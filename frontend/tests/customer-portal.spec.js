@@ -23,6 +23,21 @@ const portalPayload = {
     has_usable_password: true,
     portal_token: "customer-token",
     account_type: "individual",
+    rental_operations: {
+      plan: "rental_operations",
+      plan_label: "Rental Operations",
+      subscription_status: "active",
+      trial_active: false,
+      trial_days_remaining: 0,
+      subscription_active: true,
+      rental_operations_locked: false,
+      checkout_endpoint: "/projects/customer-portal/customer-token/rental-operations/checkout/",
+    },
+    subscription_status: "active",
+    trial_active: false,
+    trial_days_remaining: 0,
+    subscription_active: true,
+    rental_operations_locked: false,
   },
   summary: {
     active_requests: 1,
@@ -6001,6 +6016,86 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await page.getByTestId("customer-dashboard-tab-account").click();
   await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/text-white/);
   await expect(page.getByTestId("customer-profile-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
+});
+
+test("rental operations gating locks internal work orders but keeps marketplace routing visible", async ({ page }) => {
+  const lockedPortal = clonePortal({
+    ...portalPayload,
+    account: {
+      ...portalPayload.account,
+      account_type: "property_management_company",
+      is_property_management_company: true,
+      has_rental_properties: true,
+      rental_operations: {
+        ...portalPayload.account.rental_operations,
+        subscription_status: "canceled",
+        trial_active: false,
+        trial_days_remaining: 0,
+        subscription_active: false,
+        rental_operations_locked: true,
+      },
+      subscription_status: "canceled",
+      trial_active: false,
+      trial_days_remaining: 0,
+      subscription_active: false,
+      rental_operations_locked: true,
+    },
+    property_profile: {
+      ...portalPayload.property_profile,
+      rental_tools_enabled: true,
+      is_rental_property: true,
+    },
+    property_profiles: portalPayload.property_profiles.map((profile) => ({
+      ...profile,
+      rental_tools_enabled: true,
+      is_rental_property: true,
+    })),
+  });
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "customer-portal-token");
+  });
+  await page.route("**/api/projects/customer-portal/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+    if (method === "POST" && requestUrl.includes("/rental-operations/checkout/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ checkout_url: "https://checkout.stripe.test/rental-ops" }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(lockedPortal),
+    });
+  });
+
+  await page.goto("/portal/customer-token");
+  await expect(page.getByTestId("rental-operations-subscription-banner")).toContainText("Internal maintenance tools require Rental Operations.");
+  await page.getByTestId("customer-dashboard-tab-maintenance").click();
+  await page.getByTestId("property-work-order-add").click();
+  await page.getByTestId("property-work-order-title").fill("Locked staff repair");
+  await page.getByTestId("property-work-order-description").fill("Route this repair internally.");
+  await expect(page.getByTestId("property-work-order-assignment-type")).toHaveValue("internal_staff");
+  await page.getByTestId("property-work-order-continue-contractors").click();
+  await expect(page.getByTestId("property-work-order-error")).toContainText("Internal staff assignment requires Rental Operations");
+  await page.getByTestId("property-work-order-assignment-type").selectOption("vendor");
+  await page.getByTestId("property-work-order-continue-contractors").click();
+  await expect(page.getByTestId("property-work-order-vendor-panel")).toContainText("Enter Vendor Manually");
+  await page.getByTestId("property-work-order-vendor-mode-manual").click();
+  await page.getByTestId("property-work-order-manual-vendor-name").fill("Free Vendor Route");
+  await page.getByTestId("property-work-order-manual-vendor-email").fill("dispatch@freevendor.example");
+  await expect(page.getByTestId("property-work-order-continue-finalize")).toBeEnabled();
+  await page.getByTestId("property-work-order-continue-finalize").click();
+  await expect(page.getByTestId("property-work-order-rental-operations-lock")).toHaveCount(0);
+  await expect(page.getByTestId("property-work-order-send-manual-vendor")).toBeEnabled();
+  await page.getByTestId("property-work-order-back").click();
+  await page.getByTestId("property-work-order-back").click();
+  await page.getByTestId("property-work-order-assignment-type").selectOption("marketplace_contractor");
+  await page.getByTestId("property-work-order-continue-contractors").click();
+  await expect(page.getByTestId("property-work-order-marketplace-placeholder")).toContainText("Contractor Search");
 });
 
 test("customer portal paginates projects and requests", async ({ page }) => {

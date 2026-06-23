@@ -122,6 +122,12 @@ from projects.services.property_management import (
     managed_properties_for_company,
     units_for_property,
 )
+from projects.services.rental_operations_billing import (
+    create_checkout_session as create_rental_operations_checkout_session,
+    has_rental_operations_access,
+    lock_response_payload as rental_operations_lock_payload,
+    subscription_metadata as rental_operations_subscription_metadata,
+)
 from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
@@ -3738,6 +3744,8 @@ def _customer_account_payload(email: str) -> dict:
         company = create_or_sync_rental_owner_company_from_homeowner(homeowner)
     else:
         company = None
+    rental_operations = rental_operations_subscription_metadata(company)
+    rental_operations["checkout_endpoint"] = f"/projects/customer-portal/{_portal_token(email)}/rental-operations/checkout/" if company else ""
     return {
         "email": email,
         "has_user": bool(user),
@@ -3747,6 +3755,12 @@ def _customer_account_payload(email: str) -> dict:
         "is_property_management_company": is_property_management_company,
         "has_rental_properties": has_rental_properties,
         "company": company_payload(company),
+        "rental_operations": rental_operations,
+        "subscription_status": rental_operations["subscription_status"],
+        "trial_active": rental_operations["trial_active"],
+        "trial_days_remaining": rental_operations["trial_days_remaining"],
+        "subscription_active": rental_operations["subscription_active"],
+        "rental_operations_locked": rental_operations["rental_operations_locked"],
         "team_members": _property_management_team_payload(company),
         "vendors": _property_vendor_rows(company),
         "managed_property_count": managed_properties_for_company(company).count() if company else 0,
@@ -4821,6 +4835,43 @@ class CustomerPortalView(APIView):
             return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalRentalOperationsCheckoutView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request, token: str):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        company, error = _rental_tools_company_for_email_or_response(email)
+        if error is not None:
+            return error
+        if has_rental_operations_access(company):
+            return Response(
+                {
+                    "detail": "Rental Operations is already active.",
+                    "rental_operations": rental_operations_subscription_metadata(company),
+                },
+                status=status.HTTP_200_OK,
+            )
+        try:
+            session = create_rental_operations_checkout_session(company=company, request=request, token=token)
+        except RuntimeError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        checkout_url = session.get("url") if isinstance(session, dict) else getattr(session, "url", "")
+        return Response(
+            {
+                "checkout_url": checkout_url,
+                "session_id": session.get("id") if isinstance(session, dict) else getattr(session, "id", ""),
+                "rental_operations": rental_operations_subscription_metadata(company),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalNotificationActionMixin:
@@ -6938,6 +6989,17 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             return email, None, None, error
         return email, company, property_profile, None
 
+    def _rental_operations_required_response(self, company: PropertyManagementCompany):
+        return Response(rental_operations_lock_payload(company), status=status.HTTP_402_PAYMENT_REQUIRED)
+
+    def _assignment_requires_rental_operations(self, assignment_type: str) -> bool:
+        return assignment_type == PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF
+
+    def _status_requires_rental_operations(self, row: PropertyWorkOrder, next_status: str) -> bool:
+        if next_status not in {PropertyWorkOrder.STATUS_COMPLETED, PropertyWorkOrder.STATUS_CLOSED}:
+            return False
+        return row.assignment_type == PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF
+
     def _unit_for_property_or_none(self, property_profile: PropertyProfile, unit_id):
         if not unit_id:
             return None
@@ -7088,6 +7150,8 @@ class CustomerPortalPropertyWorkOrderView(APIView):
         unit = self._unit_for_property_or_none(property_profile, data.get("unit_id"))
         tenant = self._tenant_for_property_or_none(company, property_profile, data.get("tenant_id"))
         assignment_values = self._assignment_values(company, data)
+        if self._assignment_requires_rental_operations(assignment_values["assignment_type"]) and not has_rental_operations_access(company):
+            return self._rental_operations_required_response(company)
         row = PropertyWorkOrder.objects.create(
             property_management_company=company,
             property_profile=property_profile,
@@ -7139,6 +7203,8 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             return transition_error
         if next_status == PropertyWorkOrder.STATUS_COMPLETED and not _safe_text(data.get("completion_notes", row.completion_notes)):
             return Response({"completion_notes": ["Completion notes are required to complete a work order."]}, status=status.HTTP_400_BAD_REQUEST)
+        if self._status_requires_rental_operations(row, next_status) and not has_rental_operations_access(company):
+            return self._rental_operations_required_response(company)
         files = _property_work_order_uploaded_files(request)
         try:
             _validate_property_work_order_attachments(files)
@@ -7155,7 +7221,10 @@ class CustomerPortalPropertyWorkOrderView(APIView):
             field_values["tenant"] = self._tenant_for_property_or_none(company, property_profile, data.get("tenant_id"))
         assignment_keys = {"assignment_type", "assigned_staff_member_id", "assigned_vendor_id", "assigned_contractor_id"}
         if assignment_keys.intersection(data.keys()):
-            field_values.update(self._assignment_values(company, data, current=row))
+            assignment_values = self._assignment_values(company, data, current=row)
+            if self._assignment_requires_rental_operations(assignment_values["assignment_type"]) and not has_rental_operations_access(company):
+                return self._rental_operations_required_response(company)
+            field_values.update(assignment_values)
 
         update_fields = []
         activity_messages = []

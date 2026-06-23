@@ -3075,6 +3075,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [savingVendor, setSavingVendor] = useState(false);
   const [focusedRequestId, setFocusedRequestId] = useState("");
   const [requestDraft, setRequestDraft] = useState(null);
+  const [startingRentalOperationsCheckout, setStartingRentalOperationsCheckout] = useState(false);
 
   const customerName = portal?.customer?.name || "Customer";
   const notifications = normalizePortalNotifications(portal?.notifications || []);
@@ -3088,6 +3089,14 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     portal?.property_profile?.rental_tools_enabled || portal?.property_profile?.is_rental_property
   );
   const showMaintenanceTab = Boolean(isPropertyManagementAccount || selectedPropertySupportsRentalMaintenance);
+  const rentalOperations = portal?.account?.rental_operations || {
+    subscription_status: portal?.account?.subscription_status || "none",
+    trial_active: Boolean(portal?.account?.trial_active),
+    trial_days_remaining: Number(portal?.account?.trial_days_remaining || 0),
+    subscription_active: Boolean(portal?.account?.subscription_active),
+    rental_operations_locked: Boolean(portal?.account?.rental_operations_locked),
+    checkout_endpoint: "",
+  };
   const visibleTabs = useMemo(() => customerPortalTabs(showMaintenanceTab), [showMaintenanceTab]);
   useEffect(() => {
     if (!visibleTabs.some(([key]) => key === activeTab)) {
@@ -3107,6 +3116,29 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       onPortalUpdate?.(data);
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Could not refresh your workspace.");
+    }
+  };
+
+  const startRentalOperationsCheckout = async () => {
+    const endpoint =
+      rentalOperations.checkout_endpoint ||
+      `/projects/customer-portal/${encodeURIComponent(token)}/rental-operations/checkout/`;
+    if (!token || startingRentalOperationsCheckout) return;
+    setStartingRentalOperationsCheckout(true);
+    try {
+      const { data } = await api.post(endpoint);
+      if (data?.checkout_url) {
+        window.location.assign(data.checkout_url);
+        return;
+      }
+      if (data?.rental_operations) {
+        await refreshPortal();
+      }
+      toast.success(data?.detail || "Rental Operations is active.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not start Rental Operations checkout.");
+    } finally {
+      setStartingRentalOperationsCheckout(false);
     }
   };
 
@@ -3783,6 +3815,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           propertyProfile={portal?.property_profile || {}}
           propertyProfiles={portal?.property_profiles || []}
           isPropertyManagementCompany={showMaintenanceTab}
+          rentalOperations={rentalOperations}
+          onStartRentalOperationsCheckout={startRentalOperationsCheckout}
           mode={activeTab === "maintenance" ? "maintenance" : "requests"}
           creating={creatingRequest}
           acceptingBidId={acceptingBidId}
@@ -4111,6 +4145,42 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         </header>
 
         <main className="mt-5">
+          {showMaintenanceTab ? (
+            <section
+              data-testid="rental-operations-subscription-banner"
+              className={`mb-5 rounded-2xl border p-4 text-sm shadow-xl shadow-slate-950/15 ${
+                rentalOperations.rental_operations_locked
+                  ? "border-amber-300/40 bg-amber-300/10 text-amber-50"
+                  : "border-emerald-300/35 bg-emerald-400/10 text-emerald-50"
+              }`}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="font-semibold text-white">
+                    {rentalOperations.rental_operations_locked
+                      ? "Internal maintenance tools require Rental Operations."
+                      : rentalOperations.trial_active
+                        ? `Rental Operations trial: ${rentalOperations.trial_days_remaining} day${rentalOperations.trial_days_remaining === 1 ? "" : "s"} remaining`
+                        : "Rental Operations active"}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 opacity-85">
+                    Marketplace contractor routing and vendor invitations stay free. Internal staff assignment and self-performed completion workflows use Rental Operations.
+                  </p>
+                </div>
+                {rentalOperations.rental_operations_locked ? (
+                  <button
+                    type="button"
+                    data-testid="rental-operations-checkout-button"
+                    disabled={startingRentalOperationsCheckout}
+                    onClick={startRentalOperationsCheckout}
+                    className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-60"
+                  >
+                    {startingRentalOperationsCheckout ? "Opening..." : "Start free trial"}
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
           {tabContent}
         </main>
       </div>

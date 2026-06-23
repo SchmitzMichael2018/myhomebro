@@ -71,6 +71,23 @@ class PropertyProfile(models.Model):
 
 
 class PropertyManagementCompany(models.Model):
+    SUBSCRIPTION_STATUS_NONE = "none"
+    SUBSCRIPTION_STATUS_TRIALING = "trialing"
+    SUBSCRIPTION_STATUS_ACTIVE = "active"
+    SUBSCRIPTION_STATUS_PAST_DUE = "past_due"
+    SUBSCRIPTION_STATUS_INCOMPLETE = "incomplete"
+    SUBSCRIPTION_STATUS_CANCELED = "canceled"
+    SUBSCRIPTION_STATUS_UNPAID = "unpaid"
+    SUBSCRIPTION_STATUS_CHOICES = [
+        (SUBSCRIPTION_STATUS_NONE, "None"),
+        (SUBSCRIPTION_STATUS_TRIALING, "Trialing"),
+        (SUBSCRIPTION_STATUS_ACTIVE, "Active"),
+        (SUBSCRIPTION_STATUS_PAST_DUE, "Past Due"),
+        (SUBSCRIPTION_STATUS_INCOMPLETE, "Incomplete"),
+        (SUBSCRIPTION_STATUS_CANCELED, "Canceled"),
+        (SUBSCRIPTION_STATUS_UNPAID, "Unpaid"),
+    ]
+
     homeowner = models.OneToOneField(
         "projects.Homeowner",
         on_delete=models.CASCADE,
@@ -88,6 +105,17 @@ class PropertyManagementCompany(models.Model):
     license_number = models.CharField(max_length=120, blank=True, default="")
     notes = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True, db_index=True)
+    subscription_status = models.CharField(
+        max_length=32,
+        choices=SUBSCRIPTION_STATUS_CHOICES,
+        default=SUBSCRIPTION_STATUS_NONE,
+        db_index=True,
+    )
+    subscription_plan = models.CharField(max_length=80, blank=True, default="")
+    trial_started_at = models.DateTimeField(null=True, blank=True)
+    trial_ends_at = models.DateTimeField(null=True, blank=True)
+    stripe_customer_id = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    stripe_subscription_id = models.CharField(max_length=120, blank=True, default="", db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -97,6 +125,7 @@ class PropertyManagementCompany(models.Model):
             models.Index(fields=["name"]),
             models.Index(fields=["email"]),
             models.Index(fields=["is_active", "updated_at"]),
+            models.Index(fields=["subscription_status", "updated_at"]),
         ]
 
     def __str__(self):

@@ -20359,6 +20359,9 @@ class CustomerPortalAccessTests(TestCase):
         self.customer_homeowner.company_name = "Austin Rentals Group"
         self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
         company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        company.subscription_status = PropertyManagementCompany.SUBSCRIPTION_STATUS_ACTIVE
+        company.subscription_plan = "rental_operations"
+        company.save(update_fields=["subscription_status", "subscription_plan", "updated_at"])
         property_profile = PropertyProfile.objects.create(
             homeowner=self.customer_homeowner,
             customer_email=self.customer_email,
@@ -20422,6 +20425,9 @@ class CustomerPortalAccessTests(TestCase):
         self.customer_homeowner.company_name = "Austin Rentals Group"
         self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
         company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        company.subscription_status = PropertyManagementCompany.SUBSCRIPTION_STATUS_ACTIVE
+        company.subscription_plan = "rental_operations"
+        company.save(update_fields=["subscription_status", "subscription_plan", "updated_at"])
         property_profile = PropertyProfile.objects.create(
             homeowner=self.customer_homeowner,
             customer_email=self.customer_email,
@@ -20521,6 +20527,9 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIsNotNone(company)
         self.assertEqual(company.homeowner, self.customer_homeowner)
         self.assertEqual(self.customer_homeowner.account_type, Homeowner.ACCOUNT_TYPE_INDIVIDUAL)
+        company.subscription_status = PropertyManagementCompany.SUBSCRIPTION_STATUS_ACTIVE
+        company.subscription_plan = "rental_operations"
+        company.save(update_fields=["subscription_status", "subscription_plan", "updated_at"])
         unit = PropertyUnit.objects.get(property_profile=property_profile)
 
         tenant_response = self.client.post(
@@ -21100,6 +21109,9 @@ class CustomerPortalAccessTests(TestCase):
         self.customer_homeowner.company_name = "Austin Rentals Group"
         self.customer_homeowner.save(update_fields=["account_type", "company_name", "updated_at"])
         company = PropertyManagementCompany.objects.create(homeowner=self.customer_homeowner, name="Austin Rentals Group")
+        company.subscription_status = PropertyManagementCompany.SUBSCRIPTION_STATUS_ACTIVE
+        company.subscription_plan = "rental_operations"
+        company.save(update_fields=["subscription_status", "subscription_plan", "updated_at"])
         property_profile = PropertyProfile.objects.create(
             homeowner=self.customer_homeowner,
             customer_email=self.customer_email,
@@ -21324,6 +21336,178 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(row.priority, PropertyWorkOrder.PRIORITY_NORMAL)
         self.assertEqual(row.completion_notes, "Parts ordered.")
         self.assertEqual(MaintenanceWorkOrder.objects.count(), 0)
+
+    @override_settings(STRIPE_RENTAL_OPERATIONS_PRICE_ID="price_rental_ops_test")
+    def test_rental_operations_checkout_returns_stripe_session(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, _property_profile, _unit, _tenant, _staff = self._create_property_work_order_context()
+        company.subscription_status = PropertyManagementCompany.SUBSCRIPTION_STATUS_NONE
+        company.stripe_customer_id = ""
+        company.save(update_fields=["subscription_status", "stripe_customer_id", "updated_at"])
+
+        with patch("projects.services.rental_operations_billing.stripe.Customer.create", return_value={"id": "cus_rental_ops"}) as customer_mock, patch(
+            "projects.services.rental_operations_billing.stripe.checkout.Session.create",
+            return_value={"id": "cs_rental_ops", "url": "https://checkout.stripe.test/rental-ops"},
+        ) as checkout_mock:
+            response = self.client.post(f"/api/projects/customer-portal/{token}/rental-operations/checkout/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["checkout_url"], "https://checkout.stripe.test/rental-ops")
+        company.refresh_from_db()
+        self.assertEqual(company.stripe_customer_id, "cus_rental_ops")
+        customer_mock.assert_called_once()
+        checkout_mock.assert_called_once()
+        self.assertEqual(checkout_mock.call_args.kwargs["mode"], "subscription")
+        self.assertEqual(checkout_mock.call_args.kwargs["subscription_data"]["trial_period_days"], 14)
+
+    def test_rental_operations_gates_internal_only_not_vendor_or_marketplace_work_orders(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        company, property_profile, unit, tenant, staff = self._create_property_work_order_context()
+        company.subscription_status = PropertyManagementCompany.SUBSCRIPTION_STATUS_CANCELED
+        company.trial_ends_at = timezone.now() - timedelta(days=1)
+        company.save(update_fields=["subscription_status", "trial_ends_at", "updated_at"])
+        vendor = PropertyVendor.objects.create(
+            property_management_company=company,
+            name="Pipe Pros",
+            trade_category="Plumbing",
+            email="dispatch@pipepros.example",
+            status=PropertyVendor.STATUS_ACTIVE,
+        )
+        _contractor_user, _contractor, entry = self._create_marketplace_contractor_entry(
+            email="free-marketplace@example.com",
+            business_name="Free Marketplace Plumbing",
+        )
+
+        internal_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/",
+            {
+                "title": "Internal repair",
+                "description": "Assign this repair internally.",
+                "assignment_type": PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF,
+                "assigned_staff_member_id": staff.id,
+                "unit_id": unit.id,
+                "tenant_id": tenant.id,
+            },
+            content_type="application/json",
+        )
+        vendor_create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/",
+            {
+                "title": "Vendor repair",
+                "description": "Route this repair to a preferred vendor.",
+                "assignment_type": PropertyWorkOrder.ASSIGNMENT_VENDOR,
+                "assigned_vendor_id": vendor.id,
+                "unit_id": unit.id,
+                "tenant_id": tenant.id,
+            },
+            content_type="application/json",
+        )
+        marketplace_create_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/",
+            {
+                "title": "Marketplace repair",
+                "description": "Route this repair to marketplace contractors.",
+                "category": PropertyWorkOrder.CATEGORY_PLUMBING,
+                "assignment_type": PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+                "unit_id": unit.id,
+                "tenant_id": tenant.id,
+            },
+            content_type="application/json",
+        )
+        vendor_work_order_id = vendor_create_response.data["work_order"]["id"]
+        marketplace_row = PropertyWorkOrder.objects.get(title="Marketplace repair")
+        marketplace_send_response = self.client.post(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{marketplace_row.id}/send-to-marketplace/",
+            {"directory_entry_ids": [entry.id]},
+            content_type="application/json",
+        )
+        external_row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="External recipient repair",
+            description="Invite selected outside recipients.",
+            category=PropertyWorkOrder.CATEGORY_PLUMBING,
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR,
+        )
+        with patch("projects.views.customer_portal.send_postmark_email", return_value=(True, "sent")), patch(
+            "projects.views.customer_portal.send_twilio_sms",
+            return_value=(True, "sent"),
+        ):
+            external_send_response = self.client.post(
+                f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{external_row.id}/send-to-marketplace/",
+                {
+                    "recipients": [
+                        {"source": PropertyWorkOrderRecipientInvitation.TYPE_PREFERRED_VENDOR, "vendor_id": vendor.id},
+                        {
+                            "source": PropertyWorkOrderRecipientInvitation.TYPE_LOCAL_BUSINESS,
+                            "business_id": "local-pipe",
+                            "name": "Local Pipe Shop",
+                            "email": "dispatch@localpipe.example",
+                        },
+                        {
+                            "source": PropertyWorkOrderRecipientInvitation.TYPE_MANUAL_VENDOR,
+                            "name": "Rapid Rooter",
+                            "email": "dispatch@rapidrooter.example",
+                        },
+                    ]
+                },
+                content_type="application/json",
+            )
+        internal_row = PropertyWorkOrder.objects.create(
+            property_management_company=company,
+            property_profile=property_profile,
+            unit=unit,
+            tenant=tenant,
+            title="Existing internal repair",
+            description="Self-performed maintenance.",
+            assignment_type=PropertyWorkOrder.ASSIGNMENT_INTERNAL_STAFF,
+            assigned_staff_member=staff,
+            status=PropertyWorkOrder.STATUS_IN_PROGRESS,
+        )
+        internal_completion_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{internal_row.id}/",
+            {"status": PropertyWorkOrder.STATUS_COMPLETED, "completion_notes": "Done."},
+            content_type="application/json",
+        )
+        vendor_start_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{vendor_work_order_id}/",
+            {"status": PropertyWorkOrder.STATUS_IN_PROGRESS},
+            content_type="application/json",
+        )
+        vendor_completion_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{vendor_work_order_id}/",
+            {"status": PropertyWorkOrder.STATUS_COMPLETED, "completion_notes": "Done."},
+            content_type="application/json",
+        )
+
+        self.assertEqual(internal_response.status_code, 402, internal_response.data)
+        self.assertEqual(internal_response.data["code"], "rental_operations_subscription_required")
+        self.assertTrue(internal_response.data["rental_operations"]["rental_operations_locked"])
+        self.assertEqual(vendor_create_response.status_code, 201, vendor_create_response.data)
+        self.assertEqual(vendor_create_response.data["work_order"]["assignment_type"], PropertyWorkOrder.ASSIGNMENT_VENDOR)
+        self.assertEqual(marketplace_create_response.status_code, 201, marketplace_create_response.data)
+        self.assertEqual(marketplace_row.assignment_type, PropertyWorkOrder.ASSIGNMENT_MARKETPLACE_CONTRACTOR)
+        self.assertEqual(marketplace_send_response.status_code, 200, marketplace_send_response.data)
+        self.assertEqual(marketplace_send_response.data["opportunity_count"], 1)
+        self.assertEqual(external_send_response.status_code, 200, external_send_response.data)
+        self.assertEqual(external_send_response.data["invitation_count"], 3)
+        self.assertEqual(internal_completion_response.status_code, 402, internal_completion_response.data)
+        self.assertEqual(vendor_start_response.status_code, 200, vendor_start_response.data)
+        self.assertEqual(vendor_completion_response.status_code, 200, vendor_completion_response.data)
+
+        company.subscription_status = PropertyManagementCompany.SUBSCRIPTION_STATUS_TRIALING
+        company.trial_started_at = timezone.now()
+        company.trial_ends_at = timezone.now() + timedelta(days=14)
+        company.save(update_fields=["subscription_status", "trial_started_at", "trial_ends_at", "updated_at"])
+        trial_response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/properties/{property_profile.id}/work-orders/{internal_row.id}/",
+            {"status": PropertyWorkOrder.STATUS_COMPLETED, "completion_notes": "Done under trial."},
+            content_type="application/json",
+        )
+        self.assertEqual(trial_response.status_code, 200, trial_response.data)
+        self.assertEqual(trial_response.data["work_order"]["status"], PropertyWorkOrder.STATUS_COMPLETED)
 
     def test_property_management_company_can_manage_vendors(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

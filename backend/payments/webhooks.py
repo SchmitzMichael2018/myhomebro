@@ -35,6 +35,11 @@ from projects.services.direct_pay import (
 )
 from projects.services.draw_requests import finalize_draw_paid, mark_draw_payment_issue
 from projects.services.notification_center import create_notification
+from projects.services.rental_operations_billing import (
+    sync_checkout_session as sync_rental_operations_checkout_session,
+    sync_invoice_payment_failed as sync_rental_operations_invoice_payment_failed,
+    sync_subscription as sync_rental_operations_subscription,
+)
 
 log = logging.getLogger(__name__)
 
@@ -1156,6 +1161,10 @@ def stripe_webhook(request):
         if event_type in ("checkout.session.completed", "checkout.session.async_payment_succeeded"):
             # NOTE: escrow funding is handled via payment_intent.succeeded
             try:
+                sync_rental_operations_checkout_session(data_obj)
+            except Exception:
+                log.exception("Rental Operations checkout handler failed (session=%s).", data_obj.get("id"))
+            try:
                 _handle_direct_pay_checkout_completed(data_obj)
             except Exception:
                 log.exception("Direct Pay checkout handler failed (session=%s).", data_obj.get("id"))
@@ -1169,6 +1178,20 @@ def stripe_webhook(request):
             except Exception:
                 log.exception("Expense checkout handler failed (session=%s).", data_obj.get("id"))
 
+            return HttpResponse(status=200)
+
+        if event_type in ("customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"):
+            try:
+                sync_rental_operations_subscription(data_obj)
+            except Exception:
+                log.exception("Rental Operations subscription sync failed (subscription=%s).", data_obj.get("id"))
+            return HttpResponse(status=200)
+
+        if event_type == "invoice.payment_failed":
+            try:
+                sync_rental_operations_invoice_payment_failed(data_obj)
+            except Exception:
+                log.exception("Rental Operations invoice payment failure sync failed (invoice=%s).", data_obj.get("id"))
             return HttpResponse(status=200)
 
         if event_type == "checkout.session.async_payment_failed":

@@ -468,6 +468,8 @@ function PropertyWorkOrdersSection({
   onCreateAgreementDraft,
   onPreviewContractorMatches,
   onImportVendor,
+  rentalOperations = {},
+  onStartRentalOperationsCheckout,
   saving = false,
 }) {
   const [editing, setEditing] = useState(null);
@@ -553,6 +555,14 @@ function PropertyWorkOrdersSection({
     marketplaceMatches?.diagnostics?.geocode_error &&
       marketplaceMatches?.diagnostics?.geocode_error !== "google_geocode_api_key_missing" &&
       !marketplaceMatches?.diagnostics?.geocoded
+  );
+  const rentalOperationsLocked = Boolean(rentalOperations?.rental_operations_locked);
+  const paidAssignmentSelected = form.assignment_type === "internal_staff";
+  const completionStatusSelected = ["completed", "closed"].includes(form.status);
+  const currentOrSelectedAssignmentType = form.assignment_type || editing?.assignment_type || "";
+  const paidOperationLocked = Boolean(
+    rentalOperationsLocked &&
+      (paidAssignmentSelected || (completionStatusSelected && currentOrSelectedAssignmentType === "internal_staff"))
   );
 
   const resetMarketplacePreview = () => {
@@ -690,6 +700,10 @@ function PropertyWorkOrdersSection({
       setError("Add a title and description before continuing.");
       return;
     }
+    if (rentalOperationsLocked && form.assignment_type === "internal_staff") {
+      setError("Internal staff assignment requires Rental Operations. Marketplace contractor routing remains available.");
+      return;
+    }
     setError("");
     setWorkflowStep(form.assignment_type === "internal_staff" ? 3 : 2);
   };
@@ -716,6 +730,10 @@ function PropertyWorkOrdersSection({
     if (!form.title.trim() || !form.description.trim()) return;
     if (form.status === "completed" && !form.completion_notes.trim()) {
       setError("Completion notes are required before marking a work order completed.");
+      return;
+    }
+    if (paidOperationLocked) {
+      setError("Internal maintenance tools require Rental Operations.");
       return;
     }
     const payloadObject = {
@@ -1629,6 +1647,23 @@ function PropertyWorkOrdersSection({
               ) : null}
             </div>
 
+            {paidOperationLocked ? (
+              <div data-testid="property-work-order-rental-operations-lock" className="mt-4 rounded-xl border border-amber-300/40 bg-amber-300/10 p-3 text-sm leading-6 text-amber-50">
+                <div className="font-semibold text-white">Internal maintenance tools require Rental Operations.</div>
+                <p className="mt-1 text-xs text-amber-100/85">
+                  Marketplace contractor routing and vendor invitations remain available at no subscription cost. Internal staff assignment and self-performed completion workflows need an active trial or subscription.
+                </p>
+                <button
+                  type="button"
+                  data-testid="property-work-order-rental-operations-checkout"
+                  onClick={onStartRentalOperationsCheckout}
+                  className="mt-3 rounded-xl bg-amber-300 px-3 py-2 text-xs font-extrabold text-slate-950 hover:bg-amber-200"
+                >
+                  Start free trial
+                </button>
+              </div>
+            ) : null}
+
             {error ? <div data-testid="property-work-order-error" className="mt-4 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-100">{error}</div> : null}
 
             <div className="mt-5 flex flex-wrap gap-2">
@@ -1668,7 +1703,7 @@ function PropertyWorkOrdersSection({
                 <button
                   type="button"
                   data-testid="property-work-order-save-send-marketplace"
-                  disabled={saving || !form.title.trim() || !form.description.trim() || !canSendToMarketplace}
+                  disabled={saving || !form.title.trim() || !form.description.trim() || !canSendToMarketplace || paidOperationLocked}
                   onClick={(event) => submit(event, { sendToMarketplace: true })}
                   className="rounded-xl border border-emerald-300/50 bg-emerald-400/15 px-4 py-2 text-sm font-extrabold text-emerald-100 hover:bg-emerald-400/25 disabled:opacity-50"
                 >
@@ -1679,7 +1714,7 @@ function PropertyWorkOrdersSection({
                 <button
                   type="button"
                   data-testid="property-work-order-send-manual-vendor"
-                  disabled={saving || !form.title.trim() || !form.description.trim() || !manualVendorReady}
+                  disabled={saving || !form.title.trim() || !form.description.trim() || !manualVendorReady || paidOperationLocked}
                   onClick={(event) => submit(event, { sendToMarketplace: true })}
                   className="rounded-xl border border-amber-300/50 bg-amber-300/15 px-4 py-2 text-sm font-extrabold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50"
                 >
@@ -1692,7 +1727,7 @@ function PropertyWorkOrdersSection({
                 </div>
               ) : null}
               {workflowStep === 3 ? (
-              <button type="submit" data-testid="property-work-order-save" disabled={saving || !form.title.trim() || !form.description.trim()} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
+              <button type="submit" data-testid="property-work-order-save" disabled={saving || !form.title.trim() || !form.description.trim() || paidOperationLocked} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-50">
                 {saving ? "Saving..." : "Save Work Order"}
               </button>
               ) : null}
@@ -1954,6 +1989,8 @@ export default function CustomerRequests({
   onFocusedRequestHandled,
   initialDraft = null,
   onInitialDraftHandled,
+  rentalOperations = {},
+  onStartRentalOperationsCheckout,
   mode = "requests",
 }) {
   const [pendingAwardBid, setPendingAwardBid] = useState(null);
@@ -2546,6 +2583,8 @@ export default function CustomerRequests({
           onCreateAgreementDraft={onCreatePropertyWorkOrderAgreementDraft}
           onPreviewContractorMatches={onPreviewPropertyWorkOrderContractorMatches}
           onImportVendor={onImportVendor}
+          rentalOperations={rentalOperations}
+          onStartRentalOperationsCheckout={onStartRentalOperationsCheckout}
           saving={savingPropertyWorkOrder}
         />
       </div>
