@@ -96,6 +96,7 @@ from .views.contractor_me import ContractorMeView
 from .views.activity_feed import ContractorActivityFeedView
 from .views.contractor_bids import ContractorBidsView
 from .views.website_builder import (
+    ContractorWebsiteAiAssistView,
     ContractorWebsitePageDetailView,
     ContractorWebsitePagesView,
     ContractorWebsitePauseView,
@@ -416,6 +417,7 @@ agreements_router.register(
 urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
     path("contractor/website/", ContractorWebsiteView.as_view(), name="contractor-website"),
+    path("contractor/website/ai-assist/", ContractorWebsiteAiAssistView.as_view(), name="contractor-website-ai-assist"),
     path("contractor/website/preview/", ContractorWebsitePreviewView.as_view(), name="contractor-website-preview"),
     path("contractor/website/publish/", ContractorWebsitePublishView.as_view(), name="contractor-website-publish"),
     path("contractor/website/pause/", ContractorWebsitePauseView.as_view(), name="contractor-website-pause"),

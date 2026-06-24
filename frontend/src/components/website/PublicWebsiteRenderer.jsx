@@ -22,6 +22,15 @@ function color(value, fallback) {
   return value || fallback;
 }
 
+function initials(value) {
+  return String(value || 'MB')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'MB';
+}
+
 function emptyIntakeForm() {
   return {
     full_name: '',
@@ -135,45 +144,47 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
   return (
     <article
       data-testid="public-website-renderer"
-      className={`overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm ${
+      className={`overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white text-slate-900 shadow-[0_24px_70px_rgba(15,23,42,0.16)] ${
         previewMode === 'mobile' ? 'mx-auto max-w-sm' : 'w-full'
       }`}
       style={{ '--website-primary': primary, '--website-accent': accent }}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
         <div className="flex min-w-0 items-center gap-3">
           {logoImage ? (
             <img src={logoImage} alt="" className="h-10 w-10 rounded-xl object-cover" />
           ) : (
-            <div className="h-10 w-10 rounded-xl" style={{ background: primary }} />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-black text-white shadow-lg" style={{ background: `linear-gradient(135deg, ${primary}, ${accent})` }}>
+              {initials(businessName)}
+            </div>
           )}
           <div className="min-w-0">
             <div className="truncate text-sm font-bold">{businessName}</div>
             <div className="truncate text-xs text-slate-500">{serviceArea.service_area_text || [serviceArea.city, serviceArea.state].filter(Boolean).join(', ')}</div>
           </div>
         </div>
-        <a href="#website-intake" className="rounded-full px-4 py-2 text-xs font-bold text-white" style={{ background: primary }}>
+        <a href="#website-intake" className="rounded-full px-4 py-2 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5" style={{ background: primary }}>
           Request a Quote
         </a>
       </header>
 
       {sections.includes('hero') ? (
-        <section className="grid gap-0 md:grid-cols-[1.05fr_0.95fr]">
+        <section className="grid gap-0 bg-slate-50 md:grid-cols-[1.05fr_0.95fr]">
           <div className="px-6 py-10 md:px-8 md:py-14">
-            <div className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: accent }}>
+            <div className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.18em] shadow-sm" style={{ color: accent }}>
               {identity.tagline || 'Local contractor'}
             </div>
-            <h1 className="mt-4 text-3xl font-black leading-tight md:text-5xl">
+            <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight md:text-5xl">
               {hero.headline || businessName || 'Build with confidence'}
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
               {hero.subheadline || about.body || identity.bio || 'Professional project planning, clear agreements, and reliable communication from first request to final walkthrough.'}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <a href="#website-intake" className="rounded-xl px-5 py-3 text-sm font-bold text-white" style={{ background: primary }}>
+              <a href="#website-intake" className="rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5" style={{ background: primary }}>
                 {hero.cta_text || 'Request a Quote'}
               </a>
-              <a href="#portfolio" className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-bold text-slate-800">
+              <a href="#portfolio" className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50">
                 View Work
               </a>
             </div>
@@ -182,8 +193,11 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
             {heroImage ? (
               <img src={heroImage} alt="" className="h-full min-h-64 w-full object-cover" />
             ) : (
-              <div className="flex h-full min-h-64 items-center justify-center bg-slate-100 text-sm font-semibold text-slate-500">
-                Add a hero or portfolio photo
+              <div className="flex h-full min-h-64 items-center justify-center p-8 text-center text-white" style={{ background: `radial-gradient(circle at 20% 20%, ${accent} 0, transparent 28%), linear-gradient(135deg, ${primary}, #0f172a)` }}>
+                <div>
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-white/15 text-2xl font-black shadow-2xl backdrop-blur">{initials(businessName)}</div>
+                  <div className="mt-4 text-sm font-semibold text-white/85">Add a hero or portfolio photo when you are ready.</div>
+                </div>
               </div>
             )}
           </div>
@@ -198,8 +212,8 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(serviceCards.length ? serviceCards : ['Residential projects', 'Repairs', 'Renovations'].map((item) => ({ title: item, description: '' }))).map((item) => (
-              <div key={item.title || item} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
-                <div className="font-semibold">{item.title || item}</div>
+              <div key={item.title || item} className="rounded-2xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
+                <div className="font-black text-slate-950">{item.title || item}</div>
                 {item.description ? <div className="mt-2 leading-6 text-slate-600">{item.description}</div> : null}
               </div>
             ))}
@@ -220,7 +234,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
                 </div>
               </div>
             ))}
-            {!gallery.items?.length ? <div className="rounded-xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">Portfolio photos will appear here.</div> : null}
+            {!gallery.items?.length ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-500">Portfolio photos will appear here after you select public gallery images.</div> : null}
           </div>
         </section>
       ) : null}
@@ -236,7 +250,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
                 <figcaption className="mt-3 text-xs font-semibold text-slate-500">{review.reviewer_name || review.customer_name || 'Customer'}</figcaption>
               </figure>
             ))}
-            {!reviews.selected?.length ? <div className="rounded-xl border border-dashed border-slate-300 p-5 text-sm text-slate-500">Approved reviews will appear here.</div> : null}
+            {!reviews.selected?.length ? <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-6 text-slate-500">Approved reviews will appear here. Until then, the trust section highlights service area, licensing, and portfolio signals.</div> : null}
           </div>
         </section>
       ) : null}

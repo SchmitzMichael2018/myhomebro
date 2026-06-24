@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from django.conf import settings
@@ -32,6 +33,35 @@ FEATURE_WEBSITE_ANALYTICS = "website_analytics"
 FEATURE_WEBSITE_ADVANCED_SEO = "website_advanced_seo"
 
 MINIMUM_PUBLISH_READINESS_SCORE = 60
+DEFAULT_WEBSITE_TRIAL_DAYS = 14
+
+ACCESS_FREE_PROFILE = "free_profile"
+ACCESS_TRIAL_ACTIVE = "website_trial_active"
+ACCESS_TRIAL_EXPIRED = "website_trial_expired"
+ACCESS_PRO_ACTIVE = "website_pro_active"
+ACCESS_GROWTH_ACTIVE = "website_growth_active"
+
+WEBSITE_AI_ACTIONS = {
+    "suggest_palette",
+    "suggest_font_theme",
+    "generate_tagline",
+    "generate_hero_headline",
+    "generate_hero_subheadline",
+    "rewrite_hero_copy",
+    "friendly_hero_copy",
+    "premium_hero_copy",
+    "commercial_hero_copy",
+    "generate_service_descriptions",
+    "improve_service_description",
+    "suggest_missing_services",
+    "generate_photo_caption",
+    "suggest_featured_reviews",
+    "generate_trust_summary",
+    "improve_contact_cta",
+    "generate_contact_intro",
+    "generate_seo_title",
+    "generate_seo_description",
+}
 
 WEBSITE_FEATURE_KEYS = (
     FEATURE_PUBLIC_PROFILE,
@@ -115,6 +145,27 @@ TEMPLATE_PRESETS = {
         "typography_style": "compact_sans",
         "card_style": "structured",
         "section_order": ["hero", "services", "trust", "reviews", "portfolio", "contact"],
+    },
+    "luxury_remodel": {
+        "label": "Luxury Remodel",
+        "layout_style": "editorial_luxury",
+        "typography_style": "warm_serif",
+        "card_style": "premium",
+        "section_order": ["hero", "portfolio", "reviews", "services", "trust", "contact"],
+    },
+    "bold_contractor": {
+        "label": "Bold Contractor",
+        "layout_style": "bold_trade",
+        "typography_style": "bold_sans",
+        "card_style": "crisp",
+        "section_order": ["hero", "trust", "services", "contact", "portfolio", "reviews"],
+    },
+    "clean_local_service": {
+        "label": "Clean Local Service",
+        "layout_style": "local_service",
+        "typography_style": "clean_sans",
+        "card_style": "soft",
+        "section_order": ["hero", "services", "trust", "contact", "reviews", "portfolio"],
     },
 }
 
@@ -247,6 +298,33 @@ def _setting_enabled(key: str) -> bool:
     return bool(flags.get(key, False))
 
 
+def _website_access_state(contractor: Contractor | None = None) -> dict[str, Any]:
+    if contractor is not None and getattr(contractor, "pk", None):
+        contractor = Contractor.objects.select_related("user").only("id", "created_at", "user__date_joined").get(pk=contractor.pk)
+    configured = _safe_text(getattr(settings, "CONTRACTOR_WEBSITE_ACCESS_STATE", ""))
+    if configured:
+        access_state = configured
+    else:
+        access_state = ACCESS_TRIAL_ACTIVE
+        days = int(getattr(settings, "CONTRACTOR_WEBSITE_TRIAL_DAYS", DEFAULT_WEBSITE_TRIAL_DAYS) or DEFAULT_WEBSITE_TRIAL_DAYS)
+        started_at = getattr(contractor, "created_at", None) or getattr(getattr(contractor, "user", None), "date_joined", None) or timezone.now()
+        if timezone.now() > started_at + timedelta(days=days):
+            access_state = ACCESS_TRIAL_EXPIRED
+
+    days = int(getattr(settings, "CONTRACTOR_WEBSITE_TRIAL_DAYS", DEFAULT_WEBSITE_TRIAL_DAYS) or DEFAULT_WEBSITE_TRIAL_DAYS)
+    started_at = getattr(contractor, "created_at", None) or getattr(getattr(contractor, "user", None), "date_joined", None) if contractor else timezone.now()
+    started_at = started_at or timezone.now()
+    ends_at = started_at + timedelta(days=days)
+    remaining = max(0, (ends_at.date() - timezone.now().date()).days)
+    return {
+        "access_state": access_state,
+        "trial_started_at": started_at.isoformat() if started_at else None,
+        "trial_ends_at": ends_at.isoformat() if ends_at else None,
+        "days_remaining": remaining if access_state == ACCESS_TRIAL_ACTIVE else 0,
+        "post_trial_behavior": "Website draft content remains saved. Publishing can be paused until an active plan is connected.",
+    }
+
+
 @dataclass(frozen=True)
 class WebsiteFeature:
     key: str
@@ -272,6 +350,13 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
     replace the flag resolution here without changing API consumers.
     """
 
+    access = _website_access_state(contractor)
+    access_state = access["access_state"]
+    can_customize = access_state in {ACCESS_TRIAL_ACTIVE, ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} or _setting_enabled(FEATURE_WEBSITE_BUILDER)
+    can_publish = access_state in {ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} or _setting_enabled(FEATURE_WEBSITE_PUBLISH)
+    can_use_ai_limited = access_state == ACCESS_TRIAL_ACTIVE or _setting_enabled(FEATURE_WEBSITE_AI_COPY)
+    can_use_ai_full = access_state in {ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} and _setting_enabled(FEATURE_WEBSITE_AI_COPY)
+
     features = {
         FEATURE_PUBLIC_PROFILE: WebsiteFeature(
             FEATURE_PUBLIC_PROFILE,
@@ -281,17 +366,17 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
         ),
         FEATURE_WEBSITE_BUILDER: WebsiteFeature(
             FEATURE_WEBSITE_BUILDER,
-            _setting_enabled(FEATURE_WEBSITE_BUILDER),
+            can_customize,
             "pro",
             "Website Builder",
-            "" if _setting_enabled(FEATURE_WEBSITE_BUILDER) else "Upgrade to Pro to customize a multi-section website.",
+            "" if can_customize else "Your website is saved but paused. Choose a plan to reactivate customization.",
         ),
         FEATURE_WEBSITE_PUBLISH: WebsiteFeature(
             FEATURE_WEBSITE_PUBLISH,
-            _setting_enabled(FEATURE_WEBSITE_PUBLISH),
+            can_publish,
             "pro",
             "Publish website",
-            "" if _setting_enabled(FEATURE_WEBSITE_PUBLISH) else "Publishing is part of the Pro Website Builder.",
+            "" if can_publish else "Publishing is available during an active Website Builder plan.",
         ),
         FEATURE_WEBSITE_CUSTOM_DOMAIN: WebsiteFeature(
             FEATURE_WEBSITE_CUSTOM_DOMAIN,
@@ -302,10 +387,10 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
         ),
         FEATURE_WEBSITE_AI_COPY: WebsiteFeature(
             FEATURE_WEBSITE_AI_COPY,
-            _setting_enabled(FEATURE_WEBSITE_AI_COPY),
-            "growth",
+            can_use_ai_limited or can_use_ai_full,
+            "trial" if can_use_ai_limited and not can_use_ai_full else "growth",
             "AI website copy",
-            "" if _setting_enabled(FEATURE_WEBSITE_AI_COPY) else "AI page copy is planned for Growth.",
+            "" if can_use_ai_limited or can_use_ai_full else "AI website assistance is available with trial or paid Website Builder access.",
         ),
         FEATURE_WEBSITE_ANALYTICS: WebsiteFeature(
             FEATURE_WEBSITE_ANALYTICS,
@@ -323,8 +408,40 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
         ),
     }
     return {
-        "plan": "free",
+        "plan": "trial" if access_state == ACCESS_TRIAL_ACTIVE else "free",
+        **access,
+        "can_customize": can_customize,
+        "can_publish": can_publish,
+        "can_use_ai_limited": can_use_ai_limited,
+        "can_use_ai_full": can_use_ai_full,
         "features": {key: features[key].as_dict() for key in WEBSITE_FEATURE_KEYS},
+    }
+
+
+def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, Any], *, request=None) -> dict[str, Any]:
+    action = _safe_text(payload.get("action"))
+    if action not in WEBSITE_AI_ACTIONS:
+        return {"ok": False, "status": 400, "detail": "Unsupported Website Builder AI action."}
+    entitlements = get_contractor_website_entitlements(contractor)
+    if not (entitlements.get("can_use_ai_limited") or entitlements.get("can_use_ai_full")):
+        return {"ok": False, "status": 403, "detail": "Website AI assistance is not available for this access state."}
+    if not bool(getattr(settings, "CONTRACTOR_WEBSITE_AI_ASSIST_ENABLED", False)):
+        return {
+            "ok": False,
+            "status": 503,
+            "detail": "Website AI assistance is not configured yet.",
+            "action": action,
+            "entitlements": {
+                "access_state": entitlements.get("access_state"),
+                "can_use_ai_limited": entitlements.get("can_use_ai_limited"),
+                "can_use_ai_full": entitlements.get("can_use_ai_full"),
+            },
+        }
+    return {
+        "ok": False,
+        "status": 501,
+        "detail": "Website AI provider integration is pending.",
+        "action": action,
     }
 
 

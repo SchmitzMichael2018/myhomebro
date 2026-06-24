@@ -1363,6 +1363,8 @@ test("quote requests open the convert-to-agreement panel and persist the draft i
     payment_structure: "simple",
     total_cost: 22500,
     milestone_count: 3,
+    step_status: "step1",
+    wizard_step: 1,
     project: {
       id: 77,
       title: "Primary Bath Refresh",
@@ -1421,6 +1423,8 @@ test("quote requests open the convert-to-agreement panel and persist the draft i
       payment_structure: draft.payment_structure || agreement.payment_structure,
       total_cost: draft.total_cost || agreement.total_cost,
       milestone_count: Array.isArray(draft.milestones) ? draft.milestones.length : agreement.milestone_count,
+      step_status: "step1",
+      wizard_step: 1,
       project: {
         ...agreement.project,
         title: draft.project_title || agreement.project.title,

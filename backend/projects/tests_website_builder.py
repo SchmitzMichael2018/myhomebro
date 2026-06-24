@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
@@ -134,21 +136,42 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertFalse(checklist["tagline"]["complete"])
         self.assertTrue(checklist["tagline"]["required"])
 
-    def test_free_profile_enabled_and_pro_growth_features_disabled_by_default(self):
+    def test_trial_first_access_enables_customization_and_keeps_growth_disabled_by_default(self):
         response = self.client.get("/api/projects/contractor/website/", secure=True)
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["entitlements"]["access_state"], "website_trial_active")
+        self.assertTrue(response.data["entitlements"]["can_customize"])
+        self.assertTrue(response.data["entitlements"]["can_use_ai_limited"])
         features = response.data["entitlements"]["features"]
         self.assertTrue(features["public_profile"]["enabled"])
-        self.assertFalse(features["website_builder"]["enabled"])
+        self.assertTrue(features["website_builder"]["enabled"])
         self.assertFalse(features["website_publish"]["enabled"])
         self.assertFalse(features["website_custom_domain"]["enabled"])
-        self.assertFalse(features["website_ai_copy"]["enabled"])
+        self.assertTrue(features["website_ai_copy"]["enabled"])
         self.assertFalse(features["website_analytics"]["enabled"])
         self.assertFalse(features["website_advanced_seo"]["enabled"])
         self.assertEqual(response.data["draft"]["status"], ContractorWebsite.STATUS_DRAFT)
         self.assertTrue(response.data["draft"]["has_draft"])
         self.assertEqual(len(response.data["pages"]), 5)
+
+    def test_expired_trial_blocks_customization_without_deleting_content(self):
+        self.client.get("/api/projects/contractor/website/", secure=True)
+        website = ContractorWebsite.objects.get(contractor=self.contractor)
+        home = website.pages.get(page_type=ContractorWebsitePage.PAGE_HOME)
+        home.content_blocks = {"hero": {"headline": "Saved draft headline"}}
+        home.save(update_fields=["content_blocks", "updated_at"])
+        Contractor.objects.filter(pk=self.contractor.pk).update(created_at=timezone.now() - timedelta(days=45))
+
+        response = self.client.get("/api/projects/contractor/website/", secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["entitlements"]["access_state"], "website_trial_expired")
+        self.assertFalse(response.data["entitlements"]["can_customize"])
+        self.assertEqual(
+            response.data["pages"][0]["content_blocks"]["hero"]["headline"],
+            "Saved draft headline",
+        )
 
     def test_preview_endpoint_returns_public_safe_data_only(self):
         self.profile.show_email_public = False
@@ -223,6 +246,7 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(home.content_blocks["hero_headline"], "Beautiful kitchens without project chaos.")
         self.assertEqual(home.content_blocks["cta_text"], "Start My Remodel")
 
+    @override_settings(CONTRACTOR_WEBSITE_ACCESS_STATE="website_trial_expired")
     def test_entitlement_gates_enforced_for_edits(self):
         self.client.get("/api/projects/contractor/website/", secure=True)
         website = ContractorWebsite.objects.get(contractor=self.contractor)
@@ -238,6 +262,32 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(response.status_code, 403)
         home.refresh_from_db()
         self.assertNotEqual(home.title, "Blocked")
+
+    def test_ai_assist_endpoint_validates_action_type(self):
+        response = self.client.post(
+            "/api/projects/contractor/website/ai-assist/",
+            {"action": "dump_private_project_data", "current_value": "Test"},
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Unsupported", response.data["detail"])
+
+    def test_ai_assist_endpoint_does_not_return_private_data_when_provider_missing(self):
+        response = self.client.post(
+            "/api/projects/contractor/website/ai-assist/",
+            {
+                "action": "generate_tagline",
+                "current_value": "",
+                "website_payload": {"private_customer_email": "secret@example.com"},
+            },
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertNotIn("secret@example.com", str(response.data))
 
     @override_settings(
         CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={

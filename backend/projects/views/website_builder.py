@@ -15,6 +15,7 @@ from projects.services.agreements.project_create import resolve_contractor_for_u
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 from projects.services.sms_service import ensure_sms_consent
 from projects.services.website_builder import (
+    build_website_ai_assist_response,
     build_contractor_website_payload,
     build_contractor_website_preview_payload,
     ensure_contractor_website,
@@ -68,6 +69,24 @@ class ContractorWebsitePreviewView(APIView):
         if contractor is None:
             return Response({"detail": "Only contractors can preview Website Builder data."}, status=403)
         return Response(build_contractor_website_preview_payload(contractor, request=request))
+
+
+class ContractorWebsiteAiAssistView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        contractor = resolve_contractor_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Only contractors can use Website Builder AI assistance."}, status=403)
+        result = build_website_ai_assist_response(
+            contractor,
+            request.data if isinstance(request.data, dict) else {},
+            request=request,
+        )
+        if not result.get("ok"):
+            response_status = int(result.pop("status", status.HTTP_400_BAD_REQUEST))
+            return Response(result, status=response_status)
+        return Response(result)
 
 
 class ContractorWebsitePublishView(APIView):

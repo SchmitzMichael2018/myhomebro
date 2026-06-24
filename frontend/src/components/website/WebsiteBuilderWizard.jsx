@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
+import api from '../../api';
 import PublicWebsiteRenderer from './PublicWebsiteRenderer.jsx';
 
 const STEPS = [
-  { key: 'basics', label: 'Business Basics' },
-  { key: 'branding', label: 'Branding' },
+  { key: 'brand', label: 'Brand' },
+  { key: 'hero', label: 'Hero' },
   { key: 'services', label: 'Services' },
-  { key: 'trust', label: 'Trust' },
   { key: 'portfolio', label: 'Portfolio' },
-  { key: 'contact', label: 'Contact & Leads' },
-  { key: 'publish', label: 'Preview & Publish' },
+  { key: 'reviews', label: 'Reviews' },
+  { key: 'contact', label: 'Contact' },
+  { key: 'publish', label: 'Publish' },
 ];
 
 const TEMPLATES = [
@@ -17,6 +18,9 @@ const TEMPLATES = [
   { key: 'modern_trade', label: 'Modern Trade', description: 'Bold sections for trade contractors.' },
   { key: 'premium_home', label: 'Premium Home', description: 'A polished residential layout.' },
   { key: 'commercial', label: 'Commercial', description: 'Structured and trust-forward.' },
+  { key: 'luxury_remodel', label: 'Luxury Remodel', description: 'Editorial and high-touch for premium residential work.' },
+  { key: 'bold_contractor', label: 'Bold Contractor', description: 'Confident, direct, and built for action.' },
+  { key: 'clean_local_service', label: 'Clean Local Service', description: 'Friendly, clear, and optimized for local service calls.' },
 ];
 
 const SECTION_ORDER = ['hero', 'services', 'portfolio', 'reviews', 'trust', 'contact'];
@@ -84,6 +88,57 @@ function Field({ label, helper, children }) {
 
 function inputClass() {
   return 'min-h-12 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-base text-slate-950 shadow-sm transition focus:border-blue-500 focus:outline-none focus:ring-4 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-500';
+}
+
+function AiAssistButton({ action, currentValue, fieldLabel, onAssist, disabled }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onAssist({ action, currentValue, fieldLabel })}
+      className="mt-3 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-800 transition hover:bg-blue-100 disabled:opacity-50"
+      data-testid={`website-ai-${action}`}
+    >
+      Improve with AI
+    </button>
+  );
+}
+
+function AiSuggestionReview({ suggestion, onAccept, onCancel, busy }) {
+  if (!suggestion) return null;
+  const suggested = suggestion.suggested_value || suggestion.suggestion || '';
+  return (
+    <div className="fixed inset-0 z-[1600] flex items-center justify-center bg-slate-950/45 p-4" data-testid="website-ai-suggestion-review">
+      <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">AI suggestion</div>
+        <h3 className="mt-2 text-2xl font-black text-slate-950">{suggestion.fieldLabel || 'Website copy'}</h3>
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Before</div>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{suggestion.currentValue || 'Blank'}</p>
+          </div>
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+            <div className="text-xs font-black uppercase tracking-[0.14em] text-blue-700">Suggested</div>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-900">{suggested || suggestion.detail || 'No suggestion returned.'}</p>
+          </div>
+        </div>
+        {suggestion.explanation ? <p className="mt-4 text-sm leading-6 text-slate-600">{suggestion.explanation}</p> : null}
+        {suggestion.error ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{suggestion.error}</div> : null}
+        <div className="mt-6 flex flex-wrap justify-end gap-3">
+          <button type="button" onClick={onCancel} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button
+            type="button"
+            onClick={() => onAccept(suggested)}
+            disabled={busy || !suggested || suggestion.error}
+            className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-100 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none"
+            data-testid="website-ai-accept-suggestion"
+          >
+            Accept suggestion
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function WebsiteBuilderStepNav({ steps, activeStep, onStepChange, readinessScore }) {
@@ -154,21 +209,23 @@ export function WebsiteBuilderLivePreview({ payload, previewMode, setPreviewMode
   );
 }
 
-export function WebsiteBuilderBasicsStep({ profile, setProfile, onSave, busy }) {
+export function WebsiteBuilderBasicsStep({ profile, setProfile, onSave, busy, onAiAssist, canUseAi }) {
   return (
     <StepCard
-      title="Business Basics"
-      helper="These details appear at the top of your website and help customers understand where you work."
-      actions={<button type="button" onClick={onSave} disabled={busy} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:bg-slate-800 disabled:bg-slate-300 disabled:shadow-none">Save Basics</button>}
+      title="Brand foundation"
+      helper="MyHomeBro starts from your existing contractor profile. Confirm the public business identity, voice, and service area that should anchor the website."
+      actions={<button type="button" onClick={onSave} disabled={busy} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:bg-slate-800 disabled:bg-slate-300 disabled:shadow-none">Save Brand Foundation</button>}
     >
       <Field label="Business name" helper="This appears in your website header.">
         <input className={inputClass()} value={profile.business_name_public || ''} onChange={(event) => setProfile((prev) => ({ ...prev, business_name_public: event.target.value }))} data-testid="wizard-business-name" />
       </Field>
       <Field label="Tagline" helper="A short one-line promise customers see near the hero headline.">
         <input className={inputClass()} value={profile.tagline || ''} onChange={(event) => setProfile((prev) => ({ ...prev, tagline: event.target.value }))} data-testid="wizard-tagline" />
+        <AiAssistButton action="generate_tagline" fieldLabel="Tagline" currentValue={profile.tagline || ''} onAssist={(request) => onAiAssist({ ...request, onAccept: (value) => setProfile((prev) => ({ ...prev, tagline: value })) })} disabled={!canUseAi} />
       </Field>
       <Field label="Short description" helper="Use two or three sentences about the work you do best.">
         <textarea className={inputClass()} rows={4} value={profile.bio || ''} onChange={(event) => setProfile((prev) => ({ ...prev, bio: event.target.value }))} />
+        <AiAssistButton action="rewrite_hero_copy" fieldLabel="Short description" currentValue={profile.bio || ''} onAssist={(request) => onAiAssist({ ...request, onAccept: (value) => setProfile((prev) => ({ ...prev, bio: value })) })} disabled={!canUseAi} />
       </Field>
       <div className="grid gap-4 md:grid-cols-2">
         <Field label="Phone">
@@ -213,8 +270,8 @@ export function WebsiteBuilderBrandingStep({
 }) {
   return (
     <StepCard
-      title="Branding"
-      helper="Set the visual first impression: logo, hero image, colors, font style, and starter template."
+      title="Visual design"
+      helper="Choose a premium starting point, then customize colors, type, logo, and imagery. Templates are presets, not cages."
       actions={<button type="button" onClick={onSaveProfile} disabled={busy} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:bg-slate-800 disabled:bg-slate-300 disabled:shadow-none">Save Branding</button>}
     >
       {!canCustomize ? <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold leading-6 text-amber-900">{gateReason || 'Upgrade to Pro to customize website templates.'}</div> : null}
@@ -251,7 +308,7 @@ export function WebsiteBuilderBrandingStep({
         </Field>
       </div>
       <div>
-        <div className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Template selection</div>
+        <div className="text-sm font-black uppercase tracking-[0.12em] text-slate-500">Template family</div>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
           {TEMPLATES.map((template) => (
             <button
@@ -259,8 +316,9 @@ export function WebsiteBuilderBrandingStep({
               type="button"
               disabled={!canCustomize || busy}
               onClick={() => onSaveWebsiteSettings({ template_key: template.key })}
-              className={`group rounded-3xl border p-5 text-left transition disabled:opacity-60 ${(website.template_key || 'starter') === template.key ? 'border-blue-500 bg-blue-50 shadow-[0_14px_35px_rgba(37,99,235,0.14)]' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-100'}`}
+              className={`group relative rounded-3xl border p-5 text-left transition disabled:opacity-60 ${(website.template_key || 'starter') === template.key ? 'border-blue-400 bg-blue-50 shadow-[0_14px_35px_rgba(37,99,235,0.14)] ring-2 ring-blue-100' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lg hover:shadow-slate-100'}`}
             >
+              {(website.template_key || 'starter') === template.key ? <span className="absolute right-4 top-4 rounded-full bg-blue-600 px-2 py-1 text-xs font-black text-white">Selected</span> : null}
               <div className="mb-4 grid h-20 grid-cols-3 gap-2 rounded-2xl bg-slate-100 p-2">
                 <div className="col-span-2 rounded-xl bg-white shadow-sm" />
                 <div className="rounded-xl bg-slate-300" />
@@ -276,12 +334,42 @@ export function WebsiteBuilderBrandingStep({
       <div className="rounded-3xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-slate-50 p-5 shadow-inner" data-testid="website-builder-ai-branding-disabled">
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-base font-black text-slate-950">Need help branding your page?</div>
-          <span className="rounded-full bg-blue-600 px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-white">Coming Soon</span>
+          <span className="rounded-full bg-blue-600 px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-white">AI Assist</span>
         </div>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          Coming soon for Pro/Growth: suggested colors, tagline, hero headline, About copy, service descriptions, template recommendation, and SEO text.
+          Contextual AI actions now appear next to copy fields. Palette and template recommendations are wired through the AI assist endpoint and remain gated by trial or plan access.
         </p>
       </div>
+    </StepCard>
+  );
+}
+
+export function WebsiteBuilderHeroStep({ homePage, setPage, onSavePage, canCustomize, busy, onAiAssist, canUseAi }) {
+  const heroBlock = homePage?.content_blocks?.hero || {};
+  const aboutBlock = homePage?.content_blocks?.about || {};
+  const updateHero = (patch) => setPage(homePage, mergePageContent(homePage, 'hero', patch));
+  const updateAbout = (patch) => setPage(homePage, mergePageContent(homePage, 'about', patch));
+  return (
+    <StepCard
+      title="Hero"
+      helper="This is the first impression. Keep it clear, confident, and specific to the work you want more of."
+      actions={<button type="button" onClick={() => onSavePage(homePage)} disabled={!canCustomize || busy || !homePage} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:bg-slate-800 disabled:bg-slate-300 disabled:shadow-none">Save Hero Copy</button>}
+    >
+      <Field label="Hero headline" helper="The largest statement on the page.">
+        <input className={inputClass()} disabled={!canCustomize || !homePage} value={heroBlock.headline || ''} onChange={(event) => updateHero({ headline: event.target.value })} data-testid="wizard-hero-headline" />
+        <AiAssistButton action="generate_hero_headline" fieldLabel="Hero headline" currentValue={heroBlock.headline || ''} onAssist={(request) => onAiAssist({ ...request, onAccept: (value) => updateHero({ headline: value }) })} disabled={!canUseAi || !canCustomize} />
+      </Field>
+      <Field label="Hero subheadline" helper="One or two sentences that explain your promise and service area.">
+        <textarea className={inputClass()} rows={3} disabled={!canCustomize || !homePage} value={heroBlock.subheadline || ''} onChange={(event) => updateHero({ subheadline: event.target.value })} data-testid="wizard-hero-subheadline" />
+        <AiAssistButton action="generate_hero_subheadline" fieldLabel="Hero subheadline" currentValue={heroBlock.subheadline || ''} onAssist={(request) => onAiAssist({ ...request, onAccept: (value) => updateHero({ subheadline: value }) })} disabled={!canUseAi || !canCustomize} />
+      </Field>
+      <Field label="Primary CTA text">
+        <input className={inputClass()} disabled={!canCustomize || !homePage} value={heroBlock.cta_text || ''} onChange={(event) => updateHero({ cta_text: event.target.value })} />
+      </Field>
+      <Field label="About copy" helper="A short supporting section used when the page needs more context.">
+        <textarea className={inputClass()} rows={4} disabled={!canCustomize || !homePage} value={aboutBlock.body || ''} onChange={(event) => updateAbout({ body: event.target.value })} />
+        <AiAssistButton action="premium_hero_copy" fieldLabel="About copy" currentValue={aboutBlock.body || ''} onAssist={(request) => onAiAssist({ ...request, onAccept: (value) => updateAbout({ body: value }) })} disabled={!canUseAi || !canCustomize} />
+      </Field>
     </StepCard>
   );
 }
@@ -329,7 +417,7 @@ export function WebsiteBuilderServicesStep({ profile, setProfile, servicesPage, 
 export function WebsiteBuilderTrustStep({ profile, setProfile, reviewsRows, onToggleReview, onSaveProfile, reviewBusy, busy }) {
   return (
     <StepCard
-      title="Trust"
+      title="Reviews & trust"
       helper="Choose which credibility signals appear publicly. Missing items are guidance, not errors."
       actions={<button type="button" onClick={onSaveProfile} disabled={busy} className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:bg-slate-800 disabled:bg-slate-300 disabled:shadow-none">Save Trust Settings</button>}
     >
@@ -485,8 +573,10 @@ export default function WebsiteBuilderWizard({
   busy,
   publishMessage,
 }) {
-  const [activeStep, setActiveStep] = useState('basics');
+  const [activeStep, setActiveStep] = useState('brand');
   const [previewMode, setPreviewMode] = useState('desktop');
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [aiBusy, setAiBusy] = useState(false);
   const logoPreview = useObjectUrl(logoFile);
   const heroPreview = useObjectUrl(heroFile);
   const features = websiteReadiness?.entitlements?.features || {};
@@ -498,6 +588,9 @@ export default function WebsiteBuilderWizard({
   const readiness = websiteReadiness?.readiness || {};
   const blockers = Array.isArray(websiteReadiness?.publish_blockers) ? websiteReadiness.publish_blockers : [];
   const canPublish = Boolean(publishGate.enabled) && blockers.length === 0;
+  const accessState = websiteReadiness?.entitlements?.access_state || 'website_trial_active';
+  const canUseAi = Boolean(websiteReadiness?.entitlements?.can_use_ai_limited || websiteReadiness?.entitlements?.can_use_ai_full || features.website_ai_copy?.enabled);
+  const homePage = pageByType(pages, 'home');
   const servicesPage = pageByType(pages, 'services');
   const contactPage = pageByType(pages, 'contact');
 
@@ -587,7 +680,45 @@ export default function WebsiteBuilderWizard({
     setProfile,
     canCustomize,
     busy,
+    canUseAi,
+    onAiAssist: requestAiAssist,
   };
+
+  async function requestAiAssist({ action, currentValue, fieldLabel, onAccept }) {
+    setAiBusy(true);
+    setAiSuggestion(null);
+    try {
+      const { data } = await api.post('/projects/contractor/website/ai-assist/', {
+        action,
+        current_value: currentValue || '',
+        website_payload: previewPayload,
+      });
+      setAiSuggestion({
+        ...data,
+        action,
+        currentValue,
+        fieldLabel,
+        onAccept,
+      });
+    } catch (error) {
+      setAiSuggestion({
+        action,
+        currentValue,
+        fieldLabel,
+        onAccept,
+        error: error?.response?.data?.detail || 'AI assistance is not available right now.',
+      });
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function acceptAiSuggestion(value) {
+    if (aiSuggestion?.onAccept && value) {
+      aiSuggestion.onAccept(value);
+    }
+    setAiSuggestion(null);
+  }
 
   return (
     <div className="mt-6 space-y-6 overflow-hidden rounded-[2rem] bg-slate-50 p-4 sm:p-6" data-testid="marketing-website-builder-tab">
@@ -595,16 +726,17 @@ export default function WebsiteBuilderWizard({
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
           <div>
             <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-blue-800">
-              Guided Website Setup
+              AI-assisted website design
             </div>
             <h2 className="mt-4 text-3xl font-black text-slate-950 md:text-4xl">Website Builder</h2>
             <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
               Move through one focused step at a time. The preview updates immediately as you shape your public profile and website draft.
             </p>
           </div>
-          <div className="rounded-3xl bg-slate-950 px-5 py-4 text-white">
-            <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-300">Plan</div>
-            <div className="mt-1 text-2xl font-black capitalize">{websiteReadiness?.entitlements?.plan || 'free'}</div>
+          <div className="rounded-3xl bg-slate-950 px-5 py-4 text-white" data-testid="website-builder-trial-banner">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-slate-300">Access</div>
+            <div className="mt-1 text-2xl font-black capitalize">{accessState.replaceAll('_', ' ')}</div>
+            {accessState === 'website_trial_active' ? <div className="mt-2 text-sm text-slate-300">{websiteReadiness?.entitlements?.days_remaining ?? 0} days remaining</div> : null}
             <div className="mt-2 text-sm text-slate-300">Status: {website.status || 'draft'}</div>
           </div>
         </div>
@@ -614,18 +746,28 @@ export default function WebsiteBuilderWizard({
 
       <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(420px,0.9fr)_minmax(540px,1.1fr)]">
         <div className="min-w-0" data-testid={`website-builder-${activeStep}-step`}>
-          {activeStep === 'basics' ? <WebsiteBuilderBasicsStep {...stepProps} onSave={onSaveProfile} /> : null}
-          {activeStep === 'branding' ? (
-            <WebsiteBuilderBrandingStep
+          {activeStep === 'brand' ? (
+            <div className="space-y-6">
+              <WebsiteBuilderBasicsStep {...stepProps} onSave={onSaveProfile} />
+              <WebsiteBuilderBrandingStep
+                {...stepProps}
+                logoFile={logoFile}
+                setLogoFile={setLogoFile}
+                heroFile={heroFile}
+                setHeroFile={setHeroFile}
+                website={website}
+                onSaveProfile={onSaveProfile}
+                onSaveWebsiteSettings={onSaveWebsiteSettings}
+                gateReason={builderGate.reason}
+              />
+            </div>
+          ) : null}
+          {activeStep === 'hero' ? (
+            <WebsiteBuilderHeroStep
               {...stepProps}
-              logoFile={logoFile}
-              setLogoFile={setLogoFile}
-              heroFile={heroFile}
-              setHeroFile={setHeroFile}
-              website={website}
-              onSaveProfile={onSaveProfile}
-              onSaveWebsiteSettings={onSaveWebsiteSettings}
-              gateReason={builderGate.reason}
+              homePage={homePage}
+              setPage={setPage}
+              onSavePage={onSaveWebsitePage}
             />
           ) : null}
           {activeStep === 'services' ? (
@@ -637,7 +779,7 @@ export default function WebsiteBuilderWizard({
               onSavePage={onSaveWebsitePage}
             />
           ) : null}
-          {activeStep === 'trust' ? (
+          {activeStep === 'reviews' ? (
             <WebsiteBuilderTrustStep
               {...stepProps}
               reviewsRows={reviewsRows}
@@ -674,6 +816,7 @@ export default function WebsiteBuilderWizard({
 
         <WebsiteBuilderLivePreview payload={previewPayload} previewMode={previewMode} setPreviewMode={setPreviewMode} />
       </div>
+      <AiSuggestionReview suggestion={aiSuggestion} busy={aiBusy} onAccept={acceptAiSuggestion} onCancel={() => setAiSuggestion(null)} />
     </div>
   );
 }
