@@ -23,6 +23,53 @@ const BASE_TABS = [
 
 const MAINTENANCE_TAB = ["maintenance", "Maintenance", Wrench];
 const SEARCH_RADIUS_OPTIONS = [5, 10, 25, 50, 100];
+const NOTIFICATION_CATEGORY_LABELS = {
+  project_request_updates: "Project request updates",
+  contractor_responses: "Contractor responses",
+  agreement_updates: "Agreement updates",
+  milestone_updates: "Milestone updates",
+  invoice_payment_updates: "Invoice & payment updates",
+  maintenance_due_soon: "Maintenance due soon",
+  maintenance_overdue: "Maintenance overdue",
+  maintenance_completed: "Maintenance completed",
+  tenant_maintenance_requests: "Tenant maintenance requests",
+  work_order_updates: "Work order updates",
+  warranty_expiration: "Warranty expiration",
+  lifecycle_events: "Lifecycle events",
+  document_updates: "Document updates",
+  recommended_supplies: "Recommended supplies",
+  seasonal_supplies: "Seasonal supplies",
+};
+const NOTIFICATION_CHANNEL_LABELS = {
+  in_app_enabled: "In-App",
+  email_enabled: "Email",
+  sms_enabled: "SMS",
+};
+const DEFAULT_NOTIFICATION_PREFERENCE_GROUPS = {
+  Projects: [
+    "project_request_updates",
+    "contractor_responses",
+    "agreement_updates",
+    "milestone_updates",
+    "invoice_payment_updates",
+  ],
+  Maintenance: [
+    "maintenance_due_soon",
+    "maintenance_overdue",
+    "maintenance_completed",
+    "tenant_maintenance_requests",
+    "work_order_updates",
+  ],
+  Property: ["warranty_expiration", "lifecycle_events", "document_updates"],
+  Supplies: ["recommended_supplies", "seasonal_supplies"],
+};
+const DEFAULT_NOTIFICATION_FREQUENCY_OPTIONS = [
+  { value: "immediate", label: "Immediate" },
+  { value: "daily_digest", label: "Daily" },
+  { value: "weekly_digest", label: "Weekly" },
+  { value: "monthly_digest", label: "Monthly" },
+  { value: "off", label: "Off" },
+];
 
 function customerPortalTabs(showMaintenanceTab) {
   if (!showMaintenanceTab) return BASE_TABS;
@@ -1539,18 +1586,23 @@ function NotificationsCenter({
   notifications = [],
   unreadCount = 0,
   preferences = {},
+  notificationPreferences = {},
   markingId = "",
   archivingId = "",
   restoringId = "",
   savingPreferences = false,
+  savingNotificationPreferences = false,
   preferenceError = "",
+  notificationPreferenceError = "",
   bulkMarking = false,
   onMarkRead,
   onMarkAllRead,
   onArchive,
   onRestore,
   onSavePreferences,
+  onSaveNotificationPreferences,
   onOpenTab,
+  onOpenReminder,
 }) {
   const [filter, setFilter] = useState("recent");
   const [settings, setSettings] = useState({
@@ -1559,6 +1611,11 @@ function NotificationsCenter({
     auto_archive_read_after_days: 30,
     auto_archive_maintenance_after_days: 60,
     auto_archive_completed_work_after_days: 90,
+  });
+  const [deliverySettings, setDeliverySettings] = useState({
+    categories: {},
+    channels: { in_app_enabled: true, email_enabled: true, sms_enabled: false },
+    frequency: "immediate",
   });
   useEffect(() => {
     setSettings({
@@ -1569,6 +1626,17 @@ function NotificationsCenter({
       auto_archive_completed_work_after_days: preferences?.auto_archive_completed_work_after_days || 90,
     });
   }, [preferences]);
+  useEffect(() => {
+    setDeliverySettings({
+      categories: notificationPreferences?.categories || {},
+      channels: {
+        in_app_enabled: notificationPreferences?.channels?.in_app_enabled !== false,
+        email_enabled: notificationPreferences?.channels?.email_enabled !== false,
+        sms_enabled: notificationPreferences?.channels?.sms_enabled === true,
+      },
+      frequency: notificationPreferences?.frequency || "immediate",
+    });
+  }, [notificationPreferences]);
   const filtered = filter === "unread"
     ? notifications.filter(isUnreadNotification)
     : filter === "archived"
@@ -1595,6 +1663,90 @@ function NotificationsCenter({
               {bulkMarking ? "Saving..." : "Mark all as read"}
             </button>
           ) : null}
+        </div>
+      </div>
+      <div data-testid="customer-notification-preferences" className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-white">Notification preferences</h3>
+            <p className="mt-1 text-sm leading-6 text-slate-300">
+              Choose the portal updates, reminder categories, and delivery channels you want MyHomeBro to use.
+            </p>
+          </div>
+          <label className="text-sm font-medium text-slate-200 lg:w-56">
+            Frequency
+            <select
+              data-testid="notification-preference-frequency"
+              value={deliverySettings.frequency}
+              onChange={(event) => setDeliverySettings((prev) => ({ ...prev, frequency: event.target.value }))}
+              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
+            >
+              {(notificationPreferences?.frequency_options || DEFAULT_NOTIFICATION_FREQUENCY_OPTIONS).map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="grid gap-3 md:grid-cols-2">
+            {Object.entries(notificationPreferences?.groups || DEFAULT_NOTIFICATION_PREFERENCE_GROUPS).map(([groupName, keys]) => (
+              <div key={groupName} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-400">{groupName}</div>
+                <div className="mt-3 grid gap-2">
+                  {(keys || []).map((key) => (
+                    <label key={key} className="inline-flex items-center gap-2 text-sm text-slate-200">
+                      <input
+                        type="checkbox"
+                        data-testid={`notification-category-${key}`}
+                        checked={deliverySettings.categories?.[key] !== false}
+                        onChange={(event) => setDeliverySettings((prev) => ({
+                          ...prev,
+                          categories: { ...prev.categories, [key]: event.target.checked },
+                        }))}
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-300"
+                      />
+                      {NOTIFICATION_CATEGORY_LABELS[key] || key.replaceAll("_", " ")}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Channels</div>
+            <div className="mt-3 grid gap-2">
+              {Object.entries(NOTIFICATION_CHANNEL_LABELS).map(([key, label]) => (
+                <label key={key} className="inline-flex items-center gap-2 text-sm text-slate-200">
+                  <input
+                    type="checkbox"
+                    data-testid={`notification-channel-${key}`}
+                    checked={deliverySettings.channels?.[key] === true}
+                    onChange={(event) => setDeliverySettings((prev) => ({
+                      ...prev,
+                      channels: { ...prev.channels, [key]: event.target.checked },
+                    }))}
+                    className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-300"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-400">
+              SMS reminders require a verified phone number and text-message consent.
+            </p>
+          </div>
+        </div>
+        {notificationPreferenceError ? <p data-testid="notification-preferences-error" className="mt-3 text-sm font-semibold text-rose-200">{notificationPreferenceError}</p> : null}
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            data-testid="notification-preferences-save"
+            disabled={savingNotificationPreferences}
+            onClick={() => onSaveNotificationPreferences?.(deliverySettings)}
+            className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50"
+          >
+            {savingNotificationPreferences ? "Saving..." : "Save notification preferences"}
+          </button>
         </div>
       </div>
       <div data-testid="customer-notification-cleanup-settings" className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
@@ -1720,7 +1872,10 @@ function NotificationsCenter({
                       <a
                         href={notification.action_url}
                         onClick={(event) => {
-                          if (notification.action_url.startsWith("#")) {
+                          if (notification.action_url.startsWith("#reminder:")) {
+                            event.preventDefault();
+                            onOpenReminder?.(notification.action_url.replace("#reminder:", ""));
+                          } else if (notification.action_url.startsWith("#")) {
                             event.preventDefault();
                             onOpenTab?.(notification.action_url.replace(/^#/, ""));
                           }
@@ -1781,6 +1936,99 @@ function NotificationsCenter({
 
 function eventLabel(eventType = "") {
   return String(eventType || "notification").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function ReminderDetailModal({ reminder, loading = false, onClose, onCreateServiceRequest }) {
+  if (!loading && !reminder) return null;
+  const supplies = reminder?.supplies || [];
+  const isLoadingOnly = loading && !reminder;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+      <div data-testid="customer-reminder-detail-modal" className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-700 bg-slate-950 p-5 shadow-2xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">Maintenance Reminder</div>
+            <h2 className="mt-1 text-xl font-bold text-white">
+              {isLoadingOnly ? "Loading reminder..." : reminder?.home_system?.display_name || "Home system reminder"}
+            </h2>
+            {!isLoadingOnly && reminder?.property?.display_name ? (
+              <p className="mt-1 text-sm text-slate-300">{reminder.property.display_name}{reminder.property.address ? ` · ${reminder.property.address}` : ""}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            data-testid="customer-reminder-detail-close"
+            onClick={onClose}
+            className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
+          >
+            Close
+          </button>
+        </div>
+        {isLoadingOnly ? (
+          <p className="mt-5 text-sm text-slate-300">Loading reminder details...</p>
+        ) : (
+          <>
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <InfoCard eyebrow="Status" title={eventLabel(reminder?.status || "Reminder")} body={reminder?.due_date ? `Due date: ${reminder.due_date}` : "No due date recorded."} />
+              <InfoCard eyebrow="Priority" title={eventLabel(reminder?.priority || "Normal")} body={Number.isFinite(Number(reminder?.days_until_due)) ? `${reminder.days_until_due} days until due` : "Timing depends on your records."} />
+              <InfoCard eyebrow="Service interval" title={reminder?.service_interval_months ? `${reminder.service_interval_months} months` : "Not set"} body="Based on saved system details." />
+            </div>
+            <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+              <h3 className="text-sm font-bold text-white">Why this reminder is here</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{reminder?.reason || "This system may need attention based on your saved maintenance records."}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{reminder?.recommended_action || "Review the reminder and create a service request if help is needed."}</p>
+            </div>
+            <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-white">Recommended Supplies</h3>
+                  <p className="mt-1 text-sm text-slate-400">Supplies are advisory and based on saved system details.</p>
+                </div>
+                <Badge>{supplies.length} item{supplies.length === 1 ? "" : "s"}</Badge>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {supplies.length ? supplies.map((supply, index) => (
+                  <div key={supply.recommendation_key || supply.id || index} data-testid="customer-reminder-supply" className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                    <div className="font-semibold text-white">{supply.title || supply.supply_name || "Recommended supply"}</div>
+                    {supply.summary || supply.reason ? <p className="mt-1 text-sm leading-5 text-slate-300">{supply.summary || supply.reason}</p> : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {(supply.provider_links || []).filter((link) => link.url).map((link) => (
+                        <a
+                          key={`${link.provider || link.label}-${link.url}`}
+                          href={link.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          data-testid="customer-reminder-retailer-link"
+                          className="inline-flex items-center gap-1 rounded-lg border border-amber-300/35 bg-amber-300/10 px-2.5 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-300/20"
+                        >
+                          {link.label || eventLabel(link.provider || "Shop")}
+                          <ExternalLink size={12} />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )) : (
+                  <EmptyState title="No supplies recommended yet" testId="customer-reminder-supplies-empty">
+                    We did not find recommended supplies for this reminder.
+                  </EmptyState>
+                )}
+              </div>
+            </div>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                data-testid="customer-reminder-create-request"
+                onClick={() => onCreateServiceRequest?.(reminder?.id)}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25"
+              >
+                Create Service Request
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function notificationDedupeKey(notification) {
@@ -3075,6 +3323,10 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const [restoringNotificationId, setRestoringNotificationId] = useState("");
   const [savingNotificationPreferences, setSavingNotificationPreferences] = useState(false);
   const [notificationPreferenceError, setNotificationPreferenceError] = useState("");
+  const [savingDeliveryPreferences, setSavingDeliveryPreferences] = useState(false);
+  const [deliveryPreferenceError, setDeliveryPreferenceError] = useState("");
+  const [reminderDetail, setReminderDetail] = useState(null);
+  const [loadingReminderDetail, setLoadingReminderDetail] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingTeamMember, setSavingTeamMember] = useState(false);
   const [savingVendor, setSavingVendor] = useState(false);
@@ -3361,6 +3613,75 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       toast.error(message);
     } finally {
       setSavingNotificationPreferences(false);
+    }
+  };
+
+  const saveCustomerNotificationPreferences = async (preferences) => {
+    setDeliveryPreferenceError("");
+    setSavingDeliveryPreferences(true);
+    try {
+      const { data } = await api.patch(
+        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/preferences/`,
+        preferences
+      );
+      onPortalUpdate?.(data);
+      toast.success("Notification preferences saved.");
+    } catch (error) {
+      const detail = error?.response?.data?.detail;
+      const message = typeof detail === "string" ? detail : "Could not save notification preferences.";
+      setDeliveryPreferenceError(message);
+      toast.error(message);
+    } finally {
+      setSavingDeliveryPreferences(false);
+    }
+  };
+
+  const openReminderDetail = async (systemId) => {
+    if (!systemId) return;
+    const fallbackSystem = (portal?.property_profile?.home_systems || []).find((system) => String(system.id) === String(systemId));
+    const fallbackReminder = fallbackSystem ? {
+      id: fallbackSystem.id,
+      home_system: {
+        id: fallbackSystem.id,
+        display_name: fallbackSystem.display_name || fallbackSystem.custom_name || "Home system reminder",
+        system_type: fallbackSystem.system_type,
+        system_type_label: fallbackSystem.system_type_label,
+        manufacturer: fallbackSystem.manufacturer,
+        model_number: fallbackSystem.model_number,
+      },
+      property: {
+        id: portal?.property_profile?.id,
+        display_name: portal?.property_profile?.display_name || portal?.property_profile?.address_line1 || "Property",
+        address: portal?.property_profile?.address || [
+          portal?.property_profile?.address_line1,
+          portal?.property_profile?.city,
+          portal?.property_profile?.state,
+          portal?.property_profile?.postal_code,
+        ].filter(Boolean).join(", "),
+      },
+      status: fallbackSystem.maintenance_status,
+      priority: fallbackSystem.priority,
+      due_date: fallbackSystem.next_recommended_service_date,
+      days_until_due: fallbackSystem.days_until_due,
+      reason: fallbackSystem.reminder_reason,
+      recommended_action: fallbackSystem.recommended_action,
+      service_interval_months: fallbackSystem.service_interval_months,
+      supplies: fallbackSystem.supply_recommendations || [],
+    } : null;
+    setLoadingReminderDetail(true);
+    setReminderDetail(fallbackReminder);
+    try {
+      const { data } = await api.get(
+        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/reminder/`
+      );
+      setReminderDetail(data?.reminder || null);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not load that reminder.");
+      if (!fallbackReminder) {
+        setReminderDetail(null);
+      }
+    } finally {
+      setLoadingReminderDetail(false);
     }
   };
 
@@ -4024,18 +4345,23 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           notifications={notifications}
           unreadCount={unreadCount}
           preferences={portal?.notification_cleanup_preferences || {}}
+          notificationPreferences={portal?.notification_preferences || {}}
           markingId={markingNotificationId}
           archivingId={archivingNotificationId}
           restoringId={restoringNotificationId}
           savingPreferences={savingNotificationPreferences}
+          savingNotificationPreferences={savingDeliveryPreferences}
           preferenceError={notificationPreferenceError}
+          notificationPreferenceError={deliveryPreferenceError}
           bulkMarking={markingAllNotifications}
           onMarkRead={markNotificationRead}
           onMarkAllRead={markAllNotificationsRead}
           onArchive={archiveNotification}
           onRestore={restoreNotification}
           onSavePreferences={saveNotificationCleanupPreferences}
+          onSaveNotificationPreferences={saveCustomerNotificationPreferences}
           onOpenTab={setActiveTab}
+          onOpenReminder={openReminderDetail}
         />
       );
     }
@@ -4078,7 +4404,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         onUpload={uploadPropertyFile}
       />
     );
-  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab]);
+  }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingDeliveryPreferences, deliveryPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab]);
 
   return (
     <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">
@@ -4190,6 +4516,19 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           {tabContent}
         </main>
       </div>
+      <ReminderDetailModal
+        reminder={reminderDetail}
+        loading={loadingReminderDetail}
+        onClose={() => {
+          setReminderDetail(null);
+          setLoadingReminderDetail(false);
+        }}
+        onCreateServiceRequest={async (systemId) => {
+          if (await createHomeSystemServiceRequest(systemId)) {
+            setReminderDetail(null);
+          }
+        }}
+      />
     </div>
   );
 }

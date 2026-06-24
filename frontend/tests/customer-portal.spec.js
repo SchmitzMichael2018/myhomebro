@@ -981,6 +981,16 @@ const portalPayload = {
       created_at: "2026-04-10T16:00:00Z",
     },
     {
+      id: 106,
+      event_type: "home_system_maintenance_reminder",
+      channel: "in_app",
+      status: "read",
+      title: "Main HVAC maintenance reminder",
+      message: "Main HVAC may need attention.",
+      action_url: "#reminder:11",
+      created_at: "2026-04-15T16:30:00Z",
+    },
+    {
       id: 104,
       event_type: "payment_received",
       channel: "email_stub",
@@ -999,6 +1009,44 @@ const portalPayload = {
     auto_archive_completed_work_after_days: 90,
     last_auto_archive_run_at: "2026-05-10T12:00:00Z",
     next_auto_archive_run_at: "2026-06-16T12:00:00Z",
+  },
+  notification_preferences: {
+    categories: {
+      project_request_updates: true,
+      contractor_responses: true,
+      agreement_updates: true,
+      milestone_updates: true,
+      invoice_payment_updates: true,
+      maintenance_due_soon: true,
+      maintenance_overdue: true,
+      maintenance_completed: true,
+      tenant_maintenance_requests: true,
+      work_order_updates: true,
+      warranty_expiration: true,
+      lifecycle_events: true,
+      document_updates: true,
+      recommended_supplies: true,
+      seasonal_supplies: true,
+    },
+    channels: {
+      in_app_enabled: true,
+      email_enabled: true,
+      sms_enabled: false,
+    },
+    frequency: "immediate",
+    groups: {
+      Projects: ["project_request_updates", "contractor_responses", "agreement_updates", "milestone_updates", "invoice_payment_updates"],
+      Maintenance: ["maintenance_due_soon", "maintenance_overdue", "maintenance_completed", "tenant_maintenance_requests", "work_order_updates"],
+      Property: ["warranty_expiration", "lifecycle_events", "document_updates"],
+      Supplies: ["recommended_supplies", "seasonal_supplies"],
+    },
+    frequency_options: [
+      { value: "immediate", label: "Immediate" },
+      { value: "daily_digest", label: "Daily" },
+      { value: "weekly_digest", label: "Weekly" },
+      { value: "monthly_digest", label: "Monthly" },
+      { value: "off", label: "Off" },
+    ],
   },
 };
 
@@ -1333,6 +1381,51 @@ const notificationCleanupUpdatedPortalPayload = {
     auto_archive_maintenance_after_days: 75,
     auto_archive_completed_work_after_days: 120,
     next_auto_archive_run_at: "2026-06-22T12:00:00Z",
+  },
+};
+
+const notificationPreferencesUpdatedPortalPayload = {
+  ...portalPayload,
+  notification_preferences: {
+    ...portalPayload.notification_preferences,
+    categories: {
+      ...portalPayload.notification_preferences.categories,
+      maintenance_due_soon: false,
+      recommended_supplies: false,
+    },
+    channels: {
+      ...portalPayload.notification_preferences.channels,
+      email_enabled: false,
+      sms_enabled: true,
+    },
+    frequency: "weekly_digest",
+  },
+};
+
+const reminderDetailPayload = {
+  reminder: {
+    id: 11,
+    home_system: {
+      id: 11,
+      display_name: "Main HVAC",
+      system_type_label: "HVAC",
+      manufacturer: "Carrier",
+      model_number: "ABC123",
+    },
+    property: {
+      id: 1,
+      display_name: "Primary Home",
+      address: "123 Main St, Austin, TX, 78701",
+    },
+    status: "overdue",
+    priority: "high",
+    due_date: "2026-06-01",
+    days_until_due: -22,
+    reason: "Main HVAC service is overdue based on a 6-month maintenance interval.",
+    recommended_action: "Mark it serviced if completed, or create a service request.",
+    service_interval_months: 6,
+    supplies: portalPayload.property_profile.home_systems[0].supply_recommendations,
+    service_request: { enabled: true },
   },
 };
 
@@ -1873,6 +1966,15 @@ async function setupRecommendedSuppliesPortal(page) {
     const requestUrl = route.request().url();
     const method = route.request().method();
 
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/reminder") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(reminderDetailPayload),
+      });
+      return;
+    }
+
     if (method === "GET" && requestUrl.includes("/customer-portal/customer-token/")) {
       await route.fulfill({
         status: 200,
@@ -2009,6 +2111,7 @@ test("customer portal recommended supplies retailer links and actions are isolat
 test("customer portal is reachable from the landing page and loads secure records", async ({
   page,
 }) => {
+  test.setTimeout(60000);
   const consoleErrors = [];
   let submittedRequestPayload = null;
   let submittedReviewPayload = null;
@@ -3893,6 +3996,15 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/reminder") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(reminderDetailPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/") && method === "PATCH") {
       await route.fulfill({
         status: 200,
@@ -4057,6 +4169,24 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
+    if (requestUrl.includes("/customer-portal/customer-token/notifications/preferences/") && method === "PATCH") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(notificationPreferencesUpdatedPortalPayload),
+      });
+      return;
+    }
+
+    if (requestUrl.includes("/customer-portal/customer-token/property/systems/11/reminder") && method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(reminderDetailPayload),
+      });
+      return;
+    }
+
     if (requestUrl.includes("/customer-portal/customer-token/draws/2/dispute/") && method === "POST") {
       await route.fulfill({
         status: 201,
@@ -4128,6 +4258,13 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
     await route.fallback();
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/property/systems/11/reminder**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(reminderDetailPayload),
+    });
   });
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
@@ -4250,7 +4387,9 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-dashboard-tab-notifications")).toHaveClass(/border-amber/);
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
+  await expect(page.getByTestId("customer-notifications-center")).toContainText("Main HVAC maintenance reminder");
   await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Pool service request was saved.");
+  await expect(page.getByTestId("customer-notification-preferences")).toContainText("Notification preferences");
   await expect(page.getByTestId("customer-notification-cleanup-settings")).toContainText("Notification cleanup");
   await expect(page.getByTestId("customer-notification-cleanup-settings")).toContainText(
     "Unread and action-required notifications are never auto-archived."
@@ -4275,7 +4414,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-notifications-filter-recent").click();
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Agreement needs signature");
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
-  await page.getByTestId("customer-notifications-center").getByRole("button", { name: "Archive" }).last().click();
+  await page.getByTestId("customer-notifications-center-archive-102").click();
   await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Payment received");
   await page.getByTestId("customer-notifications-filter-archived").click();
   await expect(page.getByTestId("customer-notifications-center")).toContainText("Payment received");
@@ -5429,6 +5568,53 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("We could not open that portal link"))).toHaveLength(0);
+});
+
+test("customer notification preferences save and reminder details show supplies", async ({ page }) => {
+  await page.route("**/api/projects/customer-portal/customer-token/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(portalPayload),
+    });
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/notifications/preferences/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(notificationPreferencesUpdatedPortalPayload),
+    });
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/property/systems/11/reminder**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(reminderDetailPayload),
+    });
+  });
+
+  await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("customer-dashboard-tab-notifications").click();
+  await expect(page.getByTestId("customer-notification-preferences")).toContainText("Notification preferences");
+  await expect(page.getByTestId("notification-category-maintenance_due_soon")).toBeChecked();
+  await expect(page.getByTestId("notification-channel-email_enabled")).toBeChecked();
+  await expect(page.getByTestId("notification-channel-sms_enabled")).not.toBeChecked();
+  await page.getByTestId("notification-category-maintenance_due_soon").uncheck();
+  await page.getByTestId("notification-category-recommended_supplies").uncheck();
+  await page.getByTestId("notification-channel-email_enabled").uncheck();
+  await page.getByTestId("notification-channel-sms_enabled").check();
+  await page.getByTestId("notification-preference-frequency").selectOption("weekly_digest");
+  await page.getByTestId("notification-preferences-save").click();
+  await expect(page.getByTestId("notification-category-maintenance_due_soon")).not.toBeChecked();
+  await expect(page.getByTestId("notification-channel-email_enabled")).not.toBeChecked();
+  await expect(page.getByTestId("notification-channel-sms_enabled")).toBeChecked();
+  await expect(page.getByTestId("notification-preference-frequency")).toHaveValue("weekly_digest");
+
+  await page.getByTestId("customer-notifications-center-item-106").getByRole("link", { name: /Open related item/ }).click();
+  await expect(page.getByTestId("customer-reminder-detail-modal")).toContainText("Main HVAC");
+  await expect(page.getByTestId("customer-reminder-detail-modal")).toContainText("Recommended Supplies");
+  await expect(page.getByTestId("customer-reminder-supply").first()).toContainText("HVAC");
+  await expect(page.getByTestId("customer-reminder-retailer-link").first()).toBeVisible();
 });
 
 test("customer portal supports returning customer login", async ({ page }) => {

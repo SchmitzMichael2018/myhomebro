@@ -1422,6 +1422,69 @@ class CustomerNotificationCleanupPreference(models.Model):
         return f"{self.customer_email}: notification cleanup"
 
 
+def default_customer_notification_categories():
+    return {
+        "project_request_updates": True,
+        "contractor_responses": True,
+        "agreement_updates": True,
+        "milestone_updates": True,
+        "invoice_payment_updates": True,
+        "maintenance_due_soon": True,
+        "maintenance_overdue": True,
+        "maintenance_completed": True,
+        "tenant_maintenance_requests": True,
+        "work_order_updates": True,
+        "warranty_expiration": True,
+        "lifecycle_events": True,
+        "document_updates": True,
+        "recommended_supplies": True,
+        "seasonal_supplies": True,
+    }
+
+
+def default_customer_notification_channels():
+    return {
+        "in_app_enabled": True,
+        "email_enabled": True,
+        "sms_enabled": False,
+    }
+
+
+class CustomerNotificationPreference(models.Model):
+    FREQUENCY_IMMEDIATE = "immediate"
+    FREQUENCY_DAILY = "daily_digest"
+    FREQUENCY_WEEKLY = "weekly_digest"
+    FREQUENCY_MONTHLY = "monthly_digest"
+    FREQUENCY_OFF = "off"
+    FREQUENCY_CHOICES = [
+        (FREQUENCY_IMMEDIATE, "Immediate"),
+        (FREQUENCY_DAILY, "Daily Digest"),
+        (FREQUENCY_WEEKLY, "Weekly Digest"),
+        (FREQUENCY_MONTHLY, "Monthly Digest"),
+        (FREQUENCY_OFF, "Off"),
+    ]
+
+    customer_email = models.EmailField(unique=True, db_index=True)
+    homeowner = models.ForeignKey(
+        "projects.Homeowner",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="notification_preferences",
+    )
+    category_preferences = models.JSONField(default=default_customer_notification_categories, blank=True)
+    channel_preferences = models.JSONField(default=default_customer_notification_channels, blank=True)
+    frequency = models.CharField(max_length=24, choices=FREQUENCY_CHOICES, default=FREQUENCY_IMMEDIATE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["customer_email"]
+
+    def __str__(self):
+        return f"{self.customer_email}: notification preferences"
+
+
 class PropertyIntelligenceSnapshot(models.Model):
     property_profile = models.ForeignKey(
         PropertyProfile,
@@ -1621,10 +1684,14 @@ class SmartNotificationEvent(models.TextChoices):
 
 class NotificationRule(models.Model):
     CHANNEL_IN_APP = "in_app"
+    CHANNEL_EMAIL = "email"
+    CHANNEL_SMS = "sms"
     CHANNEL_EMAIL_STUB = "email_stub"
     CHANNEL_SMS_STUB = "sms_stub"
     CHANNEL_CHOICES = [
         (CHANNEL_IN_APP, "In App"),
+        (CHANNEL_EMAIL, "Email"),
+        (CHANNEL_SMS, "SMS"),
         (CHANNEL_EMAIL_STUB, "Email Stub"),
         (CHANNEL_SMS_STUB, "SMS Stub"),
     ]

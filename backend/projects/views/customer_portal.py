@@ -48,6 +48,7 @@ from projects.models import (
 from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import (
     CustomerNotificationCleanupPreference,
+    CustomerNotificationPreference,
     CustomerPortalUploadSession,
     CustomerRequest,
     NotificationRule,
@@ -76,6 +77,12 @@ from projects.services.customer_notification_cleanup import (
     cleanup_preferences_for_email,
     cleanup_preferences_payload,
     next_cleanup_run_at,
+)
+from projects.services.customer_notification_preferences import (
+    normalize_notification_categories,
+    normalize_notification_channels,
+    notification_preferences_for_email,
+    notification_preferences_payload,
 )
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
@@ -3734,6 +3741,9 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "notification_cleanup_preferences": cleanup_preferences_payload(
             cleanup_preferences_for_email(email, homeowner=_primary_homeowner_for_email(email))
         ),
+        "notification_preferences": notification_preferences_payload(
+            notification_preferences_for_email(email, homeowner=_primary_homeowner_for_email(email))
+        ),
     }
 
 
@@ -5255,6 +5265,50 @@ class CustomerPortalNotificationCleanupPreferenceView(APIView):
         for field, value in serializer.validated_data.items():
             setattr(preference, field, value)
         preference.next_auto_archive_run_at = next_cleanup_run_at(preference)
+        preference.save()
+        return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalNotificationPreferenceSerializer(serializers.Serializer):
+    categories = serializers.DictField(child=serializers.BooleanField(), required=False)
+    channels = serializers.DictField(child=serializers.BooleanField(), required=False)
+    frequency = serializers.ChoiceField(
+        choices=[choice[0] for choice in CustomerNotificationPreference.FREQUENCY_CHOICES],
+        required=False,
+    )
+
+
+class CustomerPortalNotificationPreferenceView(APIView):
+    permission_classes = [AllowAny]
+
+    def _email_or_response(self, token: str):
+        try:
+            return _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def get(self, request, token: str):
+        email = self._email_or_response(token)
+        if isinstance(email, Response):
+            return email
+        preference = notification_preferences_for_email(email, homeowner=_primary_homeowner_for_email(email))
+        return Response(notification_preferences_payload(preference), status=status.HTTP_200_OK)
+
+    def patch(self, request, token: str):
+        email = self._email_or_response(token)
+        if isinstance(email, Response):
+            return email
+        serializer = CustomerPortalNotificationPreferenceSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        preference = notification_preferences_for_email(email, homeowner=_primary_homeowner_for_email(email))
+        if "categories" in serializer.validated_data:
+            preference.category_preferences = normalize_notification_categories(serializer.validated_data["categories"])
+        if "channels" in serializer.validated_data:
+            preference.channel_preferences = normalize_notification_channels(serializer.validated_data["channels"])
+        if "frequency" in serializer.validated_data:
+            preference.frequency = serializer.validated_data["frequency"]
         preference.save()
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
@@ -8358,6 +8412,65 @@ def _home_system_for_email_or_404(email: str, system_id: int) -> PropertyHomeSys
         property_profile__customer_email__iexact=email.lower().strip(),
         is_archived=False,
     )
+
+
+class CustomerPortalHomeSystemReminderDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, token: str, system_id: int):
+        try:
+            email = _unsign_portal_token(token)
+        except signing.SignatureExpired:
+            return Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+        system = _home_system_for_email_or_404(email, system_id)
+        profile = system.property_profile
+        reminder = build_home_system_reminder(system)
+        return Response(
+            {
+                "reminder": {
+                    "id": system.id,
+                    "home_system": {
+                        "id": system.id,
+                        "display_name": system.display_name,
+                        "system_type": _safe_text(system.system_type),
+                        "system_type_label": system.get_system_type_display(),
+                        "manufacturer": _safe_text(system.manufacturer),
+                        "model_number": _safe_text(system.model_number),
+                    },
+                    "property": {
+                        "id": profile.id,
+                        "display_name": profile.display_name or profile.address_line1 or "Property",
+                        "address": ", ".join(
+                            part
+                            for part in [
+                                _safe_text(profile.address_line1),
+                                _safe_text(profile.address_line2),
+                                _safe_text(profile.city),
+                                _safe_text(profile.state),
+                                _safe_text(profile.postal_code),
+                            ]
+                            if part
+                        ),
+                    },
+                    "status": reminder.maintenance_status,
+                    "priority": reminder.priority,
+                    "due_date": _safe_dt(reminder.next_recommended_service_date),
+                    "days_until_due": reminder.days_until_due,
+                    "reason": reminder.reminder_reason,
+                    "recommended_action": reminder.recommended_action,
+                    "service_interval_months": reminder.service_interval_months,
+                    "supplies": _home_system_supply_recommendation_payloads(system),
+                    "service_request": {
+                        "enabled": True,
+                        "endpoint": f"/api/projects/customer-portal/{token}/property/systems/{system.id}/service-request/",
+                    },
+                }
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class CustomerPortalHomeSystemView(APIView):

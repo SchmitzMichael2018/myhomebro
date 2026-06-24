@@ -122,7 +122,7 @@ from projects.models import (
 )
 from projects.models import AgreementWarranty
 from projects.models_attachments import AgreementAttachment
-from projects.models_customer_portal import CustomerNotificationCleanupPreference
+from projects.models_customer_portal import CustomerNotificationCleanupPreference, CustomerNotificationPreference
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
@@ -26192,7 +26192,7 @@ class CustomerPortalAccessTests(TestCase):
             1,
         )
         self.assertEqual(system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_SENT)
-        self.assertEqual(system.reminder_channel, NotificationRule.CHANNEL_EMAIL_STUB)
+        self.assertEqual(system.reminder_channel, NotificationRule.CHANNEL_IN_APP)
         self.assertIsNotNone(system.last_notified_at)
 
     def test_home_system_reminder_dispatch_respects_frequency_dismiss_and_disabled_state(self):
@@ -26228,15 +26228,18 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(dry_run.sent, 0)
         self.assertEqual(SmartNotification.objects.filter(event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER).count(), 0)
 
-        result = dispatch_home_system_reminders()
+        with patch("projects.services.home_system_reminders.send_postmark_email", return_value=(True, "sent")) as send_email:
+            result = dispatch_home_system_reminders()
         self.assertEqual(result.sent, 1)
+        send_email.assert_called_once()
         due_system.refresh_from_db()
         self.assertEqual(due_system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_SENT)
+        self.assertEqual(due_system.reminder_channel, f"{NotificationRule.CHANNEL_IN_APP},{NotificationRule.CHANNEL_EMAIL}")
         self.assertIsNotNone(due_system.next_notification_at)
         self.assertEqual(
             SmartNotification.objects.filter(
                 event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
-                channel=NotificationRule.CHANNEL_EMAIL_STUB,
+                channel=NotificationRule.CHANNEL_IN_APP,
             ).count(),
             1,
         )
@@ -26266,6 +26269,11 @@ class CustomerPortalAccessTests(TestCase):
             email_reminders_enabled=False,
             sms_reminders_enabled=True,
         )
+        preference = CustomerNotificationPreference.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            channel_preferences={"in_app_enabled": False, "email_enabled": False, "sms_enabled": True},
+        )
 
         result = dispatch_home_system_reminders(channel="sms")
 
@@ -26273,7 +26281,101 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(result.skipped, 1)
         system.refresh_from_db()
         self.assertEqual(system.reminder_delivery_status, PropertyHomeSystem.DELIVERY_STATUS_SKIPPED)
-        self.assertEqual(SmartNotification.objects.filter(channel=NotificationRule.CHANNEL_SMS_STUB).count(), 0)
+        self.assertEqual(NotificationLog.objects.filter(channel=NotificationRule.CHANNEL_SMS).count(), 0)
+        self.assertEqual(preference.channel_preferences["sms_enabled"], True)
+
+    def test_home_system_reminder_email_respects_preferences_and_includes_supplies(self):
+        from projects.services.home_system_reminders import dispatch_home_system_reminders
+
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+        )
+        CustomerNotificationPreference.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            channel_preferences={"in_app_enabled": False, "email_enabled": True, "sms_enabled": False},
+        )
+
+        with patch("projects.services.home_system_reminders.send_postmark_email", return_value=(True, "sent")) as send_email:
+            result = dispatch_home_system_reminders(channel=NotificationRule.CHANNEL_EMAIL)
+
+        self.assertEqual(result.sent, 1)
+        send_email.assert_called_once()
+        kwargs = send_email.call_args.kwargs
+        self.assertIn("Recommended Supplies", kwargs["text_body"])
+        self.assertIn("View reminder:", kwargs["text_body"])
+        self.assertEqual(NotificationLog.objects.filter(channel=NotificationRule.CHANNEL_EMAIL).count(), 1)
+
+    def test_home_system_reminder_sms_respects_preferences_and_consent(self):
+        from projects.services.home_system_reminders import dispatch_home_system_reminders
+
+        self.customer_homeowner.phone_number = "210-555-0101"
+        self.customer_homeowner.save(update_fields=["phone_number"])
+        set_sms_opt_in(
+            phone_number=self.customer_homeowner.phone_number,
+            homeowner=self.customer_homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="SMS HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+            email_reminders_enabled=False,
+            sms_reminders_enabled=True,
+        )
+        CustomerNotificationPreference.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            channel_preferences={"in_app_enabled": False, "email_enabled": False, "sms_enabled": True},
+        )
+
+        with patch("projects.services.home_system_reminders.send_compliant_sms", return_value={"ok": True, "detail": "queued"}) as send_sms:
+            result = dispatch_home_system_reminders(channel=NotificationRule.CHANNEL_SMS)
+
+        self.assertEqual(result.sent, 1)
+        send_sms.assert_called_once()
+        self.assertIn("Recommended supplies available", send_sms.call_args.args[1])
+        self.assertEqual(NotificationLog.objects.filter(channel=NotificationRule.CHANNEL_SMS).count(), 1)
+
+    def test_home_system_reminder_disabled_category_sends_nothing(self):
+        from projects.services.home_system_reminders import dispatch_home_system_reminders
+
+        profile = PropertyProfile.objects.get_or_create(
+            customer_email=self.customer_email,
+            defaults={"homeowner": self.customer_homeowner, "display_name": "Primary Home"},
+        )[0]
+        PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Disabled reminder HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+        )
+        CustomerNotificationPreference.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            category_preferences={"maintenance_overdue": False},
+            channel_preferences={"in_app_enabled": True, "email_enabled": True, "sms_enabled": False},
+        )
+
+        with patch("projects.services.home_system_reminders.send_postmark_email") as send_email:
+            result = dispatch_home_system_reminders()
+
+        self.assertEqual(result.sent, 0)
+        self.assertEqual(result.skipped, 1)
+        send_email.assert_not_called()
+        self.assertEqual(SmartNotification.objects.filter(event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER).count(), 0)
 
     def test_send_home_system_reminders_management_command_reports_counts(self):
         profile = PropertyProfile.objects.get_or_create(
@@ -26572,6 +26674,74 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(prefs["auto_archive_maintenance_after_days"], 60)
         self.assertEqual(prefs["auto_archive_completed_work_after_days"], 90)
         self.assertTrue(CustomerNotificationCleanupPreference.objects.filter(customer_email__iexact=self.customer_email).exists())
+
+    def test_customer_portal_serializes_default_notification_preferences(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.get(f"/api/projects/customer-portal/{token}/", secure=True)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        prefs = response.data["notification_preferences"]
+        self.assertTrue(prefs["categories"]["maintenance_due_soon"])
+        self.assertTrue(prefs["categories"]["recommended_supplies"])
+        self.assertTrue(prefs["channels"]["in_app_enabled"])
+        self.assertTrue(prefs["channels"]["email_enabled"])
+        self.assertFalse(prefs["channels"]["sms_enabled"])
+        self.assertEqual(prefs["frequency"], CustomerNotificationPreference.FREQUENCY_IMMEDIATE)
+        self.assertIn("Maintenance", prefs["groups"])
+        self.assertTrue(CustomerNotificationPreference.objects.filter(customer_email__iexact=self.customer_email).exists())
+
+    def test_customer_portal_updates_notification_preferences(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        response = self.client.patch(
+            f"/api/projects/customer-portal/{token}/notifications/preferences/",
+            {
+                "categories": {"maintenance_due_soon": False, "recommended_supplies": False},
+                "channels": {"in_app_enabled": True, "email_enabled": False, "sms_enabled": True},
+                "frequency": CustomerNotificationPreference.FREQUENCY_WEEKLY,
+            },
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        prefs = response.data["notification_preferences"]
+        self.assertFalse(prefs["categories"]["maintenance_due_soon"])
+        self.assertFalse(prefs["categories"]["recommended_supplies"])
+        self.assertFalse(prefs["channels"]["email_enabled"])
+        self.assertTrue(prefs["channels"]["sms_enabled"])
+        self.assertEqual(prefs["frequency"], CustomerNotificationPreference.FREQUENCY_WEEKLY)
+
+    def test_customer_portal_reminder_detail_includes_supplies_and_retailer_links(self):
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+        profile = PropertyProfile.objects.create(
+            customer_email=self.customer_email,
+            homeowner=self.customer_homeowner,
+            display_name="Primary Home",
+            address_line1="123 Main St",
+            city="Austin",
+            state="TX",
+            postal_code="78701",
+        )
+        system = PropertyHomeSystem.objects.create(
+            property_profile=profile,
+            system_type=PropertyHomeSystem.SYSTEM_HVAC,
+            custom_name="Main HVAC",
+            last_service_date=timezone.localdate() - timezone.timedelta(days=220),
+        )
+
+        response = self.client.get(
+            f"/api/projects/customer-portal/{token}/property/systems/{system.id}/reminder/",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        reminder = response.data["reminder"]
+        self.assertEqual(reminder["home_system"]["display_name"], "Main HVAC")
+        self.assertEqual(reminder["property"]["display_name"], "Primary Home")
+        self.assertTrue(reminder["supplies"])
+        self.assertTrue(any(row.get("provider_links") for row in reminder["supplies"]))
 
     def test_customer_portal_updates_notification_cleanup_preferences(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

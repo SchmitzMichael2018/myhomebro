@@ -6,8 +6,15 @@ from datetime import date, timedelta
 from django.conf import settings
 from django.utils import timezone
 
-from projects.models_customer_portal import NotificationRule, PropertyHomeSystem, SmartNotificationEvent
+from projects.models_customer_portal import NotificationLog, NotificationRule, PropertyHomeSystem, SmartNotificationEvent
+from projects.services.customer_notification_preferences import (
+    notification_category_enabled,
+    notification_channel_enabled,
+    notification_preferences_for_email,
+)
+from projects.services.invites_delivery import send_postmark_email
 from projects.services.sms_service import get_sms_status_payload
+from projects.services.sms_service import send_compliant_sms
 from projects.services.smart_notifications import create_smart_notification
 from projects.services.home_system_subtypes import (
     SUBTYPE_AIR_CONDITIONER,
@@ -269,36 +276,243 @@ def _frequency_window(system: PropertyHomeSystem, now) -> str:
     return "once"
 
 
-def _sms_provider_ready() -> bool:
-    return bool(
-        (getattr(settings, "TWILIO_ACCOUNT_SID", None) or "")
-        and (getattr(settings, "TWILIO_AUTH_TOKEN", None) or "")
-        and (getattr(settings, "TWILIO_MESSAGING_SERVICE_SID", None) or "")
+def _reminder_category(reminder: HomeSystemReminder) -> str:
+    if reminder.maintenance_status == STATUS_DUE_SOON:
+        return "maintenance_due_soon"
+    if reminder.maintenance_status == STATUS_OVERDUE:
+        return "maintenance_overdue"
+    if reminder.maintenance_status in {STATUS_WARRANTY_EXPIRING, STATUS_WARRANTY_EXPIRED}:
+        return "warranty_expiration"
+    return "lifecycle_events"
+
+
+def _portal_base_url() -> str:
+    return (
+        str(getattr(settings, "PUBLIC_FRONTEND_BASE_URL", "") or "").strip()
+        or str(getattr(settings, "FRONTEND_URL", "") or "").strip()
+        or str(getattr(settings, "SITE_URL", "") or "").strip()
+        or "https://www.myhomebro.com"
+    ).rstrip("/")
+
+
+def _reminder_action_url(system: PropertyHomeSystem) -> str:
+    return f"#reminder:{system.id}"
+
+
+def _reminder_portal_link(system: PropertyHomeSystem) -> str:
+    return f"{_portal_base_url()}/portal#reminder:{system.id}"
+
+
+def _system_supplies(system: PropertyHomeSystem, preference=None) -> list[dict]:
+    if preference is not None and not notification_category_enabled(preference, "recommended_supplies"):
+        return []
+    from projects.services.customer_portal_supplies import build_home_system_supply_recommendations
+
+    return build_home_system_supply_recommendations([system])
+
+
+def _supply_lines(supplies: list[dict]) -> list[str]:
+    lines = []
+    for recommendation in supplies[:5]:
+        title = recommendation.get("title") or recommendation.get("supply_name") or "Recommended supply"
+        interval = recommendation.get("suggested_interval") or ""
+        lines.append(f"- {title}{f' ({interval})' if interval else ''}")
+    return lines
+
+
+def _supply_html(supplies: list[dict]) -> str:
+    if not supplies:
+        return ""
+    items = []
+    for recommendation in supplies[:5]:
+        title = recommendation.get("title") or recommendation.get("supply_name") or "Recommended supply"
+        provider_links = recommendation.get("provider_links") or []
+        links = " ".join(
+            f"<a href='{link.get('url', '')}'>{link.get('label') or link.get('provider')}</a>"
+            for link in provider_links
+            if link.get("url")
+        )
+        items.append(f"<li><strong>{title}</strong>{f'<br />Shop: {links}' if links else ''}</li>")
+    return "<h3>Recommended Supplies</h3><ul>" + "".join(items) + "</ul>"
+
+
+def _send_reminder_email(system: PropertyHomeSystem, reminder: HomeSystemReminder, supplies: list[dict]) -> tuple[bool, str]:
+    profile = system.property_profile
+    recipient = str(profile.customer_email or "").strip().lower()
+    if not recipient:
+        return False, "Customer email missing."
+    label = _system_label(system)
+    subject = f"MyHomeBro reminder: {label} needs attention"
+    supply_lines = _supply_lines(supplies)
+    text_body = "\n".join(
+        [
+            f"{label}",
+            "",
+            reminder.reminder_reason,
+            reminder.recommended_action,
+            "",
+            *(
+                ["Recommended Supplies:", *supply_lines, ""]
+                if supply_lines
+                else []
+            ),
+            f"View reminder: {_reminder_portal_link(system)}",
+        ]
+    )
+    html_body = (
+        "<div style='font-family:Arial,sans-serif'>"
+        f"<h2>{label}</h2>"
+        f"<p>{reminder.reminder_reason}</p>"
+        f"<p>{reminder.recommended_action}</p>"
+        f"{_supply_html(supplies)}"
+        f"<p><a href='{_reminder_portal_link(system)}'>View reminder</a></p>"
+        "</div>"
+    )
+    return send_postmark_email(to_email=recipient, subject=subject, text_body=text_body, html_body=html_body)
+
+
+def _send_reminder_sms(system: PropertyHomeSystem, reminder: HomeSystemReminder, supplies: list[dict], *, now=None) -> dict:
+    profile = system.property_profile
+    phone = str(getattr(profile.homeowner, "phone_number", "") or "").strip()
+    label = _system_label(system)
+    supply_note = "\n\nRecommended supplies available." if supplies else ""
+    body = f"MyHomeBro: {label} maintenance needs attention.\n{supply_note}\n\nView:\n{_reminder_portal_link(system)}"
+    return send_compliant_sms(
+        phone,
+        body,
+        related_object=profile.homeowner,
+        category="customer_care",
+        dedupe_key=f"home-system-reminder-sms:{system.id}:{_frequency_window(system, now or timezone.now())}",
     )
 
 
-def _enabled_channels(system: PropertyHomeSystem) -> tuple[list[str], list[str]]:
+def _log_reminder_delivery(*, system: PropertyHomeSystem, reminder: HomeSystemReminder, channel: str, ok: bool, message: str, notification=None):
+    NotificationLog.objects.create(
+        smart_notification=notification,
+        event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
+        channel=channel,
+        status=NotificationLog.STATUS_CREATED if ok else NotificationLog.STATUS_FAILED,
+        recipient_email=str(system.property_profile.customer_email or "").strip().lower(),
+        message=message or "",
+        metadata={
+            "system_id": system.id,
+            "maintenance_status": reminder.maintenance_status,
+            "property_profile_id": system.property_profile_id,
+        },
+    )
+
+
+def _enabled_channels(system: PropertyHomeSystem, reminder: HomeSystemReminder) -> tuple[list[str], list[str], object | None]:
     channels: list[str] = []
     skipped: list[str] = []
     profile = system.property_profile
     email = str(profile.customer_email or "").strip()
-    if system.email_reminders_enabled and email:
-        channels.append(NotificationRule.CHANNEL_EMAIL_STUB)
-    elif system.email_reminders_enabled:
+    preference = notification_preferences_for_email(email, homeowner=profile.homeowner) if email else None
+    category = _reminder_category(reminder)
+    if preference is None or not notification_category_enabled(preference, category):
+        return [], ["category_disabled"], preference
+    if notification_channel_enabled(preference, "in_app_enabled"):
+        channels.append(NotificationRule.CHANNEL_IN_APP)
+    if system.email_reminders_enabled and email and notification_channel_enabled(preference, "email_enabled"):
+        channels.append(NotificationRule.CHANNEL_EMAIL)
+    elif system.email_reminders_enabled and notification_channel_enabled(preference, "email_enabled"):
         skipped.append("email_missing")
 
-    if system.sms_reminders_enabled:
+    if system.sms_reminders_enabled and notification_channel_enabled(preference, "sms_enabled"):
         sms_status = get_sms_status_payload(homeowner=profile.homeowner)
         if not sms_status.get("sms_enabled"):
             skipped.append("sms_consent_missing")
-        elif not _sms_provider_ready():
-            skipped.append("sms_provider_unavailable")
         else:
-            channels.append(NotificationRule.CHANNEL_SMS_STUB)
-    return channels, skipped
+            channels.append(NotificationRule.CHANNEL_SMS)
+    return channels, skipped, preference
 
 
-def create_home_system_reminder_notification(system: PropertyHomeSystem, *, now=None, channel=NotificationRule.CHANNEL_EMAIL_STUB):
+def _deliver_home_system_reminder(
+    system: PropertyHomeSystem,
+    reminder: HomeSystemReminder,
+    *,
+    channels: list[str],
+    preference,
+    now,
+) -> list[object]:
+    profile = system.property_profile
+    email = str(profile.customer_email or "").strip().lower()
+    supplies = _system_supplies(system, preference)
+    deliveries: list[object] = []
+    delivered_channels: list[str] = []
+
+    for channel in channels:
+        notification = None
+        delivered = False
+        channel_message = ""
+        if channel == NotificationRule.CHANNEL_IN_APP:
+            notification = create_smart_notification(
+                event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
+                recipient_email=email,
+                homeowner=profile.homeowner,
+                property_profile=profile,
+                context={
+                    "system_name": _system_label(system),
+                    "maintenance_status": reminder.maintenance_status,
+                    "reminder_reason": reminder.reminder_reason,
+                    "recommended_action": reminder.recommended_action,
+                    "property_name": profile.display_name or profile.address_line1 or "your property",
+                    "dedupe_key": (
+                        "home-system-reminder:"
+                        f"{system.id}:{reminder.maintenance_status}:{_reminder_anchor(system, reminder)}:"
+                        f"{channel}:{_frequency_window(system, now)}"
+                    ),
+                },
+                channel=NotificationRule.CHANNEL_IN_APP,
+                action_url=_reminder_action_url(system),
+            )
+            delivered = bool(notification)
+            channel_message = "In-app notification created." if delivered else "Duplicate in-app notification skipped."
+            if notification:
+                notification.metadata = {
+                    **(notification.metadata or {}),
+                    "home_system_id": system.id,
+                    "reminder_status": reminder.maintenance_status,
+                    "supply_count": len(supplies),
+                }
+                notification.save(update_fields=["metadata"])
+        elif channel == NotificationRule.CHANNEL_EMAIL:
+            ok, message = _send_reminder_email(system, reminder, supplies)
+            delivered = ok
+            channel_message = message
+            _log_reminder_delivery(system=system, reminder=reminder, channel=NotificationRule.CHANNEL_EMAIL, ok=ok, message=message)
+        elif channel == NotificationRule.CHANNEL_SMS:
+            result = _send_reminder_sms(system, reminder, supplies, now=now)
+            delivered = bool(result.get("ok"))
+            channel_message = result.get("detail") or result.get("reason_code") or ""
+            _log_reminder_delivery(system=system, reminder=reminder, channel=NotificationRule.CHANNEL_SMS, ok=delivered, message=channel_message)
+
+        if delivered:
+            delivered_channels.append(channel)
+            deliveries.append(notification or {"channel": channel, "message": channel_message})
+
+    if delivered_channels:
+        system.last_notified_at = now
+        system.next_notification_at = _next_notification_at(system, now)
+        system.reminder_sent_at = now
+        system.reminder_channel = ",".join(delivered_channels)
+        system.reminder_delivery_status = PropertyHomeSystem.DELIVERY_STATUS_SENT
+        system.reminder_generated_at = now
+        system.save(
+            update_fields=[
+                "last_notified_at",
+                "next_notification_at",
+                "reminder_sent_at",
+                "reminder_channel",
+                "reminder_delivery_status",
+                "reminder_generated_at",
+                "updated_at",
+            ]
+        )
+    return deliveries
+
+
+def create_home_system_reminder_notification(system: PropertyHomeSystem, *, now=None, channel=NotificationRule.CHANNEL_IN_APP):
     now = now or timezone.now()
     reminder = build_home_system_reminder(system, today=timezone.localdate())
     if not reminder_should_notify(system, reminder, now=now):
@@ -307,47 +521,18 @@ def create_home_system_reminder_notification(system: PropertyHomeSystem, *, now=
     email = str(profile.customer_email or "").strip().lower()
     if not email:
         return None
-    notification = create_smart_notification(
-        event_type=SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER,
-        recipient_email=email,
-        homeowner=profile.homeowner,
-        property_profile=profile,
-        context={
-            "system_name": _system_label(system),
-            "maintenance_status": reminder.maintenance_status,
-            "reminder_reason": reminder.reminder_reason,
-            "recommended_action": reminder.recommended_action,
-            "property_name": profile.display_name or profile.address_line1 or "your property",
-            "dedupe_key": (
-                "home-system-reminder:"
-                f"{system.id}:{reminder.maintenance_status}:{_reminder_anchor(system, reminder)}:"
-                f"{channel}:{_frequency_window(system, now)}"
-            ),
-        },
-        channel=channel,
-        action_url="/portal#property",
-    )
-    if notification:
-        system.last_notified_at = now
-        system.next_notification_at = _next_notification_at(system, now)
-        system.reminder_sent_at = now
-        system.reminder_channel = channel
-        system.reminder_delivery_status = PropertyHomeSystem.DELIVERY_STATUS_SENT
-    else:
-        system.reminder_delivery_status = PropertyHomeSystem.DELIVERY_STATUS_SKIPPED
-    system.reminder_generated_at = now
-    system.save(
-        update_fields=[
-            "last_notified_at",
-            "next_notification_at",
-            "reminder_sent_at",
-            "reminder_channel",
-            "reminder_delivery_status",
-            "reminder_generated_at",
-            "updated_at",
-        ]
-    )
-    return notification
+    preference = notification_preferences_for_email(email, homeowner=profile.homeowner)
+    if not notification_category_enabled(preference, _reminder_category(reminder)):
+        return None
+    channel_preference_key = {
+        NotificationRule.CHANNEL_IN_APP: "in_app_enabled",
+        NotificationRule.CHANNEL_EMAIL: "email_enabled",
+        NotificationRule.CHANNEL_SMS: "sms_enabled",
+    }.get(channel)
+    if not channel_preference_key or not notification_channel_enabled(preference, channel_preference_key):
+        return None
+    deliveries = _deliver_home_system_reminder(system, reminder, channels=[channel], preference=preference, now=now)
+    return deliveries[0] if deliveries else None
 
 
 def dispatch_home_system_reminders(
@@ -381,9 +566,9 @@ def dispatch_home_system_reminders(
                 result.skipped += 1
                 result.details.append({"system_id": system.id, "status": reminder.maintenance_status, "result": "skipped", "reason": "not_eligible"})
                 continue
-            channels, skipped_reasons = _enabled_channels(system)
+            channels, skipped_reasons, _preference = _enabled_channels(system, reminder)
             if channel:
-                channels = [row for row in channels if row == channel or (channel == "email" and row == NotificationRule.CHANNEL_EMAIL_STUB) or (channel == "sms" and row == NotificationRule.CHANNEL_SMS_STUB)]
+                channels = [row for row in channels if row == channel or (channel == "email" and row == NotificationRule.CHANNEL_EMAIL) or (channel == "sms" and row == NotificationRule.CHANNEL_SMS)]
             if not channels:
                 result.skipped += 1
                 system.reminder_generated_at = now
@@ -399,13 +584,10 @@ def dispatch_home_system_reminders(
                 result.details.append({"system_id": system.id, "status": reminder.maintenance_status, "result": "dry_run", "channels": channels})
                 continue
 
-            sent_for_system = 0
-            for row_channel in channels:
-                notification = create_home_system_reminder_notification(system, now=now, channel=row_channel)
-                if notification:
-                    sent_for_system += 1
-            if sent_for_system:
-                result.sent += sent_for_system
+            preference = _enabled_channels(system, reminder)[2]
+            deliveries = _deliver_home_system_reminder(system, reminder, channels=channels, preference=preference, now=now)
+            if deliveries:
+                result.sent += 1
                 result.details.append({"system_id": system.id, "status": reminder.maintenance_status, "result": "sent", "channels": channels})
             else:
                 result.skipped += 1

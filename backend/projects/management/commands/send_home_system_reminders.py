@@ -13,7 +13,7 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Report eligible reminders without creating notifications.")
         parser.add_argument(
             "--channel",
-            choices=["email", "sms", NotificationRule.CHANNEL_EMAIL_STUB, NotificationRule.CHANNEL_SMS_STUB],
+            choices=[NotificationRule.CHANNEL_IN_APP, NotificationRule.CHANNEL_EMAIL, NotificationRule.CHANNEL_SMS],
             help="Limit dispatch to one channel.",
         )
         parser.add_argument("--limit", type=int, help="Maximum number of systems to scan.")
