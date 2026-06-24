@@ -9,10 +9,10 @@ from projects.services.notification_center import create_notification
 
 
 LEGACY_SOURCE_ALIASES = {
-    "website": PublicContractorLead.SOURCE_QUOTE_REQUEST,
-    "website_contact": PublicContractorLead.SOURCE_QUOTE_REQUEST,
-    "website_quote": PublicContractorLead.SOURCE_QUOTE_REQUEST,
-    "website_quote_cta": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+    "website": PublicContractorLead.SOURCE_WEBSITE,
+    "website_contact": PublicContractorLead.SOURCE_WEBSITE,
+    "website_quote": PublicContractorLead.SOURCE_WEBSITE,
+    "website_quote_cta": PublicContractorLead.SOURCE_WEBSITE,
     "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "public_profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "quote_request": PublicContractorLead.SOURCE_QUOTE_REQUEST,
@@ -25,6 +25,7 @@ LEGACY_SOURCE_ALIASES = {
 }
 
 PUBLIC_LEAD_SOURCE_LABELS = {
+    PublicContractorLead.SOURCE_WEBSITE: "Website",
     PublicContractorLead.SOURCE_QUOTE_REQUEST: "Website",
     PublicContractorLead.SOURCE_LANDING_PAGE: "Website",
     PublicContractorLead.SOURCE_PUBLIC_PROFILE: "Public Profile",
@@ -35,6 +36,7 @@ PUBLIC_LEAD_SOURCE_LABELS = {
 }
 
 WEBSITE_LEAD_SOURCES = {
+    PublicContractorLead.SOURCE_WEBSITE,
     PublicContractorLead.SOURCE_QUOTE_REQUEST,
     PublicContractorLead.SOURCE_LANDING_PAGE,
     PublicContractorLead.SOURCE_PUBLIC_PROFILE,
@@ -70,7 +72,7 @@ def website_lead_filter_key(source: Optional[str]) -> str:
         return "qr"
     if normalized == PublicContractorLead.SOURCE_PUBLIC_PROFILE:
         return "public_profile"
-    if normalized in {PublicContractorLead.SOURCE_QUOTE_REQUEST, PublicContractorLead.SOURCE_LANDING_PAGE}:
+    if normalized in {PublicContractorLead.SOURCE_WEBSITE, PublicContractorLead.SOURCE_QUOTE_REQUEST, PublicContractorLead.SOURCE_LANDING_PAGE}:
         return "website"
     return "manual"
 
@@ -178,7 +180,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
             "preferred_contact_method": (getattr(intake, "preferred_contact_method", "") or "").strip(),
             "contact_consent": bool(getattr(intake, "contact_consent", False)),
             "request_path_label": "Request a Quote"
-            if normalized_source == PublicContractorLead.SOURCE_QUOTE_REQUEST
+            if normalized_source in {PublicContractorLead.SOURCE_WEBSITE, PublicContractorLead.SOURCE_QUOTE_REQUEST}
             else analysis.get("request_path_label", ""),
         },
         "status": status_override or PublicContractorLead.STATUS_NEW,

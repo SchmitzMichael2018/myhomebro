@@ -11,8 +11,11 @@ from projects.models import (
     ContractorReview,
     ContractorWebsite,
     ContractorWebsitePage,
+    Notification,
+    PublicContractorLead,
     Skill,
 )
+from projects.models_project_intake import ProjectIntake
 from projects.services.website_builder import build_website_profile_payload
 
 
@@ -280,3 +283,56 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(pause.status_code, 200)
         public = self.client.get(f"/api/projects/public/websites/{self.profile.slug}/", secure=True)
         self.assertEqual(public.status_code, 404)
+
+    @override_settings(
+        CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={
+            "website_builder": True,
+            "website_publish": True,
+        }
+    )
+    def test_public_website_intake_creates_contractor_scoped_lead_and_notification(self):
+        self.client.get("/api/projects/contractor/website/", secure=True)
+        publish = self.client.post("/api/projects/contractor/website/publish/", secure=True)
+        self.assertEqual(publish.status_code, 200)
+
+        self.client.force_authenticate(None)
+        response = self.client.post(
+            f"/api/projects/public/websites/{self.profile.slug}/intake/",
+            {
+                "full_name": "Jordan Website",
+                "email": "jordan@example.com",
+                "phone": "555-333-4444",
+                "project_type": "Kitchen remodel",
+                "raw_description": "We need new cabinets, counters, and lighting.",
+                "desired_timing_text": "Next month",
+                "budget_range_text": "$15k-$25k",
+                "payment_preference": "discuss",
+                "project_address_line1": "123 Main St",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "contact_consent": "true",
+            },
+            format="multipart",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["source"], PublicContractorLead.SOURCE_WEBSITE)
+        self.assertEqual(response.data["source_label"], "Website")
+        self.assertIn("Bright Build Co", response.data["message"])
+
+        intake = ProjectIntake.objects.get(customer_email="jordan@example.com")
+        self.assertEqual(intake.contractor, self.contractor)
+        self.assertEqual(intake.public_profile, self.profile)
+        self.assertEqual(intake.lead_source, PublicContractorLead.SOURCE_WEBSITE)
+
+        lead = PublicContractorLead.objects.get(email="jordan@example.com")
+        self.assertEqual(lead.contractor, self.contractor)
+        self.assertEqual(lead.public_profile, self.profile)
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_WEBSITE)
+        self.assertEqual(lead.ai_analysis["source_label"], "Website")
+
+        notification = Notification.objects.get(public_lead=lead)
+        self.assertEqual(notification.link, "/app/opportunities?source=website")
+        self.assertIn("Hey, you got a new lead from your website.", notification.message)

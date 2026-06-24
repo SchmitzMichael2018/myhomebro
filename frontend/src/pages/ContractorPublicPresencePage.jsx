@@ -646,8 +646,10 @@ export default function ContractorPublicPresencePage() {
   }
 
   useEffect(() => {
-    loadAll();
-  }, []);
+    if (location.pathname.includes('/app/marketing')) {
+      loadAll();
+    }
+  }, [location.pathname]);
 
   useEffect(() => {
     if (!selectedWebsitePageId && websitePages.length) {

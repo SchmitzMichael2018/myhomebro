@@ -102,6 +102,7 @@ from .views.website_builder import (
     ContractorWebsitePreviewView,
     ContractorWebsitePublishView,
     ContractorWebsiteView,
+    PublicWebsiteIntakeView,
     PublicWebsiteView,
 )
 from .views.compliance import ContractorCompliancePreviewView
@@ -961,6 +962,7 @@ urlpatterns = [
     path("public/contractors/<slug:slug>/request-quote/improve-description/", PublicContractorQuoteDescriptionImproveView.as_view()),
     path("public/contractors/<slug:slug>/intake/", PublicContractorIntakeView.as_view()),
     path("public/contractors/<slug:slug>/qr/", PublicContractorQrView.as_view()),
+    path("public/websites/<slug:slug>/intake/", PublicWebsiteIntakeView.as_view(), name="public-website-intake"),
     path("public/websites/<slug:slug>/", PublicWebsiteView.as_view(), name="public-website"),
     path("public/websites/<slug:slug>/<slug:page_slug>/", PublicWebsiteView.as_view(), name="public-website-page"),
 

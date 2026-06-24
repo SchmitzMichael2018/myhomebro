@@ -319,6 +319,7 @@ class PublicContractorQuoteRequestSerializer(serializers.Serializer):
     contact_consent = serializers.BooleanField(required=False, default=False)
     project_class = serializers.ChoiceField(choices=ProjectIntake.PROJECT_CLASS_CHOICES, required=False)
     project_mode = serializers.ChoiceField(choices=ProjectIntake.PROJECT_MODE_CHOICES, required=False)
+    payment_preference = serializers.ChoiceField(choices=ProjectIntake.PAYMENT_PREFERENCE_CHOICES, required=False)
     property_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
     desired_timing_text = serializers.CharField(max_length=120, required=False, allow_blank=True)
     project_type = serializers.CharField(max_length=120, required=False, allow_blank=True)
@@ -369,12 +370,13 @@ class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
 
     def validate_source(self, value):
         mapping = {
-            "website": PublicContractorLead.SOURCE_QUOTE_REQUEST,
-            "website_contact": PublicContractorLead.SOURCE_QUOTE_REQUEST,
-            "website_quote": PublicContractorLead.SOURCE_QUOTE_REQUEST,
-            "website_quote_cta": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+            "website": PublicContractorLead.SOURCE_WEBSITE,
+            "website_contact": PublicContractorLead.SOURCE_WEBSITE,
+            "website_quote": PublicContractorLead.SOURCE_WEBSITE,
+            "website_quote_cta": PublicContractorLead.SOURCE_WEBSITE,
             "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
             PublicContractorLead.SOURCE_PUBLIC_PROFILE: PublicContractorLead.SOURCE_PUBLIC_PROFILE,
+            PublicContractorLead.SOURCE_WEBSITE: PublicContractorLead.SOURCE_WEBSITE,
             PublicContractorLead.SOURCE_QUOTE_REQUEST: PublicContractorLead.SOURCE_QUOTE_REQUEST,
             PublicContractorLead.SOURCE_LANDING_PAGE: PublicContractorLead.SOURCE_LANDING_PAGE,
             PublicContractorLead.SOURCE_MANUAL: PublicContractorLead.SOURCE_MANUAL,

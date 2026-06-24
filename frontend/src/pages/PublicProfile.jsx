@@ -18,6 +18,13 @@ const buildEmptyReviewForm = (context = {}) => ({
   linked_milestone: context.linked_milestone || '',
 });
 
+const buildEmptyLeadForm = () => ({
+  full_name: '',
+  email: '',
+  phone: '',
+  project_description: '',
+});
+
 export default function PublicProfile() {
   const { slug = '' } = useParams();
   const [searchParams] = useSearchParams();
@@ -30,6 +37,8 @@ export default function PublicProfile() {
   const [reviewForm, setReviewForm] = useState(() => buildEmptyReviewForm());
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
   const [quoteWizardOpen, setQuoteWizardOpen] = useState(false);
+  const [leadSubmitting, setLeadSubmitting] = useState(false);
+  const [leadForm, setLeadForm] = useState(() => buildEmptyLeadForm());
   const reviewLinkedInvoice = searchParams.get('invoice') || '';
   const reviewLinkedMilestone = searchParams.get('milestone') || '';
   const reviewRequested = searchParams.get('review') === '1' || Boolean(reviewLinkedInvoice || reviewLinkedMilestone);
@@ -134,6 +143,25 @@ export default function PublicProfile() {
 
   if (error || !profile) {
     return <div className="px-4 py-16 text-center text-sm text-rose-700">{error || 'Contractor not found.'}</div>;
+  }
+
+  async function submitLead(event) {
+    event.preventDefault();
+    try {
+      setLeadSubmitting(true);
+      const source = searchParams.get('source') === 'qr' ? 'qr' : 'public_profile';
+      await api.post(`/projects/public/contractors/${slug}/intake/`, {
+        source,
+        ...leadForm,
+      });
+      toast.success('Your project request was submitted.');
+      setLeadForm(buildEmptyLeadForm());
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Unable to submit your project request.');
+    } finally {
+      setLeadSubmitting(false);
+    }
   }
 
   const gallery = Array.isArray(profile.gallery) ? profile.gallery : [];
@@ -327,6 +355,63 @@ export default function PublicProfile() {
                 </ul>
               </div>
             ) : null}
+          </section>
+        ) : null}
+
+        {profile.allow_public_intake && !previewMode ? (
+          <section
+            data-testid="public-profile-intake-form"
+            className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
+          >
+            <div className="max-w-2xl">
+              <div className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Project request
+              </div>
+              <h2 className="mt-2 text-2xl font-bold text-slate-900">Tell us about your project</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-600">
+                Share the basics and this contractor can follow up from their Opportunities workspace.
+              </p>
+            </div>
+            <form onSubmit={submitLead} className="mt-5 grid gap-4 md:grid-cols-2">
+              <input
+                value={leadForm.full_name}
+                onChange={(event) => setLeadForm((prev) => ({ ...prev, full_name: event.target.value }))}
+                placeholder="Full name"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                required
+              />
+              <input
+                value={leadForm.email}
+                onChange={(event) => setLeadForm((prev) => ({ ...prev, email: event.target.value }))}
+                placeholder="Email"
+                type="email"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                required
+              />
+              <input
+                value={leadForm.phone}
+                onChange={(event) => setLeadForm((prev) => ({ ...prev, phone: event.target.value }))}
+                placeholder="Phone"
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+              <textarea
+                value={leadForm.project_description}
+                onChange={(event) => setLeadForm((prev) => ({ ...prev, project_description: event.target.value }))}
+                placeholder="Tell us about your project"
+                rows={4}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                required
+              />
+              <div className="md:col-span-2">
+                <button
+                  type="submit"
+                  disabled={leadSubmitting}
+                  className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {leadSubmitting ? 'Submitting...' : 'Submit Project Request'}
+                </button>
+              </div>
+            </form>
           </section>
         ) : null}
 

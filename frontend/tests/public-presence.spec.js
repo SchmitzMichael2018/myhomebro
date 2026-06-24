@@ -308,7 +308,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     });
   });
 
-  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -723,7 +723,23 @@ test('landing-source intake and public-profile intake land in the same contracto
     });
   });
 
-  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
+  await page.route('**/api/projects/contractor/website/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        entitlements: { plan: 'free', features: {} },
+        website: { status: 'draft', template_key: 'starter', public_url: '/websites/bright-build-co', homepage_layout: {} },
+        profile: {},
+        readiness: { score: 75, checklist: [], missing_required_fields: [] },
+        pages: [],
+        draft: { status: 'draft', has_draft: true, template_key: 'starter' },
+        publish_blockers: ['Publishing is part of the Pro Website Builder.'],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1244,7 +1260,23 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
     });
   });
 
-  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
+  await page.route('**/api/projects/contractor/website/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        entitlements: { plan: 'free', features: {} },
+        website: { status: 'draft', template_key: 'starter', public_url: '/websites/bright-build-co', homepage_layout: {} },
+        profile: {},
+        readiness: { score: 75, checklist: [], missing_required_fields: [] },
+        pages: [],
+        draft: { status: 'draft', has_draft: true, template_key: 'starter' },
+        publish_blockers: ['Publishing is part of the Pro Website Builder.'],
+      }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?(?:\?.*)?$/, async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON();
       const lead = {
@@ -1487,10 +1519,14 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
   await page.getByTestId('public-intake-customer-state').fill('TX');
   await page.getByTestId('public-intake-customer-postal-code').fill('78706');
   await page.getByRole('button', { name: 'Review + Confirm' }).click();
+  const intakeSubmitResponse = page.waitForResponse((response) =>
+    response.url().includes('/api/projects/public-intake/') && response.request().method() !== 'GET'
+  );
   await page.getByTestId('public-intake-submit-button').click();
+  await intakeSubmitResponse;
 
-  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
+  const appOrigin = new URL(page.url()).origin;
+  await page.goto(`${appOrigin}/app/marketing?tab=leads&refresh=manual-intake`, { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Walk Up Prospect' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Manual');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Ready for Review');
@@ -1973,7 +2009,7 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
     });
   });
 
-  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

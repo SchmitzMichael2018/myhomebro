@@ -362,13 +362,30 @@ export function WebsiteBuilderContactStep({ profile, setProfile, contactPage, se
       <div className="grid gap-2 md:grid-cols-2">
         <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700"><input type="checkbox" checked={profile.show_quote_cta !== false} onChange={(event) => setProfile((prev) => ({ ...prev, show_quote_cta: event.target.checked }))} /> Show quote request CTA</label>
         <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700"><input type="checkbox" checked={profile.allow_public_intake !== false} onChange={(event) => setProfile((prev) => ({ ...prev, allow_public_intake: event.target.checked }))} /> Allow lead intake form</label>
+        <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700"><input type="checkbox" checked={profile.show_phone_public !== false} onChange={(event) => setProfile((prev) => ({ ...prev, show_phone_public: event.target.checked }))} /> Show phone on website</label>
+        <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700"><input type="checkbox" checked={profile.show_email_public === true} onChange={(event) => setProfile((prev) => ({ ...prev, show_email_public: event.target.checked }))} /> Show email on website</label>
       </div>
       <Field label="Contact section heading">
         <input className={inputClass()} disabled={!canCustomize || !contactPage} value={contactBlock.heading || ''} onChange={(event) => setPage(contactPage, mergePageContent(contactPage, 'contact', { heading: event.target.value }))} />
       </Field>
+      <Field label="CTA button text" helper="This appears in the contact section button.">
+        <input className={inputClass()} disabled={!canCustomize || !contactPage} value={contactBlock.cta_text || ''} onChange={(event) => setPage(contactPage, mergePageContent(contactPage, 'contact', { cta_text: event.target.value }))} data-testid="wizard-contact-cta-text" />
+      </Field>
       <Field label="Contact form intro text">
         <textarea className={inputClass()} rows={3} disabled={!canCustomize || !contactPage} value={contactBlock.body || ''} onChange={(event) => setPage(contactPage, mergePageContent(contactPage, 'contact', { body: event.target.value }))} />
       </Field>
+      <Field label="Intake form helper text" helper="This appears above the project request form.">
+        <textarea className={inputClass()} rows={3} disabled={!canCustomize || !contactPage} value={contactBlock.intake_intro || ''} onChange={(event) => setPage(contactPage, mergePageContent(contactPage, 'contact', { intake_intro: event.target.value }))} data-testid="wizard-contact-intake-intro" />
+      </Field>
+      <label className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          disabled={!canCustomize || !contactPage}
+          checked={contactBlock.lead_form_enabled !== false}
+          onChange={(event) => setPage(contactPage, mergePageContent(contactPage, 'contact', { lead_form_enabled: event.target.checked }))}
+        />
+        Show website intake form
+      </label>
     </StepCard>
   );
 }
@@ -504,6 +521,7 @@ export default function WebsiteBuilderWizard({
           email_public: profile.email_public || '',
           show_phone_public: profile.show_phone_public !== false,
           show_email_public: profile.show_email_public === true,
+          allow_public_intake: profile.allow_public_intake !== false,
         },
         trust: {
           ...(baseProfile.trust || {}),

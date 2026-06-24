@@ -61,7 +61,7 @@ export default function PublicWebsitePage() {
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-6 md:py-10" data-testid="public-website-page">
       <div className="mx-auto max-w-6xl">
-        <PublicWebsiteRenderer payload={payload} currentPage={payload.current_page} />
+        <PublicWebsiteRenderer payload={payload} currentPage={payload.current_page} slug={slug} />
       </div>
     </main>
   );

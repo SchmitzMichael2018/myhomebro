@@ -50,6 +50,25 @@ function makeWebsitePayload({ pro = false, published = false } = {}) {
       sort_order: 1,
       content_blocks: { services: { heading: 'Services', intro: 'Remodeling and repairs.' } },
     },
+    {
+      id: 12,
+      page_type: 'contact',
+      slug: 'contact',
+      title: 'Contact',
+      seo_title: '',
+      seo_description: '',
+      is_published: true,
+      sort_order: 4,
+      content_blocks: {
+        contact: {
+          heading: 'Start your project',
+          body: 'Share the basics and we will follow up.',
+          cta_text: 'Start Your Project',
+          intake_intro: 'Tell us about the project and timeline.',
+          lead_form_enabled: true,
+        },
+      },
+    },
   ];
   const profile = {
     identity: {
@@ -78,6 +97,7 @@ function makeWebsitePayload({ pro = false, published = false } = {}) {
       email_public: 'hello@bright.example.com',
       show_phone_public: true,
       show_email_public: false,
+      allow_public_intake: true,
     },
     trust: { license_public: true },
     gallery: {
@@ -236,7 +256,7 @@ async function mockMarketingPage(page, { pro = false } = {}) {
     });
   });
 
-  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -359,6 +379,21 @@ async function mockMarketingPage(page, { pro = false } = {}) {
       body: JSON.stringify(publicPayload),
     });
   });
+
+  await page.route(/\/api\/projects\/public\/websites\/bright-build-co\/intake\/?$/, async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        message: 'Your request was sent to Bright Build Co.',
+        intake_id: 42,
+        lead_id: 52,
+        source: 'website',
+        source_label: 'Website',
+      }),
+    });
+  });
 }
 
 test('Marketing Website Builder tab loads readiness data and keeps Free contractors gated', async ({ page }) => {
@@ -414,4 +449,13 @@ test('Pro contractor can use wizard steps, edit services, preview mobile, and pu
   await page.goto('/websites/bright-build-co', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('public-website-page')).toBeVisible();
   await expect(page.getByTestId('public-website-renderer')).toContainText('Custom kitchens');
+  await expect(page.getByTestId('public-website-intake-form')).toBeVisible();
+  await page.getByRole('link', { name: 'Request a Quote' }).first().click();
+  await page.getByPlaceholder('Full name').fill('Jordan Website');
+  await page.getByPlaceholder('you@example.com').fill('jordan@example.com');
+  await page.getByPlaceholder('Kitchen remodel, repair, etc.').fill('Kitchen remodel');
+  await page.getByPlaceholder('Tell us what you want done and any important details.').fill('We need cabinets, counters, and lighting.');
+  await page.getByLabel(/I agree/).check();
+  await page.getByTestId('public-website-intake-submit').click();
+  await expect(page.getByTestId('public-website-intake-message')).toContainText('Your request was sent to Bright Build Co.');
 });

@@ -535,8 +535,9 @@ export default function PublicIntakeWizard() {
   const stepLabels = [
     "Project Idea",
     "Refine Your Project",
-    "Project Details",
+    "Project Snapshot",
     "Project Summary",
+    "Project Details",
     "Contact Info",
     "Choose Local Contractors",
     "Choose Path",
@@ -651,9 +652,9 @@ export default function PublicIntakeWizard() {
           freshStart
             ? 0
             : data?.post_submit_flow_selected_at
-            ? 6
+            ? 7
             : data?.post_submit_flow
-              ? 5
+              ? 6
                 : hasClarificationAnswers
                 ? 2
                 : hasStructuredOutput || hasClarifications
@@ -990,16 +991,16 @@ export default function PublicIntakeWizard() {
       await handleClarificationAdvance();
       return;
     }
-    if (currentStep === 6) {
+    if (currentStep === 7) {
       await handleBranchSubmit();
       return;
     }
-    if (currentStep === 7) {
+    if (currentStep === 8) {
       await handleConfirm();
       return;
     }
-    if (currentStep === 5) {
-      setCurrentStep(6);
+    if (currentStep === 6) {
+      setCurrentStep(7);
       return;
     }
     if (currentStep < stepLabels.length - 1) {
@@ -1104,7 +1105,7 @@ export default function PublicIntakeWizard() {
               ? `Created ${data.branch_invites.length} contractor invite${data.branch_invites.length === 1 ? "" : "s"}.`
               : "Saved your next-step choice."
         );
-        setCurrentStep(7);
+        setCurrentStep(8);
       }
       return data;
     } catch (e) {
@@ -1117,7 +1118,7 @@ export default function PublicIntakeWizard() {
 
   function handleSkipContractorBranch() {
     setBranchResult((prev) => prev || null);
-    setCurrentStep(7);
+    setCurrentStep(8);
     toast.success("You can skip contractor entry for now and continue.");
   }
 
@@ -1244,12 +1245,13 @@ export default function PublicIntakeWizard() {
     form.tentative_start_date,
   ]);
   const confidenceMessage = useMemo(() => {
-    if (currentStep >= 7) return "Almost ready to send to contractors.";
-    if (currentStep === 6) return "You are choosing the path that feels right.";
-    if (currentStep === 5) return "Review a few good contractor matches before you decide the next step.";
-    if (currentStep === 4) return "A few contact details now will help the next step feel easy.";
+    if (currentStep >= 8) return "Almost ready to send to contractors.";
+    if (currentStep === 7) return "You are choosing the path that feels right.";
+    if (currentStep === 6) return "Review a few good contractor matches before you decide the next step.";
+    if (currentStep === 5) return "A few contact details now will help the next step feel easy.";
+    if (currentStep === 4) return "Add the location and project details that help contractors review your request.";
     if (currentStep === 3) return "Your contractor will review this summary before creating the final scope.";
-    if (currentStep === 2) return "Add the location and project details that help contractors review your request.";
+    if (currentStep === 2) return "Review the project snapshot before the full summary.";
     if (currentStep === 1) return "Refine the details so your contractor can review the request more clearly.";
     return "Tell us about the project and we will help organize it for contractor review.";
   }, [currentStep]);
@@ -1652,6 +1654,64 @@ export default function PublicIntakeWizard() {
       );
     }
 
+    if (currentStep === 2) {
+      const snapshotRows = [
+        {
+          key: "snapshot-title",
+          label: "Working Title",
+          value: generatedProjectTitle || "Project Request",
+        },
+        {
+          key: "snapshot-type",
+          label: "Project Type",
+          value: [form.ai_project_type, form.ai_project_subtype].filter(Boolean).join(" / ") || "Not provided",
+        },
+        {
+          key: "snapshot-summary",
+          label: "Scope Summary",
+          value: form.project_scope_summary || form.refined_description || form.ai_description || form.accomplishment_text || "Not provided",
+        },
+        {
+          key: "snapshot-timeline",
+          label: "Timeline",
+          value: form.desired_timing_text || "Not provided",
+        },
+      ];
+      return (
+        <div className={intakeLightCardClass} data-testid="public-intake-project-snapshot">
+          <div className="max-w-3xl">
+            <div className="inline-flex rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">
+              Project Snapshot
+            </div>
+            <h2 className="mt-3 text-2xl font-semibold tracking-tight text-gray-900" data-testid="public-intake-project-snapshot-title">
+              Project Snapshot
+            </h2>
+            <p className="mt-2 text-base text-slate-600">
+              Here is a quick checkpoint before the full project summary.
+            </p>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            {snapshotRows.map((row) => (
+              <section key={row.key} className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
+                <div className="text-sm font-semibold text-gray-900">{row.label}</div>
+                <div className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700">{row.value}</div>
+              </section>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setCurrentStep(3)}
+            data-testid="public-intake-project-snapshot-continue"
+            className={`mt-6 ${intakePrimaryButtonClass}`}
+          >
+            Continue to Project Summary
+          </button>
+        </div>
+      );
+    }
+
     if (currentStep === 3) {
       const summaryCards = [
         {
@@ -1745,7 +1805,7 @@ export default function PublicIntakeWizard() {
         </div>
       );
     }
-    if (currentStep === 2) {
+    if (currentStep === 4) {
       return (
         <div className={intakeLightCardClass} data-testid="public-intake-project-details-step">
           <div className="max-w-3xl">
@@ -2333,7 +2393,7 @@ export default function PublicIntakeWizard() {
       );
     }
 
-    if (currentStep === 4) {
+    if (currentStep === 5) {
       return (
         <div className={intakeLightCardClass} data-testid="public-intake-contact-step">
           <div className="max-w-3xl">
@@ -2393,7 +2453,7 @@ export default function PublicIntakeWizard() {
       );
     }
 
-    if (currentStep === 5) {
+    if (currentStep === 6) {
       return (
         <ContractorDiscoveryStep
           token={token}
@@ -2404,13 +2464,13 @@ export default function PublicIntakeWizard() {
           onSkipToManual={() => {
             setDiscoveryTargets([]);
             setBranchMode("single_contractor");
-            setCurrentStep(6);
+            setCurrentStep(7);
           }}
         />
       );
     }
 
-    if (currentStep === 6) {
+    if (currentStep === 7) {
       return (
         <div className={intakeLightCardClass} data-testid="public-intake-branching-section">
           <div className="max-w-3xl">
@@ -2561,7 +2621,7 @@ export default function PublicIntakeWizard() {
       );
     }
 
-    if (currentStep === 7) {
+    if (currentStep === 8) {
       return (
         <div className={intakeLightCardClass} data-testid="public-intake-review-step">
           <div className="max-w-3xl">
@@ -2845,13 +2905,13 @@ export default function PublicIntakeWizard() {
           </button>
 
           <div className="flex flex-wrap items-center gap-3">
-            {currentStep === 5 ? (
+            {currentStep === 6 ? (
               <button
                 type="button"
                 onClick={() => {
                   if (discoveryTargets.length > 1) setBranchMode("multi_contractor");
                   else if (discoveryTargets.length === 1) setBranchMode("single_contractor");
-                  setCurrentStep(6);
+                  setCurrentStep(7);
                 }}
                 disabled={saving || branchSubmitting}
                 data-testid="public-intake-discovery-continue"
@@ -2859,7 +2919,7 @@ export default function PublicIntakeWizard() {
               >
                 Continue to Choose Path
               </button>
-            ) : currentStep === 6 ? (
+            ) : currentStep === 7 ? (
               <>
                 <button type="button" onClick={handleBranchSubmit} disabled={branchSubmitting || saving} data-testid="public-intake-branch-submit" className={intakePrimaryButtonClass}>{branchSubmitting ? "Saving..." : "Save and Review"}</button>
                 <button
@@ -2872,7 +2932,7 @@ export default function PublicIntakeWizard() {
                   Skip for now
                 </button>
               </>
-            ) : currentStep === 7 ? (
+            ) : currentStep === 8 ? (
               <button data-testid="public-intake-submit-button" type="button" onClick={handleConfirm} disabled={saving || branchSubmitting || !canFinish} className={intakePrimaryButtonClass}>{saving ? "Submitting..." : "Submit Project Request"}</button>
             ) : currentStep === 3 ? (
               <button
@@ -2882,9 +2942,19 @@ export default function PublicIntakeWizard() {
                 data-testid="public-intake-structured-continue"
                 className={intakePrimaryButtonClass}
               >
-                Continue to Contact Info
+                Continue to Project Details
               </button>
             ) : currentStep === 2 ? (
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={saving || branchSubmitting}
+                data-testid="public-intake-project-snapshot-footer-continue"
+                className={intakePrimaryButtonClass}
+              >
+                Continue to Project Summary
+              </button>
+            ) : currentStep === 4 ? (
               <button
                 type="button"
                 onClick={handleNext}
@@ -2892,9 +2962,9 @@ export default function PublicIntakeWizard() {
                 data-testid="public-intake-project-details-continue"
                 className={intakePrimaryButtonClass}
               >
-                Continue to Project Summary
+                Continue to Contact Info
               </button>
-            ) : currentStep === 4 ? (
+            ) : currentStep === 5 ? (
               <button
                 type="button"
                 onClick={handleNext}

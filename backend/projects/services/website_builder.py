@@ -185,7 +185,9 @@ def _default_page_blocks(page_type: str, profile_payload: dict[str, Any]) -> dic
         "contact": {
             "heading": "Contact",
             "body": "Share a few project details and we will follow up with next steps.",
-            "cta_text": "Request a Quote",
+            "cta_text": "Start Your Project",
+            "intake_intro": "Tell us what you want done, where the project is, and how soon you would like to start.",
+            "lead_form_enabled": True,
         },
     }
 
