@@ -739,6 +739,14 @@ test('landing-source intake and public-profile intake land in the same contracto
     });
   });
 
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
+    });
+  });
+
   await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -1273,6 +1281,14 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
         draft: { status: 'draft', has_draft: true, template_key: 'starter' },
         publish_blockers: ['Publishing is part of the Pro Website Builder.'],
       }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
     });
   });
 

@@ -649,7 +649,7 @@ export default function ContractorPublicPresencePage() {
     if (location.pathname.includes('/app/marketing')) {
       loadAll();
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (!selectedWebsitePageId && websitePages.length) {
