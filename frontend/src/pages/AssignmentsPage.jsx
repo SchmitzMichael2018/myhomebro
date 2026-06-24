@@ -8,6 +8,8 @@ import toast from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import HubTabs from "../components/dashboard/HubTabs.jsx";
+import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
 
 import { listSubaccounts } from "../api/subaccounts";
 import {
@@ -683,6 +685,8 @@ export default function AssignmentsPage() {
       contentClassName="w-full"
     >
       <div className="space-y-5">
+      <HubTabs tabs={teamHubTabs} />
+
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="mhb-helper-text mt-4">

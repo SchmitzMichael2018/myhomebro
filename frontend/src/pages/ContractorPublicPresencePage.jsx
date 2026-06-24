@@ -25,9 +25,10 @@ import ContractorContextualGuideModal, { pickContextualGuide } from '../componen
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
+  { key: 'website', label: 'Website Builder' },
   { key: 'gallery', label: 'Gallery' },
   { key: 'reviews', label: 'Reviews' },
-  { key: 'leads', label: 'Public Leads' },
+  { key: 'leads', label: 'Website Leads' },
 ];
 
 function normalizeList(data) {
@@ -463,6 +464,20 @@ export default function ContractorPublicPresencePage() {
   });
   const [galleryImage, setGalleryImage] = useState(null);
 
+  const profileCompletenessItems = useMemo(
+    () => [
+      { label: 'Business name', complete: Boolean(profile.business_name_public) },
+      { label: 'Tagline', complete: Boolean(profile.tagline) },
+      { label: 'Bio', complete: Boolean(profile.bio) },
+      { label: 'Service area', complete: Boolean(profile.city || profile.state || profile.service_area_text) },
+      { label: 'Branding', complete: Boolean(profile.logo_url || profile.brand_primary_color || profile.hero_image_url) },
+      { label: 'Gallery', complete: galleryRows.length > 0 },
+      { label: 'Reviews', complete: reviewsRows.length > 0 },
+    ],
+    [galleryRows.length, profile, reviewsRows.length]
+  );
+  const profileCompletenessCount = profileCompletenessItems.filter((item) => item.complete).length;
+
   const specialtiesText = useMemo(
     () => (Array.isArray(profile.specialties) ? profile.specialties.join(', ') : ''),
     [profile.specialties]
@@ -484,7 +499,7 @@ export default function ContractorPublicPresencePage() {
   );
   const leadAssistantContext = useMemo(
     () => ({
-      current_route: '/app/public-presence',
+      current_route: '/app/marketing',
       lead_id: selectedLead?.id || null,
       lead_summary: {
         source: selectedLead?.source || '',
@@ -594,6 +609,14 @@ export default function ContractorPublicPresencePage() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || '');
+    const tab = params.get('tab');
+    if (TABS.some((item) => item.key === tab)) {
+      setActiveTab(tab);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (!assistantHandoffSignature || assistantHandoffSignature === appliedAssistantRef.current) {
@@ -1020,7 +1043,7 @@ export default function ContractorPublicPresencePage() {
   }
 
   if (loading) {
-    return <div className="p-6 text-sm text-slate-500">Loading public presence…</div>;
+    return <div className="p-6 text-sm text-slate-500">Loading marketing workspace...</div>;
   }
 
   return (
@@ -1090,10 +1113,10 @@ export default function ContractorPublicPresencePage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 data-testid="public-presence-title" className="text-2xl font-bold text-slate-900">
-              Public Presence
+              Marketing
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Manage your public profile, gallery, reviews, leads, and shareable QR from one place.
+              Manage your public profile, gallery, reviews, website-ready leads, and shareable QR from one place.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1440,6 +1463,54 @@ export default function ContractorPublicPresencePage() {
             </div>
           ) : null}
 
+          {activeTab === 'website' ? (
+            <div className="mt-6 space-y-4" data-testid="marketing-website-builder-tab">
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6">
+                <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
+                  Coming Soon
+                </div>
+                <h2 className="mt-4 text-2xl font-bold text-slate-900">Website Builder</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
+                  Your public profile, gallery, reviews, service area, and brand settings are being prepared as the foundation for a Pro website builder.
+                </p>
+                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                  <div className="text-sm font-semibold text-slate-900">Plan access</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Free contractors keep the public profile. Pro will unlock the website builder. Growth will add custom domains, advanced SEO, AI content, and analytics.
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Website readiness</div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      {profileCompletenessCount} of {profileCompletenessItems.length} profile signals are ready to reuse.
+                    </div>
+                  </div>
+                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+                    {Math.round((profileCompletenessCount / profileCompletenessItems.length) * 100)}% ready
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-2 md:grid-cols-2">
+                  {profileCompletenessItems.map((item) => (
+                    <div
+                      key={item.label}
+                      className={`rounded-2xl border px-4 py-3 text-sm ${
+                        item.complete
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                          : 'border-slate-200 bg-slate-50 text-slate-600'
+                      }`}
+                    >
+                      <span className="font-semibold">{item.complete ? 'Ready' : 'Needed'}:</span> {item.label}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
           {activeTab === 'gallery' ? (
             <div className="mt-6 space-y-4" data-testid="public-presence-gallery-tab">
               <div className="grid gap-4 md:grid-cols-2">
@@ -1537,8 +1608,8 @@ export default function ContractorPublicPresencePage() {
             <div className="mt-6 space-y-4" data-testid="public-presence-leads-tab">
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">Public Leads</div>
-                  <div className="text-xs text-slate-500">Capture and review requests from your public profile and QR code.</div>
+                  <div className="text-sm font-semibold text-slate-900">Website Leads</div>
+                  <div className="text-xs text-slate-500">Capture and review requests from your public profile, QR code, and future website.</div>
                 </div>
                 <button
                   type="button"

@@ -658,7 +658,7 @@ export default function MilestoneList() {
       if (invoiceId) navigate(`/app/invoices/${invoiceId}`);
       else {
         toast.error("Invoice created but no invoice id returned.");
-        navigate(`/app/invoices`);
+        navigate(`/app/payments`);
       }
     } catch (e) {
       console.error(e);

@@ -1611,7 +1611,7 @@ function ContractorActivationChecklist({
         verificationStatus === "verified" ? "Marketplace verification is approved." : "Marketplace verification is in review.",
       complete: verificationComplete,
       required: true,
-      href: "/app/public-presence",
+      href: "/app/marketing",
       actionLabel: "Open Marketplace Profile",
       blockedReason: !stripeReady ? "Stripe setup may be required before marketplace eligibility is complete." : "",
     },
@@ -1646,7 +1646,7 @@ function ContractorActivationChecklist({
       title: "Review first opportunity",
       description: "Marketplace leads and customer opportunities will appear here once you are eligible.",
       complete: hasOpportunity,
-      href: "/app/bids",
+      href: "/app/opportunities",
       actionLabel: "Open Opportunities",
     },
   ];
@@ -2559,7 +2559,7 @@ export default function ContractorDashboard() {
     if (projectClass && projectClass !== "all") params.set("project_class", projectClass);
     if (recordType && recordType !== "all") params.set("record_type", recordType);
     const query = params.toString();
-    navigate(`/app/invoices${query ? `?${query}` : ""}`);
+    navigate(`/app/payments${query ? `?${query}` : ""}`);
   };
   const goInvoices = () => goPayments();
   const goInvoicesDisputed = () => goPayments({ moneyStatus: "issues", recordType: "invoice" });
@@ -3368,10 +3368,10 @@ export default function ContractorDashboard() {
                   <button
                     type="button"
                     data-testid="contractor-marketplace-work-orders-open-bids"
-                    onClick={() => navigate("/app/bids?source=property_work_order")}
+                    onClick={() => navigate("/app/opportunities?source=property_work_order")}
                     className="rounded-xl border border-white/18 bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-white/15"
                   >
-                    Open in Leads &amp; Bids
+                    Open in Opportunities
                   </button>
                 </div>
                 <div className="grid gap-3 lg:grid-cols-2">
@@ -3541,163 +3541,7 @@ export default function ContractorDashboard() {
             )}
             </DashboardCard>
 
-          {false ? (
-          <DashboardSection
-            title="Project Context"
-            subtitle="Compact mode, payment, and workflow filters for the jobs you are already managing."
-          >
-            <DashboardCard
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-              testId="dashboard-project-context"
-            >
-              <div className="space-y-3.5">
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-                    Project Type
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {[
-                      {
-                        label: "Residential",
-                        value: "residential",
-                        count: projectClassStats.residential,
-                        tone: "border-sky-200 bg-sky-50 text-sky-700",
-                        dataTestId: "dashboard-project-class-residential",
-                      },
-                      {
-                        label: "Commercial",
-                        value: "commercial",
-                        count: projectClassStats.commercial,
-                        tone: "border-indigo-200 bg-indigo-50 text-indigo-700",
-                        dataTestId: "dashboard-project-class-commercial",
-                      },
-                    ]
-                      .filter((item) => Number(item.count || 0) > 0)
-                      .map((item) => (
-                        <button
-                          key={item.label}
-                          type="button"
-                          data-testid={item.dataTestId}
-                          onClick={() => navigate(`/app/agreements?project_class=${item.value}`)}
-                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold leading-none transition hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${item.tone}`}
-                        >
-                          <span>{item.label}</span>
-                          <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">
-                            {Number(item.count || 0).toLocaleString()}
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-                    Mode Filters
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {[
-                      {
-                        label: "Full Service",
-                        value: "full_service",
-                        count: projectModeStats.full_service,
-                        tone: "border-blue-200 bg-blue-50 text-blue-700",
-                        dataTestId: "dashboard-project-mode-full-service",
-                      },
-                      {
-                        label: "Assisted DIY",
-                        value: "assisted_diy",
-                        count: projectModeStats.assisted_diy,
-                        tone: "border-amber-200 bg-amber-50 text-amber-800",
-                        dataTestId: "dashboard-project-mode-assisted-diy",
-                      },
-                      {
-                        label: "Consultation",
-                        value: "consultation",
-                        count: projectModeStats.consultation,
-                        tone: "border-violet-200 bg-violet-50 text-violet-700",
-                        dataTestId: "dashboard-project-mode-consultation",
-                      },
-                      {
-                        label: "Inspection Only",
-                        value: "inspection_only",
-                        count: projectModeStats.inspection_only,
-                        tone: "border-slate-200 bg-slate-100 text-slate-700",
-                        dataTestId: "dashboard-project-mode-inspection",
-                      },
-                    ].map((item) => (
-                      <button
-                        key={item.label}
-                        type="button"
-                        data-testid={item.dataTestId}
-                        onClick={() => navigate(`/app/milestones?project_mode=${item.value}&filter=incomplete`)}
-                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold leading-none transition hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${item.tone}`}
-                      >
-                        <ProjectModeBadge mode={item.value} className="scale-90" />
-                        <span>{item.label}</span>
-                        <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-900">
-                          {Number(item.count || 0).toLocaleString()}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-                    Payment Method / Protection
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {[
-                      {
-                        label: "Direct Payment",
-                        count: paymentProtectionStats.direct,
-                        tone: "border-slate-200 bg-slate-100 text-slate-700",
-                        dataTestId: "dashboard-payment-direct",
-                        navigationTarget: "/app/agreements?payment_mode=direct",
-                      },
-                      {
-                        label: "Escrow Preferred",
-                        count: paymentProtectionStats.preferred,
-                        tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-                        dataTestId: "dashboard-guardrail-escrow-preferred",
-                        navigationTarget: "/app/agreements?payment_mode=escrow&payment_protection=preferred",
-                      },
-                      {
-                        label: "Escrow Recommended",
-                        count: paymentProtectionStats.recommended,
-                        tone: "border-amber-200 bg-amber-50 text-amber-800",
-                        dataTestId: "dashboard-guardrail-escrow-recommended",
-                        navigationTarget: "/app/agreements?payment_mode=escrow&payment_protection=recommended",
-                      },
-                      {
-                        label: "Escrow Required",
-                        count: paymentProtectionStats.required,
-                        tone: "border-rose-200 bg-rose-50 text-rose-800",
-                        dataTestId: "dashboard-guardrail-escrow-required",
-                        navigationTarget: "/app/agreements?payment_mode=escrow&payment_protection=required",
-                      },
-                    ]
-                      .filter((item) => Number(item.count || 0) > 0)
-                      .map((item) => (
-                        <button
-                          type="button"
-                          key={item.label}
-                          data-testid={item.dataTestId}
-                          onClick={() => navigate(item.navigationTarget || "/app/agreements")}
-                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold leading-none ${item.tone}`}
-                        >
-                          <span>{item.label}</span>
-                          <span className="rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-extrabold text-slate-900 shadow-[0_1px_2px_rgba(15,23,42,0.08)]">
-                            {Number(item.count || 0).toLocaleString()}
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-
-          ) : null}
+          
 
           <DashboardSection
             title="Schedule"
@@ -3790,54 +3634,7 @@ export default function ContractorDashboard() {
           </DashboardSection>
           </div>{/* end dashboard-priority-schedule-grid */}
 
-          {false ? (
-          <DashboardSection
-            title="Project Context"
-            subtitle="Operational filters for the jobs you are already managing."
-          >
-            <DashboardCard
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-              testId="dashboard-project-context"
-            >
-              <div className="flex flex-wrap gap-2.5">
-                {[
-                  { label: "Residential", count: projectClassStats.residential, href: "/app/agreements?project_class=residential", tone: "border-sky-200 bg-sky-50 text-sky-800" },
-                  { label: "Commercial", count: projectClassStats.commercial, href: "/app/agreements?project_class=commercial", tone: "border-indigo-200 bg-indigo-50 text-indigo-800" },
-                  { label: "Full Service", count: projectModeStats.full_service, href: "/app/milestones?project_mode=full_service&filter=incomplete", tone: "border-blue-200 bg-blue-50 text-blue-800" },
-                  { label: "Assisted DIY", count: projectModeStats.assisted_diy, href: "/app/milestones?project_mode=assisted_diy&filter=incomplete", tone: "border-amber-200 bg-amber-50 text-amber-900" },
-                  { label: "Consultation", count: projectModeStats.consultation, href: "/app/milestones?project_mode=consultation&filter=incomplete", tone: "border-violet-200 bg-violet-50 text-violet-800" },
-                  { label: "Inspection Only", count: projectModeStats.inspection_only, href: "/app/milestones?project_mode=inspection_only&filter=incomplete", tone: "border-slate-200 bg-slate-100 text-slate-800" },
-                  { label: "Direct Payment", count: paymentProtectionStats.direct, href: "/app/agreements?payment_mode=direct", tone: "border-slate-200 bg-slate-100 text-slate-800" },
-                  { label: "Escrow Preferred", count: paymentProtectionStats.preferred, href: "/app/agreements?payment_mode=escrow&payment_protection=preferred", tone: "border-emerald-200 bg-emerald-50 text-emerald-900" },
-                  { label: "Escrow Recommended", count: paymentProtectionStats.recommended, href: "/app/agreements?payment_mode=escrow&payment_protection=recommended", tone: "border-amber-200 bg-amber-50 text-amber-900" },
-                  { label: "Escrow Required", count: paymentProtectionStats.required, href: "/app/agreements?payment_mode=escrow&payment_protection=required", tone: "border-rose-200 bg-rose-50 text-rose-900" },
-                ]
-                  .filter((item) => Number(item.count || 0) > 0)
-                  .map((item) => (
-                    <button
-                      key={item.label}
-                      type="button"
-                      onClick={() => navigate(item.href)}
-                      className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-semibold leading-none transition hover:-translate-y-px hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 ${item.tone}`}
-                    >
-                      <span>{item.label}</span>
-                      <span className="rounded-full bg-white/90 px-2 py-0.5 text-xs font-extrabold text-slate-950 shadow-[0_1px_2px_rgba(15,23,42,0.08)]">
-                        {Number(item.count || 0).toLocaleString()}
-                      </span>
-                    </button>
-                  ))}
-                {projectClassStats.residential + projectClassStats.commercial === 0 &&
-                Object.values(projectModeStats).every((count) => Number(count || 0) === 0) &&
-                Object.values(paymentProtectionStats).every((count) => Number(count || 0) === 0) ? (
-                  <div className="rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500">
-                    Project context appears here once agreements are active.
-                  </div>
-                ) : null}
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-          ) : null}
+          
 
           <div
             data-testid="dashboard-work-bids-grid"
@@ -3912,379 +3709,11 @@ export default function ContractorDashboard() {
             </DashboardCard>
           </DashboardSection>
 
-          {false ? (<>
-          <DashboardSection
-            title="Work and Money"
-            subtitle="Follow the handoff from completed work to payment requests, approval, and payout."
-          >
-            <DashboardCard
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
-            >
-              <div className="mb-5 grid gap-3 md:grid-cols-3">
-                <StatCard
-                  icon={WalletMinimal}
-                  title="Total Earned"
-                  subtitle="Paid invoices and paid or released draw requests recorded in MyHomeBro."
-                  count={paymentSummary.paid.count}
-                  amount={paymentSummary.paid.amount}
-                  onClick={() => goPayments({ moneyStatus: "paid" })}
-                />
-                <StatCard
-                  icon={BadgeCheck}
-                  title="Payment Pending"
-                  subtitle="Approved invoices or draw requests still moving through the next payment step."
-                  count={paymentSummary.payment_pending.count}
-                  amount={paymentSummary.payment_pending.amount}
-                  onClick={() => goPayments({ moneyStatus: "payment_pending" })}
-                />
-                <StatCard
-                  icon={AlertTriangle}
-                  title="Issues / Disputes"
-                  subtitle="Invoices or draw requests needing attention, dispute follow-up, or changes."
-                  count={paymentSummary.issues.count}
-                  amount={paymentSummary.issues.amount}
-                  onClick={() => goPayments({ moneyStatus: "issues" })}
-                />
-              </div>
-              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] xl:items-start">
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
-                      Active Work
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-[#18395f]">Track current work stage across active milestones</div>
-                  </div>
-                  <FlowMetricButton
-                    icon={ListTodo}
-                    label="Not Started"
-                    description="Milestones with no recorded progress yet."
-                    count={mStats.notStartedCount}
-                    amount={mStats.notStartedAmount}
-                    onClick={() => navigate(`/app/milestones?filter=incomplete`)}
-                    testId="dashboard-work-not-started"
-                  />
-                  <FlowMetricButton
-                    icon={Target}
-                    label="In Progress"
-                    description="Milestones underway but not yet complete."
-                    count={mStats.inProgressCount}
-                    amount={mStats.inProgressAmount}
-                    onClick={() => navigate(`/app/milestones?filter=incomplete`)}
-                    testId="dashboard-work-in-progress"
-                  />
-                  <FlowMetricButton
-                    icon={CheckCircle2}
-                    label="Completed"
-                    description="Finished milestones that have not yet moved into review."
-                    count={mStats.completedCount}
-                    amount={mStats.completedAmount}
-                    onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
-                    emphasized
-                    testId="dashboard-work-completed"
-                  />
-                  <FlowMetricButton
-                    icon={BadgeCheck}
-                    label="Reviewed"
-                    description="Completed milestones currently in review or approval."
-                    count={mStats.reviewedCount}
-                    amount={mStats.reviewedAmount}
-                    onClick={() => navigate(`/app/milestones`)}
-                    testId="dashboard-work-reviewed"
-                  />
-                  <FlowMetricButton
-                    icon={Receipt}
-                    label="Invoiced"
-                    description="Milestones already tied to an invoice or payment request."
-                    count={mStats.invoicedCount}
-                    amount={mStats.invoicedAmount}
-                    onClick={goInvoices}
-                    testId="dashboard-work-invoiced"
-                  />
-                  {mStats.reworkCount > 0 ? (
-                    <FlowMetricButton
-                      icon={Wrench}
-                      label="Rework Orders"
-                      description="Dispute-driven work orders that still need attention."
-                      count={mStats.reworkCount}
-                      amount={mStats.reworkAmount}
-                      onClick={goReworkMilestones}
-                      testId="dashboard-work-rework"
-                    />
-                  ) : null}
-                </div>
-
-                <div className="flex items-center justify-center">
-                  <div className="flex items-center gap-2 rounded-full border border-[#c9d8e8] bg-[#f2f7fc] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#355d8c] shadow-sm">
-                    <span>Work</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-[#2d5a8f]" />
-                    <span>Invoice</span>
-                    <span className="hidden text-[#89a6c6] xl:inline">|</span>
-                    <span className="hidden normal-case tracking-normal font-medium text-[#58779b] xl:inline">
-                      {workMoneyConnectorLabel}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[#52749a]">
-                      Payment Pipeline
-                    </div>
-                    <div className="mt-1 text-lg font-semibold text-[#18395f]">Track each payment request through approval and payout</div>
-                  </div>
-                  <FlowMetricButton
-                    icon={BadgeDollarSign}
-                    label="Awaiting Customer Approval"
-                    description="Invoices or draw requests waiting on owner or customer review."
-                    count={paymentSummary.awaiting_customer_approval.count}
-                    amount={paymentSummary.awaiting_customer_approval.amount}
-                    onClick={() => goPayments({ moneyStatus: "awaiting_customer_approval" })}
-                    emphasized={paymentSummary.awaiting_customer_approval.count > 0}
-                    testId="dashboard-money-awaiting-customer"
-                  />
-                  <FlowMetricButton
-                    icon={BadgeCheck}
-                    label="Payment Pending"
-                    description="Approved invoices or draw requests still moving through payment."
-                    count={paymentSummary.payment_pending.count}
-                    amount={paymentSummary.payment_pending.amount}
-                    onClick={() => goPayments({ moneyStatus: "payment_pending" })}
-                    testId="dashboard-money-approved"
-                  />
-                  <FlowMetricButton
-                    icon={WalletMinimal}
-                    label="Paid"
-                    description="Invoices or draw requests that have been fully paid or released."
-                    count={paymentSummary.paid.count}
-                    amount={paymentSummary.paid.amount}
-                    onClick={() => goPayments({ moneyStatus: "paid" })}
-                    testId="dashboard-money-paid-out"
-                  />
-                  <FlowMetricButton
-                    icon={AlertTriangle}
-                    label="Issues / Disputes"
-                    description="Invoices or draw requests with disputes, requested changes, or rejection issues."
-                    count={paymentSummary.issues.count}
-                    amount={paymentSummary.issues.amount}
-                    onClick={() => goPayments({ moneyStatus: "issues" })}
-                    testId="dashboard-money-issues"
-                  />
-                </div>
-              </div>
-            </DashboardCard>
-          </DashboardSection>
+          
 
           <DashboardSection
-            title="Payment Records"
-            subtitle="Recent invoices and draw requests, with record type and project class kept visible."
-          >
-            <DashboardCard
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
-            >
-              {paymentTableRows.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-4 text-sm text-slate-500">
-                  No payment records are active right now.
-                </div>
-              ) : (
-                <div className="overflow-x-auto" data-testid="dashboard-payment-records-table">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <th className="py-3 pr-3">Record</th>
-                        <th className="py-3 pr-3">Type</th>
-                        <th className="py-3 pr-3">Project</th>
-                        <th className="py-3 pr-3">Amount</th>
-                        <th className="py-3 pr-3">Status</th>
-                        <th className="py-3">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paymentTableRows.map((record) => (
-                        <tr key={`${record.recordType}-${record.id}`} className="border-b border-slate-100 align-top">
-                          <td className="py-3 pr-3">
-                            <div className="font-semibold text-slate-900">{record.title}</div>
-                            <div className="mt-1 text-xs text-slate-500">
-                              {record.subtitle}
-                              {record.agreementTitle ? ` • ${record.agreementTitle}` : ""}
-                            </div>
-                          </td>
-                          <td className="py-3 pr-3">
-                            <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                              {record.recordTypeLabel}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-3">
-                            <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
-                              {projectClassLabel(record.projectClass)}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-3 font-semibold text-slate-900">{currency(record.amount)}</td>
-                          <td className="py-3 pr-3">
-                            <span
-                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${drawStatusTone(
-                                record.moneyStatus
-                              )}`}
-                            >
-                              {moneyStatusLabel(record.moneyStatus)}
-                            </span>
-                          </td>
-                          <td className="py-3">
-                            <div className="flex flex-wrap gap-2">
-                              {record.recordType === "draw_request" ? (
-                                <>
-                                  {["submitted", "payment_pending"].includes(drawWorkflowStatus(record.raw)) ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => resendDrawLink(record.raw)}
-                                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Resend Link
-                                    </button>
-                                  ) : null}
-                                  {record.raw?.is_awaiting_release && norm(record.raw?.payment_mode) === "escrow" ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => releaseEscrowFunds(record.raw)}
-                                      className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
-                                    >
-                                      Release Funds
-                                    </button>
-                                  ) : null}
-                                  <button
-                                    type="button"
-                                    onClick={() => openDrawEditor(record.raw)}
-                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => openDrawOwnerView(record.raw)}
-                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                  >
-                                    View
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => navigate(`/app/invoices/${record.id}`)}
-                                    className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                  >
-                                    View
-                                  </button>
-                                  {record.agreementId ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => navigate(`/app/agreements/${record.agreementId}`)}
-                                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                                    >
-                                      Agreement
-                                    </button>
-                                  ) : null}
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </DashboardCard>
-          </DashboardSection>
-
-          <DashboardSection
-            title="Payout Snapshot"
-            subtitle="A quick view of completed payouts and retained platform fees."
-          >
-            <DashboardCard
-              testId="dashboard-payout-summary"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)] md:p-5"
-            >
-              <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Total Paid Out</div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
-                    {currency(payoutHistorySummary?.total_paid_out)}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    Platform Fees Retained
-                  </div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
-                    {currency(payoutHistorySummary?.total_platform_fees_retained)}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Payout Count</div>
-                  <div className="mt-2 text-2xl font-extrabold text-slate-900">
-                    {Number(payoutHistorySummary?.payout_count || 0).toLocaleString()}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Recent Payouts</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    {payoutHistoryLoading
-                      ? "Loading payout snapshot..."
-                      : payoutHistoryRecent.length
-                        ? `${payoutHistoryRecent.length} recent payout${payoutHistoryRecent.length === 1 ? "" : "s"}`
-                        : "No completed payouts yet."}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate("/app/payout-history")}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  View full payout history
-                </button>
-              </div>
-
-              {payoutHistoryRecent.length > 0 ? (
-                <div className="mt-4 overflow-x-auto" data-testid="dashboard-payout-history-table">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                        <th className="py-3 pr-3">Date</th>
-                        <th className="py-3 pr-3">Project</th>
-                        <th className="py-3 pr-3">Type</th>
-                        <th className="py-3">Net Payout</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {payoutHistoryRecent.map((row) => (
-                        <tr key={row.id} data-testid={`dashboard-payout-row-${row.record_id || row.id}`} className="border-b border-slate-100 last:border-b-0">
-                          <td className="py-3 pr-3 text-slate-700">{row.payout_date ? new Date(row.payout_date).toLocaleDateString() : "—"}</td>
-                          <td className="py-3 pr-3">
-                            <div className="font-semibold text-slate-900">{row.agreement_label}</div>
-                            <div className="mt-1 text-xs text-slate-500">{row.source_label}</div>
-                          </td>
-                          <td className="py-3 pr-3 text-slate-700">{row.record_type_label}</td>
-                          <td className="py-3 font-semibold text-slate-900">{currency(row.net_payout)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </DashboardCard>
-          </DashboardSection>
-          </>
-          ) : null}
-
-          <DashboardSection
-            title="Bids Snapshot"
-            subtitle="A compact look at bid activity before it becomes an agreement."
+            title="Opportunities Snapshot"
+            subtitle="A compact look at lead and bid activity before it becomes an agreement."
             variant="premium"
             testId="dashboard-bids-wrapper"
           >
@@ -4295,7 +3724,7 @@ export default function ContractorDashboard() {
             >
               <div className="grid gap-3 md:grid-cols-4">
                 <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Open Bids</div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Open Opportunities</div>
                   <div className="mt-2 text-2xl font-extrabold text-white">
                     {Number(bidsSnapshotSummary?.open_bids || 0).toLocaleString()}
                   </div>
@@ -4308,7 +3737,7 @@ export default function ContractorDashboard() {
                   <div className="mt-2 text-2xl font-extrabold text-white">
                     {Number(bidsSnapshotSummary?.under_review_bids || 0).toLocaleString()}
                   </div>
-                  <div className="mt-1 text-xs text-sky-100/70">Active bid conversations</div>
+                  <div className="mt-1 text-xs text-sky-100/70">Active opportunity conversations</div>
                 </div>
                 <div className="rounded-xl border border-white/10 bg-white/10 p-4">
                   <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Awarded</div>
@@ -4330,22 +3759,22 @@ export default function ContractorDashboard() {
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-white">Recent Bids</div>
+                  <div className="text-sm font-semibold text-white">Recent Opportunities</div>
                   <div className="mt-1 text-sm text-sky-100/75">
                     {bidsSnapshotLoading
-                      ? "Loading bids snapshot..."
+                      ? "Loading opportunities snapshot..."
                       : bidsSnapshotRecent.length
-                        ? `${bidsSnapshotRecent.length} recent bid${bidsSnapshotRecent.length === 1 ? "" : "s"}`
-                        : "No bids yet. New bid activity will appear here once it lands."}
+                        ? `${bidsSnapshotRecent.length} recent opportunit${bidsSnapshotRecent.length === 1 ? "y" : "ies"}`
+                        : "No opportunities yet. New lead and bid activity will appear here once it lands."}
                   </div>
                 </div>
                 <button
                   type="button"
-                  onClick={() => navigate("/app/bids")}
+                  onClick={() => navigate("/app/opportunities")}
                   className="rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
                   data-testid="dashboard-bids-view-all"
                 >
-                  View all bids
+                  View all opportunities
                 </button>
               </div>
 
@@ -4390,266 +3819,11 @@ export default function ContractorDashboard() {
           </DashboardSection>
           </div>
 
-          {false ? (
-          <DashboardSection
-            title="Recommended Project Matches"
-            subtitle="Projects that fit your collaboration style, payment preferences, and service capabilities."
-          >
-            <DashboardCard
-              testId="dashboard-recommended-project-matches"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-4 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-            >
-              <div className="grid gap-3 md:grid-cols-4">
-                {[
-                  {
-                    label: "New Opportunities",
-                    value: contractorMatchOpportunities.counts.pending,
-                    tone: "border-blue-200 bg-blue-50 text-blue-800",
-                    description: "Homeowners selected you for review.",
-                  },
-                  {
-                    label: "Strong Matches",
-                    value: contractorMatchOpportunities.counts.strong,
-                    tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-                    description: "Leads aligned with your current profile.",
-                  },
-                  {
-                    label: "Assisted DIY",
-                    value: contractorMatchOpportunities.counts.assisted_diy,
-                    tone: "border-amber-200 bg-amber-50 text-amber-800",
-                    description: "Collaborative projects that welcome homeowner participation.",
-                  },
-                  {
-                    label: "Rescue Projects",
-                    value: contractorMatchOpportunities.counts.rescue,
-                    tone: "border-violet-200 bg-violet-50 text-violet-700",
-                    description: "Partial-completion and finish-my-project opportunities.",
-                  },
-                  {
-                    label: "Escrow Compatible",
-                    value: contractorMatchOpportunities.counts.escrow,
-                    tone: "border-sky-200 bg-sky-50 text-sky-700",
-                    description: "Projects aligned with milestone-based payment workflows.",
-                  },
-                ].map((item) => (
-                  <div key={item.label} className={`rounded-xl border p-4 ${item.tone}`}>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] opacity-80">
-                      {item.label}
-                    </div>
-                    <div className="mt-2 text-2xl font-extrabold text-slate-900">
-                      {Number(item.value || 0).toLocaleString()}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-600">{item.description}</div>
-                  </div>
-                ))}
-              </div>
+          
 
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Why this project matches you</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    These leads look like a fit for your service modes, payment preferences, and project style.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate("/app/public-presence?tab=leads")}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Open lead inbox
-                </button>
-              </div>
+          
 
-              {contractorMatchOpportunities.rows.length ? (
-                <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  {contractorMatchOpportunities.rows.map((row) => (
-                    <div key={row.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <div className="text-sm font-semibold text-slate-900">{row.full_name || row.project_type || "Untitled Lead"}</div>
-                          <div className="mt-1 text-xs text-slate-500">{row.project_type || "Project request"}</div>
-                        </div>
-                        <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${contractorMatchTierClass(row.tier)}`}>
-                          {contractorMatchTierLabel(row.tier)}
-                        </span>
-                      </div>
-                      <div className="mt-2">
-                        <ProjectModeBadge mode={row.requirements?.project_mode || row.project_mode} dataTestId={`dashboard-match-project-mode-${row.id}`} />
-                      </div>
-                      <div className="mt-3 text-sm font-semibold text-slate-900">
-                        {row.matching?.summary || "This opportunity appears aligned with your service profile."}
-                      </div>
-                      {Array.isArray(row.matching?.badges) && row.matching.badges.length ? (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {row.matching.badges.slice(0, 3).map((badge) => (
-                            <span key={badge} className="rounded-full border border-white bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-sm">
-                              {badge}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
-                      {Array.isArray(row.matching?.reasons) && row.matching.reasons.length ? (
-                        <ul className="mt-3 space-y-1 text-xs text-slate-600">
-                          {row.matching.reasons.slice(0, 3).map((reason, index) => (
-                            <li key={`${row.id}-${index}`}>• {reason}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  No strong project matches yet. Add more profile details or review more leads to sharpen this section.
-                </div>
-              )}
-            </DashboardCard>
-          </DashboardSection>
-          ) : null}
-
-          {false ? (
-          <>
-          <DashboardSection
-            title="Milestones"
-            subtitle="Current work status across your active agreements."
-          >
-            <DashboardCard
-              tone="subtle"
-              className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-            >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                <StatCard
-                  icon={Target}
-                  title="All Milestones"
-                  subtitle="Across your active agreements."
-                  count={mStats.totalCount}
-                  amount={mStats.totalAmount}
-                  onClick={() => navigate(`/app/milestones`)}
-                />
-                <StatCard
-                  icon={ListTodo}
-                  title="Incomplete"
-                  subtitle="Not yet completed."
-                  count={mStats.notStartedCount + mStats.inProgressCount}
-                  amount={mStats.notStartedAmount + mStats.inProgressAmount}
-                  onClick={() => navigate(`/app/milestones?filter=incomplete`)}
-                />
-                <StatCard
-                  icon={CheckCircle2}
-                  title="Completed"
-                  subtitle="Completed but not yet invoiced."
-                  count={mStats.completedCount}
-                  amount={mStats.completedAmount}
-                  onClick={() => navigate(`/app/milestones?filter=complete_not_invoiced`)}
-                />
-                <StatCard
-                  icon={BadgeDollarSign}
-                  title="Invoiced"
-                  subtitle="Already tied to an invoice or request."
-                  count={mStats.invoicedCount}
-                  amount={mStats.invoicedAmount}
-                  onClick={goInvoices}
-                />
-                <StatCard
-                  icon={Wrench}
-                  title="Rework Work Orders"
-                  subtitle="Milestones created from disputes."
-                  count={mStats.reworkCount}
-                  amount={mStats.reworkAmount}
-                  onClick={goReworkMilestones}
-                />
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-
-          <DashboardSection
-            title="Invoices"
-            subtitle="Approvals, disputes, and payout status."
-          >
-            <DashboardCard
-              tone="subtle"
-              className="border-slate-200/90 bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]"
-            >
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <StatCard
-                  icon={BadgeDollarSign}
-                  title="Pending Approval"
-                  subtitle="Sent to homeowner — awaiting approval."
-                  count={iStats.pendingCount}
-                  amount={iStats.pendingAmount}
-                  onClick={goInvoices}
-                />
-                <StatCard
-                  icon={BadgeCheck}
-                  title="Approved"
-                  subtitle="Approved — ready for payout."
-                  count={iStats.approvedCount}
-                  amount={iStats.approvedAmount}
-                  onClick={goInvoices}
-                />
-                <StatCard
-                  icon={AlertTriangle}
-                  title="Disputed"
-                  subtitle="Frozen until resolved."
-                  count={iStats.disputedCount}
-                  amount={iStats.disputedAmount}
-                  onClick={goInvoicesDisputed}
-                />
-                <StatCard
-                  icon={WalletMinimal}
-                  title="Earned (YTD)"
-                  subtitle="Jan 1 → today. Click for breakdown."
-                  count={null}
-                  amount={earnedYtdAmount}
-                  onClick={openEarnedModal}
-                />
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-          </>
-          ) : null}
-
-          {false ? (
-          <DashboardSection
-            title="Quick Actions"
-            subtitle="Only the actions that move work and money forward."
-          >
-            <DashboardCard
-              testId="dashboard-quick-actions-row"
-              tone="subtle"
-              className="border-slate-200/90 bg-white p-3.5 shadow-[0_14px_32px_rgba(15,23,42,0.06)]"
-            >
-              <div className="grid gap-2.5 md:grid-cols-2">
-                <ActionButton
-                  icon={FilePlus2}
-                  label="New Agreement"
-                  primary
-                  onClick={goNewAgreement}
-                  hint="Start a new agreement and move it toward signature."
-                />
-                <ActionButton
-                  icon={ListPlus}
-                  label="New Milestone"
-                  onClick={goNewMilestone}
-                  hint="Add a milestone so work, approval, and payment can move forward."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="Send Payment Request"
-                  onClick={goInvoices}
-                  hint="Open payment tools so you can create or send the next request."
-                />
-                <ActionButton
-                  icon={Receipt}
-                  label="Log Expense"
-                  onClick={openNewExpense}
-                  hint="Log an expense and send it to the customer when needed."
-                />
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-          ) : null}
+          
 
           {showActivityFeed ? (
             <DashboardSection
@@ -4682,75 +3856,9 @@ export default function ContractorDashboard() {
         </div>
       ) : null}
 
-      {false ? (
-        <div
-          className="mb-4 rounded-2xl border border-white/28 bg-white/58 p-4 shadow-[0_8px_22px_rgba(15,23,42,0.05)] backdrop-blur-sm"
-          data-testid="dashboard-sms-automation"
-        >
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            SMS Automation
-          </div>
-          <div className="mt-3 grid gap-2 md:grid-cols-4">
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Status
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.sms_automation_enabled ? "Enabled" : "Off"}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Sent 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.sent_sms_count_7d || 0}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Suppressed 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.suppressed_sms_count_7d || 0}
-              </div>
-            </div>
-            <div className="rounded-xl bg-slate-50/90 px-3 py-2.5">
-              <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-                Deferred 7d
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {contractorProfile?.deferred_sms_count_7d || 0}
-              </div>
-            </div>
-          </div>
-          {contractorProfile?.last_sms_automation_decision ? (
-            <div className="mt-3 text-xs text-slate-500">
-              Last decision:{" "}
-              <span className="font-semibold text-slate-700">
-                {contractorProfile.last_sms_automation_decision.reason_code}
-              </span>
-              {" · "}
-              {contractorProfile.last_sms_automation_decision.message_preview || "No preview available."}
-            </div>
-          ) : (
-            <div className="mt-3 text-xs text-slate-500">
-              No automation decisions yet.
-            </div>
-          )}
-        </div>
-      ) : null}
+      
 
-      {false ? (
-        <div className="mb-4 rounded-2xl border border-white/26 bg-white/56 p-3.5 shadow-[0_8px_24px_rgba(15,23,42,0.05)] backdrop-blur-sm">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            MyHomeBro Pricing
-          </div>
-          <div className="mhb-grid" style={{ marginBottom: 0 }}>
-            <StatCard icon={BadgeDollarSign} title={currentRateTitle} subtitle={pricingSubtitle} count={null} amount={null} onClick={null} />
-          </div>
-        </div>
-      ) : null}
+      
 
       {isEmployee ? (
         <>
@@ -4795,47 +3903,7 @@ export default function ContractorDashboard() {
         </>
       ) : null}
 
-      {false ? (
-        <>
-          <div className="mhb-kicker" style={{ marginTop: 14 }}>
-            Invoices
-          </div>
-          <div className="mhb-grid">
-            <StatCard
-              icon={BadgeDollarSign}
-              title="Pending Approval"
-              subtitle="Sent to homeowner — awaiting approval."
-              count={iStats.pendingCount}
-              amount={iStats.pendingAmount}
-              onClick={goInvoices}
-            />
-            <StatCard
-              icon={BadgeCheck}
-              title="Approved"
-              subtitle="Approved — ready for payout."
-              count={iStats.approvedCount}
-              amount={iStats.approvedAmount}
-              onClick={goInvoices}
-            />
-            <StatCard
-              icon={AlertTriangle}
-              title="Disputed"
-              subtitle="Frozen until resolved."
-              count={iStats.disputedCount}
-              amount={iStats.disputedAmount}
-              onClick={goInvoicesDisputed}
-            />
-            <StatCard
-              icon={WalletMinimal}
-              title="Earned (YTD)"
-              subtitle="Jan 1 → today. Click for breakdown."
-              count={null}
-              amount={earnedYtdAmount}
-              onClick={openEarnedModal}
-            />
-          </div>
-        </>
-      ) : null}
+      
 
       </div>
 

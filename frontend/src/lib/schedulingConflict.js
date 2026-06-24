@@ -80,7 +80,7 @@ export function checkSchedulingConflicts({
           conflicting.end_date
         )}). Want to adjust the start date or assign someone else?`,
         actionLabel: "View schedule",
-        actionRoute: "/app/team-schedule",
+        actionRoute: "/app/team/schedule",
         skippable: true,
       });
     }

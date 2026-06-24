@@ -86,7 +86,7 @@ function activationSummary(overrides = {}) {
         dismissed: false,
         title: 'We prepared your business profile',
         description: 'MyHomeBro used public business information to prefill a starting profile. You can edit or remove any prefilled business information.',
-        action_url: '/app/public-presence',
+        action_url: '/app/marketing',
         action_label: 'Open My Profile',
         checklist: ['Confirm business profile'],
       },
@@ -96,8 +96,8 @@ function activationSummary(overrides = {}) {
         dismissed: false,
         title: 'A homeowner request may be waiting',
         description: 'Nothing has been sent to a homeowner without your confirmation.',
-        action_url: '/app/public-presence?tab=leads',
-        action_label: 'Open Public Leads',
+        action_url: '/app/marketing?tab=leads',
+        action_label: 'Open Website Leads',
         checklist: ['Review public leads', 'Accept or decline homeowner request'],
       },
       draft_agreement: {
@@ -311,7 +311,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(page.getByText('Next Actions').first()).toBeVisible();
   await expect(page.getByText('Schedule').first()).toBeVisible();
   await expect(page.getByText('Work and Money').first()).toBeVisible();
-  await expect(page.getByText('Bids Snapshot').first()).toBeVisible();
+  await expect(page.getByText('Opportunities Snapshot').first()).toBeVisible();
   await expect(page.getByTestId('contractor-activation-guide')).toHaveCount(0);
   await expect(page.getByTestId('contractor-contextual-guide-modal')).toHaveCount(0);
   await expect(page.getByText('Project Context')).toHaveCount(0);

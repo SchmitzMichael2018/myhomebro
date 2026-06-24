@@ -49,8 +49,6 @@ import {
 } from "lucide-react";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
-console.log("AgreementList.jsx v2026-03-03 — Customer wording pass");
-
 const fmtMoney = (n) => {
   if (n === null || n === undefined || n === "") return "—";
   const num = Number(n);
@@ -357,8 +355,6 @@ function shortSha(s) {
 
 const AGREEMENT_LIST_CACHE_TTL_MS = 15000;
 const MILESTONE_STATS_CACHE_TTL_MS = 15000;
-const AGREEMENT_LIST_DEBUG_PREFIX = "[AgreementListDebug]";
-let agreementListInstanceSeq = 0;
 const sharedAgreementListLoad = { key: null, promise: null };
 const sharedAgreementListCache = new Map();
 const sharedMilestoneStatsPromises = new Map();
@@ -506,8 +502,6 @@ function fetchMilestoneStats(agreementId, isMsComplete) {
 }
 
 export default function AgreementList() {
-  const instanceIdRef = useRef(++agreementListInstanceSeq);
-  const instanceId = instanceIdRef.current;
   const navigate = useNavigate();
   const location = useLocation();
   const params = useMemo(() => new URLSearchParams(location.search), [location.search]);
@@ -607,45 +601,12 @@ export default function AgreementList() {
   const actionMenuRef = useRef(null);
   const loadSeqRef = useRef(0);
   const msStatsRef = useRef({});
-  const rowsRef = useRef(rows);
   const pageSizeRef = useRef(pageSize);
   const pageNumberRef = useRef(pageNumber);
-
-  console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} render`, {
-    instanceId,
-    path: location.pathname,
-    rowsLength: rows.length,
-    pageSize,
-    pageNumber,
-    showArchived,
-    loading,
-    statusParam,
-    routeFocus,
-    routeFilter,
-    routeRange,
-  });
-
-  useEffect(() => {
-    console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} mount`, {
-      instanceId,
-      path: location.pathname,
-    });
-    return () => {
-      console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} unmount`, {
-        instanceId,
-        path: location.pathname,
-      });
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     msStatsRef.current = msStats || {};
   }, [msStats]);
-
-  useEffect(() => {
-    rowsRef.current = rows;
-  }, [rows]);
 
   useEffect(() => {
     pageSizeRef.current = pageSize;
@@ -797,11 +758,6 @@ export default function AgreementList() {
       range: routeRange,
       status_param: statusParam,
     });
-    const rowsBefore = rowsRef.current?.length || 0;
-    let cacheUsed = false;
-    let networkUsed = false;
-    let reusedInFlight = false;
-
     if (force) {
       sharedAgreementListCache.delete(key);
       sharedMilestoneStatsCache.clear();
@@ -809,19 +765,7 @@ export default function AgreementList() {
     } else {
       const cached = getFreshCachedAgreementList(key);
       if (cached) {
-        cacheUsed = true;
         const seq = ++loadSeqRef.current;
-        console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:start`, {
-          instanceId,
-          seq,
-          source,
-          showArchived,
-          pageSize: pageSizeRef.current,
-          cacheUsed,
-          networkUsed,
-          reusedInFlight,
-          rowsBefore,
-        });
         setLoading(true);
         try {
           if (seq !== loadSeqRef.current) return cached;
@@ -829,16 +773,6 @@ export default function AgreementList() {
           setHmIndex(cached.index);
           setPagination(cached.pagination || normalizeAgreementListResponse(cached.list, effectivePage, effectivePageSize).pagination);
           setLoadError("");
-          console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:end`, {
-            instanceId,
-            seq,
-            source,
-            cacheUsed,
-            networkUsed,
-            reusedInFlight,
-            rowsBefore,
-            rowsAfter: cached.list?.length || 0,
-          });
           return cached;
         } finally {
           if (seq === loadSeqRef.current) {
@@ -850,7 +784,6 @@ export default function AgreementList() {
 
     let promise = sharedAgreementListLoad.key === key ? sharedAgreementListLoad.promise : null;
     if (!promise) {
-      networkUsed = true;
       promise = fetchAgreementListData({
         showArchived,
         pageNumber: effectivePage,
@@ -877,23 +810,9 @@ export default function AgreementList() {
         });
       sharedAgreementListLoad.key = key;
       sharedAgreementListLoad.promise = promise;
-    } else {
-      reusedInFlight = true;
     }
 
     const seq = ++loadSeqRef.current;
-
-    console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:start`, {
-      instanceId,
-      seq,
-      source,
-      showArchived,
-      pageSize: pageSizeRef.current,
-      cacheUsed,
-      networkUsed,
-      reusedInFlight,
-      rowsBefore,
-    });
 
     setLoading(true);
     try {
@@ -903,16 +822,6 @@ export default function AgreementList() {
       setHmIndex(index);
       setPagination(nextPagination || normalizeAgreementListResponse(list, effectivePage, effectivePageSize).pagination);
       setLoadError("");
-      console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} load:end`, {
-        instanceId,
-        seq,
-        source,
-        cacheUsed,
-        networkUsed,
-        reusedInFlight,
-        rowsBefore,
-        rowsAfter: list?.length || 0,
-      });
     } catch (e) {
       console.error(e);
       setLoadError("Failed to load agreements.");
@@ -953,26 +862,8 @@ export default function AgreementList() {
   useEffect(() => {
     const isBackendPage = Boolean(pagination?.isPaginated);
     const visibleRows = isBackendPage ? rows : rows.slice((pageNumber - 1) * pageSize, pageNumber * pageSize);
-    const visibleIds = visibleRows.map((r) => r.id);
-    const cachedIds = [];
-    const fetchedIds = [];
-    visibleIds.forEach((id) => {
-      if (msStatsRef.current[id] || getFreshCachedMilestoneStats(id)) {
-        cachedIds.push(id);
-      } else {
-        fetchedIds.push(id);
-      }
-    });
-    console.log(`${AGREEMENT_LIST_DEBUG_PREFIX} stats-effect`, {
-      instanceId,
-      rowsLength: rows.length,
-      pageSize,
-      visibleAgreementIds: visibleIds,
-      cachedIds,
-      fetchedIds,
-    });
     fetchStatsFor(visibleRows);
-  }, [rows, pageSize, pageNumber, pagination?.isPaginated, fetchStatsFor, instanceId]);
+  }, [rows, pageSize, pageNumber, pagination?.isPaginated, fetchStatsFor]);
 
   const homeownerDisplay = useCallback(
     (r) => {

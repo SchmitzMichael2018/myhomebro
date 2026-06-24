@@ -819,7 +819,7 @@ export default function BusinessDashboard() {
         label: "Awaiting approval",
         count: awaitingApprovalCount,
         description: "Invoices or draw requests waiting on customer approval.",
-        href: "/app/invoices?money_status=payment_pending",
+        href: "/app/payments?money_status=payment_pending",
         tone: awaitingApprovalCount > 0 ? "warn" : "default",
       },
       {
@@ -843,7 +843,7 @@ export default function BusinessDashboard() {
         label: "Quote requests / new leads",
         count: quoteFollowUpCount,
         description: "New project requests that need follow-up.",
-        href: "/app/bids",
+        href: "/app/opportunities",
         tone: quoteFollowUpCount > 0 ? "info" : "default",
       },
       {
@@ -1558,7 +1558,7 @@ export default function BusinessDashboard() {
                 { label: "Unsigned", count: unsignedAgreementCount, amount: money(revenueMetrics.total_pipeline_value) },
                 { label: "Quote follow-up", count: quoteFollowUpCount, amount: money(snapshot.total_revenue) },
               ]}
-              href="/app/invoices?money_status=payment_pending"
+              href="/app/payments?money_status=payment_pending"
               actionLabel="View Approvals"
               tone={awaitingApprovalCount > 0 ? "warn" : "default"}
             />

@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { ArrowRight, ExternalLink, RefreshCw } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import DashboardSection from "../components/dashboard/DashboardSection.jsx";
+import HubTabs from "../components/dashboard/HubTabs.jsx";
+import { customerHubTabs } from "../components/dashboard/hubTabsConfig.js";
 import { buildUnifiedPaymentRecords, moneyStatusLabel, projectClassLabel } from "../utils/paymentRecords.js";
 import { normalizeProjectClass } from "../utils/projectClass.js";
 
@@ -197,17 +199,17 @@ function normalizeAgreements(items) {
     .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
 }
 
-function normalizeBidRow(row) {
+function normalizeOpportunityRow(row) {
   return {
     ...row,
-    projectTitle: row.project_title || row.project_name || `Bid #${row.bid_id || row.id}`,
+    projectTitle: row.project_title || row.project_name || `Opportunity #${row.bid_id || row.id}`,
     customerName: row.customer_name || row.customer_email || "Customer",
     projectClass: normalizeProjectClass(row.project_class),
     projectClassLabel: row.project_class_label || projectClassLabel(row.project_class),
     statusLabel: row.status_label || statusLabel(row.status, "Submitted"),
     nextActionLabel: row.next_action?.label || "View details",
     agreementId: row.linked_agreement_id || null,
-    actionHref: row.linked_agreement_url || "/app/bids",
+    actionHref: row.linked_agreement_url || "/app/opportunities",
     submittedAt: row.submitted_at || null,
   };
 }
@@ -241,15 +243,16 @@ function normalizePaymentRow(record, agreementsById) {
         ? `/app/invoices/${record.id}`
         : record.agreementId
           ? `/app/agreements/${record.agreementId}`
-          : "/app/invoices",
+          : "/app/payments",
     actionLabel: record.recordType === "invoice" ? "Open Invoice" : "Open Agreement",
   };
 }
 
 export default function CustomerRecordsPage() {
+  const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState([]);
-  const [bids, setBids] = useState([]);
+  const [opportunities, setOpportunities] = useState([]);
   const [agreements, setAgreements] = useState([]);
   const [payments, setPayments] = useState([]);
   const [loadError, setLoadError] = useState("");
@@ -272,7 +275,7 @@ export default function CustomerRecordsPage() {
       if (!active) return;
 
       const errors = [];
-      const [requestsRes, bidsRes, agreementsRes, invoicesRes, drawsRes] = settled;
+      const [requestsRes, opportunitiesRes, agreementsRes, invoicesRes, drawsRes] = settled;
 
       if (requestsRes.status === "fulfilled") {
         setRequests(normalizeListPayload(requestsRes.value?.data));
@@ -282,12 +285,12 @@ export default function CustomerRecordsPage() {
         console.error("Failed to load customer requests:", requestsRes.reason);
       }
 
-      if (bidsRes.status === "fulfilled") {
-        setBids(normalizeListPayload(bidsRes.value?.data));
+      if (opportunitiesRes.status === "fulfilled") {
+        setOpportunities(normalizeListPayload(opportunitiesRes.value?.data));
       } else {
-        setBids([]);
-        errors.push("bids");
-        console.error("Failed to load customer bids:", bidsRes.reason);
+        setOpportunities([]);
+        errors.push("opportunities");
+        console.error("Failed to load customer opportunities:", opportunitiesRes.reason);
       }
 
       if (agreementsRes.status === "fulfilled") {
@@ -338,7 +341,13 @@ export default function CustomerRecordsPage() {
   }, []);
 
   const requestRows = useMemo(() => normalizeRequests(requests), [requests]);
-  const bidRows = useMemo(() => bids.map(normalizeBidRow).sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || ""))), [bids]);
+  const opportunityRows = useMemo(
+    () =>
+      opportunities
+        .map(normalizeOpportunityRow)
+        .sort((a, b) => String(b.submittedAt || "").localeCompare(String(a.submittedAt || ""))),
+    [opportunities]
+  );
   const agreementRows = useMemo(() => normalizeAgreements(agreements), [agreements]);
   const paymentRows = useMemo(
     () =>
@@ -351,12 +360,21 @@ export default function CustomerRecordsPage() {
   const summary = useMemo(
     () => ({
       activeRequests: requestRows.filter((row) => normalize(row.status) !== "converted").length,
-      bids: bidRows.length,
+      opportunities: opportunityRows.length,
       agreements: agreementRows.length,
       payments: paymentRows.length,
     }),
-    [agreementRows.length, bidRows.length, paymentRows.length, requestRows]
+    [agreementRows.length, opportunityRows.length, paymentRows.length, requestRows]
   );
+  const activeCustomerSection = useMemo(() => {
+    if (location.pathname.endsWith("/requests")) return "requests";
+    if (location.pathname.endsWith("/agreements")) return "agreements";
+    return "activity";
+  }, [location.pathname]);
+  const showRequests = activeCustomerSection === "activity" || activeCustomerSection === "requests";
+  const showOpportunities = activeCustomerSection === "activity";
+  const showAgreements = activeCustomerSection === "activity" || activeCustomerSection === "agreements";
+  const showPayments = activeCustomerSection === "activity";
 
   const requestColumns = [
     {
@@ -399,7 +417,7 @@ export default function CustomerRecordsPage() {
     },
   ];
 
-  const bidColumns = [
+  const opportunityColumns = [
     {
       key: "project",
       label: "Project",
@@ -430,10 +448,10 @@ export default function CustomerRecordsPage() {
       label: "Actions",
       render: (row) => (
         <Link
-          to={row.actionHref || "/app/bids"}
+          to={row.actionHref || "/app/opportunities"}
           className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
         >
-          {row.agreementId ? "Open Agreement" : "Open Bid Workspace"}
+          {row.agreementId ? "Open Agreement" : "Open Opportunities"}
           <ArrowRight size={14} />
         </Link>
       ),
@@ -535,8 +553,8 @@ export default function CustomerRecordsPage() {
   return (
     <ContractorPageSurface
       eyebrow="Customers"
-      title="Customers"
-      subtitle="A single view of requests, bids, agreements, and payments across residential and commercial work."
+      title="Customer Activity"
+      subtitle="A single view of requests, opportunities, agreements, and payments across residential and commercial work."
       actions={
         <button
           type="button"
@@ -548,6 +566,8 @@ export default function CustomerRecordsPage() {
         </button>
       }
     >
+      <HubTabs tabs={customerHubTabs} />
+
       {loadError ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {loadError}
@@ -563,8 +583,8 @@ export default function CustomerRecordsPage() {
           testId="customer-records-summary-requests"
         />
         <SummaryCard
-          label="Bids"
-          value={String(summary.bids)}
+          label="Opportunities"
+          value={String(summary.opportunities)}
           sublabel="Residential + commercial"
           tone="indigo"
           testId="customer-records-summary-bids"
@@ -589,6 +609,7 @@ export default function CustomerRecordsPage() {
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-sm text-slate-600">Loading customer records...</div>
       ) : (
         <div className="space-y-6">
+          {showRequests ? (
           <DashboardSection
             title="My Requests"
             subtitle="Recent intake and request records."
@@ -605,24 +626,28 @@ export default function CustomerRecordsPage() {
               />
             </section>
           </DashboardSection>
+          ) : null}
 
+          {showOpportunities ? (
           <DashboardSection
-            title="Bids"
-            subtitle="Bid activity across residential and commercial projects."
-            actions={<SectionActionLink to="/app/bids" label="View all bids" />}
+            title="Opportunities"
+            subtitle="Opportunity activity across residential and commercial projects."
+            actions={<SectionActionLink to="/app/opportunities" label="View all opportunities" />}
             testId="customer-records-bids"
           >
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               <SectionTable
-                rows={bidRows.slice(0, RECENT_LIMIT)}
-                columns={bidColumns}
+                rows={opportunityRows.slice(0, RECENT_LIMIT)}
+                columns={opportunityColumns}
                 rowKey={(row) => row.bid_id || row.id}
-                emptyText="No bids yet. New bid activity will appear here once it lands."
+                emptyText="No opportunities yet. New lead and bid activity will appear here once it lands."
                 testId="customer-records-bids-table"
               />
             </section>
           </DashboardSection>
+          ) : null}
 
+          {showAgreements ? (
           <DashboardSection
             title="Agreements"
             subtitle="Signed and draft agreements for your customers."
@@ -639,11 +664,13 @@ export default function CustomerRecordsPage() {
               />
             </section>
           </DashboardSection>
+          ) : null}
 
+          {showPayments ? (
           <DashboardSection
             title="Payments"
             subtitle="Invoices and draw records in one payment history."
-            actions={<SectionActionLink to="/app/invoices" label="View all payments" />}
+            actions={<SectionActionLink to="/app/payments" label="View all payments" />}
             testId="customer-records-payments"
           >
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -656,6 +683,7 @@ export default function CustomerRecordsPage() {
               />
             </section>
           </DashboardSection>
+          ) : null}
         </div>
       )}
     </ContractorPageSurface>

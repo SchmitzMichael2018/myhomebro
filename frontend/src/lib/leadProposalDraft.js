@@ -324,7 +324,7 @@ export function buildLeadProposalDraft({ leadSummary = {}, requestSnapshot = {},
 
 export function buildLeadAgreementAssistantState(
   row = {},
-  { currentRoute = "/app/bids", brandVoice = {} } = {}
+  { currentRoute = "/app/opportunities", brandVoice = {} } = {}
 ) {
   const summary = leadSummaryFromRow(row);
   const snapshot = summary.request_snapshot || {};

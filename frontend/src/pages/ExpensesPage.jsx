@@ -4,8 +4,6 @@ import toast from "react-hot-toast";
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
-console.log("ExpensesPage.jsx v2026-02-20e — resend-safe: only sign drafts; resend uses send_to_homeowner");
-
 // ---------- helpers ----------
 const todayISO = () => new Date().toISOString().slice(0, 10);
 

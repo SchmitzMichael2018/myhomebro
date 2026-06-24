@@ -764,15 +764,15 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
     });
   });
 
-  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("contractor-bids-title")).toBeVisible();
   await expect(page.getByTestId("leads-tab-new")).toContainText("New Leads");
   await expect(page.getByTestId("leads-tab-follow-up")).toContainText("Follow-Up");
-  await expect(page.getByTestId("leads-tab-active")).toContainText("Active Bids");
+  await expect(page.getByTestId("leads-tab-active")).toContainText("Active Opportunities");
   await expect(page.getByTestId("leads-tab-closed")).toContainText("Closed / Archived");
   await expect(page.getByTestId("bids-summary-new-leads")).toContainText("New Leads");
   await expect(page.getByTestId("bids-summary-follow-up")).toContainText("Follow-Up");
-  await expect(page.getByTestId("bids-summary-active-bids")).toContainText("Active Bids");
+  await expect(page.getByTestId("bids-summary-active-bids")).toContainText("Active Opportunities");
   await expect(page.getByTestId("bids-summary-closed")).toContainText("Closed / Archived");
   await expect(page.getByTestId("bids-summary-total")).toContainText("Total Opportunities");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
@@ -965,7 +965,7 @@ test("contractor bids workspace renders property management work orders and rout
     });
   });
 
-  await page.goto("/app/bids?source=property_work_order", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities?source=property_work_order", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("leads-tab-work-orders")).toContainText("Work Orders");
   await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Property Management Work Order");
   await expect(page.getByTestId("lead-source-opportunity-31")).toContainText("Property Management Work Order");
@@ -990,7 +990,7 @@ test("contractor bids workspace renders property management work orders and rout
   await page.getByTestId("lead-row-action-opportunity-32").click();
   await expect(page).toHaveURL("/app/agreements/932/wizard?step=1");
 
-  await page.goto("/app/bids?source=property_work_order", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities?source=property_work_order", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-opportunity-33").click();
   await expect(page).toHaveURL("/app/agreements/933/wizard?step=1");
 });
@@ -1209,7 +1209,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
     });
   });
 
-  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("response-prep-section")).toBeVisible();
   await expect(page.getByTestId("response-starter-section")).toBeVisible();
@@ -1404,7 +1404,7 @@ test("quote requests open the convert-to-agreement panel and persist the draft i
     });
   });
 
-  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   const convertButton = page.getByTestId("lead-row-action-lead-9");
   await expect(convertButton).toBeVisible();
   await convertButton.click();
@@ -1578,7 +1578,7 @@ test("contractor bids workspace keeps learning signals hidden when fallback draf
     });
   });
 
-  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
   await page.getByTestId("create-bid-action").click();
   const noTemplateReview = page.getByTestId("step1-no-template-review");
@@ -1640,7 +1640,7 @@ test("contractor bids workspace can save a lead for follow-up and reopen it", as
     });
   });
 
-  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
   await page.getByTestId("follow-up-action-button").click();
@@ -1718,7 +1718,7 @@ test("contractor bids workspace can create a bid from a follow-up lead", async (
     await route.fallback();
   });
 
-  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await page.getByTestId("leads-tab-follow-up").click();
   await page.getByTestId("lead-row-action-lead-8").click();
   await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
@@ -1769,6 +1769,6 @@ test("contractor bids workspace shows a friendly empty state", async ({ page }) 
     });
   });
 
-  await page.goto("/app/bids", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("bids-empty")).toContainText("No opportunities match your current filters");
 });

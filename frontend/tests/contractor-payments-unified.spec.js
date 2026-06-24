@@ -105,10 +105,10 @@ test("unified payments page filters invoices and draw requests by project class,
 }) => {
   await mockPaymentsPage(page);
 
-  await page.goto("/app/invoices", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/payments", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("payments-page")).toBeVisible();
-  await expect(page.getByText("Payments")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payments" })).toBeVisible();
   await expect(page.locator("text=Awaiting Customer Approval").first()).toBeVisible();
   await expect(page.locator("text=Payment Pending").first()).toBeVisible();
   await expect(page.locator("text=Paid").first()).toBeVisible();

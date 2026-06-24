@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import HubTabs from "../components/dashboard/HubTabs.jsx";
+import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
 
 function formatDateTime(value) {
   if (!value) return "—";
@@ -194,6 +196,8 @@ export default function TeamOverviewPage() {
       variant="operational"
     >
       <div className="space-y-6">
+        <HubTabs tabs={teamHubTabs} />
+
         <section data-testid="team-overview-actions" className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -203,9 +207,9 @@ export default function TeamOverviewPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {quickActionButton("Assign Work", "/app/assignments", "team-overview-assign-work", "primary")}
-              {quickActionButton("Invite Subcontractor", "/app/subcontractors", "team-overview-invite-subcontractor")}
-              {quickActionButton("Add Employee", "/app/team", "team-overview-add-employee")}
+              {quickActionButton("Assign Work", "/app/team/assignments", "team-overview-assign-work", "primary")}
+              {quickActionButton("Invite Subcontractor", "/app/team/subcontractors", "team-overview-invite-subcontractor")}
+              {quickActionButton("Add Employee", "/app/team/members", "team-overview-add-employee")}
               {quickActionButton("Review Submitted Work", "/app/reviewer/queue", "team-overview-review-work")}
             </div>
           </div>
@@ -404,14 +408,14 @@ export default function TeamOverviewPage() {
                         <div className="flex flex-wrap justify-end gap-2">
                           <button
                             type="button"
-                            onClick={() => navigate(`/app/assignments?subaccount=${row.id}`)}
+                            onClick={() => navigate(`/app/team/assignments?subaccount=${row.id}`)}
                             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                           >
                             View Work
                           </button>
                           <button
                             type="button"
-                            onClick={() => navigate(`/app/team-schedule?subaccount=${row.id}`)}
+                            onClick={() => navigate(`/app/team/schedule?subaccount=${row.id}`)}
                             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                           >
                             Schedule

@@ -76,8 +76,8 @@ async function mockPublicPresenceWithOpportunities(page, initialRows) {
             dismissed: false,
             title: 'A homeowner request may be waiting',
             description: 'Nothing has been sent to a homeowner without your confirmation.',
-            action_url: '/app/public-presence?tab=leads',
-            action_label: 'Open Public Leads',
+            action_url: '/app/marketing?tab=leads',
+            action_label: 'Open Website Leads',
           },
           draft_agreement: {
             visible: hasConverted,
@@ -130,7 +130,7 @@ async function mockPublicPresenceWithOpportunities(page, initialRows) {
   return state;
 }
 
-test('Public Leads tab loads ContractorOpportunity rows and accepts into draft agreement handoff', async ({ page }) => {
+test('Website Leads tab loads ContractorOpportunity rows and accepts into draft agreement handoff', async ({ page }) => {
   await mockPublicPresenceWithOpportunities(page, [
     {
       id: 101,
@@ -159,8 +159,8 @@ test('Public Leads tab loads ContractorOpportunity rows and accepts into draft a
     },
   ]);
 
-  await page.goto('/app/public-presence?tab=leads', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing?tab=leads', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
 
   await expect(page.getByTestId('contractor-contextual-guide-modal')).toContainText(
     'A homeowner selected your business for project review.'
@@ -184,11 +184,11 @@ test('Public Leads tab loads ContractorOpportunity rows and accepts into draft a
   await expect(page).toHaveURL(/\/app\/agreements\/901\/wizard\?step=1$/);
 });
 
-test('Public Leads tab shows opportunity empty state', async ({ page }) => {
+test('Website Leads tab shows opportunity empty state', async ({ page }) => {
   await mockPublicPresenceWithOpportunities(page, []);
 
-  await page.goto('/app/public-presence?tab=leads', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing?tab=leads', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
 
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'No homeowner requests yet. Share your public profile or wait for matching project requests.'

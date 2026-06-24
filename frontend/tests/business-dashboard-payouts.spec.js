@@ -393,7 +393,7 @@ test('business dashboard shows payout reporting and links to full history', asyn
   await expect(page.getByTestId('dashboard-summary-projects')).toHaveAttribute('href', '/app/agreements');
   await expect(page.getByTestId('dashboard-summary-approvals')).toHaveAttribute(
     'href',
-    '/app/invoices?money_status=payment_pending'
+    '/app/payments?money_status=payment_pending'
   );
   await expect(page.getByTestId('dashboard-summary-payouts')).toHaveAttribute(
     'href',

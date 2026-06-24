@@ -13,7 +13,6 @@ import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
 import {
   Bot,
-  BriefcaseBusiness,
   CalendarDays,
   ClipboardList,
   CreditCard,
@@ -37,7 +36,7 @@ const NAV_HINTS = {
   "/app/dashboard": "See what needs attention and what to do next",
   "/app/assistant": "Start new work with AI guidance across agreements, templates, leads, and setup",
   "/app/business": "View revenue, activity, and business performance",
-  "/app/team-overview": "See operational attention counts and team work at a glance",
+  "/app/team": "See team activity, employees, subcontractors, assignments, and schedule",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
   "/app/templates": "Build reusable project templates and milestone structures",
@@ -45,14 +44,9 @@ const NAV_HINTS = {
   "/app/admin/maintenance": "Monitor maintenance contracts, work orders, renewals, and service attention",
   "/app/admin/reimbursements": "Review and record approved escrow reimbursements before release",
   "/app/milestones": "Track active work and what's ready to invoice",
-  "/app/subcontractors": "Manage your team, subcontractors, and assignments",
-  "/app/public-presence": "Showcase your work and build trust with customers",
-  "/app/bids": "Review new leads and active bids in one place",
-  "/app/customer-records": "See requests, bids, agreements, and payments in one place",
-  "/app/assignments": "Track work assigned to you and your team",
-  "/app/team-schedule": "View upcoming work, deadlines, and project timelines",
-  "/app/team": "Manage your team, subcontractors, and assignments",
-  "/app/invoices": "Send payment requests and track approvals, disputes, and payouts",
+  "/app/marketing": "Manage your public profile, gallery, reviews, leads, QR, and website readiness",
+  "/app/opportunities": "Review new leads and active opportunities in one place",
+  "/app/payments": "Send payment requests and track approvals, disputes, and payouts",
   "/app/customers": "View and manage your clients and project history",
   "/app/calendar": "View upcoming work, deadlines, and project timelines",
   "/app/expenses": "Track project expenses and job costs",
@@ -362,20 +356,15 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
         <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
-        <Item to={`${APP_BASE}/team-overview`} label="Team Overview" icon={Gauge} />
+        <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
-        <Item to={`${APP_BASE}/bids`} label="Bids" icon={ClipboardList} />
+        <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
         <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
-        <Item to={`${APP_BASE}/subcontractors`} label="Subcontractors" icon={Wrench} count={Number(attentionCounts.pending_invites_count || 0)} />
-        <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
-        <Item to={`${APP_BASE}/assignments`} label="Assignments" icon={BriefcaseBusiness} count={Number(attentionCounts.assigned_action_count || 0)} />
-        <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
-        <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
-        <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
+        <Item to={`${APP_BASE}/marketing`} label="Marketing" icon={Globe} />
+        <Item to={`${APP_BASE}/payments`} label="Payments" icon={CreditCard} />
         <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
-        <Item to={`${APP_BASE}/customer-records`} label="Records" icon={ClipboardList} />
         <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
         <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
         <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />
@@ -620,37 +609,32 @@ export default function Sidebar({ variant = "desktop" }) {
               <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
               <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
-              <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
+              <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
             </NavGroup>
 
-            <NavGroup label="Users" className="pt-1">
-              <Item to={`${APP_BASE}/team-overview`} label="Team Overview" icon={Gauge} />
-              <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
+            <NavGroup label="Customers & Team" className="pt-1">
+              <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
               <Item
-                to={`${APP_BASE}/subcontractors`}
-                label="Subcontractors"
-                icon={Wrench}
-                count={Number(attentionCounts.pending_invites_count || 0)}
+                to={`${APP_BASE}/team`}
+                label="Team"
+                icon={Users}
+                count={
+                  Number(attentionCounts.pending_invites_count || 0) +
+                  Number(attentionCounts.assigned_action_count || 0)
+                }
               />
-              <Item
-                to={`${APP_BASE}/assignments`}
-                label="Assignments"
-                icon={BriefcaseBusiness}
-                count={Number(attentionCounts.assigned_action_count || 0)}
-              />
-              <Item to={`${APP_BASE}/team-schedule`} label="Team Schedule" icon={CalendarDays} />
             </NavGroup>
 
             <NavGroup label="Finance" className="pt-1">
-              <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
-              <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
-              <Item to={`${APP_BASE}/invoices`} label="Invoices" icon={CreditCard} />
+              <Item to={`${APP_BASE}/business`} label="Insights" icon={Gauge} />
+              <Item to={`${APP_BASE}/payments`} label="Payments" icon={CreditCard} />
+              <Item to={`${APP_BASE}/payouts/history`} label="Payout History" icon={HandCoins} />
               <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
               <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />
             </NavGroup>
 
             <NavGroup label="Tools" className="pt-1">
-              <Item to={`${APP_BASE}/public-presence`} label="Public Presence" icon={Globe} />
+              <Item to={`${APP_BASE}/marketing`} label="Marketing" icon={Globe} />
               <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
               <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
               <Item

@@ -13,8 +13,8 @@ const MODAL_COPY = {
     actionLabel: "Review Profile",
   },
   public_leads: {
-    title: "Public Leads are homeowner requests",
-    message: "Public Leads are homeowner requests connected to your profile and service area.",
+    title: "Website leads are homeowner requests",
+    message: "Website leads are homeowner requests connected to your profile and service area.",
     details: ["Review the request details, then accept or decline when you are ready."],
     actionLabel: "Open Leads Workspace",
   },
@@ -22,7 +22,7 @@ const MODAL_COPY = {
     title: "A homeowner selected your business",
     message: "A homeowner selected your business for project review.",
     details: ["Nothing has been sent to a homeowner without your confirmation."],
-    actionLabel: "Review Public Leads",
+    actionLabel: "Review Website Leads",
   },
   draft_agreement: {
     title: "Draft agreement prepared",

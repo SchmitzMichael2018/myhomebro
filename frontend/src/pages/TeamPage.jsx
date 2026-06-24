@@ -6,6 +6,8 @@ import { useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import HubTabs from "../components/dashboard/HubTabs.jsx";
+import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
 
 const ROLE_OPTIONS = [
   { value: "employee_readonly", label: "Read-only" },
@@ -244,12 +246,14 @@ export default function TeamPage() {
   return (
     <ContractorPageSurface
       eyebrow="Team"
-      title="Your Team"
+      title="Employees"
       subtitle="Create employee logins, review workload, and keep the team connected to current jobs."
       className="max-w-[1440px]"
       variant="operational"
     >
     <div className="space-y-6">
+      <HubTabs tabs={teamHubTabs} />
+
       <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="mt-1 text-xs text-gray-400">
@@ -259,11 +263,11 @@ export default function TeamPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => navigate("/app/team-overview")}
+            onClick={() => navigate("/app/team")}
             className="inline-flex items-center rounded-md border bg-white px-3 py-2 text-sm font-semibold hover:bg-gray-50"
             type="button"
           >
-            Team Overview
+            Overview
           </button>
           <button
             onClick={fetchSubaccounts}
@@ -424,14 +428,14 @@ export default function TeamPage() {
                       <td className="px-4 py-3 text-right">
                         <div className="flex flex-wrap justify-end gap-2">
                           <button
-                            onClick={() => navigate(`/app/assignments?subaccount=${sub.id}`)}
+                            onClick={() => navigate(`/app/team/assignments?subaccount=${sub.id}`)}
                             className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             type="button"
                           >
                             View Work
                           </button>
                           <button
-                            onClick={() => navigate(`/app/team-schedule?subaccount=${sub.id}`)}
+                            onClick={() => navigate(`/app/team/schedule?subaccount=${sub.id}`)}
                             className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             type="button"
                           >

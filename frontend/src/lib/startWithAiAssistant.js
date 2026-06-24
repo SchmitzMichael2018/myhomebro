@@ -32,7 +32,7 @@ const INTENT_CONFIG = {
   create_lead: {
     label: "Create lead",
     requiredFields: ["full_name", "phone"],
-    destination: "/app/public-presence",
+    destination: "/app/marketing",
     destinationLabel: "Open Lead Inbox",
     summary: "Capture or move a lead forward without leaving the current workflow.",
   },
@@ -359,13 +359,13 @@ function inferDestination(input) {
     return { label: "Customers", target: "/app/customers" };
   }
   if (text.includes("invoice")) {
-    return { label: "Invoices", target: "/app/invoices" };
+    return { label: "Payments", target: "/app/payments" };
   }
   if (text.includes("calendar")) {
     return { label: "Calendar", target: "/app/calendar" };
   }
   if (text.includes("lead") || text.includes("public presence") || text.includes("intake")) {
-    return { label: "Lead Inbox", target: "/app/public-presence" };
+    return { label: "Opportunities", target: "/app/opportunities" };
   }
   if (text.includes("agreement")) {
     return { label: "Agreements", target: "/app/agreements" };

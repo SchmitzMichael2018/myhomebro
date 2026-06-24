@@ -280,11 +280,11 @@ test("contractor can open subcontractors hub, invite, assign work, and review su
     });
   });
 
-  await page.goto("/app/subcontractors", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/subcontractors", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("subcontractors-page-title")).toBeVisible();
-  await expect(page.getByText("Pending Invites")).toBeVisible();
-  await expect(page.getByText("Active Subs")).toBeVisible();
+  await expect(page.getByRole("main").getByText("Awaiting Review", { exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByText("Active Work", { exact: true })).toBeVisible();
   await expect(page.getByTestId("subcontractors-workflow-hint")).toContainText(
     "Wait for the subcontractor to accept the invitation before assigning work."
   );
@@ -490,7 +490,7 @@ test("contractor can request license from subcontractor before creating assignme
     });
   });
 
-  await page.goto("/app/subcontractors", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/subcontractors", { waitUntil: "domcontentloaded" });
 
   await page.getByTestId("subcontractors-new-assignment-button").click();
   const selects = page.locator("select");

@@ -19,8 +19,6 @@ import {
 // ✅ NEW: AI Advisor (read-only, evidence-context-based)
 import DisputeAIAdvisor from "../components/ai/DisputeAIAdvisor.jsx";
 
-console.log("DisputesPages.jsx v2026-01-21 (AI Advisor added to Details modal)");
-
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────

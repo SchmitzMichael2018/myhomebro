@@ -186,7 +186,9 @@ async function mockDashboard(page, options = {}) {
         id: 77,
         created_at: '2026-03-01T10:00:00Z',
         business_name: 'MHB Commercial',
+        contractor_onboarding_status: 'complete',
         city: 'Dallas',
+        skills: ['General Contracting'],
         payouts_enabled: true,
         charges_enabled: true,
       }),
@@ -445,7 +447,7 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-payment-records-table')).toHaveCount(0);
   await expect(page.getByTestId('dashboard-payout-summary')).toHaveCount(0);
   await expect(page.getByTestId('dashboard-bids-summary')).toBeVisible();
-  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Open Bids');
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Open Opportunities');
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Under Review');
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Awarded');
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Not Selected / Declined');
@@ -462,26 +464,26 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.locator('text=/failed.*follow-up/i').first()).toBeVisible();
 
   await page.getByTestId('dashboard-work-awaiting-review').click();
-  await expect(page).toHaveURL(/\/app\/reviewer\/queue/);
+  await expect(page).toHaveURL(/\/app\/milestones/);
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
   await page.getByTestId('dashboard-money-payment-pending').click();
-  await expect(page).toHaveURL(/\/app\/invoices\?money_status=payment_pending/);
+  await expect(page).toHaveURL(/\/app\/payments\?money_status=payment_pending/);
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('dashboard-money-paid')).toContainText('Paid');
 });
 
-test('contractor dashboard view-all bids shortcut routes to the unified bids workspace', async ({ page }) => {
+test('contractor dashboard view-all opportunities shortcut routes to the unified opportunities workspace', async ({ page }) => {
   await mockDashboard(page);
 
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('dashboard-bids-view-all')).toBeVisible();
   await page.getByTestId('dashboard-bids-view-all').click();
-  await expect(page).toHaveURL(/\/app\/bids$/);
+  await expect(page).toHaveURL(/\/app\/opportunities$/);
 });
 
-test('contractor dashboard shows a clean empty bids snapshot when there are no bids', async ({ page }) => {
+test('contractor dashboard shows a clean empty opportunities snapshot when there are no opportunities', async ({ page }) => {
   await mockDashboard(page, {
     bidRows: [],
     bidSummary: {
@@ -499,6 +501,6 @@ test('contractor dashboard shows a clean empty bids snapshot when there are no b
 
   await expect(page.getByTestId('dashboard-bids-summary')).toBeVisible();
   await expect(page.getByTestId('dashboard-bids-summary')).toContainText('0');
-  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('No bids yet');
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('No opportunities yet');
   await expect(page.getByTestId('dashboard-bids-recent-table')).toHaveCount(0);
 });

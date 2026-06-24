@@ -177,7 +177,7 @@ test("customer records dashboard renders requests, bids, agreements, and payment
     });
   });
 
-  await page.goto("/app/customer-records", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/customers/activity", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("customer-records-summary-requests")).toContainText("1");
   await expect(page.getByTestId("customer-records-summary-bids")).toContainText("2");
@@ -190,9 +190,9 @@ test("customer records dashboard renders requests, bids, agreements, and payment
   await expect(page.getByTestId("customer-records-agreements-table")).toContainText("Commercial Renovation");
   await expect(page.getByTestId("customer-records-payments-table")).toContainText("Commercial Renovation");
 
-  await expect(page.getByRole("link", { name: "View all bids" })).toHaveAttribute("href", "/app/bids");
+  await expect(page.getByRole("link", { name: "View all opportunities" })).toHaveAttribute("href", "/app/opportunities");
   await expect(page.getByRole("link", { name: "View all agreements" })).toHaveAttribute("href", "/app/agreements");
-  await expect(page.getByRole("link", { name: "View all payments" })).toHaveAttribute("href", "/app/invoices");
+  await expect(page.getByRole("link", { name: "View all payments" })).toHaveAttribute("href", "/app/payments");
 
   await expect(page.getByRole("link", { name: "Open Agreement" }).first()).toHaveAttribute(
     "href",
@@ -224,7 +224,7 @@ test("customer records dashboard shows clean empty states", async ({ page }) => 
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
   });
 
-  await page.goto("/app/customer-records", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/customers/activity", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("customer-records-summary-requests")).toContainText("0");
   await expect(page.getByTestId("customer-records-summary-bids")).toContainText("0");

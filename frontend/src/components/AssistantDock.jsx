@@ -31,7 +31,7 @@ function workspaceModeForRoute(route = "") {
     return "invoices";
   }
   if (path.includes("/dashboard")) return "dashboard";
-  if (path.includes("/bids") || path.includes("/public-presence")) return "leads";
+  if (path.includes("/opportunities") || path.includes("/bids") || path.includes("/marketing") || path.includes("/public-presence")) return "leads";
   return "general";
 }
 

@@ -129,7 +129,7 @@ test("contractor can reach payout history from payments and filter completed pay
     });
   });
 
-  await page.goto("/app/invoices", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/payments", { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Payments")).toBeVisible();
   await page.getByTestId("payments-open-payout-history").click();
 

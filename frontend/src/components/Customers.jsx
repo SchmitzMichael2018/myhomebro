@@ -8,6 +8,8 @@ import { Edit, Trash2, Home, Phone } from "lucide-react";
 import toast from "react-hot-toast";
 import api from "../api";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
+import HubTabs from "./dashboard/HubTabs.jsx";
+import { customerHubTabs } from "./dashboard/hubTabsConfig.js";
 
 function useDebouncedValue(value, delay = 400) {
   const [v, setV] = useState(value);
@@ -238,12 +240,6 @@ export default function Customers() {
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <Link
-            to="/app/customer-records"
-            className="inline-flex min-h-[42px] items-center rounded-xl border border-white/16 bg-slate-900/70 px-4 py-2.5 text-sm font-semibold text-sky-100 shadow-sm transition hover:border-sky-300/35 hover:bg-sky-500/15"
-          >
-            Records
-          </Link>
-          <Link
             to={CUSTOMER_NEW_ROUTE}
             className="inline-flex min-h-[42px] items-center rounded-xl border border-white/70 bg-white px-4 py-2.5 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
           >
@@ -252,6 +248,8 @@ export default function Customers() {
         </div>
       }
     >
+      <HubTabs tabs={customerHubTabs} />
+
       <div className="grid gap-3 sm:grid-cols-3" data-testid="customers-summary">
         {[
           { label: "Total customers", value: customerSummary.total },

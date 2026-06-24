@@ -149,7 +149,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/', async (route) => {
+  await page.route(/public-profile\/?$/, async (route) => {
     if (route.request().method() === 'PATCH') {
       state.profile.tagline = 'Now booking spring projects';
       state.profile.proposal_tone = 'warm_and_consultative';
@@ -193,7 +193,15 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
+    });
+  });
+
+  await page.route(/public-profile\/qr\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -250,7 +258,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     });
   });
 
-  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -353,7 +361,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
     });
   });
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('public-presence-title')).toBeVisible();
   await expect(page.getByTestId('public-presence-preview-banner')).toHaveCount(0);
@@ -409,7 +417,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Pending moderation');
   await page.getByRole('button', { name: 'Publish Review' }).click();
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Prospect');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Strong Match');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
@@ -434,8 +442,8 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await page.getByRole('button', { name: 'Mark Contacted' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Contacted');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
@@ -633,7 +641,7 @@ test('landing-source intake and public-profile intake land in the same contracto
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/', async (route) => {
+  await page.route(/public-profile\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -641,7 +649,7 @@ test('landing-source intake and public-profile intake land in the same contracto
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
+  await page.route(/public-profile\/qr\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -665,7 +673,7 @@ test('landing-source intake and public-profile intake land in the same contracto
     });
   });
 
-  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -843,6 +851,14 @@ test('landing-source intake and public-profile intake land in the same contracto
     });
   });
 
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
+    });
+  });
+
   await page.goto('/contractors/bright-build-co', { waitUntil: 'domcontentloaded' });
   await page.getByPlaceholder('Full name').fill('Profile Prospect');
   await page.getByPlaceholder('Email').fill('profile@example.com');
@@ -873,8 +889,8 @@ test('landing-source intake and public-profile intake land in the same contracto
   await page.getByRole('button', { name: 'Review + Confirm' }).click();
   await page.getByTestId('public-intake-submit-button').click();
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Profile Prospect');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Landing Prospect');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
@@ -886,8 +902,8 @@ test('landing-source intake and public-profile intake land in the same contracto
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await page.getByRole('button', { name: 'Profile Prospect' }).click();
   await page.getByRole('button', { name: 'Accept Lead' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Accepted');
@@ -1115,7 +1131,7 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/', async (route) => {
+  await page.route(/public-profile\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1148,7 +1164,7 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
+  await page.route(/public-profile\/qr\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1178,7 +1194,7 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
     });
   });
 
-  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON();
       const lead = {
@@ -1373,8 +1389,8 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
       });
   });
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await page.getByRole('button', { name: 'Add Lead' }).click();
   await expect(page.getByTestId('quick-add-lead-sheet')).toBeVisible();
   await page.getByPlaceholder('Full name').fill('Walk Up Prospect');
@@ -1423,8 +1439,8 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
   await page.getByRole('button', { name: 'Review + Confirm' }).click();
   await page.getByTestId('public-intake-submit-button').click();
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await page.getByRole('button', { name: 'Walk Up Prospect' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Manual');
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Ready for Review');
@@ -1522,6 +1538,14 @@ test('public profile quote wizard submits and keeps a mobile-friendly success st
         logo_url: '',
         cover_image_url: '',
       }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
     });
   });
 
@@ -1678,6 +1702,14 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
     });
   });
 
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
+    });
+  });
+
   await page.route('**/api/projects/contractors/me/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -1828,7 +1860,7 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/', async (route) => {
+  await page.route(/public-profile\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1861,7 +1893,7 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
     });
   });
 
-  await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
+  await page.route(/public-profile\/qr\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -1891,7 +1923,7 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
     });
   });
 
-  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+  await page.route(/\/api\/projects\/(?:contractor\/public-leads|contractor-opportunities)\/?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -2005,8 +2037,8 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page.getByRole('button', { name: 'Review + Confirm' }).click();
   await page.getByTestId('public-intake-submit-button').click();
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Riley Customer'
   );
@@ -2020,8 +2052,8 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await reviewLeadButton.click();
   await page.waitForURL('**/app/intake/new?intakeId=501');
   await expect(page.getByPlaceholder('e.g., Jane Smith')).toHaveValue('Riley Customer');
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
   await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
   await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
     'Bathroom Remodel - Riley Customer'
@@ -2034,3 +2066,4 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
   await page.waitForURL('**/app/agreements/901/wizard?step=1');
 });
+

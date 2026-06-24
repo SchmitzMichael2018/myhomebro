@@ -119,7 +119,7 @@ export function checkCompliance({
           severity: "info",
           message: rule.message,
           actionLabel: "Add subcontractor",
-          actionRoute: "/app/subcontractors",
+          actionRoute: "/app/team/subcontractors",
           skippable: true,
         });
       }

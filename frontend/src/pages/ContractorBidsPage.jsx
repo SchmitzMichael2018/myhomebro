@@ -409,7 +409,7 @@ export default function ContractorBidsPage() {
     } catch (err) {
       if (!mountedRef.current) return;
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Failed to load bids.");
+      toast.error(err?.response?.data?.detail || "Failed to load opportunities.");
       setRows([]);
       setServerSummary({});
       setContractorBrandVoice({});
@@ -493,7 +493,7 @@ export default function ContractorBidsPage() {
           ? "Closed / Archived"
           : activeWorkspaceTab === "work_order"
             ? "Work Orders"
-            : "Active Bids";
+            : "Active Opportunities";
   const activeStageNoun =
     activeWorkspaceTab === "new_lead"
       ? "lead"
@@ -503,7 +503,7 @@ export default function ContractorBidsPage() {
           ? "opportunity"
           : activeWorkspaceTab === "work_order"
             ? "work order"
-            : "bid";
+            : "opportunity";
   const sortOptions = useMemo(() => {
     const isLeadView = activeWorkspaceTab === "new_lead";
     const isFollowUpView = activeWorkspaceTab === "follow_up";
@@ -540,7 +540,7 @@ export default function ContractorBidsPage() {
     () => [
       { key: "new_lead", label: "New Leads", count: summary.new_leads, testId: "leads-tab-new" },
       { key: "follow_up", label: "Follow-Up", count: summary.follow_up_leads, testId: "leads-tab-follow-up" },
-      { key: "active_bid", label: "Active Bids", count: summary.active_bids, testId: "leads-tab-active" },
+      { key: "active_bid", label: "Active Opportunities", count: summary.active_bids, testId: "leads-tab-active" },
       { key: "work_order", label: "Work Orders", count: summary.work_orders, testId: "leads-tab-work-orders" },
       { key: "closed", label: "Closed / Archived", count: summary.closed, testId: "leads-tab-closed" },
     ],
@@ -826,7 +826,7 @@ export default function ContractorBidsPage() {
       if (target) {
         const assistantState =
           sourceKind === "lead" || sourceKind === "intake"
-            ? buildLeadAgreementAssistantState(row, { currentRoute: "/app/bids", brandVoice: contractorBrandVoice })
+            ? buildLeadAgreementAssistantState(row, { currentRoute: "/app/opportunities", brandVoice: contractorBrandVoice })
             : null;
         navigate(target, assistantState ? { state: assistantState } : undefined);
         return;
@@ -876,18 +876,18 @@ export default function ContractorBidsPage() {
             Opportunity Center
           </div>
           <h1 data-testid="contractor-bids-title" className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">
-            Leads &amp; Bids Workspace
+            Opportunities
           </h1>
           <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            Review new leads first, then move into active bids and closed opportunities without leaving the same workspace.
+            Review new leads first, then move into active opportunities and closed work without leaving the same workspace.
           </p>
         </div>
         <button
           type="button"
-          onClick={() => navigate("/app/public-presence")}
+          onClick={() => navigate("/app/marketing?tab=leads")}
           className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
-          Public Leads
+          Website Leads
         </button>
       </div>
 
@@ -928,7 +928,7 @@ export default function ContractorBidsPage() {
           testId="bids-summary-follow-up"
         />
         <SummaryCard
-          label="Active Bids"
+          label="Active Opportunities"
           value={String(summary.active_bids)}
           tone="indigo"
           testId="bids-summary-active-bids"

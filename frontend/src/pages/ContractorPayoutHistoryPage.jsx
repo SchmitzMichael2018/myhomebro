@@ -121,7 +121,7 @@ export default function ContractorPayoutHistoryPage() {
       actions={
         <button
           type="button"
-          onClick={() => navigate("/app/invoices")}
+          onClick={() => navigate("/app/payments")}
           className="rounded-lg border border-white/20 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-50"
         >
           Payment Records

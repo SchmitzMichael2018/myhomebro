@@ -4,6 +4,8 @@ import { Link } from "react-router-dom";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import HubTabs from "../components/dashboard/HubTabs.jsx";
+import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
 import { WorkflowHint } from "../components/WorkflowHint.jsx";
 import { getSubcontractorHubHint } from "../lib/workflowHints.js";
 
@@ -419,6 +421,8 @@ export default function SubcontractorsPage() {
         </>
       }
     >
+      <HubTabs tabs={teamHubTabs} />
+
       <h1 data-testid="subcontractors-page-title" className="sr-only">
         Subcontractors
       </h1>
@@ -523,13 +527,13 @@ export default function SubcontractorsPage() {
                         <td className="px-4 py-4 text-right">
                           <div className="flex flex-wrap justify-end gap-2">
                             <Link
-                              to={`/app/assignments?subaccount=${row.subcontractor_user_id || ""}`}
+                              to={`/app/team/assignments?subaccount=${row.subcontractor_user_id || ""}`}
                               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                             >
                               View Work
                             </Link>
                             <Link
-                              to={`/app/team-schedule?subaccount=${row.subcontractor_user_id || ""}`}
+                              to={`/app/team/schedule?subaccount=${row.subcontractor_user_id || ""}`}
                               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
                             >
                               Schedule

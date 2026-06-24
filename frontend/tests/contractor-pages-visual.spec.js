@@ -415,7 +415,7 @@ const pageConfigs = [
   {
     label: 'Subcontractors Page',
     slug: 'subcontractors-page.png',
-    url: '/app/subcontractors',
+    url: '/app/team/subcontractors',
     waitFor: async (page) => {
       await page.getByTestId('subcontractors-page-title').waitFor({ state: 'visible' });
     },
@@ -423,7 +423,7 @@ const pageConfigs = [
   {
     label: 'Assignments Page',
     slug: 'assignments-page.png',
-    url: '/app/assignments',
+    url: '/app/team/assignments',
     waitFor: async (page) => {
       await page.getByRole('heading', { name: 'Assignments' }).waitFor({ state: 'visible' });
     },

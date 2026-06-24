@@ -180,7 +180,7 @@ function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
       reason: `You have ${pendingLeads.length} lead${pendingLeads.length > 1 ? "s" : ""} ready for review. Following up quickly improves conversion.`,
       context: null,
       primaryLabel: "Open Leads",
-      primaryRoute: "/app/public-presence",
+      primaryRoute: "/app/marketing",
       secondaryLabel: "Open Assistant",
     };
   }

@@ -1,6 +1,6 @@
 // src/routes/ProtectedRoutes.jsx
 import React from "react";
-import { Route, Navigate, Outlet, useLocation } from "react-router-dom";
+import { Route, Navigate, Outlet } from "react-router-dom";
 
 import RequireAuth from "./RequireAuth.jsx";
 import AuthenticatedLayout from "../layouts/AuthenticatedLayout.jsx";
@@ -75,8 +75,6 @@ import NotificationsPage from "../pages/NotificationsPage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
-const ROLE_GATE_DEBUG_PREFIX = "[ProtectedRoutesDebug]";
-
 function AppHomeRedirect() {
   const { data: identity, loading } = useWhoAmI();
   if (loading) return null;
@@ -96,16 +94,8 @@ function AppHomeRedirect() {
 
 function RoleGate({ allow }) {
   const { data: identity, loading } = useWhoAmI();
-  const location = useLocation();
   const role = identity?.type || identity?.role || "none";
   const r = String(role).toLowerCase();
-  console.log(`${ROLE_GATE_DEBUG_PREFIX} RoleGate render`, {
-    path: location.pathname,
-    allow,
-    loading,
-    role: r,
-    hasIdentity: !!identity,
-  });
   if (loading) return null;
 
   const allowNorm = allow.map((x) => String(x).toLowerCase());
@@ -174,13 +164,26 @@ export function protectedRoutes() {
             element={<Navigate to="/app/business" replace />}
           />
 
-          <Route path="team-schedule" element={<TeamSchedule />} />
-          <Route path="team-overview" element={<TeamOverviewPage />} />
-          <Route path="team" element={<TeamPage />} />
-          <Route path="subcontractors" element={<SubcontractorsPage />} />
-          <Route path="public-presence" element={<ContractorPublicPresencePage />} />
-          <Route path="bids" element={<ContractorBidsPage />} />
-          <Route path="customer-records" element={<CustomerRecordsPage />} />
+          <Route path="team" element={<TeamOverviewPage />} />
+          <Route path="team/members" element={<TeamPage />} />
+          <Route path="team/subcontractors" element={<SubcontractorsPage />} />
+          <Route path="team/assignments" element={<AssignmentsPage />} />
+          <Route path="team/schedule" element={<TeamSchedule />} />
+          <Route path="team-overview" element={<Navigate to="/app/team" replace />} />
+          <Route path="team-schedule" element={<Navigate to="/app/team/schedule" replace />} />
+          <Route path="subcontractors" element={<Navigate to="/app/team/subcontractors" replace />} />
+          <Route path="assignments" element={<Navigate to="/app/team/assignments" replace />} />
+
+          <Route path="marketing" element={<ContractorPublicPresencePage />} />
+          <Route path="public-presence" element={<Navigate to="/app/marketing" replace />} />
+
+          <Route path="opportunities" element={<ContractorBidsPage />} />
+          <Route path="bids" element={<Navigate to="/app/opportunities" replace />} />
+
+          <Route path="customers/activity" element={<CustomerRecordsPage />} />
+          <Route path="customers/requests" element={<CustomerRecordsPage />} />
+          <Route path="customers/agreements" element={<CustomerRecordsPage />} />
+          <Route path="customer-records" element={<Navigate to="/app/customers/activity" replace />} />
 
           <Route path="intake/new" element={<ProjectIntakeForm />} />
 
@@ -201,9 +204,8 @@ export function protectedRoutes() {
           <Route path="milestones" element={<MilestoneList />} />
           <Route path="milestones/:id" element={<MilestoneDetail />} />
 
-          <Route path="assignments" element={<AssignmentsPage />} />
-
-          <Route path="invoices" element={<Invoices />} />
+          <Route path="payments" element={<Invoices />} />
+          <Route path="invoices" element={<Navigate to="/app/payments" replace />} />
           <Route path="invoices/:id" element={<InvoiceDetail />} />
 
           <Route path="customers" element={<Customers />} />

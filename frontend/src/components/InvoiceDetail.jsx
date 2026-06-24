@@ -96,7 +96,7 @@ export default function InvoiceDetail() {
       setInvoice(data);
     } catch (error) {
       toast.error("Could not load invoice details.");
-      navigate("/app/invoices");
+      navigate("/app/payments");
     } finally {
       setLoading(false);
     }
@@ -472,7 +472,7 @@ export default function InvoiceDetail() {
       <div className="p-6 max-w-4xl mx-auto bg-white rounded-xl shadow-lg space-y-6">
         <div>
           <button
-            onClick={() => navigate("/app/invoices")}
+            onClick={() => navigate("/app/payments")}
             className="text-sm text-blue-600 hover:underline"
           >
             ← Back to All Invoices

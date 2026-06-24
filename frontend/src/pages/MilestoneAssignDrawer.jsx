@@ -244,7 +244,7 @@ export default function MilestoneAssignDrawer({
               </div>
               <div className="mt-3">
                 <Link
-                  to="/app/subcontractors"
+                  to="/app/team/subcontractors"
                   className="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                   data-testid="add-subcontractor-link"
                 >

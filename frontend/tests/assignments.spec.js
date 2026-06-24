@@ -218,15 +218,15 @@ async function installAssignmentsRoutes(page, assignedActionCount = 4, subaccoun
 test("sidebar badge hides when no assigned action count is present", async ({ page }) => {
   await installAssignmentsRoutes(page, 0);
 
-  await page.goto("/app/assignments", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/assignments", { waitUntil: "domcontentloaded" });
 
-  await expect(page.locator("aside a[href='/app/assignments'] .ml-auto")).toHaveCount(0);
+  await expect(page.locator("aside a[href='/app/team'] .ml-auto")).toHaveCount(0);
 });
 
 test("assignments page shows all projects and work controls", async ({ page }) => {
   await installAssignmentsRoutes(page, 4);
 
-  await page.goto("/app/assignments", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/assignments", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByText("Residential Refresh")).toBeVisible();
   await expect(page.getByText("Commercial Buildout")).toBeVisible();
@@ -265,11 +265,11 @@ test("assign work shows empty subcontractor state with add button", async ({ pag
   const employeesOnly = subaccountsPayload.filter((sub) => String(sub.role || "").toLowerCase() !== "subcontractor");
   await installAssignmentsRoutes(page, 4, employeesOnly);
 
-  await page.goto("/app/assignments", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/assignments", { waitUntil: "domcontentloaded" });
   await page.getByTestId("assignment-work-button-202").click();
 
   await expect(page.getByText("No subcontractors yet")).toBeVisible();
-  await expect(page.getByTestId("add-subcontractor-link")).toHaveAttribute("href", "/app/subcontractors");
+  await expect(page.getByTestId("add-subcontractor-link")).toHaveAttribute("href", "/app/team/subcontractors");
   await expect(page.getByText("Employees 2")).toBeVisible();
   await expect(page.getByText("Subcontractors 0")).toBeVisible();
   await expect(page.locator('[data-testid="assign-work-assignee-select"] optgroup[label="Employees"]')).toHaveCount(1);

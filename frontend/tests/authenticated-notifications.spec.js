@@ -205,7 +205,7 @@ test("authenticated shell renders notifications bell and dropdown panel", async 
       title: "New quote request",
       body: "Jordan Prospect submitted a quote request for Kitchen Remodel.",
       action_label: "Review Request",
-      action_url: "/app/bids",
+      action_url: "/app/opportunities",
       action_needed: true,
       is_read: false,
     }),

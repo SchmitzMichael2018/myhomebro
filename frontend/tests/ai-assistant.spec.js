@@ -914,8 +914,8 @@ test('lead inbox assistant uses lead context to trigger send intake', async ({ p
     });
   });
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Public Leads' }).click();
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Leads' }).click();
 
   await page.getByTestId('public-lead-ai-entry-toggle').click();
   await expect(page.getByTestId('start-with-ai-context-summary')).toContainText('Lead #11');
@@ -1354,7 +1354,7 @@ test('lead inbox consumes assistant create-lead prefill into quick add', async (
   await installBaseAuthMocks(page);
   await installRouteState(
     page,
-    { pathname: '/app/public-presence', search: '' },
+    { pathname: '/app/marketing', search: '' },
     {
       assistantPrefill: {
         full_name: 'Casey Prospect',
@@ -1416,7 +1416,7 @@ test('lead inbox consumes assistant create-lead prefill into quick add', async (
     });
   });
 
-  await page.goto('/app/public-presence', { waitUntil: 'domcontentloaded' });
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('quick-add-lead-sheet')).toBeVisible();
   await expect(page.getByTestId('quick-add-lead-name')).toHaveValue('Casey Prospect');

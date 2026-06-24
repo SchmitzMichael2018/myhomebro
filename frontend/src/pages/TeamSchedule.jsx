@@ -15,6 +15,8 @@ import {
   deleteScheduleException,
 } from "../api/schedule";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import HubTabs from "../components/dashboard/HubTabs.jsx";
+import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
 
 function Chip({ children, tone = "neutral" }) {
   const cls =
@@ -279,13 +281,15 @@ export default function TeamSchedule() {
 
   return (
     <ContractorPageSurface
-      eyebrow="Work"
-      title="Team Schedule"
+      eyebrow="Team"
+      title="Schedule"
       subtitle="Set weekly work days and exception dates so contractor scheduling stays predictable and easy to review."
       className="max-w-[1680px]"
       variant="operational"
     >
       <div className="space-y-4">
+        <HubTabs tabs={teamHubTabs} />
+
         <div className="mhb-operational-toolbar flex flex-wrap items-end justify-between gap-3 rounded-[24px] p-4">
         <div>
           <div className="text-sm font-semibold text-sky-100/75">
@@ -294,7 +298,7 @@ export default function TeamSchedule() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            onClick={() => navigate("/app/assignments")}
+            onClick={() => navigate("/app/team/assignments")}
             disabled={saving}
             className="mhb-operational-filter-chip is-active rounded-xl px-4 py-2 font-extrabold disabled:opacity-60"
           >
@@ -461,7 +465,7 @@ export default function TeamSchedule() {
               </div>
               <button
                 type="button"
-                onClick={() => navigate(`/app/assignments?subaccount=${selectedId}`)}
+                onClick={() => navigate(`/app/team/assignments?subaccount=${selectedId}`)}
                 className="mhb-operational-filter-chip rounded-lg px-3 py-2 text-sm font-semibold"
               >
                 Open Assignments

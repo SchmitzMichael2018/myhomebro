@@ -340,7 +340,7 @@ async function installTeamRoutes(page) {
             milestone_title: "Cabinet Install",
             assigned_subaccount_id: 1,
             status: "pending",
-            actions: [{ label: "View Work", type: "route", target: "/app/assignments" }],
+            actions: [{ label: "View Work", type: "route", target: "/app/team/assignments" }],
             occurred_at: "2026-04-23T10:00:00Z",
           },
         ],
@@ -485,11 +485,10 @@ async function installTeamRoutes(page) {
 test("team overview and sidebar show attention counts", async ({ page }) => {
   await installTeamRoutes(page);
 
-  await page.goto("/app/team-overview", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team", { waitUntil: "domcontentloaded" });
 
   await expect(page.locator("aside a[href='/app/reviewer/queue']").locator("span").last()).toHaveText("1");
-  await expect(page.locator("aside a[href='/app/assignments']").locator("span").last()).toHaveText("4");
-  await expect(page.locator("aside a[href='/app/subcontractors']").locator("span").last()).toHaveText("1");
+  await expect(page.locator("aside a[href='/app/team']").locator(".ml-auto")).toContainText("5");
 
   await expect(page.getByTestId("team-overview-actions")).toContainText("Assign Work");
   await expect(page.getByTestId("team-overview-summary")).toContainText("Team Members");
@@ -506,7 +505,7 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
 test("assignments page filters by project class and status", async ({ page }) => {
   await installTeamRoutes(page);
 
-  await page.goto("/app/assignments", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/assignments", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("assignments-project-class-filter")).toBeVisible();
   await expect(page.getByText("Residential Refresh")).toBeVisible();
@@ -530,16 +529,16 @@ test("team page, subcontractors page, and schedule show operational work", async
   await installTeamRoutes(page);
 
   await page.goto("/app/team", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Taylor Crew")).toBeVisible();
+  await expect(page.getByTestId("team-overview-members").getByText("Taylor Crew")).toBeVisible();
   await expect(page.getByRole("button", { name: "View Work" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Schedule" }).first()).toBeVisible();
 
-  await page.goto("/app/subcontractors", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/subcontractors", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("subcontractors-directory-table")).toContainText("Taylor Crew");
   await expect(page.getByTestId("subcontractors-directory-table")).toContainText("Awaiting review");
   await expect(page.getByTestId("subcontractors-directory-table")).toContainText("View Work");
 
-  await page.goto("/app/team-schedule?subaccount=1", { waitUntil: "domcontentloaded" });
+  await page.goto("/app/team/schedule?subaccount=1", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("team-schedule-summary")).toContainText("Assignments");
   await expect(page.getByTestId("team-schedule-operational-view")).toContainText("Commercial Buildout");
   await expect(page.getByTestId("team-schedule-editor")).toContainText("Weekly work days");
