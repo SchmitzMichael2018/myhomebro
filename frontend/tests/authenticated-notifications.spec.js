@@ -15,8 +15,9 @@ function makeNotification(overrides = {}) {
   };
 }
 
-async function mockAuthenticatedShell(page, notifications = []) {
+async function mockAuthenticatedShell(page, notifications = [], options = {}) {
   let rows = notifications.map((notification, index) => makeNotification({ id: index + 1, ...notification }));
+  const opportunityRows = Array.isArray(options.opportunityRows) ? options.opportunityRows : [];
 
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
@@ -98,6 +99,22 @@ async function mockAuthenticatedShell(page, notifications = []) {
     });
   });
 
+  await page.route(/\/api\/projects\/draws\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor\/payout-history\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [], summary: {} }),
+    });
+  });
+
   await page.route(/\/api\/projects\/expense-requests\/?.*$/, async (route) => {
     await route.fulfill({
       status: 200,
@@ -141,11 +158,36 @@ async function mockAuthenticatedShell(page, notifications = []) {
     });
   });
 
-  await page.route("**/api/projects/contractor/public-leads/**", async (route) => {
+  await page.route(/\/api\/projects\/contractor-activation-summary\/?(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ results: [] }),
+      body: JSON.stringify({ guide_sections: {} }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor\/public-leads\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: opportunityRows }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/contractor-opportunities\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: opportunityRows,
+        summary: {
+          website_leads: opportunityRows.filter((row) => row.is_website_lead).length,
+          new_website_leads: opportunityRows.filter((row) => row.is_website_lead && row.workspace_stage === "new_lead").length,
+          website_leads_needing_follow_up: opportunityRows.filter(
+            (row) => row.is_website_lead && ["new_lead", "follow_up"].includes(row.workspace_stage)
+          ).length,
+        },
+      }),
     });
   });
 
@@ -247,7 +289,7 @@ test("authenticated shell renders notifications bell and dropdown panel", async 
   await expect(panel.getByTestId("notifications-dropdown-view-all")).toHaveAttribute("href", "/app/notifications");
 
   await panel.getByTestId("notification-item-1").click();
-  await expect(page).toHaveURL(/\/app\/bids$/);
+  await expect(page).toHaveURL(/\/app\/opportunities$/);
 });
 
 test("notifications page groups items and deep-links to targets", async ({ page }) => {
@@ -261,7 +303,7 @@ test("notifications page groups items and deep-links to targets", async ({ page 
       action_label: "Review Work",
       action_url: "/app/reviewer/queue",
       action_needed: true,
-      created_at: "2026-04-22T15:30:00Z",
+      created_at: "2026-06-24T15:30:00Z",
       is_read: false,
     }),
     makeNotification({
@@ -272,7 +314,7 @@ test("notifications page groups items and deep-links to targets", async ({ page 
       body: "Customer signed the agreement.",
       action_label: "Open Agreement",
       action_url: "/app/agreements/321",
-      created_at: "2026-04-20T10:00:00Z",
+      created_at: "2026-06-22T10:00:00Z",
       is_read: true,
     }),
     makeNotification({
@@ -283,7 +325,7 @@ test("notifications page groups items and deep-links to targets", async ({ page 
       body: "Escrow funds were received for this agreement.",
       action_label: "Open Agreement",
       action_url: "/app/agreements/444",
-      created_at: "2026-04-10T10:00:00Z",
+      created_at: "2026-06-12T10:00:00Z",
       is_read: true,
     }),
   ]);

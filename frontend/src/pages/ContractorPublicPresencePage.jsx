@@ -22,7 +22,7 @@ import { generateContractorPublicProfile } from '../api.js';
 import { ProjectModeBadge } from '../components/projectMode.jsx';
 import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
-import PublicWebsiteRenderer from '../components/website/PublicWebsiteRenderer.jsx';
+import WebsiteBuilderWizard from '../components/website/WebsiteBuilderWizard.jsx';
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
@@ -31,30 +31,6 @@ const TABS = [
   { key: 'reviews', label: 'Reviews' },
   { key: 'leads', label: 'Website Leads' },
 ];
-
-const WEBSITE_BUILDER_TABS = [
-  { key: 'setup', label: 'Setup' },
-  { key: 'design', label: 'Design' },
-  { key: 'pages', label: 'Pages' },
-  { key: 'preview', label: 'Preview' },
-  { key: 'publish', label: 'Publish' },
-];
-
-const WEBSITE_TEMPLATES = [
-  { key: 'starter', label: 'Starter', description: 'A clean profile-led site for most contractors.' },
-  { key: 'modern_trade', label: 'Modern Trade', description: 'Sharper contrast and service-forward sections.' },
-  { key: 'premium_home', label: 'Premium Home', description: 'A polished residential layout with more visual weight.' },
-  { key: 'commercial', label: 'Commercial', description: 'A direct, trust-heavy layout for larger scopes.' },
-];
-
-const WEBSITE_SECTION_LABELS = {
-  hero: 'Hero',
-  services: 'Services',
-  portfolio: 'Portfolio',
-  reviews: 'Reviews',
-  trust: 'Trust',
-  contact: 'Contact',
-};
 
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
@@ -714,7 +690,7 @@ export default function ContractorPublicPresencePage() {
     });
   }
 
-  async function saveWebsitePage(page, patch) {
+  async function saveWebsitePage(page, patch = page) {
     if (!page?.id) return;
     if (!canCustomizeWebsite) {
       toast.error(websiteBuilderGate.reason || 'Website Builder requires Pro.');
@@ -881,6 +857,7 @@ export default function ContractorPublicPresencePage() {
       setHeroFile(null);
       const qrRes = await api.get('/projects/contractor/public-profile/qr/');
       setQrData(qrRes.data || null);
+      await refreshWebsiteBuilder();
       toast.success('Public profile saved.');
     } catch (err) {
       console.error(err);
@@ -1624,6 +1601,32 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'website' ? (
+            <WebsiteBuilderWizard
+              profile={profile}
+              setProfile={setProfile}
+              websiteReadiness={websiteReadiness}
+              setWebsiteReadiness={setWebsiteReadiness}
+              galleryRows={galleryRows}
+              reviewsRows={reviewsRows}
+              logoFile={logoFile}
+              setLogoFile={setLogoFile}
+              heroFile={heroFile}
+              setHeroFile={setHeroFile}
+              onSaveProfile={saveProfile}
+              onSaveWebsiteSettings={saveWebsiteSettings}
+              onSaveWebsitePage={saveWebsitePage}
+              onPublish={publishWebsite}
+              onPause={pauseWebsite}
+              onToggleGallery={toggleGalleryVisibility}
+              onToggleReview={toggleReviewVisibility}
+              galleryBusy={galleryBusy}
+              reviewBusy={reviewBusy}
+              busy={profileBusy || websiteBusy}
+              publishMessage={websitePublishMessage}
+            />
+          ) : null}
+
+          {false && activeTab === 'website' ? (
             <div className="mt-6 space-y-4" data-testid="marketing-website-builder-tab">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">

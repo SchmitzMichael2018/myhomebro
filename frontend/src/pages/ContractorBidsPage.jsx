@@ -376,6 +376,7 @@ export default function ContractorBidsPage() {
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState("new_lead");
   const [sortBy, setSortBy] = useState("recommended");
   const [requestFilter, setRequestFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [projectClassFilter, setProjectClassFilter] = useState("all");
   const [search, setSearch] = useState("");
@@ -424,8 +425,15 @@ export default function ContractorBidsPage() {
 
   useEffect(() => {
     const source = new URLSearchParams(location.search).get("source");
-    if (normalize(source) === "property_work_order") {
+    const normalizedSource = normalize(source);
+    if (normalizedSource === "property_work_order") {
       setActiveWorkspaceTab("work_order");
+      setSourceFilter("all");
+    } else if (["website", "website_leads", "public_profile", "qr"].includes(normalizedSource)) {
+      setActiveWorkspaceTab("new_lead");
+      setSourceFilter(normalizedSource === "website" ? "website" : normalizedSource);
+    } else {
+      setSourceFilter("all");
     }
   }, [location.search]);
 
@@ -439,6 +447,14 @@ export default function ContractorBidsPage() {
         return false;
       }
       if (!requestMatchesFilter(row, requestFilter)) return false;
+      if (sourceFilter !== "all") {
+        const rowSource = normalize(row.lead_source_filter || row.source_kind);
+        if (sourceFilter === "website_leads") {
+          if (!row.is_website_lead) return false;
+        } else if (rowSource !== sourceFilter) {
+          return false;
+        }
+      }
       if (statusFilter !== "all" && normalize(row.status) !== statusFilter) return false;
       if (projectClassFilter !== "all" && normalize(row.project_class) !== projectClassFilter) return false;
       if (!q) return true;
@@ -458,7 +474,7 @@ export default function ContractorBidsPage() {
         .includes(q);
     });
     return sortWorkspaceRows(scopedRows, sortBy, activeWorkspaceTab);
-  }, [rows, search, statusFilter, projectClassFilter, activeWorkspaceTab, requestFilter, sortBy]);
+  }, [rows, search, statusFilter, projectClassFilter, activeWorkspaceTab, requestFilter, sourceFilter, sortBy]);
 
   const summary = useMemo(() => {
     const counts = {
@@ -467,11 +483,19 @@ export default function ContractorBidsPage() {
       active_bids: 0,
       closed: 0,
       work_orders: 0,
+      website_leads: 0,
+      new_website_leads: 0,
+      website_leads_needing_follow_up: 0,
     };
 
     for (const row of rows) {
       const stage = workspaceStageFromRow(row);
       if (normalize(row.source_kind) === "property_work_order") counts.work_orders += 1;
+      if (row.is_website_lead) {
+        counts.website_leads += 1;
+        if (stage === "new_lead") counts.new_website_leads += 1;
+        if (stage === "new_lead" || stage === "follow_up") counts.website_leads_needing_follow_up += 1;
+      }
       if (stage === "new_lead") counts.new_leads += 1;
       else if (stage === "follow_up") counts.follow_up_leads += 1;
       else if (stage === "closed") counts.closed += 1;
@@ -919,8 +943,20 @@ export default function ContractorBidsPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-5">
+      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
         <SummaryCard label="New Leads" value={String(summary.new_leads)} tone="slate" testId="bids-summary-new-leads" />
+        <SummaryCard
+          label="Website Leads"
+          value={String(summary.website_leads)}
+          tone="emerald"
+          testId="bids-summary-website-leads"
+        />
+        <SummaryCard
+          label="New Website Leads / Needs Follow-Up"
+          value={`${summary.new_website_leads} / ${summary.website_leads_needing_follow_up}`}
+          tone="amber"
+          testId="bids-summary-new-website-leads"
+        />
         <SummaryCard
           label="Follow-Up"
           value={String(summary.follow_up_leads)}
@@ -1118,12 +1154,12 @@ export default function ContractorBidsPage() {
                       <div className="font-semibold text-slate-900">{row.project_title}</div>
                       <div className="mt-1 text-xs text-slate-500">{row.source_reference}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {normalize(row.source_kind) === "property_work_order" ? (
+                        {row.source_kind_label ? (
                           <span
                             data-testid={`lead-source-${row.bid_id}`}
                             className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800"
                           >
-                            Property Management Work Order
+                            {row.source_kind_label}
                           </span>
                         ) : null}
                         <span

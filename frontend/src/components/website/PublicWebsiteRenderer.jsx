@@ -51,6 +51,9 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
     ...(Array.isArray(services.work_types) ? services.work_types : []),
     ...(Array.isArray(services.skills) ? services.skills : []),
   ].filter(Boolean).slice(0, 8);
+  const serviceCards = Array.isArray(serviceBlock.items) && serviceBlock.items.length
+    ? serviceBlock.items
+    : serviceItems.map((item) => ({ title: item, description: '' }));
   const sections = visibleSections(layout);
 
   return (
@@ -122,9 +125,10 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
             <p className="mt-2 text-sm leading-6 text-slate-600">{serviceBlock.intro || 'Clear scopes and reliable execution for the work your customers request most.'}</p>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {(serviceItems.length ? serviceItems : ['Residential projects', 'Repairs', 'Renovations']).map((item) => (
-              <div key={item} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold">
-                {item}
+            {(serviceCards.length ? serviceCards : ['Residential projects', 'Repairs', 'Renovations'].map((item) => ({ title: item, description: '' }))).map((item) => (
+              <div key={item.title || item} className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+                <div className="font-semibold">{item.title || item}</div>
+                {item.description ? <div className="mt-2 leading-6 text-slate-600">{item.description}</div> : null}
               </div>
             ))}
           </div>

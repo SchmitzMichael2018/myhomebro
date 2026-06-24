@@ -22,6 +22,11 @@ from projects.services.bid_workflow import (
     parse_money_like_text,
     project_class_label,
 )
+from projects.services.public_lead_pipeline import (
+    is_website_sales_lead,
+    public_lead_source_label,
+    website_lead_filter_key,
+)
 
 
 def _resolve_contractor(user):
@@ -360,6 +365,8 @@ def _workspace_stage(status: str, source_kind: str) -> str:
         return "follow_up"
     if normalized_source == "lead" and normalized_status in {"draft", "submitted"}:
         return "new_lead"
+    if normalized_source == "marketplace" and normalized_status in {"pending", "submitted"}:
+        return "new_lead"
     return "active_bid"
 
 
@@ -431,12 +438,18 @@ def _bid_row_from_lead(lead, request=None) -> dict:
         or parse_money_like_text(analysis.get("suggested_total_price"))
     )
     workspace_stage = _workspace_stage(status, "lead")
+    source_label = public_lead_source_label(getattr(lead, "source", ""))
+    source_filter_key = website_lead_filter_key(getattr(lead, "source", ""))
 
     return {
         "bid_id": f"lead-{lead.id}",
         "record_id": lead.id,
         "source_kind": "lead",
-        "source_kind_label": "Lead",
+        "source_kind_label": source_label,
+        "lead_source": _safe_text(getattr(lead, "source", "")),
+        "lead_source_label": source_label,
+        "lead_source_filter": source_filter_key,
+        "is_website_lead": is_website_sales_lead(lead),
         "workspace_stage": workspace_stage,
         "workspace_stage_label": _workspace_stage_label(workspace_stage),
         "source_id": lead.id,
@@ -482,6 +495,146 @@ def _bid_row_from_lead(lead, request=None) -> dict:
             status=status,
             linked_agreement_id=getattr(linked_agreement, "id", None),
             source_kind="lead",
+        ),
+    }
+
+
+def _marketplace_status(opportunity) -> str:
+    raw = _safe_text(getattr(opportunity, "status", "")).lower()
+    return {
+        ContractorOpportunity.STATUS_PENDING: "submitted",
+        ContractorOpportunity.STATUS_ACCEPTED: "follow_up",
+        ContractorOpportunity.STATUS_CONVERTED: "awarded",
+        ContractorOpportunity.STATUS_DECLINED: "declined",
+        ContractorOpportunity.STATUS_EXPIRED: "expired",
+    }.get(raw, raw or "submitted")
+
+
+def _marketplace_budget_text(opportunity) -> str:
+    low = getattr(opportunity, "budget_min", None)
+    high = getattr(opportunity, "budget_max", None)
+    if low and high:
+        return f"${Decimal(str(low)):,.2f} - ${Decimal(str(high)):,.2f}"
+    if low:
+        return f"From ${Decimal(str(low)):,.2f}"
+    if high:
+        return f"Up to ${Decimal(str(high)):,.2f}"
+    return ""
+
+
+def _bid_row_from_marketplace_opportunity(opportunity, request=None) -> dict:
+    linked_agreement = getattr(opportunity, "converted_agreement", None)
+    status = _marketplace_status(opportunity)
+    project_title = (
+        _safe_text(getattr(opportunity, "project_title", ""))
+        or _safe_text(getattr(opportunity, "project_type", ""))
+        or f"Marketplace Opportunity #{opportunity.id}"
+    )
+    notes = _safe_text(getattr(opportunity, "refined_description", "")) or _safe_text(getattr(opportunity, "project_description", ""))
+    location = "\n".join(
+        part
+        for part in [
+            _safe_text(getattr(opportunity, "project_address", "")),
+            ", ".join(
+                p
+                for p in [
+                    _safe_text(getattr(opportunity, "project_city", "")),
+                    _safe_text(getattr(opportunity, "project_state", "")),
+                    _safe_text(getattr(opportunity, "project_zip", "")),
+                ]
+                if p
+            ),
+        ]
+        if part
+    )
+    project_class = infer_project_class(
+        _safe_text(getattr(opportunity, "project_type", "")),
+        _safe_text(getattr(opportunity, "project_subtype", "")),
+        _safe_text(getattr(opportunity, "timeline", "")),
+        _marketplace_budget_text(opportunity),
+        notes,
+    )
+    workspace_stage = _workspace_stage(status, "marketplace")
+    photos = getattr(opportunity, "photos", None) or []
+    measurements = getattr(opportunity, "measurements", None) or []
+    request_signals = ["Marketplace"]
+    if photos:
+        request_signals.append("Photos")
+    if measurements:
+        request_signals.append("Measurements")
+    snapshot = {
+        "project_title": project_title,
+        "project_type": _safe_text(getattr(opportunity, "project_type", "")),
+        "project_subtype": _safe_text(getattr(opportunity, "project_subtype", "")),
+        "project_family_key": "",
+        "project_family_label": "",
+        "recommended_setup": {},
+        "refined_description": notes,
+        "project_scope_summary": notes,
+        "location": location,
+        "request_path_label": "Marketplace",
+        "measurement_handling": "Provided" if measurements else "",
+        "timeline": _safe_text(getattr(opportunity, "timeline", "")),
+        "budget": _marketplace_budget_text(opportunity),
+        "photo_count": len(photos),
+        "photos": photos,
+        "measurements": measurements,
+        "request_signals": request_signals,
+    }
+    return {
+        "bid_id": f"opportunity-{opportunity.id}",
+        "record_id": opportunity.id,
+        "source_kind": "marketplace",
+        "source_kind_label": "Marketplace",
+        "lead_source": "marketplace",
+        "lead_source_label": "Marketplace",
+        "lead_source_filter": "marketplace",
+        "is_website_lead": False,
+        "workspace_stage": workspace_stage,
+        "workspace_stage_label": _workspace_stage_label(workspace_stage),
+        "source_id": opportunity.id,
+        "source_reference": f"Marketplace #{opportunity.id}",
+        "project_title": project_title,
+        "customer_name": _safe_text(getattr(opportunity, "homeowner_name", "")) or "Marketplace Customer",
+        "customer_email": _safe_text(getattr(opportunity, "homeowner_email", "")),
+        "customer_phone": _safe_text(getattr(opportunity, "homeowner_phone", "")),
+        "location": location,
+        "project_type": _safe_text(getattr(opportunity, "project_type", "")),
+        "project_subtype": _safe_text(getattr(opportunity, "project_subtype", "")),
+        "property_type": "",
+        "budget_range_text": _marketplace_budget_text(opportunity),
+        "preferred_contact_method": "",
+        "contact_consent": False,
+        "project_family_key": "",
+        "project_family_label": "",
+        "request_path_label": "Marketplace",
+        "measurement_handling": "Provided" if measurements else "",
+        "desired_timing_text": "",
+        "photo_count": len(photos),
+        "request_signals": request_signals,
+        "request_snapshot": snapshot,
+        "project_class": project_class,
+        "project_class_label": project_class_label(project_class),
+        "bid_amount": None,
+        "bid_amount_label": _marketplace_budget_text(opportunity) or "-",
+        "submitted_at": _format_date(getattr(opportunity, "selected_at", None) or getattr(opportunity, "created_at", None)),
+        "updated_at": _format_date(getattr(opportunity, "updated_at", None)),
+        "status": status,
+        "status_label": _contractor_status_label(status),
+        "status_group": bid_status_group(status),
+        "status_note": _contractor_status_note(status),
+        "linked_agreement_id": getattr(linked_agreement, "id", None),
+        "linked_agreement_label": _agreement_label(linked_agreement),
+        "linked_agreement_reference": _agreement_reference(linked_agreement),
+        "linked_agreement_url": f"/app/agreements/{linked_agreement.id}" if linked_agreement else "",
+        "notes": notes,
+        "timeline": _safe_text(getattr(opportunity, "timeline", "")),
+        "budget_text": _marketplace_budget_text(opportunity),
+        "milestone_preview": [],
+        "next_action": bid_next_action(
+            status=status,
+            linked_agreement_id=getattr(linked_agreement, "id", None),
+            source_kind="marketplace",
         ),
     }
 
@@ -794,6 +947,10 @@ def _bid_row_from_property_work_order_opportunity(opportunity, request=None) -> 
         "record_id": opportunity.id,
         "source_kind": "property_work_order",
         "source_kind_label": "Property Management Work Order",
+        "lead_source": "marketplace",
+        "lead_source_label": "Marketplace",
+        "lead_source_filter": "marketplace",
+        "is_website_lead": False,
         "workspace_stage": workspace_stage,
         "workspace_stage_label": _workspace_stage_label(workspace_stage),
         "source_id": opportunity.id,
@@ -843,9 +1000,17 @@ def _bid_row_from_property_work_order_opportunity(opportunity, request=None) -> 
     }
 
 
-def _filter_rows(rows: list[dict], *, status_filter: str = "", project_class_filter: str = "", search: str = "") -> list[dict]:
+def _filter_rows(
+    rows: list[dict],
+    *,
+    status_filter: str = "",
+    project_class_filter: str = "",
+    source_filter: str = "",
+    search: str = "",
+) -> list[dict]:
     status_value = _safe_text(status_filter).lower()
     class_value = _safe_text(project_class_filter).lower()
+    source_value = _safe_text(source_filter).lower()
     query = _safe_text(search).lower()
 
     out = []
@@ -854,6 +1019,13 @@ def _filter_rows(rows: list[dict], *, status_filter: str = "", project_class_fil
             continue
         if class_value and class_value != "all" and row.get("project_class") != class_value:
             continue
+        if source_value and source_value != "all":
+            row_source = _safe_text(row.get("lead_source_filter") or row.get("source_kind")).lower()
+            if source_value == "website_leads":
+                if not row.get("is_website_lead"):
+                    continue
+            elif row_source != source_value:
+                continue
         if query:
             haystack = " ".join(
                 [
@@ -926,6 +1098,20 @@ class ContractorBidsView(APIView):
             )
             .order_by("-selected_at", "-id")
         )
+        marketplace_opportunities = list(
+            ContractorOpportunity.objects.filter(
+                property_work_order__isnull=True,
+            )
+            .filter(
+                Q(directory_entry__claimed_by_contractor=contractor)
+                | Q(accepted_by_contractor=contractor)
+            )
+            .select_related(
+                "converted_agreement",
+                "directory_entry",
+            )
+            .order_by("-selected_at", "-id")
+        )
 
         rows: list[dict] = []
         linked_intake_ids = set()
@@ -948,6 +1134,11 @@ class ContractorBidsView(APIView):
             if row:
                 rows.append(row)
 
+        for opportunity in marketplace_opportunities:
+            row = _bid_row_from_marketplace_opportunity(opportunity, request=request)
+            if row:
+                rows.append(row)
+
         rows.sort(
             key=lambda row: (
                 row.get("submitted_at") or "",
@@ -958,11 +1149,13 @@ class ContractorBidsView(APIView):
 
         status_filter = _safe_text(request.GET.get("status", "")).lower()
         project_class_filter = _safe_text(request.GET.get("project_class", "")).lower()
+        source_filter = _safe_text(request.GET.get("source", "")).lower()
         search = _safe_text(request.GET.get("search", ""))
         filtered_rows = _filter_rows(
             rows,
             status_filter=status_filter,
             project_class_filter=project_class_filter,
+            source_filter=source_filter,
             search=search,
         )
 
@@ -983,6 +1176,18 @@ class ContractorBidsView(APIView):
             ),
             "property_work_order_count": sum(
                 1 for row in filtered_rows if row.get("source_kind") == "property_work_order"
+            ),
+            "website_leads": sum(1 for row in filtered_rows if row.get("is_website_lead")),
+            "new_website_leads": sum(
+                1
+                for row in filtered_rows
+                if row.get("is_website_lead") and row.get("workspace_stage") == "new_lead"
+            ),
+            "website_leads_needing_follow_up": sum(
+                1
+                for row in filtered_rows
+                if row.get("is_website_lead")
+                and row.get("workspace_stage") in {"new_lead", "follow_up"}
             ),
             "marketplace_eligibility": {
                 "verification_status": getattr(contractor, "marketplace_verification_status", "unverified") or "unverified",
@@ -1009,6 +1214,7 @@ class ContractorBidsView(APIView):
                 "filters": {
                     "status": status_filter or "all",
                     "project_class": project_class_filter or "all",
+                    "source": source_filter or "all",
                     "search": search,
                 },
             },

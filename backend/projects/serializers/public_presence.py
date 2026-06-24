@@ -369,8 +369,13 @@ class PublicContractorLeadCreateSerializer(serializers.ModelSerializer):
 
     def validate_source(self, value):
         mapping = {
+            "website": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+            "website_contact": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+            "website_quote": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+            "website_quote_cta": PublicContractorLead.SOURCE_QUOTE_REQUEST,
             "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
             PublicContractorLead.SOURCE_PUBLIC_PROFILE: PublicContractorLead.SOURCE_PUBLIC_PROFILE,
+            PublicContractorLead.SOURCE_QUOTE_REQUEST: PublicContractorLead.SOURCE_QUOTE_REQUEST,
             PublicContractorLead.SOURCE_LANDING_PAGE: PublicContractorLead.SOURCE_LANDING_PAGE,
             PublicContractorLead.SOURCE_MANUAL: PublicContractorLead.SOURCE_MANUAL,
             PublicContractorLead.SOURCE_QR: PublicContractorLead.SOURCE_QR,

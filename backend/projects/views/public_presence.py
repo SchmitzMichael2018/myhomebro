@@ -33,12 +33,12 @@ from projects.services.public_lead_notifications import (
     send_public_lead_reject_email,
 )
 from projects.services.project_intelligence_orchestrator import build_project_intelligence
+from projects.services.public_lead_pipeline import create_public_lead_sales_notification
 from projects.services.public_lead_pipeline import normalize_public_lead_source
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 from projects.services.agreement_draft_prefill import apply_conversion_prefill
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.ai.public_profile_generation import generate_contractor_public_profile
-from projects.services.notification_center import create_notification
 from projects.services.intake_public import send_intake_email
 from projects.services.sms_service import ensure_sms_consent
 from projects.ai.agreement_description_writer import generate_or_improve_description
@@ -520,19 +520,6 @@ class PublicContractorQuoteRequestView(APIView):
                 pass
 
         lead = sync_public_lead_from_project_intake(intake, status_override=PublicContractorLead.STATUS_NEW)
-        try:
-            request_title = _safe_text(data.get("project_type")) or "your services"
-            create_notification(
-                contractor=profile.contractor,
-                user=getattr(profile.contractor, "user", None),
-                category="quote_request_received",
-                title="New quote request",
-                body=f"{_safe_text(data.get('full_name')) or 'A customer'} submitted a quote request for {request_title}.",
-                link="/app/bids",
-                public_lead=lead,
-            )
-        except Exception:
-            pass
         return Response(
             {
                 "ok": True,
@@ -984,7 +971,8 @@ class PublicContractorIntakeView(APIView):
         )
         serializer = PublicContractorLeadCreateSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
-        serializer.save(contractor=profile.contractor, public_profile=profile)
+        lead = serializer.save(contractor=profile.contractor, public_profile=profile)
+        create_public_lead_sales_notification(lead)
         return Response({"ok": True, "message": "Your project request was submitted."}, status=status.HTTP_201_CREATED)
 
 

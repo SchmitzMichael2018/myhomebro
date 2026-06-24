@@ -628,6 +628,11 @@ function buildSummary(rows) {
     residential_count: rows.filter((row) => row.project_class === "residential").length,
     commercial_count: rows.filter((row) => row.project_class === "commercial").length,
     property_work_order_count: rows.filter((row) => row.source_kind === "property_work_order").length,
+    website_leads: rows.filter((row) => row.is_website_lead).length,
+    new_website_leads: rows.filter((row) => row.is_website_lead && row.workspace_stage === "new_lead").length,
+    website_leads_needing_follow_up: rows.filter(
+      (row) => row.is_website_lead && ["new_lead", "follow_up"].includes(row.workspace_stage)
+    ).length,
   };
 }
 
@@ -879,6 +884,105 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.screenshot({ path: "test-results/contractor-bids.png", fullPage: true });
 
   expect(consoleErrors.filter((msg) => msg.includes("Failed to load bids"))).toHaveLength(0);
+});
+
+test("website leads are summarized, labeled, and filterable in opportunities", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("access", "playwright-access-token");
+  });
+
+  const websiteLead = {
+    ...cloneBidRows()[0],
+    bid_id: "lead-901",
+    source_kind: "lead",
+    source_kind_label: "Website",
+    lead_source: "quote_request",
+    lead_source_label: "Website",
+    lead_source_filter: "website",
+    is_website_lead: true,
+    workspace_stage: "new_lead",
+    workspace_stage_label: "New Lead",
+    source_id: 901,
+    source_reference: "Lead #901",
+    project_title: "Website Kitchen Lead",
+    customer_name: "Website Customer",
+    customer_email: "website@example.com",
+    project_type: "Kitchen Remodel",
+    status: "submitted",
+    status_label: "Submitted",
+    status_group: "submitted",
+    submitted_at: "2026-06-22T15:20:00Z",
+  };
+  const profileLead = {
+    ...websiteLead,
+    bid_id: "lead-902",
+    source_kind_label: "Public Profile",
+    lead_source: "public_profile",
+    lead_source_label: "Public Profile",
+    lead_source_filter: "public_profile",
+    source_id: 902,
+    source_reference: "Lead #902",
+    project_title: "Profile Bathroom Lead",
+    customer_name: "Profile Customer",
+    customer_email: "profile@example.com",
+    project_type: "Bathroom Remodel",
+    submitted_at: "2026-06-21T15:20:00Z",
+  };
+  const qrLead = {
+    ...websiteLead,
+    bid_id: "lead-903",
+    source_kind_label: "QR Code",
+    lead_source: "qr",
+    lead_source_label: "QR Code",
+    lead_source_filter: "qr",
+    source_id: 903,
+    source_reference: "Lead #903",
+    project_title: "QR Deck Lead",
+    customer_name: "QR Customer",
+    customer_email: "qr@example.com",
+    project_type: "Deck Repair",
+    submitted_at: "2026-06-20T15:20:00Z",
+  };
+
+  await page.route("**/api/projects/whoami/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 7,
+        type: "contractor",
+        role: "contractor_owner",
+        email: "playwright@myhomebro.local",
+      }),
+    });
+  });
+  await page.route("**/api/projects/contractor/bids/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildPayload([websiteLead, profileLead, qrLead])),
+    });
+  });
+  await page.route("**/api/projects/contractors/me/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ id: 7, public_profile: {} }),
+    });
+  });
+
+  await page.goto("/app/opportunities?source=website", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("bids-summary-website-leads")).toContainText("3");
+  await expect(page.getByTestId("bids-summary-new-website-leads")).toContainText("3 / 3");
+  await expect(page.getByTestId("lead-row-lead-901")).toContainText("Website Customer");
+  await expect(page.getByTestId("lead-source-lead-901")).toContainText("Website");
+  await expect(page.getByTestId("lead-row-lead-902")).toHaveCount(0);
+  await expect(page.getByTestId("lead-row-lead-903")).toHaveCount(0);
+
+  await page.goto("/app/opportunities?source=public_profile", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("lead-row-lead-902")).toContainText("Profile Customer");
+  await expect(page.getByTestId("lead-source-lead-902")).toContainText("Public Profile");
 });
 
 test("contractor bids workspace renders property management work orders and routes actions", async ({ page }) => {

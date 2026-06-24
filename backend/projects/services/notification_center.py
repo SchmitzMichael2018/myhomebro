@@ -53,18 +53,18 @@ ACTION_LABELS = {
 
 
 ACTION_URLS = {
-    Notification.EVENT_QUOTE_REQUEST_RECEIVED: "/app/bids",
+    Notification.EVENT_QUOTE_REQUEST_RECEIVED: "/app/opportunities",
     Notification.EVENT_AGREEMENT_SIGNED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/agreements",
     Notification.EVENT_ESCROW_FUNDED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/agreements",
     Notification.EVENT_INVOICE_APPROVED: lambda notification: f"/app/invoices/{notification.invoice_id}" if notification.invoice_id else "/app/invoices",
     Notification.EVENT_MILESTONE_PENDING_APPROVAL: "/app/reviewer/queue",
     Notification.EVENT_PAYMENT_RELEASED: lambda notification: f"/app/invoices/{notification.invoice_id}" if notification.invoice_id else "/app/invoices",
-    Notification.EVENT_BID_AWARDED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/bids",
-    Notification.EVENT_BID_NOT_SELECTED: "/app/bids",
-    Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED: "/app/bids",
-    Notification.EVENT_MARKETPLACE_VERIFICATION_APPROVED: "/app/bids",
-    Notification.EVENT_MARKETPLACE_VERIFICATION_REJECTED: "/app/bids",
-    Notification.EVENT_MARKETPLACE_VERIFICATION_SUSPENDED: "/app/bids",
+    Notification.EVENT_BID_AWARDED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/opportunities",
+    Notification.EVENT_BID_NOT_SELECTED: "/app/opportunities",
+    Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED: "/app/opportunities",
+    Notification.EVENT_MARKETPLACE_VERIFICATION_APPROVED: "/app/opportunities",
+    Notification.EVENT_MARKETPLACE_VERIFICATION_REJECTED: "/app/opportunities",
+    Notification.EVENT_MARKETPLACE_VERIFICATION_SUSPENDED: "/app/opportunities",
     Notification.EVENT_DRAW_APPROVED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/dashboard",
     Notification.EVENT_DRAW_CHANGES_REQUESTED: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/dashboard",
     Notification.EVENT_DRAW_PAID: lambda notification: f"/app/agreements/{notification.agreement_id}" if notification.agreement_id else "/app/dashboard",
@@ -232,7 +232,7 @@ def notification_action_url(notification) -> str:
     if getattr(notification, "draw_request_id", None):
         return "/app/dashboard"
     if getattr(notification, "public_lead_id", None):
-        return "/app/bids"
+        return "/app/opportunities"
     return ""
 
 

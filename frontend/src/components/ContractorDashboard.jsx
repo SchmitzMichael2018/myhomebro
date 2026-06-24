@@ -1993,7 +1993,19 @@ export default function ContractorDashboard() {
               ? oRes.value.data
               : oRes.value.data?.results || []
             : [];
-          setPublicLeads([...list, ...opportunityList]);
+          const seen = new Set();
+          const merged = [];
+          for (const row of [...opportunityList, ...list]) {
+            const recordId = row?.source_id || row?.record_id || row?.id || "";
+            const isLeadRow = row?.source_kind === "lead" || /^lead-/i.test(String(row?.bid_id || ""));
+            const key = isLeadRow && recordId
+              ? `lead:${recordId}`
+              : row?.bid_id || `${row?.source_kind || row?.source || "lead"}:${recordId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            merged.push(row);
+          }
+          setPublicLeads(merged);
         } else {
           console.error(lRes.reason);
           setPublicLeads([]);
@@ -2748,6 +2760,7 @@ export default function ContractorDashboard() {
         milestones,
         invoices,
         drawRequests,
+        publicLeads,
         payoutHistorySummary,
         payoutHistoryRecent,
         activityFeed,
@@ -2758,6 +2771,7 @@ export default function ContractorDashboard() {
       drawRequests,
       invoices,
       milestones,
+      publicLeads,
       payoutHistoryRecent,
       payoutHistorySummary,
       sanitizedNextBestAction,

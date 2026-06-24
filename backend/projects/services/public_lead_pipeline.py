@@ -3,10 +3,16 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Optional
 
+from projects.models import Notification
 from projects.models import ContractorPublicProfile, PublicContractorLead
+from projects.services.notification_center import create_notification
 
 
 LEGACY_SOURCE_ALIASES = {
+    "website": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+    "website_contact": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+    "website_quote": PublicContractorLead.SOURCE_QUOTE_REQUEST,
+    "website_quote_cta": PublicContractorLead.SOURCE_QUOTE_REQUEST,
     "profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "public_profile": PublicContractorLead.SOURCE_PUBLIC_PROFILE,
     "quote_request": PublicContractorLead.SOURCE_QUOTE_REQUEST,
@@ -18,6 +24,23 @@ LEGACY_SOURCE_ALIASES = {
     "direct": PublicContractorLead.SOURCE_DIRECT,
 }
 
+PUBLIC_LEAD_SOURCE_LABELS = {
+    PublicContractorLead.SOURCE_QUOTE_REQUEST: "Website",
+    PublicContractorLead.SOURCE_LANDING_PAGE: "Website",
+    PublicContractorLead.SOURCE_PUBLIC_PROFILE: "Public Profile",
+    PublicContractorLead.SOURCE_QR: "QR Code",
+    PublicContractorLead.SOURCE_MANUAL: "Manual",
+    PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM: "Manual",
+    PublicContractorLead.SOURCE_DIRECT: "Manual",
+}
+
+WEBSITE_LEAD_SOURCES = {
+    PublicContractorLead.SOURCE_QUOTE_REQUEST,
+    PublicContractorLead.SOURCE_LANDING_PAGE,
+    PublicContractorLead.SOURCE_PUBLIC_PROFILE,
+    PublicContractorLead.SOURCE_QR,
+}
+
 
 def normalize_public_lead_source(
     value: Optional[str],
@@ -26,6 +49,54 @@ def normalize_public_lead_source(
 ) -> str:
     normalized = str(value or "").strip().lower()
     return LEGACY_SOURCE_ALIASES.get(normalized, default)
+
+
+def public_lead_source_label(source: Optional[str]) -> str:
+    normalized = normalize_public_lead_source(source, default=PublicContractorLead.SOURCE_DIRECT)
+    return PUBLIC_LEAD_SOURCE_LABELS.get(normalized, "Manual")
+
+
+def is_website_sales_lead(lead) -> bool:
+    source = normalize_public_lead_source(
+        getattr(lead, "source", None),
+        default=PublicContractorLead.SOURCE_DIRECT,
+    )
+    return source in WEBSITE_LEAD_SOURCES
+
+
+def website_lead_filter_key(source: Optional[str]) -> str:
+    normalized = normalize_public_lead_source(source, default=PublicContractorLead.SOURCE_DIRECT)
+    if normalized == PublicContractorLead.SOURCE_QR:
+        return "qr"
+    if normalized == PublicContractorLead.SOURCE_PUBLIC_PROFILE:
+        return "public_profile"
+    if normalized in {PublicContractorLead.SOURCE_QUOTE_REQUEST, PublicContractorLead.SOURCE_LANDING_PAGE}:
+        return "website"
+    return "manual"
+
+
+def create_public_lead_sales_notification(lead):
+    if lead is None or not is_website_sales_lead(lead):
+        return None, False
+
+    contractor = getattr(lead, "contractor", None)
+    source_key = website_lead_filter_key(getattr(lead, "source", ""))
+    customer_name = (getattr(lead, "full_name", "") or "").strip() or "a customer"
+    project_type = (getattr(lead, "project_type", "") or "").strip()
+    details = f" Lead: {customer_name}."
+    if project_type:
+        details += f" Project type: {project_type}."
+    return create_notification(
+        contractor=contractor,
+        user=getattr(contractor, "user", None),
+        category=Notification.EVENT_CONTRACTOR_OPPORTUNITY_RECEIVED,
+        title="New website lead",
+        body=f"Hey, you got a new lead from your website.{details}",
+        link=f"/app/opportunities?source={source_key}",
+        public_lead=lead,
+        actor_display_name=customer_name,
+        actor_email=(getattr(lead, "email", "") or "").strip(),
+    )
 
 
 def ensure_public_profile_for_contractor(contractor):
@@ -118,6 +189,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         intake.public_lead = lead
         intake.public_profile = profile
         intake.save(update_fields=["public_lead", "public_profile", "updated_at"])
+        create_public_lead_sales_notification(lead)
         return lead
 
     update_fields = [
@@ -167,4 +239,5 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
     if intake.public_profile_id != profile.id:
         intake.public_profile = profile
         intake.save(update_fields=["public_profile", "updated_at"])
+    create_public_lead_sales_notification(lead)
     return lead

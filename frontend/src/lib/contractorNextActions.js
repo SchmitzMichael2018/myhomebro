@@ -28,6 +28,27 @@ function normalizeStatus(value) {
   return safeText(value).toLowerCase();
 }
 
+function normalizeSource(value) {
+  return safeText(value).toLowerCase();
+}
+
+function isWebsiteLeadRow(row) {
+  const source = normalizeSource(row?.lead_source || row?.source);
+  const sourceFilter = normalizeSource(row?.lead_source_filter);
+  return Boolean(row?.is_website_lead) ||
+    ["website", "website_leads", "public_profile", "qr"].includes(sourceFilter) ||
+    ["quote_request", "landing_page", "public_profile", "qr"].includes(source);
+}
+
+function isUnhandledLeadStatus(row) {
+  const status = normalizeStatus(row?.status);
+  const stage = normalizeStatus(row?.workspace_stage);
+  return (
+    ["new", "submitted", "pending", "follow_up"].includes(status) ||
+    ["new_lead", "follow_up"].includes(stage)
+  );
+}
+
 // Activity feed items that confirm status (not actions) — excluded from the queue
 const STATUS_CONFIRMATION_PATTERNS = [
   /onboard(ing)?.*(complet|done|finish|setup)/i,
@@ -191,6 +212,7 @@ export function getContractorNextActions({
   milestones = [],
   invoices = [],
   drawRequests = [],
+  publicLeads = [],
   activityFeed = [],
 } = {}) {
   const actions = [];
@@ -198,6 +220,36 @@ export function getContractorNextActions({
   const mappedNextBestAction = mapNextBestAction(nextBestAction);
   if (mappedNextBestAction) {
     actions.push(mappedNextBestAction);
+  }
+
+  const latestWebsiteLead = latestByDate(
+    (Array.isArray(publicLeads) ? publicLeads : []).filter((row) => isWebsiteLeadRow(row) && isUnhandledLeadStatus(row)),
+    (row) => row?.submitted_at || row?.created_at || row?.updated_at
+  );
+  if (latestWebsiteLead) {
+    const leadId = latestWebsiteLead?.source_id || latestWebsiteLead?.record_id || latestWebsiteLead?.id || latestWebsiteLead?.bid_id || "latest";
+    const customerName = safeText(
+      latestWebsiteLead?.customer_name ||
+      latestWebsiteLead?.full_name ||
+      latestWebsiteLead?.name
+    ) || "a customer";
+    const projectType = safeText(latestWebsiteLead?.project_type || latestWebsiteLead?.request_snapshot?.project_type);
+    const sourceFilter = normalizeSource(latestWebsiteLead?.lead_source_filter) || "website";
+    actions.push(
+      buildAction({
+        key: `website-lead:${leadId}`,
+        dedupeKey: `website-lead:${leadId}`,
+        title: `You got a new website lead from ${customerName}.`,
+        description: projectType
+          ? `Review the ${projectType} request and follow up from Opportunities.`
+          : "Review the request and follow up from Opportunities.",
+        buttonLabel: "Review Lead",
+        navigationTarget: `/app/opportunities?source=${sourceFilter}`,
+        priorityScore: 99,
+        category: "attention",
+        source: "website_leads",
+      })
+    );
   }
 
   const agreementRows = [...(Array.isArray(agreements) ? agreements : [])].sort((left, right) => {
