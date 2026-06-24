@@ -410,15 +410,23 @@ test('Marketing Website Builder tab loads readiness data and keeps Free contract
   const layoutState = await page.getByTestId('marketing-website-builder-tab').evaluate((root) => {
     const editor = root.querySelector('[data-testid="website-builder-basics-step"]');
     const preview = root.querySelector('[data-testid="website-builder-live-preview"]');
+    const main = root.closest('main');
+    const rootRect = root.getBoundingClientRect();
     const editorRect = editor?.getBoundingClientRect();
+    const previewRect = preview?.getBoundingClientRect();
+    const mainRect = main?.getBoundingClientRect();
     return {
+      shellUsesAvailableWidth: Boolean(mainRect && rootRect.width >= mainRect.width * 0.9),
       editorWideEnough: Boolean(editorRect && editorRect.width >= 420),
+      previewWideEnough: Boolean(previewRect && previewRect.width >= 520),
       previewHasRenderer: Boolean(preview?.querySelector('[data-testid="public-website-renderer"]')),
       documentFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
     };
   });
   expect(layoutState).toEqual({
+    shellUsesAvailableWidth: true,
     editorWideEnough: true,
+    previewWideEnough: true,
     previewHasRenderer: true,
     documentFits: true,
   });

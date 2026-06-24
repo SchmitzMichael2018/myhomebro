@@ -126,7 +126,7 @@ export function WebsiteBuilderStepNav({ steps, activeStep, onStepChange, readine
 
 export function WebsiteBuilderLivePreview({ payload, previewMode, setPreviewMode }) {
   return (
-    <aside className="min-w-0 space-y-4 2xl:sticky 2xl:top-4 2xl:self-start" data-testid="website-builder-live-preview">
+    <aside className="min-w-0 space-y-4 xl:sticky xl:top-4 xl:self-start" data-testid="website-builder-live-preview">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.07)]">
         <div>
           <div className="text-lg font-black text-slate-950">Live Preview</div>
@@ -612,7 +612,7 @@ export default function WebsiteBuilderWizard({
 
       <WebsiteBuilderStepNav steps={STEPS} activeStep={activeStep} onStepChange={setActiveStep} readinessScore={readiness.score} />
 
-      <div className="grid min-w-0 gap-6 2xl:grid-cols-[minmax(500px,580px)_minmax(0,1fr)]">
+      <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(420px,0.9fr)_minmax(540px,1.1fr)]">
         <div className="min-w-0" data-testid={`website-builder-${activeStep}-step`}>
           {activeStep === 'basics' ? <WebsiteBuilderBasicsStep {...stepProps} onSave={onSaveProfile} /> : null}
           {activeStep === 'branding' ? (

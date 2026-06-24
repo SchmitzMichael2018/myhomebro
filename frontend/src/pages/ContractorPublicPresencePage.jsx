@@ -1188,7 +1188,7 @@ export default function ContractorPublicPresencePage() {
   return (
     <ContractorPageSurface
       variant="operational"
-      contentClassName="mx-auto max-w-7xl"
+      contentClassName={activeTab === 'website' ? 'w-full max-w-none' : 'mx-auto max-w-7xl'}
     >
       <div className="space-y-6">
       <ContractorContextualGuideModal
@@ -1291,7 +1291,7 @@ export default function ContractorPublicPresencePage() {
         />
       </header>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_320px]">
+      <section className={activeTab === 'website' ? 'block' : 'grid gap-4 lg:grid-cols-[minmax(0,2fr)_320px]'}>
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap gap-2">
             {TABS.map((tab) => (
@@ -2600,6 +2600,7 @@ export default function ContractorPublicPresencePage() {
           ) : null}
         </div>
 
+        {activeTab !== 'website' ? (
         <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Share</div>
           <div className="mt-3 text-lg font-semibold text-slate-900">Public profile QR</div>
@@ -2622,6 +2623,7 @@ export default function ContractorPublicPresencePage() {
             </a>
           ) : null}
         </aside>
+        ) : null}
       </section>
       </div>
     </ContractorPageSurface>
