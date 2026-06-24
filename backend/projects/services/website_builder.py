@@ -298,11 +298,19 @@ def _setting_enabled(key: str) -> bool:
     return bool(flags.get(key, False))
 
 
+def _development_override_active() -> bool:
+    # Development override only. Do not enable in production.
+    return bool(getattr(settings, "DEBUG", False) or getattr(settings, "CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE", False))
+
+
 def _website_access_state(contractor: Contractor | None = None) -> dict[str, Any]:
     if contractor is not None and getattr(contractor, "pk", None):
         contractor = Contractor.objects.select_related("user").only("id", "created_at", "user__date_joined").get(pk=contractor.pk)
+    development_override = _development_override_active()
     configured = _safe_text(getattr(settings, "CONTRACTOR_WEBSITE_ACCESS_STATE", ""))
-    if configured:
+    if development_override:
+        access_state = ACCESS_TRIAL_ACTIVE
+    elif configured:
         access_state = configured
     else:
         access_state = ACCESS_TRIAL_ACTIVE
@@ -321,6 +329,7 @@ def _website_access_state(contractor: Contractor | None = None) -> dict[str, Any
         "trial_started_at": started_at.isoformat() if started_at else None,
         "trial_ends_at": ends_at.isoformat() if ends_at else None,
         "days_remaining": remaining if access_state == ACCESS_TRIAL_ACTIVE else 0,
+        "development_override_active": development_override,
         "post_trial_behavior": "Website draft content remains saved. Publishing can be paused until an active plan is connected.",
     }
 
@@ -352,10 +361,11 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
 
     access = _website_access_state(contractor)
     access_state = access["access_state"]
-    can_customize = access_state in {ACCESS_TRIAL_ACTIVE, ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} or _setting_enabled(FEATURE_WEBSITE_BUILDER)
-    can_publish = access_state in {ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} or _setting_enabled(FEATURE_WEBSITE_PUBLISH)
-    can_use_ai_limited = access_state == ACCESS_TRIAL_ACTIVE or _setting_enabled(FEATURE_WEBSITE_AI_COPY)
-    can_use_ai_full = access_state in {ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} and _setting_enabled(FEATURE_WEBSITE_AI_COPY)
+    development_override = bool(access.get("development_override_active"))
+    can_customize = development_override or access_state in {ACCESS_TRIAL_ACTIVE, ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} or _setting_enabled(FEATURE_WEBSITE_BUILDER)
+    can_publish = development_override or access_state in {ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} or _setting_enabled(FEATURE_WEBSITE_PUBLISH)
+    can_use_ai_limited = development_override or access_state == ACCESS_TRIAL_ACTIVE or _setting_enabled(FEATURE_WEBSITE_AI_COPY)
+    can_use_ai_full = development_override or (access_state in {ACCESS_PRO_ACTIVE, ACCESS_GROWTH_ACTIVE} and _setting_enabled(FEATURE_WEBSITE_AI_COPY))
 
     features = {
         FEATURE_PUBLIC_PROFILE: WebsiteFeature(
@@ -380,10 +390,10 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
         ),
         FEATURE_WEBSITE_CUSTOM_DOMAIN: WebsiteFeature(
             FEATURE_WEBSITE_CUSTOM_DOMAIN,
-            _setting_enabled(FEATURE_WEBSITE_CUSTOM_DOMAIN),
+            development_override or _setting_enabled(FEATURE_WEBSITE_CUSTOM_DOMAIN),
             "growth",
             "Custom domain",
-            "" if _setting_enabled(FEATURE_WEBSITE_CUSTOM_DOMAIN) else "Custom domains are planned for Growth.",
+            "" if development_override or _setting_enabled(FEATURE_WEBSITE_CUSTOM_DOMAIN) else "Custom domains are planned for Growth.",
         ),
         FEATURE_WEBSITE_AI_COPY: WebsiteFeature(
             FEATURE_WEBSITE_AI_COPY,
@@ -394,17 +404,17 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
         ),
         FEATURE_WEBSITE_ANALYTICS: WebsiteFeature(
             FEATURE_WEBSITE_ANALYTICS,
-            _setting_enabled(FEATURE_WEBSITE_ANALYTICS),
+            development_override or _setting_enabled(FEATURE_WEBSITE_ANALYTICS),
             "growth",
             "Website analytics",
-            "" if _setting_enabled(FEATURE_WEBSITE_ANALYTICS) else "Analytics are planned for Growth.",
+            "" if development_override or _setting_enabled(FEATURE_WEBSITE_ANALYTICS) else "Analytics are planned for Growth.",
         ),
         FEATURE_WEBSITE_ADVANCED_SEO: WebsiteFeature(
             FEATURE_WEBSITE_ADVANCED_SEO,
-            _setting_enabled(FEATURE_WEBSITE_ADVANCED_SEO),
+            development_override or _setting_enabled(FEATURE_WEBSITE_ADVANCED_SEO),
             "growth",
             "Advanced SEO",
-            "" if _setting_enabled(FEATURE_WEBSITE_ADVANCED_SEO) else "Advanced SEO controls are planned for Growth.",
+            "" if development_override or _setting_enabled(FEATURE_WEBSITE_ADVANCED_SEO) else "Advanced SEO controls are planned for Growth.",
         ),
     }
     return {

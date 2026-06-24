@@ -589,6 +589,7 @@ export default function WebsiteBuilderWizard({
   const blockers = Array.isArray(websiteReadiness?.publish_blockers) ? websiteReadiness.publish_blockers : [];
   const canPublish = Boolean(publishGate.enabled) && blockers.length === 0;
   const accessState = websiteReadiness?.entitlements?.access_state || 'website_trial_active';
+  const developmentOverrideActive = Boolean(websiteReadiness?.entitlements?.development_override_active);
   const canUseAi = Boolean(websiteReadiness?.entitlements?.can_use_ai_limited || websiteReadiness?.entitlements?.can_use_ai_full || features.website_ai_copy?.enabled);
   const homePage = pageByType(pages, 'home');
   const servicesPage = pageByType(pages, 'services');
@@ -728,6 +729,14 @@ export default function WebsiteBuilderWizard({
             <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-blue-800">
               AI-assisted website design
             </div>
+            {developmentOverrideActive ? (
+              <div
+                className="ml-0 mt-3 inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black uppercase tracking-[0.14em] text-amber-900 sm:ml-3 sm:mt-0"
+                data-testid="website-builder-dev-override-badge"
+              >
+                Developer Override Active
+              </div>
+            ) : null}
             <h2 className="mt-4 text-3xl font-black text-slate-950 md:text-4xl">Website Builder</h2>
             <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
               Move through one focused step at a time. The preview updates immediately as you shape your public profile and website draft.

@@ -19,7 +19,7 @@ const baseProfile = {
   brand_accent_color: '#14b8a6',
 };
 
-function makeWebsitePayload({ pro = false, published = false } = {}) {
+function makeWebsitePayload({ pro = false, published = false, developmentOverride = false } = {}) {
   const status = published ? 'published' : 'draft';
   const pages = [
     {
@@ -115,6 +115,7 @@ function makeWebsitePayload({ pro = false, published = false } = {}) {
       plan: pro ? 'pro' : 'trial',
       access_state: pro ? 'website_pro_active' : 'website_trial_active',
       days_remaining: pro ? 0 : 14,
+      development_override_active: developmentOverride,
       can_customize: true,
       can_publish: pro,
       can_use_ai_limited: !pro,
@@ -181,12 +182,12 @@ function makeWebsitePayload({ pro = false, published = false } = {}) {
   };
 }
 
-async function mockMarketingPage(page, { pro = false } = {}) {
+async function mockMarketingPage(page, { pro = false, developmentOverride = false } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
 
-  let websitePayload = makeWebsitePayload({ pro });
+  let websitePayload = makeWebsitePayload({ pro, developmentOverride });
   let publicPayload = null;
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -426,12 +427,13 @@ async function mockMarketingPage(page, { pro = false } = {}) {
 }
 
 test('Marketing Website Builder tab loads premium trial shell and AI suggestion review', async ({ page }) => {
-  await mockMarketingPage(page, { pro: false });
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('marketing-website-builder-tab')).toBeVisible();
   await expect(page.getByTestId('website-builder-trial-banner')).toContainText('website trial active');
+  await expect(page.getByTestId('website-builder-dev-override-badge')).toContainText('Developer Override Active');
   await expect(page.getByTestId('website-builder-step-nav')).toContainText('78%');
   await expect(page.getByTestId('website-builder-brand-step')).toContainText('Brand foundation');
   await expect(page.getByTestId('website-builder-live-preview')).toContainText('Bright Build Co');

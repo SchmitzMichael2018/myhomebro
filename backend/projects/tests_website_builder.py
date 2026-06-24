@@ -155,6 +155,28 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertTrue(response.data["draft"]["has_draft"])
         self.assertEqual(len(response.data["pages"]), 5)
 
+    @override_settings(DEBUG=True, CONTRACTOR_WEBSITE_ACCESS_STATE="website_trial_expired")
+    def test_debug_development_override_enables_all_website_capabilities(self):
+        Contractor.objects.filter(pk=self.contractor.pk).update(created_at=timezone.now() - timedelta(days=45))
+
+        response = self.client.get("/api/projects/contractor/website/", secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        entitlements = response.data["entitlements"]
+        self.assertEqual(entitlements["access_state"], "website_trial_active")
+        self.assertTrue(entitlements["development_override_active"])
+        self.assertTrue(entitlements["can_customize"])
+        self.assertTrue(entitlements["can_publish"])
+        self.assertTrue(entitlements["can_use_ai_limited"])
+        self.assertTrue(entitlements["can_use_ai_full"])
+        features = entitlements["features"]
+        self.assertTrue(features["website_builder"]["enabled"])
+        self.assertTrue(features["website_publish"]["enabled"])
+        self.assertTrue(features["website_ai_copy"]["enabled"])
+        self.assertTrue(features["website_analytics"]["enabled"])
+        self.assertTrue(features["website_custom_domain"]["enabled"])
+        self.assertTrue(features["website_advanced_seo"]["enabled"])
+
     def test_expired_trial_blocks_customization_without_deleting_content(self):
         self.client.get("/api/projects/contractor/website/", secure=True)
         website = ContractorWebsite.objects.get(contractor=self.contractor)
