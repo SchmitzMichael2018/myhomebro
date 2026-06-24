@@ -405,6 +405,23 @@ test('Marketing Website Builder tab loads readiness data and keeps Free contract
   await expect(page.getByTestId('website-builder-step-nav')).toContainText('78%');
   await expect(page.getByTestId('website-builder-basics-step')).toContainText('Business Basics');
   await expect(page.getByTestId('website-builder-live-preview')).toContainText('Bright Build Co');
+  await expect(page.getByTestId('website-builder-preview-toggle')).toBeVisible();
+
+  const layoutState = await page.getByTestId('marketing-website-builder-tab').evaluate((root) => {
+    const editor = root.querySelector('[data-testid="website-builder-basics-step"]');
+    const preview = root.querySelector('[data-testid="website-builder-live-preview"]');
+    const editorRect = editor?.getBoundingClientRect();
+    return {
+      editorWideEnough: Boolean(editorRect && editorRect.width >= 420),
+      previewHasRenderer: Boolean(preview?.querySelector('[data-testid="public-website-renderer"]')),
+      documentFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
+    };
+  });
+  expect(layoutState).toEqual({
+    editorWideEnough: true,
+    previewHasRenderer: true,
+    documentFits: true,
+  });
 
   await page.getByRole('button', { name: 'Branding' }).click();
   await expect(page.getByTestId('website-builder-branding-step')).toContainText('Upgrade to Pro');
