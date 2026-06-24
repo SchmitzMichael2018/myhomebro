@@ -95,7 +95,15 @@ from .views.project_intake import ProjectIntakeViewSet
 from .views.contractor_me import ContractorMeView
 from .views.activity_feed import ContractorActivityFeedView
 from .views.contractor_bids import ContractorBidsView
-from .views.website_builder import ContractorWebsitePreviewView, ContractorWebsiteView
+from .views.website_builder import (
+    ContractorWebsitePageDetailView,
+    ContractorWebsitePagesView,
+    ContractorWebsitePauseView,
+    ContractorWebsitePreviewView,
+    ContractorWebsitePublishView,
+    ContractorWebsiteView,
+    PublicWebsiteView,
+)
 from .views.compliance import ContractorCompliancePreviewView
 from .views.contractor_onboarding_setup import ContractorOnboardingSetupView
 from .views.workspace_context import WorkspaceContextView
@@ -408,6 +416,10 @@ urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
     path("contractor/website/", ContractorWebsiteView.as_view(), name="contractor-website"),
     path("contractor/website/preview/", ContractorWebsitePreviewView.as_view(), name="contractor-website-preview"),
+    path("contractor/website/publish/", ContractorWebsitePublishView.as_view(), name="contractor-website-publish"),
+    path("contractor/website/pause/", ContractorWebsitePauseView.as_view(), name="contractor-website-pause"),
+    path("contractor/website/pages/", ContractorWebsitePagesView.as_view(), name="contractor-website-pages"),
+    path("contractor/website/pages/<int:page_id>/", ContractorWebsitePageDetailView.as_view(), name="contractor-website-page-detail"),
     path("recommendations/me/", RecommendationMeView.as_view(), name="recommendations-me"),
     path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),
@@ -949,6 +961,8 @@ urlpatterns = [
     path("public/contractors/<slug:slug>/request-quote/improve-description/", PublicContractorQuoteDescriptionImproveView.as_view()),
     path("public/contractors/<slug:slug>/intake/", PublicContractorIntakeView.as_view()),
     path("public/contractors/<slug:slug>/qr/", PublicContractorQrView.as_view()),
+    path("public/websites/<slug:slug>/", PublicWebsiteView.as_view(), name="public-website"),
+    path("public/websites/<slug:slug>/<slug:page_slug>/", PublicWebsiteView.as_view(), name="public-website-page"),
 
     # -------------------------------------------------
     # Misc

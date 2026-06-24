@@ -919,6 +919,93 @@ class ContractorReview(models.Model):
     def __str__(self) -> str:
         return f"{self.customer_name} ({self.rating}/5)"
 
+
+class ContractorWebsite(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_PUBLISHED = "published"
+    STATUS_PAUSED = "paused"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_PUBLISHED, "Published"),
+        (STATUS_PAUSED, "Paused"),
+    ]
+
+    TEMPLATE_STARTER = "starter"
+    TEMPLATE_MODERN_TRADE = "modern_trade"
+    TEMPLATE_PREMIUM_HOME = "premium_home"
+    TEMPLATE_COMMERCIAL = "commercial"
+    TEMPLATE_CHOICES = [
+        (TEMPLATE_STARTER, "Starter"),
+        (TEMPLATE_MODERN_TRADE, "Modern Trade"),
+        (TEMPLATE_PREMIUM_HOME, "Premium Home"),
+        (TEMPLATE_COMMERCIAL, "Commercial"),
+    ]
+
+    contractor = models.OneToOneField(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="website",
+    )
+    public_profile = models.OneToOneField(
+        "projects.ContractorPublicProfile",
+        on_delete=models.CASCADE,
+        related_name="website",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    template_key = models.CharField(max_length=32, choices=TEMPLATE_CHOICES, default=TEMPLATE_STARTER)
+    homepage_layout = models.JSONField(default=dict, blank=True)
+    published_snapshot = models.JSONField(default=dict, blank=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["contractor_id"]
+
+    def __str__(self) -> str:
+        return f"Website {self.contractor_id} ({self.status})"
+
+
+class ContractorWebsitePage(models.Model):
+    PAGE_HOME = "home"
+    PAGE_SERVICES = "services"
+    PAGE_GALLERY = "gallery"
+    PAGE_REVIEWS = "reviews"
+    PAGE_CONTACT = "contact"
+    PAGE_CHOICES = [
+        (PAGE_HOME, "Home"),
+        (PAGE_SERVICES, "Services"),
+        (PAGE_GALLERY, "Gallery"),
+        (PAGE_REVIEWS, "Reviews"),
+        (PAGE_CONTACT, "Contact"),
+    ]
+
+    website = models.ForeignKey(
+        "projects.ContractorWebsite",
+        on_delete=models.CASCADE,
+        related_name="pages",
+    )
+    page_type = models.CharField(max_length=32, choices=PAGE_CHOICES, db_index=True)
+    slug = models.SlugField(max_length=80)
+    title = models.CharField(max_length=255, blank=True, default="")
+    seo_title = models.CharField(max_length=255, blank=True, default="")
+    seo_description = models.TextField(blank=True, default="")
+    content_blocks = models.JSONField(default=dict, blank=True)
+    is_published = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["sort_order", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["website", "page_type"], name="uniq_website_page_type"),
+            models.UniqueConstraint(fields=["website", "slug"], name="uniq_website_page_slug"),
+        ]
+
+    def __str__(self) -> str:
+        return self.title or f"{self.website_id}:{self.page_type}"
+
     @property
     def ai_free_agreements_remaining(self) -> int:
         return 0

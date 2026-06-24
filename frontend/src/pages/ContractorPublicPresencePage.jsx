@@ -22,6 +22,7 @@ import { generateContractorPublicProfile } from '../api.js';
 import { ProjectModeBadge } from '../components/projectMode.jsx';
 import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
+import PublicWebsiteRenderer from '../components/website/PublicWebsiteRenderer.jsx';
 
 const TABS = [
   { key: 'profile', label: 'Public Profile' },
@@ -30,6 +31,30 @@ const TABS = [
   { key: 'reviews', label: 'Reviews' },
   { key: 'leads', label: 'Website Leads' },
 ];
+
+const WEBSITE_BUILDER_TABS = [
+  { key: 'setup', label: 'Setup' },
+  { key: 'design', label: 'Design' },
+  { key: 'pages', label: 'Pages' },
+  { key: 'preview', label: 'Preview' },
+  { key: 'publish', label: 'Publish' },
+];
+
+const WEBSITE_TEMPLATES = [
+  { key: 'starter', label: 'Starter', description: 'A clean profile-led site for most contractors.' },
+  { key: 'modern_trade', label: 'Modern Trade', description: 'Sharper contrast and service-forward sections.' },
+  { key: 'premium_home', label: 'Premium Home', description: 'A polished residential layout with more visual weight.' },
+  { key: 'commercial', label: 'Commercial', description: 'A direct, trust-heavy layout for larger scopes.' },
+];
+
+const WEBSITE_SECTION_LABELS = {
+  hero: 'Hero',
+  services: 'Services',
+  portfolio: 'Portfolio',
+  reviews: 'Reviews',
+  trust: 'Trust',
+  contact: 'Contact',
+};
 
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
@@ -458,6 +483,11 @@ export default function ContractorPublicPresencePage() {
   const [leadsRows, setLeadsRows] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
   const [websiteReadiness, setWebsiteReadiness] = useState(defaultWebsiteReadiness);
+  const [websiteBuilderTab, setWebsiteBuilderTab] = useState('setup');
+  const [selectedWebsitePageId, setSelectedWebsitePageId] = useState(null);
+  const [websitePreviewMode, setWebsitePreviewMode] = useState('desktop');
+  const [websiteBusy, setWebsiteBusy] = useState(false);
+  const [websitePublishMessage, setWebsitePublishMessage] = useState('');
   const [activationSummary, setActivationSummary] = useState(null);
   const [dismissedContextualGuides, setDismissedContextualGuides] = useState(new Set());
   const [galleryBusy, setGalleryBusy] = useState(false);
@@ -484,6 +514,29 @@ export default function ContractorPublicPresencePage() {
   const missingRequiredFields = Array.isArray(websiteReadinessData.missing_required_fields)
     ? websiteReadinessData.missing_required_fields
     : [];
+  const websiteData = websiteReadiness?.website || {};
+  const websitePages = Array.isArray(websiteReadiness?.pages) ? websiteReadiness.pages : [];
+  const websiteLayout = websiteData.homepage_layout || {};
+  const websiteSectionOrder = Array.isArray(websiteLayout.section_order)
+    ? websiteLayout.section_order
+    : ['hero', 'services', 'portfolio', 'reviews', 'trust', 'contact'];
+  const websiteSections = websiteLayout.sections || {};
+  const websitePublishBlockers = Array.isArray(websiteReadiness?.publish_blockers)
+    ? websiteReadiness.publish_blockers
+    : [];
+  const selectedWebsitePage = websitePages.find((page) => page.id === selectedWebsitePageId) || websitePages[0] || null;
+  const canCustomizeWebsite = Boolean(websiteBuilderGate.enabled);
+  const canPublishWebsite = Boolean(websitePublishGate.enabled) && websitePublishBlockers.length === 0;
+  const websitePreviewPayload = useMemo(
+    () => ({
+      profile: websiteProfile,
+      pages: websitePages,
+      website: websiteData,
+      homepage_layout: websiteLayout,
+      template_key: websiteData.template_key || websiteReadiness?.draft?.template_key || 'starter',
+    }),
+    [websiteData, websiteLayout, websitePages, websiteProfile, websiteReadiness?.draft?.template_key]
+  );
 
   const specialtiesText = useMemo(
     () => (Array.isArray(profile.specialties) ? profile.specialties.join(', ') : ''),
@@ -619,6 +672,103 @@ export default function ContractorPublicPresencePage() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  useEffect(() => {
+    if (!selectedWebsitePageId && websitePages.length) {
+      setSelectedWebsitePageId(websitePages[0].id);
+    }
+  }, [selectedWebsitePageId, websitePages]);
+
+  async function refreshWebsiteBuilder() {
+    const { data } = await api.get('/projects/contractor/website/');
+    setWebsiteReadiness({ ...defaultWebsiteReadiness, ...(data || {}), loading: false, error: '' });
+    return data || {};
+  }
+
+  async function saveWebsiteSettings(patch) {
+    if (!canCustomizeWebsite) {
+      toast.error(websiteBuilderGate.reason || 'Website Builder requires Pro.');
+      return;
+    }
+    try {
+      setWebsiteBusy(true);
+      const { data } = await api.patch('/projects/contractor/website/', patch);
+      setWebsiteReadiness({ ...defaultWebsiteReadiness, ...(data || {}), loading: false, error: '' });
+      toast.success('Website draft saved.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Could not save website settings.');
+    } finally {
+      setWebsiteBusy(false);
+    }
+  }
+
+  function updateWebsiteLayout(layoutPatch) {
+    saveWebsiteSettings({
+      homepage_layout: {
+        ...websiteLayout,
+        ...layoutPatch,
+        branding: { ...(websiteLayout.branding || {}), ...(layoutPatch.branding || {}) },
+        sections: { ...(websiteLayout.sections || {}), ...(layoutPatch.sections || {}) },
+      },
+    });
+  }
+
+  async function saveWebsitePage(page, patch) {
+    if (!page?.id) return;
+    if (!canCustomizeWebsite) {
+      toast.error(websiteBuilderGate.reason || 'Website Builder requires Pro.');
+      return;
+    }
+    try {
+      setWebsiteBusy(true);
+      await api.patch(`/projects/contractor/website/pages/${page.id}/`, patch);
+      await refreshWebsiteBuilder();
+      toast.success('Website page saved.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Could not save website page.');
+    } finally {
+      setWebsiteBusy(false);
+    }
+  }
+
+  async function publishWebsite() {
+    if (!canPublishWebsite) {
+      setWebsitePublishMessage(websitePublishBlockers[0] || websitePublishGate.reason || 'Website is not ready to publish.');
+      return;
+    }
+    try {
+      setWebsiteBusy(true);
+      await api.post('/projects/contractor/website/publish/');
+      setWebsitePublishMessage('Website published. The public route now serves the saved snapshot.');
+      await refreshWebsiteBuilder();
+      toast.success('Website published.');
+    } catch (err) {
+      console.error(err);
+      const blockers = err?.response?.data?.blockers;
+      const message = Array.isArray(blockers) && blockers.length ? blockers[0] : err?.response?.data?.detail || 'Could not publish website.';
+      setWebsitePublishMessage(message);
+      toast.error(message);
+    } finally {
+      setWebsiteBusy(false);
+    }
+  }
+
+  async function pauseWebsite() {
+    try {
+      setWebsiteBusy(true);
+      await api.post('/projects/contractor/website/pause/');
+      await refreshWebsiteBuilder();
+      setWebsitePublishMessage('Website paused. Public visitors will not see the site while it is paused.');
+      toast.success('Website paused.');
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || 'Could not pause website.');
+    } finally {
+      setWebsiteBusy(false);
+    }
+  }
 
   useEffect(() => {
     const params = new URLSearchParams(location.search || '');
@@ -1478,21 +1628,22 @@ export default function ContractorPublicPresencePage() {
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
-                      Foundation Ready
+                    <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-blue-800">
+                      MVP Draft Builder
                     </div>
                     <h2 className="mt-4 text-2xl font-bold text-slate-900">Website Builder</h2>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
-                      Your public profile, gallery, reviews, service area, and brand settings now resolve into the Website Builder data contract.
+                      Build a simple, professional website from your existing public profile, gallery, reviews, service area, and brand settings.
                     </p>
                   </div>
                   <div className="text-right">
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current plan</div>
                     <div className="mt-1 text-lg font-bold text-slate-900">{websiteReadiness?.entitlements?.plan || 'free'}</div>
+                    <div className="mt-1 text-xs text-slate-500">Status: {websiteData.status || websiteReadiness?.draft?.status || 'draft'}</div>
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <div className="mt-5 grid gap-3 lg:grid-cols-4">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-plan-gate">
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Plan gate</div>
                     <div className="mt-2 text-sm font-semibold text-slate-900">
@@ -1518,66 +1669,376 @@ export default function ContractorPublicPresencePage() {
                       {(websiteProfile?.gallery?.count || 0)} portfolio item{Number(websiteProfile?.gallery?.count || 0) === 1 ? '' : 's'} and {(websiteProfile?.reviews?.count || 0)} public review{Number(websiteProfile?.reviews?.count || 0) === 1 ? '' : 's'} ready for preview.
                     </p>
                   </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-publish-status">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Publish</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-900">
+                      {canPublishWebsite ? 'Ready to publish' : 'Not publishable yet'}
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {websitePublishBlockers[0] || websitePublishGate.reason || 'Publishing saves a public snapshot.'}
+                    </p>
+                  </div>
                 </div>
 
-                {missingRequiredFields.length ? (
-                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="website-builder-missing-fields">
-                    <div className="text-sm font-semibold text-amber-900">Missing required fields</div>
-                    <div className="mt-1 text-sm text-amber-800">{missingRequiredFields.join(', ')}</div>
-                  </div>
-                ) : null}
-
-                <div className="mt-5 grid gap-2 md:grid-cols-2" data-testid="website-builder-readiness-checklist">
-                  {websiteChecklist.map((item) => (
-                    <div
-                      key={item.key}
-                      className={`rounded-2xl border px-4 py-3 text-sm ${
-                        item.complete
-                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                          : 'border-slate-200 bg-slate-50 text-slate-600'
+                <div className="mt-6 flex gap-2 overflow-x-auto border-b border-slate-200 pb-2" data-testid="website-builder-tabs">
+                  {WEBSITE_BUILDER_TABS.map((tab) => (
+                    <button
+                      key={tab.key}
+                      type="button"
+                      onClick={() => setWebsiteBuilderTab(tab.key)}
+                      className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold ${
+                        websiteBuilderTab === tab.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                       }`}
                     >
-                      <span className="font-semibold">{item.complete ? 'Ready' : item.required ? 'Required' : 'Suggested'}:</span> {item.label}
-                      {!item.complete && item.action ? <div className="mt-1 text-xs">{item.action}</div> : null}
-                    </div>
+                      {tab.label}
+                    </button>
                   ))}
                 </div>
 
-                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-next-steps">
-                  <div className="text-sm font-semibold text-slate-900">Recommended next steps</div>
-                  <div className="mt-3 space-y-2">
-                    {(websiteReadiness.recommended_next_steps || []).map((step) => (
-                      <div key={step.key} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
-                        <span className="font-semibold text-slate-900">{step.label}</span>
-                        {step.action ? <span className="text-slate-500"> - {step.action}</span> : null}
+                {websiteBuilderTab === 'setup' ? (
+                  <div className="mt-5 space-y-4" data-testid="website-builder-setup-tab">
+                    {missingRequiredFields.length ? (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="website-builder-missing-fields">
+                        <div className="text-sm font-semibold text-amber-900">Missing required fields</div>
+                        <div className="mt-1 text-sm text-amber-800">{missingRequiredFields.join(', ')}</div>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                    ) : null}
 
-                <div className="mt-5 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    disabled
-                    data-testid="website-builder-customize-button"
-                    title={websiteBuilderGate.reason || 'Full editor is not enabled yet.'}
-                    className="rounded-xl bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-600"
-                  >
-                    Customize Website
-                  </button>
-                  <button
-                    type="button"
-                    disabled
-                    data-testid="website-builder-publish-button"
-                    title={websitePublishGate.reason || 'Publishing is not enabled yet.'}
-                    className="rounded-xl bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-600"
-                  >
-                    Publish
-                  </button>
-                  <div className="self-center text-sm text-slate-500">
-                    {websitePublishGate.reason || websiteBuilderGate.reason || 'Website publishing is disabled in this foundation phase.'}
+                    <div className="grid gap-2 md:grid-cols-2" data-testid="website-builder-readiness-checklist">
+                      {websiteChecklist.map((item) => (
+                        <div
+                          key={item.key}
+                          className={`rounded-2xl border px-4 py-3 text-sm ${
+                            item.complete
+                              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                              : 'border-slate-200 bg-slate-50 text-slate-600'
+                          }`}
+                        >
+                          <span className="font-semibold">{item.complete ? 'Ready' : item.required ? 'Required' : 'Suggested'}:</span> {item.label}
+                          {!item.complete && item.action ? <div className="mt-1 text-xs">{item.action}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-next-steps">
+                      <div className="text-sm font-semibold text-slate-900">Recommended next steps</div>
+                      <div className="mt-3 space-y-2">
+                        {(websiteReadiness.recommended_next_steps || []).map((step) => (
+                          <div key={step.key} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                            <span className="font-semibold text-slate-900">{step.label}</span>
+                            {step.action ? <span className="text-slate-500"> - {step.action}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : null}
+
+                {websiteBuilderTab === 'design' ? (
+                  <div className="mt-5 space-y-5" data-testid="website-builder-design-tab">
+                    {!canCustomizeWebsite ? (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                        {websiteBuilderGate.reason || 'Upgrade to Pro to customize templates, sections, colors, and page content.'}
+                      </div>
+                    ) : null}
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {WEBSITE_TEMPLATES.map((template) => (
+                        <button
+                          key={template.key}
+                          type="button"
+                          disabled={!canCustomizeWebsite || websiteBusy}
+                          onClick={() => saveWebsiteSettings({ template_key: template.key })}
+                          className={`rounded-2xl border p-4 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
+                            (websiteData.template_key || 'starter') === template.key ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="text-sm font-bold text-slate-900">{template.label}</div>
+                          <div className="mt-1 text-xs leading-5 text-slate-600">{template.description}</div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <label className="text-sm font-semibold text-slate-700">
+                        Primary color
+                        <input
+                          type="color"
+                          disabled={!canCustomizeWebsite || websiteBusy}
+                          value={websiteLayout.branding?.primary_color || websiteProfile?.branding?.primary_color || '#2563eb'}
+                          onChange={(event) => updateWebsiteLayout({ branding: { primary_color: event.target.value } })}
+                          className="mt-2 h-11 w-full rounded-xl border border-slate-300 p-1 disabled:opacity-60"
+                          data-testid="website-builder-primary-color"
+                        />
+                      </label>
+                      <label className="text-sm font-semibold text-slate-700">
+                        Accent color
+                        <input
+                          type="color"
+                          disabled={!canCustomizeWebsite || websiteBusy}
+                          value={websiteLayout.branding?.accent_color || websiteProfile?.branding?.accent_color || '#14b8a6'}
+                          onChange={(event) => updateWebsiteLayout({ branding: { accent_color: event.target.value } })}
+                          className="mt-2 h-11 w-full rounded-xl border border-slate-300 p-1 disabled:opacity-60"
+                          data-testid="website-builder-accent-color"
+                        />
+                      </label>
+                      <label className="text-sm font-semibold text-slate-700">
+                        Font theme
+                        <select
+                          disabled={!canCustomizeWebsite || websiteBusy}
+                          value={websiteLayout.branding?.font_theme || websiteProfile?.branding?.font_theme || 'modern'}
+                          onChange={(event) => updateWebsiteLayout({ branding: { font_theme: event.target.value } })}
+                          className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                          data-testid="website-builder-font-theme"
+                        >
+                          {FONT_THEME_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-sm font-bold text-slate-900">Homepage sections</div>
+                      <div className="mt-3 grid gap-2 md:grid-cols-3">
+                        {websiteSectionOrder.map((key) => (
+                          <label key={key} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              disabled={!canCustomizeWebsite || websiteBusy}
+                              checked={websiteSections[key] !== false}
+                              onChange={(event) => updateWebsiteLayout({ sections: { [key]: event.target.checked } })}
+                            />
+                            <span>{WEBSITE_SECTION_LABELS[key] || key}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4" data-testid="website-builder-ai-branding-disabled">
+                      <div className="text-sm font-bold text-slate-900">AI Branding Assistant</div>
+                      <p className="mt-1 text-sm text-slate-600">Coming later. This MVP keeps AI copy generation disabled while the website data contract and publish flow stabilize.</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {websiteBuilderTab === 'pages' ? (
+                  <div className="mt-5 grid gap-5 lg:grid-cols-[240px_1fr]" data-testid="website-builder-pages-tab">
+                    <div className="space-y-2">
+                      {websitePages.map((page) => (
+                        <button
+                          key={page.id}
+                          type="button"
+                          onClick={() => setSelectedWebsitePageId(page.id)}
+                          className={`w-full rounded-xl px-4 py-3 text-left text-sm font-semibold ${
+                            selectedWebsitePage?.id === page.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                          }`}
+                        >
+                          {page.title || page.page_type}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      {selectedWebsitePage ? (
+                        <div className="space-y-4">
+                          {!canCustomizeWebsite ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                              {websiteBuilderGate.reason || 'Upgrade to Pro to edit website pages.'}
+                            </div>
+                          ) : null}
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <label className="text-sm font-semibold text-slate-700">
+                              Page title
+                              <input
+                                disabled={!canCustomizeWebsite || websiteBusy}
+                                value={selectedWebsitePage.title || ''}
+                                onChange={(event) => setWebsiteReadiness((prev) => ({
+                                  ...prev,
+                                  pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, title: event.target.value } : page),
+                                }))}
+                                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                                data-testid="website-builder-page-title"
+                              />
+                            </label>
+                            <label className="text-sm font-semibold text-slate-700">
+                              Slug
+                              <input
+                                disabled={!canCustomizeWebsite || websiteBusy || selectedWebsitePage.page_type === 'home'}
+                                value={selectedWebsitePage.slug || ''}
+                                onChange={(event) => setWebsiteReadiness((prev) => ({
+                                  ...prev,
+                                  pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, slug: event.target.value } : page),
+                                }))}
+                                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                              />
+                            </label>
+                          </div>
+                          <label className="block text-sm font-semibold text-slate-700">
+                            SEO title
+                            <input
+                              disabled={!canCustomizeWebsite || websiteBusy}
+                              value={selectedWebsitePage.seo_title || ''}
+                              onChange={(event) => setWebsiteReadiness((prev) => ({
+                                ...prev,
+                                pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, seo_title: event.target.value } : page),
+                              }))}
+                              className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                            />
+                          </label>
+                          <label className="block text-sm font-semibold text-slate-700">
+                            SEO description
+                            <textarea
+                              disabled={!canCustomizeWebsite || websiteBusy}
+                              value={selectedWebsitePage.seo_description || ''}
+                              onChange={(event) => setWebsiteReadiness((prev) => ({
+                                ...prev,
+                                pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, seo_description: event.target.value } : page),
+                              }))}
+                              rows={2}
+                              className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                            />
+                          </label>
+                          {selectedWebsitePage.page_type === 'home' ? (
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <label className="text-sm font-semibold text-slate-700">
+                                Hero headline
+                                <input
+                                  disabled={!canCustomizeWebsite || websiteBusy}
+                                  value={selectedWebsitePage.content_blocks?.hero?.headline || ''}
+                                  onChange={(event) => setWebsiteReadiness((prev) => ({
+                                    ...prev,
+                                    pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? {
+                                      ...page,
+                                      content_blocks: {
+                                        ...(page.content_blocks || {}),
+                                        hero: { ...(page.content_blocks?.hero || {}), headline: event.target.value },
+                                      },
+                                    } : page),
+                                  }))}
+                                  className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                                  data-testid="website-builder-hero-headline"
+                                />
+                              </label>
+                              <label className="text-sm font-semibold text-slate-700">
+                                CTA text
+                                <input
+                                  disabled={!canCustomizeWebsite || websiteBusy}
+                                  value={selectedWebsitePage.content_blocks?.hero?.cta_text || ''}
+                                  onChange={(event) => setWebsiteReadiness((prev) => ({
+                                    ...prev,
+                                    pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? {
+                                      ...page,
+                                      content_blocks: {
+                                        ...(page.content_blocks || {}),
+                                        hero: { ...(page.content_blocks?.hero || {}), cta_text: event.target.value },
+                                      },
+                                    } : page),
+                                  }))}
+                                  className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                                />
+                              </label>
+                              <label className="text-sm font-semibold text-slate-700 md:col-span-2">
+                                Hero subheadline
+                                <textarea
+                                  disabled={!canCustomizeWebsite || websiteBusy}
+                                  value={selectedWebsitePage.content_blocks?.hero?.subheadline || ''}
+                                  onChange={(event) => setWebsiteReadiness((prev) => ({
+                                    ...prev,
+                                    pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? {
+                                      ...page,
+                                      content_blocks: {
+                                        ...(page.content_blocks || {}),
+                                        hero: { ...(page.content_blocks?.hero || {}), subheadline: event.target.value },
+                                      },
+                                    } : page),
+                                  }))}
+                                  rows={3}
+                                  className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
+                                />
+                              </label>
+                            </div>
+                          ) : null}
+                          <button
+                            type="button"
+                            disabled={!canCustomizeWebsite || websiteBusy}
+                            onClick={() => saveWebsitePage(selectedWebsitePage, selectedWebsitePage)}
+                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-600"
+                            data-testid="website-builder-save-page"
+                          >
+                            {websiteBusy ? 'Saving...' : 'Save Page'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-slate-500">No website pages have been created yet.</div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                {websiteBuilderTab === 'preview' ? (
+                  <div className="mt-5 space-y-4" data-testid="website-builder-preview-tab">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-sm text-slate-600">Draft preview uses the same website payload as the future public renderer.</div>
+                      <div className="flex rounded-xl bg-slate-100 p-1">
+                        {['desktop', 'mobile'].map((mode) => (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => setWebsitePreviewMode(mode)}
+                            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${websitePreviewMode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
+                          >
+                            {mode === 'desktop' ? 'Desktop' : 'Mobile'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <PublicWebsiteRenderer payload={websitePreviewPayload} previewMode={websitePreviewMode} />
+                  </div>
+                ) : null}
+
+                {websiteBuilderTab === 'publish' ? (
+                  <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_360px]" data-testid="website-builder-publish-tab">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-sm font-bold text-slate-900">Publish readiness</div>
+                      <div className="mt-3 space-y-2">
+                        {(websitePublishBlockers.length ? websitePublishBlockers : ['No publish blockers detected.']).map((blocker) => (
+                          <div key={blocker} className={`rounded-xl px-3 py-2 text-sm ${websitePublishBlockers.length ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}>
+                            {blocker}
+                          </div>
+                        ))}
+                      </div>
+                      {websitePublishMessage ? <div className="mt-3 rounded-xl bg-white px-3 py-2 text-sm text-slate-700">{websitePublishMessage}</div> : null}
+                    </div>
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="text-sm font-bold text-slate-900">Public route</div>
+                      <div className="mt-2 break-all rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                        {websiteData.public_url || '/websites/your-slug'}
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          disabled={!canPublishWebsite || websiteBusy}
+                          onClick={publishWebsite}
+                          data-testid="website-builder-publish-button"
+                          className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600"
+                        >
+                          {websiteBusy ? 'Publishing...' : 'Publish Snapshot'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={websiteBusy || websiteData.status !== 'published'}
+                          onClick={pauseWebsite}
+                          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Pause
+                        </button>
+                      </div>
+                      <p className="mt-3 text-xs leading-5 text-slate-500">
+                        Publishing stores a snapshot. Later draft changes will not affect the public site until you publish again.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : null}

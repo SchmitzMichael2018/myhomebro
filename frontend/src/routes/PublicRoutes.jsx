@@ -20,6 +20,7 @@ import MagicInvoice from "../pages/MagicInvoice.jsx"; // /invoices/magic/:token
 import MagicDrawRequest from "../pages/MagicDrawRequest.jsx"; // /draws/magic/:token
 import MagicAgreement from "../pages/MagicAgreement.jsx"; // /agreements/magic/:token
 import PublicProfile from "../pages/PublicProfile.jsx"; // /contractors/:slug public view
+import PublicWebsitePage from "../pages/PublicWebsitePage.jsx"; // /websites/:slug public website view
 import LegalPage from "../pages/LegalPage.jsx";
 
 // Optional: your /invoice/:token router page
@@ -98,6 +99,10 @@ export default function PublicRoutes() {
       <Route path="/contractors/directory-claim/:token" element={<ContractorClaimPage />} />
       <Route path="/contractors/claim/:token" element={<ContractorClaimPage />} />
       <Route path="/contractors/:slug" element={<PublicProfile />} />
+
+      {/* Public contractor website */}
+      <Route path="/websites/:slug" element={<PublicWebsitePage />} />
+      <Route path="/websites/:slug/:pageSlug" element={<PublicWebsitePage />} />
 
       {/* Legal docs */}
       <Route path="/legal/:slug" element={<LegalPage />} />

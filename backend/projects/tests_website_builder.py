@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -9,6 +9,8 @@ from projects.models import (
     ContractorGalleryItem,
     ContractorPublicProfile,
     ContractorReview,
+    ContractorWebsite,
+    ContractorWebsitePage,
     Skill,
 )
 from projects.services.website_builder import build_website_profile_payload
@@ -141,7 +143,9 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertFalse(features["website_ai_copy"]["enabled"])
         self.assertFalse(features["website_analytics"]["enabled"])
         self.assertFalse(features["website_advanced_seo"]["enabled"])
-        self.assertEqual(response.data["draft"]["status"], "placeholder")
+        self.assertEqual(response.data["draft"]["status"], ContractorWebsite.STATUS_DRAFT)
+        self.assertTrue(response.data["draft"]["has_draft"])
+        self.assertEqual(len(response.data["pages"]), 5)
 
     def test_preview_endpoint_returns_public_safe_data_only(self):
         self.profile.show_email_public = False
@@ -159,3 +163,120 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(len(profile["gallery"]["items"]), 1)
         self.assertEqual(profile["reviews"]["count"], 1)
         self.assertEqual(profile["reviews"]["selected"][0]["customer_name"], "Taylor Homeowner")
+
+    def test_draft_auto_created_and_pages_auto_generated(self):
+        response = self.client.get("/api/projects/contractor/website/", secure=True)
+
+        self.assertEqual(response.status_code, 200)
+        website = ContractorWebsite.objects.get(contractor=self.contractor)
+        self.assertEqual(website.status, ContractorWebsite.STATUS_DRAFT)
+        self.assertEqual(website.pages.count(), 5)
+        self.assertTrue(website.pages.filter(page_type=ContractorWebsitePage.PAGE_HOME).exists())
+
+    @override_settings(
+        CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={
+            "website_builder": True,
+            "website_publish": True,
+        }
+    )
+    def test_design_edits_and_page_edits_save(self):
+        response = self.client.patch(
+            "/api/projects/contractor/website/",
+            {
+                "template_key": "premium_home",
+                "homepage_layout": {
+                    "branding": {"primary_color": "#123456", "accent_color": "#abcdef"},
+                    "sections": {"reviews": False},
+                    "section_order": ["hero", "portfolio", "services", "trust", "contact"],
+                },
+            },
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        website = ContractorWebsite.objects.get(contractor=self.contractor)
+        self.assertEqual(website.template_key, ContractorWebsite.TEMPLATE_PREMIUM_HOME)
+        self.assertEqual(website.homepage_layout["branding"]["primary_color"], "#123456")
+        self.assertFalse(website.homepage_layout["sections"]["reviews"])
+
+        home = website.pages.get(page_type=ContractorWebsitePage.PAGE_HOME)
+        page_response = self.client.patch(
+            f"/api/projects/contractor/website/pages/{home.id}/",
+            {
+                "title": "Austin Kitchen Remodeling",
+                "seo_title": "Kitchen Remodeling Austin",
+                "content_blocks": {
+                    "hero_headline": "Beautiful kitchens without project chaos.",
+                    "cta_text": "Start My Remodel",
+                },
+            },
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(page_response.status_code, 200)
+        home.refresh_from_db()
+        self.assertEqual(home.title, "Austin Kitchen Remodeling")
+        self.assertEqual(home.content_blocks["hero_headline"], "Beautiful kitchens without project chaos.")
+        self.assertEqual(home.content_blocks["cta_text"], "Start My Remodel")
+
+    def test_entitlement_gates_enforced_for_edits(self):
+        self.client.get("/api/projects/contractor/website/", secure=True)
+        website = ContractorWebsite.objects.get(contractor=self.contractor)
+        home = website.pages.get(page_type=ContractorWebsitePage.PAGE_HOME)
+
+        response = self.client.patch(
+            f"/api/projects/contractor/website/pages/{home.id}/",
+            {"title": "Blocked"},
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 403)
+        home.refresh_from_db()
+        self.assertNotEqual(home.title, "Blocked")
+
+    @override_settings(
+        CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={
+            "website_builder": True,
+            "website_publish": True,
+        }
+    )
+    def test_publish_creates_snapshot_and_public_renderer_uses_snapshot(self):
+        self.client.get("/api/projects/contractor/website/", secure=True)
+        website = ContractorWebsite.objects.get(contractor=self.contractor)
+        home = website.pages.get(page_type=ContractorWebsitePage.PAGE_HOME)
+        self.client.patch(
+            f"/api/projects/contractor/website/pages/{home.id}/",
+            {"content_blocks": {"hero_headline": "Published snapshot headline"}},
+            format="json",
+            secure=True,
+        )
+
+        publish = self.client.post("/api/projects/contractor/website/publish/", secure=True)
+        self.assertEqual(publish.status_code, 200)
+        website.refresh_from_db()
+        self.assertEqual(website.status, ContractorWebsite.STATUS_PUBLISHED)
+        self.assertEqual(website.published_snapshot["pages"][0]["content_blocks"]["hero_headline"], "Published snapshot headline")
+
+        home.content_blocks["hero_headline"] = "Draft changed after publish"
+        home.save(update_fields=["content_blocks", "updated_at"])
+        public = self.client.get(f"/api/projects/public/websites/{self.profile.slug}/", secure=True)
+
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual(public.data["current_page"]["content_blocks"]["hero_headline"], "Published snapshot headline")
+
+    @override_settings(
+        CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={
+            "website_builder": True,
+            "website_publish": True,
+        }
+    )
+    def test_paused_website_not_public(self):
+        self.client.get("/api/projects/contractor/website/", secure=True)
+        self.client.post("/api/projects/contractor/website/publish/", secure=True)
+
+        pause = self.client.post("/api/projects/contractor/website/pause/", secure=True)
+        self.assertEqual(pause.status_code, 200)
+        public = self.client.get(f"/api/projects/public/websites/{self.profile.slug}/", secure=True)
+        self.assertEqual(public.status_code, 404)
