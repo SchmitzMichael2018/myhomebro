@@ -420,6 +420,16 @@ const PROPOSAL_TONE_OPTIONS = [
   ['warm_and_consultative', 'Warm and Consultative'],
 ];
 
+const defaultWebsiteReadiness = {
+  loading: false,
+  error: '',
+  entitlements: { plan: 'free', features: {} },
+  profile: null,
+  readiness: { score: 0, complete_count: 0, total_count: 0, checklist: [], missing_required_fields: [] },
+  draft: { status: 'placeholder', has_draft: false },
+  recommended_next_steps: [],
+};
+
 export default function ContractorPublicPresencePage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -447,6 +457,7 @@ export default function ContractorPublicPresencePage() {
   const [reviewsRows, setReviewsRows] = useState([]);
   const [leadsRows, setLeadsRows] = useState([]);
   const [selectedLead, setSelectedLead] = useState(null);
+  const [websiteReadiness, setWebsiteReadiness] = useState(defaultWebsiteReadiness);
   const [activationSummary, setActivationSummary] = useState(null);
   const [dismissedContextualGuides, setDismissedContextualGuides] = useState(new Set());
   const [galleryBusy, setGalleryBusy] = useState(false);
@@ -464,19 +475,15 @@ export default function ContractorPublicPresencePage() {
   });
   const [galleryImage, setGalleryImage] = useState(null);
 
-  const profileCompletenessItems = useMemo(
-    () => [
-      { label: 'Business name', complete: Boolean(profile.business_name_public) },
-      { label: 'Tagline', complete: Boolean(profile.tagline) },
-      { label: 'Bio', complete: Boolean(profile.bio) },
-      { label: 'Service area', complete: Boolean(profile.city || profile.state || profile.service_area_text) },
-      { label: 'Branding', complete: Boolean(profile.logo_url || profile.brand_primary_color || profile.hero_image_url) },
-      { label: 'Gallery', complete: galleryRows.length > 0 },
-      { label: 'Reviews', complete: reviewsRows.length > 0 },
-    ],
-    [galleryRows.length, profile, reviewsRows.length]
-  );
-  const profileCompletenessCount = profileCompletenessItems.filter((item) => item.complete).length;
+  const websiteFeatures = websiteReadiness?.entitlements?.features || {};
+  const websiteBuilderGate = websiteFeatures.website_builder || {};
+  const websitePublishGate = websiteFeatures.website_publish || {};
+  const websiteProfile = websiteReadiness?.profile || {};
+  const websiteReadinessData = websiteReadiness?.readiness || {};
+  const websiteChecklist = Array.isArray(websiteReadinessData.checklist) ? websiteReadinessData.checklist : [];
+  const missingRequiredFields = Array.isArray(websiteReadinessData.missing_required_fields)
+    ? websiteReadinessData.missing_required_fields
+    : [];
 
   const specialtiesText = useMemo(
     () => (Array.isArray(profile.specialties) ? profile.specialties.join(', ') : ''),
@@ -571,13 +578,14 @@ export default function ContractorPublicPresencePage() {
   async function loadAll() {
     try {
       setLoading(true);
-      const [profileRes, qrRes, galleryRes, reviewsRes, leadsRes, activationRes] = await Promise.all([
+      const [profileRes, qrRes, galleryRes, reviewsRes, leadsRes, activationRes, websiteRes] = await Promise.all([
         api.get('/projects/contractor/public-profile/'),
         api.get('/projects/contractor/public-profile/qr/'),
         api.get('/projects/contractor/gallery/'),
         api.get('/projects/contractor/reviews/'),
         api.get('/projects/contractor-opportunities/'),
         api.get('/projects/contractor-activation-summary/'),
+        api.get('/projects/contractor/website/'),
       ]);
       setProfile({ ...defaultProfile, ...(profileRes.data || {}) });
       setQrData(qrRes.data || null);
@@ -587,8 +595,10 @@ export default function ContractorPublicPresencePage() {
       setLeadsRows(leadResults);
       setSelectedLead(leadResults[0] || null);
       setActivationSummary(activationRes.data || null);
+      setWebsiteReadiness({ ...defaultWebsiteReadiness, ...(websiteRes.data || {}), loading: false, error: '' });
     } catch (err) {
       console.error(err);
+      setWebsiteReadiness((prev) => ({ ...prev, loading: false, error: 'Website readiness could not be loaded.' }));
       toast.error('Could not load public profile settings.');
     } finally {
       setLoading(false);
@@ -1465,47 +1475,108 @@ export default function ContractorPublicPresencePage() {
 
           {activeTab === 'website' ? (
             <div className="mt-6 space-y-4" data-testid="marketing-website-builder-tab">
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50 p-6">
-                <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
-                  Coming Soon
-                </div>
-                <h2 className="mt-4 text-2xl font-bold text-slate-900">Website Builder</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
-                  Your public profile, gallery, reviews, service area, and brand settings are being prepared as the foundation for a Pro website builder.
-                </p>
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
-                  <div className="text-sm font-semibold text-slate-900">Plan access</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Free contractors keep the public profile. Pro will unlock the website builder. Growth will add custom domains, advanced SEO, AI content, and analytics.
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">Website readiness</div>
-                    <div className="mt-1 text-sm text-slate-600">
-                      {profileCompletenessCount} of {profileCompletenessItems.length} profile signals are ready to reuse.
+                    <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-amber-800">
+                      Foundation Ready
                     </div>
+                    <h2 className="mt-4 text-2xl font-bold text-slate-900">Website Builder</h2>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
+                      Your public profile, gallery, reviews, service area, and brand settings now resolve into the Website Builder data contract.
+                    </p>
                   </div>
-                  <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
-                    {Math.round((profileCompletenessCount / profileCompletenessItems.length) * 100)}% ready
-                  </span>
+                  <div className="text-right">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current plan</div>
+                    <div className="mt-1 text-lg font-bold text-slate-900">{websiteReadiness?.entitlements?.plan || 'free'}</div>
+                  </div>
                 </div>
-                <div className="mt-4 grid gap-2 md:grid-cols-2">
-                  {profileCompletenessItems.map((item) => (
+
+                <div className="mt-5 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-plan-gate">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Plan gate</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-900">
+                      {websiteBuilderGate.enabled ? 'Pro Website Builder enabled' : 'Pro Website Builder gated'}
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {websiteBuilderGate.reason || 'Website Builder controls are available for this plan.'}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-readiness-score">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Readiness</div>
+                    <div className="mt-2 text-2xl font-bold text-slate-900">{Number(websiteReadinessData.score || 0)}%</div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {Number(websiteReadinessData.complete_count || 0)} of {Number(websiteReadinessData.total_count || 0)} website signals ready.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-preview-summary">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Preview source</div>
+                    <div className="mt-2 text-sm font-semibold text-slate-900">
+                      {websiteProfile?.identity?.business_name || profile.business_name_public || 'Public profile'}
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {(websiteProfile?.gallery?.count || 0)} portfolio item{Number(websiteProfile?.gallery?.count || 0) === 1 ? '' : 's'} and {(websiteProfile?.reviews?.count || 0)} public review{Number(websiteProfile?.reviews?.count || 0) === 1 ? '' : 's'} ready for preview.
+                    </p>
+                  </div>
+                </div>
+
+                {missingRequiredFields.length ? (
+                  <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="website-builder-missing-fields">
+                    <div className="text-sm font-semibold text-amber-900">Missing required fields</div>
+                    <div className="mt-1 text-sm text-amber-800">{missingRequiredFields.join(', ')}</div>
+                  </div>
+                ) : null}
+
+                <div className="mt-5 grid gap-2 md:grid-cols-2" data-testid="website-builder-readiness-checklist">
+                  {websiteChecklist.map((item) => (
                     <div
-                      key={item.label}
+                      key={item.key}
                       className={`rounded-2xl border px-4 py-3 text-sm ${
                         item.complete
                           ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                           : 'border-slate-200 bg-slate-50 text-slate-600'
                       }`}
                     >
-                      <span className="font-semibold">{item.complete ? 'Ready' : 'Needed'}:</span> {item.label}
+                      <span className="font-semibold">{item.complete ? 'Ready' : item.required ? 'Required' : 'Suggested'}:</span> {item.label}
+                      {!item.complete && item.action ? <div className="mt-1 text-xs">{item.action}</div> : null}
                     </div>
                   ))}
+                </div>
+
+                <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-next-steps">
+                  <div className="text-sm font-semibold text-slate-900">Recommended next steps</div>
+                  <div className="mt-3 space-y-2">
+                    {(websiteReadiness.recommended_next_steps || []).map((step) => (
+                      <div key={step.key} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
+                        <span className="font-semibold text-slate-900">{step.label}</span>
+                        {step.action ? <span className="text-slate-500"> - {step.action}</span> : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  <button
+                    type="button"
+                    disabled
+                    data-testid="website-builder-customize-button"
+                    title={websiteBuilderGate.reason || 'Full editor is not enabled yet.'}
+                    className="rounded-xl bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-600"
+                  >
+                    Customize Website
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    data-testid="website-builder-publish-button"
+                    title={websitePublishGate.reason || 'Publishing is not enabled yet.'}
+                    className="rounded-xl bg-slate-300 px-4 py-2 text-sm font-semibold text-slate-600"
+                  >
+                    Publish
+                  </button>
+                  <div className="self-center text-sm text-slate-500">
+                    {websitePublishGate.reason || websiteBuilderGate.reason || 'Website publishing is disabled in this foundation phase.'}
+                  </div>
                 </div>
               </div>
             </div>

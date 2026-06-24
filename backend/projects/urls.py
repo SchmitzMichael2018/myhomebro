@@ -95,6 +95,7 @@ from .views.project_intake import ProjectIntakeViewSet
 from .views.contractor_me import ContractorMeView
 from .views.activity_feed import ContractorActivityFeedView
 from .views.contractor_bids import ContractorBidsView
+from .views.website_builder import ContractorWebsitePreviewView, ContractorWebsiteView
 from .views.compliance import ContractorCompliancePreviewView
 from .views.contractor_onboarding_setup import ContractorOnboardingSetupView
 from .views.workspace_context import WorkspaceContextView
@@ -405,6 +406,8 @@ agreements_router.register(
 
 urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
+    path("contractor/website/", ContractorWebsiteView.as_view(), name="contractor-website"),
+    path("contractor/website/preview/", ContractorWebsitePreviewView.as_view(), name="contractor-website-preview"),
     path("recommendations/me/", RecommendationMeView.as_view(), name="recommendations-me"),
     path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),

@@ -1,5 +1,55 @@
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  await page.route(/\/api\/projects\/contractor\/website\/?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        entitlements: {
+          plan: 'free',
+          features: {
+            public_profile: { key: 'public_profile', enabled: true, tier: 'free', label: 'Free public profile' },
+            website_builder: {
+              key: 'website_builder',
+              enabled: false,
+              tier: 'pro',
+              label: 'Website Builder',
+              reason: 'Upgrade to Pro to customize a multi-section website.',
+            },
+            website_publish: {
+              key: 'website_publish',
+              enabled: false,
+              tier: 'pro',
+              label: 'Publish website',
+              reason: 'Publishing is part of the Pro Website Builder.',
+            },
+          },
+        },
+        profile: {
+          identity: { business_name: 'Bright Build Co' },
+          gallery: { count: 0, items: [] },
+          reviews: { count: 0, selected: [] },
+        },
+        readiness: {
+          score: 67,
+          complete_count: 6,
+          total_count: 9,
+          missing_required_fields: ['tagline'],
+          checklist: [
+            { key: 'business_name', label: 'Add public business name', complete: true, required: true },
+            { key: 'tagline', label: 'Add a tagline', complete: false, required: true, action: 'Summarize what you do in one short line.' },
+          ],
+        },
+        draft: { status: 'placeholder', has_draft: false },
+        recommended_next_steps: [
+          { key: 'tagline', label: 'Add a tagline', action: 'Summarize what you do in one short line.' },
+        ],
+      }),
+    });
+  });
+});
+
 test('contractor can manage public presence and see qr data', async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
