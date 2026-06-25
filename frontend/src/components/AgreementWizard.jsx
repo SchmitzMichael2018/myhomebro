@@ -59,6 +59,20 @@ function deriveWizardStepFromAgreement(agreement) {
     return clampStep(parsedStep);
   }
 
+  const labeledStep = rawStepStatus.match(/^step[\s_-]*([1-4])$/i);
+  if (labeledStep?.[1]) {
+    return clampStep(labeledStep[1]);
+  }
+
+  const explicitWizardStep = Number(agreement?.wizard_step);
+  if (
+    Number.isFinite(explicitWizardStep) &&
+    explicitWizardStep >= STEP_MIN &&
+    explicitWizardStep <= STEP_MAX
+  ) {
+    return clampStep(explicitWizardStep);
+  }
+
   const projectTitle = safeStr(agreement?.project_title || agreement?.title);
   const projectType = safeStr(agreement?.project_type);
   const projectScope = safeStr(agreement?.scope_of_work || agreement?.description);
