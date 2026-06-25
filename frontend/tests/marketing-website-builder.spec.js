@@ -440,6 +440,36 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByText('Your website is saved but paused. Choose a plan to reactivate customization.')).toHaveCount(0);
   await expect(page.getByTestId('website-builder-preview-toggle')).toBeVisible();
 
+  const themeState = await page.getByTestId('online-presence-setup-shell').evaluate((shell) => {
+    const parseRgb = (value) => {
+      const match = String(value || '').match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      return match ? match.slice(1, 4).map(Number) : null;
+    };
+    const isLight = (rgb, min = 240) => Array.isArray(rgb) && rgb.every((value) => value >= min);
+    const designCard = document.querySelector('[data-testid="website-builder-design-tab"]');
+    const input = document.querySelector('[data-testid="website-builder-hero-headline"]');
+    const sidebar = document.querySelector('.mhb-sidebar-shell');
+    const sidebarStyle = sidebar ? getComputedStyle(sidebar) : null;
+    const sidebarRgb = sidebarStyle ? parseRgb(sidebarStyle.backgroundColor) : null;
+    return {
+      shellHasLightClass: shell.classList.contains('mhb-online-presence-light-theme'),
+      shellIsLight: isLight(parseRgb(getComputedStyle(shell).backgroundColor), 240),
+      cardIsLight: isLight(parseRgb(getComputedStyle(designCard).backgroundColor), 245),
+      inputIsLight: isLight(parseRgb(getComputedStyle(input).backgroundColor), 245),
+      sidebarIsDark:
+        Boolean(sidebar) &&
+        (sidebarStyle.backgroundImage.includes('gradient') ||
+          (Array.isArray(sidebarRgb) && sidebarRgb[0] < 35 && sidebarRgb[1] < 55 && sidebarRgb[2] < 90)),
+    };
+  });
+  expect(themeState).toEqual({
+    shellHasLightClass: true,
+    shellIsLight: true,
+    cardIsLight: true,
+    inputIsLight: true,
+    sidebarIsDark: true,
+  });
+
   const layoutState = await page.getByTestId('marketing-website-builder-tab').evaluate((root) => {
     const editor = root.querySelector('[data-testid="website-builder-design-tab"]');
     const preview = root.querySelector('[data-testid="public-website-renderer"]');

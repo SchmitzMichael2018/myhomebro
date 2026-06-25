@@ -445,6 +445,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('public-presence-title')).toBeVisible();
+  await expect(page.getByTestId('online-presence-setup-shell')).toHaveClass(/mhb-online-presence-light-theme/);
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Online Presence Setup');
   await expect(page.getByTestId('online-presence-readiness-score')).toContainText('67%');
   await expect(page.getByTestId('website-decision-step')).toContainText(

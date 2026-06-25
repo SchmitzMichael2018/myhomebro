@@ -205,6 +205,54 @@
     color: #f8fbff;
   }
 
+  .mhb-operational-surface .mhb-online-presence-light-theme {
+    background-color: #f8fafc !important;
+    color: #0f172a !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme.bg-slate-50 {
+    background-color: #f8fafc !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(.bg-white, .bg-slate-50, .bg-gray-50) {
+    background-color: #ffffff !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(.bg-slate-100, .bg-gray-100) {
+    background-color: #f1f5f9 !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(.border-slate-100, .border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300) {
+    border-color: #e2e8f0 !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(.text-slate-950, .text-slate-900, .text-gray-900, .text-gray-800) {
+    color: #020617 !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(.text-slate-800, .text-slate-700, .text-gray-700, .text-gray-600) {
+    color: #334155 !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(.text-slate-600, .text-slate-500, .text-gray-500, .text-gray-400, .mhb-helper-text) {
+    color: #64748b !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(input, select, textarea) {
+    border-color: #cbd5e1 !important;
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme :is(input, textarea)::placeholder {
+    color: #94a3b8;
+  }
+
+  .mhb-operational-surface .mhb-online-presence-light-theme option {
+    background-color: #ffffff;
+    color: #0f172a;
+  }
+
   .mhb-operational-surface table {
     color: #e0f2fe;
   }

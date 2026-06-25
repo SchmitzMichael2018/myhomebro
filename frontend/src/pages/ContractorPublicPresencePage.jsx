@@ -1476,7 +1476,7 @@ export default function ContractorPublicPresencePage() {
               type="submit"
               disabled={generatingProfile}
               data-testid="generate-profile-submit"
-              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
             >
               {generatingProfile ? 'Generating...' : 'Generate'}
             </button>
@@ -1496,7 +1496,7 @@ export default function ContractorPublicPresencePage() {
         }}
         onClose={() => setQuickAddPrefill(null)}
       />
-      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50 shadow-sm" data-testid="online-presence-setup-shell">
+      <div className="mhb-online-presence-light-theme overflow-hidden rounded-[28px] border border-slate-200 shadow-sm" data-testid="online-presence-setup-shell">
         <header className="border-b border-slate-200 bg-white px-5 py-4 lg:px-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
@@ -1562,13 +1562,13 @@ export default function ContractorPublicPresencePage() {
                   className={[
                     'flex min-w-[132px] items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold transition',
                     isActive
-                      ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-100'
+                      ? 'border-blue-400 bg-blue-50 text-blue-700 shadow-sm'
                       : isComplete
                       ? 'border-emerald-200 bg-white text-slate-800'
                       : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-slate-950',
                   ].join(' ')}
                 >
-                  <span className={['flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px]', isActive ? 'bg-white text-blue-700' : isComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'].join(' ')}>
+                  <span className={['flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px]', isActive ? 'bg-blue-600 text-white' : isComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'].join(' ')}>
                     {isComplete ? '✓' : index}
                   </span>
                   <span className="whitespace-nowrap">{step.label}</span>
@@ -1950,7 +1950,7 @@ export default function ContractorPublicPresencePage() {
                       {['desktop', 'mobile'].map((mode) => <button key={mode} type="button" onClick={() => setWebsitePreviewMode(mode)} className={`rounded-md px-2 py-1 text-xs font-bold ${websitePreviewMode === mode ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</button>)}
                     </div>
                   </div>
-                  <div className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-2"><div className={websitePreviewMode === 'mobile' ? 'mx-auto max-w-[340px]' : 'min-w-[620px]'}><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode={websitePreviewMode} /></div></div>
+                  <div className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-slate-200 bg-white p-2"><div className={websitePreviewMode === 'mobile' ? 'mx-auto max-w-[340px]' : 'min-w-[620px]'}><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode={websitePreviewMode} /></div></div>
                 </div>
               </aside>
             </section>
@@ -1995,7 +1995,7 @@ export default function ContractorPublicPresencePage() {
                 <div className="text-xs font-bold text-slate-500">Step 6 of 7</div>
                 <h2 className="mt-2 text-2xl font-black text-slate-950">Final Review</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">Review your online presence before publishing.</p>
-                <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-950 p-2"><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode="desktop" /></div>
+                <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white p-2"><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode="desktop" /></div>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Business Information</div><p className="mt-2 text-sm text-slate-600">{profile.business_name_public || 'Business name missing'} - {profile.primary_trade || 'Primary trade missing'}</p></div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Photos</div><p className="mt-2 text-sm text-slate-600">{galleryRows.length} gallery item{galleryRows.length === 1 ? '' : 's'} ready.</p></div>
@@ -2035,7 +2035,7 @@ export default function ContractorPublicPresencePage() {
           <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-4">
             <button type="button" onClick={goToPreviousStep} disabled={activeStepIndex === 0} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-40">Back</button>
             {activeTab === 'publish' ? (
-              <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
+              <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
               <button type="button" onClick={goToNextStep} data-testid={activeTab === 'decision' ? 'website-decision-continue' : undefined} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</button>
             )}
