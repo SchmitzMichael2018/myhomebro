@@ -96,13 +96,21 @@ def _resolve_contractor(user):
 
 
 def _profile_defaults(contractor):
+    skills = [skill.name for skill in contractor.skills.all()]
     return {
         "business_name_public": contractor.business_name or contractor.name or "",
         "city": contractor.city or "",
         "state": contractor.state or "",
         "phone_public": contractor.phone or "",
-        "email_public": contractor.email or "",
-        "specialties": [skill.name for skill in contractor.skills.all()],
+        "email_public": getattr(contractor.user, "email", "") or "",
+        "specialties": skills,
+        "primary_trade": skills[0] if skills else "",
+        "service_area_text": f"{contractor.service_radius_miles} miles" if getattr(contractor, "service_radius_miles", None) else "",
+        "credentials": {
+            "licensed": bool(getattr(contractor, "license_number", "")),
+            "license_number": getattr(contractor, "license_number", "") or "",
+            "insured": bool(getattr(contractor, "insurance_file", None)),
+        },
     }
 
 

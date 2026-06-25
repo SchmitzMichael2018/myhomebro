@@ -25,10 +25,44 @@ import ContractorContextualGuideModal, { pickContextualGuide } from '../componen
 import WebsiteBuilderWizard from '../components/website/WebsiteBuilderWizard.jsx';
 
 const ONLINE_PRESENCE_STEPS = [
-  { key: 'profile', label: 'Business Details', eyebrow: 'Step 1' },
+  { key: 'decision', label: 'Website Decision', eyebrow: 'Step 0' },
+  { key: 'profile', label: 'Business Information', eyebrow: 'Step 1' },
   { key: 'gallery', label: 'Photo Gallery', eyebrow: 'Step 2' },
   { key: 'reviews', label: 'Reviews', eyebrow: 'Step 3' },
   { key: 'website', label: 'Website Design', eyebrow: 'Step 4' },
+];
+
+const SERVICE_AREA_MODES = [
+  ['radius', 'Radius'],
+  ['cities', 'Cities'],
+  ['counties', 'Counties'],
+];
+
+const CREDENTIAL_OPTIONS = [
+  ['licensed', 'Licensed'],
+  ['insured', 'Insured'],
+  ['bonded', 'Bonded'],
+  ['emergency_service', 'Emergency service'],
+  ['free_estimates', 'Free estimates'],
+  ['financing_available', 'Financing available'],
+  ['residential', 'Residential'],
+  ['commercial', 'Commercial'],
+];
+
+const CUSTOMER_TRUST_BADGES = [
+  'Family-owned',
+  'Veteran-owned',
+  'Locally owned',
+  'Woman-owned',
+  'Minority-owned',
+  'Manufacturer certified',
+  'Background-checked employees',
+  'Warranty included',
+  'Satisfaction guaranteed',
+  'Eco-friendly',
+  'BBB accredited',
+  'Same-day service',
+  '24/7 emergency service',
 ];
 
 function normalizeList(data) {
@@ -379,6 +413,16 @@ const defaultProfile = {
   business_name_public: '',
   tagline: '',
   bio: '',
+  owner_contact_name: '',
+  primary_trade: '',
+  service_area_mode: 'radius',
+  service_cities: [],
+  service_counties: [],
+  credentials: {},
+  customer_trust_badges: [],
+  has_existing_website: false,
+  existing_website_url: '',
+  website_analysis_status: 'not_started',
   proposal_tone: '',
   preferred_signoff: '',
   brand_primary_color: '',
@@ -434,9 +478,10 @@ export default function ContractorPublicPresencePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('profile');
+  const [activeTab, setActiveTab] = useState('decision');
   const [profile, setProfile] = useState(defaultProfile);
   const [profileBusy, setProfileBusy] = useState(false);
+  const [websiteDecisionError, setWebsiteDecisionError] = useState('');
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [heroFile, setHeroFile] = useState(null);
@@ -524,6 +569,70 @@ export default function ContractorPublicPresencePage() {
     () => (Array.isArray(profile.work_types) ? profile.work_types.join(', ') : ''),
     [profile.work_types]
   );
+  const serviceCitiesText = useMemo(
+    () => (Array.isArray(profile.service_cities) ? profile.service_cities.join(', ') : ''),
+    [profile.service_cities]
+  );
+  const serviceCountiesText = useMemo(
+    () => (Array.isArray(profile.service_counties) ? profile.service_counties.join(', ') : ''),
+    [profile.service_counties]
+  );
+  const credentials = profile.credentials && typeof profile.credentials === 'object' ? profile.credentials : {};
+  const customerTrustBadges = Array.isArray(profile.customer_trust_badges)
+    ? profile.customer_trust_badges
+    : [];
+  const stepOneReadiness = useMemo(() => {
+    const checks = [
+      Boolean(profile.business_name_public),
+      Boolean(profile.bio),
+      Boolean(profile.phone_public || profile.email_public),
+      Boolean(profile.primary_trade || workTypesText || specialtiesText),
+      Boolean(profile.city && profile.state),
+      Boolean(profile.service_area_text || serviceCitiesText || serviceCountiesText),
+      Boolean(profile.years_in_business),
+      Boolean(credentials.licensed || credentials.insured || profile.show_license_public),
+      customerTrustBadges.length > 0,
+    ];
+    return Math.round((checks.filter(Boolean).length / checks.length) * 100);
+  }, [
+    credentials.insured,
+    credentials.licensed,
+    customerTrustBadges.length,
+    profile.business_name_public,
+    profile.bio,
+    profile.city,
+    profile.email_public,
+    profile.phone_public,
+    profile.primary_trade,
+    profile.service_area_text,
+    profile.show_license_public,
+    profile.state,
+    profile.years_in_business,
+    serviceCitiesText,
+    serviceCountiesText,
+    specialtiesText,
+    workTypesText,
+  ]);
+  const setCredential = (key, value) => {
+    setProfile((prev) => ({
+      ...prev,
+      credentials: {
+        ...(prev.credentials || {}),
+        [key]: value,
+      },
+    }));
+  };
+  const toggleCustomerTrustBadge = (badge) => {
+    setProfile((prev) => {
+      const badges = Array.isArray(prev.customer_trust_badges) ? prev.customer_trust_badges : [];
+      return {
+        ...prev,
+        customer_trust_badges: badges.includes(badge)
+          ? badges.filter((item) => item !== badge)
+          : [...badges, badge],
+      };
+    });
+  };
   const profileHint = useMemo(
     () => getPublicPresenceHint({ profile, galleryRows, reviewsRows, qrData }),
     [galleryRows, profile, qrData, reviewsRows]
@@ -811,15 +920,21 @@ export default function ContractorPublicPresencePage() {
     appliedAssistantRef.current = assistantHandoffSignature;
   }, [assistantHandoff, assistantHandoffSignature, leadsRows]);
 
-  async function saveProfile() {
+  async function saveProfile(overrides = {}) {
     try {
       setProfileBusy(true);
+      const profileToSave = { ...profile, ...overrides };
       const payload = new FormData();
       const scalarFields = [
         'slug',
         'business_name_public',
         'tagline',
         'bio',
+        'owner_contact_name',
+        'primary_trade',
+        'service_area_mode',
+        'existing_website_url',
+        'website_analysis_status',
         'proposal_tone',
         'preferred_signoff',
         'brand_primary_color',
@@ -837,13 +952,18 @@ export default function ContractorPublicPresencePage() {
         'seo_description',
       ];
       scalarFields.forEach((field) => {
-        if (profile[field] !== undefined && profile[field] !== null) {
-          payload.append(field, profile[field]);
+        if (profileToSave[field] !== undefined && profileToSave[field] !== null) {
+          payload.append(field, profileToSave[field]);
         }
       });
-      payload.append('specialties', JSON.stringify(specialtiesText.split(',').map((item) => item.trim()).filter(Boolean)));
-      payload.append('work_types', JSON.stringify(workTypesText.split(',').map((item) => item.trim()).filter(Boolean)));
+      payload.append('specialties', JSON.stringify((Array.isArray(profileToSave.specialties) ? profileToSave.specialties : []).map((item) => String(item).trim()).filter(Boolean)));
+      payload.append('work_types', JSON.stringify((Array.isArray(profileToSave.work_types) ? profileToSave.work_types : []).map((item) => String(item).trim()).filter(Boolean)));
+      payload.append('service_cities', JSON.stringify((Array.isArray(profileToSave.service_cities) ? profileToSave.service_cities : []).map((item) => String(item).trim()).filter(Boolean)));
+      payload.append('service_counties', JSON.stringify((Array.isArray(profileToSave.service_counties) ? profileToSave.service_counties : []).map((item) => String(item).trim()).filter(Boolean)));
+      payload.append('credentials', JSON.stringify(profileToSave.credentials || {}));
+      payload.append('customer_trust_badges', JSON.stringify(Array.isArray(profileToSave.customer_trust_badges) ? profileToSave.customer_trust_badges : []));
       [
+        'has_existing_website',
         'show_license_public',
         'show_phone_public',
         'show_email_public',
@@ -853,7 +973,7 @@ export default function ContractorPublicPresencePage() {
         'allow_public_intake',
         'allow_public_reviews',
         'is_public',
-      ].forEach((field) => payload.append(field, profile[field] ? 'true' : 'false'));
+      ].forEach((field) => payload.append(field, profileToSave[field] ? 'true' : 'false'));
       if (logoFile) payload.append('logo', logoFile);
       if (coverFile) payload.append('cover_image', coverFile);
       if (heroFile) payload.append('hero_image', heroFile);
@@ -873,6 +993,48 @@ export default function ContractorPublicPresencePage() {
     } finally {
       setProfileBusy(false);
     }
+  }
+
+  function normalizeExistingWebsiteUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  }
+
+  async function continueFromWebsiteDecision() {
+    if (profile.has_existing_website) {
+      const normalizedUrl = normalizeExistingWebsiteUrl(profile.existing_website_url);
+      try {
+        const parsed = new URL(normalizedUrl);
+        if (!parsed.hostname || !parsed.hostname.includes('.')) {
+          throw new Error('Invalid website URL');
+        }
+        setWebsiteDecisionError('');
+        const nextProfile = {
+          ...profile,
+          has_existing_website: true,
+          existing_website_url: normalizedUrl,
+          website_analysis_status: profile.website_analysis_status || 'not_started',
+        };
+        setProfile(nextProfile);
+        await saveProfile(nextProfile);
+        setActiveTab('profile');
+      } catch (_err) {
+        setWebsiteDecisionError('Enter a valid website address, like https://example.com.');
+      }
+      return;
+    }
+
+    setWebsiteDecisionError('');
+    const nextProfile = {
+      ...profile,
+      has_existing_website: false,
+      existing_website_url: '',
+      website_analysis_status: profile.website_analysis_status || 'not_started',
+    };
+    setProfile(nextProfile);
+    await saveProfile(nextProfile);
+    setActiveTab('profile');
   }
 
   async function addGalleryItem() {
@@ -1309,7 +1471,7 @@ export default function ContractorPublicPresencePage() {
                 Readiness {websiteReadinessData.score || 0}%
               </div>
             </div>
-            <div className="mt-4 grid gap-2 md:grid-cols-4">
+            <div className="mt-4 grid gap-2 md:grid-cols-5">
             {ONLINE_PRESENCE_STEPS.map((tab) => (
               <button
                 key={tab.key}
@@ -1334,13 +1496,134 @@ export default function ContractorPublicPresencePage() {
             </div>
           </div>
 
+          {activeTab === 'decision' ? (
+            <div className="mt-6 space-y-5" data-testid="website-decision-step">
+              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 p-6 text-white shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">Step 0</div>
+                <h2 className="mt-2 text-3xl font-bold">Let&apos;s get your online presence ready.</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200">
+                  We&apos;ll either build a beautiful website for you or help improve the one you already have.
+                </p>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWebsiteDecisionError('');
+                    setProfile((prev) => ({ ...prev, has_existing_website: false, existing_website_url: '' }));
+                  }}
+                  className={`rounded-3xl border p-6 text-left shadow-sm transition ${
+                    !profile.has_existing_website
+                      ? 'border-slate-900 bg-white ring-2 ring-slate-900'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                  data-testid="website-decision-no-website"
+                >
+                  <div className="flex items-start gap-4">
+                    <span className={`mt-1 h-5 w-5 rounded-full border ${!profile.has_existing_website ? 'border-slate-900 bg-slate-900' : 'border-slate-300 bg-white'}`} />
+                    <div>
+                      <div className="text-lg font-bold text-slate-950">I don&apos;t have a website</div>
+                      <p className="mt-2 text-sm leading-6 text-slate-600">
+                        We&apos;ll design one for you using your MyHomeBro business information.
+                      </p>
+                      <div className="mt-5 inline-flex rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
+                        Continue
+                      </div>
+                    </div>
+                  </div>
+                </button>
+
+                <div
+                  className={`rounded-3xl border p-6 shadow-sm transition ${
+                    profile.has_existing_website
+                      ? 'border-blue-700 bg-white ring-2 ring-blue-700'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                  data-testid="website-decision-existing-website"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setProfile((prev) => ({ ...prev, has_existing_website: true }))}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-start gap-4">
+                      <span className={`mt-1 h-5 w-5 rounded-full border ${profile.has_existing_website ? 'border-blue-700 bg-blue-700' : 'border-slate-300 bg-white'}`} />
+                      <div>
+                        <div className="text-lg font-bold text-slate-950">I already have a website</div>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">
+                          Enter your website address and we&apos;ll keep it ready for future AI analysis.
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                  <label className="mt-5 block space-y-2">
+                    <span className="text-sm font-semibold text-slate-700">Website URL</span>
+                    <input
+                      value={profile.existing_website_url || ''}
+                      onChange={(event) => {
+                        setWebsiteDecisionError('');
+                        setProfile((prev) => ({
+                          ...prev,
+                          has_existing_website: true,
+                          existing_website_url: event.target.value,
+                          website_analysis_status: prev.website_analysis_status || 'not_started',
+                        }));
+                      }}
+                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      placeholder="https://yourcompany.com"
+                      data-testid="existing-website-url-input"
+                    />
+                  </label>
+                  {websiteDecisionError ? (
+                    <div className="mt-2 text-sm font-semibold text-rose-700" data-testid="existing-website-url-error">
+                      {websiteDecisionError}
+                    </div>
+                  ) : null}
+                  {profile.has_existing_website && profile.existing_website_url ? (
+                    <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4" data-testid="existing-website-coming-soon-card">
+                      <div className="text-lg font-bold text-blue-950">Great!</div>
+                      <div className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Coming Soon</div>
+                      <div className="mt-3 grid gap-2 text-sm text-blue-950 sm:grid-cols-2">
+                        {[
+                          'Analyze your website',
+                          'Improve SEO',
+                          'Improve website copy',
+                          'Suggest a modern redesign',
+                          'Rebuild your website using AI',
+                        ].map((item) => (
+                          <div key={item} className="flex items-center gap-2">
+                            <span className="font-bold text-blue-700">✓</span>
+                            <span>{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={continueFromWebsiteDecision}
+                  disabled={profileBusy}
+                  className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
+                  data-testid="website-decision-continue"
+                >
+                  {profileBusy ? 'Saving...' : 'Continue'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {activeTab === 'profile' ? (
             <div className="mt-6" data-testid="public-presence-profile-tab">
               <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1</div>
-                <h2 className="mt-1 text-xl font-bold text-slate-950">Business Details</h2>
+                <h2 className="mt-1 text-xl font-bold text-slate-950">Business Information</h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  This is the shared foundation for your public profile, QR code, and Website Builder.
+                  Who are you, what do you do, where do you work, and why should customers trust you?
                 </p>
               </div>
               {!profile.is_public ? (
@@ -1350,6 +1633,157 @@ export default function ContractorPublicPresencePage() {
               ) : null}
               <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
                 <div className="space-y-4">
+                  <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                    We imported this from your MyHomeBro profile. Review and update anything that has changed.
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">Step 1 readiness</div>
+                      <div className="text-xs text-slate-500">Business facts that can later power AI copy, SEO, service pages, and design recommendations.</div>
+                    </div>
+                    <div className="rounded-full bg-slate-900 px-4 py-2 text-sm font-bold text-white" data-testid="business-info-readiness-score">
+                      {stepOneReadiness}%
+                    </div>
+                  </div>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-company-card">
+                    <h3 className="text-base font-bold text-slate-950">Company</h3>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Company name</span>
+                        <input value={profile.business_name_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Bright Build Co" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Years in business</span>
+                        <input value={profile.years_in_business || ''} onChange={(e) => setProfile((prev) => ({ ...prev, years_in_business: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="12" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Owner/contact name</span>
+                        <input value={profile.owner_contact_name || ''} onChange={(e) => setProfile((prev) => ({ ...prev, owner_contact_name: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Owner or office contact" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Public profile slug</span>
+                        <input value={profile.slug || ''} onChange={(e) => setProfile((prev) => ({ ...prev, slug: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="bright-build-co" />
+                      </label>
+                      <label className="space-y-1 md:col-span-2">
+                        <span className="text-sm font-semibold text-slate-700">Short business description</span>
+                        <textarea value={profile.bio || ''} onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))} rows={4} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Describe who you help, what you do, and how you work." />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Business phone</span>
+                        <input value={profile.phone_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="(555) 111-2222" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Business email</span>
+                        <input value={profile.email_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="hello@example.com" />
+                      </label>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {[
+                        ['show_phone_public', 'Show phone publicly'],
+                        ['show_email_public', 'Show email publicly'],
+                      ].map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                          <input type="checkbox" checked={Boolean(profile[key])} onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))} />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-trades-card">
+                    <h3 className="text-base font-bold text-slate-950">Trades &amp; Services</h3>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Primary trade</span>
+                        <input value={profile.primary_trade || ''} onChange={(e) => setProfile((prev) => ({ ...prev, primary_trade: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="General contractor" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Additional trades/services</span>
+                        <input value={workTypesText} onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Roofing, bath remodels" />
+                      </label>
+                      <label className="space-y-1 md:col-span-2">
+                        <span className="text-sm font-semibold text-slate-700">Specialty services</span>
+                        <input value={specialtiesText} onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Kitchen remodels, storm repairs, tile work" />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-service-area-card">
+                    <h3 className="text-base font-bold text-slate-950">Location &amp; Service Area</h3>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Headquarters city</span>
+                        <input value={profile.city || ''} onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Austin" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Headquarters state</span>
+                        <input value={profile.state || ''} onChange={(e) => setProfile((prev) => ({ ...prev, state: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="TX" />
+                      </label>
+                      <div className="md:col-span-2">
+                        <div className="text-sm font-semibold text-slate-700">Service area mode</div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {SERVICE_AREA_MODES.map(([value, label]) => (
+                            <button key={value} type="button" onClick={() => setProfile((prev) => ({ ...prev, service_area_mode: value }))} className={`rounded-full border px-4 py-2 text-sm font-semibold ${profile.service_area_mode === value ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Service radius</span>
+                        <input value={profile.service_area_text || ''} onChange={(e) => setProfile((prev) => ({ ...prev, service_area_text: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="25 miles around Austin" />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">Service cities</span>
+                        <input value={serviceCitiesText} onChange={(e) => setProfile((prev) => ({ ...prev, service_cities: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Austin, Round Rock, Cedar Park" />
+                      </label>
+                      <label className="space-y-1 md:col-span-2">
+                        <span className="text-sm font-semibold text-slate-700">Service counties</span>
+                        <input value={serviceCountiesText} onChange={(e) => setProfile((prev) => ({ ...prev, service_counties: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Travis County, Williamson County" />
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-credentials-card">
+                    <h3 className="text-base font-bold text-slate-950">Credentials</h3>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {CREDENTIAL_OPTIONS.map(([key, label]) => (
+                        <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                          <input type="checkbox" checked={Boolean(credentials[key])} onChange={(e) => setCredential(key, e.target.checked)} />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-1">
+                        <span className="text-sm font-semibold text-slate-700">License number</span>
+                        <input value={credentials.license_number || ''} onChange={(e) => setCredential('license_number', e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="License number" />
+                      </label>
+                      <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                        <input type="checkbox" checked={Boolean(profile.show_license_public)} onChange={(e) => setProfile((prev) => ({ ...prev, show_license_public: e.target.checked }))} />
+                        <span>Show license/insurance visibility publicly</span>
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-trust-badges-card">
+                    <h3 className="text-base font-bold text-slate-950">Why Customers Choose You</h3>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {CUSTOMER_TRUST_BADGES.map((badge) => {
+                        const selected = customerTrustBadges.includes(badge);
+                        return (
+                          <button key={badge} type="button" onClick={() => toggleCustomerTrustBadge(badge)} className={`rounded-full border px-3 py-2 text-sm font-semibold ${selected ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'}`}>
+                            {badge}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  {false ? (
+                    <>
                   <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <div>
                       <div className="text-sm font-semibold text-slate-900">Profile copy</div>
@@ -1613,6 +2047,8 @@ export default function ContractorPublicPresencePage() {
                       </label>
                     ))}
                   </div>
+                    </>
+                  ) : null}
 
                   <div className="flex justify-end">
                     <button
@@ -1622,7 +2058,7 @@ export default function ContractorPublicPresencePage() {
                       disabled={profileBusy}
                       className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
                     >
-                      {profileBusy ? 'Saving…' : 'Save Public Profile'}
+                      {profileBusy ? 'Saving...' : 'Save Business Information'}
                     </button>
                   </div>
                 </div>

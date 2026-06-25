@@ -106,14 +106,22 @@ def _get_or_create_public_profile(contractor: Contractor) -> ContractorPublicPro
     profile = getattr(contractor, "public_profile", None)
     if profile is not None:
         return profile
+    skills = [skill.name for skill in contractor.skills.all()]
     return ContractorPublicProfile.objects.create(
         contractor=contractor,
         business_name_public=_safe_text(getattr(contractor, "business_name", "")) or _safe_text(getattr(contractor, "name", "")),
         city=_safe_text(getattr(contractor, "city", "")),
         state=_safe_text(getattr(contractor, "state", "")),
         phone_public=_safe_text(getattr(contractor, "phone", "")),
-        email_public=_safe_text(getattr(contractor, "email", "")),
-        specialties=[skill.name for skill in contractor.skills.all()],
+        email_public=_safe_text(getattr(contractor.user, "email", "")),
+        specialties=skills,
+        primary_trade=skills[0] if skills else "",
+        service_area_text=f"{contractor.service_radius_miles} miles" if getattr(contractor, "service_radius_miles", None) else "",
+        credentials={
+            "licensed": bool(getattr(contractor, "license_number", "")),
+            "license_number": _safe_text(getattr(contractor, "license_number", "")),
+            "insured": bool(getattr(contractor, "insurance_file", None)),
+        },
     )
 
 
@@ -612,8 +620,24 @@ def build_website_profile_payload(
         "identity": {
             "business_name": profile.business_name_public or contractor.business_name or contractor.name or "",
             "contractor_business_name": contractor.business_name or "",
+            "owner_contact_name": profile.owner_contact_name or getattr(contractor.user, "get_full_name", lambda: "")() or "",
             "tagline": profile.tagline or "",
             "bio": profile.bio or "",
+        },
+        "business_identity": {
+            "company_name": profile.business_name_public or contractor.business_name or contractor.name or "",
+            "owner_contact_name": profile.owner_contact_name or getattr(contractor.user, "get_full_name", lambda: "")() or "",
+            "phone": profile.phone_public or getattr(contractor, "phone", "") or "",
+            "email": profile.email_public or getattr(contractor.user, "email", "") or "",
+            "years_in_business": profile.years_in_business,
+            "description": profile.bio or "",
+            "slug": profile.slug or "",
+        },
+        "existing_website": {
+            "has_existing_website": bool(profile.has_existing_website),
+            "website_url": profile.existing_website_url or profile.website_url or "",
+            "existing_website_url": profile.existing_website_url or "",
+            "website_analysis_status": profile.website_analysis_status or "not_started",
         },
         "branding": {
             "logo_url": profile_data.get("logo_url", ""),
@@ -629,11 +653,21 @@ def build_website_profile_payload(
             "state": profile.state or contractor.state or "",
             "service_area_text": profile.service_area_text or "",
             "service_radius_miles": getattr(contractor, "service_radius_miles", None),
+            "service_area_mode": profile.service_area_mode or "radius",
+            "service_cities": _safe_list(profile.service_cities),
+            "service_counties": _safe_list(profile.service_counties),
         },
         "services": {
+            "primary_trade": profile.primary_trade or (skills[0] if skills else ""),
             "specialties": _safe_list(profile.specialties),
             "work_types": _safe_list(profile.work_types),
             "skills": skills,
+        },
+        "trades_services": {
+            "primary_trade": profile.primary_trade or (skills[0] if skills else ""),
+            "additional_trades": _safe_list(profile.work_types),
+            "specialty_services": _safe_list(profile.specialties),
+            "contractor_skills": skills,
         },
         "contact": {
             "phone_public": phone,
@@ -648,9 +682,18 @@ def build_website_profile_payload(
             "show_license_public": bool(profile.show_license_public),
             "has_license_on_file": bool(getattr(contractor, "license_number", "") or getattr(contractor, "license_file", None)),
             "has_insurance_on_file": bool(getattr(contractor, "insurance_file", None)),
+            "license_number": getattr(contractor, "license_number", "") or _safe_dict(profile.credentials).get("license_number", ""),
+            "credentials": _safe_dict(profile.credentials),
             "marketplace_verification_status": getattr(contractor, "marketplace_verification_status", ""),
             "indicators": trust_indicators,
         },
+        "credentials": {
+            **_safe_dict(profile.credentials),
+            "license_number": getattr(contractor, "license_number", "") or _safe_dict(profile.credentials).get("license_number", ""),
+            "licensed": bool(getattr(contractor, "license_number", "") or _safe_dict(profile.credentials).get("licensed")),
+            "insured": bool(getattr(contractor, "insurance_file", None) or _safe_dict(profile.credentials).get("insured")),
+        },
+        "customer_trust_badges": _safe_list(profile.customer_trust_badges),
         "reviews": {
             "average_rating": average_rating,
             "count": review_count,

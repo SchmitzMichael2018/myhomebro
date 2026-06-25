@@ -61,6 +61,21 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
       business_name_public: 'Bright Build Co',
       tagline: 'Trusted renovations and repairs',
       bio: 'We help homeowners with clean, reliable project delivery.',
+      owner_contact_name: 'Morgan Builder',
+      primary_trade: 'Remodeling',
+      service_area_mode: 'radius',
+      service_cities: ['Austin'],
+      service_counties: ['Travis County'],
+      credentials: {
+        licensed: true,
+        insured: true,
+        residential: true,
+        license_number: 'TX-123',
+      },
+      customer_trust_badges: ['Locally owned'],
+      has_existing_website: false,
+      existing_website_url: '',
+      website_analysis_status: 'not_started',
       proposal_tone: 'friendly',
       preferred_signoff: 'Best, Bright Build Co',
       brand_primary_color: '#2563eb',
@@ -129,6 +144,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
         submitted_at: '2026-03-25T12:00:00Z',
       },
     ],
+    profilePatchCount: 0,
     leads: [
       {
         id: 11,
@@ -201,20 +217,35 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
 
   await page.route(/public-profile\/?$/, async (route) => {
     if (route.request().method() === 'PATCH') {
-      state.profile.tagline = 'Now booking spring projects';
-      state.profile.proposal_tone = 'warm_and_consultative';
-      state.profile.preferred_signoff = 'Warmly, Bright Build Co';
-      state.profile.brand_primary_color = '#1d4ed8';
+      state.profilePatchCount += 1;
+      if (state.profilePatchCount === 1) {
+        state.profile.has_existing_website = true;
+        state.profile.existing_website_url = 'https://bright.example.com';
+        state.profile.website_analysis_status = 'not_started';
+      } else if (state.profilePatchCount === 2) {
+        state.profile.business_name_public = 'Bright Build Renovations';
+        state.profile.years_in_business = 14;
+        state.profile.primary_trade = 'Kitchen remodeling';
+        state.profile.service_area_mode = 'cities';
+        state.profile.service_cities = ['Austin', 'Round Rock'];
+        state.profile.service_counties = ['Travis County', 'Williamson County'];
+        state.profile.credentials = {
+          licensed: true,
+          insured: true,
+          bonded: true,
+          residential: true,
+          commercial: true,
+          license_number: 'TX-999',
+        };
+        state.profile.customer_trust_badges = ['Locally owned', 'Warranty included'];
+      } else {
+        state.profile.has_existing_website = false;
+        state.profile.existing_website_url = '';
+      }
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          ...state.profile,
-          tagline: 'Now booking spring projects',
-          proposal_tone: 'warm_and_consultative',
-          preferred_signoff: 'Warmly, Bright Build Co',
-          brand_primary_color: '#1d4ed8',
-        }),
+        body: JSON.stringify(state.profile),
       });
       return;
     }
@@ -416,6 +447,15 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-title')).toBeVisible();
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Online Presence Setup');
   await expect(page.getByTestId('online-presence-readiness-score')).toContainText('67%');
+  await expect(page.getByTestId('website-decision-step')).toContainText(
+    "Let's get your online presence ready."
+  );
+  await expect(page.getByTestId('website-decision-no-website')).toContainText(
+    "I don't have a website"
+  );
+  await expect(page.getByTestId('website-decision-existing-website')).toContainText(
+    'I already have a website'
+  );
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Website Design');
   const setupLayout = await page.getByTestId('online-presence-setup-nav').evaluate((nav) => ({
     navWidth: nav.getBoundingClientRect().width,
@@ -424,42 +464,61 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   expect(setupLayout.navWidth).toBeGreaterThan(520);
   expect(setupLayout.documentFits).toBeTruthy();
   await expect(page.getByTestId('public-presence-preview-banner')).toHaveCount(0);
-  await page.getByRole('button', { name: /Generate My Profile/ }).click();
-  await expect(page.getByTestId('generate-profile-modal')).toBeVisible();
-  await page.getByTestId('generate-profile-prompt').fill(
-    'Write a warm, premium profile for a kitchen and bath remodeling contractor serving Austin homeowners.'
+
+  await page.getByTestId('existing-website-url-input').fill('not-a-site');
+  await page.getByTestId('website-decision-continue').click();
+  await expect(page.getByTestId('existing-website-url-error')).toContainText(
+    'Enter a valid website address'
   );
-  await page.getByTestId('generate-profile-submit').click();
-  await expect(page.getByPlaceholder('Tagline')).toHaveValue(
-    'Premium remodeling with clear communication'
-  );
-  await expect(page.getByPlaceholder('Short company intro')).toHaveValue(
-    'We turn your vision into a calm, well-managed project. Write a warm, premium profile for a kitchen and bath remodeling contractor serving Austin homeowners.'
-  );
-  await expect(page.getByTestId('proposal-tone-selector')).toHaveValue('premium');
-  await expect(page.getByPlaceholder('Work types (comma separated)')).toHaveValue(
-    'Kitchen Remodels, Bathroom Remodels, Whole Home Renovations'
-  );
-  await expect(page.getByPlaceholder('SEO title')).toHaveValue(
-    'Bright Build Co | Austin Remodeling Contractor'
-  );
-  await expect(page.getByPlaceholder('SEO description')).toHaveValue(
-    'Bright Build Co helps Austin homeowners with premium remodeling, renovations, and careful project management.'
-  );
+  await page.getByTestId('existing-website-url-input').fill('bright.example.com');
+  await expect(page.getByTestId('existing-website-coming-soon-card')).toContainText('Coming Soon');
+  await expect(page.getByTestId('existing-website-coming-soon-card')).toContainText('Analyze your website');
+  await page.getByTestId('website-decision-continue').click();
+  await expect(page.getByRole('heading', { name: 'Business Information' })).toBeVisible();
+  await expect(state.profile.has_existing_website).toBeTruthy();
+  expect(state.profile.existing_website_url).toBe('https://bright.example.com');
+
+  await expect(page.getByRole('heading', { name: 'Business Information' })).toBeVisible();
+  await expect(page.getByText('We imported this from your MyHomeBro profile.')).toBeVisible();
+  await expect(page.getByTestId('business-info-company-card')).toContainText('Company');
+  await expect(page.getByTestId('business-info-trades-card')).toContainText('Trades & Services');
+  await expect(page.getByTestId('business-info-service-area-card')).toContainText('Location & Service Area');
+  await expect(page.getByTestId('business-info-credentials-card')).toContainText('Credentials');
+  await expect(page.getByTestId('business-info-trust-badges-card')).toContainText('Why Customers Choose You');
+  await expect(page.locator('input[value="Bright Build Co"]').first()).toBeVisible();
+  await expect(page.locator('input[value="Morgan Builder"]').first()).toBeVisible();
+  await expect(page.locator('input[value="Remodeling"]').first()).toBeVisible();
+  await expect(page.locator('input[value="Austin"]').first()).toBeVisible();
+  await expect(page.locator('input[value="TX-123"]').first()).toBeVisible();
+  await expect(page.getByTestId('proposal-tone-selector')).toHaveCount(0);
+  await expect(page.getByTestId('brand-primary-color-input')).toHaveCount(0);
+  await expect(page.getByTestId('brand-font-theme-select')).toHaveCount(0);
+  await expect(page.getByText('Theme preset')).toHaveCount(0);
   await expect(page.getByTestId('public-presence-qr-image')).toBeVisible();
   await expect(page.getByTestId('public-presence-profile-hint')).toContainText(
     'Add project photos to strengthen your public profile'
   );
-  await expect(page.getByTestId('brand-voice-profile-section')).toBeVisible();
-  await page.getByPlaceholder('Tagline').fill('Now booking spring projects');
-  await page.getByTestId('proposal-tone-selector').selectOption('warm_and_consultative');
-  await page.getByTestId('preferred-signoff-input').fill('Warmly, Bright Build Co');
-  await page.getByTestId('brand-primary-color-input').fill('#1d4ed8');
+  await page.getByLabel('Company name').fill('Bright Build Renovations');
+  await page.getByLabel('Years in business').fill('14');
+  await page.getByLabel('Primary trade').fill('Kitchen remodeling');
+  await page.getByRole('button', { name: 'Cities' }).click();
+  await page.getByLabel('Service cities').fill('Austin, Round Rock');
+  await page.getByLabel('Service counties').fill('Travis County, Williamson County');
+  await page.getByLabel('License number').fill('TX-999');
+  await page.getByLabel('Bonded').check();
+  await page.getByLabel('Commercial').check();
+  await page.getByRole('button', { name: 'Warranty included' }).click();
   await page.getByTestId('public-presence-save-profile').click();
-  await expect(page.getByPlaceholder('Tagline')).toHaveValue('Now booking spring projects');
-  await expect(page.getByTestId('proposal-tone-selector')).toHaveValue('warm_and_consultative');
-  await expect(page.getByTestId('preferred-signoff-input')).toHaveValue('Warmly, Bright Build Co');
-  await expect(page.getByTestId('brand-primary-color-input')).toHaveValue('#1d4ed8');
+  await expect(page.locator('input[value="Bright Build Renovations"]').first()).toBeVisible();
+  await expect(page.locator('input[value="Kitchen remodeling"]').first()).toBeVisible();
+  await expect(page.locator('input[value="Austin, Round Rock"]').first()).toBeVisible();
+  await expect(page.locator('input[value="TX-999"]').first()).toBeVisible();
+
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Website Decision/ }).click();
+  await page.getByTestId('website-decision-no-website').click();
+  await page.getByTestId('website-decision-continue').click();
+  await expect(page.getByRole('heading', { name: 'Business Information' })).toBeVisible();
+  await expect(state.profile.has_existing_website).toBeFalsy();
 
   await page.getByRole('button', { name: 'Photo Gallery' }).click();
   await page.getByPlaceholder('Title').fill('Kitchen Remodel');
@@ -476,7 +535,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Pending moderation');
   await page.getByRole('button', { name: 'Publish Review' }).click();
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
-  await page.getByRole('button', { name: 'Business Details' }).click();
+  await page.getByRole('button', { name: 'Business Information' }).click();
   await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
     'Leads from your profile, QR code, and website appear in Opportunities.'
   );
@@ -1504,7 +1563,7 @@ test('legacy marketing lead links route back to setup with Opportunities handoff
 
   const appOrigin = new URL(page.url()).origin;
   await page.goto(`${appOrigin}/app/marketing?tab=leads&refresh=manual-intake`, { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Business Details' })).toHaveAttribute(
+  await expect(page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Business Information/ })).toHaveAttribute(
     'aria-current',
     'step'
   );
@@ -1905,6 +1964,7 @@ test('contractor-sent intake returns to Marketing with Opportunities handoff', a
     const body = route.request().postDataJSON();
     state.lead = {
       ...state.lead,
+      source: state.lead?.source || 'contractor_sent_form',
       full_name: body.customer_name,
       email: body.customer_email,
       phone: body.customer_phone,
@@ -2089,7 +2149,7 @@ test('contractor-sent intake returns to Marketing with Opportunities handoff', a
   await page
     .getByTestId('public-intake-accomplishment-text')
     .fill('Complete a bathroom remodel with updated tile and fixtures.');
-  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled();
+  await expect(page.getByTestId('public-intake-generate-structure')).toBeEnabled({ timeout: 10000 });
   await page.getByTestId('public-intake-generate-structure').click();
   await page.getByTestId('public-intake-clarification-next').click();
   await expect(page.getByTestId('public-intake-project-snapshot')).toBeVisible();

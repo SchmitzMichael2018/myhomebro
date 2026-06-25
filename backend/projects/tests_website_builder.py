@@ -51,9 +51,24 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
             bio="We help homeowners with kitchen and bath projects.",
             brand_primary_color="#1d4ed8",
             brand_accent_color="#0f766e",
+            owner_contact_name="Builder Owner",
+            primary_trade="Remodeling",
             city="Austin",
             state="TX",
             service_area_text="Austin metro",
+            service_area_mode="cities",
+            service_cities=["Austin", "Round Rock"],
+            service_counties=["Travis County"],
+            credentials={
+                "licensed": True,
+                "insured": True,
+                "free_estimates": True,
+                "license_number": "TX-123",
+            },
+            customer_trust_badges=["Locally owned", "Warranty included"],
+            has_existing_website=True,
+            existing_website_url="https://bright.example.com",
+            website_analysis_status="not_started",
             phone_public="555-111-2222",
             email_public="hello@bright.example.com",
             show_phone_public=True,
@@ -109,9 +124,21 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
 
         self.assertEqual(payload["identity"]["business_name"], "Bright Build Co")
         self.assertEqual(payload["identity"]["tagline"], "Calm remodels, clean finishes")
+        self.assertEqual(payload["business_identity"]["owner_contact_name"], "Builder Owner")
+        self.assertEqual(payload["business_identity"]["phone"], "555-111-2222")
+        self.assertEqual(payload["trades_services"]["primary_trade"], "Remodeling")
         self.assertEqual(payload["service_area"]["service_area_text"], "Austin metro")
+        self.assertEqual(payload["service_area"]["service_area_mode"], "cities")
+        self.assertIn("Round Rock", payload["service_area"]["service_cities"])
+        self.assertIn("Travis County", payload["service_area"]["service_counties"])
         self.assertIn("Kitchen Remodels", payload["services"]["specialties"])
         self.assertIn("Kitchen Remodeling", payload["services"]["skills"])
+        self.assertTrue(payload["credentials"]["licensed"])
+        self.assertTrue(payload["credentials"]["free_estimates"])
+        self.assertIn("Warranty included", payload["customer_trust_badges"])
+        self.assertTrue(payload["existing_website"]["has_existing_website"])
+        self.assertEqual(payload["existing_website"]["website_url"], "https://bright.example.com")
+        self.assertEqual(payload["existing_website"]["website_analysis_status"], "not_started")
         self.assertEqual(payload["seo"]["title"], "Bright Build Co | Austin Remodeler")
         self.assertEqual(payload["gallery"]["count"], 2)
         self.assertEqual(payload["reviews"]["count"], 1)
