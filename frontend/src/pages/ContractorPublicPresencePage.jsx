@@ -22,7 +22,6 @@ import { generateContractorPublicProfile } from '../api.js';
 import { ProjectModeBadge } from '../components/projectMode.jsx';
 import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
-import PublicWebsiteRenderer from '../components/website/PublicWebsiteRenderer.jsx';
 
 const ONLINE_PRESENCE_STEPS = [
   { key: 'decision', label: 'Website Decision', eyebrow: 'Step 0' },
@@ -546,7 +545,6 @@ export default function ContractorPublicPresencePage() {
   const [websiteReadiness, setWebsiteReadiness] = useState(defaultWebsiteReadiness);
   const [websiteBuilderTab, setWebsiteBuilderTab] = useState('setup');
   const [selectedWebsitePageId, setSelectedWebsitePageId] = useState(null);
-  const [websitePreviewMode, setWebsitePreviewMode] = useState('desktop');
   const [websiteBusy, setWebsiteBusy] = useState(false);
   const [websitePublishMessage, setWebsitePublishMessage] = useState('');
   const [aiBusyTarget, setAiBusyTarget] = useState('');
@@ -593,16 +591,21 @@ export default function ContractorPublicPresencePage() {
   const canPublishWebsite =
     websiteDevelopmentOverrideActive ||
     (Boolean(websiteReadiness?.entitlements?.can_publish || websitePublishGate.enabled) && websitePublishBlockers.length === 0);
-  const websitePreviewPayload = useMemo(
-    () => ({
-      profile: websiteProfile,
-      pages: websitePages,
-      website: websiteData,
-      homepage_layout: websiteLayout,
-      template_key: websiteData.template_key || websiteReadiness?.draft?.template_key || 'starter',
-    }),
-    [websiteData, websiteLayout, websitePages, websiteProfile, websiteReadiness?.draft?.template_key]
-  );
+  const websiteFullPreviewUrl = (mode = 'desktop') => `/app/marketing/preview?mode=${mode}`;
+  const websiteHeroImage =
+    websiteProfile?.images?.hero ||
+    websiteProfile?.images?.cover ||
+    websiteProfile?.branding?.hero_image_url ||
+    websiteProfile?.branding?.cover_image_url ||
+    websiteProfile?.gallery?.items?.[0]?.image_url ||
+    '';
+  const websiteBusinessName =
+    websiteProfile?.identity?.business_name ||
+    profile.business_name_public ||
+    profile.business_name ||
+    'Your business';
+  const selectedDesignLabel =
+    DESIGN_STYLE_OPTIONS.find((option) => option.key === (websiteData.template_key || 'starter'))?.label || 'Modern';
 
   const specialtiesText = useMemo(
     () => (Array.isArray(profile.specialties) ? profile.specialties.join(', ') : ''),
@@ -1623,9 +1626,10 @@ export default function ContractorPublicPresencePage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <a
-                href={websiteData.public_url || profile.public_url || '#'}
+                href={websiteFullPreviewUrl('desktop')}
                 target="_blank"
                 rel="noreferrer"
+                data-testid="online-presence-preview-website-link"
                 className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
               >
                 Preview Website
@@ -2083,11 +2087,24 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'website' ? (
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="marketing-website-builder-tab">
+            <section className="space-y-5" data-testid="marketing-website-builder-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="website-builder-design-tab">
-                <div className="text-xs font-bold text-slate-500">Step 4 of 7</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Design &amp; Content</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Choose how your website will look and what content it includes.</p>
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-500">Step 4 of 7</div>
+                    <h2 className="mt-2 text-2xl font-black text-slate-950">Design &amp; Content</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">Choose how your website will look and what content it includes.</p>
+                  </div>
+                  <a
+                    href={websiteFullPreviewUrl('desktop')}
+                    target="_blank"
+                    rel="noreferrer"
+                    data-testid="website-builder-preview-button"
+                    className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-700"
+                  >
+                    Preview Website
+                  </a>
+                </div>
                 {!canCustomizeWebsite ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{websiteBuilderGate.reason || 'Upgrade to customize website design.'}</div> : null}
                 {websiteDevelopmentOverrideActive ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-bold text-blue-800">Developer Override Active</div> : null}
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -2127,17 +2144,6 @@ export default function ContractorPublicPresencePage() {
                   </div>
                 </div>
               </div>
-              <aside className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between gap-3">
-                    <div><div className="text-sm font-black text-slate-950">Preview</div><div className="text-xs text-slate-500">Desktop/mobile</div></div>
-                    <div className="flex rounded-lg bg-slate-100 p-1" data-testid="website-builder-preview-toggle">
-                      {['desktop', 'mobile'].map((mode) => <button key={mode} type="button" onClick={() => setWebsitePreviewMode(mode)} className={`rounded-md px-2 py-1 text-xs font-bold ${websitePreviewMode === mode ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</button>)}
-                    </div>
-                  </div>
-                  <div className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-slate-200 bg-white p-2"><div className={websitePreviewMode === 'mobile' ? 'mx-auto max-w-[340px]' : 'min-w-[620px]'}><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode={websitePreviewMode} /></div></div>
-                </div>
-              </aside>
             </section>
           ) : null}
 
@@ -2182,7 +2188,45 @@ export default function ContractorPublicPresencePage() {
                 <div className="text-xs font-bold text-slate-500">Step 6 of 7</div>
                 <h2 className="mt-2 text-2xl font-black text-slate-950">Final Review</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">Review your online presence before publishing.</p>
-                <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-white p-2"><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode="desktop" /></div>
+                <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm" data-testid="website-preview-summary-card">
+                  <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
+                    <div className="min-h-[220px] bg-slate-100">
+                      {websiteHeroImage ? (
+                        <img src={websiteHeroImage} alt="" className="h-full min-h-[220px] w-full object-cover" />
+                      ) : (
+                        <div className="flex h-full min-h-[220px] items-center justify-center bg-gradient-to-br from-blue-600 via-slate-900 to-emerald-500 p-8 text-center text-white">
+                          <div>
+                            <div className="text-3xl font-black">{websiteBusinessName}</div>
+                            <div className="mt-3 text-sm font-semibold text-white/80">Preview thumbnail will use your hero or portfolio photo once available.</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="bg-white p-5">
+                      <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-600">Website summary</div>
+                      <h3 className="mt-2 text-xl font-black text-slate-950">{websiteBusinessName}</h3>
+                      <div className="mt-4 grid gap-3 text-sm">
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <span className="font-bold text-slate-600">Selected design</span>
+                          <span className="font-black text-slate-950">{selectedDesignLabel}</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <span className="font-bold text-slate-600">Readiness score</span>
+                          <span className="font-black text-blue-700">{websiteReadinessData.score || 0}%</span>
+                        </div>
+                        <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                          <span className="font-bold text-slate-600">Website status</span>
+                          <span className="font-black capitalize text-slate-950">{websiteData.status || 'draft'}</span>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <a href={websiteFullPreviewUrl('desktop')} target="_blank" rel="noreferrer" className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white" data-testid="final-preview-desktop">Preview Desktop</a>
+                        <a href={websiteFullPreviewUrl('mobile')} target="_blank" rel="noreferrer" className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700" data-testid="final-preview-mobile">Preview Mobile</a>
+                        <a href={websiteFullPreviewUrl('desktop')} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700" data-testid="final-open-full-preview">Open Full Preview</a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Business Information</div><p className="mt-2 text-sm text-slate-600">{profile.business_name_public || 'Business name missing'} - {profile.primary_trade || 'Primary trade missing'}</p></div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Photos</div><p className="mt-2 text-sm text-slate-600">{galleryRows.length} gallery item{galleryRows.length === 1 ? '' : 's'} ready.</p></div>

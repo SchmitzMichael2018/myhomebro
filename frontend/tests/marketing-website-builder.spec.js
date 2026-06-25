@@ -359,6 +359,23 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
     });
   });
 
+  await page.route(/\/api\/projects\/contractor\/website\/preview\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ...websitePayload,
+        preview: {
+          mode: 'draft',
+          can_publish: pro || developmentOverride,
+          publish_disabled_reason: pro || developmentOverride ? '' : 'Publishing is available during an active Website Builder plan.',
+          public_safe: true,
+        },
+        homepage_layout: websitePayload.website.homepage_layout,
+      }),
+    });
+  });
+
   await page.route(/\/api\/projects\/contractor\/website\/?$/, async (route) => {
     if (route.request().method() === 'PATCH') {
       const patch = route.request().postDataJSON();
@@ -451,7 +468,11 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Final Review');
   await expect(page.getByTestId('website-builder-design-tab')).toContainText('Developer Override Active');
   await expect(page.getByText('Your website is saved but paused. Choose a plan to reactivate customization.')).toHaveCount(0);
-  await expect(page.getByTestId('website-builder-preview-toggle')).toBeVisible();
+  await expect(page.getByTestId('website-builder-preview-toggle')).toHaveCount(0);
+  await expect(page.getByTestId('website-builder-preview-button')).toBeVisible();
+  await expect(page.getByTestId('website-builder-preview-button')).toHaveAttribute('target', '_blank');
+  await expect(page.getByTestId('website-builder-preview-button')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=desktop$/);
+  await expect(page.getByTestId('marketing-website-builder-tab').getByTestId('public-website-renderer')).toHaveCount(0);
 
   const themeState = await page.getByTestId('online-presence-setup-shell').evaluate((shell) => {
     const parseRgb = (value) => {
@@ -485,34 +506,52 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
 
   const layoutState = await page.getByTestId('marketing-website-builder-tab').evaluate((root) => {
     const editor = root.querySelector('[data-testid="website-builder-design-tab"]');
-    const preview = root.querySelector('[data-testid="public-website-renderer"]');
     const main = root.closest('main');
     const rootRect = root.getBoundingClientRect();
     const editorRect = editor?.getBoundingClientRect();
-    const previewRect = preview?.getBoundingClientRect();
     const mainRect = main?.getBoundingClientRect();
     return {
       shellUsesAvailableWidth: Boolean(mainRect && rootRect.width >= mainRect.width * 0.9),
-      editorWideEnough: Boolean(editorRect && editorRect.width >= 420),
-      previewWideEnough: Boolean(previewRect && previewRect.width >= 300),
-      previewHasRenderer: Boolean(preview),
+      editorUsesAvailableWidth: Boolean(editorRect && editorRect.width >= rootRect.width * 0.9),
+      previewHasRenderer: Boolean(root.querySelector('[data-testid="public-website-renderer"]')),
       documentFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
     };
   });
   expect(layoutState).toEqual({
     shellUsesAvailableWidth: true,
-    editorWideEnough: true,
-    previewWideEnough: true,
-    previewHasRenderer: true,
+    editorUsesAvailableWidth: true,
+    previewHasRenderer: false,
     documentFits: true,
   });
 
   await expect(page.getByTestId('website-builder-primary-color')).toBeEnabled();
   await page.getByTestId('website-builder-primary-color').fill('#0f766e');
   await expect(page.getByTestId('website-builder-save-page')).toBeEnabled();
-  await page.getByRole('button', { name: 'Mobile' }).click();
+  await page.goto('/app/marketing/preview?mode=mobile', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('contractor-website-preview-page')).toBeVisible();
+  await expect(page.getByTestId('full-preview-mobile-frame')).toBeVisible();
   await expect(page.getByTestId('public-website-renderer')).toBeVisible();
+  const mobileFrame = await page.getByTestId('full-preview-mobile-frame').evaluate((root) => {
+    const phone = root.querySelector('.rounded-\\[2\\.5rem\\]');
+    const rect = phone?.getBoundingClientRect();
+    return {
+      phoneWidth: Math.round(rect?.width || 0),
+      documentFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
+    };
+  });
+  expect(mobileFrame.phoneWidth).toBeGreaterThanOrEqual(340);
+  expect(mobileFrame.phoneWidth).toBeLessThanOrEqual(420);
+  expect(mobileFrame.documentFits).toBe(true);
 
+  await page.getByRole('button', { name: 'Desktop' }).click();
+  await expect(page.getByTestId('full-preview-desktop-frame')).toBeVisible();
+  const desktopFrame = await page.getByTestId('full-preview-desktop-canvas').evaluate((canvas) => {
+    const rect = canvas.getBoundingClientRect();
+    return Math.round(rect.width);
+  });
+  expect(desktopFrame).toBeGreaterThanOrEqual(900);
+
+  await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
   await expect(page.getByTestId('online-presence-publish-tab')).toContainText('Ready to Publish');
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
@@ -563,12 +602,16 @@ test('Online Presence AI hooks show review-before-apply suggestions', async ({ p
   await expect(page.getByTestId('seo-keywords-input')).toHaveValue(/Austin remodeling/);
 
   await setupNav.getByRole('button', { name: /Final Review/ }).click();
+  await expect(page.getByTestId('website-preview-summary-card')).toBeVisible();
+  await expect(page.getByTestId('online-presence-final-review-tab').getByTestId('public-website-renderer')).toHaveCount(0);
+  await expect(page.getByTestId('final-preview-desktop')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=desktop$/);
+  await expect(page.getByTestId('final-preview-mobile')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=mobile$/);
   await expect(page.getByTestId('ai-website-audit-card')).toContainText('AI Website Audit');
   await page.getByTestId('ai-final-review-suggestions').click();
   await expect(page.getByTestId('ai-suggestion-final-website-audit')).toContainText('ready to publish');
 });
 
-test('Pro contractor can edit Design & Content, preview mobile, and publish a snapshot', async ({ page }) => {
+test('Pro contractor can edit Design & Content, open full preview, and publish a snapshot', async ({ page }) => {
   await mockMarketingPage(page, { pro: true });
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
@@ -576,11 +619,13 @@ test('Pro contractor can edit Design & Content, preview mobile, and publish a sn
   await page.getByTestId('website-builder-hero-headline').fill('Premium remodeling, handled clearly');
   await page.getByTestId('website-builder-save-page').click();
   await expect(page.getByText('Website page saved.')).toBeVisible();
-  await expect(page.getByTestId('marketing-website-builder-tab')).toContainText('Premium remodeling, handled clearly');
+  await expect(page.getByTestId('website-builder-hero-headline')).toHaveValue('Premium remodeling, handled clearly');
 
-  await page.getByRole('button', { name: 'Mobile' }).click();
-  await expect(page.getByTestId('public-website-renderer')).toBeVisible();
+  await page.goto('/app/marketing/preview?mode=mobile', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('full-preview-mobile-frame')).toBeVisible();
+  await expect(page.getByTestId('public-website-renderer')).toContainText('Premium remodeling, handled clearly');
 
+  await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
   await page.getByTestId('website-builder-publish-button').click();
   await expect(page.getByText('Website published.', { exact: true })).toBeVisible();

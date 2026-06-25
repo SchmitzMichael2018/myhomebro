@@ -69,6 +69,7 @@ import ContractorPayoutHistoryPage from "../pages/ContractorPayoutHistoryPage.js
 import ContractorBidsPage from "../pages/ContractorBidsPage.jsx";
 import CustomerRecordsPage from "../pages/CustomerRecordsPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
+import ContractorWebsitePreviewPage from "../pages/ContractorWebsitePreviewPage.jsx";
 import AIAssistantPage from "../pages/AIAssistantPage.jsx";
 import SupportTicketsPage from "../pages/SupportTicketsPage.jsx";
 import NotificationsPage from "../pages/NotificationsPage.jsx";
@@ -175,6 +176,7 @@ export function protectedRoutes() {
           <Route path="assignments" element={<Navigate to="/app/team/assignments" replace />} />
 
           <Route path="marketing" element={<ContractorPublicPresencePage />} />
+          <Route path="marketing/preview" element={<ContractorWebsitePreviewPage />} />
           <Route path="public-presence" element={<Navigate to="/app/marketing" replace />} />
 
           <Route path="opportunities" element={<ContractorBidsPage />} />
