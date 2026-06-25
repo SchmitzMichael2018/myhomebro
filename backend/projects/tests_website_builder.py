@@ -352,11 +352,11 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Unsupported", response.data["detail"])
 
-    def test_ai_assist_endpoint_does_not_return_private_data_when_provider_missing(self):
+    def test_ai_assist_endpoint_provider_missing_is_non_fatal_and_private_safe(self):
         response = self.client.post(
             "/api/projects/contractor/website/ai-assist/",
             {
-                "action": "generate_tagline",
+                "action": "business_description",
                 "current_value": "",
                 "website_payload": {"private_customer_email": "secret@example.com"},
             },
@@ -364,8 +364,43 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
             secure=True,
         )
 
-        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["configured"])
+        self.assertIn("not configured", response.data["detail"])
         self.assertNotIn("secret@example.com", str(response.data))
+
+    def test_ai_assist_endpoint_accepts_online_presence_action_types(self):
+        actions = [
+            "business_description",
+            "logo_generation",
+            "hero_image_generation",
+            "photo_title",
+            "photo_caption",
+            "photo_category",
+            "review_summary",
+            "design_recommendation",
+            "hero_headline",
+            "hero_subheadline",
+            "cta_text",
+            "about_section",
+            "service_description",
+            "seo_title",
+            "seo_description",
+            "seo_keywords",
+            "final_website_audit",
+            "faq_generation",
+            "local_business_schema",
+        ]
+        for action in actions:
+            with self.subTest(action=action):
+                response = self.client.post(
+                    "/api/projects/contractor/website/ai-assist/",
+                    {"action": action, "current_value": ""},
+                    format="json",
+                    secure=True,
+                )
+                self.assertNotEqual(response.status_code, 400)
+                self.assertEqual(response.data["action"], action)
 
     @override_settings(
         CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={

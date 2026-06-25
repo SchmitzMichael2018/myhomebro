@@ -61,6 +61,25 @@ WEBSITE_AI_ACTIONS = {
     "generate_contact_intro",
     "generate_seo_title",
     "generate_seo_description",
+    "business_description",
+    "logo_generation",
+    "hero_image_generation",
+    "photo_title",
+    "photo_caption",
+    "photo_category",
+    "review_summary",
+    "design_recommendation",
+    "hero_headline",
+    "hero_subheadline",
+    "cta_text",
+    "about_section",
+    "service_description",
+    "seo_title",
+    "seo_description",
+    "seo_keywords",
+    "final_website_audit",
+    "faq_generation",
+    "local_business_schema",
 }
 
 WEBSITE_FEATURE_KEYS = (
@@ -219,7 +238,7 @@ def _default_page_blocks(page_type: str, profile_payload: dict[str, Any]) -> dic
             "hero": {
                 "headline": f"{business_name} builds projects homeowners can trust.",
                 "subheadline": identity.get("tagline") or identity.get("bio") or f"Professional {service_text} for {area or 'your service area'}.",
-                "cta_text": "Request a Quote",
+                "cta_text": "Start a Project",
             },
             "about": {
                 "body": identity.get("bio") or f"{business_name} helps customers plan, price, and complete work with clear communication.",
@@ -445,8 +464,8 @@ def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, 
         return {"ok": False, "status": 403, "detail": "Website AI assistance is not available for this access state."}
     if not bool(getattr(settings, "CONTRACTOR_WEBSITE_AI_ASSIST_ENABLED", False)):
         return {
-            "ok": False,
-            "status": 503,
+            "ok": True,
+            "configured": False,
             "detail": "Website AI assistance is not configured yet.",
             "action": action,
             "entitlements": {
@@ -454,6 +473,8 @@ def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, 
                 "can_use_ai_limited": entitlements.get("can_use_ai_limited"),
                 "can_use_ai_full": entitlements.get("can_use_ai_full"),
             },
+            "suggested_value": "",
+            "suggestions": [],
         }
     return {
         "ok": False,

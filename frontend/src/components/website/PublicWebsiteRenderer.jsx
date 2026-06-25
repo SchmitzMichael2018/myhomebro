@@ -55,6 +55,12 @@ function fieldClass() {
   return 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100';
 }
 
+function websiteCtaText(value) {
+  return String(value || '').trim().toLowerCase() === 'request a quote'
+    ? 'Start a Project'
+    : (value || 'Start a Project');
+}
+
 export default function PublicWebsiteRenderer({ payload, currentPage, previewMode = 'desktop', slug = '' }) {
   const profile = payload?.profile || {};
   const pages = payload?.pages || [];
@@ -164,7 +170,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
           </div>
         </div>
         <a href="#website-intake" className="rounded-full px-4 py-2 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5" style={{ background: primary }}>
-          Request a Quote
+          Start a Project
         </a>
       </header>
 
@@ -182,7 +188,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a href="#website-intake" className="rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5" style={{ background: primary }}>
-                {hero.cta_text || 'Request a Quote'}
+                {websiteCtaText(hero.cta_text)}
               </a>
               <a href="#portfolio" className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50">
                 View Work
@@ -272,7 +278,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
               <h2 className="text-2xl font-black">{contactBlock.heading || 'Ready to start?'}</h2>
               <p className="mt-2 max-w-xl text-sm leading-6 text-white/85">{contactBlock.body || 'Share the basics and we will help turn the project into a clear next step.'}</p>
               <a href="#website-intake" className="mt-5 inline-flex rounded-xl bg-white px-4 py-2 text-sm font-bold" style={{ color: primary }}>
-                {contactBlock.cta_text || 'Start Your Project'}
+                {websiteCtaText(contactBlock.cta_text || 'Start Your Project')}
               </a>
               <div className="mt-5 flex flex-wrap gap-3 text-sm font-semibold">
                 {contact.show_phone_public && contact.phone_public ? <a href={`tel:${contact.phone_public}`} className="rounded-xl bg-white/15 px-4 py-2 text-white">{contact.phone_public}</a> : null}
@@ -282,7 +288,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
 
             <form id="website-intake" data-testid="public-website-intake-form" onSubmit={submitIntake} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
               <div className="text-xs font-bold uppercase tracking-[0.18em]" style={{ color: accent }}>Project intake</div>
-              <h3 className="mt-2 text-xl font-black text-slate-900">Request a Quote</h3>
+              <h3 className="mt-2 text-xl font-black text-slate-900">Start a Project</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">
                 {contactBlock.intake_intro || `Tell ${businessName} what you want done, where the project is, and how soon you would like to start.`}
               </p>

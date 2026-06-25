@@ -243,7 +243,7 @@ class PublicWebsiteIntakeView(APIView):
                 **_quote_request_payload(data).get("ai_analysis_payload", {}),
                 "source": PublicContractorLead.SOURCE_WEBSITE,
                 "source_label": "Website",
-                "request_path_label": "Request a Quote",
+                "request_path_label": "Start a Project",
             },
             "submitted_at": timezone.now(),
         }
@@ -285,7 +285,7 @@ class PublicWebsiteIntakeView(APIView):
                 "status": getattr(lead, "status", "new"),
                 "source": PublicContractorLead.SOURCE_WEBSITE,
                 "source_label": "Website",
-                "request_path_label": "Request a Quote",
+                "request_path_label": "Start a Project",
             },
             status=status.HTTP_201_CREATED,
         )

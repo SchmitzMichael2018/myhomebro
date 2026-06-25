@@ -499,7 +499,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-qr-image')).toBeVisible();
   await page.getByLabel('Company / business name').fill('Bright Build Renovations');
   await page.getByLabel('Years in business').fill('14');
-  await page.getByLabel('Primary trade').fill('Kitchen remodeling');
+  await page.getByTestId('business-primary-trade-custom').fill('Kitchen remodeling');
   await page.getByLabel('Additional trades/services').fill('Electrical repair, generator installation');
   await page.getByLabel('Business type').fill('Residential, commercial');
   await page.getByRole('button', { name: 'Warranty included' }).click();

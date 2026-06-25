@@ -380,15 +380,28 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
 
   await page.route(/\/api\/projects\/contractor\/website\/ai-assist\/?$/, async (route) => {
     const body = route.request().postDataJSON();
+    const suggestions = {
+      business_description: 'Bright Build Co delivers clean Austin remodels with clear schedules, careful finish work, and dependable communication.',
+      photo_title: 'Finished kitchen remodel',
+      photo_caption: 'A bright kitchen update with improved storage, lighting, and clean finish details.',
+      photo_category: 'Kitchen remodel',
+      review_summary: 'Customers consistently mention clear communication and careful finish work.',
+      hero_headline: 'Austin remodeling without project chaos',
+      hero_subheadline: 'Premium remodeling, handled clearly from first walkthrough to final punch list.',
+      cta_text: 'Start a Project',
+      seo_title: 'Bright Build Co | Austin Remodeling Contractor',
+      seo_description: 'Austin remodeling contractor helping homeowners plan clean, reliable kitchen and home updates.',
+      seo_keywords: 'Austin remodeling, kitchen remodel, home renovation',
+      final_website_audit: 'Your website is ready to publish. Strengthen the hero, add one more project photo, and keep the CTA direct.',
+    };
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
         ok: true,
         action: body.action,
-        suggested_value: body.action === 'generate_hero_headline'
-          ? 'Austin remodeling without project chaos'
-          : 'Premium remodeling, handled clearly',
+        configured: true,
+        suggested_value: suggestions[body.action] || 'Premium remodeling, handled clearly',
         explanation: 'This keeps the copy specific and customer-facing.',
       }),
     });
@@ -505,6 +518,56 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
+test('Online Presence AI hooks show review-before-apply suggestions', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+
+  const setupNav = page.getByTestId('online-presence-setup-nav');
+
+  await setupNav.getByRole('button', { name: /Business Information/ }).click();
+  await page.getByTestId('ai-generate-business-description').click();
+  await expect(page.getByTestId('ai-suggestion-business-description')).toContainText('Bright Build Co delivers clean Austin remodels');
+  await page.getByTestId('ai-accept-business-description').click();
+  await expect(page.getByTestId('business-description-input')).toHaveValue(/Bright Build Co delivers clean Austin remodels/);
+
+  await setupNav.getByRole('button', { name: /Photo Gallery/ }).click();
+  await page.getByTestId('ai-photo-title').click();
+  await page.getByTestId('ai-accept-photo-title').click();
+  await expect(page.getByTestId('gallery-title-input')).toHaveValue('Finished kitchen remodel');
+  await page.getByTestId('ai-photo-caption').click();
+  await page.getByTestId('ai-accept-photo-caption').click();
+  await expect(page.getByTestId('gallery-caption-input')).toHaveValue(/bright kitchen update/);
+  await page.getByTestId('ai-photo-category').click();
+  await page.getByTestId('ai-accept-photo-category').click();
+  await expect(page.getByTestId('gallery-category-input')).toHaveValue('Kitchen remodel');
+
+  await setupNav.getByRole('button', { name: /Design & Content/ }).click();
+  await page.getByTestId('ai-hero-headline').click();
+  await expect(page.getByTestId('website-builder-hero-headline')).not.toHaveValue('Austin remodeling without project chaos');
+  await page.getByTestId('ai-accept-hero-headline').click();
+  await expect(page.getByTestId('website-builder-hero-headline')).toHaveValue('Austin remodeling without project chaos');
+  await page.getByTestId('ai-hero-subheadline').click();
+  await page.getByTestId('ai-accept-hero-subheadline').click();
+  await expect(page.getByTestId('website-builder-hero-subheadline')).toHaveValue(/Premium remodeling/);
+
+  await setupNav.getByRole('button', { name: /SEO & Visibility/ }).click();
+  await page.getByTestId('ai-seo-title').click();
+  await page.getByTestId('ai-accept-seo-title').click();
+  await expect(page.getByTestId('seo-title-input')).toHaveValue('Bright Build Co | Austin Remodeling Contractor');
+  await page.getByTestId('ai-seo-description').click();
+  await page.getByTestId('ai-accept-seo-description').click();
+  await expect(page.getByTestId('seo-description-input')).toHaveValue(/Austin remodeling contractor/);
+  await page.getByTestId('ai-seo-keywords').click();
+  await page.getByTestId('ai-accept-seo-keywords').click();
+  await expect(page.getByTestId('seo-keywords-input')).toHaveValue(/Austin remodeling/);
+
+  await setupNav.getByRole('button', { name: /Final Review/ }).click();
+  await expect(page.getByTestId('ai-website-audit-card')).toContainText('AI Website Audit');
+  await page.getByTestId('ai-final-review-suggestions').click();
+  await expect(page.getByTestId('ai-suggestion-final-website-audit')).toContainText('ready to publish');
+});
+
 test('Pro contractor can edit Design & Content, preview mobile, and publish a snapshot', async ({ page }) => {
   await mockMarketingPage(page, { pro: true });
 
@@ -526,7 +589,9 @@ test('Pro contractor can edit Design & Content, preview mobile, and publish a sn
   await expect(page.getByTestId('public-website-page')).toBeVisible();
   await expect(page.getByTestId('public-website-renderer')).toContainText('Premium remodeling, handled clearly');
   await expect(page.getByTestId('public-website-intake-form')).toBeVisible();
-  await page.getByRole('link', { name: 'Request a Quote' }).first().click();
+  await expect(page.getByRole('link', { name: 'Start a Project' }).first()).toBeVisible();
+  await expect(page.getByTestId('public-website-intake-form')).toContainText('Start a Project');
+  await page.getByRole('link', { name: 'Start a Project' }).first().click();
   await page.getByPlaceholder('Full name').fill('Jordan Website');
   await page.getByPlaceholder('you@example.com').fill('jordan@example.com');
   await page.getByPlaceholder('Kitchen remodel, repair, etc.').fill('Kitchen remodel');
