@@ -293,6 +293,13 @@ test("authenticated shell renders notifications bell and dropdown panel", async 
 });
 
 test("notifications page groups items and deep-links to targets", async ({ page }) => {
+  const datedAt = (daysAgo, hour = 15) => {
+    const date = new Date();
+    date.setDate(date.getDate() - daysAgo);
+    date.setHours(hour, 30, 0, 0);
+    return date.toISOString();
+  };
+
   await mockAuthenticatedShell(page, [
     makeNotification({
       id: 11,
@@ -303,7 +310,7 @@ test("notifications page groups items and deep-links to targets", async ({ page 
       action_label: "Review Work",
       action_url: "/app/reviewer/queue",
       action_needed: true,
-      created_at: "2026-06-24T15:30:00Z",
+      created_at: datedAt(0),
       is_read: false,
     }),
     makeNotification({
@@ -314,7 +321,7 @@ test("notifications page groups items and deep-links to targets", async ({ page 
       body: "Customer signed the agreement.",
       action_label: "Open Agreement",
       action_url: "/app/agreements/321",
-      created_at: "2026-06-22T10:00:00Z",
+      created_at: datedAt(2, 10),
       is_read: true,
     }),
     makeNotification({
@@ -325,7 +332,7 @@ test("notifications page groups items and deep-links to targets", async ({ page 
       body: "Escrow funds were received for this agreement.",
       action_label: "Open Agreement",
       action_url: "/app/agreements/444",
-      created_at: "2026-06-12T10:00:00Z",
+      created_at: datedAt(10, 10),
       is_read: true,
     }),
   ]);

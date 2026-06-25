@@ -448,7 +448,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Online Presence Setup');
   await expect(page.getByTestId('online-presence-readiness-score')).toContainText('67%');
   await expect(page.getByTestId('website-decision-step')).toContainText(
-    "Let's get your online presence ready."
+    "Let's start with your website."
   );
   await expect(page.getByTestId('website-decision-no-website')).toContainText(
     "I don't have a website"
@@ -456,7 +456,10 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('website-decision-existing-website')).toContainText(
     'I already have a website'
   );
-  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Website Design');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Design & Content');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('SEO & Visibility');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Final Review');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Publish');
   const setupLayout = await page.getByTestId('online-presence-setup-nav').evaluate((nav) => ({
     navWidth: nav.getBoundingClientRect().width,
     documentFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
@@ -480,39 +483,28 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
 
   await expect(page.getByRole('heading', { name: 'Business Information' })).toBeVisible();
   await expect(page.getByText('We imported this from your MyHomeBro profile.')).toBeVisible();
-  await expect(page.getByTestId('business-info-company-card')).toContainText('Company');
-  await expect(page.getByTestId('business-info-trades-card')).toContainText('Trades & Services');
-  await expect(page.getByTestId('business-info-service-area-card')).toContainText('Location & Service Area');
-  await expect(page.getByTestId('business-info-credentials-card')).toContainText('Credentials');
-  await expect(page.getByTestId('business-info-trust-badges-card')).toContainText('Why Customers Choose You');
+  await expect(page.getByText('Company / business name')).toBeVisible();
+  await expect(page.getByText('Owner / contact name')).toBeVisible();
+  await expect(page.getByText('Primary trade')).toBeVisible();
+  await expect(page.getByText('Additional trades/services')).toBeVisible();
+  await expect(page.getByText('Why customers choose you')).toBeVisible();
   await expect(page.locator('input[value="Bright Build Co"]').first()).toBeVisible();
   await expect(page.locator('input[value="Morgan Builder"]').first()).toBeVisible();
   await expect(page.locator('input[value="Remodeling"]').first()).toBeVisible();
-  await expect(page.locator('input[value="Austin"]').first()).toBeVisible();
-  await expect(page.locator('input[value="TX-123"]').first()).toBeVisible();
   await expect(page.getByTestId('proposal-tone-selector')).toHaveCount(0);
   await expect(page.getByTestId('brand-primary-color-input')).toHaveCount(0);
   await expect(page.getByTestId('brand-font-theme-select')).toHaveCount(0);
   await expect(page.getByText('Theme preset')).toHaveCount(0);
   await expect(page.getByTestId('public-presence-qr-image')).toBeVisible();
-  await expect(page.getByTestId('public-presence-profile-hint')).toContainText(
-    'Add project photos to strengthen your public profile'
-  );
-  await page.getByLabel('Company name').fill('Bright Build Renovations');
+  await page.getByLabel('Company / business name').fill('Bright Build Renovations');
   await page.getByLabel('Years in business').fill('14');
   await page.getByLabel('Primary trade').fill('Kitchen remodeling');
-  await page.getByRole('button', { name: 'Cities' }).click();
-  await page.getByLabel('Service cities').fill('Austin, Round Rock');
-  await page.getByLabel('Service counties').fill('Travis County, Williamson County');
-  await page.getByLabel('License number').fill('TX-999');
-  await page.getByLabel('Bonded').check();
-  await page.getByLabel('Commercial').check();
+  await page.getByLabel('Additional trades/services').fill('Electrical repair, generator installation');
+  await page.getByLabel('Business type').fill('Residential, commercial');
   await page.getByRole('button', { name: 'Warranty included' }).click();
   await page.getByTestId('public-presence-save-profile').click();
   await expect(page.locator('input[value="Bright Build Renovations"]').first()).toBeVisible();
   await expect(page.locator('input[value="Kitchen remodeling"]').first()).toBeVisible();
-  await expect(page.locator('input[value="Austin, Round Rock"]').first()).toBeVisible();
-  await expect(page.locator('input[value="TX-999"]').first()).toBeVisible();
 
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Website Decision/ }).click();
   await page.getByTestId('website-decision-no-website').click();
@@ -522,7 +514,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
 
   await page.getByRole('button', { name: 'Photo Gallery' }).click();
   await page.getByPlaceholder('Title').fill('Kitchen Remodel');
-  await page.setInputFiles('input[type="file"]', {
+  await page.getByTestId('gallery-image-input').setInputFiles({
     name: 'kitchen.jpg',
     mimeType: 'image/jpeg',
     buffer: Buffer.from('fake-image'),
@@ -530,11 +522,28 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.getByRole('button', { name: 'Add Gallery Item' }).click();
   await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Kitchen Remodel');
 
-  await page.getByRole('button', { name: 'Reviews' }).click();
+  await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Bright Build Renovations');
+
+  await page.getByRole('button', { name: 'Reviews & Testimonials' }).click();
+  await expect(page.getByRole('heading', { name: 'Reviews & Testimonials' })).toBeVisible();
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Taylor Homeowner');
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Pending moderation');
   await page.getByRole('button', { name: 'Publish Review' }).click();
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
+
+  await page.getByRole('button', { name: 'Design & Content' }).click();
+  await expect(page.getByRole('heading', { name: 'Design & Content' })).toBeVisible();
+  await expect(page.getByTestId('marketing-website-builder-tab')).toBeVisible();
+
+  await page.getByRole('button', { name: 'SEO & Visibility' }).click();
+  await expect(page.getByRole('heading', { name: 'SEO & Visibility' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Final Review' }).click();
+  await expect(page.getByRole('heading', { name: 'Final Review' })).toBeVisible();
+
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
+  await expect(page.getByTestId('online-presence-publish-tab')).toContainText('Ready to Publish');
+
   await page.getByRole('button', { name: 'Business Information' }).click();
   await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
     'Leads from your profile, QR code, and website appear in Opportunities.'

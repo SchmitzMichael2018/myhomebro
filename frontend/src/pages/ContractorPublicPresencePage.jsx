@@ -22,15 +22,34 @@ import { generateContractorPublicProfile } from '../api.js';
 import { ProjectModeBadge } from '../components/projectMode.jsx';
 import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
-import WebsiteBuilderWizard from '../components/website/WebsiteBuilderWizard.jsx';
+import PublicWebsiteRenderer from '../components/website/PublicWebsiteRenderer.jsx';
 
 const ONLINE_PRESENCE_STEPS = [
   { key: 'decision', label: 'Website Decision', eyebrow: 'Step 0' },
   { key: 'profile', label: 'Business Information', eyebrow: 'Step 1' },
   { key: 'gallery', label: 'Photo Gallery', eyebrow: 'Step 2' },
-  { key: 'reviews', label: 'Reviews', eyebrow: 'Step 3' },
-  { key: 'website', label: 'Website Design', eyebrow: 'Step 4' },
+  { key: 'reviews', label: 'Reviews & Testimonials', eyebrow: 'Step 3' },
+  { key: 'website', label: 'Design & Content', eyebrow: 'Step 4' },
+  { key: 'seo', label: 'SEO & Visibility', eyebrow: 'Step 5' },
+  { key: 'final', label: 'Final Review', eyebrow: 'Step 6' },
+  { key: 'publish', label: 'Publish', eyebrow: 'Step 7' },
 ];
+
+const DESIGN_STYLE_OPTIONS = [
+  { key: 'starter', label: 'Modern', description: 'Clean sections, blue accents, and a direct quote path.' },
+  { key: 'premium_home', label: 'Classic', description: 'Warm, trust-led presentation for residential projects.' },
+  { key: 'bold_contractor', label: 'Bold', description: 'Strong contrast and action-forward content blocks.' },
+  { key: 'clean_local_service', label: 'Local', description: 'Friendly, practical, and tuned for service calls.' },
+];
+
+const WEBSITE_SECTION_LABELS = {
+  hero: 'Hero',
+  services: 'Services',
+  portfolio: 'Portfolio',
+  reviews: 'Reviews',
+  trust: 'Trust',
+  contact: 'Contact / Quote',
+};
 
 const SERVICE_AREA_MODES = [
   ['radius', 'Radius'],
@@ -613,6 +632,67 @@ export default function ContractorPublicPresencePage() {
     specialtiesText,
     workTypesText,
   ]);
+  const activeStepIndex = Math.max(
+    0,
+    ONLINE_PRESENCE_STEPS.findIndex((step) => step.key === activeTab)
+  );
+  const currentStep = ONLINE_PRESENCE_STEPS[activeStepIndex] || ONLINE_PRESENCE_STEPS[0];
+  const setupProgress = Math.round(((activeStepIndex + 1) / ONLINE_PRESENCE_STEPS.length) * 100);
+  const completedStepKeys = new Set(
+    ONLINE_PRESENCE_STEPS.slice(0, activeStepIndex).map((step) => step.key)
+  );
+  const homePage = websitePages.find((page) => page.page_type === 'home') || selectedWebsitePage;
+  const heroContent = homePage?.content_blocks?.hero || {};
+  const serviceKeywords = [
+    ...new Set(
+      [
+        ...(Array.isArray(profile.specialties) ? profile.specialties : []),
+        ...(Array.isArray(profile.work_types) ? profile.work_types : []),
+        profile.primary_trade,
+      ].filter(Boolean)
+    ),
+  ];
+  const goToStep = (key) => {
+    if (ONLINE_PRESENCE_STEPS.some((step) => step.key === key)) {
+      setActiveTab(key);
+    }
+  };
+  const goToPreviousStep = () => {
+    const previous = ONLINE_PRESENCE_STEPS[Math.max(0, activeStepIndex - 1)];
+    if (previous) setActiveTab(previous.key);
+  };
+  const goToNextStep = () => {
+    if (activeTab === 'decision') {
+      void continueFromWebsiteDecision();
+      return;
+    }
+    const next = ONLINE_PRESENCE_STEPS[Math.min(ONLINE_PRESENCE_STEPS.length - 1, activeStepIndex + 1)];
+    if (next) setActiveTab(next.key);
+  };
+  const updateHomePageHero = (patch) => {
+    if (!homePage) return;
+    setWebsiteReadiness((prev) => ({
+      ...prev,
+      pages: (Array.isArray(prev.pages) ? prev.pages : []).map((page) =>
+        page.id === homePage.id
+          ? {
+              ...page,
+              content_blocks: {
+                ...(page.content_blocks || {}),
+                hero: {
+                  ...(page.content_blocks?.hero || {}),
+                  ...patch,
+                },
+              },
+            }
+          : page
+      ),
+    }));
+  };
+  const saveHomePageHero = () => {
+    if (!homePage) return;
+    saveWebsitePage(homePage, homePage);
+  };
   const setCredential = (key, value) => {
     setProfile((prev) => ({
       ...prev,
@@ -1416,149 +1496,155 @@ export default function ContractorPublicPresencePage() {
         }}
         onClose={() => setQuickAddPrefill(null)}
       />
-      <header className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h1 data-testid="public-presence-title" className="text-2xl font-bold text-slate-900">
-              Online Presence Setup
-            </h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Build the foundation customers see online: business details, photos, reviews, and your published website.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {!profile.is_public ? (
-              <span
-                data-testid="public-presence-preview-banner"
-                className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800"
+      <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-slate-50 shadow-sm" data-testid="online-presence-setup-shell">
+        <header className="border-b border-slate-200 bg-white px-5 py-4 lg:px-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h1 data-testid="public-presence-title" className="text-xl font-black text-slate-950">
+                Online Presence Setup
+              </h1>
+              <p className="mt-1 text-sm text-slate-600">
+                Build your public profile, gallery, reviews, website design, visibility, and publish checklist in one guided flow.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <a
+                href={websiteData.public_url || profile.public_url || '#'}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
               >
-                Preview mode
-              </span>
-            ) : null}
-            <button
-              type="button"
-              onClick={copyUrl}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Copy Public URL
-            </button>
-            <a
-              href={profile.public_url || '#'}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-            >
-              Open Public Profile
-            </a>
+                Preview Website
+              </a>
+              <button
+                type="button"
+                onClick={copyUrl}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Copy Public URL
+              </button>
+              <a
+                href={profile.public_url || '#'}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Open Public Profile
+              </a>
+              <button
+                type="button"
+                onClick={() => setGenerateProfileOpen(true)}
+                className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 shadow-sm hover:bg-blue-100"
+              >
+                Project Assistant
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="px-5 py-5 lg:px-6" data-testid="online-presence-setup-nav">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="text-sm font-black text-slate-950">Online Presence Setup</div>
+            <div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm" data-testid="online-presence-readiness-score">
+              Readiness {websiteReadinessData.score || 0}%
+            </div>
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {ONLINE_PRESENCE_STEPS.map((step, index) => {
+              const isActive = activeTab === step.key;
+              const isComplete = completedStepKeys.has(step.key);
+              return (
+                <button
+                  key={step.key}
+                  type="button"
+                  onClick={() => goToStep(step.key)}
+                  aria-current={isActive ? 'step' : undefined}
+                  className={[
+                    'flex min-w-[132px] items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-bold transition',
+                    isActive
+                      ? 'border-blue-600 bg-blue-600 text-white shadow-md shadow-blue-100'
+                      : isComplete
+                      ? 'border-emerald-200 bg-white text-slate-800'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:text-slate-950',
+                  ].join(' ')}
+                >
+                  <span className={['flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px]', isActive ? 'bg-white text-blue-700' : isComplete ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'].join(' ')}>
+                    {isComplete ? '✓' : index}
+                  </span>
+                  <span className="whitespace-nowrap">{step.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-200">
+            <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${setupProgress}%` }} />
+          </div>
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <span className="font-black">NEXT STEP</span>
+            <span className="ml-2">
+              {activeTab === 'decision'
+                ? 'Turn on public visibility to start receiving leads from your profile page.'
+                : activeTab === 'profile'
+                ? 'Add business facts that showcase your work and build customer trust.'
+                : activeTab === 'gallery'
+                ? 'Collect and display reviews and testimonials from your happy customers.'
+                : activeTab === 'reviews'
+                ? 'Choose your website style, colors, and content structure.'
+                : activeTab === 'website'
+                ? 'Optimize your website so customers can find you online.'
+                : activeTab === 'seo'
+                ? 'Review your online presence and launch when everything looks right.'
+                : activeTab === 'final'
+                ? 'Publish your website snapshot.'
+                : 'Share your live profile, promote your business, and watch leads come in.'}
+            </span>
           </div>
         </div>
-        <WorkflowHint
-          hint={profileHint}
-          testId="public-presence-profile-hint"
-          className="mt-4"
-        />
-      </header>
 
-      <section className={activeTab === 'website' ? 'block' : 'grid gap-4 lg:grid-cols-[minmax(0,2fr)_320px]'}>
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="online-presence-setup-nav">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Guided setup</div>
-                <div className="mt-1 text-lg font-bold text-slate-950">Online Presence Setup</div>
-              </div>
-              <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm" data-testid="online-presence-readiness-score">
-                Readiness {websiteReadinessData.score || 0}%
-              </div>
-            </div>
-            <div className="mt-4 grid gap-2 md:grid-cols-5">
-            {ONLINE_PRESENCE_STEPS.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => setActiveTab(tab.key)}
-                aria-current={activeTab === tab.key ? 'step' : undefined}
-                className={[
-                  'rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition',
-                  activeTab === tab.key
-                    ? 'border-slate-900 bg-slate-900 text-white'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100',
-                ].join(' ')}
-              >
-                <span className="block text-[11px] uppercase tracking-[0.14em] opacity-70">{tab.eyebrow}</span>
-                <span className="mt-1 block">{tab.label}</span>
-              </button>
-            ))}
-            </div>
-            <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
-              Leads from your profile, QR code, and website appear in Opportunities.
-              <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
-            </div>
-          </div>
-
+        <main className="px-5 pb-6 lg:px-6" data-testid="online-presence-step-content">
           {activeTab === 'decision' ? (
-            <div className="mt-6 space-y-5" data-testid="website-decision-step">
-              <div className="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 p-6 text-white shadow-sm">
-                <div className="text-xs font-semibold uppercase tracking-[0.2em] text-blue-200">Step 0</div>
-                <h2 className="mt-2 text-3xl font-bold">Let&apos;s get your online presence ready.</h2>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-200">
-                  We&apos;ll either build a beautiful website for you or help improve the one you already have.
-                </p>
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="website-decision-step">
+              <div className="text-xs font-bold text-slate-500">Step 0 of 7</div>
+              <h2 className="mt-2 text-2xl font-black text-slate-950">Let&apos;s start with your website.</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                This helps us personalize your experience and provide the best recommendations.
+              </p>
+              <div className="mt-6 grid gap-5 lg:grid-cols-2">
                 <button
                   type="button"
                   onClick={() => {
                     setWebsiteDecisionError('');
                     setProfile((prev) => ({ ...prev, has_existing_website: false, existing_website_url: '' }));
                   }}
-                  className={`rounded-3xl border p-6 text-left shadow-sm transition ${
-                    !profile.has_existing_website
-                      ? 'border-slate-900 bg-white ring-2 ring-slate-900'
-                      : 'border-slate-200 bg-white hover:border-slate-300'
-                  }`}
+                  className={[
+                    'min-h-[260px] rounded-xl border bg-white p-6 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
+                    !profile.has_existing_website ? 'border-blue-600 ring-2 ring-blue-100' : 'border-slate-200',
+                  ].join(' ')}
                   data-testid="website-decision-no-website"
                 >
-                  <div className="flex items-start gap-4">
-                    <span className={`mt-1 h-5 w-5 rounded-full border ${!profile.has_existing_website ? 'border-slate-900 bg-slate-900' : 'border-slate-300 bg-white'}`} />
-                    <div>
-                      <div className="text-lg font-bold text-slate-950">I don&apos;t have a website</div>
-                      <p className="mt-2 text-sm leading-6 text-slate-600">
-                        We&apos;ll design one for you using your MyHomeBro business information.
-                      </p>
-                      <div className="mt-5 inline-flex rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-                        Continue
-                      </div>
-                    </div>
-                  </div>
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-2xl text-blue-600">▣</div>
+                  <div className="mt-5 text-lg font-black text-slate-950">I don&apos;t have a website</div>
+                  <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-600">
+                    We&apos;ll build a beautiful website for you using your business information.
+                  </p>
+                  <span className="mt-5 inline-flex rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</span>
                 </button>
-
                 <div
-                  className={`rounded-3xl border p-6 shadow-sm transition ${
-                    profile.has_existing_website
-                      ? 'border-blue-700 bg-white ring-2 ring-blue-700'
-                      : 'border-slate-200 bg-white'
-                  }`}
+                  className={[
+                    'rounded-xl border bg-white p-6 text-center shadow-sm transition',
+                    profile.has_existing_website ? 'border-blue-600 ring-2 ring-blue-100' : 'border-slate-200',
+                  ].join(' ')}
                   data-testid="website-decision-existing-website"
                 >
-                  <button
-                    type="button"
-                    onClick={() => setProfile((prev) => ({ ...prev, has_existing_website: true }))}
-                    className="w-full text-left"
-                  >
-                    <div className="flex items-start gap-4">
-                      <span className={`mt-1 h-5 w-5 rounded-full border ${profile.has_existing_website ? 'border-blue-700 bg-blue-700' : 'border-slate-300 bg-white'}`} />
-                      <div>
-                        <div className="text-lg font-bold text-slate-950">I already have a website</div>
-                        <p className="mt-2 text-sm leading-6 text-slate-600">
-                          Enter your website address and we&apos;ll keep it ready for future AI analysis.
-                        </p>
-                      </div>
-                    </div>
+                  <button type="button" onClick={() => setProfile((prev) => ({ ...prev, has_existing_website: true }))} className="w-full text-center">
+                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-3xl text-slate-400">◎</div>
+                    <div className="mt-5 text-lg font-black text-slate-950">I already have a website</div>
+                    <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-600">
+                      Enter your website and we&apos;ll keep it ready for future analysis and improvements.
+                    </p>
                   </button>
-                  <label className="mt-5 block space-y-2">
-                    <span className="text-sm font-semibold text-slate-700">Website URL</span>
+                  <label className="mx-auto mt-5 block max-w-sm text-left">
+                    <span className="text-sm font-bold text-slate-800">Website URL</span>
                     <input
                       value={profile.existing_website_url || ''}
                       onChange={(event) => {
@@ -1570,30 +1656,24 @@ export default function ContractorPublicPresencePage() {
                           website_analysis_status: prev.website_analysis_status || 'not_started',
                         }));
                       }}
-                      className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
                       placeholder="https://yourcompany.com"
                       data-testid="existing-website-url-input"
                     />
                   </label>
                   {websiteDecisionError ? (
-                    <div className="mt-2 text-sm font-semibold text-rose-700" data-testid="existing-website-url-error">
+                    <div className="mx-auto mt-2 max-w-sm text-left text-sm font-bold text-rose-700" data-testid="existing-website-url-error">
                       {websiteDecisionError}
                     </div>
                   ) : null}
                   {profile.has_existing_website && profile.existing_website_url ? (
-                    <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4" data-testid="existing-website-coming-soon-card">
-                      <div className="text-lg font-bold text-blue-950">Great!</div>
-                      <div className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">Coming Soon</div>
+                    <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 p-4 text-left" data-testid="existing-website-coming-soon-card">
+                      <div className="font-black text-blue-950">Great!</div>
+                      <div className="mt-1 text-xs font-black uppercase tracking-wide text-blue-700">Coming Soon</div>
                       <div className="mt-3 grid gap-2 text-sm text-blue-950 sm:grid-cols-2">
-                        {[
-                          'Analyze your website',
-                          'Improve SEO',
-                          'Improve website copy',
-                          'Suggest a modern redesign',
-                          'Rebuild your website using AI',
-                        ].map((item) => (
+                        {['Analyze your website', 'Improve SEO', 'Improve website copy', 'Suggest a modern redesign', 'Rebuild your website using AI'].map((item) => (
                           <div key={item} className="flex items-center gap-2">
-                            <span className="font-bold text-blue-700">✓</span>
+                            <span className="font-black text-blue-700">✓</span>
                             <span>{item}</span>
                           </div>
                         ))}
@@ -1602,1514 +1682,372 @@ export default function ContractorPublicPresencePage() {
                   ) : null}
                 </div>
               </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={continueFromWebsiteDecision}
-                  disabled={profileBusy}
-                  className="rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                  data-testid="website-decision-continue"
-                >
-                  {profileBusy ? 'Saving...' : 'Continue'}
-                </button>
-              </div>
-            </div>
+            </section>
           ) : null}
 
           {activeTab === 'profile' ? (
-            <div className="mt-6" data-testid="public-presence-profile-tab">
-              <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1</div>
-                <h2 className="mt-1 text-xl font-bold text-slate-950">Business Information</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Who are you, what do you do, where do you work, and why should customers trust you?
-                </p>
-              </div>
-              {!profile.is_public ? (
-                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  Preview mode: your public profile is not live yet. Use the generator below to draft copy, then publish when you&apos;re ready.
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-profile-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-bold text-slate-500">Step 1 of 7</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Business Information</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Add your business details and the services you provide.</p>
+                <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                  We imported this from your MyHomeBro profile. Review and update anything that has changed.
                 </div>
-              ) : null}
-              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
-                <div className="space-y-4">
-                  <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                    We imported this from your MyHomeBro profile. Review and update anything that has changed.
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">Step 1 readiness</div>
-                      <div className="text-xs text-slate-500">Business facts that can later power AI copy, SEO, service pages, and design recommendations.</div>
-                    </div>
-                    <div className="rounded-full bg-slate-900 px-4 py-2 text-sm font-bold text-white" data-testid="business-info-readiness-score">
-                      {stepOneReadiness}%
-                    </div>
-                  </div>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-company-card">
-                    <h3 className="text-base font-bold text-slate-950">Company</h3>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Company name</span>
-                        <input value={profile.business_name_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Bright Build Co" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Years in business</span>
-                        <input value={profile.years_in_business || ''} onChange={(e) => setProfile((prev) => ({ ...prev, years_in_business: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="12" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Owner/contact name</span>
-                        <input value={profile.owner_contact_name || ''} onChange={(e) => setProfile((prev) => ({ ...prev, owner_contact_name: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Owner or office contact" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Public profile slug</span>
-                        <input value={profile.slug || ''} onChange={(e) => setProfile((prev) => ({ ...prev, slug: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="bright-build-co" />
-                      </label>
-                      <label className="space-y-1 md:col-span-2">
-                        <span className="text-sm font-semibold text-slate-700">Short business description</span>
-                        <textarea value={profile.bio || ''} onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))} rows={4} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Describe who you help, what you do, and how you work." />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Business phone</span>
-                        <input value={profile.phone_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="(555) 111-2222" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Business email</span>
-                        <input value={profile.email_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="hello@example.com" />
-                      </label>
-                    </div>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      {[
-                        ['show_phone_public', 'Show phone publicly'],
-                        ['show_email_public', 'Show email publicly'],
-                      ].map(([key, label]) => (
-                        <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                          <input type="checkbox" checked={Boolean(profile[key])} onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))} />
-                          <span>{label}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </section>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-trades-card">
-                    <h3 className="text-base font-bold text-slate-950">Trades &amp; Services</h3>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Primary trade</span>
-                        <input value={profile.primary_trade || ''} onChange={(e) => setProfile((prev) => ({ ...prev, primary_trade: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="General contractor" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Additional trades/services</span>
-                        <input value={workTypesText} onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Roofing, bath remodels" />
-                      </label>
-                      <label className="space-y-1 md:col-span-2">
-                        <span className="text-sm font-semibold text-slate-700">Specialty services</span>
-                        <input value={specialtiesText} onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Kitchen remodels, storm repairs, tile work" />
-                      </label>
-                    </div>
-                  </section>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-service-area-card">
-                    <h3 className="text-base font-bold text-slate-950">Location &amp; Service Area</h3>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Headquarters city</span>
-                        <input value={profile.city || ''} onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Austin" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Headquarters state</span>
-                        <input value={profile.state || ''} onChange={(e) => setProfile((prev) => ({ ...prev, state: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="TX" />
-                      </label>
-                      <div className="md:col-span-2">
-                        <div className="text-sm font-semibold text-slate-700">Service area mode</div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {SERVICE_AREA_MODES.map(([value, label]) => (
-                            <button key={value} type="button" onClick={() => setProfile((prev) => ({ ...prev, service_area_mode: value }))} className={`rounded-full border px-4 py-2 text-sm font-semibold ${profile.service_area_mode === value ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-700'}`}>
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Service radius</span>
-                        <input value={profile.service_area_text || ''} onChange={(e) => setProfile((prev) => ({ ...prev, service_area_text: e.target.value }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="25 miles around Austin" />
-                      </label>
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">Service cities</span>
-                        <input value={serviceCitiesText} onChange={(e) => setProfile((prev) => ({ ...prev, service_cities: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Austin, Round Rock, Cedar Park" />
-                      </label>
-                      <label className="space-y-1 md:col-span-2">
-                        <span className="text-sm font-semibold text-slate-700">Service counties</span>
-                        <input value={serviceCountiesText} onChange={(e) => setProfile((prev) => ({ ...prev, service_counties: e.target.value.split(',') }))} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Travis County, Williamson County" />
-                      </label>
-                    </div>
-                  </section>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-credentials-card">
-                    <h3 className="text-base font-bold text-slate-950">Credentials</h3>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                      {CREDENTIAL_OPTIONS.map(([key, label]) => (
-                        <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                          <input type="checkbox" checked={Boolean(credentials[key])} onChange={(e) => setCredential(key, e.target.checked)} />
-                          <span>{label}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="space-y-1">
-                        <span className="text-sm font-semibold text-slate-700">License number</span>
-                        <input value={credentials.license_number || ''} onChange={(e) => setCredential('license_number', e.target.value)} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="License number" />
-                      </label>
-                      <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                        <input type="checkbox" checked={Boolean(profile.show_license_public)} onChange={(e) => setProfile((prev) => ({ ...prev, show_license_public: e.target.checked }))} />
-                        <span>Show license/insurance visibility publicly</span>
-                      </label>
-                    </div>
-                  </section>
-
-                  <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="business-info-trust-badges-card">
-                    <h3 className="text-base font-bold text-slate-950">Why Customers Choose You</h3>
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      {CUSTOMER_TRUST_BADGES.map((badge) => {
-                        const selected = customerTrustBadges.includes(badge);
-                        return (
-                          <button key={badge} type="button" onClick={() => toggleCustomerTrustBadge(badge)} className={`rounded-full border px-3 py-2 text-sm font-semibold ${selected ? 'border-blue-700 bg-blue-50 text-blue-800' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'}`}>
-                            {badge}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </section>
-
-                  {false ? (
-                    <>
-                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">Profile copy</div>
-                      <div className="text-xs text-slate-500">Draft your tagline, intro, and search copy in one pass.</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setGenerateProfileOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
-                    >
-                      ✨ Generate My Profile
-                    </button>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <input
-                      value={profile.business_name_public || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Public business name"
-                    />
-                    <input
-                      value={profile.slug || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, slug: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Public slug"
-                    />
-                  </div>
-
-                  <div
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                    data-testid="brand-voice-profile-section"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">Brand &amp; Voice</div>
-                      <p className="mt-1 text-sm text-slate-600">
-                        These preferences help shape how proposal drafts sound and appear.
-                      </p>
-                    </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <input
-                        value={profile.tagline || ''}
-                        onChange={(e) => setProfile((prev) => ({ ...prev, tagline: e.target.value }))}
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        placeholder="Tagline"
-                      />
-                      <select
-                        data-testid="proposal-tone-selector"
-                        value={profile.proposal_tone || ''}
-                        onChange={(e) => setProfile((prev) => ({ ...prev, proposal_tone: e.target.value }))}
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      >
-                        {PROPOSAL_TONE_OPTIONS.map(([value, label]) => (
-                          <option key={value || 'default'} value={value}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                      <textarea
-                        value={profile.bio || ''}
-                        onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
-                        rows={4}
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                        placeholder="Short company intro"
-                      />
-                      <input
-                        data-testid="preferred-signoff-input"
-                        value={profile.preferred_signoff || ''}
-                        onChange={(e) => setProfile((prev) => ({ ...prev, preferred_signoff: e.target.value }))}
-                        className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        placeholder="Preferred signoff"
-                      />
-                    </div>
-                  </div>
-
-                  <div
-                    className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-                    data-testid="brand-appearance-profile-section"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold text-slate-900">Brand &amp; Appearance</div>
-                      <p className="mt-1 text-sm text-slate-600">
-                        Choose a controlled look that keeps the public profile polished and readable.
-                      </p>
-                    </div>
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="space-y-2">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Primary color</span>
-                        <input
-                          data-testid="brand-primary-color-input"
-                          type="color"
-                          value={profile.brand_primary_color || '#0f172a'}
-                          onChange={(e) => setProfile((prev) => ({ ...prev, brand_primary_color: e.target.value }))}
-                          className="h-11 w-full rounded-xl border border-slate-300 bg-white px-2 py-1"
-                        />
-                      </label>
-                      <label className="space-y-2">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Accent color</span>
-                        <input
-                          data-testid="brand-accent-color-input"
-                          type="color"
-                          value={profile.brand_accent_color || '#0ea5e9'}
-                          onChange={(e) => setProfile((prev) => ({ ...prev, brand_accent_color: e.target.value }))}
-                          className="h-11 w-full rounded-xl border border-slate-300 bg-white px-2 py-1"
-                        />
-                      </label>
-                      <label className="space-y-2 md:col-span-2">
-                        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Typography</span>
-                        <select
-                          data-testid="brand-font-theme-select"
-                          value={profile.brand_font_theme || 'clean_sans'}
-                          onChange={(e) => setProfile((prev) => ({ ...prev, brand_font_theme: e.target.value }))}
-                          className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                        >
-                          {FONT_THEME_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <div className="md:col-span-2">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Theme preset</div>
-                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                          {THEME_OPTIONS.map((option) => {
-                            const selected = String(profile.profile_theme || 'modern') === option.value;
-                            return (
-                              <button
-                                key={option.value}
-                                type="button"
-                                data-testid={`brand-theme-${option.value}`}
-                                onClick={() => setProfile((prev) => ({ ...prev, profile_theme: option.value }))}
-                                className={`rounded-2xl border px-4 py-3 text-left transition ${
-                                  selected
-                                    ? 'border-slate-900 bg-slate-900 text-white'
-                                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                                }`}
-                              >
-                                <div className="text-sm font-semibold">{option.label}</div>
-                                <div className={`mt-1 text-xs ${selected ? 'text-slate-200' : 'text-slate-500'}`}>
-                                  Controlled preset with readable contrast.
-                                </div>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Logo</div>
-                        {profile.logo_url ? <img src={profile.logo_url} alt="Logo" className="h-24 w-24 rounded-xl object-cover" /> : null}
-                        <input type="file" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
-                      </div>
-                      <div className="space-y-2">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Hero image</div>
-                        {(profile.hero_image_url || profile.cover_image_url) ? (
-                          <img
-                            src={profile.hero_image_url || profile.cover_image_url}
-                            alt="Hero"
-                            className="h-24 w-full rounded-xl object-cover"
-                          />
-                        ) : null}
-                        <input type="file" onChange={(e) => setHeroFile(e.target.files?.[0] || null)} />
-                      </div>
-                      <div className="space-y-2 md:col-span-2">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Legacy cover image</div>
-                        {profile.cover_image_url ? <img src={profile.cover_image_url} alt="Cover" className="h-24 w-full rounded-xl object-cover" /> : null}
-                        <input type="file" onChange={(e) => setCoverFile(e.target.files?.[0] || null)} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <input
-                      value={profile.city || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, city: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="City"
-                    />
-                    <input
-                      value={profile.state || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, state: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="State"
-                    />
-                    <input
-                      value={profile.service_area_text || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, service_area_text: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                      placeholder="Service area"
-                    />
-                    <input
-                      value={profile.years_in_business || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, years_in_business: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Years in business"
-                    />
-                    <input
-                      value={profile.website_url || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, website_url: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Website URL"
-                    />
-                    <input
-                      value={profile.phone_public || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Public phone"
-                    />
-                    <input
-                      value={profile.email_public || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
-                      placeholder="Public email"
-                    />
-                    <input
-                      value={specialtiesText}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',') }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                      placeholder="Specialties (comma separated)"
-                    />
-                    <input
-                      value={workTypesText}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',') }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                      placeholder="Work types (comma separated)"
-                    />
-                    <input
-                      value={profile.seo_title || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, seo_title: e.target.value }))}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                      placeholder="SEO title"
-                    />
-                    <textarea
-                      value={profile.seo_description || ''}
-                      onChange={(e) => setProfile((prev) => ({ ...prev, seo_description: e.target.value }))}
-                      rows={3}
-                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2"
-                      placeholder="SEO description"
-                    />
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {[
-                      ['is_public', 'Public profile visible'],
-                      ['allow_public_intake', 'Allow public intake'],
-                      ['allow_public_reviews', 'Allow public reviews'],
-                      ['show_reviews', 'Show reviews section'],
-                      ['show_gallery', 'Show gallery section'],
-                      ['show_quote_cta', 'Show quote CTA'],
-                      ['show_license_public', 'Show license status'],
-                      ['show_phone_public', 'Show phone publicly'],
-                      ['show_email_public', 'Show email publicly'],
-                    ].map(([key, label]) => (
-                      <label key={key} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(profile[key])}
-                          onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))}
-                        />
-                        <span>{label}</span>
-                      </label>
-                    ))}
-                  </div>
-                    </>
-                  ) : null}
-
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      data-testid="public-presence-save-profile"
-                      onClick={saveProfile}
-                      disabled={profileBusy}
-                      className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                    >
-                      {profileBusy ? 'Saving...' : 'Save Business Information'}
-                    </button>
-                  </div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Company / business name</span>
+                    <input value={profile.business_name_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="C.S.W. Power Solutions" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Primary trade</span>
+                    <input value={profile.primary_trade || ''} onChange={(e) => setProfile((prev) => ({ ...prev, primary_trade: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Electrical contractor" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Owner / contact name</span>
+                    <input value={profile.owner_contact_name || ''} onChange={(e) => setProfile((prev) => ({ ...prev, owner_contact_name: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Owner or office contact" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Additional trades/services</span>
+                    <input value={workTypesText} onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Lighting, generator installation" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Business phone</span>
+                    <input value={profile.phone_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="(210) 504-9796" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Business email</span>
+                    <input value={profile.email_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="hello@example.com" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Years in business</span>
+                    <input value={profile.years_in_business || ''} onChange={(e) => setProfile((prev) => ({ ...prev, years_in_business: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="12" />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-sm font-bold text-slate-800">Business type</span>
+                    <input value={specialtiesText} onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Residential, commercial" />
+                  </label>
+                  <label className="space-y-1 md:col-span-2">
+                    <span className="text-sm font-bold text-slate-800">Business description</span>
+                    <textarea value={profile.bio || ''} onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))} rows={4} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="What you do, who you serve, and why customers trust you." />
+                  </label>
                 </div>
-
-                <PublicPresenceBrandPreview profile={profile} galleryRows={galleryRows} reviewsRows={reviewsRows} />
-              </div>
-            </div>
-          ) : null}
-
-          {activeTab === 'website' ? (
-            <div className="mt-6">
-              <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 4</div>
-                <h2 className="mt-1 text-xl font-bold text-slate-950">Website Design</h2>
-                <p className="mt-1 text-sm text-slate-600">
-                  Use the profile, photos, and reviews you set up first to design, preview, and publish your contractor website.
-                </p>
-              </div>
-              <WebsiteBuilderWizard
-                profile={profile}
-                setProfile={setProfile}
-                websiteReadiness={websiteReadiness}
-                setWebsiteReadiness={setWebsiteReadiness}
-                galleryRows={galleryRows}
-                reviewsRows={reviewsRows}
-                logoFile={logoFile}
-                setLogoFile={setLogoFile}
-                heroFile={heroFile}
-                setHeroFile={setHeroFile}
-                onSaveProfile={saveProfile}
-                onSaveWebsiteSettings={saveWebsiteSettings}
-                onSaveWebsitePage={saveWebsitePage}
-                onPublish={publishWebsite}
-                onPause={pauseWebsite}
-                onToggleGallery={toggleGalleryVisibility}
-                onToggleReview={toggleReviewVisibility}
-                galleryBusy={galleryBusy}
-                reviewBusy={reviewBusy}
-                busy={profileBusy || websiteBusy}
-                publishMessage={websitePublishMessage}
-              />
-            </div>
-          ) : null}
-
-          {false && activeTab === 'website' ? (
-            <div className="mt-6 space-y-4" data-testid="marketing-website-builder-tab">
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-blue-800">
-                      MVP Draft Builder
-                    </div>
-                    <h2 className="mt-4 text-2xl font-bold text-slate-900">Website Builder</h2>
-                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">
-                      Build a simple, professional website from your existing public profile, gallery, reviews, service area, and brand settings.
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Current plan</div>
-                    <div className="mt-1 text-lg font-bold text-slate-900">{websiteReadiness?.entitlements?.plan || 'free'}</div>
-                    <div className="mt-1 text-xs text-slate-500">Status: {websiteData.status || websiteReadiness?.draft?.status || 'draft'}</div>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-3 lg:grid-cols-4">
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-plan-gate">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Plan gate</div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">
-                      {websiteBuilderGate.enabled ? 'Pro Website Builder enabled' : 'Pro Website Builder gated'}
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {websiteBuilderGate.reason || 'Website Builder controls are available for this plan.'}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-readiness-score">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Readiness</div>
-                    <div className="mt-2 text-2xl font-bold text-slate-900">{Number(websiteReadinessData.score || 0)}%</div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {Number(websiteReadinessData.complete_count || 0)} of {Number(websiteReadinessData.total_count || 0)} website signals ready.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-preview-summary">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Preview source</div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">
-                      {websiteProfile?.identity?.business_name || profile.business_name_public || 'Public profile'}
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {(websiteProfile?.gallery?.count || 0)} portfolio item{Number(websiteProfile?.gallery?.count || 0) === 1 ? '' : 's'} and {(websiteProfile?.reviews?.count || 0)} public review{Number(websiteProfile?.reviews?.count || 0) === 1 ? '' : 's'} ready for preview.
-                    </p>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-publish-status">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Publish</div>
-                    <div className="mt-2 text-sm font-semibold text-slate-900">
-                      {canPublishWebsite ? 'Ready to publish' : 'Not publishable yet'}
-                    </div>
-                    <p className="mt-1 text-sm text-slate-600">
-                      {websitePublishBlockers[0] || websitePublishGate.reason || 'Publishing saves a public snapshot.'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 flex gap-2 overflow-x-auto border-b border-slate-200 pb-2" data-testid="website-builder-tabs">
-                  {WEBSITE_BUILDER_TABS.map((tab) => (
-                    <button
-                      key={tab.key}
-                      type="button"
-                      onClick={() => setWebsiteBuilderTab(tab.key)}
-                      className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-semibold ${
-                        websiteBuilderTab === tab.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {[
+                    ['show_phone_public', 'Show phone publicly'],
+                    ['show_email_public', 'Show email publicly'],
+                    ['show_license_public', 'Show license publicly'],
+                    ['allow_public_intake', 'Allow quote requests'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                      <input type="checkbox" checked={Boolean(profile[key])} onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))} />
+                      <span>{label}</span>
+                    </label>
                   ))}
                 </div>
-
-                {websiteBuilderTab === 'setup' ? (
-                  <div className="mt-5 space-y-4" data-testid="website-builder-setup-tab">
-                    {missingRequiredFields.length ? (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4" data-testid="website-builder-missing-fields">
-                        <div className="text-sm font-semibold text-amber-900">Missing required fields</div>
-                        <div className="mt-1 text-sm text-amber-800">{missingRequiredFields.join(', ')}</div>
-                      </div>
-                    ) : null}
-
-                    <div className="grid gap-2 md:grid-cols-2" data-testid="website-builder-readiness-checklist">
-                      {websiteChecklist.map((item) => (
-                        <div
-                          key={item.key}
-                          className={`rounded-2xl border px-4 py-3 text-sm ${
-                            item.complete
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                              : 'border-slate-200 bg-slate-50 text-slate-600'
-                          }`}
-                        >
-                          <span className="font-semibold">{item.complete ? 'Ready' : item.required ? 'Required' : 'Suggested'}:</span> {item.label}
-                          {!item.complete && item.action ? <div className="mt-1 text-xs">{item.action}</div> : null}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="website-builder-next-steps">
-                      <div className="text-sm font-semibold text-slate-900">Recommended next steps</div>
-                      <div className="mt-3 space-y-2">
-                        {(websiteReadiness.recommended_next_steps || []).map((step) => (
-                          <div key={step.key} className="rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
-                            <span className="font-semibold text-slate-900">{step.label}</span>
-                            {step.action ? <span className="text-slate-500"> - {step.action}</span> : null}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-black text-slate-900">Why customers choose you</div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {CUSTOMER_TRUST_BADGES.slice(0, 10).map((badge) => (
+                      <button
+                        key={badge}
+                        type="button"
+                        onClick={() => toggleCustomerTrustBadge(badge)}
+                        className={`rounded-full border px-3 py-1.5 text-xs font-bold ${customerTrustBadges.includes(badge) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-600'}`}
+                      >
+                        {badge}
+                      </button>
+                    ))}
                   </div>
-                ) : null}
-
-                {websiteBuilderTab === 'design' ? (
-                  <div className="mt-5 space-y-5" data-testid="website-builder-design-tab">
-                    {!canCustomizeWebsite ? (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                        {websiteBuilderGate.reason || 'Upgrade to Pro to customize templates, sections, colors, and page content.'}
-                      </div>
-                    ) : null}
-
-                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                      {WEBSITE_TEMPLATES.map((template) => (
-                        <button
-                          key={template.key}
-                          type="button"
-                          disabled={!canCustomizeWebsite || websiteBusy}
-                          onClick={() => saveWebsiteSettings({ template_key: template.key })}
-                          className={`rounded-2xl border p-4 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
-                            (websiteData.template_key || 'starter') === template.key ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="text-sm font-bold text-slate-900">{template.label}</div>
-                          <div className="mt-1 text-xs leading-5 text-slate-600">{template.description}</div>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <label className="text-sm font-semibold text-slate-700">
-                        Primary color
-                        <input
-                          type="color"
-                          disabled={!canCustomizeWebsite || websiteBusy}
-                          value={websiteLayout.branding?.primary_color || websiteProfile?.branding?.primary_color || '#2563eb'}
-                          onChange={(event) => updateWebsiteLayout({ branding: { primary_color: event.target.value } })}
-                          className="mt-2 h-11 w-full rounded-xl border border-slate-300 p-1 disabled:opacity-60"
-                          data-testid="website-builder-primary-color"
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-slate-700">
-                        Accent color
-                        <input
-                          type="color"
-                          disabled={!canCustomizeWebsite || websiteBusy}
-                          value={websiteLayout.branding?.accent_color || websiteProfile?.branding?.accent_color || '#14b8a6'}
-                          onChange={(event) => updateWebsiteLayout({ branding: { accent_color: event.target.value } })}
-                          className="mt-2 h-11 w-full rounded-xl border border-slate-300 p-1 disabled:opacity-60"
-                          data-testid="website-builder-accent-color"
-                        />
-                      </label>
-                      <label className="text-sm font-semibold text-slate-700">
-                        Font theme
-                        <select
-                          disabled={!canCustomizeWebsite || websiteBusy}
-                          value={websiteLayout.branding?.font_theme || websiteProfile?.branding?.font_theme || 'modern'}
-                          onChange={(event) => updateWebsiteLayout({ branding: { font_theme: event.target.value } })}
-                          className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                          data-testid="website-builder-font-theme"
-                        >
-                          {FONT_THEME_OPTIONS.map((option) => (
-                            <option key={option.value} value={option.value}>{option.label}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-sm font-bold text-slate-900">Homepage sections</div>
-                      <div className="mt-3 grid gap-2 md:grid-cols-3">
-                        {websiteSectionOrder.map((key) => (
-                          <label key={key} className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm text-slate-700">
-                            <input
-                              type="checkbox"
-                              disabled={!canCustomizeWebsite || websiteBusy}
-                              checked={websiteSections[key] !== false}
-                              onChange={(event) => updateWebsiteLayout({ sections: { [key]: event.target.checked } })}
-                            />
-                            <span>{WEBSITE_SECTION_LABELS[key] || key}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4" data-testid="website-builder-ai-branding-disabled">
-                      <div className="text-sm font-bold text-slate-900">AI Branding Assistant</div>
-                      <p className="mt-1 text-sm text-slate-600">Coming later. This MVP keeps AI copy generation disabled while the website data contract and publish flow stabilize.</p>
-                    </div>
-                  </div>
-                ) : null}
-
-                {websiteBuilderTab === 'pages' ? (
-                  <div className="mt-5 grid gap-5 lg:grid-cols-[240px_1fr]" data-testid="website-builder-pages-tab">
-                    <div className="space-y-2">
-                      {websitePages.map((page) => (
-                        <button
-                          key={page.id}
-                          type="button"
-                          onClick={() => setSelectedWebsitePageId(page.id)}
-                          className={`w-full rounded-xl px-4 py-3 text-left text-sm font-semibold ${
-                            selectedWebsitePage?.id === page.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                          }`}
-                        >
-                          {page.title || page.page_type}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      {selectedWebsitePage ? (
-                        <div className="space-y-4">
-                          {!canCustomizeWebsite ? (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                              {websiteBuilderGate.reason || 'Upgrade to Pro to edit website pages.'}
-                            </div>
-                          ) : null}
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <label className="text-sm font-semibold text-slate-700">
-                              Page title
-                              <input
-                                disabled={!canCustomizeWebsite || websiteBusy}
-                                value={selectedWebsitePage.title || ''}
-                                onChange={(event) => setWebsiteReadiness((prev) => ({
-                                  ...prev,
-                                  pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, title: event.target.value } : page),
-                                }))}
-                                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                                data-testid="website-builder-page-title"
-                              />
-                            </label>
-                            <label className="text-sm font-semibold text-slate-700">
-                              Slug
-                              <input
-                                disabled={!canCustomizeWebsite || websiteBusy || selectedWebsitePage.page_type === 'home'}
-                                value={selectedWebsitePage.slug || ''}
-                                onChange={(event) => setWebsiteReadiness((prev) => ({
-                                  ...prev,
-                                  pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, slug: event.target.value } : page),
-                                }))}
-                                className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                              />
-                            </label>
-                          </div>
-                          <label className="block text-sm font-semibold text-slate-700">
-                            SEO title
-                            <input
-                              disabled={!canCustomizeWebsite || websiteBusy}
-                              value={selectedWebsitePage.seo_title || ''}
-                              onChange={(event) => setWebsiteReadiness((prev) => ({
-                                ...prev,
-                                pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, seo_title: event.target.value } : page),
-                              }))}
-                              className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                            />
-                          </label>
-                          <label className="block text-sm font-semibold text-slate-700">
-                            SEO description
-                            <textarea
-                              disabled={!canCustomizeWebsite || websiteBusy}
-                              value={selectedWebsitePage.seo_description || ''}
-                              onChange={(event) => setWebsiteReadiness((prev) => ({
-                                ...prev,
-                                pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? { ...page, seo_description: event.target.value } : page),
-                              }))}
-                              rows={2}
-                              className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                            />
-                          </label>
-                          {selectedWebsitePage.page_type === 'home' ? (
-                            <div className="grid gap-4 md:grid-cols-2">
-                              <label className="text-sm font-semibold text-slate-700">
-                                Hero headline
-                                <input
-                                  disabled={!canCustomizeWebsite || websiteBusy}
-                                  value={selectedWebsitePage.content_blocks?.hero?.headline || ''}
-                                  onChange={(event) => setWebsiteReadiness((prev) => ({
-                                    ...prev,
-                                    pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? {
-                                      ...page,
-                                      content_blocks: {
-                                        ...(page.content_blocks || {}),
-                                        hero: { ...(page.content_blocks?.hero || {}), headline: event.target.value },
-                                      },
-                                    } : page),
-                                  }))}
-                                  className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                                  data-testid="website-builder-hero-headline"
-                                />
-                              </label>
-                              <label className="text-sm font-semibold text-slate-700">
-                                CTA text
-                                <input
-                                  disabled={!canCustomizeWebsite || websiteBusy}
-                                  value={selectedWebsitePage.content_blocks?.hero?.cta_text || ''}
-                                  onChange={(event) => setWebsiteReadiness((prev) => ({
-                                    ...prev,
-                                    pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? {
-                                      ...page,
-                                      content_blocks: {
-                                        ...(page.content_blocks || {}),
-                                        hero: { ...(page.content_blocks?.hero || {}), cta_text: event.target.value },
-                                      },
-                                    } : page),
-                                  }))}
-                                  className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                                />
-                              </label>
-                              <label className="text-sm font-semibold text-slate-700 md:col-span-2">
-                                Hero subheadline
-                                <textarea
-                                  disabled={!canCustomizeWebsite || websiteBusy}
-                                  value={selectedWebsitePage.content_blocks?.hero?.subheadline || ''}
-                                  onChange={(event) => setWebsiteReadiness((prev) => ({
-                                    ...prev,
-                                    pages: websitePages.map((page) => page.id === selectedWebsitePage.id ? {
-                                      ...page,
-                                      content_blocks: {
-                                        ...(page.content_blocks || {}),
-                                        hero: { ...(page.content_blocks?.hero || {}), subheadline: event.target.value },
-                                      },
-                                    } : page),
-                                  }))}
-                                  rows={3}
-                                  className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:opacity-60"
-                                />
-                              </label>
-                            </div>
-                          ) : null}
-                          <button
-                            type="button"
-                            disabled={!canCustomizeWebsite || websiteBusy}
-                            onClick={() => saveWebsitePage(selectedWebsitePage, selectedWebsitePage)}
-                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-600"
-                            data-testid="website-builder-save-page"
-                          >
-                            {websiteBusy ? 'Saving...' : 'Save Page'}
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="text-sm text-slate-500">No website pages have been created yet.</div>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-
-                {websiteBuilderTab === 'preview' ? (
-                  <div className="mt-5 space-y-4" data-testid="website-builder-preview-tab">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-sm text-slate-600">Draft preview uses the same website payload as the future public renderer.</div>
-                      <div className="flex rounded-xl bg-slate-100 p-1">
-                        {['desktop', 'mobile'].map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            onClick={() => setWebsitePreviewMode(mode)}
-                            className={`rounded-lg px-3 py-1.5 text-sm font-semibold ${websitePreviewMode === mode ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600'}`}
-                          >
-                            {mode === 'desktop' ? 'Desktop' : 'Mobile'}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <PublicWebsiteRenderer payload={websitePreviewPayload} previewMode={websitePreviewMode} />
-                  </div>
-                ) : null}
-
-                {websiteBuilderTab === 'publish' ? (
-                  <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_360px]" data-testid="website-builder-publish-tab">
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <div className="text-sm font-bold text-slate-900">Publish readiness</div>
-                      <div className="mt-3 space-y-2">
-                        {(websitePublishBlockers.length ? websitePublishBlockers : ['No publish blockers detected.']).map((blocker) => (
-                          <div key={blocker} className={`rounded-xl px-3 py-2 text-sm ${websitePublishBlockers.length ? 'bg-amber-50 text-amber-900' : 'bg-emerald-50 text-emerald-800'}`}>
-                            {blocker}
-                          </div>
-                        ))}
-                      </div>
-                      {websitePublishMessage ? <div className="mt-3 rounded-xl bg-white px-3 py-2 text-sm text-slate-700">{websitePublishMessage}</div> : null}
-                    </div>
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4">
-                      <div className="text-sm font-bold text-slate-900">Public route</div>
-                      <div className="mt-2 break-all rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
-                        {websiteData.public_url || '/websites/your-slug'}
-                      </div>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          disabled={!canPublishWebsite || websiteBusy}
-                          onClick={publishWebsite}
-                          data-testid="website-builder-publish-button"
-                          className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600"
-                        >
-                          {websiteBusy ? 'Publishing...' : 'Publish Snapshot'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={websiteBusy || websiteData.status !== 'published'}
-                          onClick={pauseWebsite}
-                          className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          Pause
-                        </button>
-                      </div>
-                      <p className="mt-3 text-xs leading-5 text-slate-500">
-                        Publishing stores a snapshot. Later draft changes will not affect the public site until you publish again.
-                      </p>
-                    </div>
-                  </div>
-                ) : null}
+                </div>
+                <div className="mt-5 flex justify-end">
+                  <button type="button" data-testid="public-presence-save-profile" onClick={saveProfile} disabled={profileBusy} className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">
+                    {profileBusy ? 'Saving...' : 'Save Business Information'}
+                  </button>
+                </div>
               </div>
-            </div>
+              <aside className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="text-sm font-black text-slate-950">Your Progress</div>
+                  <div className="mt-1 text-xs text-slate-500">Step 1 of 7</div>
+                  <div className="mt-3 rounded-full bg-blue-600 px-3 py-1.5 text-center text-sm font-black text-white" data-testid="business-info-readiness-score">{stepOneReadiness}% complete</div>
+                  <div className="mt-4 space-y-2 text-sm">
+                    {ONLINE_PRESENCE_STEPS.map((step, index) => (
+                      <div key={step.key} className="flex items-center gap-2 text-slate-700">
+                        <span className={`h-3 w-3 rounded-full ${index < activeStepIndex ? 'bg-emerald-500' : index === activeStepIndex ? 'bg-blue-600' : 'bg-slate-200'}`} />
+                        <span>{step.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="text-sm font-black text-slate-950">Share your profile/website</div>
+                  <div className="mt-2 break-all text-xs text-slate-600">{qrData?.public_url || profile.public_url || '-'}</div>
+                  {qrData?.qr_svg ? <img data-testid="public-presence-qr-image" src={qrData.qr_svg} alt="Public profile QR code" className="mt-4 w-full rounded-xl border border-slate-200 bg-white p-4" /> : null}
+                </div>
+              </aside>
+            </section>
           ) : null}
 
           {activeTab === 'gallery' ? (
-            <div className="mt-6 space-y-4" data-testid="public-presence-gallery-tab">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2</div>
-                <h2 className="mt-1 text-xl font-bold text-slate-950">Photo Gallery</h2>
-                <p className="mt-1 text-sm text-slate-600">Add logo, hero, and project photos customers can trust before they request a quote.</p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Title" />
-                <input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Category" />
-                <textarea value={galleryForm.description} onChange={(e) => setGalleryForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Description" />
-                <input value={galleryForm.project_city} onChange={(e) => setGalleryForm((prev) => ({ ...prev, project_city: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Project city" />
-                <input value={galleryForm.project_state} onChange={(e) => setGalleryForm((prev) => ({ ...prev, project_state: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Project state" />
-                <input type="number" value={galleryForm.sort_order} onChange={(e) => setGalleryForm((prev) => ({ ...prev, sort_order: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Sort order" />
-                <input type="file" onChange={(e) => setGalleryImage(e.target.files?.[0] || null)} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-                <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={galleryForm.is_featured} onChange={(e) => setGalleryForm((prev) => ({ ...prev, is_featured: e.target.checked }))} /> Featured</label>
-                <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={galleryForm.is_public} onChange={(e) => setGalleryForm((prev) => ({ ...prev, is_public: e.target.checked }))} /> Public</label>
-              </div>
-              <button type="button" onClick={addGalleryItem} disabled={galleryBusy} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60">
-                {galleryBusy ? 'Saving…' : 'Add Gallery Item'}
-              </button>
-
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {galleryRows.map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    {item.image_url ? <img src={item.image_url} alt={item.title || 'Gallery item'} className="h-40 w-full rounded-xl object-cover" /> : null}
-                    <div className="mt-3 text-sm font-semibold text-slate-900">{item.title || 'Untitled project'}</div>
-                    <div className="mt-1 text-xs text-slate-500">{item.category || 'Uncategorized'}</div>
-                    <div className="mt-3 flex gap-2">
-                      <button type="button" onClick={() => toggleGalleryVisibility(item)} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                        {item.is_public ? 'Hide' : 'Make Public'}
-                      </button>
-                      <button type="button" onClick={() => deleteGalleryItem(item)} className="rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50">
-                        Delete
-                      </button>
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-gallery-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-bold text-slate-500">Step 2 of 7</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Photo Gallery</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Add photos that showcase your work and build trust with potential customers.</p>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="text-sm font-black text-slate-900">Logo</div>
+                    <div className="mt-4 flex min-h-36 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+                      {profile.logo_url ? (
+                        <img src={profile.logo_url} alt="Logo" className="max-h-28 object-contain" />
+                      ) : (
+                        <div>
+                          <div className="text-lg font-black uppercase tracking-wide text-slate-950">{profile.business_name_public || 'Your Company Name'}</div>
+                          <div className="mt-1 text-xs font-bold text-slate-500">{profile.primary_trade || 'Contractor'}</div>
+                        </div>
+                      )}
+                    </div>
+                    <label className="mt-3 inline-flex cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
+                      Upload New Logo
+                      <input type="file" className="hidden" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
+                    </label>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="text-sm font-black text-slate-900">Hero Image</div>
+                    <div className="mt-4 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                      {profile.hero_image_url || profile.cover_image_url ? <img src={profile.hero_image_url || profile.cover_image_url} alt="Hero" className="h-full w-full object-cover" /> : <span className="text-sm font-bold text-slate-400">Add a strong project photo</span>}
+                    </div>
+                    <label className="mt-3 inline-flex cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
+                      Upload Hero Image
+                      <input type="file" className="hidden" onChange={(e) => setHeroFile(e.target.files?.[0] || null)} />
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="text-sm font-black text-slate-900">Project / Portfolio Photos</div>
+                    <div className="flex gap-2">
+                      <label className="cursor-pointer rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">
+                        Upload Photos
+                        <input type="file" className="hidden" data-testid="gallery-image-input" onChange={(e) => setGalleryImage(e.target.files?.[0] || null)} />
+                      </label>
+                      <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Manage Order</button>
                     </div>
                   </div>
-                ))}
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                    {galleryRows.length ? galleryRows.map((item) => (
+                      <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+                        {item.image_url ? <img src={item.image_url} alt={item.title || 'Gallery item'} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center bg-slate-100 text-xs font-bold text-slate-400">{item.title || 'Project photo'}</div>}
+                        <div className="p-2 text-xs font-bold text-slate-700">{item.title || 'Untitled project'}</div>
+                      </div>
+                    )) : (
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500 sm:col-span-2 lg:col-span-5">Upload your best project photos to start the gallery.</div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Photo title" />
+                  <input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Category" />
+                  <textarea value={galleryForm.description} onChange={(e) => setGalleryForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Caption" />
+                </div>
+                <button type="button" onClick={addGalleryItem} disabled={galleryBusy} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
+                  {galleryBusy ? 'Saving...' : 'Add Gallery Item'}
+                </button>
               </div>
-            </div>
+              <aside className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="text-sm font-black text-slate-950">Your Progress</div>
+                  <div className="mt-1 text-xs text-slate-500">Step 2 of 7</div>
+                  <div className="mt-4 space-y-2 text-sm">{ONLINE_PRESENCE_STEPS.map((step, index) => <div key={step.key} className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${index < activeStepIndex ? 'bg-emerald-500' : index === activeStepIndex ? 'bg-blue-600' : 'bg-slate-200'}`} />{step.label}</div>)}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="text-sm font-black text-slate-950">Tips for best results</div>
+                  <div className="mt-3 space-y-2 text-sm text-slate-700">
+                    {['Use high quality, well-lit photos', 'Show before & after photos', 'Add captions to tell your story', 'Feature your best work'].map((tip) => <div key={tip} className="flex gap-2"><span className="text-emerald-600">✓</span>{tip}</div>)}
+                  </div>
+                </div>
+              </aside>
+            </section>
           ) : null}
 
           {activeTab === 'reviews' ? (
-            <div className="mt-6 space-y-4" data-testid="public-presence-reviews-tab">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3</div>
-                <h2 className="mt-1 text-xl font-bold text-slate-950">Reviews</h2>
-                <p className="mt-1 text-sm text-slate-600">Choose the trust signals and approved customer feedback that should appear online.</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                New public reviews stay hidden until you publish them here. Verified badges remain read-only unless an agreement-linked workflow sets them.
-              </div>
-
-              {reviewsRows.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                  No reviews have been submitted yet. Share your profile link to start collecting customer feedback.
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-reviews-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-bold text-slate-500">Step 3 of 7</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Reviews &amp; Testimonials</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Collect and display reviews from happy customers and choose which content to include.</p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button type="button" onClick={copyUrl} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Share Review Request Link</button>
+                  <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Add Testimonial Manually</button>
                 </div>
-              ) : (
-              <div className="space-y-3">
-                {reviewsRows.map((review) => (
-                  <div key={review.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-900">{review.customer_name}</div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          {review.rating}/5 {review.title ? `· ${review.title}` : ''}
+                <div className="mt-5 space-y-3">
+                  {reviewsRows.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">No reviews have been submitted yet. Share your profile link to start collecting customer feedback.</div>
+                  ) : reviewsRows.map((review) => (
+                    <div key={review.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="font-black text-slate-950">{review.customer_name || review.reviewer_name || 'Customer'}</div>
+                          <div className="mt-1 text-sm text-amber-500">{'★'.repeat(Number(review.rating || 5))}</div>
                         </div>
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${review.is_public ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{review.is_public ? 'Public' : 'Pending moderation'}</span>
                       </div>
-                      <div className="flex flex-wrap gap-2">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                            review.is_public
-                              ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-                              : 'border-amber-200 bg-amber-50 text-amber-700'
-                          }`}
-                        >
-                          {review.is_public ? 'Public' : 'Pending moderation'}
-                        </span>
-                        {review.is_verified ? (
-                          <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-                            Verified
-                          </span>
-                        ) : null}
-                      </div>
+                      <p className="mt-3 text-sm leading-6 text-slate-700">{review.review_text || review.public_comment}</p>
+                      <button type="button" onClick={() => toggleReviewVisibility(review)} disabled={reviewBusy} className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-60">{review.is_public ? 'Hide Review' : 'Publish Review'}</button>
                     </div>
-                    <div className="mt-3 text-sm text-slate-700">{review.review_text}</div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => toggleReviewVisibility(review)}
-                        disabled={reviewBusy}
-                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60"
-                      >
-                        {review.is_public ? 'Hide Review' : 'Publish Review'}
-                      </button>
+                  ))}
+                </div>
+              </div>
+              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-sm font-black text-slate-950">Your Progress</div>
+                <div className="mt-1 text-xs text-slate-500">Step 3 of 7</div>
+                <div className="mt-4 space-y-2 text-sm">{ONLINE_PRESENCE_STEPS.map((step, index) => <div key={step.key} className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${index < activeStepIndex ? 'bg-emerald-500' : index === activeStepIndex ? 'bg-blue-600' : 'bg-slate-200'}`} />{step.label}</div>)}</div>
+              </aside>
+            </section>
+          ) : null}
+
+          {activeTab === 'website' ? (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="marketing-website-builder-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="website-builder-design-tab">
+                <div className="text-xs font-bold text-slate-500">Step 4 of 7</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Design &amp; Content</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Choose how your website will look and what content it includes.</p>
+                {!canCustomizeWebsite ? <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{websiteBuilderGate.reason || 'Upgrade to customize website design.'}</div> : null}
+                {websiteDevelopmentOverrideActive ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-bold text-blue-800">Developer Override Active</div> : null}
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {DESIGN_STYLE_OPTIONS.map((template) => (
+                    <button key={template.key} type="button" disabled={!canCustomizeWebsite || websiteBusy} onClick={() => saveWebsiteSettings({ template_key: template.key })} className={`relative rounded-xl border p-4 text-left transition disabled:opacity-60 ${(websiteData.template_key || 'starter') === template.key ? 'border-blue-500 bg-blue-50 shadow-sm' : 'border-slate-200 bg-white hover:border-blue-200'}`}>
+                      {(websiteData.template_key || 'starter') === template.key ? <span className="absolute right-3 top-3 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-black text-white">✓</span> : null}
+                      <div className="text-sm font-black text-slate-950">{template.label}</div>
+                      <p className="mt-2 text-xs leading-5 text-slate-600">{template.description}</p>
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-6 grid gap-5 lg:grid-cols-[240px_minmax(0,1fr)]">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Brand Colors</div>
+                    <label className="mt-4 block text-xs font-bold text-slate-700">Primary Color<input type="color" disabled={!canCustomizeWebsite || websiteBusy} value={websiteLayout.branding?.primary_color || websiteProfile?.branding?.primary_color || profile.brand_primary_color || '#2563eb'} onChange={(event) => updateWebsiteLayout({ branding: { primary_color: event.target.value } })} className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="website-builder-primary-color" /></label>
+                    <label className="mt-4 block text-xs font-bold text-slate-700">Secondary Color<input type="color" disabled={!canCustomizeWebsite || websiteBusy} value={websiteLayout.branding?.accent_color || websiteProfile?.branding?.accent_color || profile.brand_accent_color || '#facc15'} onChange={(event) => updateWebsiteLayout({ branding: { accent_color: event.target.value } })} className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="website-builder-accent-color" /></label>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Website Content</div>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
+                      <label className="space-y-1 md:col-span-2"><span className="text-sm font-bold text-slate-700">Headline</span><input disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.headline || ''} onChange={(e) => updateHomePageHero({ headline: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-hero-headline" /></label>
+                      <label className="space-y-1 md:col-span-2"><span className="text-sm font-bold text-slate-700">Subheadline</span><textarea disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.subheadline || ''} onChange={(e) => updateHomePageHero({ subheadline: e.target.value })} rows={3} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+                      <label className="space-y-1"><span className="text-sm font-bold text-slate-700">CTA text</span><input disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.cta_text || ''} onChange={(e) => updateHomePageHero({ cta_text: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+                      <label className="space-y-1"><span className="text-sm font-bold text-slate-700">Font theme</span><select disabled={!canCustomizeWebsite || websiteBusy} value={websiteLayout.branding?.font_theme || websiteProfile?.branding?.font_theme || 'modern'} onChange={(event) => updateWebsiteLayout({ branding: { font_theme: event.target.value } })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-font-theme">{FONT_THEME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                    </div>
+                    <button type="button" disabled={!canCustomizeWebsite || websiteBusy || !homePage} onClick={saveHomePageHero} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60" data-testid="website-builder-save-page">{websiteBusy ? 'Saving...' : 'Save Content'}</button>
+                  </div>
+                </div>
+              </div>
+              <aside className="space-y-4">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div><div className="text-sm font-black text-slate-950">Preview</div><div className="text-xs text-slate-500">Desktop/mobile</div></div>
+                    <div className="flex rounded-lg bg-slate-100 p-1" data-testid="website-builder-preview-toggle">
+                      {['desktop', 'mobile'].map((mode) => <button key={mode} type="button" onClick={() => setWebsitePreviewMode(mode)} className={`rounded-md px-2 py-1 text-xs font-bold ${websitePreviewMode === mode ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-500'}`}>{mode === 'desktop' ? 'Desktop' : 'Mobile'}</button>)}
                     </div>
                   </div>
-                ))}
-              </div>
-              )}
-            </div>
+                  <div className="mt-4 max-h-[420px] overflow-auto rounded-xl border border-slate-200 bg-slate-950 p-2"><div className={websitePreviewMode === 'mobile' ? 'mx-auto max-w-[340px]' : 'min-w-[620px]'}><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode={websitePreviewMode} /></div></div>
+                </div>
+              </aside>
+            </section>
           ) : null}
 
-          {activeTab === 'leads' ? (
-            <div className="mt-6 space-y-4" data-testid="public-presence-leads-tab">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Website Leads</div>
-                  <div className="text-xs text-slate-500">Capture and review requests from your public profile, QR code, and future website.</div>
+          {activeTab === 'seo' ? (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="online-presence-seo-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-bold text-slate-500">Step 5 of 7</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">SEO &amp; Visibility</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Optimize your profile so customers can find you online.</p>
+                <div className="mt-5 grid gap-4">
+                  <label className="space-y-1"><span className="text-sm font-bold text-slate-800">Page Title</span><input value={profile.seo_title || ''} onChange={(e) => setProfile((prev) => ({ ...prev, seo_title: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+                  <label className="space-y-1"><span className="text-sm font-bold text-slate-800">Meta Description</span><textarea value={profile.seo_description || ''} onChange={(e) => setProfile((prev) => ({ ...prev, seo_description: e.target.value }))} rows={4} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+                  <label className="space-y-1"><span className="text-sm font-bold text-slate-800">Keywords</span><input value={serviceKeywords.join(', ')} onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuickAddPrefill(null);
-                    setQuickAddOpen(true);
-                  }}
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                >
-                  Add Lead
-                </button>
-              </div>
-              {activationLeadBanner ? (
-                <div
-                  data-testid="public-leads-activation-banner"
-                  className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-900"
-                >
-                  {activationLeadBanner}
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {[
+                    ['allow_public_intake', 'Show in Opportunities'],
+                    ['is_public', 'Public profile status'],
+                    ['show_quote_cta', 'Allow QR/link sharing'],
+                    ['show_reviews', 'Show reviews publicly'],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
+                      <span>{label}</span>
+                      <input type="checkbox" checked={Boolean(profile[key])} onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))} />
+                    </label>
+                  ))}
                 </div>
-              ) : null}
-              <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-              <div className="space-y-3">
-                {leadsRows.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500">
-                    No homeowner requests yet. Share your public profile or wait for matching project requests.
-                  </div>
-                ) : leadsRows.map((lead) => (
-                  <button
-                    key={lead.id}
-                    type="button"
-                    onClick={() => setSelectedLead(lead)}
-                    className={[
-                      'w-full rounded-2xl border p-4 text-left',
-                      selectedLead?.id === lead.id ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-800',
-                    ].join(' ')}
-                  >
-                    <div className="text-sm font-semibold">{lead.full_name || lead.homeowner_name || 'Homeowner Request'}</div>
-                    <div className="mt-1 text-xs opacity-80">{lead.project_title || lead.project_type || 'New project request'}</div>
-                    <div className="mt-1 text-xs opacity-80">{[lead.city, lead.state].filter(Boolean).join(', ') || 'Location not provided'}</div>
-                    <div className="mt-2">
-                      <ProjectModeBadge
-                        mode={lead.project_mode}
-                        dataTestId={`public-lead-project-mode-${lead.id}`}
-                      />
-                    </div>
-                    {lead.matching?.tier ? (
-                      <div className="mt-2">
-                        <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${contractorMatchTierClass(lead.matching.tier)}`}>
-                          {contractorMatchTierLabel(lead.matching.tier)}
-                        </span>
-                      </div>
-                    ) : null}
-                    <div className="mt-2 inline-flex rounded-full border border-current/20 px-2 py-0.5 text-[11px] font-semibold opacity-90">
-                      {sourceLabel(lead.source)}
-                    </div>
-                    <span className={`mt-2 ml-2 inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${statusChipClass(lead.status)}`}>
-                      {statusLabel(lead.status)}
-                    </span>
-                    {lead.selected_by_homeowner ? (
-                      <div className="mt-2 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
-                        Homeowner selected you
-                      </div>
-                    ) : null}
-                    <div className="mt-2 text-xs opacity-80">
-                      {[opportunityBudgetText(lead), lead.timeline || lead.preferred_timeline].filter(Boolean).join(' · ')}
-                    </div>
-                  </button>
-                ))}
+                <button type="button" onClick={saveProfile} disabled={profileBusy} className="mt-5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save SEO & Visibility'}</button>
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                {selectedLead ? (
-                  <>
-                    <StartWithAIEntry
-                      className="mb-4"
-                      testId="public-lead-ai-entry"
-                      title="Project Assistant for this lead"
-                      description="Use the current lead context to review, analyze, send intake, or draft the agreement."
-                      context={leadAssistantContext}
-                      onAction={handleLeadAssistantAction}
-                    />
-                    <WorkflowHint
-                      hint={selectedLeadHint}
-                      testId="public-lead-workflow-hint"
-                      className="mb-4"
-                    />
-                    {assistantLeadBanner ? (
-                      <div
-                        data-testid="public-lead-assistant-banner"
-                        className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900"
-                      >
-                        {assistantLeadBanner}
-                      </div>
-                    ) : null}
-                    <div
-                      data-testid="public-lead-funnel"
-                      className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3"
-                    >
-                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        Lead Funnel
-                      </div>
-                      <div className="mt-3 grid gap-2 md:grid-cols-3">
-                        {[
-                          ['Review', 'Confirm fit and intake details'],
-                          ['Analyze', 'Use AI and template guidance'],
-                          ['Draft', 'Open the agreement and continue pricing'],
-                        ].map(([label, detail], index) => {
-                          const isComplete = leadFunnelCurrentStep > index;
-                          const isCurrent = leadFunnelCurrentStep === index;
-                          return (
-                            <div
-                              key={label}
-                              data-testid={`public-lead-funnel-step-${label.toLowerCase()}`}
-                              className={`rounded-xl border px-3 py-2 text-sm ${
-                                isCurrent
-                                  ? 'border-slate-900 bg-slate-900 text-white'
-                                  : isComplete
-                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                                  : 'border-slate-200 bg-slate-50 text-slate-600'
-                              }`}
-                            >
-                              <div className="text-xs font-semibold uppercase tracking-wide">
-                                Step {index + 1}
-                              </div>
-                              <div className="mt-1 font-semibold">{label}</div>
-                              <div className={`mt-1 text-xs ${isCurrent ? 'text-slate-200' : ''}`}>
-                                {detail}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-lg font-semibold text-slate-900">{selectedLead.full_name || selectedLead.homeowner_name}</div>
-                        <div className="mt-1 text-sm text-slate-600">
-                          {selectedLead.email || 'No email'} · {selectedLead.phone || 'No phone'}
-                        </div>
-                      </div>
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusChipClass(selectedLead.status)}`}>
-                        {statusLabel(selectedLead.status)}
-                      </span>
-                      <ProjectModeBadge
-                        mode={selectedLead.project_mode}
-                        dataTestId="public-lead-selected-project-mode"
-                      />
-                    </div>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2 text-sm text-slate-700">
-                      <div><span className="font-semibold text-slate-900">Source:</span> {sourceLabel(selectedLead.source)}</div>
-                      <div><span className="font-semibold text-slate-900">Timeline:</span> {selectedLead.timeline || selectedLead.preferred_timeline || '-'}</div>
-                      <div><span className="font-semibold text-slate-900">Budget:</span> {opportunityBudgetText(selectedLead) || '-'}</div>
-                      <div><span className="font-semibold text-slate-900">Selected:</span> {fmtDateTime(selectedLead.selected_at || selectedLead.created_at)}</div>
-                      <div><span className="font-semibold text-slate-900">Location:</span> {[selectedLead.project_address, selectedLead.city, selectedLead.state, selectedLead.zip_code].filter(Boolean).join(', ') || '-'}</div>
-                    </div>
-                    {isOpportunityLead(selectedLead) ? (
-                      <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                        This request came from a homeowner project intake. MyHomeBro prepared the project details to help you respond faster.
-                      </div>
-                    ) : null}
-                    {selectedLead.accepted_at ? (
-                      <div className="mt-3 text-xs font-medium text-indigo-700">
-                        Accepted: {fmtDateTime(selectedLead.accepted_at)}
-                      </div>
-                    ) : null}
-                    <div className="mt-4 text-sm text-slate-700">
-                    {selectedLead.ai_analysis?.project_scope_summary ||
-                        selectedLead.ai_analysis?.suggested_description ||
-                        selectedLead.refined_description ||
-                        selectedLead.project_description ||
-                        'No project description provided.'}
-                    </div>
-                    {selectedLead.refined_description ? (
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Refined Description</div>
-                        <div className="mt-1">{selectedLead.refined_description}</div>
-                      </div>
-                    ) : null}
-                    {Array.isArray(selectedLead.measurements) && selectedLead.measurements.length ? (
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Measurements</div>
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          {selectedLead.measurements.map((item, index) => (
-                            <span key={`${item?.label || item}-${index}`} className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-                              {typeof item === 'string' ? item : item.label || item.value || JSON.stringify(item)}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    {selectedLead.photos_count ? (
-                      <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                        Photos attached: {selectedLead.photos_count}
-                      </div>
-                    ) : null}
-                    {selectedLeadMatching?.tier ? (
-                      <div
-                        data-testid="public-lead-compatibility"
-                        className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                            Why this project matches you
-                          </div>
-                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${contractorMatchTierClass(selectedLeadMatching.tier)}`}>
-                            {contractorMatchTierLabel(selectedLeadMatching.tier)}
-                          </span>
-                          {Number.isFinite(Number(selectedLeadMatching.score)) ? (
-                            <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                              Score {Number(selectedLeadMatching.score).toLocaleString()}
-                            </span>
-                          ) : null}
-                        </div>
-                        <div className="mt-2 text-sm text-slate-700">
-                          {selectedLeadMatching.summary || 'This lead looks like a reasonable fit for your contractor profile.'}
-                        </div>
-                        {Array.isArray(selectedLeadMatching.badges) && selectedLeadMatching.badges.length ? (
-                          <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                            {selectedLeadMatching.badges.slice(0, 4).map((badge) => (
-                              <span key={badge} className="rounded-full border border-emerald-200 bg-white px-2 py-1 font-semibold text-emerald-800">
-                                {badge}
-                              </span>
-                            ))}
-                          </div>
-                        ) : null}
-                        {Array.isArray(selectedLeadMatching.reasons) && selectedLeadMatching.reasons.length ? (
-                          <ul className="mt-3 space-y-1 text-xs text-slate-600">
-                            {selectedLeadMatching.reasons.slice(0, 4).map((reason, index) => (
-                              <li key={`${reason}-${index}`}>• {reason}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                      </div>
-                    ) : null}
-                    {selectedLead.ai_analysis?.suggested_title ? (
-                      <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
-                          AI Intake Analysis
-                        </div>
-                        <div className="mt-2 text-sm font-semibold text-slate-900">
-                          {selectedLead.ai_analysis.suggested_title}
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                          {selectedLead.ai_analysis.project_type ? (
-                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700">
-                              {selectedLead.ai_analysis.project_type}
-                            </span>
-                          ) : null}
-                          {selectedLead.ai_analysis.project_subtype ? (
-                            <span className="rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700">
-                              {selectedLead.ai_analysis.project_subtype}
-                            </span>
-                          ) : null}
-                          {selectedLead.ai_analysis.project_family_label ? (
-                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-1 text-sky-700">
-                              {selectedLead.ai_analysis.project_family_label}
-                            </span>
-                          ) : null}
-                          {selectedLead.ai_analysis.template_name ? (
-                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-emerald-700">
-                              Template: {selectedLead.ai_analysis.template_name}
-                            </span>
-                          ) : null}
-                          {selectedLead.ai_analysis.confidence ? (
-                            <span className="rounded-full border border-indigo-200 bg-white px-2 py-1 text-slate-700">
-                              {getAnalysisConfidenceLabel(selectedLead.ai_analysis.confidence)}
-                            </span>
-                          ) : null}
-                        </div>
-                        {selectedLead.ai_analysis.project_scope_summary ||
-                        selectedLead.ai_analysis.suggested_description ? (
-                          <div className="mt-3 text-sm text-slate-700">
-                            {selectedLead.ai_analysis.project_scope_summary || selectedLead.ai_analysis.suggested_description}
-                          </div>
-                        ) : null}
-                        {selectedLead.ai_analysis.reason ? (
-                          <div className="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                            Why this template path: {selectedLead.ai_analysis.reason}
-                          </div>
-                        ) : null}
-                        {Array.isArray(selectedLead.ai_analysis.recommended_templates) &&
-                        selectedLead.ai_analysis.recommended_templates.length ? (
-                          <div className="mt-3">
-                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                              Template Options
-                            </div>
-                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                              {selectedLead.ai_analysis.recommended_templates.slice(0, 3).map((template, index) => (
-                                <span
-                                  key={`${template.id || template.name || 'template'}-${index}`}
-                                  className="rounded-full border border-slate-200 bg-white px-2 py-1 text-slate-700"
-                                >
-                                  {template.name || `Template ${index + 1}`}
-                                  {template.confidence ? ` · ${getAnalysisConfidenceLabel(template.confidence)}` : ''}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ) : null}
-                        <div className="mt-3 grid gap-3 md:grid-cols-2 text-xs text-slate-600">
-                          <div>
-                            Clarifications: {Array.isArray(selectedLead.ai_analysis.clarifications_needed) ? selectedLead.ai_analysis.clarifications_needed.length : 0}
-                          </div>
-                          <div>
-                            Milestones: {Array.isArray(selectedLead.ai_analysis.milestone_outline) ? selectedLead.ai_analysis.milestone_outline.length : 0}
-                          </div>
-                        </div>
-                        <div
-                          data-testid="recommended-setup-section"
-                          className="mt-4 rounded-2xl border border-sky-200 bg-sky-50/70 p-4"
-                        >
-                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">
-                            Recommended Setup
-                          </div>
-                          <div className="mt-2 text-sm font-semibold text-slate-900">
-                            {selectedLeadRecommendedSetup.recommendedProjectType ||
-                              'Recommended project setup'}
-                          </div>
-                          <div className="mt-1 text-sm text-slate-700">
-                            Based on the project details provided. Use this as a starting point and adjust it in the agreement flow.
-                          </div>
-                          <div className="mt-3 grid gap-2 md:grid-cols-3 text-xs text-slate-700">
-                            <div className="rounded-xl border border-white/80 bg-white/80 px-3 py-2">
-                              <div className="font-semibold text-slate-900">Workflow</div>
-                              <div className="mt-1">{selectedLeadRecommendedSetup.suggestedWorkflow || 'General project review'}</div>
-                            </div>
-                            <div className="rounded-xl border border-white/80 bg-white/80 px-3 py-2">
-                              <div className="font-semibold text-slate-900">Template</div>
-                              <div className="mt-1">
-                                {selectedLeadRecommendedSetup.suggestedTemplateLabel ||
-                                  selectedLeadRecommendedSetup.recommendedTemplateName ||
-                                  'General project template'}
-                              </div>
-                            </div>
-                            <div className="rounded-xl border border-white/80 bg-white/80 px-3 py-2">
-                              <div className="font-semibold text-slate-900">Project Type</div>
-                              <div className="mt-1">
-                                {selectedLeadRecommendedSetup.recommendedProjectType ||
-                                  selectedLeadRecommendedSetup.projectFamilyLabel ||
-                                  selectedLead.project_type ||
-                                  '-'}
-                              </div>
-                            </div>
-                          </div>
-                          <div className="mt-3 rounded-xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-700">
-                            {selectedLeadRecommendedSetup.recommendationNote ||
-                              'This is a suggested setup. You can still choose a different path when you create the bid.'}
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Workflow
-                        </div>
-                        <div className="mt-1">
-                          Lead states are guided by the action buttons below so the pipeline stays consistent from review through agreement drafting.
-                        </div>
-                      </div>
-                      {!isOpportunityLead(selectedLead) ? (
-                        <textarea value={selectedLead.internal_notes || ''} onChange={(e) => setSelectedLead((prev) => ({ ...prev, internal_notes: e.target.value }))} rows={4} className="rounded-xl border border-slate-300 px-3 py-2 text-sm md:col-span-2" placeholder="Internal notes" />
-                      ) : null}
-                    </div>
-                    {selectedLead.converted_homeowner_name ? (
-                      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                        Converted to customer: {selectedLead.converted_homeowner_name}
-                      </div>
-                    ) : null}
-                    <div className="mt-4 flex flex-wrap justify-end gap-2">
-                      {primaryLeadAction ? (
-                        <button
-                          type="button"
-                          onClick={runPrimaryLeadAction}
-                          disabled={leadBusy}
-                          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
-                        >
-                          {primaryLeadAction.label}
-                        </button>
-                      ) : null}
-                      {isOpportunityLead(selectedLead) && selectedLead.status === 'pending' ? (
-                        <button type="button" onClick={rejectLead} disabled={leadBusy || Boolean(selectedLead.converted_agreement)} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60">
-                          Decline
-                        </button>
-                      ) : null}
-                      {!isOpportunityLead(selectedLead) && !leadCanSkipColdAcceptance(selectedLead) && selectedLead.status === 'new' ? (
-                        <button type="button" onClick={rejectLead} disabled={leadBusy || Boolean(selectedLead.converted_agreement)} className="rounded-xl border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60">
-                          Reject Lead
-                        </button>
-                      ) : null}
-                      {!isOpportunityLead(selectedLead) ? (
-                        <button type="button" onClick={analyzeLeadWithAi} disabled={leadBusy || !leadCanAnalyzeFromUi(selectedLead)} className="rounded-xl border border-indigo-300 bg-white px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
-                          Analyze Intake with AI
-                        </button>
-                      ) : null}
-                      {leadCanSendIntake(selectedLead) &&
-                      primaryLeadAction?.kind !== 'send_intake' ? (
-                        <button
-                          type="button"
-                          onClick={sendLeadIntake}
-                          disabled={leadBusy}
-                          className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-60"
-                        >
-                          Send Intake Form
-                        </button>
-                      ) : null}
-                      {!selectedLead.converted_agreement &&
-                      leadCanRunAiActions(selectedLead) &&
-                      primaryLeadAction?.kind !== 'create_agreement' ? (
-                        <button type="button" onClick={createAgreementFromLead} disabled={leadBusy} className="rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:opacity-60">
-                          Create AI-Assisted Agreement
-                        </button>
-                      ) : null}
-                      {!isOpportunityLead(selectedLead) ? (
-                        <button type="button" onClick={() => updateLeadStatus('contacted')} disabled={leadBusy || selectedLead.status === 'contacted'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
-                          Mark Contacted
-                        </button>
-                      ) : null}
-                      {!isOpportunityLead(selectedLead) ? (
-                        <button type="button" onClick={() => updateLeadStatus('closed')} disabled={leadBusy || selectedLead.status === 'closed'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
-                          Mark Closed
-                        </button>
-                      ) : null}
-                      {!isOpportunityLead(selectedLead) ? (
-                        <button type="button" onClick={() => updateLeadStatus('archived')} disabled={leadBusy || selectedLead.status === 'archived'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-60">
-                          Archive Lead
-                        </button>
-                      ) : null}
-                      {!selectedLead.converted_homeowner_id && leadCanRunAiActions(selectedLead) ? (
-                        <button type="button" onClick={convertLeadToCustomer} disabled={leadBusy} className="rounded-xl border border-blue-300 bg-white px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-60">
-                          Create Customer Record
-                        </button>
-                      ) : null}
-                      {selectedLead.converted_agreement || selectedLead.agreement_id || selectedLead.next_url ? (
-                        <button type="button" onClick={() => navigate(selectedLead.next_url || `/app/agreements/${selectedLead.converted_agreement || selectedLead.agreement_id}`)} className="rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50">
-                          Open Draft Agreement
-                        </button>
-                      ) : null}
-                      {!isOpportunityLead(selectedLead) ? (
-                        <button type="button" onClick={() => saveLead(selectedLead)} disabled={leadBusy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-                          {leadBusy ? 'Saving...' : 'Save Changes'}
-                        </button>
-                      ) : null}
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-sm text-slate-500">Choose a homeowner request to review its details and next steps.</div>
-                )}
-              </div>
-            </div>
-            </div>
+              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-sm font-black text-slate-950">Public Profile Status</div>
+                <div className={`mt-3 rounded-lg px-3 py-2 text-sm font-bold ${profile.is_public ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{profile.is_public ? 'Ready to Publish' : 'Preview mode'}</div>
+              </aside>
+            </section>
           ) : null}
-        </div>
 
-        {activeTab === 'profile' ? (
-        <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Share</div>
-          <div className="mt-3 text-lg font-semibold text-slate-900">Share your profile/website</div>
-          <div className="mt-2 text-sm text-slate-600 break-all">{qrData?.public_url || profile.public_url || '-'}</div>
-          {qrData?.qr_svg ? (
-            <img
-              data-testid="public-presence-qr-image"
-              src={qrData.qr_svg}
-              alt="Public profile QR code"
-              className="mt-4 w-full rounded-2xl border border-slate-200 bg-white p-4"
-            />
+          {activeTab === 'final' ? (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="online-presence-final-review-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-bold text-slate-500">Step 6 of 7</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Final Review</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Review your online presence before publishing.</p>
+                <div className="mt-5 overflow-hidden rounded-xl border border-slate-200 bg-slate-950 p-2"><PublicWebsiteRenderer payload={websitePreviewPayload} previewMode="desktop" /></div>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Business Information</div><p className="mt-2 text-sm text-slate-600">{profile.business_name_public || 'Business name missing'} - {profile.primary_trade || 'Primary trade missing'}</p></div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Photos</div><p className="mt-2 text-sm text-slate-600">{galleryRows.length} gallery item{galleryRows.length === 1 ? '' : 's'} ready.</p></div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Reviews</div><p className="mt-2 text-sm text-slate-600">{reviewsRows.filter((review) => review.is_public).length} public review{reviewsRows.filter((review) => review.is_public).length === 1 ? '' : 's'}.</p></div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">SEO & Visibility</div><p className="mt-2 text-sm text-slate-600">{profile.seo_title || profile.business_name_public || 'SEO title will use your business name.'}</p></div>
+                </div>
+              </div>
+              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-sm font-black text-slate-950">Publish Checklist</div>
+                <div className="mt-3 space-y-2 text-sm">{(websitePublishBlockers.length ? websitePublishBlockers : ['Business information complete', 'Photos can be added later', 'At least one review added', 'SEO settings optimized']).map((item) => <div key={item} className="flex gap-2 text-slate-700"><span className={websitePublishBlockers.length ? 'text-amber-600' : 'text-emerald-600'}>{websitePublishBlockers.length ? '!' : '✓'}</span>{item}</div>)}</div>
+              </aside>
+            </section>
           ) : null}
-          {qrData?.qr_svg ? (
-            <a
-              href={qrData.qr_svg}
-              download={qrData.download_filename || 'public-profile-qr.svg'}
-              className="mt-4 inline-flex rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Download QR
-            </a>
+
+          {activeTab === 'publish' ? (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="online-presence-publish-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+                {websiteData.status === 'published' ? <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-4xl font-black text-white">✓</div> : <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-3xl font-black text-blue-700">7</div>}
+                <h2 className="mt-5 text-3xl font-black text-slate-950">{websiteData.status === 'published' ? "You're Live!" : 'Ready to Publish'}</h2>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">{websiteData.status === 'published' ? 'Your online presence has been published successfully.' : 'Publish your website snapshot when you are ready to make it live.'}</p>
+                <div className="mx-auto mt-5 max-w-xl rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 break-all">{websiteData.public_url || profile.public_url || '/websites/your-slug'}</div>
+                {websitePublishMessage ? <div className="mx-auto mt-4 max-w-xl rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{websitePublishMessage}</div> : null}
+                <div className="mt-6 flex flex-wrap justify-center gap-3">
+                  <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} data-testid="website-builder-publish-button" className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600">{websiteBusy ? 'Publishing...' : 'Publish Website'}</button>
+                  <a href={websiteData.public_url || profile.public_url || '#'} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700">View Your Website</a>
+                  <button type="button" onClick={() => goToStep('decision')} className="rounded-lg border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700">Back to Marketing</button>
+                </div>
+              </div>
+              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-sm font-black text-slate-950">What&apos;s Next?</div>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Share your profile, promote your business, and watch leads come in.</p>
+                <button type="button" onClick={copyUrl} className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700">Share Your Profile</button>
+              </aside>
+            </section>
           ) : null}
-        </aside>
-        ) : null}
-      </section>
+
+          <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-4">
+            <button type="button" onClick={goToPreviousStep} disabled={activeStepIndex === 0} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-40">Back</button>
+            {activeTab === 'publish' ? (
+              <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-bold text-white disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
+            ) : (
+              <button type="button" onClick={goToNextStep} data-testid={activeTab === 'decision' ? 'website-decision-continue' : undefined} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</button>
+            )}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+            Leads from your profile, QR code, and website appear in Opportunities.
+            <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
+          </div>
+        </main>
+      </div>
+
       </div>
     </ContractorPageSurface>
   );

@@ -426,23 +426,23 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
   });
 }
 
-test('Marketing Website Builder tab loads premium trial shell and AI suggestion review', async ({ page }) => {
+test('Marketing Website Builder tab loads the new Design & Content step with dev override', async ({ page }) => {
   await mockMarketingPage(page, { pro: false, developmentOverride: true, statusOverride: 'paused' });
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
 
+  await expect(page.getByTestId('online-presence-setup-shell')).toBeVisible();
   await expect(page.getByTestId('marketing-website-builder-tab')).toBeVisible();
-  await expect(page.getByTestId('website-builder-trial-banner')).toContainText('website trial active');
-  await expect(page.getByTestId('website-builder-dev-override-badge')).toContainText('Developer Override Active');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Design & Content');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('SEO & Visibility');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Final Review');
+  await expect(page.getByTestId('website-builder-design-tab')).toContainText('Developer Override Active');
   await expect(page.getByText('Your website is saved but paused. Choose a plan to reactivate customization.')).toHaveCount(0);
-  await expect(page.getByTestId('website-builder-step-nav')).toContainText('78%');
-  await expect(page.getByTestId('website-builder-brand-step')).toContainText('Brand foundation');
-  await expect(page.getByTestId('website-builder-live-preview')).toContainText('Bright Build Co');
   await expect(page.getByTestId('website-builder-preview-toggle')).toBeVisible();
 
   const layoutState = await page.getByTestId('marketing-website-builder-tab').evaluate((root) => {
-    const editor = root.querySelector('[data-testid="website-builder-brand-step"]');
-    const preview = root.querySelector('[data-testid="website-builder-live-preview"]');
+    const editor = root.querySelector('[data-testid="website-builder-design-tab"]');
+    const preview = root.querySelector('[data-testid="public-website-renderer"]');
     const main = root.closest('main');
     const rootRect = root.getBoundingClientRect();
     const editorRect = editor?.getBoundingClientRect();
@@ -451,8 +451,8 @@ test('Marketing Website Builder tab loads premium trial shell and AI suggestion 
     return {
       shellUsesAvailableWidth: Boolean(mainRect && rootRect.width >= mainRect.width * 0.9),
       editorWideEnough: Boolean(editorRect && editorRect.width >= 420),
-      previewWideEnough: Boolean(previewRect && previewRect.width >= 520),
-      previewHasRenderer: Boolean(preview?.querySelector('[data-testid="public-website-renderer"]')),
+      previewWideEnough: Boolean(previewRect && previewRect.width >= 300),
+      previewHasRenderer: Boolean(preview),
       documentFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
     };
   });
@@ -464,52 +464,37 @@ test('Marketing Website Builder tab loads premium trial shell and AI suggestion 
     documentFits: true,
   });
 
-  await page.getByTestId('website-ai-generate_tagline').click();
-  await expect(page.getByTestId('website-ai-suggestion-review')).toContainText('Premium remodeling, handled clearly');
-  await page.getByTestId('website-ai-accept-suggestion').click();
-  await expect(page.getByTestId('wizard-tagline')).toHaveValue('Premium remodeling, handled clearly');
+  await expect(page.getByTestId('website-builder-primary-color')).toBeEnabled();
+  await page.getByTestId('website-builder-primary-color').fill('#0f766e');
+  await expect(page.getByTestId('website-builder-save-page')).toBeEnabled();
+  await page.getByRole('button', { name: 'Mobile' }).click();
+  await expect(page.getByTestId('public-website-renderer')).toBeVisible();
 
-  await expect(page.getByTestId('wizard-primary-color')).toBeEnabled();
-  await page.getByTestId('wizard-primary-color').fill('#0f766e');
-  await expect(page.getByRole('button', { name: 'Save Branding' })).toBeEnabled();
-  await expect(page.getByTestId('website-builder-live-preview')).toBeVisible();
-
-  await page.getByRole('button', { name: 'Publish' }).click();
-  await expect(page.getByTestId('website-builder-readiness-checklist')).toContainText('Add a tagline');
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
+  await expect(page.getByTestId('online-presence-publish-tab')).toContainText('Ready to Publish');
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
-test('Pro contractor can use wizard steps, edit services, preview mobile, and publish a snapshot', async ({ page }) => {
+test('Pro contractor can edit Design & Content, preview mobile, and publish a snapshot', async ({ page }) => {
   await mockMarketingPage(page, { pro: true });
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
 
-  await page.getByTestId('wizard-tagline').fill('Premium remodeling, handled clearly');
-  await expect(page.getByTestId('website-builder-live-preview')).toContainText('Premium remodeling, handled clearly');
-
-  await page.getByRole('button', { name: 'Premium Home' }).click();
-  await expect(page.getByTestId('website-builder-brand-step')).toContainText('Premium Home');
-
-  await page.getByTestId('website-builder-step-nav').getByRole('button', { name: /Services/ }).click();
-  await page.getByPlaceholder('Service 1').fill('Custom kitchens');
-  await page.getByPlaceholder('Short description').first().fill('Careful kitchen remodels with clear scopes.');
-  await page.getByRole('button', { name: 'Save Service Cards' }).click();
+  await page.getByTestId('website-builder-hero-headline').fill('Premium remodeling, handled clearly');
+  await page.getByTestId('website-builder-save-page').click();
   await expect(page.getByText('Website page saved.')).toBeVisible();
-  await expect(page.getByTestId('website-builder-live-preview')).toContainText('Custom kitchens');
-
-  await page.getByTestId('website-builder-step-nav').getByRole('button', { name: /Portfolio/ }).click();
-  await expect(page.getByTestId('website-builder-portfolio-step')).toContainText('Kitchen update');
+  await expect(page.getByTestId('marketing-website-builder-tab')).toContainText('Premium remodeling, handled clearly');
 
   await page.getByRole('button', { name: 'Mobile' }).click();
   await expect(page.getByTestId('public-website-renderer')).toBeVisible();
 
-  await page.getByTestId('website-builder-step-nav').getByRole('button', { name: /Publish/ }).click();
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
   await page.getByTestId('website-builder-publish-button').click();
   await expect(page.getByText('Website published.', { exact: true })).toBeVisible();
 
   await page.goto('/websites/bright-build-co', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('public-website-page')).toBeVisible();
-  await expect(page.getByTestId('public-website-renderer')).toContainText('Custom kitchens');
+  await expect(page.getByTestId('public-website-renderer')).toContainText('Premium remodeling, handled clearly');
   await expect(page.getByTestId('public-website-intake-form')).toBeVisible();
   await page.getByRole('link', { name: 'Request a Quote' }).first().click();
   await page.getByPlaceholder('Full name').fill('Jordan Website');
