@@ -805,6 +805,8 @@ def _snapshot_payload(website: ContractorWebsite, *, request=None) -> dict[str, 
 
 def validate_website_publish(website: ContractorWebsite, *, entitlements: dict[str, Any] | None = None) -> list[str]:
     entitlements = entitlements or get_contractor_website_entitlements(website.contractor)
+    if entitlements.get("development_override_active"):
+        return []
     blockers = []
     if not entitlements["features"][FEATURE_WEBSITE_PUBLISH]["enabled"]:
         blockers.append(entitlements["features"][FEATURE_WEBSITE_PUBLISH]["reason"] or "Publishing requires Pro.")

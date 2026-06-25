@@ -582,14 +582,14 @@ export default function WebsiteBuilderWizard({
   const features = websiteReadiness?.entitlements?.features || {};
   const builderGate = features.website_builder || {};
   const publishGate = features.website_publish || {};
-  const canCustomize = Boolean(builderGate.enabled);
+  const developmentOverrideActive = Boolean(websiteReadiness?.entitlements?.development_override_active);
+  const canCustomize = developmentOverrideActive || Boolean(websiteReadiness?.entitlements?.can_customize || builderGate.enabled);
   const pages = Array.isArray(websiteReadiness?.pages) ? websiteReadiness.pages : [];
   const website = websiteReadiness?.website || {};
   const readiness = websiteReadiness?.readiness || {};
   const blockers = Array.isArray(websiteReadiness?.publish_blockers) ? websiteReadiness.publish_blockers : [];
-  const canPublish = Boolean(publishGate.enabled) && blockers.length === 0;
+  const canPublish = developmentOverrideActive || (Boolean(websiteReadiness?.entitlements?.can_publish || publishGate.enabled) && blockers.length === 0);
   const accessState = websiteReadiness?.entitlements?.access_state || 'website_trial_active';
-  const developmentOverrideActive = Boolean(websiteReadiness?.entitlements?.development_override_active);
   const canUseAi = Boolean(websiteReadiness?.entitlements?.can_use_ai_limited || websiteReadiness?.entitlements?.can_use_ai_full || features.website_ai_copy?.enabled);
   const homePage = pageByType(pages, 'home');
   const servicesPage = pageByType(pages, 'services');

@@ -19,8 +19,8 @@ const baseProfile = {
   brand_accent_color: '#14b8a6',
 };
 
-function makeWebsitePayload({ pro = false, published = false, developmentOverride = false } = {}) {
-  const status = published ? 'published' : 'draft';
+function makeWebsitePayload({ pro = false, published = false, developmentOverride = false, statusOverride = '' } = {}) {
+  const status = statusOverride || (published ? 'published' : 'draft');
   const pages = [
     {
       id: 10,
@@ -117,7 +117,7 @@ function makeWebsitePayload({ pro = false, published = false, developmentOverrid
       days_remaining: pro ? 0 : 14,
       development_override_active: developmentOverride,
       can_customize: true,
-      can_publish: pro,
+      can_publish: pro || developmentOverride,
       can_use_ai_limited: !pro,
       can_use_ai_full: pro,
       features: {
@@ -131,10 +131,10 @@ function makeWebsitePayload({ pro = false, published = false, developmentOverrid
         },
         website_publish: {
           key: 'website_publish',
-          enabled: pro,
+          enabled: pro || developmentOverride,
           tier: 'pro',
           label: 'Publish website',
-          reason: pro ? '' : 'Publishing is available during an active Website Builder plan.',
+          reason: pro || developmentOverride ? '' : 'Publishing is available during an active Website Builder plan.',
         },
         website_ai_copy: {
           key: 'website_ai_copy',
@@ -175,19 +175,19 @@ function makeWebsitePayload({ pro = false, published = false, developmentOverrid
       ],
     },
     draft: { status, has_draft: true, template_key: 'starter' },
-    publish_blockers: pro ? [] : ['Publishing is part of the Pro Website Builder.'],
+    publish_blockers: pro || developmentOverride ? [] : ['Publishing is part of the Pro Website Builder.'],
     recommended_next_steps: pro
       ? []
       : [{ key: 'tagline', label: 'Add a tagline', action: 'Summarize what you do in one short line.' }],
   };
 }
 
-async function mockMarketingPage(page, { pro = false, developmentOverride = false } = {}) {
+async function mockMarketingPage(page, { pro = false, developmentOverride = false, statusOverride = '' } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
 
-  let websitePayload = makeWebsitePayload({ pro, developmentOverride });
+  let websitePayload = makeWebsitePayload({ pro, developmentOverride, statusOverride });
   let publicPayload = null;
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -317,7 +317,7 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
   });
 
   await page.route(/\/api\/projects\/contractor\/website\/publish\/?$/, async (route) => {
-    if (!pro) {
+    if (!pro && !developmentOverride) {
       await route.fulfill({
         status: 400,
         contentType: 'application/json',
@@ -427,13 +427,14 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
 }
 
 test('Marketing Website Builder tab loads premium trial shell and AI suggestion review', async ({ page }) => {
-  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  await mockMarketingPage(page, { pro: false, developmentOverride: true, statusOverride: 'paused' });
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('marketing-website-builder-tab')).toBeVisible();
   await expect(page.getByTestId('website-builder-trial-banner')).toContainText('website trial active');
   await expect(page.getByTestId('website-builder-dev-override-badge')).toContainText('Developer Override Active');
+  await expect(page.getByText('Your website is saved but paused. Choose a plan to reactivate customization.')).toHaveCount(0);
   await expect(page.getByTestId('website-builder-step-nav')).toContainText('78%');
   await expect(page.getByTestId('website-builder-brand-step')).toContainText('Brand foundation');
   await expect(page.getByTestId('website-builder-live-preview')).toContainText('Bright Build Co');
@@ -470,11 +471,12 @@ test('Marketing Website Builder tab loads premium trial shell and AI suggestion 
 
   await expect(page.getByTestId('wizard-primary-color')).toBeEnabled();
   await page.getByTestId('wizard-primary-color').fill('#0f766e');
+  await expect(page.getByRole('button', { name: 'Save Branding' })).toBeEnabled();
   await expect(page.getByTestId('website-builder-live-preview')).toBeVisible();
 
   await page.getByRole('button', { name: 'Publish' }).click();
   await expect(page.getByTestId('website-builder-readiness-checklist')).toContainText('Add a tagline');
-  await expect(page.getByTestId('website-builder-publish-button')).toBeDisabled();
+  await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
 test('Pro contractor can use wizard steps, edit services, preview mobile, and publish a snapshot', async ({ page }) => {

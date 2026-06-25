@@ -24,6 +24,7 @@ from projects.services.website_builder import build_website_profile_payload
 User = get_user_model()
 
 
+@override_settings(CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE=False)
 class ContractorWebsiteBuilderFoundationTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
@@ -176,6 +177,34 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertTrue(features["website_analytics"]["enabled"])
         self.assertTrue(features["website_custom_domain"]["enabled"])
         self.assertTrue(features["website_advanced_seo"]["enabled"])
+
+    @override_settings(DEBUG=True, CONTRACTOR_WEBSITE_ACCESS_STATE="website_trial_expired")
+    def test_debug_development_override_allows_editing_paused_website(self):
+        self.client.get("/api/projects/contractor/website/", secure=True)
+        website = ContractorWebsite.objects.get(contractor=self.contractor)
+        website.status = ContractorWebsite.STATUS_PAUSED
+        website.save(update_fields=["status", "updated_at"])
+
+        response = self.client.patch(
+            "/api/projects/contractor/website/",
+            {
+                "template_key": "premium_home",
+                "homepage_layout": {"sections": {"reviews": False}},
+            },
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["entitlements"]["development_override_active"])
+        self.assertTrue(response.data["entitlements"]["can_customize"])
+        website.refresh_from_db()
+        self.assertEqual(website.template_key, ContractorWebsite.TEMPLATE_PREMIUM_HOME)
+
+        publish = self.client.post("/api/projects/contractor/website/publish/", secure=True)
+        self.assertEqual(publish.status_code, 200)
+        website.refresh_from_db()
+        self.assertEqual(website.status, ContractorWebsite.STATUS_PUBLISHED)
 
     def test_expired_trial_blocks_customization_without_deleting_content(self):
         self.client.get("/api/projects/contractor/website/", secure=True)

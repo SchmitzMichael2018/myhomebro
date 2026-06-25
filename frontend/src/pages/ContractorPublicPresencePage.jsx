@@ -484,6 +484,7 @@ export default function ContractorPublicPresencePage() {
   const websiteFeatures = websiteReadiness?.entitlements?.features || {};
   const websiteBuilderGate = websiteFeatures.website_builder || {};
   const websitePublishGate = websiteFeatures.website_publish || {};
+  const websiteDevelopmentOverrideActive = Boolean(websiteReadiness?.entitlements?.development_override_active);
   const websiteProfile = websiteReadiness?.profile || {};
   const websiteReadinessData = websiteReadiness?.readiness || {};
   const websiteChecklist = Array.isArray(websiteReadinessData.checklist) ? websiteReadinessData.checklist : [];
@@ -501,8 +502,10 @@ export default function ContractorPublicPresencePage() {
     ? websiteReadiness.publish_blockers
     : [];
   const selectedWebsitePage = websitePages.find((page) => page.id === selectedWebsitePageId) || websitePages[0] || null;
-  const canCustomizeWebsite = Boolean(websiteBuilderGate.enabled);
-  const canPublishWebsite = Boolean(websitePublishGate.enabled) && websitePublishBlockers.length === 0;
+  const canCustomizeWebsite = websiteDevelopmentOverrideActive || Boolean(websiteReadiness?.entitlements?.can_customize || websiteBuilderGate.enabled);
+  const canPublishWebsite =
+    websiteDevelopmentOverrideActive ||
+    (Boolean(websiteReadiness?.entitlements?.can_publish || websitePublishGate.enabled) && websitePublishBlockers.length === 0);
   const websitePreviewPayload = useMemo(
     () => ({
       profile: websiteProfile,

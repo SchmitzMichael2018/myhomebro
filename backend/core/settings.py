@@ -115,6 +115,11 @@ ALLOWED_HOSTS = [
 
 FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
 SITE_URL = get_env_var("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+# Development override only. Do not enable in production.
+CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE = get_bool(
+    "CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE",
+    default=True,
+)
 
 # Google Maps / Places keys are used by both frontend address autocomplete and
 # backend contractor discovery geocoding. Keep values out of logs and expose only
