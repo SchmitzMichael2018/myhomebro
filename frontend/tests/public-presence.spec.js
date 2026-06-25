@@ -414,6 +414,15 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('public-presence-title')).toBeVisible();
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Online Presence Setup');
+  await expect(page.getByTestId('online-presence-readiness-score')).toContainText('67%');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Website Design');
+  const setupLayout = await page.getByTestId('online-presence-setup-nav').evaluate((nav) => ({
+    navWidth: nav.getBoundingClientRect().width,
+    documentFits: document.documentElement.scrollWidth <= window.innerWidth + 2,
+  }));
+  expect(setupLayout.navWidth).toBeGreaterThan(520);
+  expect(setupLayout.documentFits).toBeTruthy();
   await expect(page.getByTestId('public-presence-preview-banner')).toHaveCount(0);
   await page.getByRole('button', { name: /Generate My Profile/ }).click();
   await expect(page.getByTestId('generate-profile-modal')).toBeVisible();
@@ -452,7 +461,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('preferred-signoff-input')).toHaveValue('Warmly, Bright Build Co');
   await expect(page.getByTestId('brand-primary-color-input')).toHaveValue('#1d4ed8');
 
-  await page.getByRole('button', { name: 'Gallery' }).click();
+  await page.getByRole('button', { name: 'Photo Gallery' }).click();
   await page.getByPlaceholder('Title').fill('Kitchen Remodel');
   await page.setInputFiles('input[type="file"]', {
     name: 'kitchen.jpg',
@@ -467,38 +476,11 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Pending moderation');
   await page.getByRole('button', { name: 'Publish Review' }).click();
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
-  await page.getByRole('button', { name: 'Website Leads' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Prospect');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Strong Match');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
-  await expect(page.getByTestId('public-lead-funnel')).toContainText('Review');
-  await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
-  await expect(page.getByTestId('public-lead-funnel')).toContainText('Draft');
-  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the intake details and accept the lead if it is a fit'
+  await page.getByRole('button', { name: 'Business Details' }).click();
+  await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
+    'Leads from your profile, QR code, and website appear in Opportunities.'
   );
-  await page.getByRole('button', { name: 'Accept Lead' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Accepted');
-  await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'Kitchen Remodel - Casey Prospect'
-  );
-  await expect(page.getByTestId('public-lead-compatibility')).toBeVisible();
-  await expect(page.getByTestId('public-lead-compatibility')).toContainText('Strong Match');
-  await expect(page.getByTestId('public-lead-compatibility')).toContainText('Offers Assisted DIY support.');
-  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the AI suggestions and create the draft agreement'
-  );
-  await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
-  await page.waitForURL('**/app/agreements/901/wizard?step=1');
-
-  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
-  await page.getByRole('button', { name: 'Mark Contacted' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Contacted');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'Converted to customer: Casey Prospect'
-  );
+  await expect(page.getByRole('button', { name: 'Website Leads' })).toHaveCount(0);
 });
 
 test('public contractor profile surfaces compatibility badges and ways I work', async ({ page }) => {
@@ -574,7 +556,7 @@ test('public contractor profile surfaces compatibility badges and ways I work', 
   await expect(page.getByTestId('public-profile-compatibility')).toContainText('Good fit for collaborative projects');
 });
 
-test('landing-source intake and public-profile intake land in the same contractor leads flow', async ({
+test('landing-source intake and public-profile intake create leads handled in Opportunities', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -964,23 +946,17 @@ test('landing-source intake and public-profile intake land in the same contracto
   await page.getByTestId('public-intake-submit-button').click();
 
   await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Profile Prospect');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Landing Prospect');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Public Profile');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Landing Page');
-
-  await page.getByRole('button', { name: 'Landing Prospect' }).first().click();
-  await page.getByRole('button', { name: 'Accept Lead' }).click();
-  await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
-  await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
-  await page.waitForURL('**/app/agreements/901/wizard?step=1');
-
-  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
-  await page.getByRole('button', { name: 'Profile Prospect' }).click();
-  await page.getByRole('button', { name: 'Accept Lead' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Accepted');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
+    'Leads from your profile, QR code, and website appear in Opportunities.'
+  );
+  await expect(page.getByRole('button', { name: 'Website Leads' })).toHaveCount(0);
+  await expect(
+    page.getByRole('link', { name: /View website leads in Opportunities/i })
+  ).toHaveAttribute('href', '/app/opportunities?source=website');
+  expect(state.leads.some((lead) => lead.full_name === 'Profile Prospect')).toBeTruthy();
+  expect(state.leads.some((lead) => lead.full_name === 'Landing Prospect')).toBeTruthy();
+  expect(state.leads.some((lead) => lead.source === 'public_profile')).toBeTruthy();
+  expect(state.leads.some((lead) => lead.source === 'landing_page')).toBeTruthy();
 });
 
 test('public contractor profile renders gallery reviews and intake', async ({ page }) => {
@@ -1158,7 +1134,7 @@ test('public contractor profile applies saved branding and hides toggled section
   await expect(page.getByTestId('public-profile-request-quote-cta')).toHaveCount(0);
 });
 
-test('manual leads can be quick-added, sent an intake, and stay in the same lead flow', async ({
+test('legacy marketing lead links route back to setup with Opportunities handoff', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -1487,35 +1463,20 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
       });
   });
 
-  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
-  await page.getByRole('button', { name: 'Add Lead' }).click();
-  await expect(page.getByTestId('quick-add-lead-sheet')).toBeVisible();
-  await page.getByPlaceholder('Full name').fill('Walk Up Prospect');
-  await page.getByPlaceholder('(555) 555-5555').fill('5556660000');
-  await page.getByTestId('quick-add-lead-more-toggle').click();
-  await page.getByPlaceholder('name@example.com').fill('walkup@example.com');
-  await page.getByPlaceholder('123 Main St').fill('400 Field Visit Rd');
-  await page.getByPlaceholder('Kitchen remodel, roof repair, bath update...').fill(
-    'Garage conversion'
-  );
-  await page
-    .getByPlaceholder('Referral details, timeline, follow-up plan, or anything you want to remember.')
-    .fill('Met on site and discussed a garage conversion.');
-  await page.getByTestId('manual-lead-save').click();
-
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Walk Up Prospect');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Manual');
-  await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Reject Lead' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Send Intake Form' })).toBeVisible();
-  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText('warm lead');
-
-  await page.getByRole('button', { name: 'Send Intake Form' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Waiting on Customer');
-  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'You sent the intake form'
-  );
+  state.leads = [
+    {
+      id: 900,
+      source: 'manual',
+      full_name: 'Walk Up Prospect',
+      email: 'walkup@example.com',
+      phone: '5556660000',
+      project_address: '400 Field Visit Rd',
+      project_description: 'Garage conversion',
+      status: 'pending_customer_response',
+      source_intake_id: 801,
+      created_at: '2026-03-26T11:00:00Z',
+    },
+  ];
 
   await page.goto('/start-project/manual-token', { waitUntil: 'domcontentloaded' });
   await page
@@ -1543,11 +1504,16 @@ test('manual leads can be quick-added, sent an intake, and stay in the same lead
 
   const appOrigin = new URL(page.url()).origin;
   await page.goto(`${appOrigin}/app/marketing?tab=leads&refresh=manual-intake`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Walk Up Prospect' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Manual');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Ready for Review');
-  await expect(page.getByRole('button', { name: 'Review Intake' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Business Details' })).toHaveAttribute(
+    'aria-current',
+    'step'
+  );
+  await expect(page.getByRole('button', { name: 'Website Leads' })).toHaveCount(0);
+  await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
+    'Leads from your profile, QR code, and website appear in Opportunities.'
+  );
+  expect(state.leads[0].source).toBe('manual');
+  expect(state.leads[0].status).toBe('ready_for_review');
 });
 
 test('qr project requests preserve qr source attribution', async ({ page }) => {
@@ -1768,7 +1734,7 @@ test('hidden public contractor profile renders preview mode', async ({ page }) =
   await expect(page.getByText('Preview-only profile.')).toBeVisible();
 });
 
-test('contractor-sent intake flows into the same lead inbox without cold-lead accept actions', async ({
+test('contractor-sent intake returns to Marketing with Opportunities handoff', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -2140,32 +2106,15 @@ test('contractor-sent intake flows into the same lead inbox without cold-lead ac
   await page.getByTestId('public-intake-submit-button').click();
 
   await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'Riley Customer'
+  await expect(page.getByRole('button', { name: 'Website Leads' })).toHaveCount(0);
+  await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
+    'Leads from your profile, QR code, and website appear in Opportunities.'
   );
-  await expect(page.getByTestId('public-lead-funnel')).toContainText('Analyze');
-  await expect(page.getByRole('button', { name: 'Accept Lead' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Reject Lead' })).toHaveCount(0);
-  const reviewIntakeButton = page.getByRole('button', { name: 'Review Intake' });
-  const analyzeIntakeButton = page.getByRole('button', { name: 'Analyze Intake with AI' });
-  const reviewLeadButton = (await reviewIntakeButton.count()) > 0 ? reviewIntakeButton : analyzeIntakeButton;
-  await expect(reviewLeadButton).toBeVisible();
-  await reviewLeadButton.click();
-  await page.waitForURL('**/app/intake/new?intakeId=501');
-  await expect(page.getByPlaceholder('e.g., Jane Smith')).toHaveValue('Riley Customer');
-  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
-  await page.getByRole('button', { name: 'Analyze Intake with AI' }).click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'Bathroom Remodel - Riley Customer'
-  );
-  await expect(page.getByTestId('public-lead-workflow-hint')).toContainText(
-    'Review the completed intake, confirm the AI summary, and create the draft agreement'
-  );
-  await expect(page.getByTestId('recommended-setup-section')).toContainText('Recommended Setup');
-  await expect(page.getByTestId('recommended-setup-section')).toContainText('Workflow');
-  await page.getByRole('button', { name: 'Create AI-Assisted Agreement' }).click();
-  await page.waitForURL('**/app/agreements/901/wizard?step=1');
+  await expect(
+    page.getByRole('link', { name: /View website leads in Opportunities/i })
+  ).toHaveAttribute('href', '/app/opportunities?source=website');
+  expect(state.lead.full_name).toBe('Riley Customer');
+  expect(state.lead.status).toBe('ready_for_review');
+  expect(state.lead.source).toBe('contractor_sent_form');
 });
 

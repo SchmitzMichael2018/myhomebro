@@ -24,12 +24,11 @@ import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contr
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
 import WebsiteBuilderWizard from '../components/website/WebsiteBuilderWizard.jsx';
 
-const TABS = [
-  { key: 'profile', label: 'Public Profile' },
-  { key: 'website', label: 'Website Builder' },
-  { key: 'gallery', label: 'Gallery' },
-  { key: 'reviews', label: 'Reviews' },
-  { key: 'leads', label: 'Website Leads' },
+const ONLINE_PRESENCE_STEPS = [
+  { key: 'profile', label: 'Business Details', eyebrow: 'Step 1' },
+  { key: 'gallery', label: 'Photo Gallery', eyebrow: 'Step 2' },
+  { key: 'reviews', label: 'Reviews', eyebrow: 'Step 3' },
+  { key: 'website', label: 'Website Design', eyebrow: 'Step 4' },
 ];
 
 function normalizeList(data) {
@@ -754,7 +753,11 @@ export default function ContractorPublicPresencePage() {
   useEffect(() => {
     const params = new URLSearchParams(location.search || '');
     const tab = params.get('tab');
-    if (TABS.some((item) => item.key === tab)) {
+    if (tab === 'leads') {
+      setActiveTab('profile');
+      return;
+    }
+    if (ONLINE_PRESENCE_STEPS.some((item) => item.key === tab)) {
       setActiveTab(tab);
     }
   }, [location.search]);
@@ -769,7 +772,7 @@ export default function ContractorPublicPresencePage() {
         (row) => String(row.id) === String(assistantHandoff.context.lead_id)
       );
       if (matchedLead) {
-        setActiveTab('leads');
+        navigate('/app/opportunities?source=website');
         setSelectedLead(matchedLead);
       }
     }
@@ -785,7 +788,7 @@ export default function ContractorPublicPresencePage() {
       assistantHandoff.prefillFields.email || assistantHandoff.draftPayload.email || '';
 
     if (assistantHandoff.intent === 'create_lead' && (prefillName || prefillPhone || prefillEmail)) {
-      setActiveTab('leads');
+      navigate('/app/opportunities?source=manual');
       setQuickAddPrefill({
         full_name: prefillName,
         phone: prefillPhone,
@@ -1191,7 +1194,7 @@ export default function ContractorPublicPresencePage() {
   return (
     <ContractorPageSurface
       variant="operational"
-      contentClassName={activeTab === 'website' ? 'w-full max-w-none' : 'mx-auto max-w-7xl'}
+      contentClassName="w-full max-w-none"
     >
       <div className="space-y-6">
       <ContractorContextualGuideModal
@@ -1246,7 +1249,7 @@ export default function ContractorPublicPresencePage() {
         onCreated={(lead) => {
           setLeadsRows((prev) => [lead, ...prev.filter((row) => row.id !== lead.id)]);
           setSelectedLead(lead);
-          setActiveTab('leads');
+          navigate('/app/opportunities?source=manual');
           setQuickAddPrefill(null);
         }}
         onClose={() => setQuickAddPrefill(null)}
@@ -1255,10 +1258,10 @@ export default function ContractorPublicPresencePage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <h1 data-testid="public-presence-title" className="text-2xl font-bold text-slate-900">
-              Marketing
+              Online Presence Setup
             </h1>
             <p className="mt-2 text-sm text-slate-600">
-              Manage your public profile, gallery, reviews, website-ready leads, and shareable QR from one place.
+              Build the foundation customers see online: business details, photos, reviews, and your published website.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1296,26 +1299,50 @@ export default function ContractorPublicPresencePage() {
 
       <section className={activeTab === 'website' ? 'block' : 'grid gap-4 lg:grid-cols-[minmax(0,2fr)_320px]'}>
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap gap-2">
-            {TABS.map((tab) => (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4" data-testid="online-presence-setup-nav">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Guided setup</div>
+                <div className="mt-1 text-lg font-bold text-slate-950">Online Presence Setup</div>
+              </div>
+              <div className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm" data-testid="online-presence-readiness-score">
+                Readiness {websiteReadinessData.score || 0}%
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-4">
+            {ONLINE_PRESENCE_STEPS.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 onClick={() => setActiveTab(tab.key)}
+                aria-current={activeTab === tab.key ? 'step' : undefined}
                 className={[
-                  'rounded-full px-4 py-2 text-sm font-semibold transition',
+                  'rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition',
                   activeTab === tab.key
-                    ? 'bg-slate-900 text-white'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200',
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-100',
                 ].join(' ')}
               >
-                {tab.label}
+                <span className="block text-[11px] uppercase tracking-[0.14em] opacity-70">{tab.eyebrow}</span>
+                <span className="mt-1 block">{tab.label}</span>
               </button>
             ))}
+            </div>
+            <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+              Leads from your profile, QR code, and website appear in Opportunities.
+              <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
+            </div>
           </div>
 
           {activeTab === 'profile' ? (
             <div className="mt-6" data-testid="public-presence-profile-tab">
+              <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 1</div>
+                <h2 className="mt-1 text-xl font-bold text-slate-950">Business Details</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  This is the shared foundation for your public profile, QR code, and Website Builder.
+                </p>
+              </div>
               {!profile.is_public ? (
                 <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   Preview mode: your public profile is not live yet. Use the generator below to draft copy, then publish when you&apos;re ready.
@@ -1606,29 +1633,38 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'website' ? (
-            <WebsiteBuilderWizard
-              profile={profile}
-              setProfile={setProfile}
-              websiteReadiness={websiteReadiness}
-              setWebsiteReadiness={setWebsiteReadiness}
-              galleryRows={galleryRows}
-              reviewsRows={reviewsRows}
-              logoFile={logoFile}
-              setLogoFile={setLogoFile}
-              heroFile={heroFile}
-              setHeroFile={setHeroFile}
-              onSaveProfile={saveProfile}
-              onSaveWebsiteSettings={saveWebsiteSettings}
-              onSaveWebsitePage={saveWebsitePage}
-              onPublish={publishWebsite}
-              onPause={pauseWebsite}
-              onToggleGallery={toggleGalleryVisibility}
-              onToggleReview={toggleReviewVisibility}
-              galleryBusy={galleryBusy}
-              reviewBusy={reviewBusy}
-              busy={profileBusy || websiteBusy}
-              publishMessage={websitePublishMessage}
-            />
+            <div className="mt-6">
+              <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 4</div>
+                <h2 className="mt-1 text-xl font-bold text-slate-950">Website Design</h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  Use the profile, photos, and reviews you set up first to design, preview, and publish your contractor website.
+                </p>
+              </div>
+              <WebsiteBuilderWizard
+                profile={profile}
+                setProfile={setProfile}
+                websiteReadiness={websiteReadiness}
+                setWebsiteReadiness={setWebsiteReadiness}
+                galleryRows={galleryRows}
+                reviewsRows={reviewsRows}
+                logoFile={logoFile}
+                setLogoFile={setLogoFile}
+                heroFile={heroFile}
+                setHeroFile={setHeroFile}
+                onSaveProfile={saveProfile}
+                onSaveWebsiteSettings={saveWebsiteSettings}
+                onSaveWebsitePage={saveWebsitePage}
+                onPublish={publishWebsite}
+                onPause={pauseWebsite}
+                onToggleGallery={toggleGalleryVisibility}
+                onToggleReview={toggleReviewVisibility}
+                galleryBusy={galleryBusy}
+                reviewBusy={reviewBusy}
+                busy={profileBusy || websiteBusy}
+                publishMessage={websitePublishMessage}
+              />
+            </div>
           ) : null}
 
           {false && activeTab === 'website' ? (
@@ -2053,6 +2089,11 @@ export default function ContractorPublicPresencePage() {
 
           {activeTab === 'gallery' ? (
             <div className="mt-6 space-y-4" data-testid="public-presence-gallery-tab">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 2</div>
+                <h2 className="mt-1 text-xl font-bold text-slate-950">Photo Gallery</h2>
+                <p className="mt-1 text-sm text-slate-600">Add logo, hero, and project photos customers can trust before they request a quote.</p>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Title" />
                 <input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="rounded-xl border border-slate-300 px-3 py-2 text-sm" placeholder="Category" />
@@ -2090,6 +2131,11 @@ export default function ContractorPublicPresencePage() {
 
           {activeTab === 'reviews' ? (
             <div className="mt-6 space-y-4" data-testid="public-presence-reviews-tab">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Step 3</div>
+                <h2 className="mt-1 text-xl font-bold text-slate-950">Reviews</h2>
+                <p className="mt-1 text-sm text-slate-600">Choose the trust signals and approved customer feedback that should appear online.</p>
+              </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                 New public reviews stay hidden until you publish them here. Verified badges remain read-only unless an agreement-linked workflow sets them.
               </div>
@@ -2603,10 +2649,10 @@ export default function ContractorPublicPresencePage() {
           ) : null}
         </div>
 
-        {activeTab !== 'website' ? (
+        {activeTab === 'profile' ? (
         <aside className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Share</div>
-          <div className="mt-3 text-lg font-semibold text-slate-900">Public profile QR</div>
+          <div className="mt-3 text-lg font-semibold text-slate-900">Share your profile/website</div>
           <div className="mt-2 text-sm text-slate-600 break-all">{qrData?.public_url || profile.public_url || '-'}</div>
           {qrData?.qr_svg ? (
             <img
