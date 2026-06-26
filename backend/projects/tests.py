@@ -271,6 +271,156 @@ def _use_secure_requests(client):
     return client
 
 
+class CustomerWorkspaceApiTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.client = _use_secure_requests(APIClient())
+        self.user = User.objects.create_user(email="workspace-contractor@example.com", password="testpass123")
+        self.contractor = Contractor.objects.create(user=self.user, business_name="Workspace Builders")
+        self.public_profile = ContractorPublicProfile.objects.create(
+            contractor=self.contractor,
+            business_name_public="Workspace Builders",
+            is_public=True,
+        )
+        self.other_user = User.objects.create_user(email="other-workspace@example.com", password="testpass123")
+        self.other_contractor = Contractor.objects.create(user=self.other_user, business_name="Other Builders")
+        self.customer = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Pat Customer",
+            email="pat@example.com",
+            phone_number="5125550100",
+            street_address="123 Main St",
+            city="Austin",
+            state="TX",
+            zip_code="78701",
+            status="active",
+        )
+
+    def _seed_workspace_activity(self):
+        intake = ProjectIntake.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            customer_name="Pat Customer",
+            customer_email=self.customer.email,
+            customer_phone=self.customer.phone_number,
+            ai_project_title="Kitchen Refresh",
+            accomplishment_text="Refresh the kitchen.",
+            status="submitted",
+        )
+        CustomerRequest.objects.create(
+            homeowner=self.customer,
+            customer_email=self.customer.email,
+            request_type=CustomerRequest.TYPE_REPAIR,
+            title="Cabinet repair",
+            description="Cabinet doors need adjustment.",
+            status=CustomerRequest.STATUS_SUBMITTED,
+            source_intake=intake,
+        )
+        PublicContractorLead.objects.create(
+            contractor=self.contractor,
+            public_profile=self.public_profile,
+            converted_homeowner=self.customer,
+            full_name="Pat Customer",
+            email=self.customer.email,
+            phone=self.customer.phone_number,
+            source=PublicContractorLead.SOURCE_WEBSITE,
+            project_type="Kitchen Remodel",
+            project_description="Website request for a kitchen remodel.",
+            status=PublicContractorLead.STATUS_NEW,
+        )
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Workspace Builders",
+            normalized_name="workspace builders",
+            claimed=True,
+            claimed_by_contractor=self.contractor,
+        )
+        ContractorOpportunity.objects.create(
+            directory_entry=entry,
+            converted_customer=self.customer,
+            intake_request=intake,
+            homeowner_name="Pat Customer",
+            homeowner_email=self.customer.email,
+            project_title="Kitchen Refresh",
+            project_description="Selected contractor opportunity.",
+            status=ContractorOpportunity.STATUS_PENDING,
+        )
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Kitchen Refresh",
+            description="Kitchen project.",
+            status="in_progress",
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("12500.00"),
+            status="signed",
+        )
+        Invoice.objects.create(
+            agreement=agreement,
+            amount=Decimal("2500.00"),
+            status=InvoiceStatus.SENT,
+        )
+        property_profile = PropertyProfile.objects.create(
+            homeowner=self.customer,
+            customer_email=self.customer.email,
+            display_name="Primary Home",
+            address_line1="123 Main St",
+            city="Austin",
+            state="TX",
+            postal_code="78701",
+        )
+        PropertyDocument.objects.create(
+            property_profile=property_profile,
+            title="Warranty",
+            document_type="Warranty",
+            file=SimpleUploadedFile("warranty.pdf", b"fake pdf", content_type="application/pdf"),
+        )
+
+    def test_customer_workspace_returns_profile_related_rows_and_timeline(self):
+        self._seed_workspace_activity()
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get(f"/api/projects/homeowners/{self.customer.id}/workspace/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["customer"]["id"], self.customer.id)
+        self.assertEqual(response.data["contact"]["email"], "pat@example.com")
+        self.assertEqual(response.data["stats"]["active_requests"], 4)
+        self.assertEqual(response.data["stats"]["active_agreements_projects"], 2)
+        self.assertEqual(response.data["stats"]["open_balance"], "2500.00")
+        self.assertEqual(response.data["stats"]["lifetime_value"], "12500.00")
+        self.assertTrue(response.data["stats"]["last_activity"])
+        self.assertEqual(len(response.data["related"]["leads"]), 1)
+        self.assertEqual(len(response.data["related"]["project_intakes"]), 1)
+        self.assertEqual(len(response.data["related"]["customer_requests"]), 1)
+        self.assertEqual(len(response.data["related"]["opportunities"]), 1)
+        self.assertEqual(len(response.data["related"]["agreements"]), 1)
+        self.assertEqual(len(response.data["related"]["payments"]), 1)
+        self.assertEqual(len(response.data["related"]["properties"]), 1)
+        event_types = {event["type"] for event in response.data["timeline"]}
+        self.assertIn("customer_created", event_types)
+        self.assertIn("lead", event_types)
+        self.assertIn("customer_request", event_types)
+        self.assertIn("opportunity", event_types)
+        self.assertIn("agreement", event_types)
+        self.assertIn("invoice", event_types)
+
+    def test_customer_workspace_is_contractor_scoped(self):
+        other_customer = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Customer",
+            email="other-customer@example.com",
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get(f"/api/projects/homeowners/{other_customer.id}/workspace/")
+
+        self.assertEqual(response.status_code, 404)
+
+
 class AgreementMilestoneAIRouteTests(TestCase):
     def setUp(self):
         self.pdf_task_patcher = patch(

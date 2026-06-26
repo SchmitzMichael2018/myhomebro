@@ -34,7 +34,7 @@ const StatusBadge = ({ status }) => {
         statusStyles[key] || "border border-slate-300/25 bg-slate-400/15 text-sky-100/75"
       }`}
     >
-      {status || "—"}
+      {status || "-"}
     </span>
   );
 };
@@ -87,7 +87,7 @@ function getCustomerDisplay(customer) {
   if (company) {
     return {
       primary: company,
-      secondary: contact || "—",
+      secondary: contact || "-",
       hasCompany: true,
     };
   }
@@ -104,6 +104,7 @@ export default function Customers() {
   const location = useLocation();
 
   const CUSTOMER_NEW_ROUTE = "/app/customers/new";
+  const customerWorkspaceRoute = (id) => `/app/customers/${id}`;
   const customerEditRoute = (id) => `/app/customers/${id}/edit`;
 
   const [newCustomerId, setNewCustomerId] = useState(null);
@@ -187,7 +188,7 @@ export default function Customers() {
         setCustomers([]);
         setCount(0);
         setUsedEndpoint("NONE");
-        toast("No customers endpoint found. Showing an empty list.", { icon: "ℹ️" });
+        toast("No customers endpoint found. Showing an empty list.", { icon: "i" });
       }
     } catch (err) {
       const errorMsg =
@@ -274,7 +275,7 @@ export default function Customers() {
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
             className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/45 focus:border-sky-300/60"
-            placeholder="Search name, company, email, phone…"
+            placeholder="Search name, company, email, phone..."
             value={q}
             onChange={(e) => {
               setQ(e.target.value);
@@ -305,10 +306,10 @@ export default function Customers() {
           >
             <option value="-created_at">Newest</option>
             <option value="created_at">Oldest</option>
-            <option value="full_name">Name A→Z</option>
-            <option value="-full_name">Name Z→A</option>
-            <option value="name">Name A→Z (name)</option>
-            <option value="-name">Name Z→A (name)</option>
+            <option value="full_name">Name A-Z</option>
+            <option value="-full_name">Name Z-A</option>
+            <option value="name">Name A-Z (name)</option>
+            <option value="-name">Name Z-A (name)</option>
           </select>
           <select
             className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
@@ -357,13 +358,96 @@ export default function Customers() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="divide-y divide-white/10 md:hidden">
+              {customers.map((customer) => {
+                const cid = String(customer.id ?? customer.uuid ?? customer.pk ?? "");
+                const isNew = newCustomerId && cid && String(newCustomerId) === cid;
+                const { primary, secondary, hasCompany } = getCustomerDisplay(customer);
+                const openRequests = customer.open_requests_count ?? customer.active_requests_count ?? 0;
+                const activeWork = customer.active_agreements_projects_count ?? customer.active_agreements_count ?? customer.active_projects_count ?? 0;
+                const openBalance =
+                  customer.open_balance != null
+                    ? Number(customer.open_balance).toLocaleString(undefined, { style: "currency", currency: "USD" })
+                    : "-";
+                const lastActivity = customer.last_activity ?? customer.last_activity_at ?? customer.updated_at ?? customer.created_at;
+
+                return (
+                  <div
+                    key={`mobile-${customer.id ?? customer.uuid ?? customer.pk ?? `${customer.email}-${customer.phone}`}`}
+                    className="block w-full cursor-pointer px-4 py-4 text-left text-sky-100/78 transition hover:bg-sky-500/10 focus:bg-sky-500/10 focus:outline-none"
+                    data-testid={`customer-row-mobile-${cid}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      if (event.target.closest("a,button")) return;
+                      if (cid) navigate(customerWorkspaceRoute(cid));
+                    }}
+                    onKeyDown={(event) => {
+                      if (!cid) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(customerWorkspaceRoute(cid));
+                      }
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-semibold text-white">
+                          {primary}
+                          {isNew ? <NewBadge /> : null}
+                        </div>
+                        {hasCompany && secondary ? <div className="text-sm text-sky-100/65">Contact: {secondary}</div> : null}
+                        <div className="mt-1 text-sm text-sky-100/60">{customer.email || "-"}</div>
+                        <div className="mt-1 text-sm text-sky-100/60">{formatPhoneNumber(customer.phone_number || customer.phone)}</div>
+                      </div>
+                      <StatusBadge status={customer.status} />
+                    </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Requests</div>
+                        <div className="mt-1 font-semibold text-white">{openRequests}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Active Work</div>
+                        <div className="mt-1 font-semibold text-white">{activeWork}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Balance</div>
+                        <div className="mt-1 font-semibold text-white">{openBalance}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Last Activity</div>
+                        <div className="mt-1 font-semibold text-white">{lastActivity ? new Date(lastActivity).toLocaleDateString() : "-"}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex items-center justify-end gap-2">
+                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/16 bg-slate-900/70 text-sky-100">
+                        Open
+                      </span>
+                      <Link
+                        to={customerEditRoute(customer.id)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/16 bg-slate-900/70 text-sky-100"
+                        aria-label="Edit customer"
+                        data-testid={`customer-edit-mobile-${cid}`}
+                      >
+                        <Edit size={16} />
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="hidden overflow-x-auto md:block">
               <table className="min-w-full divide-y divide-white/10">
                 <thead className="bg-white/8 text-sky-100/75">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Customer</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Active Projects</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Open Requests</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Active Work</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider">Open Balance</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Last Activity</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Date Added</th>
                     <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider">Actions</th>
                   </tr>
@@ -374,11 +458,32 @@ export default function Customers() {
                     const cid = String(customer.id ?? customer.uuid ?? customer.pk ?? "");
                     const isNew = newCustomerId && cid && String(newCustomerId) === cid;
                     const { primary, secondary, hasCompany } = getCustomerDisplay(customer);
+                    const openRequests = customer.open_requests_count ?? customer.active_requests_count ?? 0;
+                    const activeWork = customer.active_agreements_projects_count ?? customer.active_agreements_count ?? customer.active_projects_count ?? 0;
+                    const openBalance =
+                      customer.open_balance != null
+                        ? Number(customer.open_balance).toLocaleString(undefined, { style: "currency", currency: "USD" })
+                        : "-";
+                    const lastActivity = customer.last_activity ?? customer.last_activity_at ?? customer.updated_at ?? customer.created_at;
 
                     return (
                       <tr
                         key={customer.id ?? customer.uuid ?? customer.pk ?? `${customer.email}-${customer.phone}`}
-                        className="text-sky-100/78 transition-colors hover:bg-sky-500/10"
+                        className="cursor-pointer text-sky-100/78 transition-colors hover:bg-sky-500/10 focus-within:bg-sky-500/10"
+                        data-testid={`customer-row-${cid}`}
+                        tabIndex={0}
+                        title="Open customer workspace"
+                        onClick={(event) => {
+                          if (event.target.closest("a,button")) return;
+                          if (cid) navigate(customerWorkspaceRoute(cid));
+                        }}
+                        onKeyDown={(event) => {
+                          if (!cid) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            navigate(customerWorkspaceRoute(cid));
+                          }
+                        }}
                       >
                         <td className="whitespace-nowrap px-6 py-5">
                           <div className="font-semibold text-white">
@@ -390,7 +495,7 @@ export default function Customers() {
                             <div className="text-sm text-sky-100/65">Contact: {secondary}</div>
                           ) : null}
 
-                          <div className="text-sm text-sky-100/60">{customer.email || "—"}</div>
+                          <div className="text-sm text-sky-100/60">{customer.email || "-"}</div>
 
                           <div className="mt-1 flex items-center text-sm text-sky-100/60">
                             <Phone size={12} className="mr-1.5" />{" "}
@@ -407,26 +512,41 @@ export default function Customers() {
                         </td>
 
                         <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-white">
-                          {customer.active_projects_count ?? 0}
+                          {openRequests}
+                        </td>
+
+                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-white">
+                          {activeWork}
+                        </td>
+
+                        <td className="whitespace-nowrap px-6 py-5 text-right text-sm font-semibold text-white">
+                          {openBalance}
                         </td>
 
                         <td className="whitespace-nowrap px-6 py-5 text-sm text-sky-100/60">
-                          {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "—"}
+                          {lastActivity ? new Date(lastActivity).toLocaleDateString() : "-"}
+                        </td>
+
+                        <td className="whitespace-nowrap px-6 py-5 text-sm text-sky-100/60">
+                          {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "-"}
                         </td>
 
                         <td className="whitespace-nowrap px-6 py-5 text-right text-sm font-medium">
                           <div className="flex items-center justify-end gap-3">
-                            <button
-                              onClick={() => navigate(customerEditRoute(customer.id))}
+                            <Link
+                              to={customerEditRoute(customer.id)}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/16 bg-slate-900/70 text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 hover:text-white"
+                              data-testid={`customer-edit-${cid}`}
                               title="Edit Customer"
-                              type="button"
                             >
                               <Edit size={18} />
-                            </button>
+                            </Link>
 
                             <button
-                              onClick={() => handleDelete(customer.id)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDelete(customer.id);
+                              }}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-300/35 bg-rose-500/10 text-rose-100 transition hover:bg-rose-500/18"
                               title="Delete Customer"
                               type="button"
@@ -444,7 +564,7 @@ export default function Customers() {
 
             <div className="flex items-center justify-between border-t border-white/10 bg-white/8 px-4 py-3">
               <div className="text-sm text-sky-100/65">
-                Showing {count === 0 ? 0 : (page - 1) * pageSize + 1}–{Math.min(page * pageSize, count)} of {count}
+                Showing {count === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, count)} of {count}
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -453,7 +573,7 @@ export default function Customers() {
                   disabled={page <= 1 || loading}
                   type="button"
                 >
-                  ‹ Prev
+                  &lt; Prev
                 </button>
 
                 <span className="text-sm text-sky-100/65">
@@ -466,7 +586,7 @@ export default function Customers() {
                   disabled={page >= totalPages || loading}
                   type="button"
                 >
-                  Next ›
+                  Next &gt;
                 </button>
               </div>
             </div>

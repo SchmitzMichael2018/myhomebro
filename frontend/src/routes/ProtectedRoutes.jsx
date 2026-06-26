@@ -49,6 +49,7 @@ import InvoiceDetail from "../components/InvoiceDetail.jsx";
 import Customers from "../components/Customers.jsx";
 import CustomerForm from "../components/CustomerForm.jsx";
 import CustomerEdit from "../components/CustomerEdit.jsx";
+import CustomerWorkspacePage from "../pages/CustomerWorkspacePage.jsx";
 
 /* Other sections */
 import ProfilePage from "../pages/ProfilePage.jsx";
@@ -213,6 +214,7 @@ export function protectedRoutes() {
           <Route path="customers" element={<Customers />} />
           <Route path="customers/new" element={<CustomerForm />} />
           <Route path="customers/:id/edit" element={<CustomerEdit />} />
+          <Route path="customers/:id" element={<CustomerWorkspacePage />} />
 
           <Route path="calendar" element={<Calendar />} />
           <Route path="expenses" element={<Expenses />} />

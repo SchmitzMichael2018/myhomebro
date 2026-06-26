@@ -21,6 +21,157 @@ function authAndWhoAmI(page) {
   ]);
 }
 
+const customerListPayload = {
+  count: 1,
+  results: [
+    {
+      id: 42,
+      full_name: "Jordan Customer",
+      company_name: "Jordan Renovations LLC",
+      email: "jordan@example.com",
+      phone: "5551234567",
+      status: "active",
+      street_address: "18 Oak Street",
+      city: "Madison",
+      state: "WI",
+      zip_code: "53703",
+      active_projects_count: 2,
+      open_requests_count: 1,
+      open_balance: "2500.00",
+      created_at: "2026-04-01T12:00:00Z",
+      updated_at: "2026-04-14T12:00:00Z",
+    },
+  ],
+};
+
+const workspacePayload = {
+  customer: customerListPayload.results[0],
+  contact: {
+    name: "Jordan Customer",
+    company_name: "Jordan Renovations LLC",
+    email: "jordan@example.com",
+    phone: "5551234567",
+    status: "active",
+    address: {
+      street_address: "18 Oak Street",
+      city: "Madison",
+      state: "WI",
+      zip_code: "53703",
+    },
+  },
+  stats: {
+    active_requests: 2,
+    active_agreements_projects: 3,
+    open_balance: "2500.00",
+    lifetime_value: "12500.00",
+    last_activity: "2026-04-14T12:00:00Z",
+    customer_since: "2026-04-01T12:00:00Z",
+  },
+  related: {
+    leads: [
+      {
+        id: 71,
+        title: "Kitchen Refresh",
+        description: "Website lead",
+        status: "new",
+        type: "public lead",
+        url: "/app/opportunities?lead=71",
+      },
+    ],
+    project_intakes: [],
+    customer_requests: [
+      {
+        id: 81,
+        title: "Bathroom remodel",
+        description: "Customer portal request",
+        status: "submitted",
+        type: "customer request",
+        url: "/app/customers/requests?request=81",
+      },
+    ],
+    opportunities: [
+      {
+        id: 91,
+        title: "Deck repair",
+        description: "Manual lead",
+        status: "open",
+        type: "opportunity",
+        url: "/app/opportunities?opportunity=91",
+      },
+    ],
+    agreements: [
+      {
+        id: 301,
+        title: "Kitchen Agreement",
+        description: "Agreement",
+        status: "signed",
+        total: "12500.00",
+        type: "agreement",
+        url: "/app/agreements/301",
+      },
+    ],
+    projects: [],
+    payments: [
+      {
+        id: 401,
+        title: "Invoice #401",
+        invoice_number: "401",
+        status: "sent",
+        amount: "2500.00",
+        url: "/app/invoices/401",
+      },
+    ],
+    properties: [],
+    documents: [],
+    communication: [],
+  },
+  timeline: [
+    {
+      type: "lead",
+      title: "Kitchen Refresh",
+      description: "Website lead received from Jordan Customer.",
+      timestamp: "2026-04-14T12:00:00Z",
+      source: "PublicContractorLead",
+      source_id: 71,
+      url: "/app/opportunities?lead=71",
+      status: "new",
+    },
+    {
+      type: "agreement",
+      title: "Kitchen Agreement",
+      description: "Agreement is signed.",
+      timestamp: "2026-04-13T12:00:00Z",
+      source: "Agreement",
+      source_id: 301,
+      url: "/app/agreements/301",
+      amount: "12500.00",
+      status: "signed",
+    },
+  ],
+  gaps: {
+    communication: "No contractor-side customer communication timeline is available yet.",
+  },
+};
+
+async function mockCustomersWorkspaceApi(page, payload = workspacePayload) {
+  await page.route("**/api/projects/homeowners/**", async (route) => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname.endsWith("/api/projects/homeowners/42/workspace/")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) });
+      return;
+    }
+    if (pathname.endsWith("/api/projects/homeowners/42/")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(customerListPayload.results[0]) });
+      return;
+    }
+    if (pathname.endsWith("/api/projects/homeowners/")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(customerListPayload) });
+      return;
+    }
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not found" }) });
+  });
+}
+
 test("customer records dashboard renders requests, bids, agreements, and payments", async ({ page }) => {
   await authAndWhoAmI(page);
 
@@ -235,4 +386,82 @@ test("customer records dashboard shows clean empty states", async ({ page }) => 
   await expect(page.getByTestId("customer-records-bids-table-empty")).toBeVisible();
   await expect(page.getByTestId("customer-records-agreements-table-empty")).toBeVisible();
   await expect(page.getByTestId("customer-records-payments-table-empty")).toBeVisible();
+});
+
+test("customer list row opens the customer workspace and edit stays secondary", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page);
+
+  await page.goto("/app/customers", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("customer-row-42")).toBeVisible();
+  await page.getByTestId("customer-row-42").click();
+  await expect(page).toHaveURL(/\/app\/customers\/42$/);
+
+  await page.goto("/app/customers", { waitUntil: "domcontentloaded" });
+  const editLink = page.getByRole("link", { name: "Edit Customer" });
+  await expect(editLink).toHaveAttribute("href", "/app/customers/42/edit");
+  await editLink.click();
+  await expect(page).toHaveURL(/\/app\/customers\/42\/edit$/);
+});
+
+test("customer workspace renders overview, timeline, tabs, and dark operational shell", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page);
+
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("heading", { name: "Jordan Renovations LLC" })).toBeVisible();
+  await expect(page.locator(".mhb-operational-surface")).toBeVisible();
+  await expect(page.getByTestId("customer-workspace-overview-cards")).toContainText("Active Requests");
+  await expect(page.getByTestId("customer-workspace-overview-cards")).toContainText("$2,500.00");
+  await expect(page.getByTestId("customer-workspace-timeline")).toContainText("Kitchen Refresh");
+  await expect(page.getByTestId("customer-workspace-tabs")).toContainText("Requests & Opportunities");
+  await expect(page.getByTestId("customer-workspace-tabs")).toContainText("Communication");
+
+  await page.getByRole("button", { name: "Requests & Opportunities" }).click();
+  await expect(page.getByTestId("customer-workspace-requests")).toContainText("Bathroom remodel");
+  await expect(page.getByTestId("customer-workspace-requests")).toContainText("Deck repair");
+
+  await page.getByRole("button", { name: "Projects & Agreements" }).click();
+  await expect(page.getByTestId("customer-workspace-projects")).toContainText("Kitchen Agreement");
+
+  await page.getByRole("button", { name: "Payments" }).click();
+  await expect(page.getByTestId("customer-workspace-payments")).toContainText("Invoice #401");
+
+  await page.getByRole("button", { name: "Communication" }).click();
+  await expect(page.getByText("No contractor-side customer communication timeline is available yet.")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("â");
+});
+
+test("customer workspace empty states and mobile layout stay clean", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page, {
+    ...workspacePayload,
+    related: {
+      leads: [],
+      project_intakes: [],
+      customer_requests: [],
+      opportunities: [],
+      agreements: [],
+      projects: [],
+      payments: [],
+      properties: [],
+      documents: [],
+      communication: [],
+    },
+    timeline: [],
+  });
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("No timeline yet")).toBeVisible();
+  await page.getByRole("button", { name: "Requests & Opportunities" }).click();
+  await expect(page.getByText("No requests or opportunities yet")).toBeVisible();
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2
+  );
+  expect(hasHorizontalOverflow).toBeFalsy();
 });
