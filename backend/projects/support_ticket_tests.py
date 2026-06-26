@@ -14,6 +14,26 @@ from projects.models_support import SupportMessage, SupportTicket
 from projects.services.support_gmail_sync import InboundSupportEmail
 
 
+def _use_secure_requests(client):
+    client.defaults.update(
+        {
+            "wsgi.url_scheme": "https",
+            "SERVER_PORT": "443",
+            "HTTPS": "on",
+            "HTTP_X_FORWARDED_PROTO": "https",
+        }
+    )
+    for method_name in ("get", "post", "put", "patch", "delete"):
+        original = getattr(client, method_name)
+
+        def secure_method(*args, _original=original, **kwargs):
+            kwargs.setdefault("secure", True)
+            return _original(*args, **kwargs)
+
+        setattr(client, method_name, secure_method)
+    return client
+
+
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
     SUPPORT_EMAIL="support@example.com",
@@ -26,7 +46,7 @@ class SupportTicketTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         user_model = get_user_model()
         self.user = user_model.objects.create_user(
             email="owner@example.com",

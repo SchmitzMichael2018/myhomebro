@@ -1603,7 +1603,7 @@ class SubcontractorHubApiTests(TestCase):
             start_date=timezone.localdate(),
             completion_date=timezone.localdate(),
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.contractor_user)
 
     @patch(
@@ -1958,7 +1958,7 @@ class SubcontractorHubApiTests(TestCase):
             ]
         )
 
-        other_client = APIClient()
+        other_client = _use_secure_requests(APIClient())
         other_client.force_authenticate(user=self.other_contractor_user)
         response = other_client.post(
             f"/api/projects/subcontractor-work-submissions/{self.milestone.id}/review/",
@@ -2059,7 +2059,7 @@ class ContractorPublicPresenceApiTests(TestCase):
             business_name_public="Bright Build Co",
             is_public=False,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def _create_completed_agreement(
         self,
@@ -3239,7 +3239,7 @@ class ContractorPublicPresenceApiTests(TestCase):
             user=contractor_user,
             business_name="Prime Builder",
         )
-        claim_client = APIClient()
+        claim_client = _use_secure_requests(APIClient())
         claim_client.force_authenticate(user=contractor_user)
 
         accept_response = claim_client.post(
@@ -5918,7 +5918,7 @@ class ContractorBidsWorkspaceTests(TestCase):
         self.linked_agreement.total_cost = Decimal("48000.00")
         self.linked_agreement.save(update_fields=["total_cost"])
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_contractor_sees_only_own_unified_bids_and_actions(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -5999,7 +5999,7 @@ class ContractorBidsWorkspaceTests(TestCase):
         self.assertEqual(not_selected["status_note"], "Another contractor was selected for this project.")
         self.assertEqual(not_selected["workspace_stage"], "closed")
 
-        other_client = APIClient()
+        other_client = _use_secure_requests(APIClient())
         other_client.force_authenticate(user=self.other_plain_user)
         forbidden = other_client.get("/api/projects/contractor/bids/")
         self.assertEqual(forbidden.status_code, 404)
@@ -6703,7 +6703,7 @@ class SubcontractorInvitationApiTests(TestCase):
             last_name="Contractor",
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.contractor_user)
 
     def _create_invitation(self, email="subcontractor@example.com"):
@@ -6763,7 +6763,7 @@ class SubcontractorInvitationApiTests(TestCase):
         invitation_id = create_response.json()["id"]
         invitation = SubcontractorInvitation.objects.get(pk=invitation_id)
 
-        public_client = APIClient()
+        public_client = _use_secure_requests(APIClient())
         lookup = public_client.get(
             f"/api/projects/subcontractor-invitations/accept/{invitation.token}/"
         )
@@ -6799,7 +6799,7 @@ class SubcontractorInvitationApiTests(TestCase):
         self.assertEqual(revoke_response.status_code, 200)
 
         invitation = SubcontractorInvitation.objects.get(pk=invitation_id)
-        public_client = APIClient()
+        public_client = _use_secure_requests(APIClient())
         public_client.force_authenticate(user=self.subcontractor_user)
 
         revoked_accept = public_client.post(
@@ -6820,7 +6820,7 @@ class SubcontractorInvitationApiTests(TestCase):
         create_response = self._create_invitation(email="expected@example.com")
         invitation = SubcontractorInvitation.objects.get(pk=create_response.json()["id"])
 
-        public_client = APIClient()
+        public_client = _use_secure_requests(APIClient())
         public_client.force_authenticate(user=self.subcontractor_user)
         response = public_client.post(
             f"/api/projects/subcontractor-invitations/accept/{invitation.token}/",
@@ -6833,6 +6833,9 @@ class SubcontractorInvitationApiTests(TestCase):
 
 
 class SMSWebhookTests(TestCase):
+    def setUp(self):
+        self.client = _use_secure_requests(self.client)
+
     def _post_sms(self, body, from_number="+12105551234", message_sid="SM123"):
         return self.client.post(
             "/api/sms/webhook/",
@@ -7008,7 +7011,7 @@ class SMSComplianceTests(TestCase):
             milestone_id_snapshot=self.milestone.id,
             milestone_title_snapshot=self.milestone.title,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_opt_in_api_creates_consent_and_activity_event(self):
@@ -7295,7 +7298,7 @@ class SMSAutomationTests(TestCase):
             milestone_id_snapshot=self.milestone.id,
             milestone_title_snapshot=self.milestone.title,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_payment_released_sends_immediately_when_consent_exists(self):
@@ -7748,7 +7751,7 @@ class SubcontractorMilestoneAssignmentTests(TestCase):
             accepted_at=timezone.now(),
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.contractor_user)
 
     def test_contractor_can_assign_accepted_subcontractor_to_milestone(self):
@@ -8165,7 +8168,7 @@ class SubcontractorAssignedWorkTests(TestCase):
             assigned_subcontractor_invitation=self.invitation_two,
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_subcontractor_can_fetch_only_their_assigned_milestones(self):
         self.client.force_authenticate(user=self.user_one)
@@ -8311,7 +8314,7 @@ class SubcontractorCollaborationTests(TestCase):
             file=SimpleUploadedFile("scope.txt", b"scope details", content_type="text/plain"),
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_assigned_subcontractor_can_list_milestone_comments_and_files(self):
         self.client.force_authenticate(user=self.assigned_user)
@@ -8463,7 +8466,7 @@ class SubcontractorReviewRequestTests(TestCase):
             amount="1800.00",
             assigned_subcontractor_invitation=self.assigned_invitation,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_assigned_subcontractor_can_request_review(self):
         self.client.force_authenticate(user=self.assigned_user)
@@ -8614,7 +8617,7 @@ class ContractorNotificationTests(TestCase):
             business_name="Other Notify Owner",
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_contractor_receives_notification_for_subcontractor_comment(self):
         self.client.force_authenticate(user=self.subcontractor_user)
@@ -8703,7 +8706,7 @@ class ContractorNotificationTests(TestCase):
             is_read=True,
         )
 
-        notify_client = APIClient()
+        notify_client = _use_secure_requests(APIClient())
         notify_client.force_authenticate(user=self.contractor_user)
 
         response = notify_client.get("/api/notifications/")
@@ -8918,7 +8921,7 @@ class SubcontractorCompletionReviewTests(TestCase):
             display_name="Internal Worker",
             role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_assigned_subcontractor_can_submit_completion_for_review(self):
         self.client.force_authenticate(user=self.assigned_user)
@@ -9219,7 +9222,7 @@ class MilestonePayoutFoundationTests(TestCase):
             description="Complete rough-in stage",
             amount="1800.00",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_subcontractor_assignment_creates_payout_record(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -9514,7 +9517,7 @@ class SubcontractorStripePayoutExecutionTests(TestCase):
         self.milestone.invoice = self.invoice
         self.milestone.save(update_fields=["is_invoiced", "invoice"])
         self.payout = sync_milestone_payout(self.milestone.id)
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_subcontractor_can_start_stripe_onboarding(self):
         self.client.force_authenticate(user=self.subcontractor_user)
@@ -10057,7 +10060,7 @@ class SubcontractorQuoteRequestTests(TestCase):
             accepted_by_user=self.other_subcontractor_user,
             accepted_at=timezone.now(),
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def _create_quote(self, *, contractor_message="Please quote this milestone."):
         self.client.force_authenticate(user=self.contractor_user)
@@ -10344,7 +10347,7 @@ class SubcontractorPayoutOrchestrationTests(TestCase):
         )
         self.milestone.invoice = self.invoice
         self.milestone.save(update_fields=["invoice"])
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def _create_terms(self, *, payment_release_mode="manual_release", agreed_pay="1750.00", accepted=False):
         agreement = upsert_subcontractor_milestone_agreement(
@@ -10647,7 +10650,7 @@ class ReviewerQueueTests(TestCase):
             subcontractor_marked_complete_by=self.worker_user,
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_contractor_owner_sees_only_default_reviewer_items(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -10774,7 +10777,7 @@ class ContractorWhoAmIReviewQueueCountTests(TestCase):
             subcontractor_marked_complete_by=self.worker_user,
             subcontractor_completion_note="Countertops are ready.",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_whoami_includes_pending_review_queue_count(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -10883,7 +10886,7 @@ class ContractorTeamSummaryTests(TestCase):
             milestone=self.milestone,
             subaccount=self.subaccount,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_subaccount_directory_includes_work_summary_fields(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -11056,7 +11059,7 @@ class ContractorOperationsDashboardTests(TestCase):
             subcontractor_completion_status=SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW,
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_dashboard_endpoint_returns_all_sections(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -11337,7 +11340,7 @@ class ContractorPayoutHistoryTests(TestCase):
             paid_at=now - timezone.timedelta(days=1),
             stripe_transfer_id="tr_other_hist",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_contractor_sees_only_their_own_payout_history(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -11494,7 +11497,7 @@ class ContractorCompletedPayoutHistoryTests(TestCase):
             transfer_created_at=now - timezone.timedelta(days=1),
             stripe_transfer_id="tr_draw_completed",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def _create_completed_agreement(
         self,
@@ -11643,7 +11646,7 @@ class ContractorCompletedPayoutHistoryTests(TestCase):
         self.assertEqual(payload["summary"]["total_paid_out"], "1710.00")
         self.assertEqual(payload["summary"]["payout_count"], 1)
 
-        other_client = APIClient()
+        other_client = _use_secure_requests(APIClient())
         other_client.force_authenticate(user=self.non_contractor_user)
         forbidden = other_client.get("/api/projects/contractor/payout-history/")
         self.assertEqual(forbidden.status_code, 403)
@@ -11751,7 +11754,7 @@ class BusinessDashboardExportTests(TestCase):
             milestone_title_snapshot="Other Milestone",
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_revenue_export_is_contractor_scoped_and_has_headers(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -11867,7 +11870,7 @@ class BusinessDashboardInsightsTests(TestCase):
             status="approved",
             escrow_released=False,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def _create_project_outcome_snapshot(
         self,
@@ -12258,7 +12261,7 @@ class BusinessDashboardPerformanceTests(TestCase):
             platform_fee_cents=20000,
             payout_cents=380000,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_business_dashboard_returns_business_performance_metrics(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -12417,7 +12420,7 @@ class BusinessDashboardChartTests(TestCase):
             status=ProjectStatus.IN_PROGRESS,
             total_cost="4500.00",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
         now = timezone.now()
         self.revenue_invoice_recent = Invoice.objects.create(
@@ -12638,7 +12641,7 @@ class MilestoneLifecycleGateTests(TestCase):
             full_name="Lifecycle Homeowner",
             email="lifecycle-homeowner@example.com",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def _make_agreement(self, *, status, payment_mode="escrow", signed=False, funded=False, days_offset=0):
         project = Project.objects.create(
@@ -12777,7 +12780,7 @@ class ProgressPaymentWorkflowTests(TestCase):
             payment_structure="progress",
             retainage_percent=Decimal("7.50"),
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.contractor_user)
 
     def test_agreement_patch_accepts_payment_structure_fields(self):
@@ -14338,7 +14341,7 @@ class ContractorProcessedVolumePricingTests(TestCase):
         self._create_paid_invoice(amount="8000.00")
         self._create_released_draw(gross_amount="18000.00")
 
-        client = APIClient()
+        client = _use_secure_requests(APIClient())
         client.force_authenticate(user=self.contractor_user)
         response = client.get("/api/projects/contractors/me/")
 
@@ -14412,7 +14415,7 @@ class AgreementFundingPreviewAccessTests(TestCase):
             password="testpass123",
         )
 
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
 
     def test_contractor_can_access_own_agreement_funding_preview(self):
         self.client.force_authenticate(user=self.contractor_user)
@@ -14488,7 +14491,7 @@ class ProjectLearningFoundationTests(TestCase):
             city="Miami",
             state="FL",
         )
-        self.api_client = APIClient()
+        self.api_client = _use_secure_requests(APIClient())
 
     def _new_learning_project(self, title="Draft Intelligence Project"):
         return Project.objects.create(
@@ -16908,7 +16911,7 @@ class ProjectEstimationEngineTests(TestCase):
             project_zip_code="78205",
         )
         call_command("seed_project_templates")
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def _agreement(self, **overrides):
@@ -17148,7 +17151,7 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
             project_zip_code="78205",
         )
         call_command("seed_project_templates")
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
         self.private_template = ProjectTemplate.objects.create(
@@ -18422,7 +18425,7 @@ class ContractorComplianceFoundationTests(TestCase):
             homeowner=self.homeowner,
             title="Compliance Project",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
         call_command("seed_state_trade_license_requirements")
 
@@ -18602,7 +18605,7 @@ class AIOrchestratorTests(TestCase):
         )
         call_command("seed_project_templates")
         call_command("seed_state_trade_license_requirements")
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
         self.system_template = ProjectTemplate.objects.get(
@@ -18862,7 +18865,7 @@ class ContractorActivationOnboardingTests(TestCase):
             status=InvoiceStatus.PENDING,
             invoice_number="ACT-1001",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_onboarding_patch_updates_progress_and_soft_prompt(self):
@@ -19136,7 +19139,7 @@ class ContractorActivityFeedTests(TestCase):
             amount=Decimal("500.00"),
             assigned_subcontractor_invitation=None,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
         call_command("seed_state_trade_license_requirements")
 
@@ -19448,7 +19451,7 @@ class ProjectEmailReportTests(TestCase):
             subcontractor_completion_status=SubcontractorCompletionStatus.NOT_SUBMITTED,
         )
 
-        client = APIClient()
+        client = _use_secure_requests(APIClient())
         client.force_authenticate(user=submit_user)
         response = client.post(
             f"/api/projects/milestones/{workflow_milestone.id}/submit-work/",
@@ -19744,7 +19747,7 @@ class AgreementStep1RecurringFieldSaveTests(TestCase):
             full_name="Step 1 Save Homeowner",
             email="step1-save-homeowner@example.com",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
     def test_standard_step1_draft_normalizes_recurring_fields_to_empty_strings(self):
@@ -27620,7 +27623,7 @@ class AdminTemplateManagementTests(TestCase):
             city="Austin",
             state="TX",
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.admin_user)
 
         self.contractor_template = ProjectTemplate.objects.create(
@@ -27798,7 +27801,7 @@ class AdminGeoTests(TestCase):
             amount_paid_cents=20000,
             platform_fee_cents=3500,
         )
-        self.client = APIClient()
+        self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.admin_user)
 
     def test_admin_geo_returns_state_city_zip_and_debug_counts(self):
@@ -28073,16 +28076,16 @@ class DisputeMutationSafetyTests(TestCase):
             fee_paid=True,
             escrow_frozen=False,
         )
-        self.contractor_client = APIClient()
+        self.contractor_client = _use_secure_requests(APIClient())
         self.contractor_client.force_authenticate(user=self.contractor_user)
-        self.admin_client = APIClient()
+        self.admin_client = _use_secure_requests(APIClient())
         self.admin_client.force_authenticate(user=self.admin_user)
 
         self.other_user = user_model.objects.create_user(
             email="other-dispute-user@example.com",
             password="testpass123",
         )
-        self.other_client = APIClient()
+        self.other_client = _use_secure_requests(APIClient())
         self.other_client.force_authenticate(user=self.other_user)
 
     def test_terminal_dispute_status_helper_covers_closed_aliases(self):
@@ -28780,11 +28783,11 @@ class TemplateAIPermissionGateTests(TestCase):
             email="template-ai-user@example.com",
             password="testpass123",
         )
-        self.contractor_client = APIClient()
+        self.contractor_client = _use_secure_requests(APIClient())
         self.contractor_client.force_authenticate(user=self.contractor_user)
-        self.admin_client = APIClient()
+        self.admin_client = _use_secure_requests(APIClient())
         self.admin_client.force_authenticate(user=self.admin_user)
-        self.normal_client = APIClient()
+        self.normal_client = _use_secure_requests(APIClient())
         self.normal_client.force_authenticate(user=self.normal_user)
 
     def test_template_ai_create_from_scope_allows_contractor_and_admin(self):
