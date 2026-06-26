@@ -413,11 +413,19 @@ test("customer workspace renders overview, timeline, tabs, and dark operational 
 
   await expect(page.getByRole("heading", { name: "Jordan Renovations LLC" })).toBeVisible();
   await expect(page.locator(".mhb-operational-surface")).toBeVisible();
+  await expect(page.getByTestId("customer-workspace-back-link")).toHaveAttribute("href", "/app/customers");
+  await expect(page.getByTestId("customer-next-action-card")).toContainText("Respond to this request");
+  await expect(page.getByTestId("customer-next-action-card")).toContainText("Bathroom remodel");
   await expect(page.getByTestId("customer-workspace-overview-cards")).toContainText("Active Requests");
   await expect(page.getByTestId("customer-workspace-overview-cards")).toContainText("$2,500.00");
   await expect(page.getByTestId("customer-workspace-timeline")).toContainText("Kitchen Refresh");
+  await expect(page.getByRole("link", { name: /Open opportunity/ }).first()).toBeVisible();
   await expect(page.getByTestId("customer-workspace-tabs")).toContainText("Requests & Opportunities");
   await expect(page.getByTestId("customer-workspace-tabs")).toContainText("Communication");
+
+  await page.getByTestId("customer-workspace-back-link").click();
+  await expect(page).toHaveURL(/\/app\/customers$/);
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
 
   await page.getByRole("button", { name: "Requests & Opportunities" }).click();
   await expect(page.getByTestId("customer-workspace-requests")).toContainText("Bathroom remodel");
@@ -430,8 +438,56 @@ test("customer workspace renders overview, timeline, tabs, and dark operational 
   await expect(page.getByTestId("customer-workspace-payments")).toContainText("Invoice #401");
 
   await page.getByRole("button", { name: "Communication" }).click();
-  await expect(page.getByText("No contractor-side customer communication timeline is available yet.")).toBeVisible();
-  await expect(page.locator("body")).not.toContainText("â");
+  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Add note");
+  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Coming soon");
+  const bodyText = await page.locator("body").innerText();
+  expect(bodyText).not.toMatch(/\u00e2/);
+});
+
+test("customer workspace shows caught up next action when no item needs work", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page, {
+    ...workspacePayload,
+    stats: {
+      ...workspacePayload.stats,
+      last_activity: new Date().toISOString(),
+      active_requests: 0,
+      active_agreements_projects: 0,
+      open_balance: "0.00",
+    },
+    related: {
+      leads: [],
+      project_intakes: [],
+      customer_requests: [],
+      opportunities: [],
+      agreements: [],
+      projects: [],
+      payments: [],
+      properties: [],
+      documents: [],
+      communication: [],
+    },
+    timeline: [],
+  });
+
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("customer-next-action-card")).toContainText("Customer is caught up");
+  await expect(page.getByRole("link", { name: /New agreement/ })).toHaveAttribute("href", "/app/agreements/new/wizard?customerId=42");
+});
+
+test("customer edit uses dark operational theme and still saves", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page);
+
+  await page.goto("/app/customers/42/edit", { waitUntil: "domcontentloaded" });
+
+  await expect(page.locator(".mhb-operational-surface")).toBeVisible();
+  await expect(page.getByTestId("customer-edit-form")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Edit Customer" })).toBeVisible();
+  await page.getByLabel("Full Name").fill("Jordan Updated");
+  await page.getByRole("button", { name: "Save Changes" }).click();
+  await expect(page).toHaveURL(/\/app\/customers$/);
 });
 
 test("customer workspace empty states and mobile layout stay clean", async ({ page }) => {
@@ -459,6 +515,13 @@ test("customer workspace empty states and mobile layout stay clean", async ({ pa
   await expect(page.getByText("No timeline yet")).toBeVisible();
   await page.getByRole("button", { name: "Requests & Opportunities" }).click();
   await expect(page.getByText("No requests or opportunities yet")).toBeVisible();
+  await page.getByRole("button", { name: "Properties" }).click();
+  await expect(page.getByTestId("customer-workspace-properties")).toContainText("Add property");
+  await expect(page.getByTestId("customer-workspace-properties")).toContainText("Coming soon");
+  await page.getByRole("button", { name: "Documents" }).click();
+  await expect(page.getByTestId("customer-workspace-documents")).toContainText("Upload document");
+  await page.getByRole("button", { name: "Communication" }).click();
+  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Add note");
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2
