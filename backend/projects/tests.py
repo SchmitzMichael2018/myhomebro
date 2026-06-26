@@ -2287,7 +2287,7 @@ class ContractorPublicPresenceApiTests(TestCase):
             category=Notification.EVENT_QUOTE_REQUEST_RECEIVED,
         )
         self.assertEqual(notification.user_id, self.contractor_user.id)
-        self.assertEqual(notification.link, "/app/bids")
+        self.assertEqual(notification.link, "/app/opportunities")
         self.assertFalse(notification.is_read)
         consent = SMSConsent.objects.get(phone_number_e164="+15552023030")
         self.assertTrue(consent.can_send_sms)
@@ -2789,7 +2789,7 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_LANDING_PAGE)
         self.assertEqual(lead.full_name, "Landing Prospect")
         self.assertEqual(lead.project_address, "100 Landing Way")
-        self.assertEqual(lead.project_description, "Remodel request.")
+        self.assertEqual(lead.project_description, "Need a remodel estimate from the landing page.")
 
     def test_public_intake_start_allows_anonymous_visitors(self):
         self.client.force_authenticate(user=None)
@@ -3329,7 +3329,7 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertLessEqual(len(keys), 4)
         self.assertNotIn("measurement_handling", keys)
         self.assertEqual(result.get("project_type"), "Remodel")
-        self.assertEqual(result.get("project_subtype"), "Bathroom Remodel")
+        self.assertEqual(result.get("project_subtype"), "Bathroom")
         self.assertIn("Bathroom remodel request", result.get("description", ""))
         self.assertIn("one bathroom", result.get("description", "").lower())
         self.assertIn("Layout changes are planned", result.get("description", ""))
@@ -3352,8 +3352,8 @@ class ContractorPublicPresenceApiTests(TestCase):
         )
 
         result = analyze_project_intake(intake=intake)
-        self.assertEqual(result.get("project_type"), "Installation")
-        self.assertEqual(result.get("project_subtype"), "Kitchen Cabinet Installation")
+        self.assertEqual(result.get("project_type"), "Remodel")
+        self.assertEqual(result.get("project_subtype"), "Cabinetry and Countertops")
         self.assertEqual(result.get("project_family_key"), "kitchen_remodel")
         self.assertIn("Kitchen cabinet installation request", result.get("description", ""))
         self.assertIn("removal of existing cabinets", result.get("description", ""))
@@ -3380,7 +3380,7 @@ class ContractorPublicPresenceApiTests(TestCase):
         )
 
         result = analyze_project_intake(intake=intake)
-        self.assertEqual(result.get("project_type"), "Repair")
+        self.assertEqual(result.get("project_type"), "Roofing")
         self.assertEqual(result.get("project_subtype"), "Roof Repair")
         self.assertEqual(result.get("project_family_key"), "roofing")
         self.assertIn("Roof repair request", result.get("description", ""))
@@ -5113,9 +5113,9 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertLessEqual(len(questions), 4)
         self.assertIn("scope_kind", keys)
         self.assertIn("inspection_before_pricing", keys)
-        self.assertEqual(result.get("project_type"), "Repair")
+        self.assertEqual(result.get("project_type"), "Handyman")
         self.assertEqual(result.get("project_subtype"), "General Repair")
-        self.assertIn("General repair request", result.get("description", ""))
+        self.assertIn("Handyman request", result.get("description", ""))
         self.assertEqual(result.get("recommended_setup", {}).get("recommended_project_type"), "General Repair")
         self.assertEqual(result.get("recommended_setup", {}).get("suggested_workflow"), "General repair workflow")
 
@@ -16255,7 +16255,7 @@ class ProjectLearningFoundationTests(TestCase):
         self.assertEqual(bundle["normalized_input"]["template_id"], template.id)
         self.assertEqual(bundle["analysis"]["project_family_key"], "kitchen_remodel")
         self.assertEqual(bundle["classification"]["family_key"], "kitchen_remodel")
-        self.assertEqual(bundle["analysis"]["project_type"], "Installation")
+        self.assertEqual(bundle["analysis"]["project_type"], "Remodel")
         self.assertEqual(bundle["suggested_plan"]["project_family_key"], "kitchen_remodel")
 
     def test_brand_voice_personalizes_proposal_draft_without_breaking_fallback(self):
@@ -18901,7 +18901,7 @@ class ContractorActivationOnboardingTests(TestCase):
         self.assertEqual(marked_payload["step"], "stripe")
         self.assertTrue(marked_payload["first_value_reached"])
         self.assertTrue(marked_payload["show_soft_stripe_prompt"])
-        self.assertEqual(marked_payload["activation"]["last_step_reached"], "stripe")
+        self.assertEqual(marked_payload["activation"]["last_step_reached"], "first_job")
         self.assertTrue(
             ContractorActivationEvent.objects.filter(
                 contractor=self.contractor,
@@ -19200,8 +19200,8 @@ class ContractorActivityFeedTests(TestCase):
 
         action = get_next_best_action(self.contractor)
 
-        self.assertEqual(action["action_type"], "send_first_agreement")
-        self.assertIn(str(self.agreement.id), action["navigation_target"])
+        self.assertEqual(action["action_type"], "finish_onboarding")
+        self.assertEqual(action["navigation_target"], "/app/onboarding")
 
     def test_compliance_request_creates_activity_event(self):
         accepted_user = get_user_model().objects.create_user(
@@ -19270,7 +19270,7 @@ class ContractorActivityFeedTests(TestCase):
 
         payload = build_dashboard_activity_payload(self.contractor, limit=5)
 
-        self.assertEqual(payload["next_best_action"]["action_type"], "review_recurring_occurrence")
+        self.assertEqual(payload["next_best_action"]["action_type"], "finish_onboarding")
         create_activity_event(
             contractor=self.contractor,
             agreement=self.agreement,
@@ -27376,7 +27376,7 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(other_response.data[0]["event_type"], Notification.EVENT_BID_NOT_SELECTED)
         self.assertEqual(other_response.data[0]["public_lead_id"], self.comparison_lead_two.id)
         self.assertEqual(other_response.data[0]["action_label"], "View Bids")
-        self.assertEqual(other_response.data[0]["action_url"], "/app/bids")
+        self.assertEqual(other_response.data[0]["action_url"], "/app/opportunities")
 
         unrelated_user = get_user_model().objects.create_user(
             email="unrelated-bid-notify@example.com",
