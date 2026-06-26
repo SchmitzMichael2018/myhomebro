@@ -21809,7 +21809,7 @@ class CustomerPortalAccessTests(TestCase):
             email="selected-one@example.com",
             business_name="Selected Pipe Pros",
         )
-        _user_two, _contractor_two, entry_two = self._create_marketplace_contractor_entry(
+        _user_two, contractor_two, entry_two = self._create_marketplace_contractor_entry(
             email="selected-two@example.com",
             business_name="Second Pipe Pros",
         )
@@ -21835,6 +21835,11 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(response.data["opportunity_count"], 1)
         self.assertFalse(ContractorOpportunity.objects.filter(property_work_order=row, directory_entry=entry_one).exists())
         self.assertTrue(ContractorOpportunity.objects.filter(property_work_order=row, directory_entry=entry_two).exists())
+        opportunity = ContractorOpportunity.objects.get(property_work_order=row, directory_entry=entry_two)
+        customer = Homeowner.objects.get(created_by=contractor_two, email=self.customer_email)
+        self.assertEqual(opportunity.converted_customer, customer)
+        self.assertEqual(customer.company_name, "Austin Rentals Group")
+        self.assertNotEqual(customer.email, tenant.email)
         invitation = PropertyWorkOrderRecipientInvitation.objects.get(work_order=row, directory_entry=entry_two)
         self.assertEqual(invitation.recipient_type, PropertyWorkOrderRecipientInvitation.TYPE_MYHOMEBRO_CONTRACTOR)
         self.assertEqual(invitation.status, PropertyWorkOrderRecipientInvitation.STATUS_SENT)
@@ -24491,6 +24496,8 @@ class CustomerPortalAccessTests(TestCase):
             primary_service="Appliance Repair",
             services=["Appliance Repair", "Dryer Repair"],
             source="manual",
+            claimed=True,
+            claimed_by_contractor=self.contractor,
         )
         route_response = self.client.post(
             f"/api/projects/customer-portal/{token}/requests/{saved.id}/contractors/select/",
@@ -24508,6 +24515,11 @@ class CustomerPortalAccessTests(TestCase):
         saved.refresh_from_db()
         self.assertEqual(saved.status, CustomerRequest.STATUS_ROUTED)
         self.assertEqual(ContractorOpportunity.objects.filter(intake_request=saved.source_intake).count(), 1)
+        opportunity = ContractorOpportunity.objects.get(intake_request=saved.source_intake)
+        self.assertEqual(opportunity.converted_customer, self.customer_homeowner)
+        saved.source_intake.refresh_from_db()
+        self.assertEqual(saved.source_intake.homeowner, self.customer_homeowner)
+        self.assertEqual(Homeowner.objects.filter(created_by=self.contractor, email=self.customer_email).count(), 1)
         routed_row = next(row for row in route_response.data["portal"]["requests"] if row["request_id"] == saved.id)
         self.assertEqual(routed_row["workflow_status"], "sent_to_contractors")
         self.assertEqual(routed_row["workflow_status_label"], "Sent to 1 Contractor")

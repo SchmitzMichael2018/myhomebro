@@ -114,7 +114,7 @@ from projects.services.marketplace_permissions import contractor_marketplace_act
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
 from projects.services.property_intelligence import build_property_intelligence
 from projects.services.home_system_reminders import build_home_system_reminder
-from projects.services.customer_lifecycle import sync_customer_request_agreement_links
+from projects.services.customer_lifecycle import sync_customer_request_agreement_links, upsert_pm_customer_for_property_work_order_opportunity
 from projects.services.home_system_document_extraction import extract_home_system_document
 from projects.services.customer_portal_supplies import (
     build_home_system_supply_recommendations,
@@ -7977,6 +7977,11 @@ class CustomerPortalPropertyWorkOrderMarketplaceView(CustomerPortalPropertyWorkO
             )
             if was_created:
                 created.append(opportunity)
+            upsert_pm_customer_for_property_work_order_opportunity(
+                opportunity,
+                contractor=entry.claimed_by_contractor,
+                source="property_work_order",
+            )
             PropertyWorkOrderRecipientInvitation.objects.update_or_create(
                 work_order=row,
                 directory_entry=entry,

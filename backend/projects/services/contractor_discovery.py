@@ -31,6 +31,7 @@ from projects.services.google_places_contractors import (
 from projects.services.contractor_directory import upsert_directory_entry_from_place
 from projects.services.project_titles import is_home_addition_description, normalize_project_classification
 from projects.services.notification_center import create_notification
+from projects.services.customer_lifecycle import upsert_customer_for_public_lead
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
 from projects.services.recipient_validation import normalize_valid_email
@@ -1368,6 +1369,7 @@ def create_discovery_invites(*, intake, selected_targets: list[dict[str, Any]], 
                     "project_scope_summary": project_brief,
                 },
             )
+            upsert_customer_for_public_lead(lead, source=lead.source or PublicContractorLead.SOURCE_PUBLIC_PROFILE)
             create_notification(
                 contractor=contractor,
                 public_lead=lead,
@@ -1513,6 +1515,7 @@ def claim_discovery_invite(invite: ContractorDiscoveryInvite, *, contractor: Con
             status=PublicContractorLead.STATUS_READY_FOR_REVIEW,
             ai_analysis=_safe_dict(getattr(intake, "ai_analysis_payload", None)),
         )
+        upsert_customer_for_public_lead(attached_lead, source=attached_lead.source or PublicContractorLead.SOURCE_PUBLIC_PROFILE)
         create_notification(
             contractor=contractor,
             public_lead=attached_lead,

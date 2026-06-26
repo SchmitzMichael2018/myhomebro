@@ -111,7 +111,7 @@ class ContractorOpportunityFlowTests(TestCase):
             ]
         )
 
-    def test_selecting_contractor_creates_pending_opportunity_without_customer_or_agreement(self):
+    def test_selecting_contractor_creates_pending_opportunity_and_customer_without_agreement(self):
         response = self.client.post(
             "/api/projects/public-intake/select-contractor/",
             {
@@ -128,8 +128,68 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(opportunity.directory_entry, self.entry)
         self.assertEqual(opportunity.intake_request, self.intake)
         self.assertEqual(opportunity.homeowner_email, "casey@example.com")
-        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Homeowner.objects.count(), 1)
+        customer = Homeowner.objects.get()
+        self.assertEqual(customer.created_by, self.contractor)
+        self.assertEqual(customer.full_name, "Casey Homeowner")
+        self.assertEqual(customer.email, "casey@example.com")
+        self.assertEqual(customer.phone_number, "512-555-2222")
+        self.assertEqual(customer.street_address, "123 Main St")
+        self.assertEqual(customer.city, "Austin")
+        self.assertEqual(customer.state, "TX")
+        self.assertEqual(customer.zip_code, "78701")
+        self.assertEqual(opportunity.converted_customer, customer)
+        self.intake.refresh_from_db()
+        self.assertEqual(self.intake.homeowner, customer)
         self.assertEqual(Agreement.objects.count(), 0)
+
+    def test_selecting_contractor_updates_existing_customer_by_email(self):
+        existing = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Existing Casey",
+            email="CASEY@example.com",
+            phone_number="",
+            street_address="",
+        )
+
+        response = self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Homeowner.objects.count(), 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.full_name, "Existing Casey")
+        self.assertEqual(existing.phone_number, "512-555-2222")
+        self.assertEqual(existing.street_address, "123 Main St")
+        opportunity = ContractorOpportunity.objects.get()
+        self.assertEqual(opportunity.converted_customer, existing)
+
+    def test_selecting_contractor_updates_existing_customer_by_phone_when_email_missing(self):
+        self.intake.customer_email = ""
+        self.intake.save(update_fields=["customer_email", "updated_at"])
+        existing = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Phone Match",
+            email="phone-holder@example.com",
+            phone_number="(512) 555-2222",
+            street_address="",
+        )
+
+        response = self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Homeowner.objects.count(), 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.street_address, "123 Main St")
+        opportunity = ContractorOpportunity.objects.get()
+        self.assertEqual(opportunity.converted_customer, existing)
 
     def test_selecting_contractor_creates_dashboard_notification_and_sms_suppression_without_consent(self):
         response = self.client.post(
@@ -277,6 +337,7 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(agreement.status, "draft")
         self.assertEqual(agreement.contractor, self.contractor)
         self.assertEqual(agreement.homeowner.email, "casey@example.com")
+        self.assertEqual(agreement.homeowner, opportunity.converted_customer)
         self.assertEqual(first.data["agreement_id"], second.data["agreement_id"])
         self.assertIn("/app/agreements/", first.data["next_url"])
 
@@ -292,7 +353,7 @@ class ContractorOpportunityFlowTests(TestCase):
         response = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
 
         self.assertEqual(response.status_code, 403)
-        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Homeowner.objects.count(), 1)
         self.assertEqual(Agreement.objects.count(), 0)
 
     def test_unverified_contractor_cannot_accept_opportunity(self):
@@ -308,7 +369,7 @@ class ContractorOpportunityFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn("not verified", response.data["detail"].lower())
-        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Homeowner.objects.count(), 1)
         self.assertEqual(Agreement.objects.count(), 0)
 
     def test_stripe_incomplete_contractor_cannot_accept_opportunity(self):
@@ -335,7 +396,7 @@ class ContractorOpportunityFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn("stripe setup", response.data["detail"].lower())
-        self.assertEqual(Homeowner.objects.count(), 0)
+        self.assertEqual(Homeowner.objects.count(), 1)
         self.assertEqual(Agreement.objects.count(), 0)
 
     def test_admin_can_list_opportunities(self):

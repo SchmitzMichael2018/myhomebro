@@ -13,6 +13,7 @@ from projects.models import (
     ContractorReview,
     ContractorWebsite,
     ContractorWebsitePage,
+    Homeowner,
     Notification,
     PublicContractorLead,
     Skill,
@@ -495,6 +496,14 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
         self.assertEqual(lead.public_profile, self.profile)
         self.assertEqual(lead.source, PublicContractorLead.SOURCE_WEBSITE)
         self.assertEqual(lead.ai_analysis["source_label"], "Website")
+        customer = Homeowner.objects.get(created_by=self.contractor, email="jordan@example.com")
+        self.assertEqual(customer.full_name, "Jordan Website")
+        self.assertEqual(customer.phone_number, "555-333-4444")
+        self.assertEqual(customer.street_address, "123 Main St")
+        intake.refresh_from_db()
+        lead.refresh_from_db()
+        self.assertEqual(intake.homeowner, customer)
+        self.assertEqual(lead.converted_homeowner, customer)
 
         notification = Notification.objects.get(public_lead=lead)
         self.assertEqual(notification.link, "/app/opportunities?source=website")

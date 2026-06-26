@@ -36,6 +36,7 @@ from projects.services.project_intelligence_orchestrator import build_project_in
 from projects.services.public_lead_pipeline import create_public_lead_sales_notification
 from projects.services.public_lead_pipeline import normalize_public_lead_source
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
+from projects.services.customer_lifecycle import upsert_customer_for_public_lead
 from projects.services.agreement_draft_prefill import apply_conversion_prefill
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.ai.public_profile_generation import generate_contractor_public_profile
@@ -629,6 +630,7 @@ class ContractorPublicLeadListView(APIView):
         serializer = ContractorManualLeadCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         lead = serializer.save(contractor=contractor, public_profile=profile)
+        upsert_customer_for_public_lead(lead, source=lead.source or PublicContractorLead.SOURCE_MANUAL)
         return Response(ContractorPublicLeadSerializer(lead).data, status=status.HTTP_201_CREATED)
 
 
@@ -646,7 +648,8 @@ class ContractorPublicLeadDetailView(APIView):
         lead = get_object_or_404(contractor.public_leads.all(), pk=lead_id)
         serializer = ContractorPublicLeadSerializer(lead, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        lead = serializer.save()
+        upsert_customer_for_public_lead(lead, source=lead.source or "public_lead")
         return Response(serializer.data)
 
 
@@ -980,6 +983,7 @@ class PublicContractorIntakeView(APIView):
         serializer = PublicContractorLeadCreateSerializer(data=payload)
         serializer.is_valid(raise_exception=True)
         lead = serializer.save(contractor=profile.contractor, public_profile=profile)
+        upsert_customer_for_public_lead(lead, source=lead.source or PublicContractorLead.SOURCE_PUBLIC_PROFILE)
         create_public_lead_sales_notification(lead)
         return Response({"ok": True, "message": "Your project request was submitted."}, status=status.HTTP_201_CREATED)
 

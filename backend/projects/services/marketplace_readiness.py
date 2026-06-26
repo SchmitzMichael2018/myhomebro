@@ -13,6 +13,7 @@ from projects.models import Contractor, PublicContractorLead
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDirectoryListing, ContractorDiscoveryInvite, MarketplaceLocation
 from projects.models_project_intake import ProjectIntake
 from projects.services.contractor_opportunities import create_or_update_opportunity_from_selection
+from projects.services.customer_lifecycle import upsert_customer_for_public_lead
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.public_lead_pipeline import ensure_public_profile_for_contractor
 from projects.services.workflow_notifications import notify_customer_bid_received, notify_marketplace_request_routed
@@ -507,6 +508,7 @@ def _sync_public_lead_for_marketplace(
         for field, value in defaults.items():
             setattr(lead, field, value)
         lead.save(update_fields=[*defaults.keys(), "updated_at"])
+    upsert_customer_for_public_lead(lead, source=lead.source or PublicContractorLead.SOURCE_QUOTE_REQUEST)
     return lead
 
 

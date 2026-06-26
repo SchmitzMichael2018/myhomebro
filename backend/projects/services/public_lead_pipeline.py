@@ -5,6 +5,7 @@ from typing import Optional
 
 from projects.models import Notification
 from projects.models import ContractorPublicProfile, PublicContractorLead
+from projects.services.customer_lifecycle import upsert_customer_for_public_lead
 from projects.services.notification_center import create_notification
 
 
@@ -191,6 +192,7 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
         intake.public_lead = lead
         intake.public_profile = profile
         intake.save(update_fields=["public_lead", "public_profile", "updated_at"])
+        upsert_customer_for_public_lead(lead, source=normalized_source)
         create_public_lead_sales_notification(lead)
         return lead
 
@@ -241,5 +243,6 @@ def sync_public_lead_from_project_intake(intake, *, status_override=None):
     if intake.public_profile_id != profile.id:
         intake.public_profile = profile
         intake.save(update_fields=["public_profile", "updated_at"])
+    upsert_customer_for_public_lead(lead, source=normalized_source)
     create_public_lead_sales_notification(lead)
     return lead

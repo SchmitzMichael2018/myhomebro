@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from projects.models import Contractor, ContractorPublicProfile, Notification, PublicContractorLead
+from projects.models import Contractor, ContractorPublicProfile, Homeowner, Notification, PublicContractorLead
 from projects.services.public_lead_pipeline import create_public_lead_sales_notification
 
 
@@ -111,7 +111,63 @@ class WebsiteLeadRoutingTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         lead = PublicContractorLead.objects.get(full_name="Priya Customer")
+        customer = Homeowner.objects.get(created_by=self.contractor, email="priya@example.com")
+        lead.refresh_from_db()
+        self.assertEqual(lead.converted_homeowner, customer)
+        self.assertEqual(customer.full_name, "Priya Customer")
         notification = Notification.objects.get(public_lead=lead)
         self.assertEqual(notification.link, "/app/opportunities?source=public_profile")
         self.assertIn("Hey, you got a new lead from your website.", notification.message)
         self.assertIn("Bathroom Remodel", notification.message)
+
+    def test_qr_public_profile_intake_creates_customer_immediately(self):
+        response = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/intake/",
+            {
+                "source": "qr",
+                "full_name": "Quinn QR",
+                "email": "quinn@example.com",
+                "phone": "512-555-3333",
+                "project_type": "Deck Repair",
+                "project_description": "Replace a few deck boards.",
+            },
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        lead = PublicContractorLead.objects.get(full_name="Quinn QR")
+        customer = Homeowner.objects.get(created_by=self.contractor, email="quinn@example.com")
+        self.assertEqual(lead.source, PublicContractorLead.SOURCE_QR)
+        self.assertEqual(lead.converted_homeowner, customer)
+        self.assertEqual(customer.phone_number, "512-555-3333")
+
+    def test_public_profile_intake_reuses_existing_customer_by_email(self):
+        existing = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Existing Priya",
+            email="priya@example.com",
+            phone_number="",
+        )
+
+        response = self.client.post(
+            f"/api/projects/public/contractors/{self.profile.slug}/intake/",
+            {
+                "source": "public_profile",
+                "full_name": "Priya Customer",
+                "email": "PRIYA@example.com",
+                "phone": "512-555-4444",
+                "project_type": "Bathroom Remodel",
+                "project_description": "Replace tile and fixtures.",
+            },
+            format="json",
+            secure=True,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(Homeowner.objects.filter(created_by=self.contractor).count(), 1)
+        existing.refresh_from_db()
+        self.assertEqual(existing.full_name, "Existing Priya")
+        self.assertEqual(existing.phone_number, "512-555-4444")
+        lead = PublicContractorLead.objects.get(email="PRIYA@example.com")
+        self.assertEqual(lead.converted_homeowner, existing)

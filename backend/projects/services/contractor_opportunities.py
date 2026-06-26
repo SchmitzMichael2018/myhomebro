@@ -16,7 +16,7 @@ from projects.models_contractor_discovery import (
 from projects.models_customer_portal import PropertyWorkOrder, PropertyWorkOrderActivity
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.services.contractor_directory import normalize_business_name, normalize_phone, normalize_website_domain, upsert_directory_entry_from_place
-from projects.services.customer_lifecycle import sync_customer_request_agreement_links
+from projects.services.customer_lifecycle import sync_customer_request_agreement_links, upsert_customer_for_contractor_opportunity
 from projects.services.marketplace_permissions import contractor_marketplace_action_block_reason
 from projects.services.notification_center import create_notification
 from projects.services.project_titles import generate_project_title, normalize_project_classification
@@ -241,6 +241,7 @@ def create_or_update_opportunity_from_selection(selection_context: dict[str, Any
         defaults=defaults,
         **lookup,
     )
+    upsert_customer_for_contractor_opportunity(opportunity)
     mark_directory_discovery_selected(directory_entry, {"intake_request": intake})
     if created and not selection_context.get("suppress_contractor_notification"):
         _notify_selected_contractor_opportunity(opportunity)
