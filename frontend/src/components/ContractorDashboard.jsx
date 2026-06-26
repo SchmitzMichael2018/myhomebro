@@ -12,12 +12,10 @@ import DashboardSection from "./dashboard/DashboardSection.jsx";
 import ContractorContextualGuideModal, { pickContextualGuide } from "./ContractorContextualGuideModal.jsx";
 import { ProjectModeBadge, normalizeProjectMode } from "./projectMode.jsx";
 import { deriveMilestoneRoleLabel, normalizeMilestoneRole } from "./milestoneRole.jsx";
-import { contractorMatchTierClass, contractorMatchTierLabel } from "../lib/contractorMatching.js";
 import {
   Target,
   ListTodo,
   CheckCircle2,
-  Circle,
   BadgeDollarSign,
   BadgeCheck,
   WalletMinimal,
@@ -36,8 +34,6 @@ import {
   ChevronRight,
   Sparkles,
   ArrowRight,
-  ShieldCheck,
-  ShieldAlert,
 } from "lucide-react";
 import {
   buildUnifiedPaymentRecords,
@@ -141,163 +137,6 @@ function inRange(dateObj, from, to) {
 }
 const currency = (n) =>
   Number(n || 0).toLocaleString("en-US", { style: "currency", currency: "USD" });
-
-function percentLabel(rate, percent) {
-  if (typeof percent === "number" && Number.isFinite(percent)) return `${Math.round(percent)}%`;
-  if (typeof rate === "number" && Number.isFinite(rate)) return `${Math.round(rate * 100)}%`;
-  return "Not enough data";
-}
-
-function scoreLabel(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return `${Math.round(value)}/100`;
-  return "New";
-}
-
-function performanceInsightClass(tone = "neutral") {
-  if (tone === "positive") return "border-emerald-300/20 bg-emerald-300/10 text-emerald-50";
-  if (tone === "warning") return "border-amber-300/25 bg-amber-300/10 text-amber-50";
-  if (tone === "info") return "border-sky-300/20 bg-sky-300/10 text-sky-50";
-  return "border-white/10 bg-white/5 text-sky-50";
-}
-
-function activationValue(...values) {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) return String(value);
-    if (value === true) return "true";
-  }
-  return "";
-}
-
-function hasContractorTradeInfo(profile = {}) {
-  if (Array.isArray(profile?.skills)) return profile.skills.length > 0;
-  return Boolean(
-    activationValue(
-      profile?.trade,
-      profile?.trade_name,
-      profile?.specialty,
-      profile?.project_type,
-      profile?.primary_trade
-    )
-  );
-}
-
-function hasContractorServiceArea(profile = {}) {
-  return Boolean(
-    activationValue(
-      profile?.city,
-      profile?.state,
-      profile?.zip,
-      profile?.postal_code,
-      profile?.address,
-      profile?.service_area,
-      profile?.service_area_text
-    )
-  );
-}
-
-function isStripeReadyForActivation(profile = {}, stripe = {}) {
-  const onboarding = profile?.onboarding || {};
-  return Boolean(
-    stripe?.connected ||
-      stripe?.stripe_ready ||
-      stripe?.onboarding?.stripe_ready ||
-      onboarding?.stripe_ready ||
-      profile?.stripe_ready ||
-      (profile?.stripe_connected && profile?.charges_enabled && profile?.payouts_enabled) ||
-      (profile?.stripe_status?.connected &&
-        profile?.stripe_status?.charges_enabled &&
-        profile?.stripe_status?.payouts_enabled)
-  );
-}
-
-function marketplaceStatusFromProfile(profile = {}, stripe = {}) {
-  const raw = String(profile?.marketplace_verification_status || profile?.verification_status || "").toLowerCase();
-  const stripeReady = isStripeReadyForActivation(profile, stripe);
-  const hasServiceArea = hasContractorServiceArea(profile);
-  const hasTrade = hasContractorTradeInfo(profile);
-  if (raw === "suspended") {
-    return {
-      key: "suspended",
-      label: "Suspended",
-      tone: "danger",
-      reason: "Marketplace access is suspended. Contact support before accepting new marketplace work.",
-    };
-  }
-  if (!stripeReady) {
-    return {
-      key: "stripe",
-      label: "Stripe action needed",
-      tone: "warning",
-      reason: "Connect Stripe before marketplace-funded projects can move forward.",
-    };
-  }
-  if (!hasServiceArea) {
-    return {
-      key: "service_area",
-      label: "Missing service area",
-      tone: "warning",
-      reason: "Add your service city, state, or ZIP so marketplace requests can be matched locally.",
-    };
-  }
-  if (!hasTrade) {
-    return {
-      key: "trade",
-      label: "Missing trade/category",
-      tone: "warning",
-      reason: "Select at least one trade category so relevant requests can find you.",
-    };
-  }
-  if (raw === "verified" && profile?.marketplace_preferred) {
-    return {
-      key: "preferred",
-      label: "Preferred",
-      tone: "success",
-      reason: "Profile and marketplace eligibility were reviewed. Preferred status reflects platform participation and administrative review.",
-    };
-  }
-  if (raw === "verified") {
-    return {
-      key: "verified",
-      label: "Verified",
-      tone: "success",
-      reason: "Profile and marketplace eligibility were reviewed for enabled locations.",
-    };
-  }
-  if (raw === "pending_review") {
-    return {
-      key: "pending",
-      label: "Pending review",
-      tone: "info",
-      reason: "Your marketplace verification is waiting for review.",
-    };
-  }
-  if (raw === "rejected") {
-    return {
-      key: "rejected",
-      label: "Not eligible",
-      tone: "danger",
-      reason: profile?.marketplace_verification_rejected_reason || "Verification needs attention before marketplace eligibility.",
-    };
-  }
-  return {
-    key: "not_eligible",
-    label: "Not eligible",
-    tone: "warning",
-    reason: "Complete the required setup steps to become marketplace eligible.",
-  };
-}
-
-function activationToneClasses(tone = "slate") {
-  const map = {
-    success: "border-emerald-300/35 bg-emerald-400/10 text-emerald-100",
-    warning: "border-amber-300/35 bg-amber-300/10 text-amber-100",
-    danger: "border-rose-300/35 bg-rose-400/10 text-rose-100",
-    info: "border-sky-300/35 bg-sky-400/10 text-sky-100",
-    slate: "border-slate-600 bg-slate-900/70 text-slate-200",
-  };
-  return map[tone] || map.slate;
-}
 
 function getMilestoneDueDate(m) {
   return (
@@ -1474,335 +1313,6 @@ function DashboardGreeting({ firstName, daysSince, briefingItems, profileScore, 
         </button>
       </div>
     </div>
-  );
-}
-
-function ActivationChecklistItem({ item, onNavigate }) {
-  const complete = Boolean(item.complete);
-  return (
-    <article
-      data-testid={`contractor-activation-check-${item.key}`}
-      className={`rounded-2xl border p-4 ${
-        complete
-          ? "border-emerald-300/25 bg-emerald-400/10"
-          : item.required
-          ? "border-amber-300/25 bg-slate-950/55"
-          : "border-slate-700 bg-slate-950/40"
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <span className={`mt-0.5 ${complete ? "text-emerald-300" : "text-slate-500"}`}>
-          {complete ? <CheckCircle2 className="h-5 w-5" aria-hidden="true" /> : <Circle className="h-5 w-5" aria-hidden="true" />}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-bold text-white">{item.title}</h4>
-            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${complete ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" : "border-slate-600 bg-slate-900 text-slate-300"}`}>
-              {complete ? "Complete" : item.required ? "Required" : "Optional"}
-            </span>
-          </div>
-          <p className="mt-1 text-sm leading-5 text-sky-100/70">
-            {complete ? item.completeText || "Done." : item.description}
-          </p>
-          {!complete && item.blockedReason ? (
-            <p className="mt-2 text-xs font-semibold text-amber-100">{item.blockedReason}</p>
-          ) : null}
-          {!complete && item.href ? (
-            <button
-              type="button"
-              onClick={() => onNavigate?.(item.href)}
-              className="mt-3 inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-bold text-white transition hover:border-amber-300/50 hover:bg-white/15"
-              data-testid={`contractor-activation-action-${item.key}`}
-            >
-              {item.actionLabel || "Complete step"}
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function ContractorActivationChecklist({
-  contractorProfile,
-  stripeStatus,
-  agreements = [],
-  publicLeads = [],
-  onNavigate,
-}) {
-  if (!contractorProfile) return null;
-
-  const stripeReady = isStripeReadyForActivation(contractorProfile, stripeStatus);
-  const hasBusiness = Boolean(
-    activationValue(
-      contractorProfile.business_name,
-      contractorProfile.company_name,
-      contractorProfile.display_name,
-      contractorProfile.name
-    )
-  );
-  const hasServiceArea = hasContractorServiceArea(contractorProfile);
-  const hasTrade = hasContractorTradeInfo(contractorProfile);
-  const verificationStatus = String(
-    contractorProfile.marketplace_verification_status || contractorProfile.verification_status || "unverified"
-  ).toLowerCase();
-  const verificationComplete = ["verified", "pending_review"].includes(verificationStatus);
-  const hasLogo = Boolean(
-    activationValue(contractorProfile.logo, contractorProfile.logo_url, contractorProfile.public_profile?.logo_url)
-  );
-  const hasCompliance = Boolean(
-    activationValue(
-      contractorProfile.license_number,
-      contractorProfile.license_file,
-      contractorProfile.insurance_file,
-      contractorProfile.insurance_status?.has_insurance
-    )
-  );
-  const hasFirstTemplateOrAgreement = Number(agreements.length || 0) > 0;
-  const hasOpportunity = Number(publicLeads.length || 0) > 0;
-  const status = marketplaceStatusFromProfile(contractorProfile, stripeStatus);
-  const requiredItems = [
-    {
-      key: "business-profile",
-      title: "Complete business profile",
-      description: "Add the business name and contact details customers will see on agreements and invoices.",
-      completeText: "Business identity is ready for customer-facing records.",
-      complete: hasBusiness,
-      required: true,
-      href: "/app/profile",
-      actionLabel: "Open Profile",
-    },
-    {
-      key: "service-area",
-      title: "Add service area",
-      description: "Set your city, state, ZIP, and service radius for local marketplace matching.",
-      completeText: "Service area is available for local matching.",
-      complete: hasServiceArea,
-      required: true,
-      href: "/app/profile",
-      actionLabel: "Add Service Area",
-    },
-    {
-      key: "trade-category",
-      title: "Add trade/category",
-      description: "Select the trades you offer so requests, templates, and compliance guidance stay relevant.",
-      completeText: "Trade profile is ready.",
-      complete: hasTrade,
-      required: true,
-      href: "/app/profile",
-      actionLabel: "Choose Trades",
-    },
-    {
-      key: "stripe",
-      title: "Connect Stripe",
-      description: "Connect Stripe before escrow, invoice, and payout workflows can fully activate.",
-      completeText: "Stripe is connected for payment workflows.",
-      complete: stripeReady,
-      required: true,
-      href: "/app/onboarding/stripe",
-      actionLabel: "Connect Stripe",
-    },
-    {
-      key: "verification",
-      title: "Submit/complete verification",
-      description: "Submit marketplace verification so customers can see reviewed profile and eligibility information.",
-      completeText:
-        verificationStatus === "verified" ? "Marketplace verification is approved." : "Marketplace verification is in review.",
-      complete: verificationComplete,
-      required: true,
-      href: "/app/marketing",
-      actionLabel: "Open Marketplace Profile",
-      blockedReason: !stripeReady ? "Stripe setup may be required before marketplace eligibility is complete." : "",
-    },
-  ];
-  const optionalItems = [
-    {
-      key: "logo",
-      title: "Add logo/profile photo",
-      description: "Add a brand image for customer-facing agreements, invoices, and profile pages.",
-      complete: hasLogo,
-      href: "/app/profile",
-      actionLabel: "Add Logo",
-    },
-    {
-      key: "license-insurance",
-      title: "Add insurance/license details",
-      description: "Upload license or insurance details where they apply to your trade and state.",
-      complete: hasCompliance,
-      href: "/app/profile",
-      actionLabel: "Add Compliance Details",
-    },
-    {
-      key: "first-template",
-      title: "Create first template",
-      description: "Save a reusable scope and milestone plan so future agreements start faster.",
-      complete: hasFirstTemplateOrAgreement,
-      href: "/app/templates",
-      actionLabel: "Open Templates",
-    },
-    {
-      key: "first-opportunity",
-      title: "Review first opportunity",
-      description: "Marketplace leads and customer opportunities will appear here once you are eligible.",
-      complete: hasOpportunity,
-      href: "/app/opportunities",
-      actionLabel: "Open Opportunities",
-    },
-  ];
-
-  return (
-    <DashboardCard
-      testId="contractor-activation-checklist"
-      tone="premium"
-      className="p-5 shadow-[0_24px_55px_rgba(2,8,23,0.34)]"
-    >
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div>
-          <div className="flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-amber-300/35 bg-amber-300/15 text-amber-100">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Activation</div>
-              <h2 className="mt-1 text-2xl font-black text-white">Get marketplace ready</h2>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-sky-100/72">
-                Finish the essentials that let customers find you, compare bids, sign agreements, and pay through MyHomeBro.
-              </p>
-            </div>
-          </div>
-          <div className="mt-5 grid gap-3 lg:grid-cols-2">
-            {requiredItems.map((item) => (
-              <ActivationChecklistItem key={item.key} item={item} onNavigate={onNavigate} />
-            ))}
-          </div>
-          <div className="mt-5">
-            <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-100/55">Optional next steps</div>
-            <div className="mt-3 grid gap-3 lg:grid-cols-2">
-              {optionalItems.map((item) => (
-                <ActivationChecklistItem key={item.key} item={item} onNavigate={onNavigate} />
-              ))}
-            </div>
-          </div>
-        </div>
-        <aside
-          data-testid="contractor-marketplace-eligibility-panel"
-          className="rounded-3xl border border-white/10 bg-slate-950/55 p-5"
-        >
-          <div className="flex items-start gap-3">
-            <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${activationToneClasses(status.tone)}`}>
-              {status.tone === "danger" ? <ShieldAlert className="h-5 w-5" /> : <BadgeCheck className="h-5 w-5" />}
-            </span>
-            <div>
-              <div className="text-xs font-black uppercase tracking-[0.2em] text-sky-100/55">Marketplace eligibility</div>
-              <div className="mt-1 text-xl font-black text-white">{status.label}</div>
-              <p className="mt-2 text-sm leading-6 text-sky-100/72">{status.reason}</p>
-            </div>
-          </div>
-          <div className="mt-5 space-y-2 text-sm">
-            {[
-              ["Business profile", hasBusiness],
-              ["Service area", hasServiceArea],
-              ["Trade/category", hasTrade],
-              ["Stripe ready", stripeReady],
-              ["Verification", verificationComplete],
-            ].map(([label, complete]) => (
-              <div key={label} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                <span className="text-sky-100/75">{label}</span>
-                <span className={complete ? "font-bold text-emerald-200" : "font-bold text-amber-100"}>
-                  {complete ? "Ready" : "Needed"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </aside>
-      </div>
-    </DashboardCard>
-  );
-}
-
-function ContractorPerformancePanel({ performance }) {
-  if (!performance) return null;
-  const score = performance.performance_score ?? performance.score;
-  const rating = performance.average_rating ?? performance.review_rating;
-  const insights = Array.isArray(performance.insights) ? performance.insights : [];
-  const metrics = [
-    {
-      label: "Customer rating",
-      value: rating ? `${Number(rating).toFixed(1)} / 5` : "New",
-      helper: `${performance.review_count || 0} approved reviews`,
-    },
-    {
-      label: "Completed projects",
-      value: performance.completed_projects || 0,
-      helper: `${performance.completed_milestones || 0} milestone snapshots`,
-    },
-    {
-      label: "Win rate",
-      value: percentLabel(performance.marketplace_bid_win_rate, performance.marketplace_bid_win_percent),
-      helper: `${performance.marketplace_bid_count || 0} marketplace bids`,
-    },
-    {
-      label: "Dispute rate",
-      value: percentLabel(performance.dispute_rate),
-      helper: `${performance.dispute_count || 0} disputes recorded`,
-    },
-    {
-      label: "On-time rate",
-      value: percentLabel(performance.on_time_milestone_rate, performance.on_time_milestone_percent),
-      helper: `${performance.delayed_milestones || 0} delayed milestones`,
-    },
-  ];
-
-  return (
-    <DashboardCard
-      testId="dashboard-performance-panel"
-      className="border border-white/10 bg-[#061d42]/95 p-5 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
-    >
-      <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <div className="rounded-3xl border border-amber-300/25 bg-amber-300/10 p-5">
-          <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-200">Performance</div>
-          <div className="mt-3 text-5xl font-black text-white" data-testid="dashboard-performance-score">
-            {scoreLabel(score)}
-          </div>
-          <div className="mt-2 text-sm font-bold text-amber-100" data-testid="dashboard-performance-confidence">
-            {performance.confidence_label || "Low Confidence"}
-          </div>
-          <p className="mt-3 text-sm leading-6 text-sky-100/75">
-            Advisory score for marketplace review and self-improvement. It is not an automatic eligibility gate.
-          </p>
-        </div>
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-xl font-black text-white">Contractor performance insights</h2>
-            <p className="mt-1 text-sm leading-6 text-sky-100/72">
-              Built from approved reviews, completed projects, disputes, milestone timing, bids, and payment signals.
-            </p>
-          </div>
-          <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-5">
-            {metrics.map((item) => (
-              <div key={item.label} className="rounded-2xl border border-white/10 bg-white/5 p-3">
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">{item.label}</div>
-                <div className="mt-2 text-lg font-black text-white">{item.value}</div>
-                <div className="mt-1 text-xs leading-5 text-sky-100/65">{item.helper}</div>
-              </div>
-            ))}
-          </div>
-          <div className="grid gap-3 lg:grid-cols-2">
-            {(insights.length ? insights : [{ tone: "neutral", title: "More data needed", body: "Complete projects and request reviews to build a stronger performance profile." }]).map((item, index) => (
-              <div
-                key={`${item.title}-${index}`}
-                data-testid={`dashboard-performance-insight-${index}`}
-                className={`rounded-2xl border p-3 text-sm leading-6 ${performanceInsightClass(item.tone)}`}
-              >
-                <div className="font-black text-white">{item.title}</div>
-                <div className="mt-1 opacity-85">{item.body}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </DashboardCard>
   );
 }
 
@@ -3206,6 +2716,191 @@ export default function ContractorDashboard() {
     ];
   }, [agreements, dueSchedule.week.count, mStats.inProgressCount, mStats.totalCount, paymentSummary]);
 
+  const workPipelineSection = (
+    <DashboardSection
+      title="Work Pipeline"
+      subtitle="Track project progress across agreements, milestones, reviews, and invoices."
+      variant="premium"
+      testId="dashboard-work-money-wrapper"
+    >
+      <DashboardCard
+        testId="dashboard-work-money"
+        tone="premium"
+        className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
+      >
+        <div className="mb-4">
+          <div className="flex items-center gap-2">
+            <ListTodo className="h-4 w-4 text-sky-100/70" aria-hidden="true" />
+            <h2 className="text-xl font-semibold text-white">Work Pipeline</h2>
+          </div>
+          <p className="mt-1 text-sm text-sky-100/75">
+            Track job progress across milestones.
+          </p>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          {workPipelineRows.map((row) => (
+            <PipelineRow
+              key={row.key}
+              testId={`dashboard-work-${row.key}`}
+              icon={row.icon}
+              title={row.title}
+              count={row.count}
+              amount={row.amount}
+              description={row.description}
+              tone={row.tone}
+              onClick={row.onClick}
+            />
+          ))}
+        </div>
+      </DashboardCard>
+    </DashboardSection>
+  );
+
+  const opportunitiesSnapshotSection = (
+    <DashboardSection
+      title="Opportunities Snapshot"
+      subtitle="Lead and bid activity before it becomes an agreement."
+      variant="premium"
+      testId="dashboard-bids-wrapper"
+    >
+      <DashboardCard
+        testId="dashboard-bids-summary"
+        tone="premium"
+        className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Open Opportunities</div>
+            <div className="mt-2 text-2xl font-extrabold text-white">
+              {Number(bidsSnapshotSummary?.open_bids || 0).toLocaleString()}
+            </div>
+            <div className="mt-1 text-xs text-sky-100/70">Draft + Submitted</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Under Review</div>
+            <div className="mt-2 text-2xl font-extrabold text-white">
+              {Number(bidsSnapshotSummary?.under_review_bids || 0).toLocaleString()}
+            </div>
+            <div className="mt-1 text-xs text-sky-100/70">Active conversations</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Awarded</div>
+            <div className="mt-2 text-2xl font-extrabold text-white">
+              {Number(bidsSnapshotSummary?.awarded_bids || 0).toLocaleString()}
+            </div>
+            <div className="mt-1 text-xs text-sky-100/70">Ready to convert</div>
+          </div>
+          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Not Selected / Declined</div>
+            <div className="mt-2 text-2xl font-extrabold text-white">
+              {Number(bidsSnapshotSummary?.declined_expired_bids || 0).toLocaleString()}
+            </div>
+            <div className="mt-1 text-xs text-sky-100/70">Closed opportunities</div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-white">Recent Opportunities</div>
+            <div className="mt-1 text-sm text-sky-100/75">
+              {bidsSnapshotLoading
+                ? "Loading opportunities snapshot..."
+                : bidsSnapshotRecent.length
+                  ? `${bidsSnapshotRecent.length} recent opportunit${bidsSnapshotRecent.length === 1 ? "y" : "ies"}`
+                  : "No opportunities yet. New lead and bid activity will appear here once it lands."}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/app/opportunities")}
+            className="rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
+            data-testid="dashboard-bids-view-all"
+          >
+            View all opportunities
+          </button>
+        </div>
+
+        {bidsSnapshotRecent.length > 0 ? (
+          <div className="mt-4 overflow-x-auto" data-testid="dashboard-bids-recent-table">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10 text-left text-xs font-semibold uppercase tracking-wide text-sky-100/65">
+                  <th className="py-3 pr-3">Project</th>
+                  <th className="py-3 pr-3">Class</th>
+                  <th className="py-3 pr-3">Status</th>
+                  <th className="py-3">Next Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bidsSnapshotRecent.map((row) => (
+                  <tr
+                    key={row.bid_id || row.id}
+                    data-testid={`dashboard-bids-row-${row.bid_id || row.id}`}
+                    className="border-b border-white/10 last:border-b-0"
+                  >
+                    <td className="py-3 pr-3">
+                      <div className="font-semibold text-white">{row.project_title || row.project_name || "Untitled Bid"}</div>
+                      <div className="mt-1 text-xs text-sky-100/65">{row.customer_name || "Unknown Customer"}</div>
+                      <div className="mt-2">
+                        <ProjectModeBadge
+                          mode={row.project_mode}
+                          dataTestId={`dashboard-bid-project-mode-${row.bid_id || row.id}`}
+                        />
+                      </div>
+                    </td>
+                    <td className="py-3 pr-3 text-sky-100/75">{row.project_class_label || row.project_class || "Residential"}</td>
+                    <td className="py-3 pr-3 text-sky-100/75">{row.status_label || row.status || "Submitted"}</td>
+                    <td className="py-3 text-sky-100/75">{row.next_action?.label || "View details"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
+      </DashboardCard>
+    </DashboardSection>
+  );
+
+  const moneyPipelineSection = (
+    <DashboardSection
+      title="Money Pipeline"
+      subtitle="Track payment handoffs from customer approval through payout."
+      variant="premium"
+      testId="dashboard-money-wrapper"
+    >
+      <DashboardCard
+        testId="dashboard-money-pipeline"
+        tone="premium"
+        className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
+      >
+        <div className="mb-4">
+          <div className="flex items-center gap-2">
+            <WalletMinimal className="h-4 w-4 text-sky-100/70" aria-hidden="true" />
+            <h2 className="text-xl font-semibold text-white">Money Pipeline</h2>
+          </div>
+          <p className="mt-1 text-sm text-sky-100/75">
+            Track payments from approval to payout.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {moneyPipelineRows.map((row) => (
+            <PipelineRow
+              key={row.key}
+              testId={`dashboard-money-${row.key}`}
+              icon={row.icon}
+              title={row.title}
+              count={row.count}
+              amount={row.amount}
+              description={row.description}
+              tone={row.tone}
+              onClick={row.onClick}
+            />
+          ))}
+        </div>
+      </DashboardCard>
+    </DashboardSection>
+  );
+
   // Show onboarding conversation on Dashboard until the contractor is fully set up
   if (loginExperience === "first_login" || loginExperience === "resume_onboarding") {
     return (
@@ -3266,16 +2961,6 @@ export default function ContractorDashboard() {
             }
           />
 
-          <ContractorActivationChecklist
-            contractorProfile={contractorProfile}
-            stripeStatus={onboardingStripe}
-            agreements={agreements}
-            publicLeads={publicLeads}
-            onNavigate={navigate}
-          />
-
-          <ContractorPerformancePanel performance={contractorProfile?.performance_summary || contractorProfile?.performance} />
-
           <DashboardCard
             testId="dashboard-kpi-strip"
             tone="premium"
@@ -3310,6 +2995,14 @@ export default function ContractorDashboard() {
               ))}
             </div>
           </DashboardCard>
+
+          <div
+            data-testid="dashboard-work-bids-grid"
+            className="grid gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.55fr)] xl:items-start"
+          >
+            {workPipelineSection}
+            {opportunitiesSnapshotSection}
+          </div>
 
           <DashboardSection variant="premium">
             <DashboardCard
@@ -3650,188 +3343,7 @@ export default function ContractorDashboard() {
 
           
 
-          <div
-            data-testid="dashboard-work-bids-grid"
-            className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(360px,0.65fr)] xl:items-start"
-          >
-          <DashboardSection
-            title="Work and Money"
-            subtitle="Track job progress on the left and payment handoffs on the right."
-            variant="premium"
-            testId="dashboard-work-money-wrapper"
-          >
-            <DashboardCard
-              testId="dashboard-work-money"
-              tone="premium"
-              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
-            >
-              <div id="layout" className="grid gap-4 xl:grid-cols-2 xl:items-start">
-                <div className="space-y-3">
-                  <div className="mb-4">
-                    <div className="flex items-center gap-2">
-                      <ListTodo className="h-4 w-4 text-sky-100/70" aria-hidden="true" />
-                      <h2 className="text-xl font-semibold text-white">Work Pipeline</h2>
-                    </div>
-                    <p className="mt-1 text-sm text-sky-100/75">
-                      Track job progress across milestones
-                    </p>
-                  </div>
-                  <div className="space-y-3">
-                    {workPipelineRows.map((row) => (
-                      <PipelineRow
-                        key={row.key}
-                        testId={`dashboard-work-${row.key}`}
-                        icon={row.icon}
-                        title={row.title}
-                        count={row.count}
-                        amount={row.amount}
-                        description={row.description}
-                        tone={row.tone}
-                        onClick={row.onClick}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="mb-4 mt-6 xl:mt-0">
-                    <div className="flex items-center gap-2">
-                      <WalletMinimal className="h-4 w-4 text-sky-100/70" aria-hidden="true" />
-                      <h2 className="text-xl font-semibold text-white">Money Pipeline</h2>
-                    </div>
-                    <p className="mt-1 text-sm text-sky-100/75">
-                      Track payments from approval to payout
-                    </p>
-                  </div>
-                  <div className="space-y-3">
-                    {moneyPipelineRows.map((row) => (
-                      <PipelineRow
-                        key={row.key}
-                        testId={`dashboard-money-${row.key}`}
-                        icon={row.icon}
-                        title={row.title}
-                        count={row.count}
-                        amount={row.amount}
-                        description={row.description}
-                        tone={row.tone}
-                        onClick={row.onClick}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </DashboardCard>
-          </DashboardSection>
-
-          
-
-          <DashboardSection
-            title="Opportunities Snapshot"
-            subtitle="A compact look at lead and bid activity before it becomes an agreement."
-            variant="premium"
-            testId="dashboard-bids-wrapper"
-          >
-            <DashboardCard
-              testId="dashboard-bids-summary"
-              tone="premium"
-              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
-            >
-              <div className="grid gap-3 md:grid-cols-4">
-                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Open Opportunities</div>
-                  <div className="mt-2 text-2xl font-extrabold text-white">
-                    {Number(bidsSnapshotSummary?.open_bids || 0).toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-sky-100/70">Draft + Submitted</div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">
-                    Under Review
-                  </div>
-                  <div className="mt-2 text-2xl font-extrabold text-white">
-                    {Number(bidsSnapshotSummary?.under_review_bids || 0).toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-sky-100/70">Active opportunity conversations</div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Awarded</div>
-                  <div className="mt-2 text-2xl font-extrabold text-white">
-                    {Number(bidsSnapshotSummary?.awarded_bids || 0).toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-sky-100/70">Ready to convert</div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">
-                    Not Selected / Declined
-                  </div>
-                  <div className="mt-2 text-2xl font-extrabold text-white">
-                    {Number(bidsSnapshotSummary?.declined_expired_bids || 0).toLocaleString()}
-                  </div>
-                  <div className="mt-1 text-xs text-sky-100/70">Closed opportunities</div>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-white">Recent Opportunities</div>
-                  <div className="mt-1 text-sm text-sky-100/75">
-                    {bidsSnapshotLoading
-                      ? "Loading opportunities snapshot..."
-                      : bidsSnapshotRecent.length
-                        ? `${bidsSnapshotRecent.length} recent opportunit${bidsSnapshotRecent.length === 1 ? "y" : "ies"}`
-                        : "No opportunities yet. New lead and bid activity will appear here once it lands."}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigate("/app/opportunities")}
-                  className="rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
-                  data-testid="dashboard-bids-view-all"
-                >
-                  View all opportunities
-                </button>
-              </div>
-
-              {bidsSnapshotRecent.length > 0 ? (
-                <div className="mt-4 overflow-x-auto" data-testid="dashboard-bids-recent-table">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-white/10 text-left text-xs font-semibold uppercase tracking-wide text-sky-100/65">
-                        <th className="py-3 pr-3">Project</th>
-                        <th className="py-3 pr-3">Class</th>
-                        <th className="py-3 pr-3">Status</th>
-                        <th className="py-3">Next Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {bidsSnapshotRecent.map((row) => (
-                        <tr
-                          key={row.bid_id || row.id}
-                          data-testid={`dashboard-bids-row-${row.bid_id || row.id}`}
-                          className="border-b border-white/10 last:border-b-0"
-                        >
-                          <td className="py-3 pr-3">
-                            <div className="font-semibold text-white">{row.project_title || row.project_name || "Untitled Bid"}</div>
-                            <div className="mt-1 text-xs text-sky-100/65">{row.customer_name || "Unknown Customer"}</div>
-                            <div className="mt-2">
-                              <ProjectModeBadge
-                                mode={row.project_mode}
-                                dataTestId={`dashboard-bid-project-mode-${row.bid_id || row.id}`}
-                              />
-                            </div>
-                          </td>
-                          <td className="py-3 pr-3 text-sky-100/75">{row.project_class_label || row.project_class || "Residential"}</td>
-                          <td className="py-3 pr-3 text-sky-100/75">{row.status_label || row.status || "Submitted"}</td>
-                          <td className="py-3 text-sky-100/75">{row.next_action?.label || "View details"}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-            </DashboardCard>
-          </DashboardSection>
-          </div>
+          {moneyPipelineSection}
 
           
 

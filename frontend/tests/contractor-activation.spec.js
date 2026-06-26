@@ -199,7 +199,7 @@ test('traditional contractors do not see homeowner-selection guidance by default
   await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('We prepared your business profile');
 });
 
-test('contractor dashboard shows marketplace activation checklist and eligibility blockers', async ({ page }) => {
+test('contractor dashboard hides marketplace readiness and performance analytics', async ({ page }) => {
   await mockAuth(page);
   await page.route('**/api/projects/contractors/me/', async (route) => {
     await route.fulfill({
@@ -265,22 +265,14 @@ test('contractor dashboard shows marketplace activation checklist and eligibilit
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('contractor-activation-checklist')).toContainText('Get marketplace ready');
-  await expect(page.getByTestId('contractor-activation-check-business-profile')).toContainText('Complete');
-  await expect(page.getByTestId('contractor-activation-check-service-area')).toContainText('Complete');
-  await expect(page.getByTestId('contractor-activation-check-trade-category')).toContainText('Complete');
-  await expect(page.getByTestId('contractor-activation-check-stripe')).toContainText('Required');
-  await expect(page.getByTestId('contractor-activation-action-stripe')).toContainText('Connect Stripe');
-  await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Stripe action needed');
-  await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Stripe ready');
-  await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toContainText('Needed');
-  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('Contractor performance insights');
-  await expect(page.getByTestId('dashboard-performance-score')).toContainText('82/100');
-  await expect(page.getByTestId('dashboard-performance-confidence')).toContainText('Medium Confidence');
-  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('Advisory score');
-  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('Win rate');
-  await expect(page.getByTestId('dashboard-performance-panel')).toContainText('50%');
-  await expect(page.getByTestId('dashboard-performance-insight-0')).toContainText('Strong customer satisfaction');
+  await expect(page.getByText('Get marketplace ready')).toHaveCount(0);
+  await expect(page.getByTestId('contractor-activation-checklist')).toHaveCount(0);
+  await expect(page.getByTestId('contractor-marketplace-eligibility-panel')).toHaveCount(0);
+  await expect(page.getByText('Contractor performance insights')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-performance-panel')).toHaveCount(0);
+  await expect(page.getByTestId('dashboard-work-money')).toContainText('Work Pipeline');
+  await expect(page.getByTestId('dashboard-bids-summary')).toContainText('Open Opportunities');
+  await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Money Pipeline');
 });
 
 test('dashboard renders operational hierarchy without persistent smart activation section', async ({ page }) => {
@@ -310,8 +302,11 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(page.getByText('Quick Actions').first()).toBeVisible();
   await expect(page.getByText('Next Actions').first()).toBeVisible();
   await expect(page.getByText('Schedule').first()).toBeVisible();
-  await expect(page.getByText('Work and Money').first()).toBeVisible();
+  await expect(page.getByText('Work Pipeline').first()).toBeVisible();
+  await expect(page.getByText('Money Pipeline').first()).toBeVisible();
   await expect(page.getByText('Opportunities Snapshot').first()).toBeVisible();
+  await expect(page.getByText('Get marketplace ready')).toHaveCount(0);
+  await expect(page.getByText('Contractor performance insights')).toHaveCount(0);
   await expect(page.getByTestId('contractor-activation-guide')).toHaveCount(0);
   await expect(page.getByTestId('contractor-contextual-guide-modal')).toHaveCount(0);
   await expect(page.getByText('Project Context')).toHaveCount(0);
@@ -327,13 +322,15 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   const workBox = await page.getByTestId('dashboard-work-money').boundingBox();
   const bidsWrapperBox = await page.getByTestId('dashboard-bids-wrapper').boundingBox();
   const bidsBox = await page.getByTestId('dashboard-bids-summary').boundingBox();
+  const moneyBox = await page.getByTestId('dashboard-money-pipeline').boundingBox();
 
-  expect(quickBox.y).toBeLessThan(nextBox.y);
-  expect(quickBox.y).toBeLessThan(scheduleWrapperBox.y);
-  expect(scheduleBox.y).toBeLessThan(workWrapperBox.y);
-  expect(Math.abs(nextBox.y - scheduleWrapperBox.y)).toBeLessThan(40);
+  expect(workWrapperBox.y).toBeLessThan(quickBox.y);
   expect(Math.abs(workWrapperBox.y - bidsWrapperBox.y)).toBeLessThan(40);
-  expect(scheduleBox.y + scheduleBox.height).toBeLessThan(bidsWrapperBox.y);
+  expect(workBox.width).toBeGreaterThan(bidsBox.width);
+  expect(quickBox.y).toBeLessThan(nextBox.y);
+  expect(nextBox.y).toBeLessThan(moneyBox.y);
+  expect(Math.abs(nextBox.y - scheduleWrapperBox.y)).toBeLessThan(40);
+  expect(scheduleBox.y + scheduleBox.height).toBeLessThan(moneyBox.y);
 
   const scheduleContainsBids = await page
     .getByTestId('dashboard-schedule-section')
@@ -351,16 +348,16 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(workMoney).toContainText('Completed');
   await expect(workMoney).toContainText('Awaiting Review');
   await expect(workMoney).toContainText('Invoiced');
-  await expect(workMoney).toContainText('Awaiting Customer Approval');
-  await expect(workMoney).toContainText('Payment Pending');
-  await expect(workMoney).toContainText('Paid');
-  await expect(workMoney).toContainText('Disputes / Issues');
+  await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Awaiting Customer Approval');
+  await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Payment Pending');
+  await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Paid');
+  await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Disputes / Issues');
 
   const bidsClass = await page.getByTestId('dashboard-bids-summary').getAttribute('class');
   expect(bidsClass).toContain('bg-[#061d42]/95');
 
   await page.getByTestId('dashboard-bids-view-all').click();
-  await expect(page).toHaveURL(/\/app\/bids$/);
+  await expect(page).toHaveURL(/\/app\/opportunities$/);
 });
 
 test('opportunity draft agreement banner renders and dismisses', async ({ page }) => {
