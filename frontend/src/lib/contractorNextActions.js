@@ -10,6 +10,11 @@ function safeNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function optionalNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function parseDateAny(value) {
   if (!value) return null;
   const parsed = new Date(value);
@@ -30,6 +35,29 @@ function normalizeStatus(value) {
 
 function normalizeSource(value) {
   return safeText(value).toLowerCase();
+}
+
+function pickFirst(...values) {
+  for (const value of values) {
+    const text = safeText(value);
+    if (text) return text;
+  }
+  return "";
+}
+
+function pickAmount(...values) {
+  for (const value of values) {
+    const amount = optionalNumber(value);
+    if (amount !== null && amount > 0) return amount;
+  }
+  return null;
+}
+
+function sumAmount(rows) {
+  return (Array.isArray(rows) ? rows : []).reduce((total, row) => {
+    const amount = pickAmount(row?.amount, row?.total, row?.net_amount, row?.gross_amount);
+    return total + (amount || 0);
+  }, 0);
 }
 
 function isWebsiteLeadRow(row) {
@@ -145,6 +173,13 @@ function buildAction({
   actionType = "",
   reason = "",
   estimatedEffort = "2 minutes",
+  summary = "",
+  urgency = "",
+  customer = "",
+  project = "",
+  value = null,
+  receivedAt = "",
+  updatedAt = "",
   blocking = false,
 }) {
   const recommendedUrl = safeText(navigationTarget) || "/app/dashboard";
@@ -163,11 +198,25 @@ function buildAction({
     dataTestId,
     action_type: normalizedActionType,
     priority_score: normalizedPriority,
+    summary: safeText(summary) || safeText(description),
     reason: safeText(reason) || safeText(description),
     estimated_effort: safeText(estimatedEffort) || "2 minutes",
+    urgency: safeText(urgency) || urgencyFromPriority(normalizedPriority, blocking),
+    customer: safeText(customer),
+    project: safeText(project),
+    value: optionalNumber(value),
+    received_at: safeText(receivedAt),
+    updated_at: safeText(updatedAt),
     recommended_url: recommendedUrl,
     blocking: Boolean(blocking),
   };
+}
+
+function urgencyFromPriority(priorityScore, blocking = false) {
+  if (blocking || priorityScore >= 95) return "Critical";
+  if (priorityScore >= 80) return "Today";
+  if (priorityScore >= 55) return "Soon";
+  return "Growth";
 }
 
 function sortActions(actions) {
@@ -252,6 +301,13 @@ export function getContractorNextActions({
     ) || "a customer";
     const projectType = safeText(latestWebsiteLead?.project_type || latestWebsiteLead?.request_snapshot?.project_type);
     const sourceFilter = normalizeSource(latestWebsiteLead?.lead_source_filter) || "website";
+    const leadValue = pickAmount(
+      latestWebsiteLead?.estimated_value,
+      latestWebsiteLead?.budget,
+      latestWebsiteLead?.amount,
+      latestWebsiteLead?.request_snapshot?.estimated_value,
+      latestWebsiteLead?.request_snapshot?.budget
+    );
     actions.push(
       buildAction({
         key: `website-lead:${leadId}`,
@@ -266,9 +322,18 @@ export function getContractorNextActions({
         category: "lead",
         source: "website_leads",
         actionType: "review_website_lead",
+        summary: projectType
+          ? `${customerName} requested ${projectType}.`
+          : `${customerName} submitted a new website request.`,
         reason: projectType
           ? `${customerName} requested help with ${projectType}. Fast responses improve close rate.`
           : `${customerName} submitted a website lead. Fast responses improve close rate.`,
+        urgency: "Critical",
+        customer: customerName,
+        project: projectType,
+        value: leadValue,
+        receivedAt: latestWebsiteLead?.submitted_at || latestWebsiteLead?.created_at,
+        updatedAt: latestWebsiteLead?.updated_at,
         estimatedEffort: "2 minutes",
         blocking: true,
       })
@@ -285,6 +350,8 @@ export function getContractorNextActions({
 
   const latestDraft = agreementRows.find((agreement) => normalizeStatus(agreement?.status) === "draft");
   if (latestDraft?.id) {
+    const projectName = pickFirst(latestDraft?.title, latestDraft?.project_title, latestDraft?.project?.title, latestDraft?.name);
+    const customerName = pickFirst(latestDraft?.customer_name, latestDraft?.homeowner_name, latestDraft?.client_name, latestDraft?.customer?.name);
     actions.push(
       buildAction({
         key: `agreement-draft:${latestDraft.id}`,
@@ -297,8 +364,14 @@ export function getContractorNextActions({
         category: "project",
         source: "agreements",
         actionType: "send_draft_agreement",
+        summary: projectName ? `${projectName} is drafted and ready for review.` : "A draft agreement is ready for review.",
         reason: "Sending the draft keeps the customer moving toward signature.",
         estimatedEffort: "5 minutes",
+        urgency: "Today",
+        customer: customerName,
+        project: projectName,
+        value: pickAmount(latestDraft?.total_amount, latestDraft?.amount, latestDraft?.contract_total, latestDraft?.project?.budget),
+        updatedAt: latestDraft?.updated_at || latestDraft?.created_at,
       })
     );
   }
@@ -323,8 +396,10 @@ export function getContractorNextActions({
         source: "agreements",
         dataTestId: "dashboard-needs-attention-item-awaiting_signature",
         actionType: "follow_up_signature",
+        summary: `${countLabel(awaitingSignature.length, "agreement")} ${isAre(awaitingSignature.length)} waiting on signature.`,
         reason: "Signed agreements unlock scheduled work and payment setup.",
         estimatedEffort: "3 minutes",
+        urgency: "Today",
         blocking: true,
       })
     );
@@ -353,8 +428,10 @@ export function getContractorNextActions({
         source: "payments",
         dataTestId: "dashboard-needs-attention-item-awaiting_funding",
         actionType: "collect_escrow_funding",
+        summary: `${countLabel(awaitingFunding.length, "agreement")} ${isAre(awaitingFunding.length)} waiting on escrow funding.`,
         reason: "Funding protects the work before active milestones begin.",
         estimatedEffort: "4 minutes",
+        urgency: "Today",
         blocking: true,
       })
     );
@@ -375,8 +452,11 @@ export function getContractorNextActions({
         source: "invoices",
         dataTestId: "dashboard-needs-attention-item-pending_approval",
         actionType: "review_invoice_approval",
+        summary: `${countLabel(invoicePending.length, "payment request")} ${isAre(invoicePending.length)} waiting on approval.`,
         reason: "Payment approvals keep cash moving and prevent project stalls.",
         estimatedEffort: "3 minutes",
+        urgency: "Soon",
+        value: sumAmount(invoicePending),
       })
     );
   }
@@ -384,6 +464,8 @@ export function getContractorNextActions({
   const invoiceApproved = [...(Array.isArray(invoices) ? invoices : [])].filter((invoice) => invBucket(invoice) === "approved");
   const latestApprovedInvoice = latestByDate(invoiceApproved, (invoice) => invoice?.updated_at || invoice?.created_at);
   if (latestApprovedInvoice?.id) {
+    const projectName = pickFirst(latestApprovedInvoice?.project_title, latestApprovedInvoice?.agreement_title, latestApprovedInvoice?.title);
+    const customerName = pickFirst(latestApprovedInvoice?.customer_name, latestApprovedInvoice?.homeowner_name, latestApprovedInvoice?.client_name);
     actions.push(
       buildAction({
         key: `invoice-approved:${latestApprovedInvoice.id}`,
@@ -396,8 +478,14 @@ export function getContractorNextActions({
         category: "money",
         source: "invoices",
         actionType: "release_escrow_payment",
+        summary: "An approved invoice is ready for the next payment step.",
         reason: "Approved funds are ready for the next payment step.",
         estimatedEffort: "2 minutes",
+        urgency: "Today",
+        customer: customerName,
+        project: projectName,
+        value: pickAmount(latestApprovedInvoice?.amount, latestApprovedInvoice?.total, latestApprovedInvoice?.net_amount),
+        updatedAt: latestApprovedInvoice?.updated_at || latestApprovedInvoice?.created_at,
       })
     );
   }
@@ -417,8 +505,11 @@ export function getContractorNextActions({
         source: "invoices",
         dataTestId: "dashboard-needs-attention-item-disputed",
         actionType: "resolve_payment_issue",
+        summary: `${countLabel(invoiceDisputed.length, "invoice")} ${isAre(invoiceDisputed.length)} disputed and need follow-up.`,
         reason: "Resolving payment issues protects the customer relationship and payout timing.",
         estimatedEffort: "10 minutes",
+        urgency: "Critical",
+        value: sumAmount(invoiceDisputed),
         blocking: true,
       })
     );
@@ -432,6 +523,8 @@ export function getContractorNextActions({
     (milestone) => milestone?.submitted_at || milestone?.submitted_on || milestone?.completion_submitted_at || milestone?.updated_at || milestone?.created_at
   );
   if (latestSubmittedMilestone?.id) {
+    const projectName = pickFirst(latestSubmittedMilestone?.project_title, latestSubmittedMilestone?.agreement_title, latestSubmittedMilestone?.title, latestSubmittedMilestone?.name);
+    const customerName = pickFirst(latestSubmittedMilestone?.customer_name, latestSubmittedMilestone?.homeowner_name, latestSubmittedMilestone?.client_name);
     actions.push(
       buildAction({
         key: "milestone-submitted-review",
@@ -445,8 +538,14 @@ export function getContractorNextActions({
         source: "milestones",
         dataTestId: "dashboard-needs-attention-item-submitted_work",
         actionType: "review_submitted_work",
+        summary: `${countLabel(submittedMilestones.length, "milestone")} ${isAre(submittedMilestones.length)} waiting for review.`,
         reason: "Reviewed work can move to approval, invoicing, or completion.",
         estimatedEffort: "5 minutes",
+        urgency: "Soon",
+        customer: customerName,
+        project: projectName,
+        value: pickAmount(latestSubmittedMilestone?.amount, latestSubmittedMilestone?.price, latestSubmittedMilestone?.total),
+        updatedAt: latestSubmittedMilestone?.updated_at || latestSubmittedMilestone?.submitted_at || latestSubmittedMilestone?.created_at,
       })
     );
   }
@@ -466,6 +565,8 @@ export function getContractorNextActions({
   );
   if (latestQuoteMilestone?.id) {
     const quoteStatus = getMilestoneQuoteStatus(latestQuoteMilestone);
+    const projectName = pickFirst(latestQuoteMilestone?.project_title, latestQuoteMilestone?.agreement_title, latestQuoteMilestone?.title, latestQuoteMilestone?.name);
+    const customerName = pickFirst(latestQuoteMilestone?.customer_name, latestQuoteMilestone?.homeowner_name, latestQuoteMilestone?.client_name);
     const title =
       quoteStatus === "accepted" ? "Send subcontractor agreement" : "Review subcontractor quote";
     const description =
@@ -485,10 +586,23 @@ export function getContractorNextActions({
         source: "quotes",
         dataTestId: "dashboard-next-action-quote",
         actionType: quoteStatus === "accepted" ? "send_subcontractor_agreement" : "review_quote_response",
+        summary: quoteStatus === "accepted"
+          ? `A subcontractor quote was accepted${projectName ? ` for ${projectName}` : ""}.`
+          : `A subcontractor quote response is waiting${projectName ? ` for ${projectName}` : ""}.`,
         reason: quoteStatus === "accepted"
           ? "Turn the accepted quote into an agreement before the schedule slips."
           : "A quote response is waiting and may affect the estimate timeline.",
         estimatedEffort: "4 minutes",
+        urgency: "Today",
+        customer: customerName,
+        project: projectName,
+        value: pickAmount(
+          latestQuoteMilestone?.subcontractor_quote_request?.amount,
+          latestQuoteMilestone?.subcontractor_quote_request?.total,
+          latestQuoteMilestone?.amount,
+          latestQuoteMilestone?.price
+        ),
+        updatedAt: latestQuoteMilestone?.subcontractor_quote_request?.updated_at || latestQuoteMilestone?.updated_at || latestQuoteMilestone?.created_at,
         blocking: true,
       })
     );
@@ -506,6 +620,8 @@ export function getContractorNextActions({
   );
   if (latestQuoteRequiredMilestone?.id) {
     const agreementId = getMilestoneAgreementId(latestQuoteRequiredMilestone);
+    const projectName = pickFirst(latestQuoteRequiredMilestone?.project_title, latestQuoteRequiredMilestone?.agreement_title, latestQuoteRequiredMilestone?.title, latestQuoteRequiredMilestone?.name);
+    const customerName = pickFirst(latestQuoteRequiredMilestone?.customer_name, latestQuoteRequiredMilestone?.homeowner_name, latestQuoteRequiredMilestone?.client_name);
     actions.push(
       buildAction({
         key: `milestone-quote-required:${latestQuoteRequiredMilestone.id}`,
@@ -519,8 +635,14 @@ export function getContractorNextActions({
         source: "quotes",
         dataTestId: "dashboard-next-action-quote-required",
         actionType: "request_quote_response",
+        summary: `Subcontractor pricing is needed${projectName ? ` for ${projectName}` : ""}.`,
         reason: "The customer estimate cannot move forward cleanly until pricing is confirmed.",
         estimatedEffort: "5 minutes",
+        urgency: "Today",
+        customer: customerName,
+        project: projectName,
+        value: pickAmount(latestQuoteRequiredMilestone?.amount, latestQuoteRequiredMilestone?.price, latestQuoteRequiredMilestone?.total),
+        updatedAt: latestQuoteRequiredMilestone?.updated_at || latestQuoteRequiredMilestone?.created_at,
         blocking: true,
       })
     );
@@ -545,8 +667,13 @@ export function getContractorNextActions({
           source: "activity",
           dataTestId: `dashboard-activity-action-${item?.id ?? index}`,
           actionType: "review_customer_activity",
+          summary: item?.summary || "Review the latest activity item.",
           reason: item?.summary || "Recent activity may need a response.",
           estimatedEffort: "2 minutes",
+          urgency: "Growth",
+          customer: item?.customer_name,
+          project: item?.project_title,
+          updatedAt: item?.created_at || item?.updated_at,
         })
       );
     actions.push(...activityActions);

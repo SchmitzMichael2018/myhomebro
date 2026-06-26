@@ -407,6 +407,7 @@ test('AI operations manager prioritizes leads, dedupes actions, and deep-links',
     workspace_stage: 'new_lead',
     customer_name: 'Avery Customer',
     project_type: 'kitchen remodel',
+    estimated_value: 8750,
     created_at: '2026-06-25T14:00:00Z',
   };
   await page.route('**/api/projects/contractor/public-leads/', async (route) => {
@@ -442,6 +443,32 @@ test('AI operations manager prioritizes leads, dedupes actions, and deep-links',
       body: JSON.stringify({ results: [{ id: 701, status: 'approved', updated_at: '2026-06-25T11:00:00Z' }] }),
     });
   });
+  await page.route('**/api/projects/milestones/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          {
+            id: 9101,
+            title: 'Bathroom remodel',
+            customer_name: 'Michael Schmitz',
+            amount: 7500,
+            status: 'not_started',
+            updated_at: '2026-06-25T10:00:00Z',
+          },
+          {
+            id: 9102,
+            title: 'Kitchen backsplash',
+            customer_name: 'Sarah Jones',
+            amount: 3200,
+            status: 'not_started',
+            updated_at: '2026-06-24T10:00:00Z',
+          },
+        ],
+      }),
+    });
+  });
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
@@ -449,12 +476,33 @@ test('AI operations manager prioritizes leads, dedupes actions, and deep-links',
   await expect(actionItems.first()).toContainText('New Website Lead');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('Avery Customer requested kitchen remodel.');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('2 minutes');
+  await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-customer')).toContainText('Avery Customer');
+  await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-project')).toContainText('kitchen remodel');
+  await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-value')).toContainText('$8,750.00');
+  await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-received')).toContainText('Jun 25');
   await expect(page.getByTestId('dashboard-next-actions').getByText('New Website Lead')).toHaveCount(1);
   await expect(actionItems.nth(1)).toContainText('Draft agreement ready to send');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('Release approved payment');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Fast responses improve close rate.');
 
   await page.getByTestId('dashboard-next-action-snooze-agreement-draft:301').click();
   await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Draft agreement ready to send');
+
+  await page.getByTestId('dashboard-next-action-dismiss-invoice-approved:701').click();
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Release approved payment');
+
+  await page.getByTestId('dashboard-work-not-started').hover();
+  await expect(page.getByTestId('dashboard-work-not-started-preview')).toContainText('Bathroom remodel');
+  await expect(page.getByTestId('dashboard-work-not-started-preview')).toContainText('Michael Schmitz');
+  await expect(page.getByTestId('dashboard-work-not-started-preview')).toContainText('$7,500.00');
+  await expect(page.getByTestId('dashboard-work-not-started-view-all')).toContainText('View all Not Started');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('dashboard-work-not-started-preview')).toHaveCount(0);
+
+  await page.getByTestId('dashboard-work-invoiced').focus();
+  await expect(page.getByTestId('dashboard-work-invoiced-preview')).toContainText('No items in this stage.');
+  await page.getByTestId('dashboard-work-invoiced').blur();
+  await expect(page.getByTestId('dashboard-work-invoiced-preview')).toHaveCount(0);
 
   await page.getByTestId('dashboard-next-action-button-website-lead:501').click();
   await expect(page).toHaveURL(/\/app\/opportunities\?source=website$/);

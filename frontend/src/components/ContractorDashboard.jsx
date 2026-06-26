@@ -67,9 +67,10 @@ const nextActionCategoryStyles = {
   operations: "border-white/20 bg-white/10 text-white",
 };
 const nextActionPriorityStyles = {
-  high: "border-l-red-300",
-  medium: "border-l-amber-300",
-  low: "border-l-sky-300",
+  critical: "border-l-rose-300",
+  today: "border-l-sky-300",
+  soon: "border-l-amber-300",
+  growth: "border-l-emerald-300",
 };
 const growthSuggestions = [
   { key: "improve-website", label: "Improve Website", to: "/app/marketing?tab=website" },
@@ -89,10 +90,73 @@ function nextActionCategoryLabel(category) {
 }
 
 function nextActionPriorityTone(action) {
+  const urgency = String(action?.urgency || "").toLowerCase();
+  if (urgency === "critical") return "critical";
+  if (urgency === "today") return "today";
+  if (urgency === "soon") return "soon";
+  if (urgency === "growth") return "growth";
   const score = Number(action?.priority_score ?? action?.priorityScore ?? 0);
-  if (action?.blocking || score >= 90) return "high";
-  if (score >= 75) return "medium";
-  return "low";
+  if (action?.blocking || score >= 95) return "critical";
+  if (score >= 80) return "today";
+  if (score >= 55) return "soon";
+  return "growth";
+}
+
+function nextActionUrgencyLabel(action) {
+  const tone = nextActionPriorityTone(action);
+  if (tone === "critical") return "Critical";
+  if (tone === "today") return "Today";
+  if (tone === "soon") return "Soon";
+  return "Growth";
+}
+
+function formatActionTime(value) {
+  const dt = parseDateAny(value);
+  if (!dt) return "";
+  return dt.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatActionValue(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return "";
+  return currency(amount);
+}
+
+function formatPipelineDate(value) {
+  const dt = parseDateAny(value);
+  if (!dt) return "";
+  return dt.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function pickMilestoneText(milestone, ...keys) {
+  for (const key of keys) {
+    const value = key.split(".").reduce((current, part) => current?.[part], milestone);
+    const text = String(value ?? "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function milestonePreviewItem(milestone, statusLabel) {
+  const title =
+    pickMilestoneText(milestone, "project_title", "agreement_title", "title", "name", "milestone_title") ||
+    "Untitled milestone";
+  const customer = pickMilestoneText(milestone, "customer_name", "homeowner_name", "client_name", "customer.name", "agreement.customer_name");
+  const amount = Number(milestone?.amount ?? milestone?.price ?? milestone?.total ?? 0);
+  const updated = milestone?.updated_at || milestone?.due_date || milestone?.scheduled_date || milestone?.created_at;
+  return {
+    key: String(milestone?.id || milestone?.pk || `${title}-${statusLabel}`),
+    title,
+    customer,
+    amount: Number.isFinite(amount) && amount > 0 ? amount : null,
+    date: formatPipelineDate(updated),
+    statusLabel,
+  };
 }
 
 function parseDateAny(v) {
@@ -582,7 +646,29 @@ function FlowMetricButton({
   );
 }
 
-function PipelineRow({ title, count, amount, description, onClick, tone = "neutral", testId, icon: Icon }) {
+function PipelineRow({
+  title,
+  count,
+  amount,
+  description,
+  onClick,
+  tone = "neutral",
+  testId,
+  icon: Icon,
+  previewItems = [],
+  viewAllLabel = "",
+}) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  useEffect(() => {
+    if (!previewOpen) return undefined;
+    const onDocumentKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setPreviewOpen(false);
+      }
+    };
+    document.addEventListener("keydown", onDocumentKeyDown);
+    return () => document.removeEventListener("keydown", onDocumentKeyDown);
+  }, [previewOpen]);
   const toneClass =
     tone === "good"
       ? "border-emerald-300/30 bg-emerald-400/10"
@@ -623,41 +709,96 @@ function PipelineRow({ title, count, amount, description, onClick, tone = "neutr
       : "text-sky-100/70";
 
   return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={onClick}
-      className={`group flex min-h-[76px] w-full items-start justify-between gap-3 rounded-xl border p-3 text-left shadow-[0_12px_30px_rgba(2,8,23,0.18)] transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12 hover:shadow-[0_18px_38px_rgba(2,8,23,0.24)] ${toneClass}`}
+    <div
+      className="group relative"
+      onMouseEnter={() => setPreviewOpen(true)}
+      onMouseLeave={() => setPreviewOpen(false)}
+      onFocus={() => setPreviewOpen(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setPreviewOpen(false);
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.stopPropagation();
+          setPreviewOpen(false);
+        }
+      }}
     >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-3">
-          {Icon ? (
-            <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}>
-              <Icon className={`h-4 w-4 ${titleClass}`} aria-hidden="true" />
+      <button
+        type="button"
+        data-testid={testId}
+        aria-expanded={previewOpen}
+        aria-controls={`${testId}-preview`}
+        onClick={() => setPreviewOpen((current) => !current)}
+        className={`flex min-h-[76px] w-full items-start justify-between gap-3 rounded-xl border p-3 text-left shadow-[0_12px_30px_rgba(2,8,23,0.18)] transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12 hover:shadow-[0_18px_38px_rgba(2,8,23,0.24)] focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-[#061d42] ${toneClass}`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-3">
+            {Icon ? (
+              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}>
+                <Icon className={`h-4 w-4 ${titleClass}`} aria-hidden="true" />
+              </div>
+            ) : null}
+            <div className={`text-xs font-semibold uppercase tracking-[0.14em] ${titleClass}`}>{title}</div>
+          </div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <div className={`text-xl font-bold leading-none ${titleClass}`}>
+              {typeof count === "number" ? Number(count).toLocaleString() : "0"}
             </div>
-          ) : null}
-          <div className={`text-xs font-semibold uppercase tracking-[0.14em] ${titleClass}`}>{title}</div>
-        </div>
-        <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-          <div className={`text-xl font-bold leading-none ${titleClass}`}>
-            {typeof count === "number" ? Number(count).toLocaleString() : "0"}
+            <div className={`pb-0.5 text-sm font-medium leading-5 ${descriptionClass}`}>
+              items
+            </div>
+            <div className={`ml-auto text-lg font-semibold leading-none ${titleClass}`}>
+              {currency(amount)}
+            </div>
           </div>
-          <div className={`pb-0.5 text-sm font-medium leading-5 ${descriptionClass}`}>
-            items
-          </div>
-          <div className={`ml-auto text-lg font-semibold leading-none ${titleClass}`}>
-            {currency(amount)}
-          </div>
+          <div className={`mt-1 text-xs leading-5 ${descriptionClass}`}>{description}</div>
         </div>
-        <div className={`mt-1 text-xs leading-5 ${descriptionClass}`}>{description}</div>
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/70 opacity-0 transition group-hover:opacity-100">
-          View
+        <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/70 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
+            Preview
+          </div>
+          <ChevronDown className={`h-4 w-4 text-sky-100/60 transition group-hover:text-white ${previewOpen ? "rotate-180 text-white" : ""}`} />
         </div>
-        <ChevronRight className="h-4 w-4 text-sky-100/60 transition group-hover:text-white" />
-      </div>
-    </button>
+      </button>
+      {previewOpen ? (
+        <div
+          id={`${testId}-preview`}
+          data-testid={`${testId}-preview`}
+          className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 rounded-2xl border border-white/18 bg-[#061d42] p-3 shadow-[0_24px_54px_rgba(2,8,23,0.45)]"
+        >
+          {previewItems.length ? (
+            <div className="space-y-2">
+              {previewItems.slice(0, 3).map((item) => (
+                <div key={item.key} className="rounded-xl border border-white/10 bg-white/8 px-3 py-2">
+                  <div className="truncate text-sm font-bold text-white">{item.title}</div>
+                  <div className="mt-1 flex flex-wrap gap-x-2 gap-y-1 text-xs font-semibold text-sky-100/68">
+                    {item.customer ? <span>{item.customer}</span> : null}
+                    {item.amount ? <span>{currency(item.amount)}</span> : null}
+                    {item.date ? <span>{item.date}</span> : null}
+                    {item.statusLabel ? <span>{item.statusLabel}</span> : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-xl border border-dashed border-white/16 bg-white/6 px-3 py-4 text-sm font-semibold text-sky-100/76">
+              No items in this stage.
+            </div>
+          )}
+          <button
+            type="button"
+            data-testid={`${testId}-view-all`}
+            onClick={onClick}
+            className="mt-3 w-full rounded-xl border border-white/18 bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/15"
+          >
+            {viewAllLabel || `View all ${title}`}
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -1923,14 +2064,19 @@ export default function ContractorDashboard() {
 
       notStartedCount: notStarted.length,
       notStartedAmount: notStartedAmt,
+      notStartedItems: notStarted,
       inProgressCount: inProgress.length,
       inProgressAmount: inProgressAmt,
+      inProgressItems: inProgress,
       completedCount: completed.length,
       completedAmount: completedAmt,
+      completedItems: completed,
       reviewedCount: reviewed.length,
       reviewedAmount: reviewedAmt,
+      reviewedItems: reviewed,
       invoicedCount: invoiced.length,
       invoicedAmount: invoicedAmt,
+      invoicedItems: invoiced,
 
       reworkCount: rework.length,
       reworkAmount: reworkAmt,
@@ -2597,6 +2743,7 @@ export default function ContractorDashboard() {
       icon: Target,
       count: mStats.notStartedCount,
       amount: mStats.notStartedAmount,
+      previewItems: (mStats.notStartedItems || []).slice(0, 3).map((item) => milestonePreviewItem(item, "Not Started")),
       description: "Milestones with no recorded progress.",
       tone: "neutral",
       onClick: () => navigate(`/app/milestones?filter=incomplete`),
@@ -2607,6 +2754,7 @@ export default function ContractorDashboard() {
       icon: ListTodo,
       count: mStats.inProgressCount,
       amount: mStats.inProgressAmount,
+      previewItems: (mStats.inProgressItems || []).slice(0, 3).map((item) => milestonePreviewItem(item, "In Progress")),
       description: "Milestones underway but not yet complete.",
       tone: "active",
       onClick: () => navigate(`/app/milestones?filter=incomplete`),
@@ -2617,6 +2765,7 @@ export default function ContractorDashboard() {
       icon: CheckCircle2,
       count: mStats.completedCount,
       amount: mStats.completedAmount,
+      previewItems: (mStats.completedItems || []).slice(0, 3).map((item) => milestonePreviewItem(item, "Completed")),
       description: "Finished milestones waiting to move forward.",
       tone: "good",
       onClick: () => navigate(`/app/milestones?filter=complete_not_invoiced`),
@@ -2627,6 +2776,7 @@ export default function ContractorDashboard() {
       icon: ClipboardCheck,
       count: mStats.reviewedCount,
       amount: mStats.reviewedAmount,
+      previewItems: (mStats.reviewedItems || []).slice(0, 3).map((item) => milestonePreviewItem(item, "Awaiting Review")),
       description: "Completed milestones waiting on review or approval.",
       tone: "warn",
       onClick: () => navigate(`/app/milestones?filter=reviewed`),
@@ -2637,6 +2787,7 @@ export default function ContractorDashboard() {
       icon: FileText,
       count: mStats.invoicedCount,
       amount: mStats.invoicedAmount,
+      previewItems: (mStats.invoicedItems || []).slice(0, 3).map((item) => milestonePreviewItem(item, "Invoiced")),
       description: "Milestones already tied to an invoice or payment request.",
       tone: "purple",
       onClick: () => navigate(`/app/milestones?filter=invoiced`),
@@ -2787,6 +2938,8 @@ export default function ContractorDashboard() {
               description={row.description}
               tone={row.tone}
               onClick={row.onClick}
+              previewItems={row.previewItems}
+              viewAllLabel={`View all ${row.title}`}
             />
           ))}
         </div>
@@ -3200,7 +3353,15 @@ export default function ContractorDashboard() {
                   const priorityTone = nextActionPriorityTone(item);
                   const categoryLabel = nextActionCategoryLabel(item.category);
                   const categoryClass = nextActionCategoryStyles[String(item.category || "operations").toLowerCase()] || nextActionCategoryStyles.operations;
-                  const priorityClass = nextActionPriorityStyles[priorityTone] || nextActionPriorityStyles.low;
+                  const priorityClass = nextActionPriorityStyles[priorityTone] || nextActionPriorityStyles.growth;
+                  const metadataRows = [
+                    item.customer ? ["Customer", item.customer] : null,
+                    item.project ? ["Project", item.project] : null,
+                    formatActionTime(item.received_at) ? ["Received", formatActionTime(item.received_at)] : null,
+                    !formatActionTime(item.received_at) && formatActionTime(item.updated_at) ? ["Updated", formatActionTime(item.updated_at)] : null,
+                    formatActionValue(item.value) ? ["Value", formatActionValue(item.value)] : null,
+                    item.estimated_effort ? ["Effort", item.estimated_effort] : null,
+                  ].filter(Boolean);
                   return (
                     <article
                       key={item.key}
@@ -3213,17 +3374,30 @@ export default function ContractorDashboard() {
                             {categoryLabel}
                           </span>
                           <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-bold uppercase text-sky-100/80">
-                            {priorityTone === "high" ? "High priority" : priorityTone === "medium" ? "Priority" : "Suggested"}
-                          </span>
-                          <span
-                            data-testid={`dashboard-next-action-effort-${item.key}`}
-                            className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-bold text-sky-100/80"
-                          >
-                            {item.estimated_effort || "2 minutes"}
+                            {nextActionUrgencyLabel(item)}
                           </span>
                         </div>
                         <div className="text-base font-black text-white">{item.title}</div>
-                        <div className="mt-2 text-sm leading-6 text-sky-100/78">{item.description}</div>
+                        <div
+                          data-testid={`dashboard-next-action-summary-${item.key}`}
+                          className="mt-2 text-sm leading-6 text-sky-100/78"
+                        >
+                          {item.summary || item.description}
+                        </div>
+                        {metadataRows.length ? (
+                          <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                            {metadataRows.map(([label, value]) => (
+                              <div
+                                key={`${item.key}-${label}`}
+                                data-testid={`dashboard-next-action-meta-${item.key}-${label.toLowerCase()}`}
+                                className="rounded-xl border border-white/10 bg-white/6 px-3 py-2"
+                              >
+                                <dt className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-100/50">{label}</dt>
+                                <dd className="mt-0.5 truncate text-xs font-bold text-white">{value}</dd>
+                              </div>
+                            ))}
+                          </dl>
+                        ) : null}
                         <div className="mt-3 rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-xs font-semibold leading-5 text-sky-100/72">
                           {item.reason || "This keeps today's work moving."}
                         </div>
