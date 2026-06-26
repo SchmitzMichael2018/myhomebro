@@ -301,7 +301,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
 
   await expect(page.getByText('Quick Actions').first()).toBeVisible();
   await expect(page.getByText('Next Actions').first()).toBeVisible();
-  await expect(page.getByText('Schedule').first()).toBeVisible();
+  await expect(page.getByText("Today's Schedule").first()).toBeVisible();
   await expect(page.getByText('Work Pipeline').first()).toBeVisible();
   await expect(page.getByText('Money Pipeline').first()).toBeVisible();
   await expect(page.getByText('Opportunities Snapshot').first()).toBeVisible();
@@ -324,13 +324,12 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   const bidsBox = await page.getByTestId('dashboard-bids-summary').boundingBox();
   const moneyBox = await page.getByTestId('dashboard-money-pipeline').boundingBox();
 
-  expect(workWrapperBox.y).toBeLessThan(quickBox.y);
+  expect(quickBox.y).toBeLessThan(nextBox.y);
+  expect(nextBox.y).toBeLessThan(scheduleWrapperBox.y);
+  expect(scheduleBox.y + scheduleBox.height).toBeLessThan(workWrapperBox.y);
   expect(Math.abs(workWrapperBox.y - bidsWrapperBox.y)).toBeLessThan(40);
   expect(workBox.width).toBeGreaterThan(bidsBox.width);
-  expect(quickBox.y).toBeLessThan(nextBox.y);
-  expect(nextBox.y).toBeLessThan(moneyBox.y);
-  expect(Math.abs(nextBox.y - scheduleWrapperBox.y)).toBeLessThan(40);
-  expect(scheduleBox.y + scheduleBox.height).toBeLessThan(moneyBox.y);
+  expect(bidsWrapperBox.y).toBeLessThan(moneyBox.y);
 
   const scheduleContainsBids = await page
     .getByTestId('dashboard-schedule-section')
@@ -339,6 +338,9 @@ test('dashboard renders operational hierarchy without persistent smart activatio
 
   await expect(page.getByTestId('dashboard-priority-schedule-grid')).toBeVisible();
   await expect(page.getByTestId('dashboard-work-bids-grid')).toBeVisible();
+
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(hasHorizontalOverflow).toBe(false);
 
   const workMoney = page.getByTestId('dashboard-work-money');
   const workMoneyClass = await workMoney.getAttribute('class');
