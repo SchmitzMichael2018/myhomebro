@@ -58,6 +58,42 @@ Modal.setAppElement("#root");
 const money = (n) => Number(n || 0);
 const sum = (arr, key = "amount") => arr.reduce((a, x) => a + money(x?.[key]), 0);
 const norm = (s) => (s || "").toString().toLowerCase();
+const nextActionCategoryStyles = {
+  lead: "border-sky-300/30 bg-sky-300/12 text-sky-100",
+  project: "border-violet-300/30 bg-violet-300/12 text-violet-100",
+  money: "border-emerald-300/30 bg-emerald-300/12 text-emerald-100",
+  customer: "border-amber-300/30 bg-amber-300/12 text-amber-100",
+  marketing: "border-pink-300/30 bg-pink-300/12 text-pink-100",
+  operations: "border-white/20 bg-white/10 text-white",
+};
+const nextActionPriorityStyles = {
+  high: "border-l-red-300",
+  medium: "border-l-amber-300",
+  low: "border-l-sky-300",
+};
+const growthSuggestions = [
+  { key: "improve-website", label: "Improve Website", to: "/app/marketing?tab=website" },
+  { key: "request-reviews", label: "Request Reviews", to: "/app/marketing?tab=reviews" },
+  { key: "upload-portfolio", label: "Upload Portfolio Photos", to: "/app/marketing?tab=gallery" },
+  { key: "invite-team", label: "Invite Team Member", to: "/app/team" },
+];
+
+function nextActionCategoryLabel(category) {
+  const value = String(category || "operations").toLowerCase();
+  if (value === "lead") return "Lead";
+  if (value === "project") return "Project";
+  if (value === "money") return "Money";
+  if (value === "customer") return "Customer";
+  if (value === "marketing") return "Marketing";
+  return "Operations";
+}
+
+function nextActionPriorityTone(action) {
+  const score = Number(action?.priority_score ?? action?.priorityScore ?? 0);
+  if (action?.blocking || score >= 90) return "high";
+  if (score >= 75) return "medium";
+  return "low";
+}
 
 function parseDateAny(v) {
   if (!v) return null;
@@ -1350,6 +1386,7 @@ export default function ContractorDashboard() {
 
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showAllNextActions, setShowAllNextActions] = useState(false);
+  const [dismissedNextActionKeys, setDismissedNextActionKeys] = useState(() => new Set());
 
   // Earned modal + paid expenses cache
   const [showEarnedModal, setShowEarnedModal] = useState(false);
@@ -2410,7 +2447,8 @@ export default function ContractorDashboard() {
     contractorNextActions,
   ]);
   const nextActionCards = useMemo(() => {
-    if (contractorNextActions.length) return contractorNextActions.slice(0, 10);
+    const activeActions = contractorNextActions.filter((action) => !dismissedNextActionKeys.has(action.key));
+    if (activeActions.length) return activeActions.slice(0, 10);
     const traditionalSection = activationSummary?.guide_sections?.traditional_onboarding;
     if (traditionalSection?.visible && !traditionalSection.completed && !traditionalSection.dismissed) {
       return [
@@ -2434,7 +2472,7 @@ export default function ContractorDashboard() {
         action: heroBand.action,
       },
     ];
-  }, [activationSummary, contractorNextActions, heroBand]);
+  }, [activationSummary, contractorNextActions, dismissedNextActionKeys, heroBand]);
   const visibleNextActionCards = useMemo(
     () => nextActionCards.slice(0, showAllNextActions ? 10 : 5),
     [nextActionCards, showAllNextActions]
@@ -3127,20 +3165,23 @@ export default function ContractorDashboard() {
             <DashboardCard
               testId="dashboard-next-actions"
               tone="premium"
-              className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
+              className="p-5 shadow-[0_22px_50px_rgba(2,8,23,0.34)]"
             >
-            <div className="mb-3 flex items-end justify-between gap-3">
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <div className="text-2xl font-bold text-white">
-                  Next Actions
+                <div className="text-xs font-black uppercase tracking-[0.18em] text-sky-200/75">
+                  Today's Priorities
+                </div>
+                <div className="mt-1 text-2xl font-black text-white">
+                  AI Operations Manager
                 </div>
                 <div className="mt-1 text-sm text-sky-100/85">
-                  Top priorities from agreements, milestones, quotes, approvals, and payouts.
+                  The highest-value actions to win work, prevent delays, and keep money moving.
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm">
-                  {nextActionCards.length} total
+                  {nextActionCards.length ? `${nextActionCards.length} active` : "Caught up"}
                 </span>
                 {nextActionCards.length > 5 ? (
                   <button
@@ -3154,37 +3195,96 @@ export default function ContractorDashboard() {
               </div>
             </div>
             {visibleNextActionCards.length ? (
-              <div className="space-y-2.5">
-                {visibleNextActionCards.map((item) => (
-                  <button
-                    key={item.key}
-                    data-testid={`dashboard-next-action-item-${item.key}`}
-                    type="button"
-                    onClick={() => {
-                      if (typeof item.action === "function") {
-                        item.action();
-                        return;
-                      }
-                      navigate(item.navigationTarget || "/app/dashboard");
-                    }}
-                    className="flex w-full items-start justify-between gap-4 rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-sky-300 focus:ring-offset-2 focus:ring-offset-[#061d42]"
-                  >
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-white">{item.title}</div>
-                      <div className="mt-1 text-sm leading-6 text-sky-100/75">{item.description}</div>
-                    </div>
-                    <span
-                      data-testid={`dashboard-next-action-button-${item.key}`}
-                      className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-[#0a2550]"
+              <div className="grid gap-3 lg:grid-cols-2">
+                {visibleNextActionCards.map((item) => {
+                  const priorityTone = nextActionPriorityTone(item);
+                  const categoryLabel = nextActionCategoryLabel(item.category);
+                  const categoryClass = nextActionCategoryStyles[String(item.category || "operations").toLowerCase()] || nextActionCategoryStyles.operations;
+                  const priorityClass = nextActionPriorityStyles[priorityTone] || nextActionPriorityStyles.low;
+                  return (
+                    <article
+                      key={item.key}
+                      data-testid={`dashboard-next-action-item-${item.key}`}
+                      className={`flex min-h-[190px] flex-col justify-between rounded-2xl border border-white/15 border-l-4 bg-white/8 p-4 text-left shadow-sm transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12 ${priorityClass}`}
                     >
-                      {item.buttonLabel || "Open"}
-                    </span>
-                  </button>
-                ))}
+                      <div>
+                        <div className="mb-3 flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black uppercase ${categoryClass}`}>
+                            {categoryLabel}
+                          </span>
+                          <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-bold uppercase text-sky-100/80">
+                            {priorityTone === "high" ? "High priority" : priorityTone === "medium" ? "Priority" : "Suggested"}
+                          </span>
+                          <span
+                            data-testid={`dashboard-next-action-effort-${item.key}`}
+                            className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-bold text-sky-100/80"
+                          >
+                            {item.estimated_effort || "2 minutes"}
+                          </span>
+                        </div>
+                        <div className="text-base font-black text-white">{item.title}</div>
+                        <div className="mt-2 text-sm leading-6 text-sky-100/78">{item.description}</div>
+                        <div className="mt-3 rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-xs font-semibold leading-5 text-sky-100/72">
+                          {item.reason || "This keeps today's work moving."}
+                        </div>
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          data-testid={`dashboard-next-action-button-${item.key}`}
+                          onClick={() => {
+                            if (typeof item.action === "function") {
+                              item.action();
+                              return;
+                            }
+                            navigate(item.recommended_url || item.navigationTarget || "/app/dashboard");
+                          }}
+                          className="rounded-xl bg-white px-4 py-2 text-xs font-black text-[#0a2550] shadow-sm transition hover:-translate-y-px"
+                        >
+                          {item.buttonLabel || "Open"}
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`dashboard-next-action-snooze-${item.key}`}
+                          onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
+                          className="rounded-xl border border-white/18 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-white/10"
+                        >
+                          Snooze
+                        </button>
+                        <button
+                          type="button"
+                          data-testid={`dashboard-next-action-dismiss-${item.key}`}
+                          onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
+                          className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/18 text-sky-100 hover:bg-white/10"
+                          aria-label={`Dismiss ${item.title}`}
+                        >
+                          <X className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
             ) : (
-              <div className="rounded-xl border border-dashed border-white/20 bg-white/8 px-4 py-3 text-sm text-sky-100/80">
-                No next actions surfaced yet.
+              <div
+                data-testid="dashboard-next-actions-empty"
+                className="rounded-2xl border border-dashed border-white/20 bg-white/8 p-5 text-sky-100"
+              >
+                <div className="text-lg font-black text-white">Great job!</div>
+                <div className="mt-1 text-sm font-semibold text-sky-100/80">You're all caught up.</div>
+                <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                  {growthSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion.key}
+                      type="button"
+                      data-testid={`dashboard-growth-suggestion-${suggestion.key}`}
+                      onClick={() => navigate(suggestion.to)}
+                      className="rounded-xl border border-white/15 bg-white/8 px-3 py-3 text-sm font-bold text-white hover:bg-white/12"
+                    >
+                      {suggestion.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             </DashboardCard>

@@ -259,7 +259,18 @@ test('contractor dashboard hides marketplace readiness and performance analytics
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify(activationSummary({ should_show_activation_guide: false })),
+      body: JSON.stringify(activationSummary({
+        should_show_activation_guide: false,
+        has_prefilled_profile: false,
+        has_pending_opportunities: false,
+        pending_opportunity_count: 0,
+        guide_sections: {
+          prefilled_profile: { visible: false, completed: false, dismissed: false },
+          public_leads: { visible: false, completed: false, dismissed: false },
+          draft_agreement: { visible: false, completed: false, dismissed: false },
+          traditional_onboarding: { visible: false, completed: true, dismissed: true },
+        },
+      })),
     });
   });
 
@@ -300,7 +311,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByText('Quick Actions').first()).toBeVisible();
-  await expect(page.getByText('Next Actions').first()).toBeVisible();
+  await expect(page.getByText('AI Operations Manager').first()).toBeVisible();
   await expect(page.getByText("Today's Schedule").first()).toBeVisible();
   await expect(page.getByText('Work Pipeline').first()).toBeVisible();
   await expect(page.getByText('Money Pipeline').first()).toBeVisible();
@@ -312,7 +323,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(page.getByText('Project Context')).toHaveCount(0);
   await expect(page.getByText('Recommended Project Matches')).toHaveCount(0);
   await expect(page.getByText('Open lead inbox')).toHaveCount(0);
-  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Next Actions');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText("Today's Priorities");
 
   const quickBox = await page.getByTestId('dashboard-quick-actions-row').boundingBox();
   const nextBox = await page.getByTestId('dashboard-next-actions').boundingBox();
@@ -360,6 +371,175 @@ test('dashboard renders operational hierarchy without persistent smart activatio
 
   await page.getByTestId('dashboard-bids-view-all').click();
   await expect(page).toHaveURL(/\/app\/opportunities$/);
+});
+
+test('AI operations manager prioritizes leads, dedupes actions, and deep-links', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mockAuth(page);
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(activationSummary({
+        should_show_activation_guide: false,
+        has_prefilled_profile: false,
+        has_pending_opportunities: false,
+        pending_opportunity_count: 0,
+        guide_sections: {
+          prefilled_profile: { visible: false, completed: false, dismissed: false },
+          public_leads: { visible: false, completed: false, dismissed: false },
+          draft_agreement: { visible: false, completed: false, dismissed: false },
+          traditional_onboarding: { visible: false, completed: true, dismissed: true },
+        },
+      })),
+    });
+  });
+  const websiteLead = {
+    id: 501,
+    source_id: 501,
+    record_id: 501,
+    bid_id: 'lead-501',
+    source_kind: 'lead',
+    source: 'quote_request',
+    lead_source_filter: 'website',
+    is_website_lead: true,
+    status: 'new',
+    workspace_stage: 'new_lead',
+    customer_name: 'Avery Customer',
+    project_type: 'kitchen remodel',
+    created_at: '2026-06-25T14:00:00Z',
+  };
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [websiteLead] }),
+    });
+  });
+  await page.route('**/api/projects/contractor-opportunities/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [websiteLead] }),
+    });
+  });
+  await page.route('**/api/projects/agreements/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [
+          { id: 301, title: 'Bathroom Update', status: 'draft', created_at: '2026-06-24T12:00:00Z' },
+          { id: 302, title: 'Deck Repair', status: 'sent', signature_is_satisfied: false, is_fully_signed: false, created_at: '2026-06-23T12:00:00Z' },
+        ],
+      }),
+    });
+  });
+  await page.route('**/api/projects/invoices/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [{ id: 701, status: 'approved', updated_at: '2026-06-25T11:00:00Z' }] }),
+    });
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const actionItems = page.locator('[data-testid^="dashboard-next-action-item-"]');
+  await expect(actionItems.first()).toContainText('New Website Lead');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Avery Customer requested kitchen remodel.');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('2 minutes');
+  await expect(page.getByTestId('dashboard-next-actions').getByText('New Website Lead')).toHaveCount(1);
+  await expect(actionItems.nth(1)).toContainText('Draft agreement ready to send');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Release approved payment');
+
+  await page.getByTestId('dashboard-next-action-snooze-agreement-draft:301').click();
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Draft agreement ready to send');
+
+  await page.getByTestId('dashboard-next-action-button-website-lead:501').click();
+  await expect(page).toHaveURL(/\/app\/opportunities\?source=website$/);
+});
+
+test('AI operations manager hides snoozed actions and shows growth suggestions when caught up', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mockAuth(page);
+  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(activationSummary({
+        should_show_activation_guide: false,
+        has_prefilled_profile: false,
+        has_pending_opportunities: false,
+        pending_opportunity_count: 0,
+        guide_sections: {
+          prefilled_profile: { visible: false, completed: false, dismissed: false },
+          public_leads: { visible: false, completed: false, dismissed: false },
+          draft_agreement: { visible: false, completed: false, dismissed: false },
+          traditional_onboarding: { visible: false, completed: true, dismissed: true },
+        },
+      })),
+    });
+  });
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{
+          id: 601,
+          source_id: 601,
+          lead_source_filter: 'website',
+          is_website_lead: true,
+          status: 'converted',
+          workspace_stage: 'converted',
+          customer_name: 'Completed Lead',
+          project_type: 'roof repair',
+        }],
+      }),
+    });
+  });
+  await page.route('**/api/projects/contractor-opportunities/', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+  });
+  await page.route('**/api/projects/agreements/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{
+          id: 801,
+          title: 'Completed Kitchen Project',
+          status: 'completed',
+          signature_is_satisfied: true,
+          is_fully_signed: true,
+          escrow_funded: true,
+          created_at: '2026-06-20T12:00:00Z',
+        }],
+      }),
+    });
+  });
+  await page.route('**/api/projects/milestones/', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+  });
+  await page.route('**/api/projects/invoices/', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+  });
+  await page.route('**/api/projects/activity-feed/**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+  });
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('New Website Lead');
+  await expect(page.getByTestId('dashboard-next-actions-empty')).toContainText('Great job!');
+  await expect(page.getByTestId('dashboard-growth-suggestion-improve-website')).toBeVisible();
+  await expect(page.getByTestId('dashboard-growth-suggestion-request-reviews')).toBeVisible();
+  await expect(page.getByTestId('dashboard-growth-suggestion-upload-portfolio')).toBeVisible();
+  await expect(page.getByTestId('dashboard-growth-suggestion-invite-team')).toBeVisible();
+
+  await page.getByTestId('dashboard-growth-suggestion-improve-website').click();
+  await expect(page).toHaveURL(/\/app\/marketing\?tab=website$/);
 });
 
 test('opportunity draft agreement banner renders and dismisses', async ({ page }) => {

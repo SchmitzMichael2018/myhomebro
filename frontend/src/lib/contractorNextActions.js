@@ -139,27 +139,40 @@ function buildAction({
   buttonLabel,
   navigationTarget,
   priorityScore,
-  category = "workflow",
+  category = "operations",
   source = "",
   dataTestId = "",
+  actionType = "",
+  reason = "",
+  estimatedEffort = "2 minutes",
+  blocking = false,
 }) {
+  const recommendedUrl = safeText(navigationTarget) || "/app/dashboard";
+  const normalizedPriority = safeNumber(priorityScore);
+  const normalizedActionType = safeText(actionType) || safeText(key).split(":")[0] || "open_work_item";
   return {
     key,
     dedupeKey: safeText(dedupeKey),
     title: safeText(title),
     description: safeText(description),
     buttonLabel: safeText(buttonLabel) || "Open",
-    navigationTarget: safeText(navigationTarget) || "/app/dashboard",
-    priorityScore: safeNumber(priorityScore),
+    navigationTarget: recommendedUrl,
+    priorityScore: normalizedPriority,
     category,
     source,
     dataTestId,
+    action_type: normalizedActionType,
+    priority_score: normalizedPriority,
+    reason: safeText(reason) || safeText(description),
+    estimated_effort: safeText(estimatedEffort) || "2 minutes",
+    recommended_url: recommendedUrl,
+    blocking: Boolean(blocking),
   };
 }
 
 function sortActions(actions) {
   return [...actions].sort((left, right) => {
-    const diff = safeNumber(right.priorityScore) - safeNumber(left.priorityScore);
+    const diff = safeNumber(right.priority_score ?? right.priorityScore) - safeNumber(left.priority_score ?? left.priorityScore);
     if (diff !== 0) return diff;
     return safeText(left.title).localeCompare(safeText(right.title));
   });
@@ -200,9 +213,13 @@ function mapNextBestAction(nextBestAction) {
     buttonLabel: nextBestAction.cta_label || "Open",
     navigationTarget: nextBestAction.navigation_target || "/app/dashboard",
     priorityScore: nextBestAction.priority_score ?? 100,
-    category: nextBestAction.blocking_issue ? "attention" : "workflow",
+    category: nextBestAction.blocking_issue ? "operations" : "project",
     source: nextBestAction.source_system || "activity",
     dataTestId: "dashboard-next-best-action-primary",
+    actionType: nextBestAction.action_type || "next_best_action",
+    reason: nextBestAction.reason || nextBestAction.message,
+    estimatedEffort: nextBestAction.estimated_effort || "3 minutes",
+    blocking: Boolean(nextBestAction.blocking_issue),
   });
 }
 
@@ -239,15 +256,21 @@ export function getContractorNextActions({
       buildAction({
         key: `website-lead:${leadId}`,
         dedupeKey: `website-lead:${leadId}`,
-        title: `You got a new website lead from ${customerName}.`,
+        title: "New Website Lead",
         description: projectType
-          ? `Review the ${projectType} request and follow up from Opportunities.`
-          : "Review the request and follow up from Opportunities.",
+          ? `${customerName} requested ${projectType}.`
+          : `${customerName} submitted a new request.`,
         buttonLabel: "Review Lead",
         navigationTarget: `/app/opportunities?source=${sourceFilter}`,
-        priorityScore: 99,
-        category: "attention",
+        priorityScore: 100,
+        category: "lead",
         source: "website_leads",
+        actionType: "review_website_lead",
+        reason: projectType
+          ? `${customerName} requested help with ${projectType}. Fast responses improve close rate.`
+          : `${customerName} submitted a website lead. Fast responses improve close rate.`,
+        estimatedEffort: "2 minutes",
+        blocking: true,
       })
     );
   }
@@ -270,9 +293,12 @@ export function getContractorNextActions({
         description: "A draft agreement is ready for review and sending.",
         buttonLabel: "Open draft",
         navigationTarget: `/app/agreements/${latestDraft.id}/wizard?step=1`,
-        priorityScore: 95,
-        category: "workflow",
+        priorityScore: 87,
+        category: "project",
         source: "agreements",
+        actionType: "send_draft_agreement",
+        reason: "Sending the draft keeps the customer moving toward signature.",
+        estimatedEffort: "5 minutes",
       })
     );
   }
@@ -292,10 +318,14 @@ export function getContractorNextActions({
         description: `${countLabel(awaitingSignature.length, "agreement")} ${isAre(awaitingSignature.length)} waiting on signature.`,
         buttonLabel: "Open agreements",
         navigationTarget: "/app/agreements?focus=needs_attention&filter=awaiting_signature",
-        priorityScore: 90,
-        category: "attention",
+        priorityScore: 86,
+        category: "project",
         source: "agreements",
         dataTestId: "dashboard-needs-attention-item-awaiting_signature",
+        actionType: "follow_up_signature",
+        reason: "Signed agreements unlock scheduled work and payment setup.",
+        estimatedEffort: "3 minutes",
+        blocking: true,
       })
     );
   }
@@ -318,10 +348,14 @@ export function getContractorNextActions({
         description: `${countLabel(awaitingFunding.length, "agreement")} ${isAre(awaitingFunding.length)} waiting on funding.`,
         buttonLabel: "Open agreements",
         navigationTarget: "/app/agreements?focus=needs_attention&filter=awaiting_funding",
-        priorityScore: 88,
-        category: "attention",
+        priorityScore: 82,
+        category: "money",
         source: "payments",
         dataTestId: "dashboard-needs-attention-item-awaiting_funding",
+        actionType: "collect_escrow_funding",
+        reason: "Funding protects the work before active milestones begin.",
+        estimatedEffort: "4 minutes",
+        blocking: true,
       })
     );
   }
@@ -336,10 +370,13 @@ export function getContractorNextActions({
         description: `${countLabel(invoicePending.length, "payment request")} ${isAre(invoicePending.length)} waiting on approval.`,
         buttonLabel: "Open invoices",
         navigationTarget: "/app/payments?money_status=pending_approval",
-        priorityScore: 82,
-        category: "attention",
+        priorityScore: 78,
+        category: "money",
         source: "invoices",
         dataTestId: "dashboard-needs-attention-item-pending_approval",
+        actionType: "review_invoice_approval",
+        reason: "Payment approvals keep cash moving and prevent project stalls.",
+        estimatedEffort: "3 minutes",
       })
     );
   }
@@ -355,9 +392,12 @@ export function getContractorNextActions({
         description: "An approved invoice is ready for payout handling.",
         buttonLabel: "Open invoice",
         navigationTarget: `/app/invoices/${latestApprovedInvoice.id}`,
-        priorityScore: 78,
+        priorityScore: 80,
         category: "money",
         source: "invoices",
+        actionType: "release_escrow_payment",
+        reason: "Approved funds are ready for the next payment step.",
+        estimatedEffort: "2 minutes",
       })
     );
   }
@@ -372,10 +412,14 @@ export function getContractorNextActions({
         description: `${countLabel(invoiceDisputed.length, "invoice")} ${isAre(invoiceDisputed.length)} disputed and need follow-up.`,
         buttonLabel: "Open issues",
         navigationTarget: "/app/payments?money_status=issues",
-        priorityScore: 76,
-        category: "attention",
+        priorityScore: 84,
+        category: "money",
         source: "invoices",
         dataTestId: "dashboard-needs-attention-item-disputed",
+        actionType: "resolve_payment_issue",
+        reason: "Resolving payment issues protects the customer relationship and payout timing.",
+        estimatedEffort: "10 minutes",
+        blocking: true,
       })
     );
   }
@@ -396,10 +440,13 @@ export function getContractorNextActions({
         description: `${countLabel(submittedMilestones.length, "milestone")} ${isAre(submittedMilestones.length)} waiting for review.`,
         buttonLabel: "Open review queue",
         navigationTarget: "/app/reviewer/queue",
-        priorityScore: 74,
-        category: "attention",
+        priorityScore: 72,
+        category: "project",
         source: "milestones",
         dataTestId: "dashboard-needs-attention-item-submitted_work",
+        actionType: "review_submitted_work",
+        reason: "Reviewed work can move to approval, invoicing, or completion.",
+        estimatedEffort: "5 minutes",
       })
     );
   }
@@ -433,10 +480,16 @@ export function getContractorNextActions({
         description,
         buttonLabel: "Open milestone",
         navigationTarget: `/app/milestones/${latestQuoteMilestone.id}`,
-        priorityScore: quoteStatus === "accepted" ? 79 : 84,
-        category: "attention",
+        priorityScore: quoteStatus === "accepted" ? 91 : 92,
+        category: "customer",
         source: "quotes",
         dataTestId: "dashboard-next-action-quote",
+        actionType: quoteStatus === "accepted" ? "send_subcontractor_agreement" : "review_quote_response",
+        reason: quoteStatus === "accepted"
+          ? "Turn the accepted quote into an agreement before the schedule slips."
+          : "A quote response is waiting and may affect the estimate timeline.",
+        estimatedEffort: "4 minutes",
+        blocking: true,
       })
     );
   }
@@ -461,10 +514,14 @@ export function getContractorNextActions({
         description: `Pricing for ${safeText(latestQuoteRequiredMilestone?.title) || "this milestone"} still needs subcontractor pricing.`,
         buttonLabel: "Open agreement",
         navigationTarget: agreementId ? `/app/agreements/${agreementId}/wizard?step=2` : `/app/milestones/${latestQuoteRequiredMilestone.id}`,
-        priorityScore: 86,
-        category: "attention",
+        priorityScore: 92,
+        category: "customer",
         source: "quotes",
         dataTestId: "dashboard-next-action-quote-required",
+        actionType: "request_quote_response",
+        reason: "The customer estimate cannot move forward cleanly until pricing is confirmed.",
+        estimatedEffort: "5 minutes",
+        blocking: true,
       })
     );
   }
@@ -473,6 +530,7 @@ export function getContractorNextActions({
   if (remainingActivitySlots > 0) {
     const activityActions = [...(Array.isArray(activityFeed) ? activityFeed : [])]
       .filter((item) => !isStatusConfirmationItem(item))
+      .filter((item) => safeText(item?.navigation_target) && safeText(item?.navigation_target) !== "/app/dashboard")
       .slice(0, remainingActivitySlots)
       .map((item, index) =>
         buildAction({
@@ -483,9 +541,12 @@ export function getContractorNextActions({
           buttonLabel: item?.severity === "warning" || item?.severity === "critical" ? "Review" : "Open",
           navigationTarget: item?.navigation_target || "/app/dashboard",
           priorityScore: 25 - index,
-          category: "recent",
+          category: normalizeStatus(item?.severity) === "critical" ? "operations" : "customer",
           source: "activity",
           dataTestId: `dashboard-activity-action-${item?.id ?? index}`,
+          actionType: "review_customer_activity",
+          reason: item?.summary || "Recent activity may need a response.",
+          estimatedEffort: "2 minutes",
         })
       );
     actions.push(...activityActions);
