@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
@@ -11,6 +13,25 @@ from projects.models_contractor_discovery import (
 from projects.models_project_intake import ProjectIntake
 from projects.models_sms import SMSAutomationDecision, SMSConsent
 from projects.services.contractor_directory import normalize_business_name
+
+
+def _use_secure_requests(client):
+    client.defaults.update(
+        {
+            "wsgi.url_scheme": "https",
+            "SERVER_PORT": "443",
+            "HTTPS": "on",
+            "HTTP_X_FORWARDED_PROTO": "https",
+        }
+    )
+    for method_name in ("get", "post", "put", "patch", "delete"):
+        original = getattr(client, method_name)
+
+        def secure_method(*args, _original=original, **kwargs):
+            kwargs.setdefault("secure", True)
+            return _original(*args, **kwargs)
+
+        setattr(client, method_name, secure_method)
 
 
 class ContractorOpportunityFlowTests(TestCase):
@@ -68,6 +89,7 @@ class ContractorOpportunityFlowTests(TestCase):
         )
         self.intake.ensure_share_token()
         self.client = APIClient()
+        _use_secure_requests(self.client)
 
     def _make_contractor_marketplace_eligible(self, contractor=None):
         contractor = contractor or self.contractor
@@ -141,7 +163,8 @@ class ContractorOpportunityFlowTests(TestCase):
         TWILIO_PHONE_NUMBER="",
         TWILIO_FROM_NUMBER="",
     )
-    def test_selecting_contractor_records_retryable_sms_failure_when_provider_missing(self):
+    @patch("projects.services.sms_automation._in_quiet_hours", return_value=False)
+    def test_selecting_contractor_records_retryable_sms_failure_when_provider_missing(self, _quiet_hours):
         SMSConsent.objects.create(
             phone_number_e164="+15125551111",
             contractor=self.contractor,
@@ -351,12 +374,12 @@ class ContractorOpportunityFlowTests(TestCase):
         )
         self.client.force_authenticate(self.contractor_user)
 
-        response = self.client.get("/api/projects/contractor-opportunities/", {"status": "pending"})
+        response = self.client.get("/api/projects/contractor-opportunities/", {"status": "submitted"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
-        self.assertEqual(response.data["results"][0]["homeowner_email"], "casey@example.com")
-        self.assertEqual(response.data["results"][0]["status"], "pending")
+        self.assertEqual(response.data["results"][0]["customer_email"], "casey@example.com")
+        self.assertEqual(response.data["results"][0]["status"], "submitted")
 
     def test_converted_opportunities_return_agreement_info(self):
         self.client.post(
@@ -370,10 +393,10 @@ class ContractorOpportunityFlowTests(TestCase):
         accept = self.client.post(f"/api/projects/contractor-opportunities/{opportunity.id}/accept/", {}, format="json")
         self.assertEqual(accept.status_code, 200)
 
-        response = self.client.get("/api/projects/contractor-opportunities/", {"status": "converted"})
+        response = self.client.get("/api/projects/contractor-opportunities/", {"status": "awarded"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data["results"]), 1)
-        self.assertEqual(response.data["results"][0]["status"], "converted")
-        self.assertIsNotNone(response.data["results"][0]["agreement_id"])
-        self.assertIn("/app/agreements/", response.data["results"][0]["next_url"])
+        self.assertEqual(response.data["results"][0]["status"], "awarded")
+        self.assertIsNotNone(response.data["results"][0]["linked_agreement_id"])
+        self.assertIn("/app/agreements/", response.data["results"][0]["linked_agreement_url"])
