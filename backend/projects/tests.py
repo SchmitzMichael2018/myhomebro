@@ -493,6 +493,72 @@ class CustomerWorkspaceApiTests(TestCase):
         self.assertEqual(row["last_activity"], "Communication activity")
         self.assertTrue(row["last_activity_at"])
 
+    def test_customer_records_endpoint_returns_normalized_filtered_paginated_records(self):
+        self._seed_workspace_activity()
+        CustomerCommunicationLog.objects.create(
+            contractor=self.contractor,
+            customer=self.customer,
+            created_by=self.user,
+            communication_type=CustomerCommunicationLog.TYPE_INTERNAL_NOTE,
+            direction=CustomerCommunicationLog.DIRECTION_INTERNAL,
+            subject="Cabinet follow-up",
+            body="Follow up with cabinet pricing.",
+            occurred_at=timezone.now(),
+            follow_up_at=timezone.now() - timedelta(hours=1),
+        )
+        other_customer = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Customer",
+            email="other-customer@example.com",
+        )
+        other_profile = ContractorPublicProfile.objects.create(
+            contractor=self.other_contractor,
+            business_name_public="Other Builders",
+            is_public=True,
+        )
+        PublicContractorLead.objects.create(
+            contractor=self.other_contractor,
+            public_profile=other_profile,
+            converted_homeowner=other_customer,
+            full_name="Other Customer",
+            email=other_customer.email,
+            project_type="Other contractor only",
+            status=PublicContractorLead.STATUS_NEW,
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/projects/customers/records/?page_size=2")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["count"], 8)
+        self.assertEqual(len(response.data["results"]), 2)
+        self.assertEqual(response.data["next"], 2)
+        self.assertIsNone(response.data["previous"])
+        self.assertEqual(response.data["summary"]["requests"], 2)
+        self.assertEqual(response.data["summary"]["opportunities"], 2)
+        self.assertEqual(response.data["summary"]["agreements"], 2)
+        self.assertEqual(response.data["summary"]["payments"], 1)
+        self.assertEqual(response.data["summary"]["communications"], 1)
+        self.assertGreaterEqual(response.data["summary"]["needs_attention"], 1)
+        first = response.data["results"][0]
+        self.assertTrue({"id", "type", "source", "customer_id", "customer_name", "title", "status", "timestamp", "url", "primary_action_label", "needs_attention"}.issubset(first.keys()))
+        self.assertNotIn("Other contractor only", {row["title"] for row in response.data["results"]})
+
+        request_response = self.client.get("/api/projects/customers/records/?type=request")
+        self.assertEqual(request_response.status_code, 200, request_response.data)
+        self.assertEqual(request_response.data["count"], 2)
+        self.assertTrue(all(row["type"] == "request" for row in request_response.data["results"]))
+
+        attention_response = self.client.get("/api/projects/customers/records/?needs_attention=true")
+        self.assertEqual(attention_response.status_code, 200, attention_response.data)
+        self.assertGreater(attention_response.data["count"], 0)
+        self.assertTrue(all(row["needs_attention"] for row in attention_response.data["results"]))
+
+        search_response = self.client.get("/api/projects/customers/records/?search=Cabinet")
+        self.assertEqual(search_response.status_code, 200, search_response.data)
+        self.assertGreaterEqual(search_response.data["count"], 1)
+        self.assertTrue(any("Cabinet" in row["title"] or "cabinet" in row["description"].lower() for row in search_response.data["results"]))
+
     def test_contractor_can_create_update_and_delete_customer_communication_log(self):
         self.client.force_authenticate(self.user)
         occurred_at = timezone.now().isoformat()

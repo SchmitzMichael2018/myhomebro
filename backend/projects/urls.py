@@ -20,7 +20,7 @@ from .views.milestone import (
     MilestoneFileViewSet,
     MilestoneCommentViewSet,
 )
-from .views.homeowner import HomeownerViewSet
+from .views.homeowner import HomeownerViewSet, customer_records
 from .views.project import ProjectViewSet
 
 from .views.dispute import (
@@ -416,6 +416,7 @@ agreements_router.register(
 
 urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
+    path("customers/records/", customer_records, name="customer-records"),
     path("contractor/website/", ContractorWebsiteView.as_view(), name="contractor-website"),
     path("contractor/website/ai-assist/", ContractorWebsiteAiAssistView.as_view(), name="contractor-website-ai-assist"),
     path("contractor/website/preview/", ContractorWebsitePreviewView.as_view(), name="contractor-website-preview"),

@@ -228,220 +228,202 @@ async function mockCustomersWorkspaceApi(page, payload = workspacePayload) {
   });
 }
 
-test("customer records dashboard renders requests, bids, agreements, and payments", async ({ page }) => {
+const records = [
+  {
+    id: "request-11",
+    type: "request",
+    source: "project_intake",
+    customer_id: 42,
+    customer_name: "Jordan Customer",
+    customer_email: "jordan@example.com",
+    title: "Kitchen Refresh",
+    description: "Need a kitchen refresh.",
+    status: "submitted",
+    amount: null,
+    timestamp: "2026-04-14T12:00:00Z",
+    url: "/app/intake/new?intakeId=11",
+    primary_action_label: "Open request",
+    needs_attention: true,
+  },
+  {
+    id: "opportunity-41",
+    type: "opportunity",
+    source: "public_lead",
+    customer_id: 42,
+    customer_name: "Jordan Customer",
+    customer_email: "jordan@example.com",
+    title: "Website lead",
+    description: "Public profile quote request.",
+    status: "new",
+    amount: null,
+    timestamp: "2026-04-13T12:00:00Z",
+    url: "/app/opportunities",
+    primary_action_label: "Open opportunity",
+    needs_attention: true,
+  },
+  {
+    id: "agreement-301",
+    type: "agreement",
+    source: "agreement",
+    customer_id: 43,
+    customer_name: "Riley Business",
+    customer_email: "riley@example.com",
+    title: "Commercial Renovation",
+    description: "Office renovation scope.",
+    status: "signed",
+    amount: "42000.00",
+    timestamp: "2026-04-12T12:00:00Z",
+    url: "/app/agreements/301",
+    primary_action_label: "Open agreement",
+    needs_attention: false,
+  },
+  {
+    id: "invoice-401",
+    type: "payment",
+    source: "invoice",
+    customer_id: 43,
+    customer_name: "Riley Business",
+    customer_email: "riley@example.com",
+    title: "Invoice 401",
+    description: "Commercial Renovation",
+    status: "sent",
+    amount: "8400.00",
+    timestamp: "2026-04-11T12:00:00Z",
+    url: "/app/invoices/401",
+    primary_action_label: "Open invoice",
+    needs_attention: true,
+  },
+  {
+    id: "communication-1",
+    type: "communication",
+    source: "communication_log",
+    customer_id: 42,
+    customer_name: "Jordan Customer",
+    customer_email: "jordan@example.com",
+    title: "Phone follow-up",
+    description: "Discussed cabinet pricing.",
+    status: "outbound",
+    amount: null,
+    timestamp: "2026-04-10T12:00:00Z",
+    url: "/app/customers/42#communication",
+    primary_action_label: "Open communication",
+    needs_attention: false,
+  },
+];
+
+function summaryFor(rows) {
+  return {
+    all: rows.length,
+    requests: rows.filter((row) => row.type === "request").length,
+    opportunities: rows.filter((row) => row.type === "opportunity").length,
+    agreements: rows.filter((row) => row.type === "agreement").length,
+    payments: rows.filter((row) => row.type === "payment").length,
+    communications: rows.filter((row) => row.type === "communication").length,
+    needs_attention: rows.filter((row) => row.needs_attention).length,
+  };
+}
+
+async function mockRecordsApi(page, sourceRows = records) {
+  await page.route("**/api/projects/customers/records/**", async (route) => {
+    const url = new URL(route.request().url());
+    const type = url.searchParams.get("type");
+    const needsAttention = url.searchParams.get("needs_attention");
+    const search = (url.searchParams.get("search") || "").toLowerCase();
+    const pageNumber = Number(url.searchParams.get("page") || 1);
+    const pageSize = Number(url.searchParams.get("page_size") || 20);
+    let filtered = [...sourceRows];
+    if (type) filtered = filtered.filter((row) => row.type === type);
+    if (needsAttention) filtered = filtered.filter((row) => row.needs_attention);
+    if (search) {
+      filtered = filtered.filter((row) =>
+        [row.customer_name, row.customer_email, row.title, row.description].join(" ").toLowerCase().includes(search)
+      );
+    }
+    const start = (pageNumber - 1) * pageSize;
+    const pageRows = filtered.slice(start, start + pageSize);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: pageRows,
+        count: filtered.length,
+        summary: summaryFor(sourceRows),
+        facets: { types: ["request", "opportunity", "agreement", "payment", "communication"] },
+        next: start + pageSize < filtered.length ? pageNumber + 1 : null,
+        previous: pageNumber > 1 ? pageNumber - 1 : null,
+      }),
+    });
+  });
+}
+
+test("customer records hub renders unified feed, filters, and pagination", async ({ page }) => {
   await authAndWhoAmI(page);
+  await mockRecordsApi(page);
 
-  await page.route("**/api/projects/intakes/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        results: [
-          {
-            id: 11,
-            customer_name: "Jordan Customer",
-            customer_email: "jordan@example.com",
-            project_class: "residential",
-            status: "submitted",
-            ai_project_title: "Kitchen Refresh",
-            accomplishment_text: "Need a kitchen refresh.",
-            submitted_at: "2026-04-10T12:00:00Z",
-            agreement: null,
-          },
-          {
-            id: 12,
-            customer_name: "Riley Business",
-            customer_email: "riley@example.com",
-            project_class: "commercial",
-            status: "converted",
-            ai_project_title: "Commercial Renovation",
-            accomplishment_text: "Office renovation scope.",
-            converted_at: "2026-04-09T12:00:00Z",
-            agreement: 301,
-          },
-        ],
-      }),
-    });
-  });
+  await page.goto("/app/customers/records", { waitUntil: "domcontentloaded" });
 
-  await page.route("**/api/projects/contractor/bids/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        summary: {
-          total_bids: 2,
-          open_bids: 1,
-          under_review_bids: 0,
-          awarded_bids: 1,
-          declined_expired_bids: 0,
-        },
-        results: [
-          {
-            bid_id: "lead-41",
-            project_title: "Kitchen Refresh",
-            customer_name: "Jordan Customer",
-            project_class: "residential",
-            project_class_label: "Residential",
-            status: "submitted",
-            status_label: "Submitted",
-            submitted_at: "2026-04-11T10:00:00Z",
-            next_action: { key: "review", label: "Review Bid" },
-            linked_agreement_id: null,
-            linked_agreement_url: "",
-          },
-          {
-            bid_id: "intake-12",
-            project_title: "Commercial Renovation",
-            customer_name: "Riley Business",
-            project_class: "commercial",
-            project_class_label: "Commercial",
-            status: "expired",
-            status_label: "Not Selected",
-            submitted_at: "2026-04-09T11:00:00Z",
-            status_note: "Another contractor was selected for this project.",
-            next_action: { key: "view", label: "View Details" },
-            linked_agreement_id: null,
-            linked_agreement_url: "",
-          },
-        ],
-      }),
-    });
-  });
+  await expect(page.locator(".mhb-operational-surface")).toBeVisible();
+  await expect(page.getByTestId("hub-tabs").getByRole("link", { name: "Customers" })).toBeVisible();
+  await expect(page.getByTestId("hub-tabs").getByRole("link", { name: "Records" })).toBeVisible();
+  await expect(page.getByTestId("hub-tabs").getByRole("link", { name: "Activity" })).toHaveCount(0);
+  await expect(page.getByTestId("hub-tabs").getByRole("link", { name: "Requests" })).toHaveCount(0);
+  await expect(page.getByTestId("hub-tabs").getByRole("link", { name: "Agreements" })).toHaveCount(0);
 
-  await page.route("**/api/projects/agreements/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        results: [
-          {
-            id: 301,
-            project_title: "Commercial Renovation",
-            customer_name: "Riley Business",
-            project_class: "commercial",
-            status: "signed",
-            total_cost: "42000.00",
-            updated_at: "2026-04-09T15:00:00Z",
-          },
-          {
-            id: 302,
-            project_title: "Kitchen Refresh",
-            customer_name: "Jordan Customer",
-            project_class: "residential",
-            status: "draft",
-            total_cost: "18500.00",
-            updated_at: "2026-04-08T15:00:00Z",
-          },
-        ],
-      }),
-    });
-  });
-
-  await page.route("**/api/projects/invoices/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        results: [
-          {
-            id: 401,
-            recordType: "invoice",
-            agreement_id: 301,
-            agreement_title: "Commercial Renovation",
-            customer_name: "Riley Business",
-            project_class: "commercial",
-            amount: 8400,
-            status: "paid",
-            display_status: "Paid",
-            paid_at: "2026-04-12T15:00:00Z",
-          },
-        ],
-      }),
-    });
-  });
-
-  await page.route("**/api/projects/draws/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        results: [
-          {
-            id: 501,
-            recordType: "draw_request",
-            agreement_id: 301,
-            agreement_title: "Commercial Renovation",
-            amount: 3600,
-            payment_mode: "escrow",
-            status: "paid",
-            workflow_status_label: "Paid",
-            project_class: "commercial",
-            paid_at: "2026-04-13T15:00:00Z",
-          },
-        ],
-      }),
-    });
-  });
-
-  await page.goto("/app/customers/activity", { waitUntil: "domcontentloaded" });
-
+  await expect(page.getByTestId("customer-records-summary-all")).toContainText("5");
   await expect(page.getByTestId("customer-records-summary-requests")).toContainText("1");
-  await expect(page.getByTestId("customer-records-summary-bids")).toContainText("2");
-  await expect(page.getByTestId("customer-records-summary-agreements")).toContainText("2");
-  await expect(page.getByTestId("customer-records-summary-payments")).toContainText("2");
+  await expect(page.getByTestId("customer-records-summary-opportunities")).toContainText("1");
+  await expect(page.getByTestId("customer-records-summary-agreements")).toContainText("1");
+  await expect(page.getByTestId("customer-records-summary-payments")).toContainText("1");
+  await expect(page.getByTestId("customer-records-summary-needs_attention")).toContainText("3");
+  await expect(page.getByTestId("customer-records-feed")).toContainText("Kitchen Refresh");
+  await expect(page.getByTestId("customer-records-feed")).toContainText("Invoice 401");
+  await expect(page.getByRole("link", { name: /Open invoice/ })).toHaveAttribute("href", "/app/invoices/401");
+  await expect(page.getByRole("link", { name: "Customer workspace" }).first()).toHaveAttribute("href", "/app/customers/42");
+  await expect(page.getByTestId("customer-records-pagination")).toContainText("Page 1");
 
-  await expect(page.getByTestId("customer-records-requests-table")).toContainText("Kitchen Refresh");
-  await expect(page.getByTestId("customer-records-bids-table")).toContainText("Commercial Renovation");
-  await expect(page.getByTestId("customer-records-bids-table")).toContainText("Not Selected");
-  await expect(page.getByTestId("customer-records-agreements-table")).toContainText("Commercial Renovation");
-  await expect(page.getByTestId("customer-records-payments-table")).toContainText("Commercial Renovation");
+  await page.getByTestId("customer-records-filter-chips").getByRole("button", { name: "Requests" }).click();
+  await expect(page).toHaveURL(/\/app\/customers\/records\?type=request/);
+  await expect(page.getByTestId("customer-records-feed")).toContainText("Kitchen Refresh");
+  await expect(page.getByTestId("customer-records-feed")).not.toContainText("Invoice 401");
 
-  await expect(page.getByRole("link", { name: "View all opportunities" })).toHaveAttribute("href", "/app/opportunities");
-  await expect(page.getByRole("link", { name: "View all agreements" })).toHaveAttribute("href", "/app/agreements");
-  await expect(page.getByRole("link", { name: "View all payments" })).toHaveAttribute("href", "/app/payments");
+  await page.getByTestId("customer-records-filter-chips").getByRole("button", { name: "Needs Attention" }).click();
+  await expect(page).toHaveURL(/needs_attention=true/);
+  await expect(page.getByTestId("customer-records-feed")).toContainText("Website lead");
 
-  await expect(page.getByRole("link", { name: "Open Agreement" }).first()).toHaveAttribute(
-    "href",
-    "/app/agreements/301"
-  );
-  await expect(page.getByRole("link", { name: "Open Invoice" })).toHaveAttribute("href", "/app/invoices/401");
+  await page.getByPlaceholder("Search customer, email, project, request...").fill("invoice");
+  await page.getByRole("button", { name: "Search" }).click();
+  await expect(page).toHaveURL(/search=invoice/);
 });
 
-test("customer records dashboard shows clean empty states", async ({ page }) => {
+test("customer records legacy routes redirect into the records hub", async ({ page }) => {
   await authAndWhoAmI(page);
-
-  await page.route("**/api/projects/intakes/**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
-  });
-  await page.route("**/api/projects/contractor/bids/**", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ results: [], summary: {} }),
-    });
-  });
-  await page.route("**/api/projects/agreements/**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
-  });
-  await page.route("**/api/projects/invoices/**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
-  });
-  await page.route("**/api/projects/draws/**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
-  });
+  await mockRecordsApi(page);
 
   await page.goto("/app/customers/activity", { waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/app\/customers\/records$/);
 
-  await expect(page.getByTestId("customer-records-summary-requests")).toContainText("0");
-  await expect(page.getByTestId("customer-records-summary-bids")).toContainText("0");
-  await expect(page.getByTestId("customer-records-summary-agreements")).toContainText("0");
-  await expect(page.getByTestId("customer-records-summary-payments")).toContainText("0");
+  await page.goto("/app/customers/requests", { waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/app\/customers\/records\?type=request$/);
+  await expect(page.getByTestId("customer-records-feed")).toContainText("Kitchen Refresh");
 
-  await expect(page.getByTestId("customer-records-requests-table-empty")).toBeVisible();
-  await expect(page.getByTestId("customer-records-bids-table-empty")).toBeVisible();
-  await expect(page.getByTestId("customer-records-agreements-table-empty")).toBeVisible();
-  await expect(page.getByTestId("customer-records-payments-table-empty")).toBeVisible();
+  await page.goto("/app/customers/agreements", { waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/app\/customers\/records\?type=agreement$/);
+  await expect(page.getByTestId("customer-records-feed")).toContainText("Commercial Renovation");
+});
+
+test("customer records hub shows clean empty state and mobile has no horizontal overflow", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockRecordsApi(page, []);
+  await page.setViewportSize({ width: 390, height: 900 });
+
+  await page.goto("/app/customers/records", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("customer-records-summary-all")).toContainText("0");
+  await expect(page.getByTestId("customer-records-empty")).toBeVisible();
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2
+  );
+  expect(hasHorizontalOverflow).toBeFalsy();
 });
 
 test("customer list row opens the customer workspace and edit stays secondary", async ({ page }) => {

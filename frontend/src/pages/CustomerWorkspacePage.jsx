@@ -34,6 +34,12 @@ const TABS = [
   "Communication",
 ];
 
+const OVERVIEW_TIMELINE_PREVIEW_LIMIT = 5;
+
+// Full workspace tabs intentionally render the complete payload returned by
+// the workspace endpoint in Phase 1A. Add pagination/filter controls before
+// increasing backend workspace limits or exposing larger customer histories.
+
 const COMMUNICATION_TYPE_OPTIONS = [
   ["all", "All communication"],
   ["internal_note", "Internal notes"],
@@ -677,7 +683,7 @@ export default function CustomerWorkspacePage() {
                 <section className="rounded-2xl border border-white/12 bg-slate-950/45 p-5">
                   <h2 className="text-lg font-semibold text-white">What is happening with this customer?</h2>
                   <div className="mt-4">
-                    <Timeline events={(workspace.timeline || []).slice(0, 5)} />
+                    <Timeline events={(workspace.timeline || []).slice(0, OVERVIEW_TIMELINE_PREVIEW_LIMIT)} />
                   </div>
                 </section>
                 <section className="rounded-2xl border border-white/12 bg-slate-950/45 p-5">
@@ -815,7 +821,7 @@ export default function CustomerWorkspacePage() {
                     key={`communication-${row.id}`}
                     title={row.subject || row.communication_type_label}
                     subtitle={row.body}
-                    meta={`${row.communication_type_label || "Communication"} • ${row.direction_label || row.direction || "Internal"}`}
+                    meta={`${row.communication_type_label || "Communication"} | ${row.direction_label || row.direction || "Internal"}`}
                     status={row.follow_up_at ? `Follow up ${formatDateTime(row.follow_up_at)}` : row.visibility_label || row.visibility}
                   />
                 )}

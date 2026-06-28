@@ -183,10 +183,11 @@ export function protectedRoutes() {
           <Route path="opportunities" element={<ContractorBidsPage />} />
           <Route path="bids" element={<Navigate to="/app/opportunities" replace />} />
 
-          <Route path="customers/activity" element={<CustomerRecordsPage />} />
-          <Route path="customers/requests" element={<CustomerRecordsPage />} />
-          <Route path="customers/agreements" element={<CustomerRecordsPage />} />
-          <Route path="customer-records" element={<Navigate to="/app/customers/activity" replace />} />
+          <Route path="customers/records" element={<CustomerRecordsPage />} />
+          <Route path="customers/activity" element={<Navigate to="/app/customers/records" replace />} />
+          <Route path="customers/requests" element={<Navigate to="/app/customers/records?type=request" replace />} />
+          <Route path="customers/agreements" element={<Navigate to="/app/customers/records?type=agreement" replace />} />
+          <Route path="customer-records" element={<Navigate to="/app/customers/records" replace />} />
 
           <Route path="intake/new" element={<ProjectIntakeForm />} />
 

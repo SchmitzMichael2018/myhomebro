@@ -1090,6 +1090,11 @@ class Homeowner(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # TODO CRM: Contractor customer rating should be private/internal CRM data,
+    # not public review data. A future relationship profile can support 1-5
+    # stars, tags, priority, and relationship notes without exposing them to
+    # homeowners or public contractor profiles.
+
     class Meta:
         ordering = ["full_name"]
         constraints = [

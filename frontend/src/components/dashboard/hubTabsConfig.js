@@ -1,8 +1,6 @@
 export const customerHubTabs = [
   { to: "/app/customers", label: "Customers", end: true },
-  { to: "/app/customers/activity", label: "Activity" },
-  { to: "/app/customers/requests", label: "Requests" },
-  { to: "/app/customers/agreements", label: "Agreements" },
+  { to: "/app/customers/records", label: "Records" },
 ];
 
 export const teamHubTabs = [

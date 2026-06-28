@@ -1,14 +1,15 @@
 # backend/projects/views/homeowner.py
 from __future__ import annotations
 
+from datetime import datetime, time
 from decimal import Decimal
 
 from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import Lower
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
+from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import viewsets, filters, permissions, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, NotFound
 from rest_framework.request import Request
@@ -695,6 +696,375 @@ def attach_customer_directory_metrics(customers, contractor) -> None:
     for customer in customers:
         for key, value in metrics.get(customer.id, {}).items():
             setattr(customer, key, value)
+
+
+def _record_timestamp(*values):
+    for value in values:
+        if value:
+            return value
+    return None
+
+
+def _record_search_text(record):
+    return " ".join(
+        _safe_text(record.get(field)).lower()
+        for field in ["customer_name", "customer_email", "title", "description", "status", "source"]
+    )
+
+
+def _parse_record_filter_datetime(value, *, end_of_day=False):
+    if not value:
+        return None
+    parsed = parse_datetime(str(value))
+    if parsed is None:
+        parsed_date = parse_date(str(value))
+        if parsed_date is None:
+            return None
+        parsed = datetime.combine(parsed_date, time.max if end_of_day else time.min)
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _record_matches_filters(record, params):
+    type_filter = _safe_text(params.get("type")).lower().rstrip("s")
+    if type_filter:
+        aliases = {
+            "lead": "opportunity",
+            "opportunities": "opportunity",
+            "requests": "request",
+            "agreements": "agreement",
+            "payments": "payment",
+            "communications": "communication",
+        }
+        expected = aliases.get(type_filter, type_filter)
+        if record["type"] != expected:
+            return False
+
+    status_filter = _safe_text(params.get("status")).lower()
+    if status_filter and _safe_text(record.get("status")).lower() != status_filter:
+        return False
+
+    source_filter = _safe_text(params.get("source")).lower()
+    if source_filter and _safe_text(record.get("source")).lower() != source_filter:
+        return False
+
+    customer_filter = _safe_text(params.get("customer") or params.get("customer_id"))
+    if customer_filter and str(record.get("customer_id") or "") != customer_filter:
+        return False
+
+    needs_attention = _safe_text(params.get("needs_attention")).lower()
+    if needs_attention in {"1", "true", "yes"} and not record.get("needs_attention"):
+        return False
+
+    search = _safe_text(params.get("search") or params.get("q")).lower()
+    if search and search not in _record_search_text(record):
+        return False
+
+    start = _parse_record_filter_datetime(params.get("date_from")) if params.get("date_from") else None
+    end = _parse_record_filter_datetime(params.get("date_to"), end_of_day=True) if params.get("date_to") else None
+    timestamp = record.get("_timestamp")
+    if start and timestamp and timestamp < start:
+        return False
+    if end and timestamp and timestamp > end:
+        return False
+    return True
+
+
+def _append_record(records, *, record_type, source, customer, title, description="", status="", amount=None, timestamp=None, url="", primary_action_label="", needs_attention=False, source_id=None):
+    if not customer or not timestamp:
+        return
+    source_key = f"{source}-{source_id or len(records)}"
+    records.append(
+        {
+            "id": source_key,
+            "type": record_type,
+            "source": source,
+            "customer_id": customer.id,
+            "customer_name": customer.company_name or customer.full_name,
+            "customer_email": customer.email,
+            "title": title or f"{record_type.title()} record",
+            "description": description or "",
+            "status": status or "",
+            "amount": _money(amount) if amount is not None else None,
+            "timestamp": _iso(timestamp),
+            "_timestamp": timestamp,
+            "url": url,
+            "primary_action_label": primary_action_label or "Open record",
+            "needs_attention": bool(needs_attention),
+        }
+    )
+
+
+def build_customer_records_payload(contractor, params) -> dict:
+    customers = list(Homeowner.objects.filter(created_by=contractor).order_by("full_name", "id"))
+    customer_ids = [customer.id for customer in customers]
+    customers_by_id = {customer.id: customer for customer in customers}
+    email_to_customer = {
+        _customer_email_key(customer.email): customer
+        for customer in customers
+        if _customer_email_key(customer.email)
+    }
+    email_keys = list(email_to_customer.keys())
+    records = []
+
+    public_lead_attention_statuses = {
+        PublicContractorLead.STATUS_NEW,
+        PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE,
+        PublicContractorLead.STATUS_READY_FOR_REVIEW,
+        PublicContractorLead.STATUS_FOLLOW_UP,
+    }
+    for lead in PublicContractorLead.objects.filter(contractor=contractor).filter(
+        Q(converted_homeowner_id__in=customer_ids) | Q(email__in=email_keys)
+    ).select_related("converted_homeowner"):
+        customer = lead.converted_homeowner or email_to_customer.get(_customer_email_key(lead.email))
+        _append_record(
+            records,
+            record_type="opportunity",
+            source="public_lead",
+            source_id=lead.id,
+            customer=customer,
+            title=lead.project_type or "Public lead",
+            description=lead.project_description,
+            status=lead.status,
+            timestamp=_record_timestamp(lead.updated_at, lead.created_at),
+            url=f"/app/opportunities?source={lead.source or 'website'}",
+            primary_action_label="Open opportunity",
+            needs_attention=lead.status in public_lead_attention_statuses,
+        )
+
+    intake_attention_statuses = {"draft", "submitted", "analyzed"}
+    intakes = ProjectIntake.objects.filter(
+        Q(contractor=contractor) | Q(public_profile__contractor=contractor) | Q(contractor__isnull=True)
+    ).filter(Q(homeowner_id__in=customer_ids) | Q(customer_email__in=email_keys)).select_related("homeowner")
+    for intake in intakes:
+        customer = intake.homeowner or email_to_customer.get(_customer_email_key(intake.customer_email))
+        _append_record(
+            records,
+            record_type="request",
+            source="project_intake",
+            source_id=intake.id,
+            customer=customer,
+            title=intake.ai_project_title or intake.ai_project_type or intake.accomplishment_text or "Project intake",
+            description=intake.ai_description or intake.accomplishment_text,
+            status=intake.status,
+            timestamp=_record_timestamp(intake.submitted_at, intake.analyzed_at, intake.updated_at, intake.created_at),
+            url=f"/app/intake/new?intakeId={intake.id}",
+            primary_action_label="Open request",
+            needs_attention=intake.status in intake_attention_statuses,
+        )
+
+    request_attention_statuses = {
+        CustomerRequest.STATUS_SUBMITTED,
+        CustomerRequest.STATUS_ROUTED,
+        CustomerRequest.STATUS_MARKETPLACE_READY,
+        CustomerRequest.STATUS_MATCHED,
+    }
+    for row in CustomerRequest.objects.filter(Q(homeowner_id__in=customer_ids) | Q(customer_email__in=email_keys)).select_related("homeowner"):
+        customer = row.homeowner or email_to_customer.get(_customer_email_key(row.customer_email))
+        _append_record(
+            records,
+            record_type="request",
+            source="customer_request",
+            source_id=row.id,
+            customer=customer,
+            title=row.title or "Customer request",
+            description=row.description,
+            status=row.status,
+            timestamp=_record_timestamp(row.updated_at, row.created_at),
+            url="/app/customers/records?type=request",
+            primary_action_label="Open request",
+            needs_attention=row.status in request_attention_statuses,
+        )
+
+    opportunity_attention_statuses = {ContractorOpportunity.STATUS_PENDING, ContractorOpportunity.STATUS_ACCEPTED}
+    opportunities = ContractorOpportunity.objects.filter(
+        Q(directory_entry__claimed_by_contractor=contractor) | Q(accepted_by_contractor=contractor)
+    ).filter(
+        Q(converted_customer_id__in=customer_ids)
+        | Q(homeowner_email__in=email_keys)
+        | Q(intake_request__homeowner_id__in=customer_ids)
+        | Q(intake_request__customer_email__in=email_keys)
+    ).select_related("converted_customer", "intake_request")
+    for row in opportunities:
+        customer = (
+            row.converted_customer
+            or email_to_customer.get(_customer_email_key(row.homeowner_email))
+            or getattr(row.intake_request, "homeowner", None)
+            or email_to_customer.get(_customer_email_key(getattr(row.intake_request, "customer_email", "")))
+        )
+        _append_record(
+            records,
+            record_type="opportunity",
+            source="contractor_opportunity",
+            source_id=row.id,
+            customer=customer,
+            title=row.project_title or row.project_type or "Contractor opportunity",
+            description=row.project_description or row.refined_description or "",
+            status=row.status,
+            timestamp=_record_timestamp(row.updated_at, row.accepted_at, row.selected_at, row.created_at),
+            url="/app/opportunities",
+            primary_action_label="Open opportunity",
+            needs_attention=row.status in opportunity_attention_statuses,
+        )
+
+    active_agreement_attention = {"draft", "sent", "pending", "awaiting_signature", "signature_requested"}
+    for agreement in Agreement.objects.filter(contractor=contractor, homeowner_id__in=customer_ids).select_related("homeowner", "project"):
+        project = getattr(agreement, "project", None)
+        _append_record(
+            records,
+            record_type="agreement",
+            source="agreement",
+            source_id=agreement.id,
+            customer=agreement.homeowner,
+            title=getattr(project, "title", "") or f"Agreement #{agreement.id}",
+            description=agreement.description or getattr(project, "description", "") or "",
+            status=agreement.status,
+            amount=agreement.total_cost,
+            timestamp=_record_timestamp(agreement.updated_at, agreement.created_at),
+            url=f"/app/agreements/{agreement.id}",
+            primary_action_label="Open agreement",
+            needs_attention=agreement.status in active_agreement_attention,
+        )
+
+    for project in Project.objects.filter(contractor=contractor, homeowner_id__in=customer_ids).select_related("homeowner"):
+        try:
+            agreement_id = project.agreement.id
+        except Exception:
+            agreement_id = None
+        _append_record(
+            records,
+            record_type="agreement",
+            source="project",
+            source_id=project.id,
+            customer=project.homeowner,
+            title=project.title or f"Project #{project.id}",
+            description=project.description,
+            status=project.status,
+            timestamp=_record_timestamp(project.updated_at, project.created_at),
+            url=f"/app/agreements/{agreement_id}" if agreement_id else "/app/agreements",
+            primary_action_label="Open project",
+            needs_attention=False,
+        )
+
+    invoice_attention_statuses = {InvoiceStatus.INCOMPLETE, InvoiceStatus.SENT, InvoiceStatus.PENDING, InvoiceStatus.DISPUTED}
+    for invoice in Invoice.objects.filter(agreement__contractor=contractor, agreement__homeowner_id__in=customer_ids).select_related("agreement__homeowner", "agreement__project"):
+        agreement = invoice.agreement
+        project = getattr(agreement, "project", None)
+        _append_record(
+            records,
+            record_type="payment",
+            source="invoice",
+            source_id=invoice.id,
+            customer=agreement.homeowner,
+            title=invoice.invoice_number or f"Invoice #{invoice.id}",
+            description=getattr(project, "title", "") or "Invoice activity",
+            status=invoice.status,
+            amount=invoice.amount,
+            timestamp=_record_timestamp(invoice.approved_at, invoice.created_at),
+            url=f"/app/invoices/{invoice.id}",
+            primary_action_label="Open invoice",
+            needs_attention=invoice.status in invoice_attention_statuses,
+        )
+
+    draw_attention_statuses = {DrawRequestStatus.SUBMITTED, DrawRequestStatus.APPROVED, DrawRequestStatus.AWAITING_RELEASE, DrawRequestStatus.CHANGES_REQUESTED}
+    for draw in DrawRequest.objects.filter(agreement__contractor=contractor, agreement__homeowner_id__in=customer_ids).select_related("agreement__homeowner"):
+        _append_record(
+            records,
+            record_type="payment",
+            source="draw",
+            source_id=draw.id,
+            customer=draw.agreement.homeowner,
+            title=draw.title or f"Draw #{draw.draw_number}",
+            description=draw.notes,
+            status=draw.status,
+            amount=draw.current_requested_amount,
+            timestamp=_record_timestamp(draw.updated_at, draw.submitted_at, draw.created_at),
+            url=f"/app/agreements/{draw.agreement_id}",
+            primary_action_label="Open draw",
+            needs_attention=draw.status in draw_attention_statuses,
+        )
+
+    for payment in ExternalPaymentRecord.objects.filter(agreement__contractor=contractor, agreement__homeowner_id__in=customer_ids).select_related("agreement__homeowner"):
+        _append_record(
+            records,
+            record_type="payment",
+            source="external_payment",
+            source_id=payment.id,
+            customer=payment.agreement.homeowner,
+            title=payment.reference_number or "External payment",
+            description=payment.notes,
+            status=payment.status,
+            amount=payment.net_amount,
+            timestamp=_record_timestamp(payment.updated_at, payment.recorded_at),
+            url=f"/app/agreements/{payment.agreement_id}",
+            primary_action_label="Open payment",
+            needs_attention=payment.status == ExternalPaymentStatus.DISPUTED,
+        )
+
+    for log in CustomerCommunicationLog.objects.filter(contractor=contractor, customer_id__in=customer_ids).select_related("customer"):
+        _append_record(
+            records,
+            record_type="communication",
+            source="communication_log",
+            source_id=log.id,
+            customer=log.customer,
+            title=log.subject or log.get_communication_type_display(),
+            description=log.body,
+            status=log.direction,
+            timestamp=_record_timestamp(log.occurred_at, log.created_at),
+            url=f"/app/customers/{log.customer_id}#communication",
+            primary_action_label="Open communication",
+            needs_attention=bool(log.follow_up_at and log.follow_up_at <= timezone.now()),
+        )
+
+    summary_records = records[:]
+    summary = {
+        "all": len(summary_records),
+        "requests": sum(1 for record in summary_records if record["type"] == "request"),
+        "opportunities": sum(1 for record in summary_records if record["type"] == "opportunity"),
+        "agreements": sum(1 for record in summary_records if record["type"] == "agreement"),
+        "payments": sum(1 for record in summary_records if record["type"] == "payment"),
+        "communications": sum(1 for record in summary_records if record["type"] == "communication"),
+        "needs_attention": sum(1 for record in summary_records if record.get("needs_attention")),
+    }
+
+    filtered = [record for record in records if _record_matches_filters(record, params)]
+    filtered.sort(key=lambda record: record.get("_timestamp"), reverse=True)
+
+    page_size = max(1, min(int(params.get("page_size") or 20), 100))
+    page = max(1, int(params.get("page") or 1))
+    count = len(filtered)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_rows = filtered[start:end]
+
+    for record in page_rows:
+        record.pop("_timestamp", None)
+
+    return {
+        "results": page_rows,
+        "count": count,
+        "summary": summary,
+        "facets": {
+            "types": ["request", "opportunity", "agreement", "payment", "communication"],
+            "sources": sorted({record["source"] for record in summary_records if record.get("source")}),
+        },
+        "next": page + 1 if end < count else None,
+        "previous": page - 1 if page > 1 else None,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([IsContractorOnly])
+def customer_records(request: Request):
+    contractor = _get_contractor_for_user(request.user)
+    if contractor is None:
+        raise PermissionDenied(detail={
+            "detail": "Your account must be linked to a Contractor profile to access customer records.",
+            "code": "contractor_required",
+        })
+    return Response(build_customer_records_payload(contractor, request.query_params))
 
 
 def _lead_payload(lead: PublicContractorLead) -> dict:
