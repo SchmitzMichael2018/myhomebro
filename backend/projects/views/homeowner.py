@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
+from django.db.models.functions import Lower
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import viewsets, filters, permissions, status
@@ -12,7 +13,19 @@ from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, NotFound
 from rest_framework.request import Request
 
-from projects.models import Agreement, CustomerCommunicationLog, Homeowner, Invoice, InvoiceStatus, Project, PublicContractorLead
+from projects.models import (
+    Agreement,
+    CustomerCommunicationLog,
+    DrawRequest,
+    DrawRequestStatus,
+    ExternalPaymentRecord,
+    ExternalPaymentStatus,
+    Homeowner,
+    Invoice,
+    InvoiceStatus,
+    Project,
+    PublicContractorLead,
+)
 from projects.models_contractor_discovery import ContractorOpportunity
 from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyProfile
 from projects.models_project_intake import ProjectIntake
@@ -135,6 +148,22 @@ class HomeownerViewSet(viewsets.ModelViewSet):
             qs = qs.order_by("-created_at", "-id")
 
         return qs
+
+    def list(self, request: Request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            contractor = _get_contractor_for_user(request.user)
+            attach_customer_directory_metrics(page, contractor)
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        contractor = _get_contractor_for_user(request.user)
+        customers = list(queryset)
+        attach_customer_directory_metrics(customers, contractor)
+        serializer = self.get_serializer(customers, many=True)
+        return Response(serializer.data)
 
     # ---------- Create / Update / Destroy enforce contractor ownership ----------
     def perform_create(self, serializer):
@@ -358,6 +387,314 @@ def _customer_email(customer: Homeowner) -> str:
 
 def _matching_email_filter(field: str, email: str) -> Q:
     return Q(**{f"{field}__iexact": email}) if email else Q(pk__isnull=True)
+
+
+def _empty_directory_metrics(customer: Homeowner) -> dict:
+    timestamp = customer.updated_at or customer.created_at
+    return {
+        "open_requests_count": 0,
+        "active_requests_count": 0,
+        "active_agreements_projects_count": 0,
+        "active_agreements_count": 0,
+        "active_projects_count": 0,
+        "closed_work_count": 0,
+        "open_balance": Decimal("0.00"),
+        "lifetime_value": Decimal("0.00"),
+        "last_activity": "Customer updated" if customer.updated_at else "Customer created",
+        "last_activity_at": timestamp,
+    }
+
+
+def _customer_email_key(value) -> str:
+    return _safe_text(value).lower()
+
+
+def _attach_count(metrics, customer_id, key, value):
+    if customer_id in metrics and value:
+        metrics[customer_id][key] += int(value or 0)
+
+
+def _attach_money(metrics, customer_id, key, value):
+    if customer_id in metrics and value is not None:
+        metrics[customer_id][key] += Decimal(value or 0)
+
+
+def _attach_latest(metrics, customer_id, timestamp, label):
+    if customer_id not in metrics or not timestamp:
+        return
+    current = metrics[customer_id].get("last_activity_at")
+    if not current or timestamp > current:
+        metrics[customer_id]["last_activity_at"] = timestamp
+        metrics[customer_id]["last_activity"] = label
+
+
+def attach_customer_directory_metrics(customers, contractor) -> None:
+    """
+    Attach CRM directory metrics to a page of customers in batched queries.
+
+    Lifetime value intentionally uses agreement value where available instead
+    of adding invoices on top, because invoices normally represent payment
+    against the same agreement value and would otherwise double-count work.
+    """
+    customers = list(customers or [])
+    if not customers or contractor is None:
+        return
+
+    customer_ids = [customer.id for customer in customers if customer.id]
+    email_to_customer_id = {
+        _customer_email_key(customer.email): customer.id
+        for customer in customers
+        if _customer_email_key(customer.email)
+    }
+    email_keys = list(email_to_customer_id.keys())
+    metrics = {customer.id: _empty_directory_metrics(customer) for customer in customers}
+
+    public_lead_open_statuses = [
+        PublicContractorLead.STATUS_NEW,
+        PublicContractorLead.STATUS_PENDING_CUSTOMER_RESPONSE,
+        PublicContractorLead.STATUS_READY_FOR_REVIEW,
+        PublicContractorLead.STATUS_FOLLOW_UP,
+        PublicContractorLead.STATUS_ACCEPTED,
+        PublicContractorLead.STATUS_CONTACTED,
+        PublicContractorLead.STATUS_QUALIFIED,
+    ]
+    intake_open_statuses = ["draft", "submitted", "analyzed"]
+    customer_request_open_statuses = [
+        CustomerRequest.STATUS_DRAFT,
+        CustomerRequest.STATUS_SUBMITTED,
+        CustomerRequest.STATUS_ROUTED,
+        CustomerRequest.STATUS_MARKETPLACE_READY,
+        CustomerRequest.STATUS_MATCHED,
+    ]
+    opportunity_open_statuses = [
+        ContractorOpportunity.STATUS_PENDING,
+        ContractorOpportunity.STATUS_ACCEPTED,
+    ]
+    active_work_excluded_statuses = ["completed", "closed", "cancelled", "canceled", "archived", "void"]
+    closed_work_statuses = ["completed", "closed"]
+    open_invoice_statuses = [
+        InvoiceStatus.INCOMPLETE,
+        InvoiceStatus.SENT,
+        InvoiceStatus.PENDING,
+        InvoiceStatus.APPROVED,
+        InvoiceStatus.DISPUTED,
+    ]
+    open_draw_statuses = [
+        DrawRequestStatus.SUBMITTED,
+        DrawRequestStatus.APPROVED,
+        DrawRequestStatus.AWAITING_RELEASE,
+        DrawRequestStatus.CHANGES_REQUESTED,
+    ]
+    paid_draw_statuses = [
+        DrawRequestStatus.PAID,
+        DrawRequestStatus.RELEASED,
+    ]
+
+    # Public profile / website / QR leads.
+    lead_base = PublicContractorLead.objects.filter(contractor=contractor).filter(
+        Q(converted_homeowner_id__in=customer_ids) | Q(email__in=email_keys)
+    )
+    for row in (
+        lead_base.values("converted_homeowner_id")
+        .annotate(open_count=Count("id", filter=Q(status__in=public_lead_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = row["converted_homeowner_id"]
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Lead activity")
+    for row in (
+        lead_base.filter(converted_homeowner__isnull=True)
+        .annotate(email_key=Lower("email"))
+        .values("email_key")
+        .annotate(open_count=Count("id", filter=Q(status__in=public_lead_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = email_to_customer_id.get(row["email_key"])
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Lead activity")
+
+    # Project intakes, including public-profile intakes that may not carry contractor directly.
+    intake_base = ProjectIntake.objects.filter(
+        Q(contractor=contractor) | Q(public_profile__contractor=contractor) | Q(contractor__isnull=True)
+    ).filter(Q(homeowner_id__in=customer_ids) | Q(customer_email__in=email_keys))
+    for row in (
+        intake_base.values("homeowner_id")
+        .annotate(open_count=Count("id", filter=Q(status__in=intake_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = row["homeowner_id"]
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Project intake activity")
+    for row in (
+        intake_base.filter(homeowner__isnull=True)
+        .annotate(email_key=Lower("customer_email"))
+        .values("email_key")
+        .annotate(open_count=Count("id", filter=Q(status__in=intake_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = email_to_customer_id.get(row["email_key"])
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Project intake activity")
+
+    # Customer portal project and maintenance/service requests.
+    request_base = CustomerRequest.objects.filter(Q(homeowner_id__in=customer_ids) | Q(customer_email__in=email_keys))
+    for row in (
+        request_base.values("homeowner_id")
+        .annotate(open_count=Count("id", filter=Q(status__in=customer_request_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = row["homeowner_id"]
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Customer request activity")
+    for row in (
+        request_base.filter(homeowner__isnull=True)
+        .annotate(email_key=Lower("customer_email"))
+        .values("email_key")
+        .annotate(open_count=Count("id", filter=Q(status__in=customer_request_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = email_to_customer_id.get(row["email_key"])
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Customer request activity")
+
+    # Contractor opportunities from selected contractors, public intake, manual, and PM work order sources.
+    opportunity_base = ContractorOpportunity.objects.filter(
+        Q(directory_entry__claimed_by_contractor=contractor) | Q(accepted_by_contractor=contractor)
+    ).filter(
+        Q(converted_customer_id__in=customer_ids)
+        | Q(homeowner_email__in=email_keys)
+        | Q(intake_request__homeowner_id__in=customer_ids)
+        | Q(intake_request__customer_email__in=email_keys)
+    )
+    for row in (
+        opportunity_base.values("converted_customer_id")
+        .annotate(open_count=Count("id", filter=Q(status__in=opportunity_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = row["converted_customer_id"]
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Opportunity activity")
+    for row in (
+        opportunity_base.filter(converted_customer__isnull=True)
+        .annotate(email_key=Lower("homeowner_email"))
+        .values("email_key")
+        .annotate(open_count=Count("id", filter=Q(status__in=opportunity_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = email_to_customer_id.get(row["email_key"])
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Opportunity activity")
+    for row in (
+        opportunity_base.filter(converted_customer__isnull=True)
+        .exclude(homeowner_email__in=email_keys)
+        .values("intake_request__homeowner_id")
+        .annotate(open_count=Count("id", filter=Q(status__in=opportunity_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = row["intake_request__homeowner_id"]
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Opportunity activity")
+    for row in (
+        opportunity_base.filter(converted_customer__isnull=True)
+        .exclude(homeowner_email__in=email_keys)
+        .filter(intake_request__homeowner__isnull=True)
+        .annotate(email_key=Lower("intake_request__customer_email"))
+        .values("email_key")
+        .annotate(open_count=Count("id", filter=Q(status__in=opportunity_open_statuses)), latest=Max("updated_at"))
+    ):
+        customer_id = email_to_customer_id.get(row["email_key"])
+        _attach_count(metrics, customer_id, "open_requests_count", row["open_count"])
+        _attach_count(metrics, customer_id, "active_requests_count", row["open_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Opportunity activity")
+
+    agreement_base = Agreement.objects.filter(contractor=contractor, homeowner_id__in=customer_ids)
+    for row in (
+        agreement_base.values("homeowner_id")
+        .annotate(
+            active_count=Count("id", filter=Q(is_archived=False) & ~Q(status__in=active_work_excluded_statuses)),
+            closed_count=Count("id", filter=Q(status__in=closed_work_statuses)),
+            lifetime=Sum("total_cost", filter=Q(is_archived=False) & ~Q(status__in=["cancelled", "canceled", "void"])),
+            latest=Max("updated_at"),
+        )
+    ):
+        customer_id = row["homeowner_id"]
+        _attach_count(metrics, customer_id, "active_agreements_count", row["active_count"])
+        _attach_count(metrics, customer_id, "active_agreements_projects_count", row["active_count"])
+        _attach_count(metrics, customer_id, "closed_work_count", row["closed_count"])
+        _attach_money(metrics, customer_id, "lifetime_value", row["lifetime"])
+        _attach_latest(metrics, customer_id, row["latest"], "Agreement activity")
+
+    project_base = Project.objects.filter(contractor=contractor, homeowner_id__in=customer_ids)
+    for row in (
+        project_base.values("homeowner_id")
+        .annotate(
+            active_count=Count("id", filter=~Q(status__in=active_work_excluded_statuses)),
+            closed_count=Count("id", filter=Q(status__in=closed_work_statuses)),
+            latest=Max("updated_at"),
+        )
+    ):
+        customer_id = row["homeowner_id"]
+        _attach_count(metrics, customer_id, "active_projects_count", row["active_count"])
+        _attach_count(metrics, customer_id, "active_agreements_projects_count", row["active_count"])
+        _attach_count(metrics, customer_id, "closed_work_count", row["closed_count"])
+        _attach_latest(metrics, customer_id, row["latest"], "Project activity")
+
+    invoice_base = Invoice.objects.filter(agreement__contractor=contractor, agreement__homeowner_id__in=customer_ids)
+    for row in (
+        invoice_base.values("agreement__homeowner_id")
+        .annotate(
+            open_total=Sum("amount", filter=Q(status__in=open_invoice_statuses)),
+            paid_total=Sum("amount", filter=Q(status=InvoiceStatus.PAID)),
+            latest_created=Max("created_at"),
+            latest_approved=Max("approved_at"),
+        )
+    ):
+        customer_id = row["agreement__homeowner_id"]
+        _attach_money(metrics, customer_id, "open_balance", row["open_total"])
+        if not metrics[customer_id]["lifetime_value"]:
+            _attach_money(metrics, customer_id, "lifetime_value", row["paid_total"])
+        _attach_latest(metrics, customer_id, row["latest_created"], "Invoice activity")
+        _attach_latest(metrics, customer_id, row["latest_approved"], "Invoice activity")
+
+    draw_base = DrawRequest.objects.filter(agreement__contractor=contractor, agreement__homeowner_id__in=customer_ids)
+    for row in (
+        draw_base.values("agreement__homeowner_id")
+        .annotate(
+            open_total=Sum("current_requested_amount", filter=Q(status__in=open_draw_statuses)),
+            paid_total=Sum("current_requested_amount", filter=Q(status__in=paid_draw_statuses)),
+            latest=Max("updated_at"),
+        )
+    ):
+        customer_id = row["agreement__homeowner_id"]
+        _attach_money(metrics, customer_id, "open_balance", row["open_total"])
+        if not metrics[customer_id]["lifetime_value"]:
+            _attach_money(metrics, customer_id, "lifetime_value", row["paid_total"])
+        _attach_latest(metrics, customer_id, row["latest"], "Draw request activity")
+
+    external_payment_base = ExternalPaymentRecord.objects.filter(
+        agreement__contractor=contractor,
+        agreement__homeowner_id__in=customer_ids,
+        status__in=[ExternalPaymentStatus.RECORDED, ExternalPaymentStatus.VERIFIED],
+    )
+    for row in (
+        external_payment_base.values("agreement__homeowner_id")
+        .annotate(total=Sum("net_amount"), latest=Max("updated_at"))
+    ):
+        customer_id = row["agreement__homeowner_id"]
+        if not metrics[customer_id]["lifetime_value"]:
+            _attach_money(metrics, customer_id, "lifetime_value", row["total"])
+        _attach_latest(metrics, customer_id, row["latest"], "Payment activity")
+
+    for row in (
+        CustomerCommunicationLog.objects.filter(contractor=contractor, customer_id__in=customer_ids)
+        .values("customer_id")
+        .annotate(latest=Max("occurred_at"))
+    ):
+        _attach_latest(metrics, row["customer_id"], row["latest"], "Communication activity")
+
+    for customer in customers:
+        for key, value in metrics.get(customer.id, {}).items():
+            setattr(customer, key, value)
 
 
 def _lead_payload(lead: PublicContractorLead) -> dict:

@@ -8,6 +8,17 @@ class HomeownerSerializer(serializers.ModelSerializer):
     Read serializer for Homeowner. Exposes all model fields so the
     Admin/API list/detail views can render without crashing.
     """
+    open_requests_count = serializers.IntegerField(read_only=True)
+    active_requests_count = serializers.IntegerField(read_only=True)
+    active_agreements_projects_count = serializers.IntegerField(read_only=True)
+    active_agreements_count = serializers.IntegerField(read_only=True)
+    active_projects_count = serializers.IntegerField(read_only=True)
+    closed_work_count = serializers.IntegerField(read_only=True)
+    open_balance = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    lifetime_value = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    last_activity = serializers.CharField(read_only=True)
+    last_activity_at = serializers.DateTimeField(read_only=True)
+
     class Meta:
         model = Homeowner
         fields = "__all__"

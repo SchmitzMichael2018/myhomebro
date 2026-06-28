@@ -37,7 +37,14 @@ const customerListPayload = {
       zip_code: "53703",
       active_projects_count: 2,
       open_requests_count: 1,
+      active_requests_count: 1,
+      active_agreements_projects_count: 3,
+      active_agreements_count: 1,
+      closed_work_count: 4,
       open_balance: "2500.00",
+      lifetime_value: "12500.00",
+      last_activity: "Invoice activity",
+      last_activity_at: "2026-04-14T12:00:00Z",
       created_at: "2026-04-01T12:00:00Z",
       updated_at: "2026-04-14T12:00:00Z",
     },
@@ -444,6 +451,13 @@ test("customer list row opens the customer workspace and edit stays secondary", 
   await page.goto("/app/customers", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("customer-row-42")).toBeVisible();
+  await expect(page.getByTestId("customer-row-42")).toContainText("1");
+  await expect(page.getByTestId("customer-row-42")).toContainText("3");
+  await expect(page.getByTestId("customer-row-42")).toContainText("4");
+  await expect(page.getByTestId("customer-row-42")).toContainText("$2,500.00");
+  await expect(page.getByTestId("customer-row-42")).toContainText("Invoice activity");
+  const listBodyText = await page.locator("body").innerText();
+  expect(listBodyText).not.toMatch(/\u00e2/);
   await page.getByTestId("customer-row-42").click();
   await expect(page).toHaveURL(/\/app\/customers\/42$/);
 
@@ -452,6 +466,30 @@ test("customer list row opens the customer workspace and edit stays secondary", 
   await expect(editLink).toHaveAttribute("href", "/app/customers/42/edit");
   await editLink.click();
   await expect(page).toHaveURL(/\/app\/customers\/42\/edit$/);
+});
+
+test("mobile customer cards show directory CRM metrics", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page);
+  await page.setViewportSize({ width: 390, height: 900 });
+
+  await page.goto("/app/customers", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("customer-row-mobile-42")).toBeVisible();
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("Requests");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("Active Work");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("Closed Work");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("Balance");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("1");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("3");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("4");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("$2,500.00");
+  await expect(page.getByTestId("customer-row-mobile-42")).toContainText("Invoice activity");
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2
+  );
+  expect(hasHorizontalOverflow).toBeFalsy();
 });
 
 test("customer workspace renders overview, timeline, tabs, and dark operational shell", async ({ page }) => {

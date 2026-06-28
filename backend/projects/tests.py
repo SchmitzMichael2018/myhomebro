@@ -424,6 +424,75 @@ class CustomerWorkspaceApiTests(TestCase):
         self.assertIn("invoice", event_types)
         self.assertIn("phone_call", event_types)
 
+    def test_customers_list_returns_contractor_scoped_directory_metrics(self):
+        self._seed_workspace_activity()
+        closed_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Closed Bathroom Work",
+            description="Completed bathroom project.",
+            status="completed",
+        )
+        Agreement.objects.create(
+            project=closed_project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("700.00"),
+            status="completed",
+        )
+        other_profile = ContractorPublicProfile.objects.create(
+            contractor=self.other_contractor,
+            business_name_public="Other Builders",
+            is_public=True,
+        )
+        PublicContractorLead.objects.create(
+            contractor=self.other_contractor,
+            public_profile=other_profile,
+            full_name="Pat Customer",
+            email=self.customer.email,
+            project_type="Other contractor lead",
+            status=PublicContractorLead.STATUS_NEW,
+        )
+        CustomerCommunicationLog.objects.create(
+            contractor=self.contractor,
+            customer=self.customer,
+            created_by=self.user,
+            communication_type=CustomerCommunicationLog.TYPE_INTERNAL_NOTE,
+            direction=CustomerCommunicationLog.DIRECTION_INTERNAL,
+            subject="Latest internal note",
+            occurred_at=timezone.now() + timedelta(hours=1),
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.get("/api/projects/homeowners/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = response.data["results"]
+        row = next(item for item in rows if item["id"] == self.customer.id)
+        expected_fields = {
+            "open_requests_count",
+            "active_requests_count",
+            "active_agreements_projects_count",
+            "active_agreements_count",
+            "active_projects_count",
+            "closed_work_count",
+            "open_balance",
+            "lifetime_value",
+            "last_activity",
+            "last_activity_at",
+        }
+        self.assertTrue(expected_fields.issubset(row.keys()))
+        self.assertEqual(row["open_requests_count"], 4)
+        self.assertEqual(row["active_requests_count"], 4)
+        self.assertEqual(row["active_agreements_count"], 1)
+        self.assertEqual(row["active_projects_count"], 1)
+        self.assertEqual(row["active_agreements_projects_count"], 2)
+        self.assertEqual(row["closed_work_count"], 2)
+        self.assertEqual(row["open_balance"], "2500.00")
+        self.assertEqual(row["lifetime_value"], "13200.00")
+        self.assertEqual(row["last_activity"], "Communication activity")
+        self.assertTrue(row["last_activity_at"])
+
     def test_contractor_can_create_update_and_delete_customer_communication_log(self):
         self.client.force_authenticate(self.user)
         occurred_at = timezone.now().isoformat()

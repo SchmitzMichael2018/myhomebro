@@ -64,6 +64,29 @@ const formatAddress = (customer) => {
   return [street, line2, `${cityState} ${zip}`.trim()].filter(Boolean).join(", ");
 };
 
+const formatCurrency = (value) => {
+  if (value == null || value === "") return "-";
+  const number = Number(value);
+  if (Number.isNaN(number)) return "-";
+  return number.toLocaleString(undefined, { style: "currency", currency: "USD" });
+};
+
+const formatDate = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString();
+};
+
+const getLastActivityDisplay = (customer) => {
+  const timestamp = customer.last_activity_at ?? customer.updated_at ?? customer.created_at;
+  const label = customer.last_activity && customer.last_activity !== timestamp ? customer.last_activity : "";
+  return {
+    date: formatDate(timestamp),
+    label,
+  };
+};
+
 const ENDPOINTS = [
   "/projects/homeowners/",
   "/homeowners/",
@@ -365,11 +388,9 @@ export default function Customers() {
                 const { primary, secondary, hasCompany } = getCustomerDisplay(customer);
                 const openRequests = customer.open_requests_count ?? customer.active_requests_count ?? 0;
                 const activeWork = customer.active_agreements_projects_count ?? customer.active_agreements_count ?? customer.active_projects_count ?? 0;
-                const openBalance =
-                  customer.open_balance != null
-                    ? Number(customer.open_balance).toLocaleString(undefined, { style: "currency", currency: "USD" })
-                    : "-";
-                const lastActivity = customer.last_activity ?? customer.last_activity_at ?? customer.updated_at ?? customer.created_at;
+                const closedWork = customer.closed_work_count ?? 0;
+                const openBalance = formatCurrency(customer.open_balance);
+                const lastActivity = getLastActivityDisplay(customer);
 
                 return (
                   <div
@@ -412,12 +433,17 @@ export default function Customers() {
                         <div className="mt-1 font-semibold text-white">{activeWork}</div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Closed Work</div>
+                        <div className="mt-1 font-semibold text-white">{closedWork}</div>
+                      </div>
+                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
                         <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Balance</div>
                         <div className="mt-1 font-semibold text-white">{openBalance}</div>
                       </div>
                       <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
                         <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Last Activity</div>
-                        <div className="mt-1 font-semibold text-white">{lastActivity ? new Date(lastActivity).toLocaleDateString() : "-"}</div>
+                        <div className="mt-1 font-semibold text-white">{lastActivity.date}</div>
+                        {lastActivity.label ? <div className="mt-0.5 text-xs text-sky-100/55">{lastActivity.label}</div> : null}
                       </div>
                     </div>
                     <div className="mt-4 flex items-center justify-end gap-2">
@@ -446,6 +472,7 @@ export default function Customers() {
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
                     <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Open Requests</th>
                     <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Active Work</th>
+                    <th className="px-6 py-3 text-center text-xs font-medium uppercase tracking-wider">Closed Work</th>
                     <th className="px-6 py-3 text-right text-xs font-medium uppercase tracking-wider">Open Balance</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Last Activity</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Date Added</th>
@@ -460,11 +487,9 @@ export default function Customers() {
                     const { primary, secondary, hasCompany } = getCustomerDisplay(customer);
                     const openRequests = customer.open_requests_count ?? customer.active_requests_count ?? 0;
                     const activeWork = customer.active_agreements_projects_count ?? customer.active_agreements_count ?? customer.active_projects_count ?? 0;
-                    const openBalance =
-                      customer.open_balance != null
-                        ? Number(customer.open_balance).toLocaleString(undefined, { style: "currency", currency: "USD" })
-                        : "-";
-                    const lastActivity = customer.last_activity ?? customer.last_activity_at ?? customer.updated_at ?? customer.created_at;
+                    const closedWork = customer.closed_work_count ?? 0;
+                    const openBalance = formatCurrency(customer.open_balance);
+                    const lastActivity = getLastActivityDisplay(customer);
 
                     return (
                       <tr
@@ -519,12 +544,17 @@ export default function Customers() {
                           {activeWork}
                         </td>
 
+                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-white">
+                          {closedWork}
+                        </td>
+
                         <td className="whitespace-nowrap px-6 py-5 text-right text-sm font-semibold text-white">
                           {openBalance}
                         </td>
 
                         <td className="whitespace-nowrap px-6 py-5 text-sm text-sky-100/60">
-                          {lastActivity ? new Date(lastActivity).toLocaleDateString() : "-"}
+                          <div>{lastActivity.date}</div>
+                          {lastActivity.label ? <div className="mt-1 text-xs text-sky-100/45">{lastActivity.label}</div> : null}
                         </td>
 
                         <td className="whitespace-nowrap px-6 py-5 text-sm text-sky-100/60">
