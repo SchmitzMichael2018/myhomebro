@@ -154,10 +154,59 @@ const workspacePayload = {
 };
 
 async function mockCustomersWorkspaceApi(page, payload = workspacePayload) {
+  const communications = [...(payload.related?.communication || [])];
   await page.route("**/api/projects/homeowners/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (pathname.endsWith("/api/projects/homeowners/42/communications/")) {
+      if (method === "POST") {
+        const data = route.request().postDataJSON();
+        const created = {
+          id: 900 + communications.length,
+          type: "communication",
+          communication_type: data.communication_type || "internal_note",
+          communication_type_label:
+            data.communication_type === "phone_call"
+              ? "Phone call"
+              : data.communication_type === "email"
+              ? "Email"
+              : data.communication_type === "sms"
+              ? "SMS"
+              : data.communication_type === "in_person"
+              ? "In-person meeting"
+              : "Internal note",
+          direction: data.direction || "internal",
+          direction_label: data.direction === "inbound" ? "Inbound" : data.direction === "outbound" ? "Outbound" : "Internal",
+          subject: data.subject || "",
+          title: data.subject || "Internal note",
+          body: data.body || "",
+          description: data.body || "",
+          occurred_at: data.occurred_at || new Date().toISOString(),
+          follow_up_at: data.follow_up_at || null,
+          visibility: "internal_only",
+          visibility_label: "Internal only",
+          status: data.direction || "internal",
+          url: "",
+        };
+        communications.unshift(created);
+        await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(created) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: communications }) });
+      return;
+    }
     if (pathname.endsWith("/api/projects/homeowners/42/workspace/")) {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(payload) });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...payload,
+          related: {
+            ...(payload.related || {}),
+            communication: communications,
+          },
+        }),
+      });
       return;
     }
     if (pathname.endsWith("/api/projects/homeowners/42/")) {
@@ -438,10 +487,78 @@ test("customer workspace renders overview, timeline, tabs, and dark operational 
   await expect(page.getByTestId("customer-workspace-payments")).toContainText("Invoice #401");
 
   await page.getByRole("button", { name: "Communication" }).click();
-  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Add note");
-  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Coming soon");
+  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Log Communication");
+  await expect(page.getByTestId("customer-workspace-communication-list")).toContainText("No communication logged yet");
   const bodyText = await page.locator("body").innerText();
   expect(bodyText).not.toMatch(/\u00e2/);
+});
+
+test("customer communication tab logs notes and interactions into timeline", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page);
+
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Communication" }).click();
+  await expect(page.getByText("No communication logged yet")).toBeVisible();
+
+  await page.getByRole("button", { name: "Log Communication" }).click();
+  const form = page.getByTestId("communication-log-form");
+  await form.getByLabel("Type").selectOption("phone_call");
+  await form.getByLabel("Direction").selectOption("outbound");
+  await form.getByLabel("Subject").fill("Called about cabinet repair");
+  await form.getByRole("textbox", { name: "Notes" }).fill("Customer prefers Friday morning.");
+  await page.getByRole("button", { name: "Save Communication" }).click();
+
+  await expect(page.getByTestId("customer-workspace-communication-list")).toContainText("Called about cabinet repair");
+  await expect(page.getByTestId("customer-workspace-communication-list")).toContainText("Phone call");
+
+  await page.getByRole("button", { name: "Timeline" }).click();
+  await expect(page.getByTestId("customer-workspace-timeline")).toContainText("Called about cabinet repair");
+  await expect(page.getByTestId("customer-workspace-timeline")).toContainText("Phone call");
+});
+
+test("customer communication follow-up produces next action", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page, {
+    ...workspacePayload,
+    related: {
+      leads: [],
+      project_intakes: [],
+      customer_requests: [],
+      opportunities: [],
+      agreements: [],
+      projects: [],
+      payments: [],
+      properties: [],
+      documents: [],
+      communication: [
+        {
+          id: 701,
+          type: "communication",
+          communication_type: "email",
+          communication_type_label: "Email",
+          direction: "outbound",
+          direction_label: "Outbound",
+          subject: "Send cabinet options",
+          body: "Follow up with pricing.",
+          occurred_at: new Date(Date.now() - 86400000).toISOString(),
+          follow_up_at: new Date(Date.now() - 3600000).toISOString(),
+          visibility: "internal_only",
+          visibility_label: "Internal only",
+          status: "outbound",
+          url: "",
+        },
+      ],
+    },
+    timeline: [],
+  });
+
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("customer-next-action-card")).toContainText("Follow up with this customer");
+  await expect(page.getByTestId("customer-next-action-card")).toContainText("Send cabinet options");
+  await page.getByRole("button", { name: /Open communication/ }).click();
+  await expect(page.getByTestId("customer-workspace-communication-list")).toContainText("Send cabinet options");
 });
 
 test("customer workspace shows caught up next action when no item needs work", async ({ page }) => {
@@ -521,7 +638,8 @@ test("customer workspace empty states and mobile layout stay clean", async ({ pa
   await page.getByRole("button", { name: "Documents" }).click();
   await expect(page.getByTestId("customer-workspace-documents")).toContainText("Upload document");
   await page.getByRole("button", { name: "Communication" }).click();
-  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Add note");
+  await expect(page.getByTestId("customer-workspace-communication")).toContainText("Log Communication");
+  await expect(page.getByText("No communication logged yet")).toBeVisible();
 
   const hasHorizontalOverflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2

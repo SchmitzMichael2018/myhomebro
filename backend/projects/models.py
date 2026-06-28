@@ -1106,6 +1106,62 @@ class Homeowner(models.Model):
         return self.full_name
 
 
+class CustomerCommunicationLog(models.Model):
+    TYPE_INTERNAL_NOTE = "internal_note"
+    TYPE_PHONE_CALL = "phone_call"
+    TYPE_EMAIL = "email"
+    TYPE_SMS = "sms"
+    TYPE_IN_PERSON = "in_person"
+    TYPE_OTHER = "other"
+    COMMUNICATION_TYPE_CHOICES = [
+        (TYPE_INTERNAL_NOTE, "Internal note"),
+        (TYPE_PHONE_CALL, "Phone call"),
+        (TYPE_EMAIL, "Email"),
+        (TYPE_SMS, "SMS"),
+        (TYPE_IN_PERSON, "In-person meeting"),
+        (TYPE_OTHER, "Other"),
+    ]
+
+    DIRECTION_INTERNAL = "internal"
+    DIRECTION_INBOUND = "inbound"
+    DIRECTION_OUTBOUND = "outbound"
+    DIRECTION_CHOICES = [
+        (DIRECTION_INTERNAL, "Internal"),
+        (DIRECTION_INBOUND, "Inbound"),
+        (DIRECTION_OUTBOUND, "Outbound"),
+    ]
+
+    VISIBILITY_INTERNAL_ONLY = "internal_only"
+    VISIBILITY_CUSTOMER_VISIBLE_FUTURE = "customer_visible_future"
+    VISIBILITY_CHOICES = [
+        (VISIBILITY_INTERNAL_ONLY, "Internal only"),
+        (VISIBILITY_CUSTOMER_VISIBLE_FUTURE, "Customer visible future"),
+    ]
+
+    contractor = models.ForeignKey(Contractor, on_delete=models.CASCADE, related_name="customer_communication_logs")
+    customer = models.ForeignKey(Homeowner, on_delete=models.CASCADE, related_name="communication_logs")
+    communication_type = models.CharField(max_length=32, choices=COMMUNICATION_TYPE_CHOICES, default=TYPE_INTERNAL_NOTE, db_index=True)
+    direction = models.CharField(max_length=16, choices=DIRECTION_CHOICES, default=DIRECTION_INTERNAL, db_index=True)
+    subject = models.CharField(max_length=255, blank=True, default="")
+    body = models.TextField(blank=True, default="")
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+    follow_up_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="customer_communication_logs")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    visibility = models.CharField(max_length=32, choices=VISIBILITY_CHOICES, default=VISIBILITY_INTERNAL_ONLY, db_index=True)
+
+    class Meta:
+        ordering = ["-occurred_at", "-id"]
+        indexes = [
+            models.Index(fields=["contractor", "customer", "-occurred_at"]),
+            models.Index(fields=["contractor", "follow_up_at"]),
+        ]
+
+    def __str__(self):
+        return self.subject or self.get_communication_type_display()
+
+
 class Project(models.Model):
     number = models.CharField(
         max_length=30, unique=True, editable=False, db_index=True

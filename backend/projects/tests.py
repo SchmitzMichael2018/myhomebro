@@ -56,6 +56,7 @@ from projects.models import (
     ContractorReview,
     ContractorSubAccount,
     ContractorInvite,
+    CustomerCommunicationLog,
     CustomerRequest,
     ExpenseRequest,
     DrawRequest,
@@ -381,6 +382,17 @@ class CustomerWorkspaceApiTests(TestCase):
 
     def test_customer_workspace_returns_profile_related_rows_and_timeline(self):
         self._seed_workspace_activity()
+        CustomerCommunicationLog.objects.create(
+            contractor=self.contractor,
+            customer=self.customer,
+            created_by=self.user,
+            communication_type=CustomerCommunicationLog.TYPE_PHONE_CALL,
+            direction=CustomerCommunicationLog.DIRECTION_OUTBOUND,
+            subject="Called about cabinet repair",
+            body="Customer asked for a Friday follow-up.",
+            occurred_at=timezone.now(),
+            follow_up_at=timezone.now() - timedelta(hours=1),
+        )
         self.client.force_authenticate(self.user)
 
         response = self.client.get(f"/api/projects/homeowners/{self.customer.id}/workspace/")
@@ -400,6 +412,9 @@ class CustomerWorkspaceApiTests(TestCase):
         self.assertEqual(len(response.data["related"]["agreements"]), 1)
         self.assertEqual(len(response.data["related"]["payments"]), 1)
         self.assertEqual(len(response.data["related"]["properties"]), 1)
+        self.assertEqual(len(response.data["related"]["communication"]), 1)
+        self.assertEqual(response.data["related"]["communication"][0]["communication_type"], "phone_call")
+        self.assertTrue(response.data["related"]["communication"][0]["follow_up_at"])
         event_types = {event["type"] for event in response.data["timeline"]}
         self.assertIn("customer_created", event_types)
         self.assertIn("lead", event_types)
@@ -407,6 +422,47 @@ class CustomerWorkspaceApiTests(TestCase):
         self.assertIn("opportunity", event_types)
         self.assertIn("agreement", event_types)
         self.assertIn("invoice", event_types)
+        self.assertIn("phone_call", event_types)
+
+    def test_contractor_can_create_update_and_delete_customer_communication_log(self):
+        self.client.force_authenticate(self.user)
+        occurred_at = timezone.now().isoformat()
+        follow_up_at = (timezone.now() + timedelta(days=2)).isoformat()
+
+        response = self.client.post(
+            f"/api/projects/homeowners/{self.customer.id}/communications/",
+            {
+                "communication_type": "internal_note",
+                "direction": "internal",
+                "subject": "Prep note",
+                "body": "Ask about cabinet hardware.",
+                "occurred_at": occurred_at,
+                "follow_up_at": follow_up_at,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["subject"], "Prep note")
+        self.assertEqual(response.data["visibility"], "internal_only")
+        log_id = response.data["id"]
+        self.assertTrue(CustomerCommunicationLog.objects.filter(id=log_id, contractor=self.contractor, customer=self.customer).exists())
+
+        patch_response = self.client.patch(
+            f"/api/projects/homeowners/{self.customer.id}/communications/{log_id}/",
+            {"subject": "Updated prep note"},
+            format="json",
+        )
+        self.assertEqual(patch_response.status_code, 200, patch_response.data)
+        self.assertEqual(patch_response.data["subject"], "Updated prep note")
+
+        list_response = self.client.get(f"/api/projects/homeowners/{self.customer.id}/communications/")
+        self.assertEqual(list_response.status_code, 200, list_response.data)
+        self.assertEqual(len(list_response.data["results"]), 1)
+
+        delete_response = self.client.delete(f"/api/projects/homeowners/{self.customer.id}/communications/{log_id}/")
+        self.assertEqual(delete_response.status_code, 204)
+        self.assertFalse(CustomerCommunicationLog.objects.filter(id=log_id).exists())
 
     def test_customer_workspace_is_contractor_scoped(self):
         other_customer = Homeowner.objects.create(
@@ -419,6 +475,33 @@ class CustomerWorkspaceApiTests(TestCase):
         response = self.client.get(f"/api/projects/homeowners/{other_customer.id}/workspace/")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_customer_communication_logs_are_contractor_scoped(self):
+        other_customer = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Customer",
+            email="other-customer@example.com",
+        )
+        log = CustomerCommunicationLog.objects.create(
+            contractor=self.other_contractor,
+            customer=other_customer,
+            created_by=self.other_user,
+            subject="Private note",
+            body="Other contractor only.",
+        )
+        self.client.force_authenticate(self.user)
+
+        list_response = self.client.get(f"/api/projects/homeowners/{other_customer.id}/communications/")
+        detail_response = self.client.patch(
+            f"/api/projects/homeowners/{other_customer.id}/communications/{log.id}/",
+            {"subject": "nope"},
+            format="json",
+        )
+
+        self.assertEqual(list_response.status_code, 404)
+        self.assertEqual(detail_response.status_code, 404)
+        log.refresh_from_db()
+        self.assertEqual(log.subject, "Private note")
 
 
 class AgreementMilestoneAIRouteTests(TestCase):

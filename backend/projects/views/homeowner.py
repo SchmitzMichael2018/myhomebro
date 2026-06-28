@@ -4,13 +4,15 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.db.models import Count, Q, Sum
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import viewsets, filters, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, NotFound
 from rest_framework.request import Request
 
-from projects.models import Agreement, Homeowner, Invoice, InvoiceStatus, Project, PublicContractorLead
+from projects.models import Agreement, CustomerCommunicationLog, Homeowner, Invoice, InvoiceStatus, Project, PublicContractorLead
 from projects.models_contractor_discovery import ContractorOpportunity
 from projects.models_customer_portal import CustomerRequest, PropertyDocument, PropertyProfile
 from projects.models_project_intake import ProjectIntake
@@ -172,6 +174,50 @@ class HomeownerViewSet(viewsets.ModelViewSet):
         payload = build_customer_workspace_payload(customer, contractor, request=request)
         return Response(payload)
 
+    @action(detail=True, methods=["get", "post"], url_path="communications")
+    def communications(self, request: Request, pk=None):
+        customer: Homeowner = self.get_object()
+        contractor = _get_contractor_for_user(request.user)
+        if request.method.lower() == "get":
+            rows = CustomerCommunicationLog.objects.filter(contractor=contractor, customer=customer).order_by("-occurred_at", "-id")
+            communication_type = (request.query_params.get("type") or "").strip()
+            if communication_type:
+                rows = rows.filter(communication_type=communication_type)
+            return Response({"results": [_communication_payload(row) for row in rows[:100]]})
+
+        serializer = _validate_communication_payload(request.data)
+        if serializer.get("errors"):
+            return Response(serializer["errors"], status=status.HTTP_400_BAD_REQUEST)
+
+        row = CustomerCommunicationLog.objects.create(
+            contractor=contractor,
+            customer=customer,
+            created_by=request.user,
+            **serializer["data"],
+        )
+        return Response(_communication_payload(row), status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["patch", "delete"], url_path=r"communications/(?P<log_id>[^/.]+)")
+    def communication_detail(self, request: Request, pk=None, log_id=None):
+        customer: Homeowner = self.get_object()
+        contractor = _get_contractor_for_user(request.user)
+        try:
+            row = CustomerCommunicationLog.objects.get(id=log_id, contractor=contractor, customer=customer)
+        except CustomerCommunicationLog.DoesNotExist:
+            raise NotFound("Communication log not found.")
+
+        if request.method.lower() == "delete":
+            row.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        serializer = _validate_communication_payload(request.data, partial=True)
+        if serializer.get("errors"):
+            return Response(serializer["errors"], status=status.HTTP_400_BAD_REQUEST)
+        for field, value in serializer["data"].items():
+            setattr(row, field, value)
+        row.save(update_fields=[*serializer["data"].keys(), "updated_at"])
+        return Response(_communication_payload(row))
+
 
 def _safe_text(value) -> str:
     return "" if value is None else str(value).strip()
@@ -192,6 +238,102 @@ def _iso(value):
 
 def _date(value):
     return value.isoformat() if value else None
+
+
+def _parse_optional_datetime(value, *, default=None):
+    if value in (None, ""):
+        return default
+    if hasattr(value, "isoformat"):
+        parsed = value
+    else:
+        parsed = parse_datetime(str(value))
+    if parsed is None:
+        raise ValueError("Enter a valid date/time.")
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _validate_choice(field, value, choices):
+    allowed = {choice[0] for choice in choices}
+    if value not in allowed:
+        return f"Invalid {field}."
+    return ""
+
+
+def _validate_communication_payload(payload, *, partial=False):
+    errors = {}
+    data = {}
+
+    if not partial or "communication_type" in payload:
+        communication_type = (payload.get("communication_type") or CustomerCommunicationLog.TYPE_INTERNAL_NOTE).strip()
+        error = _validate_choice("communication_type", communication_type, CustomerCommunicationLog.COMMUNICATION_TYPE_CHOICES)
+        if error:
+            errors["communication_type"] = [error]
+        else:
+            data["communication_type"] = communication_type
+
+    if not partial or "direction" in payload:
+        direction = (payload.get("direction") or CustomerCommunicationLog.DIRECTION_INTERNAL).strip()
+        error = _validate_choice("direction", direction, CustomerCommunicationLog.DIRECTION_CHOICES)
+        if error:
+            errors["direction"] = [error]
+        else:
+            data["direction"] = direction
+
+    if not partial or "visibility" in payload:
+        visibility = (payload.get("visibility") or CustomerCommunicationLog.VISIBILITY_INTERNAL_ONLY).strip()
+        error = _validate_choice("visibility", visibility, CustomerCommunicationLog.VISIBILITY_CHOICES)
+        if error:
+            errors["visibility"] = [error]
+        else:
+            data["visibility"] = visibility
+
+    if not partial or "subject" in payload:
+        data["subject"] = _safe_text(payload.get("subject"))[:255]
+    if not partial or "body" in payload:
+        data["body"] = _safe_text(payload.get("body"))
+
+    if not partial or "occurred_at" in payload:
+        try:
+            data["occurred_at"] = _parse_optional_datetime(payload.get("occurred_at"), default=timezone.now())
+        except ValueError as exc:
+            errors["occurred_at"] = [str(exc)]
+
+    if not partial or "follow_up_at" in payload:
+        try:
+            data["follow_up_at"] = _parse_optional_datetime(payload.get("follow_up_at"), default=None)
+        except ValueError as exc:
+            errors["follow_up_at"] = [str(exc)]
+
+    if not data.get("subject") and not data.get("body") and not partial:
+        errors["body"] = ["Add a subject or note body."]
+
+    return {"data": data, "errors": errors}
+
+
+def _communication_payload(row: CustomerCommunicationLog) -> dict:
+    return {
+        "id": row.id,
+        "type": "communication",
+        "communication_type": row.communication_type,
+        "communication_type_label": row.get_communication_type_display(),
+        "direction": row.direction,
+        "direction_label": row.get_direction_display(),
+        "subject": row.subject,
+        "title": row.subject or row.get_communication_type_display(),
+        "body": row.body,
+        "description": row.body,
+        "occurred_at": _iso(row.occurred_at),
+        "follow_up_at": _iso(row.follow_up_at),
+        "created_by": getattr(row.created_by, "email", "") if row.created_by_id else "",
+        "created_at": _iso(row.created_at),
+        "updated_at": _iso(row.updated_at),
+        "visibility": row.visibility,
+        "visibility_label": row.get_visibility_display(),
+        "status": row.direction,
+        "url": "",
+    }
 
 
 def _event(events, *, event_type, title, description="", timestamp=None, source="", source_id=None, url="", amount=None, status=""):
@@ -356,6 +498,7 @@ def build_customer_workspace_payload(customer: Homeowner, contractor, *, request
     invoices_qs = Invoice.objects.select_related("agreement").filter(agreement__contractor=contractor, agreement__homeowner=customer)
     properties_qs = PropertyProfile.objects.filter(Q(homeowner=customer) | _matching_email_filter("customer_email", email))
     documents_qs = PropertyDocument.objects.filter(property_profile__in=properties_qs)
+    communications_qs = CustomerCommunicationLog.objects.filter(contractor=contractor, customer=customer)
 
     active_request_statuses = [
         CustomerRequest.STATUS_DRAFT,
@@ -489,6 +632,18 @@ def build_customer_workspace_payload(customer: Homeowner, contractor, *, request
 
     properties = [_property_payload(row) for row in properties_qs.order_by("-updated_at", "-id")[:25]]
     documents = [_document_payload(row) for row in documents_qs.order_by("-uploaded_at", "-id")[:25]]
+    communications = [_communication_payload(row) for row in communications_qs.order_by("-occurred_at", "-id")[:50]]
+    for row in communications_qs.order_by("-occurred_at", "-id")[:50]:
+        _event(
+            timeline,
+            event_type=row.communication_type,
+            title=row.subject or row.get_communication_type_display(),
+            description=row.body or "",
+            timestamp=row.occurred_at,
+            source="communication_log",
+            source_id=row.id,
+            status=row.direction,
+        )
     timeline = sorted(
         [event for event in timeline if event.get("timestamp")],
         key=lambda event: event["timestamp"],
@@ -538,10 +693,8 @@ def build_customer_workspace_payload(customer: Homeowner, contractor, *, request
             "payments": payments,
             "properties": properties,
             "documents": documents,
-            "communication": [],
+            "communication": communications,
         },
         "timeline": timeline,
-        "gaps": {
-            "communication": "No contractor-side customer communication timeline is available yet.",
-        },
+        "gaps": {},
     }

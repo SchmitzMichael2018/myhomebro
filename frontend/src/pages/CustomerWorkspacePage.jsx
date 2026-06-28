@@ -34,6 +34,23 @@ const TABS = [
   "Communication",
 ];
 
+const COMMUNICATION_TYPE_OPTIONS = [
+  ["all", "All communication"],
+  ["internal_note", "Internal notes"],
+  ["phone_call", "Phone calls"],
+  ["email", "Email"],
+  ["sms", "SMS"],
+  ["in_person", "In-person"],
+  ["other", "Other"],
+];
+
+const LOG_TYPE_OPTIONS = COMMUNICATION_TYPE_OPTIONS.filter(([value]) => value !== "all");
+const DIRECTION_OPTIONS = [
+  ["internal", "Internal"],
+  ["inbound", "Inbound"],
+  ["outbound", "Outbound"],
+];
+
 function safeText(value, fallback = "-") {
   const text = String(value ?? "").trim();
   return text || fallback;
@@ -51,6 +68,20 @@ function formatDateTime(value, fallback = "-") {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return fallback;
   return date.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function dateTimeInputValue(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetMs = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function toApiDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString();
 }
 
 function money(value) {
@@ -167,6 +198,7 @@ function RowCard({ title, subtitle, meta, status, amount, url }) {
 
 function sourceKind(value) {
   const key = String(value || "").toLowerCase();
+  if (["internal_note", "phone_call", "email", "sms", "in_person", "other"].includes(key) || key.includes("communication")) return "communication";
   if (key.includes("opportunity") || key.includes("lead") || key.includes("intake")) return "opportunity";
   if (key.includes("request")) return "request";
   if (key.includes("agreement")) return "agreement";
@@ -178,8 +210,17 @@ function sourceKind(value) {
 }
 
 function timelineMeta(event = {}) {
-  const kind = sourceKind(event.source || event.type);
+  const kind = sourceKind(event.source === "communication_log" ? event.type : event.source || event.type);
+  const communicationLabels = {
+    internal_note: "Internal note",
+    phone_call: "Phone call",
+    email: "Email",
+    sms: "SMS",
+    in_person: "In-person meeting",
+    other: "Communication",
+  };
   const config = {
+    communication: { label: communicationLabels[event.type] || "Communication", cta: "Open communication", icon: MessageSquare },
     opportunity: { label: "Opportunity", cta: "Open opportunity", icon: ClipboardList },
     request: { label: "Request", cta: "Open request", icon: MessageSquare },
     agreement: { label: "Agreement", cta: "Open agreement", icon: FileSignature },
@@ -206,6 +247,25 @@ function customerScopedUrl(url, customerId) {
 }
 
 function getCustomerNextAction({ related = {}, stats = {}, customerId }) {
+  const now = new Date();
+  const dueCommunication = (related.communication || []).find((row) => {
+    if (!row.follow_up_at) return false;
+    const due = new Date(row.follow_up_at);
+    return !Number.isNaN(due.getTime()) && due <= now;
+  });
+  if (dueCommunication) {
+    return {
+      tone: "amber",
+      title: "Follow up with this customer",
+      why: "A logged communication has a due or overdue follow-up reminder.",
+      related: dueCommunication.subject || dueCommunication.communication_type_label || "Customer communication",
+      ctaLabel: "Open communication",
+      ctaUrl: "#communication",
+      icon: MessageSquare,
+      tab: "Communication",
+    };
+  }
+
   const requests = [...(related.customer_requests || []), ...(related.project_intakes || [])];
   const request = pickFirstActionable(requests, ["new", "submitted", "pending", "open"]);
   if (request) {
@@ -304,7 +364,7 @@ function getCustomerNextAction({ related = {}, stats = {}, customerId }) {
   };
 }
 
-function CustomerNextActionCard({ action }) {
+function CustomerNextActionCard({ action, onSelectTab }) {
   const Icon = action.icon || AlertCircle;
   const toneClass =
     action.tone === "amber"
@@ -328,7 +388,15 @@ function CustomerNextActionCard({ action }) {
           {action.related ? <p className="mt-2 text-sm font-semibold text-sky-50">{action.related}</p> : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {action.ctaUrl && !action.comingSoon ? (
+          {action.tab ? (
+            <button
+              type="button"
+              onClick={() => onSelectTab?.(action.tab)}
+              className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50"
+            >
+              {action.ctaLabel} <ArrowRight size={15} />
+            </button>
+          ) : action.ctaUrl && !action.comingSoon ? (
             <Link to={action.ctaUrl} className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50">
               {action.ctaLabel} <ArrowRight size={15} />
             </Link>
@@ -392,6 +460,17 @@ export default function CustomerWorkspacePage() {
   const [workspace, setWorkspace] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [communicationFilter, setCommunicationFilter] = useState("all");
+  const [showCommunicationForm, setShowCommunicationForm] = useState(false);
+  const [savingCommunication, setSavingCommunication] = useState(false);
+  const [communicationForm, setCommunicationForm] = useState({
+    communication_type: "internal_note",
+    direction: "internal",
+    subject: "",
+    body: "",
+    occurred_at: dateTimeInputValue(new Date()),
+    follow_up_at: "",
+  });
 
   useEffect(() => {
     let alive = true;
@@ -434,9 +513,78 @@ export default function CustomerWorkspacePage() {
     [related]
   );
   const nextAction = useMemo(() => getCustomerNextAction({ related, stats, customerId: id }), [related, stats, id]);
+  const communicationRows = useMemo(() => {
+    const rows = related.communication || [];
+    if (communicationFilter === "all") return rows;
+    return rows.filter((row) => row.communication_type === communicationFilter);
+  }, [related, communicationFilter]);
 
   const title = contact.company_name || contact.name || "Customer Workspace";
   const subtitleParts = [contact.email, contact.phone, formatAddress(contact)].filter(Boolean);
+
+  const handleCommunicationChange = (event) => {
+    const { name, value } = event.target;
+    setCommunicationForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleCommunicationSubmit = async (event) => {
+    event.preventDefault();
+    if (!communicationForm.subject.trim() && !communicationForm.body.trim()) {
+      toast.error("Add a subject or note body.");
+      return;
+    }
+    setSavingCommunication(true);
+    try {
+      const payload = {
+        ...communicationForm,
+        occurred_at: toApiDateTime(communicationForm.occurred_at),
+        follow_up_at: toApiDateTime(communicationForm.follow_up_at),
+      };
+      const { data } = await api.post(`/projects/homeowners/${id}/communications/`, payload);
+      setWorkspace((prev) => {
+        const previousRelated = prev?.related || {};
+        const previousTimeline = prev?.timeline || [];
+        const communication = [data, ...(previousRelated.communication || [])];
+        const eventRow = {
+          type: data.communication_type,
+          title: data.subject || data.communication_type_label,
+          description: data.body,
+          timestamp: data.occurred_at,
+          source: "communication_log",
+          source_id: data.id,
+          url: "",
+          amount: null,
+          status: data.direction,
+        };
+        return {
+          ...prev,
+          related: {
+            ...previousRelated,
+            communication,
+          },
+          timeline: [eventRow, ...previousTimeline].sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || ""))),
+          stats: {
+            ...(prev?.stats || {}),
+            last_activity: data.occurred_at || prev?.stats?.last_activity,
+          },
+        };
+      });
+      setShowCommunicationForm(false);
+      setCommunicationForm({
+        communication_type: "internal_note",
+        direction: "internal",
+        subject: "",
+        body: "",
+        occurred_at: dateTimeInputValue(new Date()),
+        follow_up_at: "",
+      });
+      toast.success("Communication logged.");
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Failed to log communication.");
+    } finally {
+      setSavingCommunication(false);
+    }
+  };
 
   return (
     <ContractorPageSurface
@@ -462,7 +610,14 @@ export default function CustomerWorkspacePage() {
             <Link to={`/app/payments?customerId=${id}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15">
               <Receipt size={16} /> New Invoice
             </Link>
-            <button type="button" className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/12 bg-slate-950/40 px-3 py-2 text-sm font-semibold text-sky-100/70" disabled>
+            <button
+              type="button"
+              className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15"
+              onClick={() => {
+                setActiveTab("Communication");
+                setShowCommunicationForm(true);
+              }}
+            >
               <MessageSquare size={16} /> Add Note
             </button>
           </div>
@@ -517,7 +672,7 @@ export default function CustomerWorkspacePage() {
 
           {activeTab === "Overview" ? (
             <div className="space-y-5" data-testid="customer-workspace-overview">
-              <CustomerNextActionCard action={nextAction} />
+              <CustomerNextActionCard action={nextAction} onSelectTab={setActiveTab} />
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
                 <section className="rounded-2xl border border-white/12 bg-slate-950/45 p-5">
                   <h2 className="text-lg font-semibold text-white">What is happening with this customer?</h2>
@@ -570,26 +725,120 @@ export default function CustomerWorkspacePage() {
             />
           ) : null}
 
-          {["Properties", "Documents", "Communication"].includes(activeTab) ? (
+          {activeTab === "Communication" ? (
+            <section className="space-y-4" data-testid="customer-workspace-communication">
+              <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-white">Communication Log</h2>
+                    <p className="mt-1 text-sm leading-6 text-sky-100/60">Track internal notes, calls, emails, SMS, and in-person interactions. Nothing here is sent to the customer yet.</p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <select
+                      value={communicationFilter}
+                      onChange={(event) => setCommunicationFilter(event.target.value)}
+                      className="min-h-[40px] rounded-xl border border-white/12 bg-slate-950/50 px-3 py-2 text-sm font-semibold text-sky-100 outline-none focus:border-sky-300/45"
+                      aria-label="Filter communication type"
+                    >
+                      {COMMUNICATION_TYPE_OPTIONS.map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setShowCommunicationForm((prev) => !prev)}
+                      className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50"
+                    >
+                      <Plus size={16} /> Log Communication
+                    </button>
+                  </div>
+                </div>
+
+                {showCommunicationForm ? (
+                  <form onSubmit={handleCommunicationSubmit} className="mt-5 grid gap-4 rounded-2xl border border-white/12 bg-slate-950/40 p-4" data-testid="communication-log-form">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="text-sm font-semibold text-sky-100/80">
+                        Type
+                        <select name="communication_type" value={communicationForm.communication_type} onChange={handleCommunicationChange} className="mt-1 w-full rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none focus:border-sky-300/45">
+                          {LOG_TYPE_OPTIONS.map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="text-sm font-semibold text-sky-100/80">
+                        Direction
+                        <select name="direction" value={communicationForm.direction} onChange={handleCommunicationChange} className="mt-1 w-full rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none focus:border-sky-300/45">
+                          {DIRECTION_OPTIONS.map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="text-sm font-semibold text-sky-100/80">
+                      Subject
+                      <input name="subject" value={communicationForm.subject} onChange={handleCommunicationChange} className="mt-1 w-full rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/45" placeholder="Short summary" />
+                    </label>
+                    <label className="text-sm font-semibold text-sky-100/80">
+                      Notes
+                      <textarea name="body" value={communicationForm.body} onChange={handleCommunicationChange} className="mt-1 min-h-28 w-full rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/45" placeholder="What happened? What should the team know?" />
+                    </label>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="text-sm font-semibold text-sky-100/80">
+                        Occurred
+                        <input type="datetime-local" name="occurred_at" value={communicationForm.occurred_at} onChange={handleCommunicationChange} className="mt-1 w-full rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none focus:border-sky-300/45" />
+                      </label>
+                      <label className="text-sm font-semibold text-sky-100/80">
+                        Follow-up date <span className="text-sky-100/45">(optional)</span>
+                        <input type="datetime-local" name="follow_up_at" value={communicationForm.follow_up_at} onChange={handleCommunicationChange} className="mt-1 w-full rounded-xl border border-white/12 bg-slate-950/60 px-3 py-2.5 text-sm text-white outline-none focus:border-sky-300/45" />
+                      </label>
+                    </div>
+                    <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                      <button type="button" onClick={() => setShowCommunicationForm(false)} className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-white/15 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35">
+                        Cancel
+                      </button>
+                      <button type="submit" disabled={savingCommunication} className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60">
+                        {savingCommunication ? "Saving..." : "Save Communication"}
+                      </button>
+                    </div>
+                  </form>
+                ) : null}
+              </div>
+
+              <PreviewList
+                rows={communicationRows}
+                emptyTitle="No communication logged yet"
+                emptyText="Log internal notes, phone calls, emails, SMS, or in-person conversations so the next person has the full customer context."
+                icon={MessageSquare}
+                testId="customer-workspace-communication-list"
+                renderRow={(row) => (
+                  <RowCard
+                    key={`communication-${row.id}`}
+                    title={row.subject || row.communication_type_label}
+                    subtitle={row.body}
+                    meta={`${row.communication_type_label || "Communication"} • ${row.direction_label || row.direction || "Internal"}`}
+                    status={row.follow_up_at ? `Follow up ${formatDateTime(row.follow_up_at)}` : row.visibility_label || row.visibility}
+                  />
+                )}
+              />
+            </section>
+          ) : null}
+
+          {["Properties", "Documents"].includes(activeTab) ? (
             <PreviewList
-              rows={activeTab === "Properties" ? related.properties || [] : activeTab === "Documents" ? related.documents || [] : related.communication || []}
+              rows={activeTab === "Properties" ? related.properties || [] : related.documents || []}
               emptyTitle={
                 activeTab === "Properties"
                   ? "No linked properties yet"
-                  : activeTab === "Documents"
-                  ? "No customer documents yet"
-                  : "No communication log yet"
+                  : "No customer documents yet"
               }
               emptyText={
-                activeTab === "Communication"
-                  ? workspace.gaps?.communication || "Customer notes, calls, and message history will appear here when the contractor communication timeline is available."
-                  : activeTab === "Properties"
+                activeTab === "Properties"
                   ? "Property links will make service history and site context easier to find from this customer workspace."
                   : "Uploaded files and generated customer documents will appear here once document linking is available."
               }
-              actionLabel={activeTab === "Properties" ? "Add property" : activeTab === "Documents" ? "Upload document" : "Add note"}
+              actionLabel={activeTab === "Properties" ? "Add property" : "Upload document"}
               actionNote="Coming soon"
-              icon={activeTab === "Properties" ? Home : activeTab === "Documents" ? Upload : MessageSquare}
+              icon={activeTab === "Properties" ? Home : Upload}
               testId={`customer-workspace-${activeTab.toLowerCase()}`}
               renderRow={(row) => <RowCard key={`${activeTab}-${row.id}`} title={row.display_name || row.title} subtitle={row.address_line1 || row.document_type} meta={activeTab} />}
             />
