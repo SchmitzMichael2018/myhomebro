@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime, time
 from decimal import Decimal
 
+from django.db import transaction
 from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import Lower
 from django.utils import timezone
@@ -247,6 +248,25 @@ class HomeownerViewSet(viewsets.ModelViewSet):
             setattr(row, field, value)
         row.save(update_fields=[*serializer["data"].keys(), "updated_at"])
         return Response(_communication_payload(row))
+
+    @action(detail=True, methods=["post"], url_path="project-record-actions")
+    def project_record_actions(self, request: Request, pk=None):
+        customer: Homeowner = self.get_object()
+        contractor = _get_contractor_for_user(request.user)
+        action_name = _safe_text(request.data.get("action")).lower()
+        records = request.data.get("records") or []
+        if action_name not in {"archive", "delete"}:
+            return Response({"detail": "Action must be archive or delete."}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(records, list) or not records:
+            return Response({"detail": "Select at least one project or agreement record."}, status=status.HTTP_400_BAD_REQUEST)
+
+        results = []
+        with transaction.atomic():
+            for record in records:
+                record_type = _safe_text(record.get("type") or record.get("record_kind")).lower()
+                record_id = record.get("id")
+                results.append(_apply_project_record_action(contractor, customer, action_name, record_type, record_id))
+        return Response({"results": results})
 
 
 def _safe_text(value) -> str:
@@ -1121,32 +1141,193 @@ def _opportunity_payload(row: ContractorOpportunity) -> dict:
     }
 
 
+ARCHIVABLE_WORK_STATUSES = {"draft", "completed", "closed", "cancelled", "canceled"}
+ACTIVE_WORK_STATUSES = {"signed", "funded", "in_progress", "active", "sent"}
+
+
+def _agreement_delete_blockers(row: Agreement) -> list[str]:
+    blockers = []
+    project = getattr(row, "project", None)
+    if row.status != "draft":
+        blockers.append("Only draft agreements can be deleted.")
+    if project and project.status != "draft":
+        blockers.append("Linked project is not a draft.")
+    if row.signed_by_contractor or row.signed_by_homeowner or row.signed_at_contractor or row.signed_at_homeowner:
+        blockers.append("Agreement has signature history.")
+    if row.reviewed or row.reviewed_at:
+        blockers.append("Agreement has customer approval/review history.")
+    if row.escrow_funded or Decimal(row.escrow_funded_amount or 0) > Decimal("0.00") or row.escrow_payment_intent_id:
+        blockers.append("Agreement has escrow or funding history.")
+    if row.invoices.exists():
+        blockers.append("Agreement has invoice history.")
+    if row.draw_requests.exists():
+        blockers.append("Agreement has draw/payment request history.")
+    if row.external_payment_records.exists():
+        blockers.append("Agreement has recorded payment history.")
+    if row.funding_links.exists():
+        blockers.append("Agreement has funding links.")
+    if row.pdf_versions.exists() or row.pdf_file or row.pdf_archived:
+        blockers.append("Agreement has generated PDF history.")
+    if row.milestones.exists():
+        blockers.append("Agreement has milestone/work history.")
+    if row.status in {"signed", "funded", "in_progress", "completed", "disputed"}:
+        blockers.append("Agreement status indicates signed, funded, active, completed, or disputed work.")
+    return blockers
+
+
+def _agreement_archive_blockers(row: Agreement) -> list[str]:
+    if row.is_archived:
+        return ["Agreement is already archived."]
+    if row.status in ARCHIVABLE_WORK_STATUSES:
+        return []
+    return ["Only draft, completed, cancelled, or closed agreements can be archived from this workspace."]
+
+
+def _project_delete_blockers(row: Project) -> list[str]:
+    blockers = []
+    if row.status != "draft":
+        blockers.append("Only draft projects can be deleted.")
+    if _linked_agreement_for_project(row):
+        blockers.append("Project is linked to an agreement. Manage the agreement instead.")
+    return blockers
+
+
+def _project_archive_blockers(row: Project) -> list[str]:
+    if _linked_agreement_for_project(row):
+        return ["Archive the linked agreement instead."]
+    return ["Project records do not support archive yet."]
+
+
+def _linked_agreement_for_project(row: Project):
+    try:
+        return row.agreement
+    except Agreement.DoesNotExist:
+        return None
+
+
+def _project_record_management_payload(row) -> dict:
+    if isinstance(row, Agreement):
+        delete_blockers = _agreement_delete_blockers(row)
+        archive_blockers = _agreement_archive_blockers(row)
+        return {
+            "can_archive": not archive_blockers,
+            "can_delete": not delete_blockers,
+            "archive_blockers": archive_blockers,
+            "delete_blockers": delete_blockers,
+            "delete_hint": "Delete is limited to draft agreements with no signatures, payments, invoices, escrow, approvals, PDFs, or completed work.",
+        }
+
+    delete_blockers = _project_delete_blockers(row)
+    archive_blockers = _project_archive_blockers(row)
+    return {
+        "can_archive": not archive_blockers,
+        "can_delete": not delete_blockers,
+        "archive_blockers": archive_blockers,
+        "delete_blockers": delete_blockers,
+        "delete_hint": "Delete is limited to standalone draft projects with no linked agreement or work history.",
+    }
+
+
+def _apply_project_record_action(contractor, customer: Homeowner, action_name: str, record_type: str, record_id) -> dict:
+    result = {
+        "type": record_type or "unknown",
+        "id": record_id,
+        "action": action_name,
+        "ok": False,
+        "status": "blocked",
+        "message": "",
+        "blockers": [],
+    }
+    try:
+        if record_type == "agreement":
+            row = Agreement.objects.select_related("project").get(id=record_id, contractor=contractor, homeowner=customer)
+            management = _project_record_management_payload(row)
+            if action_name == "archive":
+                if not management["can_archive"]:
+                    result.update(message="Agreement cannot be archived.", blockers=management["archive_blockers"])
+                    return result
+                row.is_archived = True
+                row.save(update_fields=["is_archived", "updated_at"])
+                result.update(ok=True, status="archived", message="Agreement archived.", blockers=[])
+                return result
+
+            if not management["can_delete"]:
+                result.update(message="Agreement cannot be deleted. Archive instead.", blockers=management["delete_blockers"])
+                return result
+            project = getattr(row, "project", None)
+            if project and project.status == "draft":
+                project.delete()
+            else:
+                row.delete()
+            result.update(ok=True, status="deleted", message="Draft agreement deleted.", blockers=[])
+            return result
+
+        if record_type == "project":
+            row = Project.objects.get(id=record_id, contractor=contractor, homeowner=customer)
+            management = _project_record_management_payload(row)
+            if action_name == "archive":
+                result.update(message="Project cannot be archived from this workspace.", blockers=management["archive_blockers"])
+                return result
+
+            if not management["can_delete"]:
+                result.update(message="Project cannot be deleted. Archive linked agreement instead where available.", blockers=management["delete_blockers"])
+                return result
+            row.delete()
+            result.update(ok=True, status="deleted", message="Draft project deleted.", blockers=[])
+            return result
+
+        result.update(message="Unsupported record type.", blockers=["Record type must be agreement or project."])
+        return result
+    except (Agreement.DoesNotExist, Project.DoesNotExist, ValueError, TypeError):
+        result.update(message="Record not found.", blockers=["Record does not belong to this contractor customer."])
+        return result
+
+
 def _agreement_payload(row: Agreement) -> dict:
     project = getattr(row, "project", None)
+    is_draft = row.status == "draft"
+    action_url = f"/app/agreements/{row.id}/wizard" if is_draft else f"/app/agreements/{row.id}"
     return {
         "id": row.id,
+        "record_kind": "agreement",
         "type": "agreement",
         "title": getattr(project, "title", "") or f"Agreement #{row.id}",
         "description": row.description or getattr(project, "description", "") or "",
         "status": row.status,
+        "project_type": row.project_type or row.standardized_category or "",
         "project_id": getattr(project, "id", None),
         "total": _money(row.total_cost),
+        "is_archived": row.is_archived,
         "created_at": _iso(row.created_at),
         "updated_at": _iso(row.updated_at),
-        "url": f"/app/agreements/{row.id}",
+        "url": action_url,
+        "action_url": action_url,
+        "action_label": "Continue Draft" if is_draft else "Open Agreement",
+        "management": _project_record_management_payload(row),
     }
 
 
 def _project_payload(row: Project) -> dict:
+    agreement = _linked_agreement_for_project(row)
+    url = f"/app/agreements/{agreement.id}" if agreement else ""
     return {
         "id": row.id,
+        "record_kind": "project",
+        "type": "project",
         "title": row.title,
         "description": row.description or "",
         "status": row.status,
+        "project_type": "",
         "created_at": _iso(row.created_at),
         "updated_at": _iso(row.updated_at),
-        "agreement_id": getattr(getattr(row, "agreement", None), "id", None),
-        "url": f"/app/agreements/{getattr(getattr(row, 'agreement', None), 'id', '')}" if getattr(row, "agreement", None) else "",
+        "agreement_id": getattr(agreement, "id", None),
+        "total": _money(getattr(agreement, "total_cost", None)) if agreement else None,
+        "is_archived": bool(getattr(agreement, "is_archived", False)) if agreement else False,
+        "url": url,
+        "action_url": url,
+        "action_label": "Open Project" if url else "No linked record",
+        "action_disabled_reason": "" if url else "This project is not linked to an agreement or project detail route yet.",
+        "management": _project_record_management_payload(row),
     }
 
 

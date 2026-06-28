@@ -638,6 +638,221 @@ class CustomerWorkspaceApiTests(TestCase):
         log.refresh_from_db()
         self.assertEqual(log.subject, "Private note")
 
+    def test_customer_workspace_can_archive_safe_draft_and_cancelled_agreements(self):
+        draft_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Draft kitchen scope",
+            status=ProjectStatus.DRAFT,
+        )
+        draft_agreement = Agreement.objects.create(
+            project=draft_project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("500.00"),
+            status=ProjectStatus.DRAFT,
+        )
+        cancelled_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Cancelled bath scope",
+            status=ProjectStatus.CANCELLED,
+        )
+        cancelled_agreement = Agreement.objects.create(
+            project=cancelled_project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("800.00"),
+            status=ProjectStatus.CANCELLED,
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            f"/api/projects/homeowners/{self.customer.id}/project-record-actions/",
+            {
+                "action": "archive",
+                "records": [
+                    {"type": "agreement", "id": draft_agreement.id},
+                    {"type": "agreement", "id": cancelled_agreement.id},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(all(row["ok"] for row in response.data["results"]))
+        draft_agreement.refresh_from_db()
+        cancelled_agreement.refresh_from_db()
+        self.assertTrue(draft_agreement.is_archived)
+        self.assertTrue(cancelled_agreement.is_archived)
+
+    def test_customer_workspace_cannot_delete_signed_agreement(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Signed kitchen scope",
+            status=ProjectStatus.SIGNED,
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("1500.00"),
+            status=ProjectStatus.SIGNED,
+            signed_by_contractor=True,
+            signed_by_homeowner=True,
+            signed_at_contractor=timezone.now(),
+            signed_at_homeowner=timezone.now(),
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            f"/api/projects/homeowners/{self.customer.id}/project-record-actions/",
+            {"action": "delete", "records": [{"type": "agreement", "id": agreement.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data["results"][0]["ok"])
+        self.assertTrue(Agreement.objects.filter(id=agreement.id).exists())
+        self.assertTrue(any("signature" in blocker.lower() for blocker in response.data["results"][0]["blockers"]))
+
+    def test_customer_workspace_cannot_delete_invoice_linked_agreement(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Invoice linked draft",
+            status=ProjectStatus.DRAFT,
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("1500.00"),
+            status=ProjectStatus.DRAFT,
+        )
+        Invoice.objects.create(agreement=agreement, amount=Decimal("200.00"), status=InvoiceStatus.SENT)
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            f"/api/projects/homeowners/{self.customer.id}/project-record-actions/",
+            {"action": "delete", "records": [{"type": "agreement", "id": agreement.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data["results"][0]["ok"])
+        self.assertTrue(Agreement.objects.filter(id=agreement.id).exists())
+        self.assertTrue(any("invoice" in blocker.lower() for blocker in response.data["results"][0]["blockers"]))
+
+    def test_customer_workspace_can_delete_draft_with_no_history(self):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Empty draft",
+            status=ProjectStatus.DRAFT,
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("0.00"),
+            status=ProjectStatus.DRAFT,
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            f"/api/projects/homeowners/{self.customer.id}/project-record-actions/",
+            {"action": "delete", "records": [{"type": "agreement", "id": agreement.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["results"][0]["ok"])
+        self.assertFalse(Agreement.objects.filter(id=agreement.id).exists())
+
+    def test_customer_workspace_bulk_actions_return_per_record_results(self):
+        draft_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Empty draft",
+            status=ProjectStatus.DRAFT,
+        )
+        draft_agreement = Agreement.objects.create(
+            project=draft_project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("0.00"),
+            status=ProjectStatus.DRAFT,
+        )
+        signed_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.customer,
+            title="Signed draft",
+            status=ProjectStatus.SIGNED,
+        )
+        signed_agreement = Agreement.objects.create(
+            project=signed_project,
+            contractor=self.contractor,
+            homeowner=self.customer,
+            total_cost=Decimal("1000.00"),
+            status=ProjectStatus.SIGNED,
+            signed_by_contractor=True,
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            f"/api/projects/homeowners/{self.customer.id}/project-record-actions/",
+            {
+                "action": "delete",
+                "records": [
+                    {"type": "agreement", "id": draft_agreement.id},
+                    {"type": "agreement", "id": signed_agreement.id},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        results = response.data["results"]
+        self.assertEqual(len(results), 2)
+        self.assertTrue(results[0]["ok"])
+        self.assertFalse(results[1]["ok"])
+        self.assertFalse(Agreement.objects.filter(id=draft_agreement.id).exists())
+        self.assertTrue(Agreement.objects.filter(id=signed_agreement.id).exists())
+
+    def test_customer_workspace_cannot_archive_or_delete_another_contractors_records(self):
+        other_customer = Homeowner.objects.create(
+            created_by=self.other_contractor,
+            full_name="Other Customer",
+            email="other-customer@example.com",
+        )
+        other_project = Project.objects.create(
+            contractor=self.other_contractor,
+            homeowner=other_customer,
+            title="Other draft",
+            status=ProjectStatus.DRAFT,
+        )
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=self.other_contractor,
+            homeowner=other_customer,
+            total_cost=Decimal("0.00"),
+            status=ProjectStatus.DRAFT,
+        )
+        self.client.force_authenticate(self.user)
+
+        response = self.client.post(
+            f"/api/projects/homeowners/{self.customer.id}/project-record-actions/",
+            {"action": "archive", "records": [{"type": "agreement", "id": other_agreement.id}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data["results"][0]["ok"])
+        other_agreement.refresh_from_db()
+        self.assertFalse(other_agreement.is_archived)
+
 
 class AgreementMilestoneAIRouteTests(TestCase):
     def setUp(self):

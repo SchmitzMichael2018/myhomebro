@@ -113,11 +113,103 @@ const workspacePayload = {
         description: "Agreement",
         status: "signed",
         total: "12500.00",
+        project_type: "Kitchen",
+        record_kind: "agreement",
         type: "agreement",
         url: "/app/agreements/301",
+        action_url: "/app/agreements/301",
+        action_label: "Open Agreement",
+        is_archived: false,
+        management: {
+          can_archive: false,
+          can_delete: false,
+          archive_blockers: ["Only draft, completed, cancelled, or closed agreements can be archived from this workspace."],
+          delete_blockers: ["Agreement has signature history."],
+        },
+      },
+      {
+        id: 302,
+        title: "Basement Draft",
+        description: "Early estimate draft",
+        status: "draft",
+        total: "900.00",
+        project_type: "Basement",
+        record_kind: "agreement",
+        type: "agreement",
+        url: "/app/agreements/302/wizard",
+        action_url: "/app/agreements/302/wizard",
+        action_label: "Continue Draft",
+        is_archived: false,
+        management: {
+          can_archive: true,
+          can_delete: true,
+          archive_blockers: [],
+          delete_blockers: [],
+        },
+      },
+      {
+        id: 303,
+        title: "Cancelled Patio",
+        description: "Customer cancelled before signing",
+        status: "cancelled",
+        total: "1200.00",
+        project_type: "Patio",
+        record_kind: "agreement",
+        type: "agreement",
+        url: "/app/agreements/303",
+        action_url: "/app/agreements/303",
+        action_label: "Open Agreement",
+        is_archived: false,
+        management: {
+          can_archive: true,
+          can_delete: false,
+          archive_blockers: [],
+          delete_blockers: ["Only draft agreements can be deleted."],
+        },
+      },
+      {
+        id: 304,
+        title: "Archived Closet",
+        description: "Old archived draft",
+        status: "draft",
+        total: "300.00",
+        project_type: "Closet",
+        record_kind: "agreement",
+        type: "agreement",
+        url: "/app/agreements/304/wizard",
+        action_url: "/app/agreements/304/wizard",
+        action_label: "Continue Draft",
+        is_archived: true,
+        management: {
+          can_archive: false,
+          can_delete: true,
+          archive_blockers: ["Agreement is already archived."],
+          delete_blockers: [],
+        },
       },
     ],
-    projects: [],
+    projects: [
+      {
+        id: 501,
+        title: "Loose project",
+        description: "Project without a detail destination",
+        status: "in_progress",
+        project_type: "Repair",
+        record_kind: "project",
+        type: "project",
+        url: "",
+        action_url: "",
+        action_label: "No linked record",
+        action_disabled_reason: "This project is not linked to an agreement or project detail route yet.",
+        is_archived: false,
+        management: {
+          can_archive: false,
+          can_delete: false,
+          archive_blockers: ["Project records do not support archive yet."],
+          delete_blockers: ["Only draft projects can be deleted."],
+        },
+      },
+    ],
     payments: [
       {
         id: 401,
@@ -161,10 +253,43 @@ const workspacePayload = {
 };
 
 async function mockCustomersWorkspaceApi(page, payload = workspacePayload) {
-  const communications = [...(payload.related?.communication || [])];
+  let workspaceState = JSON.parse(JSON.stringify(payload));
+  const communications = [...(workspaceState.related?.communication || [])];
   await page.route("**/api/projects/homeowners/**", async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     const method = route.request().method();
+    if (pathname.endsWith("/api/projects/homeowners/42/project-record-actions/")) {
+      const data = route.request().postDataJSON();
+      const recordsToUpdate = data.records || [];
+      const results = recordsToUpdate.map((record) => {
+        const collection = record.type === "project" ? "projects" : "agreements";
+        const current = (workspaceState.related?.[collection] || []).find((row) => String(row.id) === String(record.id));
+        if (!current) {
+          return { type: record.type, id: record.id, action: data.action, ok: false, status: "blocked", message: "Record not found.", blockers: ["Record not found."] };
+        }
+        if (data.action === "archive" && current.management?.can_archive) {
+          current.is_archived = true;
+          current.management.can_archive = false;
+          current.management.archive_blockers = ["Record is already archived."];
+          return { type: record.type, id: record.id, action: data.action, ok: true, status: "archived", message: "Agreement archived.", blockers: [] };
+        }
+        if (data.action === "delete" && current.management?.can_delete) {
+          workspaceState.related[collection] = workspaceState.related[collection].filter((row) => String(row.id) !== String(record.id));
+          return { type: record.type, id: record.id, action: data.action, ok: true, status: "deleted", message: "Draft agreement deleted.", blockers: [] };
+        }
+        return {
+          type: record.type,
+          id: record.id,
+          action: data.action,
+          ok: false,
+          status: "blocked",
+          message: data.action === "delete" ? "Agreement cannot be deleted. Archive instead." : "Record cannot be archived.",
+          blockers: current.management?.delete_blockers || current.management?.archive_blockers || ["Blocked by safety rules."],
+        };
+      });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results }) });
+      return;
+    }
     if (pathname.endsWith("/api/projects/homeowners/42/communications/")) {
       if (method === "POST") {
         const data = route.request().postDataJSON();
@@ -208,8 +333,9 @@ async function mockCustomersWorkspaceApi(page, payload = workspacePayload) {
         contentType: "application/json",
         body: JSON.stringify({
           ...payload,
+          ...workspaceState,
           related: {
-            ...(payload.related || {}),
+            ...(workspaceState.related || {}),
             communication: communications,
           },
         }),
@@ -511,6 +637,72 @@ test("customer workspace renders overview, timeline, tabs, and dark operational 
   await expect(page.getByTestId("customer-workspace-communication-list")).toContainText("No communication logged yet");
   const bodyText = await page.locator("body").innerText();
   expect(bodyText).not.toMatch(/\u00e2/);
+});
+
+test("customer workspace projects tab supports labels, filters, search, and safe bulk actions", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page);
+
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Projects & Agreements" }).click();
+
+  const projectsTab = page.getByTestId("customer-workspace-projects");
+  await expect(projectsTab).toContainText("Kitchen Agreement");
+  await expect(page.getByTestId("project-agreement-card-agreement-301").getByRole("link", { name: /Open Agreement/ })).toHaveAttribute("href", "/app/agreements/301");
+  await expect(page.getByTestId("project-agreement-card-agreement-302").getByRole("link", { name: /Continue Draft/ })).toHaveAttribute("href", "/app/agreements/302/wizard");
+  await expect(projectsTab.getByRole("button", { name: "No linked record" })).toBeDisabled();
+  await expect(projectsTab).toContainText("This project is not linked");
+
+  await page.getByTestId("project-agreement-filters").getByRole("button", { name: "Draft" }).click();
+  await expect(projectsTab).toContainText("Basement Draft");
+  await expect(projectsTab).not.toContainText("Kitchen Agreement");
+
+  await page.getByTestId("project-agreement-filters").getByRole("button", { name: "All" }).click();
+  await page.getByTestId("project-agreement-search").fill("patio");
+  await expect(projectsTab).toContainText("Cancelled Patio");
+  await expect(projectsTab).not.toContainText("Kitchen Agreement");
+  await page.getByTestId("project-agreement-search").fill("");
+
+  await page.getByRole("button", { name: "Select records" }).click();
+  await page.getByLabel("Select Basement Draft").check();
+  await page.getByLabel("Select Kitchen Agreement").check();
+  await expect(page.getByTestId("project-selection-toolbar")).toContainText("2");
+  await expect(page.getByTestId("project-selection-toolbar")).toContainText("Deletable 1");
+  await expect(page.getByTestId("project-selection-toolbar")).toContainText("Blocked 1");
+
+  await page.getByRole("button", { name: "Delete selected drafts only" }).click();
+  await expect(page.getByTestId("project-delete-confirmation")).toContainText("Delete selected draft records?");
+  await expect(page.getByTestId("project-delete-confirmation")).toContainText("Selected:");
+  await page.getByTestId("project-delete-confirmation").getByRole("button", { name: /Delete safe drafts/ }).click();
+  await expect(projectsTab).not.toContainText("Basement Draft");
+  await expect(projectsTab).toContainText("Kitchen Agreement");
+  await expect(page.getByTestId("project-delete-confirmation")).toContainText("Agreement cannot be deleted");
+
+  await page.getByRole("button", { name: "Clear" }).click();
+  await page.getByLabel("Select Cancelled Patio").check();
+  await page.getByRole("button", { name: "Archive selected" }).click();
+  await expect(page.getByTestId("project-archive-confirmation")).toContainText("Archive selected records?");
+  await page.getByTestId("project-archive-confirmation").getByRole("button", { name: /Archive selected/ }).click();
+  await expect(projectsTab).not.toContainText("Cancelled Patio");
+
+  await page.getByTestId("project-agreement-filters").getByRole("button", { name: "Archived" }).click();
+  await expect(projectsTab).toContainText("Cancelled Patio");
+  await expect(projectsTab).toContainText("Archived Closet");
+});
+
+test("customer workspace projects tab mobile layout avoids horizontal overflow", async ({ page }) => {
+  await authAndWhoAmI(page);
+  await mockCustomersWorkspaceApi(page);
+  await page.setViewportSize({ width: 390, height: 900 });
+
+  await page.goto("/app/customers/42", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Projects & Agreements" }).click();
+  await expect(page.getByTestId("customer-workspace-projects")).toContainText("Kitchen Agreement");
+
+  const hasHorizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth + 2
+  );
+  expect(hasHorizontalOverflow).toBeFalsy();
 });
 
 test("customer communication tab logs notes and interactions into timeline", async ({ page }) => {

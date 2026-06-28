@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   AlertCircle,
+  Archive,
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
@@ -16,6 +17,8 @@ import {
   MessageSquare,
   Plus,
   Receipt,
+  Search,
+  Trash2,
   Upload,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -56,6 +59,19 @@ const DIRECTION_OPTIONS = [
   ["inbound", "Inbound"],
   ["outbound", "Outbound"],
 ];
+
+const PROJECT_STATUS_FILTERS = [
+  ["all", "All"],
+  ["draft", "Draft"],
+  ["sent", "Sent"],
+  ["signed", "Signed"],
+  ["active", "Active"],
+  ["completed", "Completed"],
+  ["cancelled", "Cancelled"],
+  ["archived", "Archived"],
+];
+
+const ACTIVE_PROJECT_STATUSES = new Set(["active", "signed", "funded", "in_progress", "sent"]);
 
 function safeText(value, fallback = "-") {
   const text = String(value ?? "").trim();
@@ -199,6 +215,236 @@ function RowCard({ title, subtitle, meta, status, amount, url }) {
     </Link>
   ) : (
     <div key={`${title}-${meta}`}>{content}</div>
+  );
+}
+
+function normalizeStatus(value) {
+  const key = String(value || "").toLowerCase();
+  return key === "canceled" ? "cancelled" : key;
+}
+
+function projectRecordType(row = {}) {
+  return row.record_kind || row.type || (row.agreement_id ? "project" : "agreement");
+}
+
+function projectRecordKey(row = {}) {
+  return `${projectRecordType(row)}-${row.id}`;
+}
+
+function projectActionLabel(row = {}) {
+  if (row.action_label) return row.action_label;
+  if (projectRecordType(row) === "project") return row.action_url || row.url ? "Open Project" : "No linked record";
+  return normalizeStatus(row.status) === "draft" ? "Continue Draft" : "Open Agreement";
+}
+
+function ProjectAgreementCard({ row, selectionMode, selected, onToggle }) {
+  const key = projectRecordKey(row);
+  const status = normalizeStatus(row.status);
+  const meta = [projectRecordType(row), row.project_type].filter(Boolean).join(" | ");
+  const actionUrl = row.action_url || row.url || "";
+  const label = projectActionLabel(row);
+  const management = row.management || {};
+  const canArchive = Boolean(management.can_archive);
+  const canDelete = Boolean(management.can_delete);
+  const blocker = (canArchive && !canDelete)
+    ? "Archive instead"
+    : (management.delete_blockers || management.archive_blockers || [])[0];
+
+  return (
+    <div className={`rounded-2xl border p-4 transition ${selected ? "border-sky-300/55 bg-sky-400/12" : "border-white/12 bg-slate-950/45"}`} data-testid={`project-agreement-card-${key}`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 gap-3">
+          {selectionMode ? (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggle(row)}
+              aria-label={`Select ${row.title || "project record"}`}
+              className="mt-1 h-4 w-4 shrink-0 accent-sky-400"
+            />
+          ) : null}
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="font-semibold text-white">{safeText(row.title, "Untitled")}</div>
+              {row.is_archived ? <span className="rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-xs font-semibold text-sky-100/65">Archived</span> : null}
+            </div>
+            {row.description ? <p className="mt-1 line-clamp-2 text-sm leading-6 text-sky-100/65">{row.description}</p> : null}
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/45">
+              {meta ? <span>{meta}</span> : null}
+              {row.updated_at ? <span>Updated {formatDate(row.updated_at)}</span> : null}
+            </div>
+            {selectionMode && blocker ? <p className="mt-2 text-xs font-semibold text-amber-100/80">{blocker}</p> : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+          {row.total != null ? <span className="text-sm font-bold text-white">{money(row.total)}</span> : null}
+          {row.status ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusBadge(row.status)}`}>{status.replaceAll("_", " ")}</span> : null}
+          {actionUrl ? (
+            <Link to={actionUrl} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-950/45 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15">
+              {label} <ArrowRight size={14} />
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled
+              title={row.action_disabled_reason || "No destination is available for this record."}
+              className="inline-flex min-h-[38px] items-center justify-center rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-sky-100/45"
+            >
+              No linked record
+            </button>
+          )}
+        </div>
+      </div>
+      {!actionUrl && row.action_disabled_reason ? <p className="mt-3 text-xs text-sky-100/50">{row.action_disabled_reason}</p> : null}
+    </div>
+  );
+}
+
+function ProjectActionDialog({ action, summary, saving, results, onCancel, onConfirm }) {
+  if (!action) return null;
+  const isDelete = action === "delete";
+  return (
+    <div className="rounded-2xl border border-amber-200/35 bg-amber-400/10 p-4" data-testid={`project-${action}-confirmation`}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="font-semibold text-white">
+            {isDelete
+              ? "Delete selected draft records? This can only be done for drafts with no signatures, payments, invoices, escrow, approvals, or completed work."
+              : "Archive selected records? They will be hidden from active views but remain in customer history."}
+          </h3>
+          <div className="mt-3 grid gap-2 text-sm text-sky-100/70 sm:grid-cols-4">
+            <span>Selected: <strong className="text-white">{summary.selected}</strong></span>
+            <span>Deletable: <strong className="text-white">{summary.deletable}</strong></span>
+            <span>Archive-only: <strong className="text-white">{summary.archiveOnly}</strong></span>
+            <span>Blocked: <strong className="text-white">{summary.blocked}</strong></span>
+          </div>
+          {results?.length ? (
+            <div className="mt-3 space-y-1 text-sm">
+              {results.map((result) => (
+                <p key={`${result.type}-${result.id}-${result.action}`} className={result.ok ? "text-emerald-100" : "text-amber-100"}>
+                  {result.message || (result.ok ? "Updated." : "Blocked.")}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 flex-col-reverse gap-2 sm:flex-row">
+          <button type="button" onClick={onCancel} disabled={saving} className="inline-flex min-h-[40px] items-center justify-center rounded-xl border border-white/15 bg-slate-950/40 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} disabled={saving || !summary.selected} className="inline-flex min-h-[40px] items-center justify-center gap-2 rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60">
+            {isDelete ? <Trash2 size={15} /> : <Archive size={15} />}
+            {saving ? "Working..." : isDelete ? "Delete safe drafts" : "Archive selected"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectAgreementsManager({
+  rows,
+  totalRows,
+  filter,
+  onFilterChange,
+  search,
+  onSearchChange,
+  selectionMode,
+  onSelectionModeChange,
+  selectedKeys,
+  onToggleSelected,
+  onClearSelection,
+  onOpenDialog,
+  actionDialog,
+  actionSummary,
+  actionSaving,
+  actionResults,
+  onCancelDialog,
+  onConfirmAction,
+}) {
+  if (!totalRows) {
+    return (
+      <div data-testid="customer-workspace-projects">
+        <EmptyState title="No projects or agreements yet">Created agreements and linked projects for this customer will appear here.</EmptyState>
+      </div>
+    );
+  }
+
+  return (
+    <section className="space-y-4" data-testid="customer-workspace-projects">
+      <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Projects & Agreements</h2>
+            <p className="mt-1 text-sm text-sky-100/60">Filter old drafts, cancelled work, and archived records without losing customer history.</p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label className="relative block min-w-0 sm:w-72">
+              <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sky-100/45" />
+              <input
+                value={search}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Search title, type, status, amount..."
+                className="min-h-[40px] w-full rounded-xl border border-white/12 bg-slate-950/50 py-2 pl-9 pr-3 text-sm text-white outline-none placeholder:text-sky-100/35 focus:border-sky-300/45"
+                data-testid="project-agreement-search"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => onSelectionModeChange(!selectionMode)}
+              className={`inline-flex min-h-[40px] items-center justify-center rounded-xl border px-3 py-2 text-sm font-semibold ${selectionMode ? "border-sky-300/50 bg-sky-400/15 text-white" : "border-white/15 bg-slate-950/40 text-sky-100 hover:border-sky-300/35"}`}
+            >
+              {selectionMode ? "Exit selection" : "Select records"}
+            </button>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2" data-testid="project-agreement-filters">
+          {PROJECT_STATUS_FILTERS.map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onFilterChange(value)}
+              className={`rounded-full border px-3 py-1.5 text-sm font-semibold transition ${filter === value ? "border-sky-300/50 bg-sky-400/15 text-white" : "border-white/12 bg-slate-950/35 text-sky-100/65 hover:border-sky-300/35 hover:text-white"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {selectionMode ? (
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-white/12 bg-slate-950/40 p-3 sm:flex-row sm:items-center sm:justify-between" data-testid="project-selection-toolbar">
+            <div className="text-sm text-sky-100/70">
+              <strong className="text-white">{actionSummary.selected}</strong> selected.
+              <span className="ml-2">Deletable {actionSummary.deletable}</span>
+              <span className="ml-2">Archive-only {actionSummary.archiveOnly}</span>
+              <span className="ml-2">Blocked {actionSummary.blocked}</span>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button type="button" onClick={onClearSelection} className="inline-flex min-h-[38px] items-center justify-center rounded-xl border border-white/15 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35">
+                Clear
+              </button>
+              <button type="button" onClick={() => onOpenDialog("archive")} disabled={!actionSummary.selected} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-950/45 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 disabled:cursor-not-allowed disabled:opacity-50">
+                <Archive size={15} /> Archive selected
+              </button>
+              <button type="button" onClick={() => onOpenDialog("delete")} disabled={!actionSummary.selected} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-xl border border-rose-200/35 bg-rose-400/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/15 disabled:cursor-not-allowed disabled:opacity-50">
+                <Trash2 size={15} /> Delete selected drafts only
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      <ProjectActionDialog action={actionDialog} summary={actionSummary} saving={actionSaving} results={actionResults} onCancel={onCancelDialog} onConfirm={onConfirmAction} />
+
+      {rows.length ? (
+        <div className="grid gap-3">
+          {rows.map((row) => (
+            <ProjectAgreementCard key={projectRecordKey(row)} row={row} selectionMode={selectionMode} selected={selectedKeys.has(projectRecordKey(row))} onToggle={onToggleSelected} />
+          ))}
+        </div>
+      ) : (
+        <EmptyState title="No records match these filters">Try another status or search term. Archived records only appear when the Archived filter is selected.</EmptyState>
+      )}
+    </section>
   );
 }
 
@@ -469,6 +715,13 @@ export default function CustomerWorkspacePage() {
   const [communicationFilter, setCommunicationFilter] = useState("all");
   const [showCommunicationForm, setShowCommunicationForm] = useState(false);
   const [savingCommunication, setSavingCommunication] = useState(false);
+  const [projectStatusFilter, setProjectStatusFilter] = useState("all");
+  const [projectSearch, setProjectSearch] = useState("");
+  const [projectSelectionMode, setProjectSelectionMode] = useState(false);
+  const [selectedProjectRecords, setSelectedProjectRecords] = useState(new Set());
+  const [projectActionDialog, setProjectActionDialog] = useState(null);
+  const [projectActionSaving, setProjectActionSaving] = useState(false);
+  const [projectActionResults, setProjectActionResults] = useState([]);
   const [communicationForm, setCommunicationForm] = useState({
     communication_type: "internal_note",
     direction: "internal",
@@ -518,6 +771,26 @@ export default function CustomerWorkspacePage() {
     () => [...(related.agreements || []), ...(related.projects || [])],
     [related]
   );
+  const filteredProjectAgreementRows = useMemo(() => {
+    const searchTerm = projectSearch.trim().toLowerCase();
+    return projectAgreementRows.filter((row) => {
+      const status = normalizeStatus(row.status);
+      if (projectStatusFilter === "archived") {
+        if (!row.is_archived) return false;
+      } else if (row.is_archived) {
+        return false;
+      } else if (projectStatusFilter === "active") {
+        if (!ACTIVE_PROJECT_STATUSES.has(status)) return false;
+      } else if (projectStatusFilter !== "all" && status !== projectStatusFilter) {
+        return false;
+      }
+      if (!searchTerm) return true;
+      return [row.title, row.description, row.project_type, row.status, row.total]
+        .join(" ")
+        .toLowerCase()
+        .includes(searchTerm);
+    });
+  }, [projectAgreementRows, projectSearch, projectStatusFilter]);
   const nextAction = useMemo(() => getCustomerNextAction({ related, stats, customerId: id }), [related, stats, id]);
   const communicationRows = useMemo(() => {
     const rows = related.communication || [];
@@ -531,6 +804,85 @@ export default function CustomerWorkspacePage() {
   const handleCommunicationChange = (event) => {
     const { name, value } = event.target;
     setCommunicationForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const selectedProjectRows = useMemo(
+    () => projectAgreementRows.filter((row) => selectedProjectRecords.has(projectRecordKey(row))),
+    [projectAgreementRows, selectedProjectRecords]
+  );
+  const projectActionSummary = useMemo(() => {
+    const selected = selectedProjectRows.length;
+    const deletable = selectedProjectRows.filter((row) => row.management?.can_delete).length;
+    const archiveOnly = selectedProjectRows.filter((row) => row.management?.can_archive && !row.management?.can_delete).length;
+    const blocked = selectedProjectRows.filter((row) => !row.management?.can_archive && !row.management?.can_delete).length;
+    return { selected, deletable, archiveOnly, blocked };
+  }, [selectedProjectRows]);
+
+  const toggleProjectRecord = (row) => {
+    const key = projectRecordKey(row);
+    setSelectedProjectRecords((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const updateWorkspaceProjectRecords = (results = []) => {
+    setWorkspace((prev) => {
+      const updateRows = (rows = [], type) =>
+        rows
+          .filter((row) => !results.some((result) => result.ok && result.status === "deleted" && result.type === type && String(result.id) === String(row.id)))
+          .map((row) => {
+            const archived = results.find((result) => result.ok && result.status === "archived" && result.type === type && String(result.id) === String(row.id));
+            if (!archived) return row;
+            return {
+              ...row,
+              is_archived: true,
+              management: {
+                ...(row.management || {}),
+                can_archive: false,
+                archive_blockers: ["Record is already archived."],
+              },
+            };
+          });
+      return {
+        ...prev,
+        related: {
+          ...(prev?.related || {}),
+          agreements: updateRows(prev?.related?.agreements || [], "agreement"),
+          projects: updateRows(prev?.related?.projects || [], "project"),
+        },
+      };
+    });
+  };
+
+  const handleProjectActionConfirm = async () => {
+    if (!projectActionDialog || !selectedProjectRows.length) return;
+    setProjectActionSaving(true);
+    setProjectActionResults([]);
+    try {
+      const { data } = await api.post(`/projects/homeowners/${id}/project-record-actions/`, {
+        action: projectActionDialog,
+        records: selectedProjectRows.map((row) => ({ type: projectRecordType(row), id: row.id })),
+      });
+      const results = data?.results || [];
+      setProjectActionResults(results);
+      updateWorkspaceProjectRecords(results);
+      const succeeded = results.filter((result) => result.ok).length;
+      const blocked = results.length - succeeded;
+      if (succeeded) toast.success(`${succeeded} record${succeeded === 1 ? "" : "s"} updated.`);
+      if (blocked) toast.error(`${blocked} record${blocked === 1 ? "" : "s"} blocked by safety rules.`);
+      setSelectedProjectRecords(new Set(results.filter((result) => !result.ok).map((result) => `${result.type}-${result.id}`)));
+      if (!blocked) {
+        setProjectActionDialog(null);
+        setProjectSelectionMode(false);
+      }
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Failed to update selected records.");
+    } finally {
+      setProjectActionSaving(false);
+    }
   };
 
   const handleCommunicationSubmit = async (event) => {
@@ -712,12 +1064,40 @@ export default function CustomerWorkspacePage() {
           ) : null}
 
           {activeTab === "Projects & Agreements" ? (
-            <PreviewList
-              rows={projectAgreementRows}
-              emptyTitle="No projects or agreements yet"
-              emptyText="Created agreements and linked projects for this customer will appear here."
-              testId="customer-workspace-projects"
-              renderRow={(row) => <RowCard key={`${row.type || "project"}-${row.id}`} title={row.title} subtitle={row.description} meta={row.type || "project"} status={row.status} amount={row.total} url={row.url} />}
+            <ProjectAgreementsManager
+              rows={filteredProjectAgreementRows}
+              totalRows={projectAgreementRows.length}
+              filter={projectStatusFilter}
+              onFilterChange={setProjectStatusFilter}
+              search={projectSearch}
+              onSearchChange={setProjectSearch}
+              selectionMode={projectSelectionMode}
+              onSelectionModeChange={(next) => {
+                setProjectSelectionMode(next);
+                setProjectActionDialog(null);
+                setProjectActionResults([]);
+                if (!next) setSelectedProjectRecords(new Set());
+              }}
+              selectedKeys={selectedProjectRecords}
+              onToggleSelected={toggleProjectRecord}
+              onClearSelection={() => {
+                setSelectedProjectRecords(new Set());
+                setProjectActionDialog(null);
+                setProjectActionResults([]);
+              }}
+              onOpenDialog={(actionName) => {
+                setProjectActionDialog(actionName);
+                setProjectActionResults([]);
+              }}
+              actionDialog={projectActionDialog}
+              actionSummary={projectActionSummary}
+              actionSaving={projectActionSaving}
+              actionResults={projectActionResults}
+              onCancelDialog={() => {
+                setProjectActionDialog(null);
+                setProjectActionResults([]);
+              }}
+              onConfirmAction={handleProjectActionConfirm}
             />
           ) : null}
 
