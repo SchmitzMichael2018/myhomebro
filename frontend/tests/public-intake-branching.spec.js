@@ -125,6 +125,73 @@ test("start-project fresh CTA opens project idea even with stale intake browser 
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toHaveCount(0);
 });
 
+test("landing intake mobile layout keeps progress and actions compact", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+
+  await page.route("**/api/projects/public-intake/**", async (route) => {
+    const requestUrl = route.request().url();
+    const method = route.request().method();
+
+    if (requestUrl.endsWith("/start/") && method === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ok: true,
+          intake_id: 604,
+          token: "mobile-layout-token",
+          status: "draft",
+          public_url: "http://localhost:5173/start-project/mobile-layout-token",
+        }),
+      });
+      return;
+    }
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: 604,
+          token: "mobile-layout-token",
+          status: "draft",
+          contractor_name: "Your contractor",
+          customer_name: "Mobile Prospect",
+          customer_email: "mobile@example.com",
+          customer_phone: "555-606-7777",
+          accomplishment_text: "",
+          ai_project_title: "",
+          ai_project_type: "",
+          ai_project_subtype: "",
+          ai_description: "",
+          ai_milestones: [],
+          ai_clarification_questions: [],
+          ai_clarification_answers: {},
+          clarification_photos: [],
+          ai_analysis_payload: {},
+          post_submit_flow: "",
+          submitted_at: null,
+          completed_at: null,
+        }),
+      });
+    }
+  });
+
+  await page.goto("/start-project", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("start-project-contact-form")).toBeVisible();
+  await expect(page.getByText("If you already have an account, we'll link this request to it.")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBeTruthy();
+
+  await fillStartProjectContact(page, {
+    name: "Mobile Prospect",
+    email: "mobile@example.com",
+    phone: "555-606-7777",
+  });
+  await expect(page.getByTestId("public-intake-step-rail")).toBeVisible();
+  await expect(page.getByTestId("public-intake-ai-explanation")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBeTruthy();
+});
+
 test("landing page drives into intake and public intake shows branching choices after submit", async ({
   page,
 }) => {
@@ -330,6 +397,9 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-step-rail")).toBeVisible();
   await expect(page.getByTestId("public-intake-step-rail")).toHaveClass(/bg-slate-950\/45/);
   await expect(page.getByTestId("public-intake-main-card")).toHaveClass(/bg-white/);
+  await expect(page.getByTestId("public-intake-ai-explanation")).toContainText(
+    "AI will help organize your answers"
+  );
 
   await page.getByTestId("public-intake-accomplishment-text").fill("Need a bid-ready commercial scope.");
   await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("Need a bid-ready commercial scope.");
@@ -342,12 +412,16 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-project-summary-title")).toContainText("Your Project So Far");
   await expect(page.getByRole("heading", { name: "Refine Your Project" })).toBeVisible();
   await expect(page.getByTestId("public-intake-clarification-photo-section")).toBeVisible();
+  await expect(page.getByText("We already have enough information, so we'll move to the next step.")).toBeVisible();
   await expect(page.getByTestId("public-intake-measurement-provided")).toHaveCount(0);
   await expect(page.getByText("No clarification questions are needed for this project.")).toHaveCount(0);
   await page.getByTestId("public-intake-clarification-next").click();
   await expect(page.getByTestId("public-intake-project-snapshot")).toBeVisible();
   await page.getByTestId("public-intake-project-snapshot-continue").click();
   await expect(page.getByTestId("public-intake-structured-output-step")).toBeVisible();
+  await expect(page.getByTestId("public-intake-summary-ai-explanation")).toContainText(
+    "AI generated this summary from your answers."
+  );
   await page.getByTestId("public-intake-structured-continue").click();
   await expect(page.getByTestId("public-intake-project-details-step")).toBeVisible();
   await expect(page.getByRole("button", { name: "Project Details" })).toBeVisible();
@@ -417,6 +491,8 @@ test("landing page drives into intake and public intake shows branching choices 
 
   await expect(page.getByRole("heading", { name: "Review + Confirm" })).toBeVisible();
   await expect(page.getByText("1 invite prepared")).toBeVisible();
+  await expect(page.getByTestId("public-intake-portal-expectations")).toContainText("Add photos");
+  await expect(page.getByTestId("public-intake-portal-expectations")).toContainText("View agreements");
   await expect(page.getByText("Untitled project")).toHaveCount(0);
   await page.getByTestId("public-intake-submit-button").click();
   await expect(page.getByTestId("public-intake-submit-confirmation")).toBeVisible();
@@ -424,7 +500,11 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-confirmation-title")).not.toContainText("Untitled project");
   await expect(page.getByText("We sent you a secure link to access your customer portal.").first()).toBeVisible();
   await expect(page.getByText("We linked this request to your existing customer portal.")).toBeVisible();
-  await expect(page.getByText("You can use your portal to view updates, add photos, and respond to contractor questions.")).toBeVisible();
+  await expect(page.getByTestId("public-intake-success-timeline")).toContainText("Today");
+  await expect(page.getByTestId("public-intake-success-timeline")).toContainText("Request received");
+  await expect(page.getByTestId("public-intake-success-timeline")).toContainText("When a contractor responds");
+  await expect(page.getByRole("link", { name: "Go to Customer Portal" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return Home" })).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "single_contractor")).toBeTruthy();
   expect(branchRequests.some((body) => body.final_submit === true)).toBeTruthy();
 });

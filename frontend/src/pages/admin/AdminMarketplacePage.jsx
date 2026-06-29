@@ -116,6 +116,30 @@ function Badge({ tone = "slate", children }) {
   );
 }
 
+function sourceBadgeLabel(row = {}) {
+  const raw = String(row.source || row.lead_source || row.source_label || "").toLowerCase();
+  if (raw.includes("website")) return "Website";
+  if (raw.includes("qr")) return "QR";
+  if (raw.includes("portal")) return "Portal";
+  if (raw.includes("marketplace")) return "Marketplace";
+  if (raw.includes("landing")) return "Landing";
+  return clean(row.source_label || row.lead_source_label || "Landing");
+}
+
+function metadataBadges(row = {}) {
+  const source = sourceBadgeLabel(row);
+  const badges = [{ label: source, tone: source === "Landing" ? "sky" : source === "Website" ? "violet" : "slate" }];
+  badges.push({
+    label: row.customer_linked || row.homeowner_id || row.customer_id ? "Customer Linked" : "Customer Pending",
+    tone: row.customer_linked || row.homeowner_id || row.customer_id ? "emerald" : "amber",
+  });
+  badges.push({
+    label: row.contractor_linked || row.contractor_id || row.already_routed ? "Contractor Linked" : "Contractor Pending",
+    tone: row.contractor_linked || row.contractor_id || row.already_routed ? "emerald" : "amber",
+  });
+  return badges;
+}
+
 function Section({ title, sub, children, testId, className = "" }) {
   return (
     <section data-testid={testId} className={`${sectionClass} ${className}`.trim()}>
@@ -966,6 +990,11 @@ export default function AdminMarketplacePage() {
                           <div className="font-extrabold text-white">{row.request_title}</div>
                           <div className="mt-1 text-xs text-sky-100/70">{row.project_type || "Project type pending"} {row.project_subtype ? `| ${row.project_subtype}` : ""}</div>
                           <div className="mt-1 text-xs text-sky-100/55">Submitted {formatDate(row.submitted_at)}</div>
+                          <div className="mt-3 flex flex-wrap gap-2" data-testid={`admin-marketplace-request-badges-${row.id}`}>
+                            {metadataBadges(row).map((badge) => (
+                              <Badge key={`${row.id}-${badge.label}`} tone={badge.tone}>{badge.label}</Badge>
+                            ))}
+                          </div>
                         </td>
                         <td className={tableCellClass}>
                           <div className="font-bold text-sky-50">{row.city}, {row.state}</div>

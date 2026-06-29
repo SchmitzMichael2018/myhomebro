@@ -120,6 +120,10 @@ def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
 
     return {
         "id": intake.id,
+        "source": _safe_text(getattr(intake, "lead_source", "")),
+        "source_label": _safe_text(intake.get_lead_source_display() if hasattr(intake, "get_lead_source_display") else getattr(intake, "lead_source", "")),
+        "customer_linked": bool(getattr(intake, "homeowner_id", None)),
+        "contractor_linked": bool(getattr(intake, "contractor_id", None) or getattr(intake, "public_profile_id", None) or already_routed),
         "request_title": _intake_title(intake),
         "project_type": _safe_text(getattr(intake, "ai_project_type", "")),
         "project_subtype": _safe_text(getattr(intake, "ai_project_subtype", "")),

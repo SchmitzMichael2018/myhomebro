@@ -134,7 +134,7 @@ function getFriendlyBudgetLabel(value) {
 }
 
 const intakeLightCardClass =
-  "rounded-3xl border border-slate-200/80 bg-white p-6 text-slate-950 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7";
+  "rounded-3xl border border-slate-200/80 bg-white p-4 text-slate-950 shadow-2xl shadow-slate-950/20 ring-1 ring-white/80 sm:p-7";
 const intakePanelClass =
   "rounded-3xl border border-white/15 bg-slate-950/45 p-4 shadow-2xl shadow-slate-950/30 backdrop-blur";
 const intakePrimaryButtonClass =
@@ -414,7 +414,7 @@ const blankForm = {
 function StepPill({ active, complete, label, index }) {
   return (
     <div
-      className={`flex min-h-10 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold shadow-sm transition ${
+      className={`flex min-h-10 items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold shadow-sm transition max-sm:min-h-8 max-sm:rounded-xl max-sm:px-2 max-sm:py-1.5 ${
         active
           ? "border-blue-300/40 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 text-white shadow-blue-950/25"
           : complete
@@ -429,10 +429,19 @@ function StepPill({ active, complete, label, index }) {
       >
         {complete ? "✓" : index + 1}
       </span>
-      <span className="whitespace-nowrap">{label}</span>
+      <span className="whitespace-nowrap max-sm:hidden">{label}</span>
     </div>
   );
 }
+
+const portalExpectationItems = [
+  "Add photos",
+  "Respond to contractor questions",
+  "Track your project",
+  "Receive estimates",
+  "View agreements",
+  "Upload documents",
+];
 
 export default function PublicIntakeWizard() {
   const { token = "" } = useParams();
@@ -1267,6 +1276,12 @@ export default function PublicIntakeWizard() {
           <p className="mt-2 text-base text-gray-600">
             Tell us what you&apos;d like to get done. We&apos;ll help organize it for contractor review.
           </p>
+          <p
+            className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950"
+            data-testid="public-intake-ai-explanation"
+          >
+            AI will help organize your answers into a clearer project request and may ask a few follow-up questions so contractors have enough context.
+          </p>
           <textarea
             data-testid="public-intake-accomplishment-text"
             className="mt-5 w-full rounded-2xl border border-blue-200/80 bg-white px-4 py-4 text-base text-slate-950 shadow-sm outline-none transition placeholder:text-slate-500 focus:border-blue-400 focus:ring-2 focus:ring-blue-200"
@@ -1367,6 +1382,12 @@ export default function PublicIntakeWizard() {
             </div>
           ) : null}
           <div className="mt-6 flex items-center justify-end gap-3">
+            <div
+              aria-hidden="true"
+              className="mr-auto hidden max-w-xl rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950 sm:block"
+            >
+              AI helps turn your rough project idea into a contractor-ready request, then asks only for details that make the scope clearer.
+            </div>
             <button
               type="button"
               data-testid="public-intake-generate-structure"
@@ -1398,7 +1419,17 @@ export default function PublicIntakeWizard() {
                 <p className="mt-2 text-base text-gray-600">
                   A few quick details make your request clearer, faster to review, and easier to price accurately.
                 </p>
-                <p className="mt-1 text-sm text-slate-500">Your contractor will verify measurements before work begins.</p>
+                <p className="mt-1 text-sm text-slate-500">
+                  AI is asking a few follow-up questions so contractors receive a complete project request.
+                </p>
+                {!questionCount ? (
+                  <p
+                    className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-900"
+                    data-testid="public-intake-ai-skip-explanation"
+                  >
+                    We already have enough information, so we&apos;ll move to the next step. Photos and measurement notes are still optional.
+                  </p>
+                ) : null}
               </div>
 
               <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm" data-testid="public-intake-clarification-photo-section">
@@ -1786,6 +1817,12 @@ export default function PublicIntakeWizard() {
             </p>
             <p className="mt-1 text-sm text-slate-500">
               We&apos;ll help organize this for contractor review. Your contractor will create the final agreement and milestones later.
+            </p>
+            <p
+              className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-950"
+              data-testid="public-intake-summary-ai-explanation"
+            >
+              AI generated this summary from your answers. You can edit anything before submitting.
             </p>
           </div>
 
@@ -2692,6 +2729,20 @@ export default function PublicIntakeWizard() {
             </ul>
           </section>
 
+          <section
+            className="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm"
+            data-testid="public-intake-portal-expectations"
+          >
+            <div className="text-sm font-semibold text-blue-950">After submitting you can use your secure customer portal to:</div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {portalExpectationItems.map((item) => (
+                <div key={item} className="rounded-xl border border-white/80 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </section>
+
           <div className="mt-6 grid gap-6 lg:grid-cols-2">
           <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm">
             <div className="text-sm font-semibold text-gray-900">Project Summary</div>
@@ -2844,18 +2895,34 @@ export default function PublicIntakeWizard() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-sm text-indigo-950">
+          <div
+            className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-sm text-indigo-950"
+            data-testid="public-intake-success-timeline"
+          >
             <div className="font-semibold">What happens next</div>
-            <ul className="mt-3 space-y-2">
-              <li>We&apos;ll review your request and match it with the right next step.</li>
-              <li>We sent you a secure link to access your customer portal.</li>
-              <li>You can use your portal to view updates, add photos, and respond to contractor questions.</li>
-            </ul>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {[
+                ["Today", "Request received"],
+                ["Next", "We'll review your project and prepare it for contractors."],
+                ["Later", "You'll receive updates in your secure customer portal."],
+                ["When a contractor responds", "You'll receive an email and portal notification."],
+              ].map(([label, text]) => (
+                <div key={label} className="rounded-2xl border border-white/70 bg-white px-4 py-3 shadow-sm">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">{label}</div>
+                  <div className="mt-2 flex gap-2 text-sm font-medium text-slate-800">
+                    <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">
+                      ✓
+                    </span>
+                    <span>{text}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            <a href="/" className={intakePrimaryButtonClass}>
-              Return Home
+            <a href="/portal" className={intakePrimaryButtonClass}>
+              Go to Customer Portal
             </a>
             <button
               type="button"
@@ -2867,6 +2934,9 @@ export default function PublicIntakeWizard() {
             >
               View Project Summary
             </button>
+            <a href="/" className="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Return Home
+            </a>
             <a href="/start-project" className="rounded border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
               Start Another Project
             </a>
@@ -2879,9 +2949,9 @@ export default function PublicIntakeWizard() {
   return (
     <div className="w-full">
       <div className="space-y-6">
-        <div data-testid="public-intake-step-rail" className={`${intakePanelClass} relative overflow-hidden`}>
+        <div data-testid="public-intake-step-rail" className={`${intakePanelClass} relative overflow-hidden max-sm:p-3`}>
           <div className="absolute inset-x-6 top-0 h-[3px] rounded-full bg-gradient-to-r from-transparent via-amber-300 to-blue-500 shadow-[0_0_18px_rgba(251,191,36,0.75)]" />
-          <div className="mb-4 flex flex-wrap items-center gap-3 pt-3">
+          <div className="mb-3 flex flex-wrap items-center gap-2 pt-3 sm:mb-4 sm:gap-3">
             <div className="inline-flex rounded-full border border-amber-300/40 bg-amber-300/12 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-100">
               Project Intake
             </div>
@@ -2890,7 +2960,7 @@ export default function PublicIntakeWizard() {
                 Status: {statusText}
               </div>
             ) : null}
-            <div className="text-xs font-medium text-sky-50/70">
+            <div className="text-xs font-medium text-sky-50/70 max-sm:hidden">
               {contractorName} can review your request once you finish. {confidenceMessage}
             </div>
           </div>
@@ -2905,7 +2975,7 @@ export default function PublicIntakeWizard() {
 
         {renderStep()}
 
-        <div className="flex flex-col gap-3 rounded-3xl border border-white/12 bg-slate-950/45 p-4 shadow-xl shadow-slate-950/25 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+        <div className="sticky bottom-3 z-20 flex flex-col gap-3 rounded-3xl border border-white/12 bg-slate-950/85 p-3 shadow-xl shadow-slate-950/35 backdrop-blur sm:static sm:flex-row sm:items-center sm:justify-between sm:bg-slate-950/45 sm:p-4">
           <button
             type="button"
             onClick={handleBack}

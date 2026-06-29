@@ -169,6 +169,10 @@ async function installMarketplaceMocks(page) {
       : { invites: 0, opportunities: 0, leads: 0 };
     const savedRequest = {
       id: 501,
+      source: 'landing_page',
+      source_label: 'Landing',
+      customer_linked: true,
+      contractor_linked: requestRouted,
       request_title: 'Luxury Vinyl Plank Flooring',
       project_type: 'Flooring',
       project_subtype: 'Luxury Vinyl Plank',
@@ -684,6 +688,9 @@ test('admin marketplace routes saved requests after location enablement without 
 
   await expect(page.getByTestId('admin-marketplace-saved-requests')).toBeVisible();
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Luxury Vinyl Plank Flooring');
+  await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Landing');
+  await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Customer Linked');
+  await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Contractor Pending');
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('Marketplace is not enabled for this location yet.');
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
   await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
@@ -700,6 +707,7 @@ test('admin marketplace routes saved requests after location enablement without 
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 invites');
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 opportunities');
   await expect(page.getByTestId('admin-marketplace-saved-request-501')).toContainText('5 leads');
+  await expect(page.getByTestId('admin-marketplace-request-badges-501')).toContainText('Contractor Linked');
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toBeDisabled();
   await expect(page.getByTestId('admin-marketplace-route-request-501')).toContainText('At cap');
   await expect(page.getByTestId('admin-marketplace-route-all-eligible')).toBeDisabled();
