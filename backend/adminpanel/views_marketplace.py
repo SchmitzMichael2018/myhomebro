@@ -143,7 +143,14 @@ def _saved_marketplace_request_row(intake: ProjectIntake) -> dict[str, Any]:
 
 def _saved_marketplace_requests_payload() -> dict[str, Any]:
     intakes = list(
-        ProjectIntake.objects.filter(post_submit_flow="multi_contractor")
+        ProjectIntake.objects.filter(
+            Q(post_submit_flow="multi_contractor")
+            | Q(
+                lead_source=PublicContractorLead.SOURCE_LANDING_PAGE,
+                status__in=["submitted", "analyzed"],
+                contractor__isnull=True,
+            )
+        )
         .order_by("-post_submit_flow_selected_at", "-created_at", "-id")[:100]
     )
     rows = [_saved_marketplace_request_row(intake) for intake in intakes]

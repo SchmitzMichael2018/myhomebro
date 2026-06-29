@@ -3224,6 +3224,209 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertEqual(lead.project_address, "100 Landing Way")
         self.assertEqual(lead.project_description, "Need a remodel estimate from the landing page.")
 
+    def test_landing_page_public_intake_creates_customer_account_and_portal_link(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "New Landing Customer",
+                "customer_email": "new-landing@example.com",
+                "customer_phone": "(555) 333-2020",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "New Landing Customer",
+                "customer_email": "new-landing@example.com",
+                "customer_phone": "(555) 333-2020",
+                "project_address_line1": "101 Portal Way",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a public landing request reviewed.",
+                "final_submit": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        intake = ProjectIntake.objects.get(share_token=token)
+        homeowner = Homeowner.objects.get(email="new-landing@example.com")
+        self.assertEqual(intake.homeowner_id, homeowner.id)
+        self.assertEqual(homeowner.full_name, "New Landing Customer")
+        self.assertEqual(homeowner.phone_number, "(555) 333-2020")
+        self.assertEqual(response.json()["customer_account"]["created"], True)
+        self.assertEqual(response.json()["customer_account"]["portal_link_sent"], True)
+        self.assertNotIn("password", json.dumps(response.json()).lower())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["new-landing@example.com"])
+        self.assertIn("/portal/", mail.outbox[0].body)
+        self.assertNotIn("temporary password", mail.outbox[0].body.lower())
+
+    def test_landing_page_public_intake_draft_save_does_not_create_customer_account(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Draft Landing Customer",
+                "customer_email": "draft-landing@example.com",
+                "customer_phone": "(555) 333-3030",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Draft Landing Customer",
+                "customer_email": "draft-landing@example.com",
+                "customer_phone": "(555) 333-3030",
+                "project_address_line1": "105 Draft Way",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a draft landing request reviewed.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertIsNone(intake.homeowner_id)
+        self.assertFalse(Homeowner.objects.filter(email="draft-landing@example.com").exists())
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(response.json()["customer_account"]["linked"], False)
+
+    def test_landing_page_public_intake_links_existing_customer_by_email_without_duplicate(self):
+        existing = Homeowner.objects.create(
+            full_name="Existing Portal Customer",
+            email="existing-landing@example.com",
+            phone_number="555-111-0000",
+        )
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Existing Updated Name",
+                "customer_email": "EXISTING-LANDING@example.com",
+                "customer_phone": "555-222-0000",
+            },
+            format="json",
+        )
+        token = start_response.json()["token"]
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Existing Updated Name",
+                "customer_email": "EXISTING-LANDING@example.com",
+                "customer_phone": "555-222-0000",
+                "project_address_line1": "102 Portal Way",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need another landing request reviewed.",
+                "final_submit": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(Homeowner.objects.filter(email__iexact="existing-landing@example.com").count(), 1)
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertEqual(intake.homeowner_id, existing.id)
+        existing.refresh_from_db()
+        self.assertEqual(existing.full_name, "Existing Portal Customer")
+        self.assertEqual(existing.phone_number, "555-111-0000")
+        self.assertEqual(response.json()["customer_account"]["created"], False)
+        self.assertEqual(response.json()["customer_account"]["matched_by"], "email")
+
+    def test_landing_page_public_intake_falls_back_to_phone_when_email_missing(self):
+        existing = Homeowner.objects.create(
+            full_name="Phone Match Customer",
+            email="phone-match@example.com",
+            phone_number="(555) 444-9999",
+        )
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Phone Match Updated",
+                "customer_phone": "5554449999",
+            },
+            format="json",
+        )
+        token = start_response.json()["token"]
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Phone Match Updated",
+                "customer_phone": "5554449999",
+                "project_address_line1": "103 Portal Way",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a phone-only landing request reviewed.",
+                "final_submit": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertEqual(intake.homeowner_id, existing.id)
+        self.assertEqual(Homeowner.objects.filter(phone_number="(555) 444-9999").count(), 1)
+        self.assertEqual(response.json()["customer_account"]["created"], False)
+        self.assertEqual(response.json()["customer_account"]["matched_by"], "phone")
+
+    def test_landing_page_public_intake_is_visible_in_admin_marketplace_queue(self):
+        user_model = get_user_model()
+        admin_user = user_model.objects.create_user(email="admin-public-intake@example.com", password="testpass123")
+        admin_user.is_staff = True
+        admin_user.save(update_fields=["is_staff"])
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Admin Queue Customer",
+                "customer_email": "admin-queue@example.com",
+                "customer_phone": "555-101-2020",
+            },
+            format="json",
+        )
+        token = start_response.json()["token"]
+        submit_response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Admin Queue Customer",
+                "customer_email": "admin-queue@example.com",
+                "customer_phone": "555-101-2020",
+                "project_address_line1": "104 Admin Way",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need admin to see this landing page request.",
+                "final_submit": True,
+            },
+            format="json",
+        )
+        self.assertEqual(submit_response.status_code, 200, submit_response.data)
+
+        self.client.force_authenticate(user=admin_user)
+        response = self.client.get("/api/projects/admin/marketplace/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        saved = response.json()["saved_marketplace_requests"]["results"]
+        self.assertTrue(any(row["id"] == ProjectIntake.objects.get(share_token=token).id for row in saved))
+
     def test_public_intake_start_allows_anonymous_visitors(self):
         self.client.force_authenticate(user=None)
         response = self.client.post(

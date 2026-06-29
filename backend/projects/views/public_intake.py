@@ -20,6 +20,7 @@ from projects.services.project_intelligence_orchestrator import build_project_in
 from projects.services.project_titles import generate_project_title, normalize_project_classification
 from projects.services.public_lead_pipeline import sync_public_lead_from_project_intake
 from projects.services.marketplace_readiness import create_marketplace_invites_for_intake, marketplace_enabled_for_intake
+from projects.services.public_intake_customers import link_customer_to_public_intake
 
 
 def blank_to_none(value):
@@ -560,6 +561,13 @@ class PublicIntakeView(APIView):
         _ensure_generated_intake_title(intake, changed)
 
         intake.save(update_fields=changed + ["updated_at"])
+        is_final_submit = str(request.data.get("final_submit") or "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        customer_result = link_customer_to_public_intake(intake) if is_final_submit else None
         status_override = None
         if intake.lead_source in {
             PublicContractorLead.SOURCE_CONTRACTOR_SENT_FORM,
@@ -576,6 +584,12 @@ class PublicIntakeView(APIView):
                 "id": intake.id,
                 "status": intake.status,
                 "lead_id": getattr(lead, "id", None),
+                "customer_account": {
+                    "linked": bool(customer_result),
+                    "created": bool(getattr(customer_result, "created", False)) if customer_result else False,
+                    "matched_by": getattr(customer_result, "matched_by", "") if customer_result else "",
+                    "portal_link_sent": bool(getattr(customer_result, "portal_link_sent", False)) if customer_result else False,
+                },
                 "post_submit_flow": intake.post_submit_flow,
                 "branch_invites": branch_invites,
                 "marketplace": branch_marketplace,

@@ -827,6 +827,7 @@ export default function PublicIntakeWizard() {
     branchMessageOverride = null,
     allowBranch = true,
     formOverrides = null,
+    finalSubmit = false,
   } = {}) {
     if (!token) {
       toast.error("Missing intake token.");
@@ -841,6 +842,7 @@ export default function PublicIntakeWizard() {
       payload.ai_project_title = generateProjectTitle(effectiveForm);
       payload.measurement_handling = form.measurement_handling || "";
       payload.ai_clarification_answers = form.ai_clarification_answers || {};
+      if (finalSubmit) payload.final_submit = true;
 
       if (formOverrides?.ai_clarification_answers) {
         payload.ai_clarification_answers = formOverrides.ai_clarification_answers;
@@ -1163,6 +1165,7 @@ export default function PublicIntakeWizard() {
     const saved = await saveIntake({
       showToast: false,
       formOverrides: { ai_project_title: generatedProjectTitle },
+      finalSubmit: true,
     });
     if (!saved) return;
 
@@ -1183,6 +1186,7 @@ export default function PublicIntakeWizard() {
     setSubmissionConfirmation({
       projectTitle: saved?.ai_project_title || generatedProjectTitle || "Home Improvement Project",
       selectedCount,
+      customerAccount: saved?.customer_account || null,
     });
     toast.success("Project request submitted.");
   }
@@ -2812,10 +2816,18 @@ export default function PublicIntakeWizard() {
           <div className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
             Submitted
           </div>
-          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-gray-900">Project Request Submitted</h1>
+          <h1 className="mt-4 text-3xl font-semibold tracking-tight text-gray-900">Thanks, we received your project request.</h1>
           <p className="mt-3 max-w-2xl text-base text-slate-700">
-            Your project request has been submitted. The selected contractor can now review your project details and prepare the next step.
+            We&apos;ll review your request and match it with the right next step.
           </p>
+          <p className="mt-2 max-w-2xl text-base text-slate-700">
+            We sent you a secure link to access your customer portal.
+          </p>
+          {submissionConfirmation.customerAccount?.created === false ? (
+            <p className="mt-2 max-w-2xl text-base font-semibold text-emerald-800">
+              We linked this request to your existing customer portal.
+            </p>
+          ) : null}
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -2835,9 +2847,9 @@ export default function PublicIntakeWizard() {
           <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50 p-5 text-sm text-indigo-950">
             <div className="font-semibold">What happens next</div>
             <ul className="mt-3 space-y-2">
-              <li>The contractor can review your project details and context.</li>
-              <li>They can prepare or refine the agreement before sending anything to you.</li>
-              <li>You will be notified when there is an update if notifications are available.</li>
+              <li>We&apos;ll review your request and match it with the right next step.</li>
+              <li>We sent you a secure link to access your customer portal.</li>
+              <li>You can use your portal to view updates, add photos, and respond to contractor questions.</li>
             </ul>
           </div>
 
