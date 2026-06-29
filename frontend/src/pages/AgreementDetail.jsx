@@ -4,7 +4,7 @@
 // - Adds PDF History panel with Open/Download for each version
 // - Uses credentialed fetch() for downloads so /media files work with auth cookies
 //
-// v2026-02-15 — ✅ Direct Pay aware:
+// v2026-02-15 - Direct Pay aware:
 // - Detect agreement.payment_mode ("escrow" vs "direct")
 // - Hide escrow-only actions/modals for Direct Pay agreements
 // - Adjust status display + show Payment Mode badge
@@ -36,7 +36,7 @@ import AssignSubcontractorInline from '../components/AssignSubcontractorInline';
 import AssignReviewerInline from '../components/AssignReviewerInline';
 import SupportRequestModal from '../components/SupportRequestModal';
 
-// ✅ Assignment UI
+// Assignment UI
 import AssignEmployeeInline from '../components/AssignEmployeeInline';
 import { WorkflowHint } from '../components/WorkflowHint.jsx';
 import ContractorPageSurface from '../components/dashboard/ContractorPageSurface.jsx';
@@ -290,11 +290,11 @@ function fmtDateTime(val) {
 function shortSha(sha) {
   const s = String(sha || '').trim();
   if (!s) return '';
-  return s.length > 12 ? `${s.slice(0, 12)}…` : s;
+  return s.length > 12 ? `${s.slice(0, 12)}...` : s;
 }
 
 function formatInviteDate(value) {
-  if (!value) return '—';
+  if (!value) return '-';
   try {
     return new Date(value).toLocaleString();
   } catch {
@@ -400,7 +400,7 @@ function titleCase(value) {
 
 function normalizeAgreement(raw) {
   if (!raw || typeof raw !== 'object')
-    return { id: null, title: '—', invoices: [], milestones: [] };
+    return { id: null, title: '-', invoices: [], milestones: [] };
 
   const payment_mode = normalizePaymentMode(
     pick(raw.payment_mode, raw.paymentMode, raw.raw?.payment_mode)
@@ -421,9 +421,9 @@ function normalizeAgreement(raw) {
 
   return {
     id: raw.id ?? null,
-    title: raw.title || raw.project_title || raw.project?.title || '—',
-    homeownerName: raw.homeowner_name || raw.homeowner?.full_name || '—',
-    homeownerEmail: raw.homeowner_email || raw.homeowner?.email || '—',
+    title: raw.title || raw.project_title || raw.project?.title || '-',
+    homeownerName: raw.homeowner_name || raw.homeowner?.full_name || '-',
+    homeownerEmail: raw.homeowner_email || raw.homeowner?.email || '-',
     project_mode: raw.project_mode || raw.raw?.project_mode || 'full_service',
     homeowner_participation_notes:
       raw.homeowner_participation_notes ||
@@ -468,13 +468,62 @@ function normalizeAgreement(raw) {
     milestones: raw.milestones || raw.milestone_set || [],
     amendmentRequests: raw.amendment_requests || raw.amendmentRequests || [],
 
-    // ✅ PDF versioning
+    // PDF versioning
     currentPdfUrl: pick(raw.current_pdf_url, raw.pdf_file_url, raw.pdf_url, ''),
     currentPdfVersion: raw.pdf_version != null ? Number(raw.pdf_version) : null,
     pdfVersions: pdfVersionsSorted,
 
     raw,
   };
+}
+
+function resolveAgreementMilestones({
+  agreement,
+  norm,
+  fallbackRows = [],
+  fallbackLoaded = false,
+  fallbackLoading = false,
+  fallbackError = '',
+}) {
+  const hasEmbeddedMilestones =
+    Array.isArray(agreement?.milestones) ||
+    Array.isArray(agreement?.milestone_set);
+  const embeddedRows = Array.isArray(norm?.milestones) ? norm.milestones : [];
+  const rows = hasEmbeddedMilestones
+    ? embeddedRows
+    : Array.isArray(fallbackRows)
+      ? fallbackRows
+      : [];
+
+  return {
+    rows,
+    dataKnown: hasEmbeddedMilestones || fallbackLoaded,
+    loading: !hasEmbeddedMilestones && fallbackLoading,
+    error: !hasEmbeddedMilestones ? fallbackError : '',
+    source: hasEmbeddedMilestones ? 'agreement' : 'milestones_endpoint',
+  };
+}
+
+function agreementCustomerId(agreement) {
+  const customer =
+    agreement?.homeowner ||
+    agreement?.customer ||
+    agreement?.homeowner_record ||
+    agreement?.customer_record;
+  if (customer && typeof customer === 'object') {
+    return pick(
+      customer.id,
+      customer.pk,
+      customer.homeowner_id,
+      customer.customer_id
+    );
+  }
+  return pick(
+    agreement?.homeowner_id,
+    agreement?.customer_id,
+    agreement?.homeowner,
+    agreement?.customer
+  );
 }
 
 // Download helper for /media URLs that may require cookies.
@@ -566,8 +615,8 @@ function AdminAgreementCommandCenter({
       agreement?.contractor?.name,
       agreement?.contractor?.display_name,
       agreement?.assigned_contractor_name
-    ) || '—';
-  const customerLabel = norm?.homeownerName || agreement?.homeowner_name || '—';
+    ) || '-';
+  const customerLabel = norm?.homeownerName || agreement?.homeowner_name || '-';
   const statusLabel = titleCase(
     agreement?.status ||
       agreement?.workflow_status ||
@@ -874,7 +923,7 @@ function AdminAgreementCommandCenter({
                       </td>
                       <td className="px-3 py-2">{milestoneStatusLabel(m)}</td>
                       <td className="px-3 py-2">
-                        {m.due_date || m.completion_date || '—'}
+                        {m.due_date || m.completion_date || '-'}
                       </td>
                       <td className="px-3 py-2">
                         {m.approved_at ? 'Approved' : 'Pending'} /{' '}
@@ -956,7 +1005,7 @@ function AdminAgreementCommandCenter({
                   </div>
                   <div className="text-xs font-extrabold text-slate-700">
                     {isDisputeTerminal(d.status)
-                      ? 'Resolved — read only'
+                      ? 'Resolved - read only'
                       : titleCase(d.status || 'open')}
                   </div>
                 </div>
@@ -1047,7 +1096,7 @@ function AdminAgreementCommandCenter({
 
           {adminAiLoading ? (
             <div className="mt-3 text-sm text-slate-600">
-              Loading AI context…
+              Loading AI context...
             </div>
           ) : null}
         </div>
@@ -2067,7 +2116,7 @@ export default function AgreementDetail({
         return;
       }
 
-      // ✅ Direct Pay: do not load escrow funding preview
+      // Direct Pay: do not load escrow funding preview
       if (norm.isDirectPay) {
         setFundingPreview(null);
         setFundingError('');
@@ -2161,7 +2210,7 @@ export default function AgreementDetail({
     }
   };
 
-  // ✅ Assignment handlers
+  // Assignment handlers
   const assignAgreement = async (subId) => {
     await assignAgreementToSubaccount(norm.id, subId);
     toast.success('Agreement assigned.');
@@ -2868,23 +2917,23 @@ export default function AgreementDetail({
     .trim()
     .toLowerCase();
   const isDraftWorkspace = workspaceStatus === 'draft' || !workspaceStatus;
-  const hasEmbeddedMilestones =
-    Array.isArray(agreement?.milestones) ||
-    Array.isArray(agreement?.milestone_set);
-  const embeddedMilestones = Array.isArray(norm?.milestones)
-    ? norm.milestones
-    : [];
-  const milestones = hasEmbeddedMilestones
-    ? embeddedMilestones
-    : workspaceMilestones;
-  const milestoneDataKnown = hasEmbeddedMilestones || workspaceMilestonesLoaded;
+  const resolvedMilestones = resolveAgreementMilestones({
+    agreement,
+    norm,
+    fallbackRows: workspaceMilestones,
+    fallbackLoaded: workspaceMilestonesLoaded,
+    fallbackLoading: workspaceMilestonesLoading,
+    fallbackError: workspaceMilestonesError,
+  });
+  const milestones = resolvedMilestones.rows;
+  const milestoneDataKnown = resolvedMilestones.dataKnown;
   const completedMilestones = milestones.filter(
     (milestone) => milestoneStatusLabel(milestone).toLowerCase() === 'completed'
   ).length;
-  const milestoneProgressLabel = workspaceMilestonesLoading
+  const milestoneProgressLabel = resolvedMilestones.loading
     ? 'Loading milestones...'
-    : workspaceMilestonesError
-      ? workspaceMilestonesError
+    : resolvedMilestones.error
+      ? resolvedMilestones.error
       : milestones.length
         ? `${completedMilestones} of ${milestones.length} complete`
         : milestoneDataKnown
@@ -3153,6 +3202,38 @@ export default function AgreementDetail({
   const backUrl = isAdminMode
     ? '/app/admin?view=agreements'
     : '/app/agreements';
+  const customerId = agreementCustomerId(agreement);
+  const customerWorkspaceUrl = customerId ? `/app/customers/${customerId}` : '';
+  const recordsUrl = '/app/customers/records';
+  const paymentsUrl = '/app/payments';
+  const hasPaymentNavigation =
+    !isAdminMode &&
+    (openInvoiceRows.length > 0 ||
+      activeDrawRows.length > 0 ||
+      norm.isSigned ||
+      norm.escrowFunded ||
+      norm.isDirectPay);
+  const activeDrawTotal = activeDrawRows.reduce(
+    (sum, draw) =>
+      sum +
+      toMoney(
+        pick(draw?.net_amount, draw?.gross_amount, draw?.amount, draw?.total)
+      ),
+    0
+  );
+  const outstandingBalanceTotal = openInvoiceTotal + activeDrawTotal;
+  const invoiceSummaryLabel = openInvoiceRows.length
+    ? `${openInvoiceRows.length} open / ${formatMoney(openInvoiceTotal)}`
+    : norm.invoices?.length
+      ? `${norm.invoices.length} invoice${norm.invoices.length === 1 ? '' : 's'} tracked`
+      : 'No invoices yet';
+  const drawSummaryLabel = isProgressPayments
+    ? activeDrawRows.length
+      ? `${activeDrawRows.length} active / ${formatMoney(activeDrawTotal)}`
+      : drawRows.length
+        ? `${drawRows.length} draw${drawRows.length === 1 ? '' : 's'} tracked`
+        : 'No draw requests yet'
+    : 'Draw requests not used for this payment structure';
   const pageEyebrow = isAdminMode ? 'Admin' : 'Core';
   const pageTitle = isAdminMode
     ? 'Admin Agreement Detail'
@@ -3183,22 +3264,73 @@ export default function AgreementDetail({
       title={pageTitle}
       subtitle={pageSubtitle}
       actions={
-        <button
-          onClick={() => navigate(backUrl)}
-          className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
-        >
-          {isAdminMode ? 'Back to Admin Agreements' : 'Back to Agreements'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <a
+            data-testid="agreement-workspace-nav-back"
+            href={backUrl}
+            className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
+          >
+            {isAdminMode ? 'Back to Admin Agreements' : 'Back to Agreements'}
+          </a>
+          {!isAdminMode && customerWorkspaceUrl ? (
+            <a
+              data-testid="agreement-workspace-nav-customer"
+              href={customerWorkspaceUrl}
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
+            >
+              Customer Workspace
+            </a>
+          ) : null}
+          {!isAdminMode ? (
+            <a
+              data-testid="agreement-workspace-nav-records"
+              href={recordsUrl}
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
+            >
+              Records
+            </a>
+          ) : null}
+          {hasPaymentNavigation ? (
+            <a
+              data-testid="agreement-workspace-nav-payments"
+              href={paymentsUrl}
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
+            >
+              Payments
+            </a>
+          ) : null}
+        </div>
       }
     >
       <section
         data-testid="agreement-workspace-header"
-        className="rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_18px_45px_rgba(2,8,23,0.28)] sm:rounded-[28px] sm:p-6"
+        className="rounded-[22px] border border-white/10 bg-[#061d42]/95 p-3 shadow-[0_18px_45px_rgba(2,8,23,0.28)] sm:rounded-[28px] sm:p-5"
       >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            {!isAdminMode ? (
+              <nav
+                data-testid="agreement-workspace-breadcrumb"
+                className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-sky-100/60"
+                aria-label="Agreement workspace breadcrumb"
+              >
+                <a href="/app/agreements" className="hover:text-white">
+                  Agreements
+                </a>
+                <span>/</span>
+                {customerWorkspaceUrl ? (
+                  <a href={customerWorkspaceUrl} className="hover:text-white">
+                    {norm.homeownerName}
+                  </a>
+                ) : (
+                  <span>{norm.homeownerName}</span>
+                )}
+                <span>/</span>
+                <span className="text-sky-100">Agreement Workspace</span>
+              </nav>
+            ) : null}
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              <h2 className="text-xl font-bold tracking-tight text-white sm:text-3xl">
                 {norm.title}
               </h2>
               <PaymentModeBadge mode={norm.payment_mode} />
@@ -3211,7 +3343,7 @@ export default function AgreementDetail({
               <span className="font-semibold text-white">
                 {norm.homeownerName}
               </span>
-              {norm.homeownerEmail && norm.homeownerEmail !== '—' ? (
+              {norm.homeownerEmail && norm.homeownerEmail !== '-' ? (
                 <span className="ml-2 text-sky-100/65">
                   {norm.homeownerEmail}
                 </span>
@@ -3234,7 +3366,7 @@ export default function AgreementDetail({
             </div>
           </div>
 
-          <div className="grid min-w-0 grid-cols-1 gap-2 sm:min-w-[280px] sm:grid-cols-2 sm:gap-3">
+          <div className="grid min-w-0 grid-cols-2 gap-2 sm:min-w-[280px] sm:gap-3">
             <SummaryCard
               label="Status"
               value={statusText}
@@ -3465,7 +3597,7 @@ export default function AgreementDetail({
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="PDF / Documents"
+              label="PDF Status"
               value={pdfStatusLabel}
               className="border-white/10 bg-white/10 text-white"
             />
@@ -3718,11 +3850,11 @@ export default function AgreementDetail({
                   {Number(
                     norm.inspection_summary.requested_count || 0
                   ).toLocaleString()}{' '}
-                  · Passed:{' '}
+                  / Passed:{' '}
                   {Number(
                     norm.inspection_summary.passed_count || 0
                   ).toLocaleString()}{' '}
-                  · Revision required:{' '}
+                  / Revision required:{' '}
                   {Number(
                     norm.inspection_summary.revision_required_count || 0
                   ).toLocaleString()}
@@ -4257,7 +4389,7 @@ export default function AgreementDetail({
             </div>
           </div>
 
-          {/* ✅ NEW: Agreement assignment selector */}
+          {/* Agreement assignment selector */}
           {isContractor && (
             <AssignEmployeeInline
               label="Assign Entire Agreement"
@@ -4352,7 +4484,7 @@ export default function AgreementDetail({
                       onClick={submitInvitation}
                       className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
                     >
-                      {inviteSubmitting ? 'Sending…' : 'Send Invitation'}
+                      {inviteSubmitting ? 'Sending...' : 'Send Invitation'}
                     </button>
                   </div>
                 </div>
@@ -4360,7 +4492,7 @@ export default function AgreementDetail({
 
               {subcontractorsLoading ? (
                 <div className="text-sm text-gray-500">
-                  Loading subcontractors…
+                  Loading subcontractors...
                 </div>
               ) : (
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -4665,7 +4797,7 @@ export default function AgreementDetail({
                     className="px-4 py-2 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60"
                   >
                     {warrantySaving
-                      ? 'Saving…'
+                      ? 'Saving...'
                       : editingWarrantyId
                         ? 'Update Warranty'
                         : 'Save Warranty'}
@@ -4676,7 +4808,7 @@ export default function AgreementDetail({
 
             {warrantiesLoading ? (
               <div className="text-sm text-gray-500">
-                Loading warranty records…
+                Loading warranty records...
               </div>
             ) : warranties.length === 0 ? (
               <div className="text-sm text-gray-500">
@@ -4700,11 +4832,11 @@ export default function AgreementDetail({
                             ? `Applies to: ${String(warranty.applies_to)
                                 .replaceAll('_', ' ')
                                 .replace(/^\w/, (c) => c.toUpperCase())}`
-                            : 'Applies to: —'}
+                            : 'Applies to: -'}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {warranty.start_date || '—'} to{' '}
-                          {warranty.end_date || '—'}
+                          {warranty.start_date || '-'} to{' '}
+                          {warranty.end_date || '-'}
                         </div>
                       </div>
 
@@ -4732,7 +4864,7 @@ export default function AgreementDetail({
                           Coverage
                         </div>
                         <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                          {warranty.coverage_details || '—'}
+                          {warranty.coverage_details || '-'}
                         </div>
                       </div>
                       <div>
@@ -4740,7 +4872,7 @@ export default function AgreementDetail({
                           Exclusions
                         </div>
                         <div className="text-sm text-gray-700 whitespace-pre-wrap">
-                          {warranty.exclusions || '—'}
+                          {warranty.exclusions || '-'}
                         </div>
                       </div>
                     </div>
@@ -4795,17 +4927,33 @@ export default function AgreementDetail({
 
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
             <div className="flex items-end justify-between gap-3 flex-wrap">
-              <h3 className="text-lg font-semibold">Milestone Control</h3>
+              <div>
+                <h3 className="text-lg font-semibold">Milestone Control</h3>
+                <div
+                  data-testid="agreement-milestones-progress"
+                  className="mt-1 text-xs font-semibold text-slate-500"
+                >
+                  {milestoneProgressLabel}
+                </div>
+              </div>
               <div className="text-xs text-gray-500">
                 Assign individual milestones to override agreement assignment.
               </div>
             </div>
 
-            {!norm.milestones || norm.milestones.length === 0 ? (
-              <p className="text-gray-500">No milestones found.</p>
+            {resolvedMilestones.loading ? (
+              <p className="text-gray-500">Loading milestones...</p>
+            ) : resolvedMilestones.error ? (
+              <p className="text-rose-600">{resolvedMilestones.error}</p>
+            ) : !milestones.length ? (
+              <p className="text-gray-500">
+                {milestoneDataKnown
+                  ? 'No milestones found.'
+                  : 'No milestone data loaded yet.'}
+              </p>
             ) : (
               <div className="space-y-3">
-                {norm.milestones.map((m) => {
+                {milestones.map((m) => {
                   const refunded = isRefundedMilestone(m);
                   const amendmentBlocked = isMilestoneAmendmentBlocked(m);
                   const label = milestoneStatusLabel(m);
@@ -4848,7 +4996,7 @@ export default function AgreementDetail({
                       className="border rounded-lg p-3 bg-gray-50"
                     >
                       <div className="text-sm">
-                        <span className="font-semibold">{m.title}</span> — $
+                        <span className="font-semibold">{m.title}</span> - $
                         {toMoney(m.amount).toFixed(2)}
                         {refunded ? <RefundedBadge /> : null}
                         <span className="text-gray-500"> ({label})</span>
@@ -5002,7 +5150,7 @@ export default function AgreementDetail({
                           <span className="font-semibold text-gray-900">
                             Payout:
                           </span>{' '}
-                          {m.payout_amount ? formatMoney(m.payout_amount) : '—'}{' '}
+                          {m.payout_amount ? formatMoney(m.payout_amount) : '-'}{' '}
                           <span className="text-gray-500">
                             ({formatPayoutStatus(m.payout_status)})
                           </span>
@@ -5012,7 +5160,7 @@ export default function AgreementDetail({
                                 Amount
                               </div>
                               <div className="font-semibold text-slate-900">
-                                {payoutAmount ? formatMoney(payoutAmount) : '—'}
+                                {payoutAmount ? formatMoney(payoutAmount) : '-'}
                               </div>
                             </div>
                             <div className="rounded-lg bg-slate-50 px-3 py-2">
@@ -5209,7 +5357,7 @@ export default function AgreementDetail({
                                 Amount:{' '}
                                 {m.payout_amount
                                   ? formatMoney(m.payout_amount)
-                                  : '—'}
+                                  : '-'}
                               </div>
                               {payoutOrchestration.can_manual_release ? (
                                 <button
@@ -5259,7 +5407,7 @@ export default function AgreementDetail({
                                 Amount:{' '}
                                 {m.payout_amount
                                   ? formatMoney(m.payout_amount)
-                                  : '—'}
+                                  : '-'}
                               </div>
                               {m.payout_failure_reason ? (
                                 <div className="mt-1 text-sm text-rose-800 whitespace-pre-wrap">
@@ -5307,12 +5455,75 @@ export default function AgreementDetail({
         data-testid="agreement-workspace-panel-funding"
         className={workspaceTab === 'funding' ? 'space-y-4' : 'hidden'}
       >
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div
+            data-testid="agreement-funding-status"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Funding Status
+            </div>
+            <div className="mt-2 text-lg font-semibold text-slate-950">
+              {fundingStatusLabel}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              {norm.isDirectPay
+                ? 'Direct Pay uses invoice pay links instead of escrow funding.'
+                : norm.isSigned
+                  ? 'Funding state is based on the existing escrow/payment fields.'
+                  : 'Funding waits until signatures are complete.'}
+            </div>
+          </div>
+          <div
+            data-testid="agreement-payment-summary"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Payment Summary
+            </div>
+            <div className="mt-2 text-lg font-semibold text-slate-950">
+              {formatMoney(norm.totalCost)}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              {paymentModeLabel(norm.payment_mode)} / {paymentStructure || 'standard'}
+            </div>
+          </div>
+          <div
+            data-testid="agreement-outstanding-balance"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Outstanding Balance
+            </div>
+            <div className="mt-2 text-lg font-semibold text-slate-950">
+              {formatMoney(outstandingBalanceTotal)}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              From open invoices and active draw requests currently loaded.
+            </div>
+          </div>
+          <div
+            data-testid="agreement-invoice-summary"
+            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+          >
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Invoice Summary
+            </div>
+            <div className="mt-2 text-lg font-semibold text-slate-950">
+              {invoiceSummaryLabel}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              Invoice logic is unchanged; this summarizes existing invoice rows.
+            </div>
+          </div>
+        </section>
+
         {/* Project Totals & Fee Summary (Contractor View) */}
         {!norm.isDirectPay && (
-          <div className="bg-white rounded shadow p-6 border border-dashed border-gray-300 bg-gray-50">
+          <section className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-semibold text-gray-900">
-                Project Totals &amp; Fee Summary (Contractor View)
+                Funding Status Detail
               </h3>
               {fundingPreview && (
                 <div className="text-[11px] text-gray-500 text-right space-y-0.5">
@@ -5331,7 +5542,7 @@ export default function AgreementDetail({
 
             {fundingLoading ? (
               <div className="text-xs text-gray-500">
-                Loading fee &amp; escrow summary…
+                Loading fee &amp; escrow summary...
               </div>
             ) : fundingError ? (
               <div className="text-xs text-red-600">{fundingError}</div>
@@ -5371,10 +5582,10 @@ export default function AgreementDetail({
               </>
             ) : (
               <div className="text-xs text-gray-500">
-                Fee summary not available yet.
+                Fee and escrow detail is not available yet.
               </div>
             )}
-          </div>
+          </section>
         )}
 
         <section className="space-y-4">
@@ -5470,13 +5681,16 @@ export default function AgreementDetail({
 
         {isProgressPayments && (
           <>
-            <div className="bg-white rounded shadow p-6">
+            <div
+              data-testid="agreement-draw-requests"
+              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+            >
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-semibold mb-1">Draw Requests</h3>
                   <p className="text-sm text-gray-500">
-                    Create and review progress-payment draws after the agreement
-                    is signed.
+                    {drawSummaryLabel}. Create and review progress-payment
+                    draws after the agreement is signed.
                   </p>
                 </div>
                 {isExecuted ? (
@@ -5496,7 +5710,7 @@ export default function AgreementDetail({
                 </div>
               ) : drawLoading ? (
                 <div className="mt-4 text-sm text-gray-500">
-                  Loading draw requests…
+                  Loading draw requests...
                 </div>
               ) : drawRows.length === 0 ? (
                 <div className="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500">
@@ -5515,9 +5729,9 @@ export default function AgreementDetail({
                             Draw {draw.draw_number}: {draw.title}
                           </div>
                           <div className="mt-1 text-xs text-gray-500">
-                            Status: {drawWorkflowLabel(draw)} • Gross{' '}
-                            {formatMoney(draw.gross_amount)} • Retainage{' '}
-                            {formatMoney(draw.retainage_amount)} • Net{' '}
+                            Status: {drawWorkflowLabel(draw)} / Gross{' '}
+                            {formatMoney(draw.gross_amount)} / Retainage{' '}
+                            {formatMoney(draw.retainage_amount)} / Net{' '}
                             {formatMoney(draw.net_amount)}
                           </div>
                           {draw.review_email_sent_at ? (
@@ -5678,14 +5892,14 @@ export default function AgreementDetail({
               )}
             </div>
 
-            <div className="bg-white rounded shadow p-6">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-lg font-semibold mb-1">External Payments</h3>
               <p className="text-sm text-gray-500">
                 Read-only records for payments received outside the app.
               </p>
               {externalPaymentsLoading ? (
                 <div className="mt-4 text-sm text-gray-500">
-                  Loading external payments…
+                  Loading external payments...
                 </div>
               ) : externalPayments.length === 0 ? (
                 <div className="mt-4 rounded-lg border border-dashed border-gray-300 px-4 py-4 text-sm text-gray-500">
@@ -5713,7 +5927,7 @@ export default function AgreementDetail({
                             {row.payment_method}
                           </td>
                           <td className="py-3 pr-3 text-gray-700">
-                            {row.payment_date || '—'}
+                            {row.payment_date || '-'}
                           </td>
                           <td className="py-3 pr-3 font-semibold text-gray-900">
                             {formatMoney(row.net_amount)}
@@ -5732,7 +5946,17 @@ export default function AgreementDetail({
         )}
 
         {!isProgressPayments ? (
-          <div className="bg-white rounded shadow p-6">
+          <div
+            data-testid="agreement-draw-requests"
+            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+          >
+            <h3 className="text-lg font-semibold mb-1">Draw Requests</h3>
+            <p className="text-sm text-gray-500">{drawSummaryLabel}</p>
+          </div>
+        ) : null}
+
+        {!isProgressPayments ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h3 className="text-lg font-semibold mb-3">Invoices</h3>
             {!norm.invoices || norm.invoices.length === 0 ? (
               <p className="text-gray-500">No invoices yet.</p>
@@ -5740,7 +5964,7 @@ export default function AgreementDetail({
               <ul className="space-y-1">
                 {norm.invoices.map((inv) => (
                   <li key={inv.id} className="text-sm">
-                    • #{inv.id} — ${toMoney(inv.amount).toFixed(2)} (
+                    - #{inv.id} - ${toMoney(inv.amount).toFixed(2)} (
                     {inv.status})
                   </li>
                 ))}
@@ -5884,7 +6108,7 @@ export default function AgreementDetail({
                 disabled={drawSaving}
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                {drawSaving ? 'Creating…' : 'Create Draw'}
+                {drawSaving ? 'Creating...' : 'Create Draw'}
               </button>
             </div>
           </div>
@@ -5917,8 +6141,8 @@ export default function AgreementDetail({
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700 sm:col-span-2">
                 <div className="font-semibold text-slate-900">
                   Expected payment: Gross{' '}
-                  {formatMoney(paymentTargetDraw?.gross_amount)} • Retainage{' '}
-                  {formatMoney(paymentTargetDraw?.retainage_amount)} • Net{' '}
+                  {formatMoney(paymentTargetDraw?.gross_amount)} / Retainage{' '}
+                  {formatMoney(paymentTargetDraw?.retainage_amount)} / Net{' '}
                   {formatMoney(paymentTargetDraw?.net_amount)}
                 </div>
                 <div className="mt-1 text-xs text-slate-500">
@@ -6039,7 +6263,7 @@ export default function AgreementDetail({
                 disabled={paymentSaving}
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
               >
-                {paymentSaving ? 'Saving…' : 'Record Payment'}
+                {paymentSaving ? 'Saving...' : 'Record Payment'}
               </button>
             </div>
           </div>
@@ -6132,7 +6356,7 @@ export default function AgreementDetail({
           if (pdfUrl) URL.revokeObjectURL(pdfUrl);
         }}
         fileUrl={pdfUrl}
-        title={`Agreement #${id} — Preview`}
+        title={`Agreement #${id} - Preview`}
       />
     </ContractorPageSurface>
   );
