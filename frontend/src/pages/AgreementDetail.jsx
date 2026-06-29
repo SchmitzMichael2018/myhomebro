@@ -289,6 +289,25 @@ function normalizeAdminTab(tab) {
   return "overview";
 }
 
+const WORKSPACE_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "milestones", label: "Milestones" },
+  { id: "amendments", label: "Amendments" },
+  { id: "funding", label: "Funding & Payments" },
+  { id: "signatures", label: "Signatures & PDF" },
+  { id: "documents", label: "Documents" },
+  { id: "activity", label: "Activity" },
+  { id: "ai", label: "AI Review" },
+];
+
+function normalizeWorkspaceTab(tab) {
+  const normalized = String(tab || "").trim().toLowerCase();
+  if (normalized === "payments") return "funding";
+  if (normalized === "pdf" || normalized === "signatures-pdf") return "signatures";
+  if (WORKSPACE_TABS.some((item) => item.id === normalized)) return normalized;
+  return "overview";
+}
+
 function adminTabToQuery(tab) {
   const normalized = normalizeAdminTab(tab);
   if (normalized === "overview") return "";
@@ -1162,6 +1181,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
   const isAdminMode = !!adminMode;
   const activeTab = useMemo(() => new URLSearchParams(location.search).get("tab") || "", [location.search]);
   const adminTab = useMemo(() => normalizeAdminTab(activeTab), [activeTab]);
+  const workspaceTab = useMemo(() => normalizeWorkspaceTab(activeTab), [activeTab]);
 
   const [agreement, setAgreement] = useState(initialAgreement || null);
   const [loading, setLoading] = useState(!initialAgreement);
@@ -1900,7 +1920,19 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isContractor, pendingContractorAmendments.map((row) => row.id).join(",")]);
 
-  if (loading) return <div className="p-6">Loading…</div>;
+  useEffect(() => {
+    const routeWorkspaceStatus = String(
+      agreement?.status || agreement?.workflow_status || agreement?.state || ""
+    )
+      .trim()
+      .toLowerCase();
+    const isDraftRoute = routeWorkspaceStatus === "draft" || (!routeWorkspaceStatus && agreement);
+    if (isAdminMode || loading || !agreement || !isDraftRoute) return;
+    navigate(`/app/agreements/${id}/wizard?step=1`, { replace: true });
+  }, [agreement, id, isAdminMode, loading, navigate]);
+
+  if (loading) return <div className="p-6">Loading...</div>;
+
   if (!norm.id) return <div className="p-6">Agreement not found.</div>;
 
   if (isAdminMode) {
@@ -2287,13 +2319,13 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
 
   const statusText = norm.isDirectPay
     ? norm.isSigned
-      ? "✅ Signed — Direct Pay"
-      : "❌ Not Signed — Direct Pay"
+      ? "Signed - Direct Pay"
+      : "Not Signed - Direct Pay"
     : norm.escrowFunded
-    ? "✅ Escrow Funded"
+    ? "Escrow Funded"
     : norm.isSigned
-    ? "❌ Awaiting Funding"
-    : "❌ Not Signed";
+    ? "Awaiting Funding"
+    : "Not Signed";
   const workspaceStatus = String(
     agreement?.status || agreement?.workflow_status || agreement?.state || ""
   )
@@ -2301,18 +2333,37 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
     .toLowerCase();
   const isDraftWorkspace = workspaceStatus === "draft" || !workspaceStatus;
   const milestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
+  const completedMilestones = milestones.filter((milestone) => milestoneStatusLabel(milestone).toLowerCase() === "completed").length;
+  const milestoneProgressLabel = milestones.length
+    ? `${completedMilestones} of ${milestones.length} complete`
+    : "No milestones yet";
   const timelineState = agreementTimelineState(norm);
   const agreementHint = getAgreementDetailHint({
     agreement,
     norm,
     milestones,
   });
-  const backUrl = isAdminMode ? "/app/admin?view=agreements" : "/agreements";
+  const nextActionLabel = pendingContractorAmendments.length
+    ? "Review amendment"
+    : !norm.isSigned
+    ? "Collect signatures"
+    : !norm.isDirectPay && !norm.escrowFunded
+    ? "Request funding"
+    : milestones.length && completedMilestones < milestones.length
+    ? "Manage milestones"
+    : "Review agreement status";
+  const backUrl = isAdminMode ? "/app/admin?view=agreements" : "/app/agreements";
   const pageEyebrow = isAdminMode ? "Admin" : "Core";
-  const pageTitle = isAdminMode ? "Admin Agreement Detail" : "Contract Workspace";
+  const pageTitle = isAdminMode ? "Admin Agreement Detail" : "Agreement Workspace";
   const pageSubtitle = isAdminMode
     ? "Review agreement details, pricing signals, and agreement history without contractor workflow actions."
     : "Manage signatures, funding, assignments, documents, milestones, and invoices after the agreement is sent.";
+
+
+  const setWorkspaceTab = (tab) => {
+    const normalized = normalizeWorkspaceTab(tab);
+    navigate(`/app/agreements/${id}/workspace${normalized === "overview" ? "" : `?tab=${normalized}`}`);
+  };
 
   return (
     <ContractorPageSurface
@@ -2322,24 +2373,18 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       actions={
         <button
           onClick={() => navigate(backUrl)}
-          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
         >
           {isAdminMode ? "Back to Admin Agreements" : "Back to Agreements"}
         </button>
       }
     >
-      <button
-        onClick={() => navigate(backUrl)}
-        className="hidden"
-      >
-        ← Back
-      </button>
 
-      <section className="rounded-[28px] border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-6 shadow-sm">
+      <section data-testid="agreement-workspace-header" className="rounded-[28px] border border-white/10 bg-[#061d42]/95 p-6 shadow-[0_18px_45px_rgba(2,8,23,0.28)]">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-3xl font-bold tracking-tight text-slate-950">
+              <h2 className="text-3xl font-bold tracking-tight text-white">
                 {norm.title}
               </h2>
               <PaymentModeBadge mode={norm.payment_mode} />
@@ -2348,28 +2393,32 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
                 dataTestId="agreement-detail-project-mode-badge"
               />
             </div>
-            <div className="text-sm text-slate-600">
-              <span className="font-semibold text-slate-900">{norm.homeownerName}</span>
+            <div className="text-sm text-sky-100/75">
+              <span className="font-semibold text-white">{norm.homeownerName}</span>
               {norm.homeownerEmail && norm.homeownerEmail !== "—" ? (
-                <span className="ml-2 text-slate-500">{norm.homeownerEmail}</span>
+                <span className="ml-2 text-sky-100/65">{norm.homeownerEmail}</span>
               ) : null}
             </div>
             {norm.isDirectPay && (
-              <div className="max-w-2xl text-xs text-slate-600">
+              <div className="max-w-2xl text-xs text-sky-100/65">
                 Direct Pay agreements don&apos;t use escrow. Payment collection happens through invoice pay links as milestones are invoiced.
               </div>
             )}
+            <div data-testid="agreement-workspace-next-action" className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-2xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-50">
+              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100/80">Next action</span>
+              <span className="font-semibold">{nextActionLabel}</span>
+            </div>
           </div>
 
           <div className="grid min-w-[280px] grid-cols-1 gap-3 sm:grid-cols-2">
-            <SummaryCard label="Status" value={statusText} className="border-sky-200 bg-white" />
+            <SummaryCard label="Status" value={statusText} className="border-white/10 bg-white/10 text-white" />
             <SummaryCard
               label="Payment Mode"
               value={paymentModeLabel(norm.payment_mode)}
-              className="border-sky-200 bg-white"
+              className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="Timeline"
+              label="Last Activity"
               value={
                 <span
                   data-testid="agreement-timeline-state"
@@ -2382,10 +2431,10 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
                   {agreementTimelineLabel(norm)}
                 </span>
               }
-              className="border-sky-200 bg-white"
+              className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="Payment Protection"
+              label="Signature / Funding"
               value={
                 <span
                   className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${paymentProtectionTone(norm.payment_protection?.label)}`}
@@ -2393,26 +2442,46 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
                   {paymentProtectionLabel(norm.payment_protection?.label)}
                 </span>
               }
-              className="border-sky-200 bg-white"
+              className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="Project Mode"
-              value={<ProjectModeBadge mode={norm.project_mode} />}
-              className="border-sky-200 bg-white"
+              label="Milestone Progress"
+              value={milestoneProgressLabel}
+              className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
               label="Customer"
               value={norm.homeownerName}
-              className="border-sky-200 bg-white"
+              className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
               label="Project Total"
               value={formatMoney(norm.totalCost)}
-              className="border-sky-200 bg-white"
+              className="border-white/10 bg-white/10 text-white"
             />
           </div>
         </div>
       </section>
+
+      <nav data-testid="agreement-workspace-tabs" className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl border border-white/10 bg-[#061d42]/95 p-2 shadow-[0_12px_30px_rgba(2,8,23,0.18)]">
+        <div className="flex min-w-max gap-2 px-1">
+          {WORKSPACE_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              data-testid={`agreement-workspace-tab-${tab.id}`}
+              onClick={() => setWorkspaceTab(tab.id)}
+              className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                workspaceTab === tab.id
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "bg-white/5 text-sky-100/75 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </nav>
 
       {isContractor && pendingContractorAmendments.length ? (
         <section data-testid="contractor-amendment-next-action" className="rounded-2xl border border-rose-200 bg-rose-50 p-5 shadow-sm">
@@ -2430,6 +2499,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         </section>
       ) : null}
 
+      <div data-testid="agreement-workspace-panel-overview" className={workspaceTab === "overview" ? "space-y-4" : "hidden"}>
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -2782,7 +2852,9 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         ) : null}
       </details>
       ) : null}
+      </div>
 
+      <div data-testid="agreement-workspace-panel-signatures" className={workspaceTab === "signatures" ? "space-y-4" : "hidden"}>
       <WorkflowHint
         hint={agreementHint}
         testId="agreement-detail-hint"
@@ -2870,7 +2942,9 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         )}
       </div>
       </div>
+      </div>
 
+      <div data-testid="agreement-workspace-panel-activity" className={workspaceTab === "activity" ? "space-y-4" : "hidden"}>
       <section className="space-y-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">Assignment / Team</h3>
@@ -3077,7 +3151,9 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         </div>
       )}
       </section>
+      </div>
 
+      <div data-testid="agreement-workspace-panel-documents" className={workspaceTab === "documents" ? "space-y-4" : "hidden"}>
       <section className="space-y-4">
         <div>
           <h3 className="text-lg font-semibold text-slate-900">Documents</h3>
@@ -3491,7 +3567,9 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       {/* Attachments */}
       <AttachmentManager agreementId={id} canEdit={isContractor} />
       </section>
+      </div>
 
+      <div data-testid="agreement-workspace-panel-amendments" className={workspaceTab === "amendments" ? "space-y-4" : "hidden"}>
       {isContractor && amendmentRequests.length ? (
         <AmendmentReviewPanel
           amendments={amendmentRequests}
@@ -3499,8 +3577,15 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
           onMarkViewed={markAmendmentViewed}
           busyId={amendmentResponseBusy}
         />
-      ) : null}
+      ) : (
+        <section className="rounded-2xl border border-white/10 bg-[#061d42]/80 p-6 text-sky-100/75 shadow-sm">
+          <h3 className="text-lg font-semibold text-white">No amendment activity</h3>
+          <p className="mt-2 text-sm">Amendment requests and contractor responses will appear here when this agreement changes after signing.</p>
+        </section>
+      )}
+      </div>
 
+      <div data-testid="agreement-workspace-panel-milestones" className={workspaceTab === "milestones" ? "space-y-4" : "hidden"}>
       {/* Milestones */}
       <section className="space-y-4">
         <div>
@@ -3955,7 +4040,9 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         )}
       </div>
       </section>
+      </div>
 
+      <div data-testid="agreement-workspace-panel-funding" className={workspaceTab === "funding" ? "space-y-4" : "hidden"}>
       {/* Project Totals & Fee Summary (Contractor View) */}
       {!norm.isDirectPay && (
         <div className="bg-white rounded shadow p-6 border border-dashed border-gray-300 bg-gray-50">
@@ -4342,6 +4429,30 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         )}
         </div>
       ) : null}
+      </div>
+
+      <div data-testid="agreement-workspace-panel-ai" className={workspaceTab === "ai" ? "space-y-4" : "hidden"}>
+        <section className="rounded-2xl border border-white/10 bg-[#061d42]/90 p-6 text-sky-100/75 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-100/55">AI Review</div>
+          <h3 className="mt-2 text-xl font-semibold text-white">AI Agreement Review coming soon.</h3>
+          <p className="mt-2 max-w-2xl text-sm">
+            This tab is reserved for advisory review tools. No AI generation or agreement changes happen in this phase.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              "Scope completeness",
+              "Amendment risk",
+              "Funding readiness",
+              "Missing exclusions",
+              "Warranty language",
+            ].map((item) => (
+              <div key={item} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-semibold text-sky-50">
+                {item}
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
 
       {drawModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -4649,10 +4760,11 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
 }
 
 function SummaryCard({ label, value, className = "" }) {
+  const dark = className.includes("text-white");
   return (
     <div className={`rounded border bg-gray-50 px-3 py-2 h-full ${className}`}>
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-sm font-medium whitespace-pre-wrap text-gray-900 break-words">
+      <div className={`text-xs ${dark ? "text-sky-100/65" : "text-gray-500"}`}>{label}</div>
+      <div className={`text-sm font-medium whitespace-pre-wrap break-words ${dark ? "text-white" : "text-gray-900"}`}>
         {value}
       </div>
     </div>

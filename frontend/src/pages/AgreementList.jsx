@@ -1090,8 +1090,8 @@ export default function AgreementList() {
   };
 
   const goEdit = (id) => navigate(`${BASE}/agreements/${id}/wizard?step=1`);
-  const goView = (id) => navigate(`${BASE}/agreements/${id}/wizard?step=4`);
-  const goDetail = (id) => navigate(`${BASE}/agreements/${id}`);
+  const goView = (id) => navigate(`${BASE}/agreements/${id}/workspace`);
+  const goDetail = (id) => navigate(`${BASE}/agreements/${id}/workspace`);
 
   const deleteDraft = async (row) => {
     if (String(row.status).toLowerCase() !== "draft") {
@@ -2002,58 +2002,22 @@ export default function AgreementList() {
                 const statusTone = needsFundingAttention
                   ? "border border-amber-200 bg-amber-50 text-amber-800"
                   : statusPillClass(r.status);
-                const primaryAction = canUnarchive
-                  ? {
-                      key: "restore",
-                      label: busyArchiveRow === r.id ? "Restoring..." : "Restore",
-                      icon: busyArchiveRow === r.id ? RefreshCw : Undo2,
-                      onClick: () => unarchiveAgreement(r),
-                      disabled: busyArchiveRow === r.id,
-                      className: "mhb-agreement-primary-action",
-                    }
-                  : canMarkComplete
-                  ? {
-                      key: "complete",
-                      label: busyCompleteRow === r.id ? "Completing..." : "Complete",
-                      icon: busyCompleteRow === r.id ? RefreshCw : Check,
-                      onClick: () => markComplete(r, stat),
-                      disabled: busyCompleteRow === r.id,
-                      className: "mhb-agreement-primary-action mhb-agreement-primary-action--success",
-                    }
-                  : needsFundingAttention
-                  ? {
-                      key: "funding",
-                      label: "Request Funding",
-                      icon: Landmark,
-                      onClick: () => goView(r.id),
-                      disabled: false,
-                      className: "mhb-agreement-primary-action mhb-agreement-primary-action--warning",
-                    }
-                  : fullySigned
-                  ? {
-                      key: "manage",
-                      label: "Manage",
-                      icon: Layers,
-                      onClick: () => goView(r.id),
-                      disabled: false,
-                      className: "mhb-agreement-primary-action",
-                    }
-                  : isDraft
+                const primaryAction = isDraft
                   ? {
                       key: "finish-send",
-                      label: "Finish & Send",
+                      label: "Continue Draft",
                       icon: Pencil,
                       onClick: () => goEdit(r.id),
                       disabled: false,
                       className: "mhb-agreement-primary-action",
                     }
                   : {
-                      key: "status",
-                      label: "View Status",
-                      icon: Eye,
+                      key: "workspace",
+                      label: "Open Workspace",
+                      icon: Layers,
                       onClick: () => goView(r.id),
                       disabled: false,
-                      className: "mhb-agreement-primary-action",
+                      className: `mhb-agreement-primary-action ${needsFundingAttention ? "mhb-agreement-primary-action--warning" : ""}`,
                     };
 
                 return (
@@ -2062,8 +2026,8 @@ export default function AgreementList() {
                     className={`cursor-pointer transition-colors ${
                       needsFundingAttention ? "bg-amber-400/[0.08] hover:bg-amber-400/[0.14]" : "bg-white/[0.035] hover:bg-white/[0.075]"
                     }`}
-                    onClick={() => goView(r.id)}
-                    title="Click to view agreement"
+                    onClick={() => (isDraft ? goEdit(r.id) : goView(r.id))}
+                    title={isDraft ? "Continue draft" : "Open workspace"}
                   >
                     <td className="px-3 py-4 align-top">
                       <input
@@ -2257,16 +2221,20 @@ export default function AgreementList() {
                           className="absolute right-3 top-14 z-20 min-w-[180px] rounded-xl border border-white/15 bg-[#071f46] p-1.5 text-left shadow-[0_16px_40px_rgba(2,8,23,0.34)]"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {!["manage", "status"].includes(primaryAction.key) ? (
+                          {primaryAction.key !== "workspace" ? (
                             <button
                               type="button"
                               onClick={() => {
                                 setActionMenuOpenForId(null);
-                                goView(r.id);
+                                if (isDraft) {
+                                  goEdit(r.id);
+                                } else {
+                                  goView(r.id);
+                                }
                               }}
                               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-sky-100 hover:bg-white/10"
                             >
-                              <Eye size={14} /> View agreement
+                              <Eye size={14} /> {isDraft ? "Continue draft" : "Open workspace"}
                             </button>
                           ) : null}
 

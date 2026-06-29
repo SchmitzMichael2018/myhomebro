@@ -2074,10 +2074,10 @@ export default function AgreementWizard() {
                 <button
                   type="button"
                   data-testid="agreement-wizard-open-workspace-button"
-                  onClick={() => navigate(`/app/agreements/${agreementId}`)}
+                  onClick={() => navigate(`/app/agreements/${agreementId}/workspace`)}
                   className="mhb-operational-filter-chip rounded-xl px-3 py-2 text-sm font-semibold"
                 >
-                  Open Contract Workspace
+                  Open Agreement Workspace
                 </button>
               ) : null}
             </div>

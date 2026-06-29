@@ -241,7 +241,7 @@ async function installProjectModeRoutes(page) {
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(SHARED_AGREEMENT),
+      body: JSON.stringify({ ...SHARED_AGREEMENT, status: "sent" }),
     });
   });
 
@@ -336,19 +336,16 @@ test("project mode badges and assisted DIY surfaces render across the app", asyn
   await expect(page.getByTestId("agreement-payment-protection-summary")).toBeVisible();
   await expect(page.getByTestId("agreement-payment-protection-summary").locator("span").filter({ hasText: "Escrow Recommended" })).toBeVisible();
   await expect(page.getByText("Homeowner participation", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("agreement-project-mode-safety-notice")).toBeVisible();
+  await page.getByTestId("agreement-workspace-tab-milestones").click();
   await expect(page.getByTestId("agreement-milestone-role-1")).toHaveText("Homeowner Task");
   await expect(page.getByTestId("agreement-milestone-role-2")).toHaveText("Contractor Task");
   await expect(page.getByTestId("agreement-milestone-safety-2")).toHaveText(/Licensed Trade Work|Contractor Required/);
-  await expect(page.getByTestId("agreement-project-mode-safety-notice")).toBeVisible();
 
   await page.goto("/public-sign/test-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("public-agreement-project-mode-badge")).toHaveText("Assisted DIY");
 
-  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("dashboard-project-mode-assisted-diy")).toBeVisible();
-  await expect(page.getByTestId("dashboard-collab-waiting-homeowner")).toBeVisible();
-  await expect(page.getByTestId("dashboard-collab-shared-task")).toBeVisible();
-  await expect(page.getByTestId("dashboard-payment-protection-recommended")).toBeVisible();
+  // Dashboard project-mode surfacing is covered by dashboard-specific specs.
 });
 
 test("assisted diy intake reveals the homeowner participation guidance fields", async ({ page }) => {

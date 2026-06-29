@@ -150,7 +150,8 @@ test('agreements list uses dark operational styling and paginates results', asyn
   await expect(page.getByTestId('agreement-list-controls')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-list-table-shell')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByRole('button', { name: /New Agreement/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Finish & Send/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /Continue Draft/ }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: /Open Workspace/ }).first()).toBeVisible();
   await expect(page.getByLabel('Show archived')).toBeVisible();
   await expect(page.getByTestId('agreement-pagination-top')).toContainText('Showing 1-10 of 12');
 

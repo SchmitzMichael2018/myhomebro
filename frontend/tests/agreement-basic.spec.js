@@ -6925,8 +6925,11 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-open-workspace-button')).toBeVisible();
   await expect(page.getByTestId('step4-copy-customer-link-button')).toBeVisible();
   await page.getByTestId('step4-open-workspace-button').click();
-  await expect(page).toHaveURL(new RegExp(`/app/agreements/${AGREEMENT_ID}$`));
-  await expect(page.getByRole('heading', { name: 'Contract Workspace' })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/app/agreements/${AGREEMENT_ID}/workspace$`));
+  await expect(page.getByRole('heading', { name: 'Agreement Workspace' })).toBeVisible();
+  await expect(page.getByTestId('agreement-workspace-header')).toBeVisible();
+  await expect(page.getByTestId('agreement-workspace-tabs')).toBeVisible();
+  await expect(page.getByTestId('agreement-workspace-tab-milestones')).toBeVisible();
 });
 
 test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {
@@ -7355,7 +7358,7 @@ test('agreement wizard step 4 shows missing warranty as a warning state', async 
   await expect(page.getByTestId('step4-warranty-summary')).toContainText('No warranty provided');
 });
 
-test('agreement detail shows a draft notice and can return to the wizard', async ({ page }) => {
+test('draft agreement detail redirects to the wizard', async ({ page }) => {
   const agreement = {
     id: AGREEMENT_ID + 3,
     agreement_id: AGREEMENT_ID + 3,
@@ -7439,14 +7442,5 @@ test('agreement detail shows a draft notice and can return to the wizard', async
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByRole('heading', { name: 'Contract Workspace' })).toBeVisible();
-  await expect(page.getByTestId('agreement-detail-draft-notice')).toBeVisible();
-  await expect(page.getByTestId('agreement-detail-back-to-wizard-button')).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Assignment / Team' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Documents' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Milestones' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Secondary Details' })).toBeVisible();
-
-  await page.getByTestId('agreement-detail-back-to-wizard-button').click();
   await expect(page).toHaveURL(/\/wizard\?step=\d+/);
 });

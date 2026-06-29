@@ -200,6 +200,7 @@ export function protectedRoutes() {
           <Route path="agreements/new/wizard" element={<AgreementWizard />} />
           <Route path="agreements/:id/wizard" element={<AgreementWizard />} />
 
+          <Route path="agreements/:id/workspace" element={<AgreementDetail />} />
           <Route path="agreements/:id" element={<AgreementDetail />} />
           <Route path="agreements/:id/edit" element={<AgreementEdit />} />
 
