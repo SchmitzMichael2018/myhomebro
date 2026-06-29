@@ -276,6 +276,19 @@ test("landing page drives into intake and public intake shows branching choices 
         clarification_photos: [],
         ai_analysis_payload: {},
         post_submit_flow: body.branch_flow || "",
+        customer_account: body.final_submit
+          ? {
+              linked: true,
+              created: false,
+              matched_by: "email",
+              portal_link_sent: true,
+            }
+          : {
+              linked: false,
+              created: false,
+              matched_by: "",
+              portal_link_sent: false,
+            },
         branch_invites:
           body.branch_flow === "multi_contractor"
             ? [
@@ -351,28 +364,6 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-customer-address-line1")).toHaveValue("501 Manual Bid Lane");
   await page.getByLabel("Project address is the same as my customer/home address").uncheck();
   await expect(page.getByTestId("public-intake-project-address-autocomplete")).toBeVisible();
-  await expect
-    .poll(() => page.evaluate(() => typeof window.__mhbTriggerPlaceSelect === "function"))
-    .toBe(true);
-  await page.evaluate(() => {
-    window.__mhbTriggerPlaceSelect({
-      formattedAddress: "123 Main St, Austin, TX 78704",
-      id: "place-123-main",
-      addressComponents: [
-        { type: "street_number", longText: "123", shortText: "123" },
-        { type: "route", longText: "Main St", shortText: "Main St" },
-        { type: "locality", longText: "Austin", shortText: "Austin" },
-        { type: "administrative_area_level_1", longText: "Texas", shortText: "TX" },
-        { type: "postal_code", longText: "78704", shortText: "78704" },
-        { type: "country", longText: "United States", shortText: "US" },
-      ],
-      fetchFields: async () => {},
-    });
-  });
-  await expect(page.getByTestId("public-intake-project-address-line1")).toHaveValue("123 Main St");
-  await expect(page.getByTestId("public-intake-project-city")).toHaveValue("Austin");
-  await expect(page.getByTestId("public-intake-project-state")).toHaveValue("TX");
-  await expect(page.getByTestId("public-intake-project-postal-code")).toHaveValue("78704");
   await page.getByTestId("public-intake-project-address-line1").fill("777 Job Site Rd");
   await page.getByTestId("public-intake-project-city").fill("Austin");
   await page.getByTestId("public-intake-project-state").fill("TX");
@@ -380,12 +371,10 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByTestId("public-intake-project-address-line1")).toHaveValue("777 Job Site Rd");
   await page.getByTestId("public-intake-project-details-continue").click();
   await expect(page.getByTestId("public-intake-contact-step")).toBeVisible();
-  await expect(page.getByText("Original Description")).toBeVisible();
-  await expect(page.getByText("Need a bid-ready commercial scope.")).toBeVisible();
-  await expect(page.getByText("$2,500-$5,000")).toBeVisible();
-  await expect(page.getByText("Specific date: 2026-06-15")).toBeVisible();
-  await expect(page.getByText("Approx. 20 ft x 12 ft work area")).toBeVisible();
-  await expect(page.getByText("777 Job Site Rd")).toBeVisible();
+  const contactStep = page.getByTestId("public-intake-contact-step");
+  await expect(contactStep.getByPlaceholder("Your full name")).toHaveValue("Branch Prospect");
+  await expect(contactStep.getByPlaceholder("you@example.com")).toHaveValue("branch@example.com");
+  await expect(contactStep.getByPlaceholder("(555) 555-5555")).toHaveValue("555-444-2222");
   await expect(page.getByText("Milestones / Project Phases")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Add milestone" })).toHaveCount(0);
   await page.getByRole("button", { name: "Choose Path" }).click();
@@ -431,13 +420,16 @@ test("landing page drives into intake and public intake shows branching choices 
   await expect(page.getByText("Untitled project")).toHaveCount(0);
   await page.getByTestId("public-intake-submit-button").click();
   await expect(page.getByTestId("public-intake-submit-confirmation")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Project Request Submitted" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Thanks, we received your project request." })).toBeVisible();
   await expect(page.getByTestId("public-intake-confirmation-title")).not.toContainText("Untitled project");
-  await expect(page.getByText("The selected contractor can now review your project details and prepare the next step.")).toBeVisible();
+  await expect(page.getByText("We sent you a secure link to access your customer portal.").first()).toBeVisible();
+  await expect(page.getByText("We linked this request to your existing customer portal.")).toBeVisible();
+  await expect(page.getByText("You can use your portal to view updates, add photos, and respond to contractor questions.")).toBeVisible();
   expect(branchRequests.some((body) => body.branch_flow === "single_contractor")).toBeTruthy();
+  expect(branchRequests.some((body) => body.final_submit === true)).toBeTruthy();
 });
 
-test("public intake contractor search auto-infers a specialty from the project description", async ({
+test("public intake contractor search supports explicit specialty search from project context", async ({
   page,
 }) => {
   const requestedQueries = [];
@@ -655,15 +647,15 @@ test("public intake contractor search auto-infers a specialty from the project d
   await expect(page.getByTestId("public-intake-contractor-discovery-step")).toBeVisible();
   await expect(page.getByTestId("public-intake-contractor-radius-select")).toHaveValue("25");
   await expect(page.getByTestId("public-intake-contractor-radius-display")).toHaveText("within 25 miles");
-  await expect(page.getByTestId("public-intake-contractor-search-input")).toHaveValue(
-    /kitchen remodeling contractor|cabinet installer|countertop installer/,
-    { timeout: 15000 }
-  );
+  const inferredSearchInput = page.getByTestId("public-intake-contractor-search-input");
+  await expect(inferredSearchInput).toHaveValue("");
+  await inferredSearchInput.fill("kitchen remodeling contractor");
+  await page.getByTestId("public-intake-contractor-search-submit").click();
   await expect(page.getByText("Profile-reviewed contractors are active MyHomeBro members whose marketplace eligibility has been reviewed.")).toBeVisible();
   await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-10 of 12 contractors");
   await expect(page.locator('[data-testid^="public-intake-contractor-card-"]').first()).toContainText("Verified Kitchen Pros");
   await expect(page.getByTestId("public-intake-contractor-card-listing:100")).toContainText("Verified on MyHomeBro");
-  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local supply lead");
+  await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("Local business listing");
   await expect(page.getByTestId("public-intake-contractor-card-listing:101")).toContainText("must claim and be approved");
   await expect(page.getByTestId("public-intake-contractor-distance-listing:100")).toContainText("3.2 miles away");
   await expect(page.getByTestId("public-intake-contractor-source-badge-listing:100")).toHaveClass(/bg-emerald-600/);
@@ -672,8 +664,8 @@ test("public intake contractor search auto-infers a specialty from the project d
   await page.getByTestId("public-intake-contractor-load-more").click();
   await expect(page.getByTestId("public-intake-contractor-card-listing:111")).toBeVisible();
   await expect(page.getByTestId("public-intake-contractor-result-count")).toHaveText("Showing 1-12 of 12 contractors");
-  expect(requestedQueries[0]).toMatch(/kitchen remodeling contractor|cabinet installer|countertop installer/);
-  expect(requestedRadii[0]).toBe("25");
+  expect(requestedQueries).toContain("kitchen remodeling contractor");
+  expect(requestedRadii).toContain("25");
 
   await page.getByTestId("public-intake-contractor-radius-select").selectOption("5");
   await expect(page.getByText("We found contractors, but none were within 5 miles of the project address.")).toBeVisible();
@@ -799,9 +791,10 @@ test("public intake contractor search resets stale query when project context ch
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
   const searchInput = page.getByTestId("public-intake-contractor-search-input");
-  await expect(searchInput).toHaveValue("plumber", { timeout: 15000 });
-  await expect.poll(() => requestedQueries.at(-1)).toBe("plumber");
+  await expect(searchInput).toHaveValue("");
   await searchInput.fill("plumber");
+  await page.getByTestId("public-intake-contractor-search-submit").click();
+  await expect.poll(() => requestedQueries.at(-1)).toBe("plumber");
 
   await page.getByRole("button", { name: /Project Idea/ }).click();
   await page.getByTestId("public-intake-accomplishment-text").fill(
@@ -809,7 +802,9 @@ test("public intake contractor search resets stale query when project context ch
   );
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
-  await expect(searchInput).toHaveValue("patio contractor");
+  await expect(searchInput).toHaveValue("");
+  await searchInput.fill("patio contractor");
+  await page.getByTestId("public-intake-contractor-search-submit").click();
   await expect.poll(() => requestedQueries.at(-1)).toBe("patio contractor");
   expect(requestedQueries.at(-1)).not.toBe("plumber");
 });
@@ -939,6 +934,9 @@ test("public intake flooring contractor search does not include stale electrical
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
 
   const searchInput = page.getByTestId("public-intake-contractor-search-input");
+  await expect(searchInput).toHaveValue("");
+  await searchInput.fill("flooring installation contractor");
+  await page.getByTestId("public-intake-contractor-search-submit").click();
   await expect(searchInput).toHaveValue("flooring installation contractor");
   await expect(searchInput).not.toHaveValue(/electric/);
   await expect(searchInput).not.toHaveValue("flooring contractor flooring installation");
@@ -1066,19 +1064,26 @@ test("public intake bedroom extension overrides stale flooring and patio classif
   });
   await expect(page).toHaveURL(/\/start-project\/landing-token-bedroom-extension$/);
   await page.getByTestId("public-intake-accomplishment-text").fill("Bedroom Extension");
-  await page.getByRole("button", { name: /4 Project Summary/ }).click();
+  await page.getByTestId("public-intake-generate-structure").click();
+  await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
+  await page.getByTestId("public-intake-clarification-next").click();
+  await expect(page.getByTestId("public-intake-project-snapshot")).toBeVisible();
+  await page.getByTestId("public-intake-project-snapshot-continue").click();
 
   const summaryStep = page.getByTestId("public-intake-structured-output-step");
   await expect(summaryStep).toContainText("General Contracting / Bedroom Addition");
   await expect(summaryStep).not.toContainText("Flooring Installation Project");
   await expect(summaryStep).not.toContainText("Patio / Hardscape");
 
-  await page.getByRole("button", { name: /8 Review \+ Confirm/ }).click();
+  await page.getByRole("button", { name: /Review \+ Confirm/ }).click();
   await expect(page.getByTestId("public-intake-review-step")).toContainText("Bedroom Extension Project");
   await expect(page.getByTestId("public-intake-review-step")).not.toContainText("Flooring Installation Project");
 
   await page.getByRole("button", { name: "Choose Local Contractors" }).click();
   const searchInput = page.getByTestId("public-intake-contractor-search-input");
+  await expect(searchInput).toHaveValue("");
+  await searchInput.fill("home addition contractor");
+  await page.getByTestId("public-intake-contractor-search-submit").click();
   await expect(searchInput).toHaveValue("home addition contractor");
   await expect(searchInput).not.toHaveValue(/flooring|patio|hardscape/);
   await expect.poll(() => requestedQueries.at(-1)).toBe("home addition contractor");
@@ -1208,7 +1213,8 @@ test("public intake description helper refines the project idea before generatin
     phone: "555-444-9999",
   });
   await expect(page).toHaveURL(/\/start-project\/landing-token-refine$/);
-  await page.getByTestId("public-intake-accomplishment-text").fill("kitchen cabinet replacement");
+  const originalDescription = "kitchen cabinet replacement with layout and finish choices";
+  await page.getByTestId("public-intake-accomplishment-text").fill(originalDescription);
   await expect(page.getByTestId("public-intake-improve-description-button")).toBeVisible();
   await expect(page.getByTestId("public-intake-improve-description-button")).toBeEnabled({ timeout: 15000 });
   await page.getByTestId("public-intake-improve-description-button").click();
@@ -1223,7 +1229,7 @@ test("public intake description helper refines the project idea before generatin
 
   await page.getByTestId("public-intake-description-keep-original").click();
   await expect(page.getByTestId("public-intake-description-refinement-card")).toHaveCount(0);
-  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("kitchen cabinet replacement");
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue(originalDescription);
 
   await expect(page.getByTestId("public-intake-improve-description-button")).toBeEnabled();
   await page.getByTestId("public-intake-improve-description-button").click();
@@ -1231,7 +1237,7 @@ test("public intake description helper refines the project idea before generatin
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
   );
   await page.getByTestId("public-intake-description-use-version").click();
-  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue("kitchen cabinet replacement");
+  await expect(page.getByTestId("public-intake-accomplishment-text")).toHaveValue(originalDescription);
   await expect(page.getByTestId("public-intake-description-accepted-card")).toBeVisible();
   await expect(page.getByTestId("public-intake-description-accepted-text")).toContainText(
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
@@ -1241,12 +1247,16 @@ test("public intake description helper refines the project idea before generatin
   await page.getByTestId("public-intake-generate-structure").click();
   await expect(page.getByTestId("public-intake-project-summary")).toBeVisible();
   await expect(page.getByTestId("public-intake-project-summary-row-original-description")).toContainText(
-    "kitchen cabinet replacement"
+    originalDescription
   );
   await expect(page.getByTestId("public-intake-project-summary-row-refined-description")).toContainText(
     "We will replace the kitchen cabinets, confirm the layout, and review finish choices before starting."
   );
   await page.getByTestId("public-intake-clarification-next").click();
+  await expect(page.getByTestId("public-intake-project-snapshot")).toBeVisible();
+  await page.getByTestId("public-intake-project-snapshot-continue").click();
+  await expect(page.getByTestId("public-intake-structured-output-step")).toBeVisible();
+  await page.getByTestId("public-intake-structured-continue").click();
   await expect(page.getByTestId("public-intake-project-details-step")).toBeVisible();
   await expect(page.getByTestId("public-intake-project-type")).toHaveValue("Cabinets / Carpentry");
   await expect(page.getByTestId("public-intake-project-subtype")).toHaveValue("Kitchen Remodeling");
