@@ -296,7 +296,7 @@ const WORKSPACE_TABS = [
   { id: "funding", label: "Funding & Payments" },
   { id: "signatures", label: "Signatures & PDF" },
   { id: "documents", label: "Documents" },
-  { id: "activity", label: "Activity" },
+  { id: "activity", label: "Team & Assignments" },
   { id: "ai", label: "AI Review" },
 ];
 
@@ -1196,6 +1196,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
   // PDF preview state
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfOpen, setPdfOpen] = useState(false);
+  const [pdfPreviewError, setPdfPreviewError] = useState("");
 
   // Refund modal state
   const [refundOpen, setRefundOpen] = useState(false);
@@ -1210,6 +1211,10 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
   const [paymentTargetDraw, setPaymentTargetDraw] = useState(null);
   const [externalPayments, setExternalPayments] = useState([]);
   const [externalPaymentsLoading, setExternalPaymentsLoading] = useState(false);
+  const [workspaceMilestones, setWorkspaceMilestones] = useState([]);
+  const [workspaceMilestonesLoading, setWorkspaceMilestonesLoading] = useState(false);
+  const [workspaceMilestonesLoaded, setWorkspaceMilestonesLoaded] = useState(false);
+  const [workspaceMilestonesError, setWorkspaceMilestonesError] = useState("");
   const [agreementOpsMsg, setAgreementOpsMsg] = useState("");
   const [agreementOpBusy, setAgreementOpBusy] = useState("");
   const [adminAiContext, setAdminAiContext] = useState(null);
@@ -1416,6 +1421,48 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
     fetchExternalPayments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isExecuted, isProgressPayments]);
+
+  useEffect(() => {
+    const hasEmbeddedMilestones =
+      Array.isArray(agreement?.milestones) || Array.isArray(agreement?.milestone_set);
+    if (!id || hasEmbeddedMilestones) {
+      setWorkspaceMilestones([]);
+      setWorkspaceMilestonesLoaded(Boolean(hasEmbeddedMilestones));
+      setWorkspaceMilestonesError("");
+      setWorkspaceMilestonesLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchWorkspaceMilestones = async () => {
+      try {
+        setWorkspaceMilestonesLoading(true);
+        setWorkspaceMilestonesError("");
+        const { data } = await api.get("/projects/milestones/", {
+          params: { agreement: id, _ts: Date.now() },
+        });
+        const rows = Array.isArray(data) ? data : Array.isArray(data?.results) ? data.results : [];
+        if (!cancelled) {
+          setWorkspaceMilestones(rows);
+          setWorkspaceMilestonesLoaded(true);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setWorkspaceMilestones([]);
+          setWorkspaceMilestonesLoaded(false);
+          setWorkspaceMilestonesError("Milestone data is not available yet.");
+        }
+      } finally {
+        if (!cancelled) setWorkspaceMilestonesLoading(false);
+      }
+    };
+
+    fetchWorkspaceMilestones();
+    return () => {
+      cancelled = true;
+    };
+  }, [agreement?.milestones, agreement?.milestone_set, id]);
 
   const fetchSubcontractorInvitations = async () => {
     if (!id || !isContractor) return;
@@ -1636,6 +1683,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
 
   const previewPdf = async () => {
     try {
+      setPdfPreviewError("");
       const res = await api.get(`/projects/agreements/${id}/preview_pdf/`, {
         responseType: "blob",
         params: { stream: 1 },
@@ -1648,6 +1696,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       setPdfOpen(true);
     } catch (err) {
       console.error("Preview PDF error:", err);
+      setPdfPreviewError(formatApiError(err, "Unable to preview PDF."));
       toast.error("Unable to preview PDF.");
     }
   };
@@ -2332,26 +2381,92 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
     .trim()
     .toLowerCase();
   const isDraftWorkspace = workspaceStatus === "draft" || !workspaceStatus;
-  const milestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
+  const hasEmbeddedMilestones =
+    Array.isArray(agreement?.milestones) || Array.isArray(agreement?.milestone_set);
+  const embeddedMilestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
+  const milestones = hasEmbeddedMilestones ? embeddedMilestones : workspaceMilestones;
+  const milestoneDataKnown = hasEmbeddedMilestones || workspaceMilestonesLoaded;
   const completedMilestones = milestones.filter((milestone) => milestoneStatusLabel(milestone).toLowerCase() === "completed").length;
-  const milestoneProgressLabel = milestones.length
+  const milestoneProgressLabel = workspaceMilestonesLoading
+    ? "Loading milestones..."
+    : workspaceMilestonesError
+    ? workspaceMilestonesError
+    : milestones.length
     ? `${completedMilestones} of ${milestones.length} complete`
-    : "No milestones yet";
+    : milestoneDataKnown
+    ? "No milestones found"
+    : "No milestone data loaded";
+  const openInvoiceRows = (Array.isArray(norm.invoices) ? norm.invoices : []).filter((invoice) => {
+    const status = String(invoice?.status || invoice?.workflow_status || "").toLowerCase();
+    return !["paid", "void", "voided", "cancelled", "canceled", "refunded"].includes(status);
+  });
+  const openInvoiceTotal = openInvoiceRows.reduce((sum, invoice) => sum + toMoney(invoice?.amount || invoice?.total || invoice?.total_amount), 0);
+  const activeDrawRows = drawRows.filter((draw) => {
+    const status = drawWorkflowStatus(draw);
+    return !["paid", "released", "cancelled", "canceled", "void", "voided"].includes(status);
+  });
+  const pdfStatusLabel = norm.currentPdfUrl
+    ? norm.currentPdfVersion != null
+      ? `Current PDF v${norm.currentPdfVersion}`
+      : "Current PDF available"
+    : "No current PDF yet";
+  const fundingStatusLabel = norm.isDirectPay
+    ? activeDrawRows.length || openInvoiceRows.length
+      ? "Direct Pay - payment activity pending"
+      : "Direct Pay"
+    : norm.escrowFunded
+    ? "Escrow funded"
+    : norm.isSigned
+    ? "Awaiting escrow funding"
+    : "Funding waits for signatures";
   const timelineState = agreementTimelineState(norm);
   const agreementHint = getAgreementDetailHint({
     agreement,
     norm,
     milestones,
   });
-  const nextActionLabel = pendingContractorAmendments.length
-    ? "Review amendment"
+  const nextAction = pendingContractorAmendments.length
+    ? {
+        label: "Review amendment",
+        reason: `${pendingContractorAmendments.length} amendment request${pendingContractorAmendments.length === 1 ? "" : "s"} need attention before affected work or payments move forward.`,
+        cta: "Open amendments",
+        tab: "amendments",
+      }
     : !norm.isSigned
-    ? "Collect signatures"
+    ? {
+        label: "Collect signatures",
+        reason: "The agreement is not fully signed yet, so funding and execution steps should wait.",
+        cta: "Open signatures",
+        tab: "signatures",
+      }
     : !norm.isDirectPay && !norm.escrowFunded
-    ? "Request funding"
+    ? {
+        label: "Request funding",
+        reason: "The agreement is signed but escrow has not been funded.",
+        cta: "Open funding",
+        tab: "funding",
+      }
+    : activeDrawRows.length || openInvoiceRows.length
+    ? {
+        label: "Review payment activity",
+        reason: "There are open invoice, draw, or payment items to review.",
+        cta: "Open payments",
+        tab: "funding",
+      }
     : milestones.length && completedMilestones < milestones.length
-    ? "Manage milestones"
-    : "Review agreement status";
+    ? {
+        label: "Manage milestones",
+        reason: "Work is active and at least one milestone is still incomplete.",
+        cta: "Open milestones",
+        tab: "milestones",
+      }
+    : {
+        label: "Review agreement status",
+        reason: "No urgent blockers were detected from the loaded agreement data.",
+        cta: "View overview",
+        tab: "overview",
+      };
+  const nextActionLabel = nextAction.label;
   const backUrl = isAdminMode ? "/app/admin?view=agreements" : "/app/agreements";
   const pageEyebrow = isAdminMode ? "Admin" : "Core";
   const pageTitle = isAdminMode ? "Admin Agreement Detail" : "Agreement Workspace";
@@ -2380,11 +2495,11 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       }
     >
 
-      <section data-testid="agreement-workspace-header" className="rounded-[28px] border border-white/10 bg-[#061d42]/95 p-6 shadow-[0_18px_45px_rgba(2,8,23,0.28)]">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+      <section data-testid="agreement-workspace-header" className="rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_18px_45px_rgba(2,8,23,0.28)] sm:rounded-[28px] sm:p-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-3">
             <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-3xl font-bold tracking-tight text-white">
+              <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
                 {norm.title}
               </h2>
               <PaymentModeBadge mode={norm.payment_mode} />
@@ -2410,7 +2525,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
             </div>
           </div>
 
-          <div className="grid min-w-[280px] grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:min-w-[280px] sm:grid-cols-2 sm:gap-3">
             <SummaryCard label="Status" value={statusText} className="border-white/10 bg-white/10 text-white" />
             <SummaryCard
               label="Payment Mode"
@@ -2500,6 +2615,83 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
       ) : null}
 
       <div data-testid="agreement-workspace-panel-overview" className={workspaceTab === "overview" ? "space-y-4" : "hidden"}>
+      <section data-testid="agreement-overview-command-center" className="rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-100/75">Recommended next action</div>
+            <h3 className="mt-2 text-2xl font-bold text-white">{nextAction.label}</h3>
+            <p className="mt-2 text-sm leading-6 text-sky-100/75">{nextAction.reason}</p>
+          </div>
+          <button
+            type="button"
+            data-testid="agreement-overview-primary-cta"
+            onClick={() => setWorkspaceTab(nextAction.tab)}
+            className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
+          >
+            {nextAction.cta}
+          </button>
+        </div>
+
+        <div data-testid="agreement-overview-status-summary" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryCard
+            label="Signature Status"
+            value={norm.isSigned ? "Fully signed" : "Signature needed"}
+            className="border-white/10 bg-white/10 text-white"
+          />
+          <SummaryCard
+            label="Funding / Payment"
+            value={fundingStatusLabel}
+            className="border-white/10 bg-white/10 text-white"
+          />
+          <SummaryCard
+            label="Milestone Progress"
+            value={milestoneProgressLabel}
+            className="border-white/10 bg-white/10 text-white"
+          />
+          <SummaryCard
+            label="Pending Amendments"
+            value={
+              pendingContractorAmendments.length
+                ? `${pendingContractorAmendments.length} needs review`
+                : "None pending"
+            }
+            className="border-white/10 bg-white/10 text-white"
+          />
+          <SummaryCard
+            label="Open Invoices"
+            value={
+              openInvoiceRows.length
+                ? `${openInvoiceRows.length} open - ${formatMoney(openInvoiceTotal)}`
+                : "No open invoices loaded"
+            }
+            className="border-white/10 bg-white/10 text-white"
+          />
+          <SummaryCard
+            label="Open Draws / Payments"
+            value={
+              drawLoading
+                ? "Loading payment activity..."
+                : activeDrawRows.length
+                ? `${activeDrawRows.length} active draw/payment item${activeDrawRows.length === 1 ? "" : "s"}`
+                : isProgressPayments && !isExecuted
+                ? "Unlocks after signing"
+                : "No active draw/payment items loaded"
+            }
+            className="border-white/10 bg-white/10 text-white"
+          />
+          <SummaryCard
+            label="PDF / Documents"
+            value={pdfStatusLabel}
+            className="border-white/10 bg-white/10 text-white"
+          />
+          <SummaryCard
+            label="Customer / Value"
+            value={`${norm.homeownerName} - ${formatMoney(norm.totalCost)}`}
+            className="border-white/10 bg-white/10 text-white"
+          />
+        </div>
+      </section>
+
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -2942,12 +3134,155 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         )}
       </div>
       </div>
+      {pdfPreviewError ? (
+        <section data-testid="agreement-pdf-preview-fallback" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 shadow-sm">
+          <div className="font-semibold">PDF preview is unavailable right now.</div>
+          <div className="mt-1">{pdfPreviewError}</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={previewPdf}
+              className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              Refresh preview
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!norm.currentPdfUrl) {
+                  toast("No current PDF URL available yet.");
+                  return;
+                }
+                openInNewTab(norm.currentPdfUrl);
+              }}
+              className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-950"
+            >
+              Open raw PDF
+            </button>
+            <button
+              type="button"
+              onClick={downloadPDF}
+              className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800"
+            >
+              Download PDF
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section data-testid="agreement-signatures-pdf-history" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-950">PDF History</h3>
+            <p className="mt-1 text-sm text-slate-600">
+              Current and historical agreement PDFs are available here with signatures.
+            </p>
+          </div>
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+            {norm.pdfVersions?.length ? `${norm.pdfVersions.length} version${norm.pdfVersions.length === 1 ? "" : "s"}` : "No history yet"}
+          </span>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-slate-950">
+                Current PDF {norm.currentPdfVersion != null ? <span className="text-xs text-slate-500">(v{norm.currentPdfVersion})</span> : null}
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                {norm.currentPdfUrl ? "Latest stored PDF is available." : "No current PDF URL available yet."}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!norm.currentPdfUrl}
+                onClick={() => openInNewTab(norm.currentPdfUrl)}
+              >
+                Open
+              </button>
+              <button
+                type="button"
+                className="rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!norm.currentPdfUrl}
+                onClick={async () => {
+                  try {
+                    await downloadWithCredentials(norm.currentPdfUrl, `agreement_${norm.id}_current.pdf`);
+                    toast.success("Downloaded.");
+                  } catch (e) {
+                    console.error(e);
+                    toast.error("Download failed.");
+                  }
+                }}
+              >
+                Download
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {Array.isArray(norm.pdfVersions) && norm.pdfVersions.length ? (
+          <div className="mt-3 space-y-2">
+            {norm.pdfVersions.map((v) => {
+              const verNum = Number(v?.version_number ?? v?.version ?? 0);
+              const kind = String(v?.kind || "").toLowerCase();
+              const fileUrl = v?.file_url || v?.fileUrl || "";
+              return (
+                <div key={v.id ?? `${verNum}-${v.created_at ?? ""}`} className="rounded-xl border border-slate-200 bg-white p-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-950">
+                        v{verNum || "-"} {kind ? <span className="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">{kind}</span> : null}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">Created: {fmtDateTime(v?.created_at) || "-"}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {v?.signed_by_contractor ? "Contractor signed" : "Contractor not signed"} / {v?.signed_by_homeowner ? "Customer signed" : "Customer not signed"}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="rounded-lg bg-slate-800 px-3 py-1.5 text-sm font-semibold text-white hover:bg-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!fileUrl}
+                        onClick={() => openInNewTab(fileUrl)}
+                      >
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg bg-blue-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={!fileUrl}
+                        onClick={async () => {
+                          try {
+                            await downloadWithCredentials(fileUrl, `agreement_${norm.id}_v${verNum || "x"}_${kind || "pdf"}.pdf`);
+                            toast.success("Downloaded.");
+                          } catch (e) {
+                            console.error(e);
+                            toast.error("Download failed.");
+                          }
+                        }}
+                      >
+                        Download
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            No historical PDF versions found yet.
+          </div>
+        )}
+      </section>
       </div>
 
       <div data-testid="agreement-workspace-panel-activity" className={workspaceTab === "activity" ? "space-y-4" : "hidden"}>
       <section className="space-y-4">
         <div>
-          <h3 className="text-lg font-semibold text-slate-900">Assignment / Team</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Team & Assignments</h3>
           <div className="mt-1 text-sm text-slate-600">
             Manage who owns the agreement and who is helping deliver the work.
           </div>
@@ -3158,7 +3493,7 @@ export default function AgreementDetail({ adminMode = false, initialAgreement = 
         <div>
           <h3 className="text-lg font-semibold text-slate-900">Documents</h3>
           <div className="mt-1 text-sm text-slate-600">
-            Keep the live PDF, attachments, and warranty records together so document review feels like one workflow.
+            Supporting attachments and warranty records stay here. Agreement PDF history is available under Signatures & PDF.
           </div>
         </div>
 

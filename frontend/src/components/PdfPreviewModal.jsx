@@ -13,9 +13,6 @@ export default function PdfPreviewModal({ open, onClose, fileUrl, title = "Previ
 
   if (!open) return null;
 
-  // Use the provided fileUrl directly (works with blob: URLs and normal URLs)
-  const viewerUrl = fileUrl;
-
   const handleBackdrop = (e) => {
     if (e.target.dataset?.backdrop === "1") onClose?.();
   };
@@ -48,16 +45,16 @@ export default function PdfPreviewModal({ open, onClose, fileUrl, title = "Previ
               className="rounded px-2 py-1 text-gray-600 hover:bg-gray-100"
               aria-label="Close"
             >
-              ✕
+              x
             </button>
           </div>
         </div>
 
-        {/* Plain iframe, no sandbox — lets the browser PDF viewer render normally */}
-        {viewerUrl ? (
+        {/* Plain iframe, no sandbox - lets the browser PDF viewer render normally. */}
+        {fileUrl ? (
           <iframe
             title="PDF Preview"
-            src={viewerUrl}
+            src={fileUrl}
             className="flex-1 w-full border-0"
           />
         ) : (

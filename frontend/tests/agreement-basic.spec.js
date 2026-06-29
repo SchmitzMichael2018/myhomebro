@@ -6930,6 +6930,114 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('agreement-workspace-header')).toBeVisible();
   await expect(page.getByTestId('agreement-workspace-tabs')).toBeVisible();
   await expect(page.getByTestId('agreement-workspace-tab-milestones')).toBeVisible();
+  await expect(page.getByTestId('agreement-overview-command-center')).toBeVisible();
+  await expect(page.getByTestId('agreement-workspace-tab-activity')).toContainText('Team & Assignments');
+});
+
+test('agreement workspace phase 2 shows command center and PDF fallback', async ({ page }) => {
+  const workspaceId = AGREEMENT_ID + 41;
+  let previewAttempts = 0;
+  const agreement = {
+    id: workspaceId,
+    agreement_id: workspaceId,
+    project_title: 'Workspace Phase 2 Project',
+    title: 'Workspace Phase 2 Project',
+    description: 'Validate workspace management summary.',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'sent',
+    workflow_status: 'sent',
+    total_cost: '6400.00',
+    signed_by_contractor: true,
+    signed_by_homeowner: false,
+    is_fully_signed: false,
+    escrow_funded: false,
+    current_pdf_url: '/media/workspace-phase-2.pdf',
+    pdf_version: 4,
+    pdf_versions: [
+      {
+        id: 44,
+        version_number: 4,
+        kind: 'sent',
+        file_url: '/media/workspace-phase-2.pdf',
+        created_at: '2026-06-24T12:00:00Z',
+        signed_by_contractor: true,
+        signed_by_homeowner: false,
+      },
+    ],
+    invoices: [
+      { id: 88, amount: '1250.00', status: 'unpaid' },
+    ],
+    amendment_requests: [],
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [],
+    fundingPreview: {
+      project_amount: 6400,
+      homeowner_escrow: 6400,
+      platform_fee: 321,
+      contractor_payout: 6079,
+      escrow_funded: false,
+      rate: 0.05,
+    },
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${workspaceId}/preview_pdf/?(\\?.*)?$`),
+    async (route) => {
+      previewAttempts += 1;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ detail: 'Preview temporarily unavailable.' }),
+      });
+    }
+  );
+
+  await page.route('**/media/workspace-phase-2.pdf', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/pdf',
+      body: '%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF',
+    });
+  });
+
+  await page.goto(`/app/agreements/${workspaceId}/workspace`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('agreement-overview-command-center')).toBeVisible();
+  await expect(page.getByTestId('agreement-overview-command-center')).toContainText('Collect signatures');
+  await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('Signature needed');
+  await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('No milestones found');
+  await expect(page.getByTestId('agreement-overview-status-summary')).not.toContainText('0 of 0');
+  await expect(page.getByTestId('agreement-workspace-tab-activity')).toContainText('Team & Assignments');
+  await expect(page.getByTestId('agreement-workspace-tabs')).not.toContainText('Activity');
+
+  await page.getByTestId('agreement-workspace-tab-signatures').click();
+  await expect(page.getByTestId('agreement-signatures-pdf-history')).toBeVisible();
+  await expect(page.getByTestId('agreement-signatures-pdf-history')).toContainText('PDF History');
+  await page.getByRole('button', { name: 'Preview PDF' }).click();
+  await expect.poll(() => previewAttempts).toBe(1);
+  await expect(page.getByTestId('agreement-pdf-preview-fallback')).toBeVisible();
+  await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Open raw PDF');
+  await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Download PDF');
+
+  const visibleText = await page.locator('body').innerText();
+  expect(visibleText).not.toMatch(/â|Â|Ã/);
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto(`/app/agreements/${workspaceId}/workspace`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await expect(page.getByTestId('agreement-workspace-header')).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
 });
 
 test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {
