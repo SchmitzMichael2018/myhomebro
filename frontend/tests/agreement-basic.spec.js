@@ -6934,7 +6934,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('agreement-workspace-tab-activity')).toContainText('Team & Assignments');
 });
 
-test('agreement workspace phase 2 shows command center and PDF fallback', async ({ page }) => {
+test('agreement workspace phase 3 shows operations manager and PDF fallback', async ({ page }) => {
   const workspaceId = AGREEMENT_ID + 41;
   let previewAttempts = 0;
   const agreement = {
@@ -7012,7 +7012,12 @@ test('agreement workspace phase 2 shows command center and PDF fallback', async 
   });
 
   await expect(page.getByTestId('agreement-overview-command-center')).toBeVisible();
-  await expect(page.getByTestId('agreement-overview-command-center')).toContainText('Collect signatures');
+  await expect(page.getByTestId('agreement-overview-command-center')).toContainText('Agreement Operations Manager');
+  await expect(page.getByTestId('agreement-operations-next-action')).toContainText('Awaiting Signature');
+  await expect(page.getByTestId('agreement-operations-status')).toContainText('Waiting on signature');
+  await expect(page.getByTestId('agreement-operations-effort')).toContainText('1 min check');
+  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Open signatures');
+  await expect(page.getByTestId('agreement-overview-secondary-cta')).toContainText('Review PDF');
   await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('Signature needed');
   await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('No milestones found');
   await expect(page.getByTestId('agreement-overview-status-summary')).not.toContainText('0 of 0');
@@ -7027,6 +7032,10 @@ test('agreement workspace phase 2 shows command center and PDF fallback', async 
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toBeVisible();
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Open raw PDF');
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Download PDF');
+
+  await page.getByTestId('agreement-workspace-tab-documents').click();
+  await expect(page.getByTestId('agreement-workspace-panel-documents')).not.toContainText('PDF Versions');
+  await expect(page.getByTestId('agreement-workspace-panel-documents')).not.toContainText('PDF History');
 
   const visibleText = await page.locator('body').innerText();
   expect(visibleText).not.toMatch(/â|Â|Ã/);
