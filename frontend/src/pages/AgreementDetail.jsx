@@ -132,6 +132,83 @@ const milestoneStatusLabel = (m) => {
   return 'Incomplete';
 };
 
+const milestoneStatusKey = (m) =>
+  String(
+    pick(
+      m?.workflow_status,
+      m?.lifecycle_state,
+      m?.milestone_lifecycle_state,
+      m?.status,
+      m?.state
+    ) || ''
+  )
+    .trim()
+    .toLowerCase();
+
+function milestoneProgressPercent(m) {
+  const explicit = Number(
+    pick(m?.percent_complete, m?.progress_percent, m?.completion_percent, '')
+  );
+  if (Number.isFinite(explicit) && explicit >= 0) {
+    return Math.max(0, Math.min(100, Math.round(explicit)));
+  }
+  const status = milestoneStatusKey(m);
+  if (status.includes('complete') || m?.completed) return 100;
+  if (
+    status.includes('active') ||
+    status.includes('progress') ||
+    status.includes('started') ||
+    status.includes('submitted') ||
+    status.includes('review')
+  ) {
+    return 50;
+  }
+  return 0;
+}
+
+function milestonePaymentStatus(m) {
+  const raw = String(
+    pick(
+      m?.payment_status,
+      m?.invoice_status,
+      m?.payout_status,
+      m?.draw_status,
+      ''
+    )
+  )
+    .trim()
+    .toLowerCase();
+  if (raw) return titleCase(raw);
+  if (m?.is_paid || m?.paid_at || m?.released_at) return 'Paid';
+  if (m?.is_invoiced || m?.invoice || m?.invoice_id || m?.draw_request_id) {
+    return 'Pending';
+  }
+  return 'Not requested';
+}
+
+function statusBadgeTone(label) {
+  const normalized = String(label || '').toLowerCase();
+  if (normalized.includes('complete') || normalized.includes('paid')) {
+    return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  }
+  if (
+    normalized.includes('active') ||
+    normalized.includes('progress') ||
+    normalized.includes('signed') ||
+    normalized.includes('funded')
+  ) {
+    return 'border-blue-200 bg-blue-50 text-blue-800';
+  }
+  if (
+    normalized.includes('pending') ||
+    normalized.includes('waiting') ||
+    normalized.includes('unpaid')
+  ) {
+    return 'border-amber-200 bg-amber-50 text-amber-800';
+  }
+  return 'border-slate-200 bg-slate-100 text-slate-700';
+}
+
 const isRefundedMilestone = (m) =>
   String(pick(m?.descope_status, m?.descopeStatus) || '').toLowerCase() ===
   'refunded';
@@ -3030,6 +3107,26 @@ export default function AgreementDetail({
       milestone?.draw_request_id;
     return completed && !alreadyBilled;
   });
+  const overallMilestoneProgressPercent =
+    milestones.length > 0
+      ? Math.round((completedMilestones / milestones.length) * 100)
+      : 0;
+  const currentMilestone =
+    activeMilestones?.[0] ||
+    milestones.find((milestone) => milestoneProgressPercent(milestone) < 100) ||
+    milestones[0] ||
+    null;
+  const currentMilestoneLabel = currentMilestone
+    ? `${currentMilestone.order || milestones.indexOf(currentMilestone) + 1}. ${currentMilestone.title || 'Untitled milestone'}`
+    : milestoneDataKnown
+      ? 'No active milestone'
+      : 'Milestone data not loaded';
+  const nextPaymentStatus = openInvoiceRows.length
+    ? `${openInvoiceRows.length} open invoice${openInvoiceRows.length === 1 ? '' : 's'}`
+    : activeDrawRows.length
+      ? `${activeDrawRows.length} active draw${activeDrawRows.length === 1 ? '' : 's'}`
+      : 'No payment action loaded';
+  const milestonePreviewRows = milestones.slice(0, 5);
   const hasLoadedIncompleteMilestones =
     milestoneDataKnown &&
     milestones.length > 0 &&
@@ -3234,6 +3331,69 @@ export default function AgreementDetail({
         ? `${drawRows.length} draw${drawRows.length === 1 ? '' : 's'} tracked`
         : 'No draw requests yet'
     : 'Draw requests not used for this payment structure';
+  const timelineItems = [
+    norm.isSigned
+      ? {
+          id: 'signed',
+          title: 'Agreement signed',
+          detail: pick(
+            agreement?.signed_at,
+            agreement?.homeowner_signed_at,
+            agreement?.contractor_signed_at,
+            'Signature complete'
+          ),
+          tone: 'complete',
+        }
+      : {
+          id: 'signature-pending',
+          title: 'Signature pending',
+          detail: 'Agreement has not been fully signed yet.',
+          tone: 'pending',
+        },
+    norm.isDirectPay || norm.escrowFunded
+      ? {
+          id: 'funding',
+          title: norm.isDirectPay ? 'Direct Pay selected' : 'Funding received',
+          detail: norm.isDirectPay
+            ? 'Invoice pay links handle collection.'
+            : 'Escrow funding is marked ready in the loaded data.',
+          tone: 'complete',
+        }
+      : {
+          id: 'funding-pending',
+          title: 'Funding pending',
+          detail: 'Funding waits for signatures or customer action.',
+          tone: 'pending',
+        },
+    completedMilestones
+      ? {
+          id: 'milestones-complete',
+          title: `${completedMilestones} milestone${completedMilestones === 1 ? '' : 's'} completed`,
+          detail: milestoneProgressLabel,
+          tone: 'complete',
+        }
+      : null,
+    currentMilestone
+      ? {
+          id: 'current-milestone',
+          title: `${currentMilestone.title || 'Current milestone'}`,
+          detail:
+            milestoneProgressPercent(currentMilestone) >= 100
+              ? 'Complete'
+              : 'Current or next milestone',
+          tone: 'active',
+        }
+      : null,
+  ].filter(Boolean);
+  const documentFileRows = [
+    {
+      label: 'Agreement PDFs',
+      value: Array.isArray(norm.pdfVersions) ? norm.pdfVersions.length : 0,
+    },
+    { label: 'Photos', value: Number(agreement?.photos_count || 0) },
+    { label: 'Warranties', value: warranties.length },
+    { label: 'Attachments', value: Number(agreement?.attachments_count || 0) },
+  ];
   const pageEyebrow = isAdminMode ? 'Admin' : 'Core';
   const pageTitle = isAdminMode
     ? 'Admin Agreement Detail'
@@ -3341,7 +3501,14 @@ export default function AgreementDetail({
             </div>
             <div className="text-sm text-sky-100/75">
               <span className="font-semibold text-white">
-                {norm.homeownerName}
+                Customer: {norm.homeownerName}
+              </span>
+              <span className="mx-2 text-sky-100/50">/</span>
+              <span>
+                Agreement Value:{' '}
+                <span className="font-semibold text-white">
+                  {formatMoney(norm.totalCost)}
+                </span>
               </span>
               {norm.homeownerEmail && norm.homeownerEmail !== '-' ? (
                 <span className="ml-2 text-sky-100/65">
@@ -3368,13 +3535,27 @@ export default function AgreementDetail({
 
           <div className="grid min-w-0 grid-cols-2 gap-2 sm:min-w-[280px] sm:gap-3">
             <SummaryCard
-              label="Status"
-              value={statusText}
+              label="Agreement Status"
+              value={norm.isSigned ? 'Signed' : statusText}
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="Payment Mode"
-              value={paymentModeLabel(norm.payment_mode)}
+              label="Funding"
+              value={fundingStatusLabel}
+              className="border-white/10 bg-white/10 text-white"
+            />
+            <SummaryCard
+              label="Progress"
+              value={`${milestoneProgressLabel}${milestones.length ? ` (${overallMilestoneProgressPercent}%)` : ''}`}
+              className="border-white/10 bg-white/10 text-white"
+            />
+            <SummaryCard
+              label="Version"
+              value={
+                norm.currentPdfVersion != null
+                  ? `v${norm.currentPdfVersion} current`
+                  : pdfStatusLabel
+              }
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
@@ -3391,32 +3572,6 @@ export default function AgreementDetail({
                   {agreementTimelineLabel(norm)}
                 </span>
               }
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Signature / Funding"
-              value={
-                <span
-                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${paymentProtectionTone(norm.payment_protection?.label)}`}
-                >
-                  {paymentProtectionLabel(norm.payment_protection?.label)}
-                </span>
-              }
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Milestone Progress"
-              value={milestoneProgressLabel}
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Customer"
-              value={norm.homeownerName}
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Project Total"
-              value={formatMoney(norm.totalCost)}
               className="border-white/10 bg-white/10 text-white"
             />
           </div>
@@ -3476,138 +3631,291 @@ export default function AgreementDetail({
         data-testid="agreement-workspace-panel-overview"
         className={workspaceTab === 'overview' ? 'space-y-4' : 'hidden'}
       >
-        <section
-          data-testid="agreement-overview-command-center"
-          className="rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-2xl">
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-100/75">
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <div className="space-y-4">
+            <section
+              data-testid="agreement-overview-command-center"
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <h3 className="mb-4 text-lg font-semibold text-slate-950">
                 Agreement Operations Manager
-              </div>
-              <h3
-                data-testid="agreement-operations-next-action"
-                className="mt-2 text-2xl font-bold text-white"
-              >
-                {nextAction.label}
               </h3>
-              <p className="mt-2 text-sm leading-6 text-sky-100/75">
-                {nextAction.reason}
-              </p>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between">
+                <div className="min-w-0 flex-1 rounded-2xl border border-blue-200 bg-blue-50/60 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-800">
+                    Next Action
+                  </div>
+                  <h3
+                    data-testid="agreement-operations-next-action"
+                    className="mt-2 text-xl font-bold text-slate-950"
+                  >
+                    {nextAction.label}
+                  </h3>
+                  <div className="mt-4 text-sm font-semibold text-slate-900">
+                    Why this matters
+                  </div>
+                  <p className="mt-1 text-sm leading-6 text-slate-700">
+                    {nextAction.reason}
+                  </p>
+                </div>
+                <div className="flex min-w-[220px] flex-col justify-center gap-2">
+                  <button
+                    type="button"
+                    data-testid="agreement-overview-primary-cta"
+                    onClick={() => runWorkspaceAction(nextAction)}
+                    className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
+                  >
+                    {nextAction.cta}
+                  </button>
+                  {nextAction.secondaryCta ? (
+                    <button
+                      type="button"
+                      data-testid="agreement-overview-secondary-cta"
+                      onClick={() =>
+                        runWorkspaceAction({ tab: nextAction.secondaryTab })
+                      }
+                      className="inline-flex items-center justify-center rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-blue-700 shadow-sm hover:bg-blue-50"
+                    >
+                      {nextAction.secondaryCta}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
               <div
                 data-testid="agreement-operations-manager"
-                className="mt-4 grid gap-3 sm:grid-cols-2"
+                className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
               >
-                <div className="rounded-xl border border-white/10 bg-white/10 p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/60">
-                    Status
-                  </div>
-                  <div
-                    data-testid="agreement-operations-status"
-                    className="mt-1 text-sm font-semibold text-white"
-                  >
-                    {nextAction.status}
-                  </div>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-white/10 p-3">
-                  <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/60">
-                    Estimated Effort
-                  </div>
-                  <div
-                    data-testid="agreement-operations-effort"
-                    className="mt-1 text-sm font-semibold text-white"
-                  >
-                    {nextAction.effort}
-                  </div>
-                </div>
+                <SummaryCard label="Current Stage" value={nextAction.status} />
+                <SummaryCard
+                  label="Current Milestone"
+                  value={currentMilestoneLabel}
+                />
+                <SummaryCard label="Funding State" value={fundingStatusLabel} />
+                <SummaryCard
+                  label="Next Payment"
+                  value={nextPaymentStatus}
+                />
               </div>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-              <button
-                type="button"
-                data-testid="agreement-overview-primary-cta"
-                onClick={() => runWorkspaceAction(nextAction)}
-                className="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-500"
+            </section>
+
+            <section
+              data-testid="agreement-project-snapshot"
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <h3 className="text-lg font-semibold text-slate-950">
+                Project Snapshot
+              </h3>
+              <div
+                data-testid="agreement-overview-status-summary"
+                className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4"
               >
-                {nextAction.cta}
-              </button>
-              {nextAction.secondaryCta ? (
+                <SummaryCard
+                  label="Agreement"
+                  value={`Status: ${norm.isSigned ? 'Signed' : 'Signature needed'}\nVersion: ${norm.currentPdfVersion || '-'}\n${pdfStatusLabel}`}
+                />
+                <SummaryCard
+                  label="Financial"
+                  value={`Funding: ${fundingStatusLabel}\nOpen invoices: ${openInvoiceRows.length || 'None'}\nOutstanding: ${formatMoney(outstandingBalanceTotal)}`}
+                />
+                <SummaryCard
+                  label="Progress"
+                  value={`Milestones: ${milestoneProgressLabel}\nPending amendments: ${pendingContractorAmendments.length || 'None'}`}
+                />
+                <SummaryCard
+                  label="Customer"
+                  value={`${norm.homeownerName}\nProject value: ${formatMoney(norm.totalCost)}\n${paymentModeLabel(norm.payment_mode)}`}
+                />
+              </div>
+            </section>
+
+            <section
+              data-testid="agreement-overview-milestone-preview"
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-slate-950">
+                  Milestones
+                </h3>
                 <button
                   type="button"
-                  data-testid="agreement-overview-secondary-cta"
-                  onClick={() =>
-                    runWorkspaceAction({ tab: nextAction.secondaryTab })
-                  }
-                  className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
+                  onClick={() => setWorkspaceTab('milestones')}
+                  className="text-sm font-semibold text-blue-700 hover:text-blue-900"
                 >
-                  {nextAction.secondaryCta}
+                  View All Milestones
                 </button>
-              ) : null}
-            </div>
+              </div>
+
+              {!milestonePreviewRows.length ? (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-5 text-sm text-slate-600">
+                  {milestoneDataKnown
+                    ? 'No milestones found.'
+                    : 'Milestone data has not loaded yet.'}
+                </div>
+              ) : (
+                <>
+                  <div className="mt-4 hidden overflow-hidden rounded-xl border border-slate-200 md:block">
+                    <table className="min-w-full text-sm">
+                      <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                        <tr>
+                          <th className="px-3 py-3">#</th>
+                          <th className="px-3 py-3">Milestone</th>
+                          <th className="px-3 py-3">Status</th>
+                          <th className="px-3 py-3">Progress</th>
+                          <th className="px-3 py-3">Amount</th>
+                          <th className="px-3 py-3">Payment Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {milestonePreviewRows.map((m, index) => {
+                          const progress = milestoneProgressPercent(m);
+                          const label = milestoneStatusLabel(m);
+                          return (
+                            <tr key={m.id || `${m.title}-${index}`}>
+                              <td className="px-3 py-3 text-slate-600">
+                                {m.order || index + 1}
+                              </td>
+                              <td className="px-3 py-3">
+                                <div className="font-semibold text-slate-950">
+                                  {m.title || 'Untitled milestone'}
+                                </div>
+                                {m.description ? (
+                                  <div className="text-xs text-slate-500">
+                                    {m.description}
+                                  </div>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-3">
+                                <span
+                                  className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(label)}`}
+                                >
+                                  {label}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-10 text-xs font-semibold text-slate-700">
+                                    {progress}%
+                                  </span>
+                                  <div className="h-2 w-24 rounded-full bg-slate-200">
+                                    <div
+                                      className="h-2 rounded-full bg-blue-600"
+                                      style={{ width: `${progress}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-3 py-3 font-semibold text-slate-900">
+                                {formatMoney(m.amount)}
+                              </td>
+                              <td className="px-3 py-3">
+                                {milestonePaymentStatus(m)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="mt-4 space-y-3 md:hidden">
+                    {milestonePreviewRows.map((m, index) => {
+                      const progress = milestoneProgressPercent(m);
+                      return (
+                        <div
+                          key={m.id || `${m.title}-${index}`}
+                          className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="text-xs font-semibold text-slate-500">
+                                Milestone {m.order || index + 1}
+                              </div>
+                              <div className="font-semibold text-slate-950">
+                                {m.title || 'Untitled milestone'}
+                              </div>
+                            </div>
+                            <span
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(milestoneStatusLabel(m))}`}
+                            >
+                              {milestoneStatusLabel(m)}
+                            </span>
+                          </div>
+                          <div className="mt-3 text-sm text-slate-700">
+                            {progress}% / {formatMoney(m.amount)} /{' '}
+                            {milestonePaymentStatus(m)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </section>
           </div>
 
-          <div
-            data-testid="agreement-overview-status-summary"
-            className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
-          >
-            <SummaryCard
-              label="Signature Status"
-              value={norm.isSigned ? 'Fully signed' : 'Signature needed'}
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Funding / Payment"
-              value={fundingStatusLabel}
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Milestone Progress"
-              value={milestoneProgressLabel}
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Pending Amendments"
-              value={
-                pendingContractorAmendments.length
-                  ? `${pendingContractorAmendments.length} needs review`
-                  : 'None pending'
-              }
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Open Invoices"
-              value={
-                openInvoiceRows.length
-                  ? `${openInvoiceRows.length} open - ${formatMoney(openInvoiceTotal)}`
-                  : 'No open invoices loaded'
-              }
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Open Draws / Payments"
-              value={
-                drawLoading
-                  ? 'Loading payment activity...'
-                  : activeDrawRows.length
-                    ? `${activeDrawRows.length} active draw/payment item${activeDrawRows.length === 1 ? '' : 's'}`
-                    : isProgressPayments && !isExecuted
-                      ? 'Unlocks after signing'
-                      : 'No active draw/payment items loaded'
-              }
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="PDF Status"
-              value={pdfStatusLabel}
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Customer / Value"
-              value={`${norm.homeownerName} - ${formatMoney(norm.totalCost)}`}
-              className="border-white/10 bg-white/10 text-white"
-            />
-          </div>
-        </section>
+          <aside className="space-y-4">
+            <section
+              data-testid="agreement-overview-timeline"
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <h3 className="text-lg font-semibold text-slate-950">
+                Timeline
+              </h3>
+              <div className="mt-4 space-y-4">
+                {timelineItems.map((item) => (
+                  <div key={item.id} className="flex gap-3">
+                    <span
+                      className={`mt-1 h-3 w-3 rounded-full ${
+                        item.tone === 'complete'
+                          ? 'bg-emerald-500'
+                          : item.tone === 'active'
+                            ? 'bg-blue-600'
+                            : 'bg-slate-300'
+                      }`}
+                    />
+                    <div>
+                      <div className="text-sm font-semibold text-slate-950">
+                        {item.title}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {item.detail}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section
+              data-testid="agreement-overview-documents-summary"
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <h3 className="text-lg font-semibold text-slate-950">
+                Documents & Files
+              </h3>
+              <div className="mt-4 divide-y divide-slate-100">
+                {documentFileRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between gap-3 py-2 text-sm"
+                  >
+                    <span className="text-slate-700">{row.label}</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setWorkspaceTab('documents')}
+                className="mt-4 w-full rounded-xl border border-blue-200 bg-white px-4 py-3 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+              >
+                Open Documents
+              </button>
+            </section>
+          </aside>
+        </div>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -5049,37 +5357,84 @@ export default function AgreementDetail({
                         </div>
                       ) : null}
 
-                      <div className="mt-2 text-sm text-gray-600">
-                        <span className="font-semibold text-gray-900">
-                          Assigned Worker:
-                        </span>{' '}
-                        {m.assigned_worker_display || 'Unassigned'}
+                      <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Progress
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-900">
+                            {milestoneProgressPercent(m)}%
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Payment
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-900">
+                            {milestonePaymentStatus(m)}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Due
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-900">
+                            {m.due_date || m.completion_date || '-'}
+                          </div>
+                        </div>
+                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Action State
+                          </div>
+                          <div className="mt-1 font-semibold text-slate-900">
+                            {milestoneLifecycleLabel(lifecycleState)}
+                          </div>
+                        </div>
                       </div>
 
-                      <div className="mt-2 text-sm text-gray-600">
-                        <span className="font-semibold text-gray-900">
-                          Reviewer:
-                        </span>{' '}
-                        {m.reviewer_display || 'Contractor Owner'}
-                      </div>
-
-                      <div
-                        data-testid={`milestone-review-state-${m.id}`}
-                        className="mt-2 text-sm text-gray-600"
+                      <details
+                        data-testid={`milestone-team-controls-${m.id}`}
+                        className="mt-3 rounded-xl border border-slate-200 bg-white p-3"
                       >
-                        <span className="font-semibold text-gray-900">
-                          Review:
-                        </span>{' '}
-                        {m.subcontractor_review_requested
-                          ? 'Requested'
-                          : 'Not requested'}
-                        {m.subcontractor_review_requested_at ? (
-                          <span className="text-gray-500">
-                            {' '}
-                            ({fmtDateTime(m.subcontractor_review_requested_at)})
-                          </span>
-                        ) : null}
-                      </div>
+                        <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                          Advanced assignment controls
+                        </summary>
+
+                        <div className="mt-3 text-sm text-gray-600">
+                          <span className="font-semibold text-gray-900">
+                            Assigned Worker:
+                          </span>{' '}
+                          {m.assigned_worker_display || 'Unassigned'}
+                        </div>
+
+                        <div className="mt-2 text-sm text-gray-600">
+                          <span className="font-semibold text-gray-900">
+                            Reviewer:
+                          </span>{' '}
+                          {m.reviewer_display || 'Contractor Owner'}
+                        </div>
+
+                        <div
+                          data-testid={`milestone-review-state-${m.id}`}
+                          className="mt-2 text-sm text-gray-600"
+                        >
+                          <span className="font-semibold text-gray-900">
+                            Review:
+                          </span>{' '}
+                          {m.subcontractor_review_requested
+                            ? 'Requested'
+                            : 'Not requested'}
+                          {m.subcontractor_review_requested_at ? (
+                            <span className="text-gray-500">
+                              {' '}
+                              (
+                              {fmtDateTime(
+                                m.subcontractor_review_requested_at
+                              )}
+                              )
+                            </span>
+                          ) : null}
+                        </div>
 
                       {m.subcontractor_review_note ? (
                         <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
@@ -5442,6 +5797,7 @@ export default function AgreementDetail({
                           ) : null}
                         </div>
                       )}
+                      </details>
                     </div>
                   );
                 })}
