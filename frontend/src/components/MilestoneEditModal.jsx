@@ -1092,15 +1092,26 @@ export default function MilestoneEditModal({
   const canShowComplete = !actionReadOnly;
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/40 p-6 overflow-y-auto">
-      <div className="w-full max-w-3xl rounded-xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b px-5 py-3">
-          <div className="text-sm text-gray-500">
-            {agreementNumber ? `Agreement #${agreementNumber}` : null}
+    <div
+      data-testid="milestone-modal-backdrop"
+      className="fixed inset-0 z-[9999] flex items-start justify-center overflow-y-auto bg-slate-950/85 p-4 backdrop-blur-sm sm:p-6"
+    >
+      <div
+        data-testid="milestone-modal-content"
+        className="isolate w-full max-w-3xl rounded-xl border border-slate-200 bg-white text-slate-950 opacity-100 shadow-2xl ring-1 ring-black/10"
+      >
+        <div className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3">
+          <div>
+            <div className="text-base font-semibold text-slate-950">
+              {form.title || currentMilestone?.title || "Milestone"}
+            </div>
+            <div className="text-sm text-slate-600">
+              {agreementNumber ? `Agreement #${agreementNumber}` : null}
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded px-2 py-1 text-gray-500 hover:bg-gray-100"
+            className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100"
             aria-label="Close"
             title="Close"
           >
@@ -1108,7 +1119,7 @@ export default function MilestoneEditModal({
           </button>
         </div>
 
-        <div className="px-5 pb-5 pt-3">
+        <div className="bg-white px-5 pb-5 pt-3">
           {invoiceReadonlyBanner}
 
           {lockedBanner ? (

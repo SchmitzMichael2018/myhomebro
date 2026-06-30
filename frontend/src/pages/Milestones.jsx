@@ -21,6 +21,17 @@ const FILTERS = [
 ];
 
 const norm = (v) => String(v || "").toLowerCase();
+const sameId = (left, right) =>
+  String(left ?? "").trim() !== "" &&
+  String(left ?? "").trim() === String(right ?? "").trim();
+
+const milestoneAgreementId = (milestone) =>
+  milestone?.agreement_id ??
+  milestone?.agreement ??
+  milestone?.agreementId ??
+  milestone?.agreement?.id ??
+  milestone?.agreement_number ??
+  "";
 
 const isReworkMilestone = (m) => {
   const t = String(m?.title || m?.name || "").toLowerCase();
@@ -77,6 +88,8 @@ export default function Milestones() {
   const [active, setActive] = useState(null);
 
   const filterKey = query.get("filter") || "all";
+  const agreementQuery = query.get("agreement") || "";
+  const milestoneQuery = query.get("milestone") || "";
   const isEmployee = who?.role && String(who.role).startsWith("employee_");
 
   useEffect(() => {
@@ -117,6 +130,10 @@ export default function Milestones() {
   const filtered = useMemo(() => {
     let rows = items;
 
+    if (agreementQuery) {
+      rows = rows.filter((m) => sameId(milestoneAgreementId(m), agreementQuery));
+    }
+
     if (filterKey === "rework") return rows.filter(isReworkMilestone);
 
     rows = rows.filter((m) => !isReworkMilestone(m));
@@ -138,7 +155,19 @@ export default function Milestones() {
     }
 
     return rows;
-  }, [items, filterKey]);
+  }, [items, filterKey, agreementQuery]);
+
+  useEffect(() => {
+    if (loading || !milestoneQuery) return;
+    const selected = filtered.find((m) => sameId(m?.id, milestoneQuery));
+    if (!selected) return;
+    setActive((current) => (sameId(current?.id, selected.id) ? current : selected));
+    window.setTimeout(() => {
+      document
+        .querySelector(`[data-milestone-row-id="${CSS.escape(String(selected.id))}"]`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 50);
+  }, [filtered, loading, milestoneQuery]);
 
   const title =
     filterKey === "rework"
@@ -171,6 +200,25 @@ export default function Milestones() {
       title={title}
       subtitle="Track progress, review late work, and keep each agreement moving without digging through every project."
     >
+      {agreementQuery ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 shadow-sm">
+          <div>
+            <div className="font-semibold">Agreement milestones</div>
+            <div className="text-blue-800">
+              Showing milestones for Agreement #{agreementQuery}
+              {milestoneQuery ? ` and opening milestone #${milestoneQuery}` : ""}.
+            </div>
+          </div>
+          <a
+            data-testid="milestones-back-to-agreement-workspace"
+            href={`/app/agreements/${agreementQuery}/workspace?tab=milestones`}
+            className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+          >
+            Back to Agreement Workspace
+          </a>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid="milestones-summary">
         {[
           { label: "Total milestones", value: summary.total },
@@ -200,7 +248,10 @@ export default function Milestones() {
           <div className="flex flex-wrap items-center gap-2">
             {FILTERS.map((f) => {
               const isActive = filterKey === f.key;
-              const href = `/app/milestones?filter=${encodeURIComponent(f.key)}`;
+              const params = new URLSearchParams();
+              params.set("filter", f.key);
+              if (agreementQuery) params.set("agreement", agreementQuery);
+              const href = `/app/milestones?${params.toString()}`;
 
               return (
                 <a
@@ -251,7 +302,13 @@ export default function Milestones() {
                 return (
                   <tr
                     key={m.id}
-                    className="cursor-pointer border-t border-slate-100 transition-colors hover:bg-slate-50/80"
+                    data-testid={`milestone-row-${m.id}`}
+                    data-milestone-row-id={m.id}
+                    className={`cursor-pointer border-t transition-colors ${
+                      sameId(m.id, milestoneQuery)
+                        ? "border-blue-200 bg-blue-50/90 ring-2 ring-inset ring-blue-300"
+                        : "border-slate-100 hover:bg-slate-50/80"
+                    }`}
                     onClick={() => setActive(m)}
                   >
                     <td className="px-4 py-4 font-medium text-slate-900">
@@ -266,7 +323,22 @@ export default function Milestones() {
                       </span>
                     </td>
                     <td className="px-4 py-3">{date}</td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-900">{amt}</td>
+                    <td className="px-4 py-3 text-right font-medium text-slate-900">
+                      <div>{amt}</div>
+                      {sameId(m.id, milestoneQuery) ? (
+                        <button
+                          type="button"
+                          data-testid={`milestone-deeplink-action-${m.id}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setActive(m);
+                          }}
+                          className="mt-2 rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-800"
+                        >
+                          Complete
+                        </button>
+                      ) : null}
+                    </td>
                   </tr>
                 );
               })}

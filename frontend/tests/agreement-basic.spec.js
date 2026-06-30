@@ -6983,8 +6983,9 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
         order: 1,
         title: 'Prep and mobilization',
         amount: '7000.00',
-        status: 'paid',
-        payment_status: 'paid',
+        status: 'completed',
+        payment_status: 'pending',
+        invoice_status: 'pending',
         paid_at: '2026-06-25T12:00:00Z',
       },
       {
@@ -7060,6 +7061,7 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('milestone-preview-status-501')).toContainText('Completed');
   await expect(page.getByTestId('milestone-preview-progress-501')).toContainText('100%');
   await expect(page.getByTestId('milestone-preview-payment-501')).toContainText('Paid');
+  await expect(page.getByTestId('milestone-preview-payment-501')).not.toContainText('Pending');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).not.toContainText('Assigned Worker');
   await expect(page.getByTestId('agreement-overview-timeline')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-documents-summary')).toBeVisible();
@@ -7082,6 +7084,7 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('milestone-progress-501')).toContainText('100%');
   await expect(page.getByTestId('milestone-progress-bar-501')).toHaveAttribute('style', /width: 100%/);
   await expect(page.getByTestId('milestone-payment-status-501')).toContainText('Paid');
+  await expect(page.getByTestId('milestone-payment-status-501')).not.toContainText('Pending');
   await expect(page.getByTestId('milestone-progress-501')).not.toHaveText('0%');
   await expect(page.getByTestId('milestone-actions-501')).toContainText('View');
   await expect(page.getByTestId('milestone-complete-action-502')).toContainText('Complete in Milestones');
@@ -7205,6 +7208,103 @@ test('agreement workspace routes active milestone action to milestone completion
   await expect(page).toHaveURL(
     new RegExp(`/app/milestones\\?agreement=${workspaceId}&milestone=602$`)
   );
+});
+
+test('milestones page deep links to agreement milestone and opens opaque modal', async ({
+  page,
+}) => {
+  const workspaceId = AGREEMENT_ID + 53;
+  const agreement = {
+    id: workspaceId,
+    agreement_id: workspaceId,
+    project_title: 'Deep Linked Milestone Project',
+    title: 'Deep Linked Milestone Project',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'funded',
+    workflow_status: 'funded',
+    total_cost: '20000.00',
+    signed_by_contractor: true,
+    signed_by_homeowner: true,
+    is_fully_signed: true,
+    escrow_funded: true,
+    invoices: [],
+    amendment_requests: [],
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 701,
+        agreement: workspaceId,
+        order: 1,
+        title: 'Completed paid milestone',
+        amount: '7000.00',
+        status: 'completed',
+        payment_status: 'pending',
+        paid_at: '2026-06-25T12:00:00Z',
+      },
+      {
+        id: 702,
+        agreement: workspaceId,
+        order: 2,
+        title: 'Target milestone to complete',
+        amount: '7000.00',
+        status: 'active',
+      },
+      {
+        id: 801,
+        agreement: workspaceId + 99,
+        order: 1,
+        title: 'Other agreement milestone',
+        amount: '1000.00',
+        status: 'active',
+      },
+    ],
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [agreement] }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/invoices\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.goto(`/app/milestones?agreement=${workspaceId}&milestone=702`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('milestones-back-to-agreement-workspace')).toBeVisible();
+  await expect(page.getByTestId('milestones-back-to-agreement-workspace')).toHaveAttribute(
+    'href',
+    `/app/agreements/${workspaceId}/workspace?tab=milestones`
+  );
+  await expect(page.getByTestId('milestone-row-702')).toContainText('Target milestone to complete');
+  await expect(page.getByTestId('milestone-row-702')).toHaveClass(/bg-blue-50/);
+  await expect(page.getByTestId('milestone-row-801')).toHaveCount(0);
+  await expect(page.getByTestId('milestone-modal-backdrop')).toBeVisible();
+  await expect(page.getByTestId('milestone-modal-backdrop')).toHaveClass(/bg-slate-950\/85/);
+  await expect(page.getByTestId('milestone-modal-content')).toBeVisible();
+  await expect(page.getByTestId('milestone-modal-content')).toHaveClass(/bg-white/);
+  await expect(page.getByTestId('milestone-modal-content')).toContainText('Target milestone to complete');
+  await expect(page.getByTestId('milestone-deeplink-action-702')).toContainText('Complete');
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
 });
 
 test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {

@@ -63,9 +63,24 @@ export function isMilestonePaid(milestone) {
     .trim()
     .toLowerCase();
   return (
-    ['paid', 'released', 'earned'].includes(status) ||
-    ['paid', 'released', 'earned', 'settled'].includes(paymentStatus) ||
+    ['paid', 'released', 'earned', 'approved'].includes(status) ||
+    [
+      'paid',
+      'released',
+      'earned',
+      'settled',
+      'approved',
+      'complete',
+      'completed',
+      'payout_complete',
+      'payout_completed',
+      'invoice_paid',
+      'invoiced_paid',
+    ].includes(paymentStatus) ||
     !!milestone?.is_paid ||
+    !!milestone?.invoice_paid ||
+    !!milestone?.invoice_paid_at ||
+    !!milestone?.is_released ||
     !!milestone?.paid_at ||
     !!milestone?.released_at ||
     !!milestone?.payment_released_at ||
@@ -117,6 +132,12 @@ export function milestoneDisplayPaymentStatus(milestone) {
   )
     .trim()
     .toLowerCase();
+  if (
+    isMilestoneCompleted(milestone) &&
+    ['pending', 'unpaid', 'payment_pending', 'invoice_pending'].includes(raw)
+  ) {
+    return 'Paid';
+  }
   if (raw) return titleCase(raw);
 
   if (

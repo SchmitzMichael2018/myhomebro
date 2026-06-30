@@ -223,7 +223,9 @@ export default function MilestoneList() {
   const projectClassFilter = normalizeProjectClassFilter(query.get("project_class"));
   const projectModeFilter = normalizeProjectModeFilter(query.get("project_mode"));
   const focusIdRaw = query.get("focus");
-  const focusId = focusIdRaw ? String(focusIdRaw) : null;
+  const agreementQuery = query.get("agreement") ? String(query.get("agreement")) : null;
+  const milestoneQuery = query.get("milestone") ? String(query.get("milestone")) : null;
+  const focusId = milestoneQuery || (focusIdRaw ? String(focusIdRaw) : null);
 
   const [rows, setRows] = useState([]);
   const [agreementsMap, setAgreementsMap] = useState({});
@@ -381,6 +383,10 @@ export default function MilestoneList() {
   const matchingMilestones = useMemo(() => {
     let r = enriched;
 
+    if (agreementQuery) {
+      r = r.filter((m) => String(m._agId || "") === String(agreementQuery));
+    }
+
     switch (tab) {
       case "rework":
         r = r.filter((m) => isReworkMilestone(m));
@@ -417,7 +423,7 @@ export default function MilestoneList() {
     }
 
     return r;
-  }, [enriched, tab, q, projectClassFilter, projectModeFilter]);
+  }, [enriched, tab, q, projectClassFilter, projectModeFilter, agreementQuery]);
 
   /* ---------------- All milestones by agreement ---------------- */
   const allMilestonesByAgreement = useMemo(() => {
@@ -452,8 +458,17 @@ export default function MilestoneList() {
 
   /* ---------------- Agreement list ---------------- */
   const agreementGroups = useMemo(() => {
-    const hasFiltering = tab !== "all" || q.trim().length > 0;
-    const agIds = hasFiltering ? Array.from(matchSetByAgreement.keys()) : Array.from(allMilestonesByAgreement.keys());
+    const hasFiltering =
+      tab !== "all" ||
+      q.trim().length > 0 ||
+      projectClassFilter !== "all" ||
+      projectModeFilter !== "all" ||
+      !!agreementQuery;
+    const agIds = agreementQuery
+      ? [String(agreementQuery)].filter((agId) => allMilestonesByAgreement.has(agId))
+      : hasFiltering
+        ? Array.from(matchSetByAgreement.keys())
+        : Array.from(allMilestonesByAgreement.keys());
 
     const out = agIds.map((agId) => {
       const listAll = allMilestonesByAgreement.get(agId) || [];
@@ -483,22 +498,42 @@ export default function MilestoneList() {
     });
 
     return out;
-  }, [tab, q, matchSetByAgreement, allMilestonesByAgreement, agreementsMap]);
+  }, [
+    tab,
+    q,
+    projectClassFilter,
+    projectModeFilter,
+    agreementQuery,
+    matchSetByAgreement,
+    allMilestonesByAgreement,
+    agreementsMap,
+  ]);
 
   /* ---------------- Auto-expand behavior ---------------- */
   useEffect(() => {
-    if (!focusId) return;
+    if (!focusId && !agreementQuery) return;
     if (loading) return;
 
-    const m = enriched.find((x) => String(x.id) === String(focusId));
-    if (!m?._agId) return;
+    const m = focusId
+      ? enriched.find((x) => String(x.id) === String(focusId))
+      : null;
+    const agId = m?._agId || agreementQuery;
+    if (!agId) return;
 
     setOpenAgreements((prev) => {
       const next = new Set(prev);
-      next.add(String(m._agId));
+      next.add(String(agId));
       return next;
     });
-  }, [focusId, loading, enriched]);
+  }, [focusId, agreementQuery, loading, enriched]);
+
+  useEffect(() => {
+    if (!milestoneQuery || loading) return;
+    const m = enriched.find((x) => String(x.id) === String(milestoneQuery));
+    if (!m) return;
+    setDetailItem((current) => (String(current?.id || "") === String(m.id) ? current : m));
+    setDetailOpen(true);
+  }, [milestoneQuery, loading, enriched]);
 
   useEffect(() => {
     const isFiltering = tab !== "all" || q.trim().length > 0;
@@ -717,7 +752,12 @@ export default function MilestoneList() {
   const tdBase = "px-4 py-3 border-r border-slate-100 last:border-r-0";
 
   // 🔑 Determines whether we should show ONLY matching rows inside expanded agreements
-  const isFiltering = tab !== "all" || q.trim().length > 0 || projectClassFilter !== "all";
+  const isFiltering =
+    tab !== "all" ||
+    q.trim().length > 0 ||
+    projectClassFilter !== "all" ||
+    projectModeFilter !== "all" ||
+    !!agreementQuery;
 
   return (
     <ContractorPageSurface
@@ -727,6 +767,25 @@ export default function MilestoneList() {
       className="max-w-[1680px]"
       variant="operational"
     >
+      {agreementQuery ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 shadow-sm">
+          <div>
+            <div className="font-semibold">Agreement milestones</div>
+            <div className="text-blue-800">
+              Showing milestones for Agreement #{agreementQuery}
+              {milestoneQuery ? ` and opening milestone #${milestoneQuery}` : ""}.
+            </div>
+          </div>
+          <a
+            data-testid="milestones-back-to-agreement-workspace"
+            href={`/app/agreements/${agreementQuery}/workspace?tab=milestones`}
+            className="rounded-xl bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800"
+          >
+            Back to Agreement Workspace
+          </a>
+        </div>
+      ) : null}
+
       {/* Header: filters + search */}
       <div className="mhb-operational-toolbar mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[24px] p-4">
         <div className="flex flex-wrap gap-2">
@@ -901,13 +960,16 @@ export default function MilestoneList() {
                                         return (
                                           <tr
                                             id={`mhb-milestone-row-${m.id}`}
+                                            data-testid={`milestone-row-${m.id}`}
                                             key={`m-${m.id}`}
                                             className={[
                                               "border-b border-slate-100 last:border-b-0",
                                               "hover:bg-slate-100",
                                               "odd:bg-white even:bg-slate-50",
                                               isRowBusy ? "opacity-70" : "",
-                                              focusId && String(m.id) === String(focusId) ? "ring-2 ring-amber-300" : "",
+                                              focusId && String(m.id) === String(focusId)
+                                                ? "bg-blue-50 ring-2 ring-blue-300"
+                                                : "",
                                             ].join(" ")}
                                             title="Click to view milestone details"
                                             onClick={() => {
@@ -1040,6 +1102,7 @@ export default function MilestoneList() {
 
                                                 {allowComplete ? (
                                                   <button
+                                                    data-testid={`milestone-deeplink-action-${m.id}`}
                                                     type="button"
                                                     onClick={(e) => {
                                                       e.stopPropagation();
