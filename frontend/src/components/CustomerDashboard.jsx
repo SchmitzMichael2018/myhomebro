@@ -1642,6 +1642,15 @@ function NotificationsCenter({
     : filter === "archived"
       ? notifications.filter(isArchivedNotification)
       : notifications.filter((notification) => !isArchivedNotification(notification));
+  const smsStatus = notificationPreferences?.sms_status || {};
+  const smsConsentLabel = smsStatus.sms_enabled
+    ? "Enabled"
+    : smsStatus.sms_opted_out
+      ? "Opted out"
+      : smsStatus.consent_on_file
+        ? "Consent incomplete"
+        : "No SMS consent on file";
+  const smsPhoneLabel = smsStatus.phone_number_e164 || "No verified phone number";
 
   return (
     <section data-testid="customer-notifications-center" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -1734,6 +1743,35 @@ function NotificationsCenter({
             <p className="mt-3 text-xs leading-5 text-slate-400">
               SMS reminders require a verified phone number and text-message consent.
             </p>
+            <div data-testid="customer-sms-status-panel" className="mt-4 rounded-xl border border-slate-700 bg-slate-900/80 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">SMS status</div>
+                  <div data-testid="customer-sms-status-label" className="mt-1 text-sm font-semibold text-white">{smsConsentLabel}</div>
+                </div>
+                <Badge tone={smsStatus.sms_enabled ? "gold" : "slate"}>
+                  {deliverySettings.channels?.sms_enabled ? "Preferred" : "Off"}
+                </Badge>
+              </div>
+              <dl className="mt-3 grid gap-2 text-xs text-slate-300">
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-slate-500">Phone</dt>
+                  <dd data-testid="customer-sms-status-phone" className="text-right font-medium text-slate-200">{smsPhoneLabel}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-slate-500">Consent</dt>
+                  <dd className="text-right font-medium text-slate-200">
+                    {smsStatus.opted_in_at ? `Opted in ${new Date(smsStatus.opted_in_at).toLocaleDateString()}` : smsStatus.sms_opted_out ? "Stopped by customer" : "Not recorded"}
+                  </dd>
+                </div>
+              </dl>
+              <p data-testid="customer-sms-quiet-hours" className="mt-3 text-xs leading-5 text-slate-400">
+                {smsStatus.quiet_hours?.notice || "Most SMS notifications pause overnight unless the update is urgent."}
+              </p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                SMS controls are preference and consent safeguards only. Contractors cannot send freeform SMS from here.
+              </p>
+            </div>
           </div>
         </div>
         {notificationPreferenceError ? <p data-testid="notification-preferences-error" className="mt-3 text-sm font-semibold text-rose-200">{notificationPreferenceError}</p> : null}

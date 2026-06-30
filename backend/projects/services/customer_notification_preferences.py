@@ -70,10 +70,18 @@ def notification_preferences_for_email(email: str, *, homeowner=None) -> Custome
 
 
 def notification_preferences_payload(preference: CustomerNotificationPreference) -> dict:
+    sms_status = {}
+    try:
+        from projects.services.sms_service import get_sms_status_payload
+
+        sms_status = get_sms_status_payload(homeowner=preference.homeowner)
+    except Exception:
+        sms_status = {}
     return {
         "categories": normalize_notification_categories(preference.category_preferences),
         "channels": normalize_notification_channels(preference.channel_preferences),
         "frequency": preference.frequency or CustomerNotificationPreference.FREQUENCY_IMMEDIATE,
+        "sms_status": sms_status,
         "groups": NOTIFICATION_PREFERENCE_GROUPS,
         "frequency_options": [
             {"value": value, "label": label}

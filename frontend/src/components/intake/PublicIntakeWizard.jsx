@@ -2477,6 +2477,9 @@ export default function PublicIntakeWizard() {
                     onChange={(e) => setField("customer_phone", e.target.value)}
                     placeholder="(555) 555-5555"
                   />
+                  <p data-testid="public-intake-sms-consent-copy" className="mt-2 text-xs leading-5 text-slate-500">
+                    Text updates are optional. If you opt in later, MyHomeBro will only send project updates; message frequency varies and you can reply STOP at any time.
+                  </p>
                 </div>
               </div>
             </section>

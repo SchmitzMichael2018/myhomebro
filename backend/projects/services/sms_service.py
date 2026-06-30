@@ -9,7 +9,13 @@ from django.core.cache import cache
 from django.utils import timezone
 
 from projects.models import Agreement, Contractor, ContractorActivityEvent, Homeowner, Invoice, Milestone
-from projects.models_sms import SMSConsent
+from projects.models_sms import SMSConsent, SMSConsentStatus
+
+
+SMS_OPT_IN_DISCLOSURE = (
+    "By opting in, you agree to receive MyHomeBro project updates by text message. "
+    "Message frequency varies. Reply STOP to opt out or HELP for help."
+)
 
 try:
     from twilio.base.exceptions import TwilioRestException
@@ -158,7 +164,105 @@ def get_sms_consent(phone_number: str | None) -> SMSConsent | None:
     normalized = normalize_phone_to_e164(phone_number)
     if not normalized:
         return None
-    return SMSConsent.objects.filter(phone_number_e164=normalized).select_related("contractor", "homeowner").first()
+    consent = SMSConsent.objects.filter(phone_number_e164=normalized).select_related("contractor", "homeowner").first()
+    if consent is not None:
+        legacy = SMSConsentStatus.objects.filter(phone_number=normalized).first()
+        if legacy is not None:
+            if not legacy.is_subscribed and (not consent.opted_out or consent.can_send_sms):
+                consent.can_send_sms = False
+                consent.opted_out = True
+                consent.opted_out_at = legacy.opted_out_at or consent.opted_out_at or timezone.now()
+                consent.opted_out_source = SMSConsent.OPT_OUT_SOURCE_INBOUND_STOP
+                consent.last_inbound_keyword = "STOP"
+                consent.save(
+                    update_fields=[
+                        "can_send_sms",
+                        "opted_out",
+                        "opted_out_at",
+                        "opted_out_source",
+                        "last_inbound_keyword",
+                        "updated_at",
+                    ]
+                )
+            elif legacy.is_subscribed and consent.opted_out and legacy.opted_in_at and (not consent.opted_out_at or legacy.opted_in_at >= consent.opted_out_at):
+                consent.can_send_sms = True
+                consent.opted_out = False
+                consent.opted_in_at = legacy.opted_in_at
+                consent.opted_in_source = SMSConsent.OPT_IN_SOURCE_INBOUND_START
+                consent.last_inbound_keyword = "START"
+                consent.save(
+                    update_fields=[
+                        "can_send_sms",
+                        "opted_out",
+                        "opted_in_at",
+                        "opted_in_source",
+                        "last_inbound_keyword",
+                        "updated_at",
+                    ]
+                )
+        return consent
+    legacy = SMSConsentStatus.objects.filter(phone_number=normalized).first()
+    if legacy is None:
+        return None
+    return SMSConsent.objects.create(
+        phone_number_e164=normalized,
+        can_send_sms=bool(legacy.is_subscribed),
+        opted_out=not bool(legacy.is_subscribed),
+        opted_out_at=legacy.opted_out_at,
+        opted_in_at=legacy.opted_in_at,
+        opted_in_source=SMSConsent.OPT_IN_SOURCE_INBOUND_START if legacy.is_subscribed and legacy.opted_in_at else "",
+        opted_out_source=SMSConsent.OPT_OUT_SOURCE_INBOUND_STOP if not legacy.is_subscribed else "",
+        last_inbound_keyword="START" if legacy.last_keyword_type == SMSConsentStatus.KEYWORD_OPT_IN else "STOP" if legacy.last_keyword_type == SMSConsentStatus.KEYWORD_OPT_OUT else legacy.last_keyword_type,
+    )
+
+
+def _sync_legacy_sms_status(*, phone_number_e164: str, subscribed: bool, keyword_type: str, body: str = "") -> None:
+    if not phone_number_e164:
+        return
+    legacy, _ = SMSConsentStatus.objects.get_or_create(phone_number=phone_number_e164)
+    legacy.is_subscribed = bool(subscribed)
+    legacy.last_keyword_type = keyword_type
+    if body:
+        legacy.last_inbound_body = body
+    if subscribed:
+        legacy.opted_in_at = timezone.now()
+    else:
+        legacy.opted_out_at = timezone.now()
+    legacy.save()
+
+
+def _customer_notification_preference(homeowner: Homeowner | None):
+    email = str(getattr(homeowner, "email", "") or "").strip().lower()
+    if not email:
+        return None
+    try:
+        from projects.models_customer_portal import CustomerNotificationPreference
+
+        return CustomerNotificationPreference.objects.filter(customer_email=email).first()
+    except Exception:
+        return None
+
+
+def _preference_allows_sms(*, homeowner: Homeowner | None, category: str = "customer_care") -> tuple[bool, str]:
+    preference = _customer_notification_preference(homeowner)
+    if preference is None:
+        return True, "no_preference_record"
+    if getattr(preference, "frequency", "") == getattr(preference, "FREQUENCY_OFF", "off"):
+        return False, "notifications_off"
+    channels = preference.channel_preferences or {}
+    if channels.get("sms_enabled") is False:
+        return False, "sms_channel_disabled"
+    categories = preference.category_preferences or {}
+    mapped_category = {
+        "agreement": "agreement_updates",
+        "milestone": "milestone_updates",
+        "invoice": "invoice_payment_updates",
+        "payment": "invoice_payment_updates",
+        "customer_care": "",
+    }.get(category, category)
+    if mapped_category and categories.get(mapped_category) is False:
+        return False, "sms_category_disabled"
+    return True, "preference_allows_sms"
 
 
 def get_sms_status_payload(*, phone_number: str | None = None, contractor: Contractor | None = None, homeowner: Homeowner | None = None) -> dict[str, Any]:
@@ -188,6 +292,15 @@ def get_sms_status_payload(*, phone_number: str | None = None, contractor: Contr
         "sms_enabled": bool(consent and consent.can_send_sms and not consent.opted_out),
         "sms_opted_out": bool(consent.opted_out) if consent else False,
         "can_send_sms": bool(consent.can_send_sms) if consent else False,
+        "consent_on_file": bool(consent),
+        "consent_text": consent.consent_text_snapshot if consent else SMS_OPT_IN_DISCLOSURE,
+        "consent_source_page": consent.consent_source_page if consent else "",
+        "quiet_hours": {
+            "enabled": True,
+            "start_hour": int(getattr(settings, "SMS_QUIET_HOURS_START", 21) or 21),
+            "end_hour": int(getattr(settings, "SMS_QUIET_HOURS_END", 8) or 8),
+            "notice": "Most SMS notifications pause overnight unless the update is urgent.",
+        },
         "opted_in_at": consent.opted_in_at.isoformat() if consent and consent.opted_in_at else None,
         "opted_out_at": consent.opted_out_at.isoformat() if consent and consent.opted_out_at else None,
         "last_inbound_keyword": consent.last_inbound_keyword if consent else "",
@@ -226,6 +339,12 @@ def set_sms_opt_in(
     if consent_source_page:
         consent.consent_source_page = consent_source_page
     consent.save()
+    _sync_legacy_sms_status(
+        phone_number_e164=normalized,
+        subscribed=True,
+        keyword_type=SMSConsentStatus.KEYWORD_OPT_IN,
+        body="START" if source == SMSConsent.OPT_IN_SOURCE_INBOUND_START else "",
+    )
     related_contractor = consent.contractor or getattr(consent.homeowner, "created_by", None)
     _log_sms_activity(
         event_type="sms_opt_in",
@@ -261,6 +380,12 @@ def set_sms_opt_out(
     consent.opted_out_source = source
     consent.last_inbound_keyword = keyword
     consent.save()
+    _sync_legacy_sms_status(
+        phone_number_e164=normalized,
+        subscribed=False,
+        keyword_type=SMSConsentStatus.KEYWORD_OPT_OUT,
+        body=keyword,
+    )
     related_contractor = consent.contractor or getattr(consent.homeowner, "created_by", None)
     _log_sms_activity(
         event_type="sms_opt_out",
@@ -359,6 +484,16 @@ def send_compliant_sms(
         result["reason_code"] = "opted_out"
         result["detail"] = "SMS cannot be sent because this phone number is opted out or not consented."
         contractor = contractor or consent.contractor or getattr(consent.homeowner, "created_by", None)
+    elif not result["blocked"]:
+        preference_allowed, preference_reason = _preference_allows_sms(
+            homeowner=related.get("homeowner") or getattr(consent, "homeowner", None),
+            category=category,
+        )
+        if not preference_allowed:
+            result["blocked"] = True
+            result["reason_code"] = preference_reason
+            result["detail"] = "SMS cannot be sent because notification preferences do not allow SMS for this update."
+            contractor = contractor or consent.contractor or getattr(consent.homeowner, "created_by", None)
 
     if result["blocked"]:
         _log_sms_activity(
@@ -376,6 +511,8 @@ def send_compliant_sms(
                 "dedupe_key": dedupe_key,
                 "status": result["status"],
                 "reason_code": result["reason_code"],
+                "email_fallback_decision": "recommended",
+                "email_fallback_reason": result["reason_code"],
             },
         )
         return result

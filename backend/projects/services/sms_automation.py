@@ -253,6 +253,25 @@ def _build_decision_payload(
     }
 
 
+def _email_fallback_context(reason_code: str) -> dict[str, Any]:
+    return {
+        "email_fallback": {
+            "recommended": reason_code
+            in {
+                "no_consent",
+                "opted_out",
+                "sms_channel_disabled",
+                "sms_category_disabled",
+                "notifications_off",
+                "send_failed",
+                "twilio_config_missing",
+            },
+            "reason_code": reason_code,
+            "note": "Use email or portal notification when SMS is blocked or unavailable.",
+        }
+    }
+
+
 def _record_activity_for_suppression(
     *,
     contractor: Contractor | None,
@@ -431,7 +450,7 @@ def evaluate_sms_automation(
             phone_number_e164="",
             decision=decision,
             consent_snapshot=consent_snapshot,
-            metadata=decision_context,
+            metadata={**decision_context, **_email_fallback_context("missing_phone_number")},
         )
         _record_activity_for_suppression(
             contractor=ctx.get("contractor"),
@@ -462,7 +481,7 @@ def evaluate_sms_automation(
             phone_number_e164=phone_number_e164,
             decision=decision,
             consent_snapshot=consent_snapshot,
-            metadata=decision_context,
+            metadata={**decision_context, **_email_fallback_context("no_consent")},
         )
         return {**decision, "decision_id": decision_obj.id}
 
@@ -485,7 +504,7 @@ def evaluate_sms_automation(
             phone_number_e164=phone_number_e164,
             decision=decision,
             consent_snapshot=consent_snapshot,
-            metadata=decision_context,
+            metadata={**decision_context, **_email_fallback_context("opted_out")},
         )
         _record_activity_for_suppression(
             contractor=ctx.get("contractor"),
@@ -720,7 +739,11 @@ def evaluate_sms_automation(
         phone_number_e164=phone_number_e164,
         decision=decision,
         consent_snapshot=consent_snapshot,
-        metadata={**decision_context, "send_result": send_result},
+        metadata={
+            **decision_context,
+            "send_result": send_result,
+            **_email_fallback_context(decision["reason_code"]),
+        },
     )
     return {**decision, "decision_id": decision_obj.id}
 
@@ -764,6 +787,8 @@ def build_sms_automation_summary(*, contractor: Contractor | None = None, agreem
         "suppressed_sms_count_7d": window.filter(channel_decision=SMSAutomationDecision.ChannelDecision.SUPPRESSED).count(),
         "sent_sms_count_7d": window.filter(sent=True).count(),
         "deferred_sms_count_7d": window.filter(deferred=True).count(),
+        "failed_sms_count_7d": window.filter(reason_code__in=["send_failed", "twilio_error", "twilio_config_missing"]).count(),
+        "email_fallback_recommended_count_7d": window.filter(decision_context_json__email_fallback__recommended=True).count(),
     }
 
 

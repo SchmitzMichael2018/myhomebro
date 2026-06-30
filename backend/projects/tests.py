@@ -7695,6 +7695,59 @@ class SMSComplianceTests(TestCase):
         ).order_by("-id").first()
         self.assertIsNotNone(blocked_event)
         self.assertIn("No SMS consent", blocked_event.summary)
+        self.assertEqual(blocked_event.metadata.get("email_fallback_decision"), "recommended")
+
+    def test_legacy_sms_status_opt_out_blocks_modern_sender(self):
+        SMSConsentStatus.objects.create(
+            phone_number="+12105550002",
+            is_subscribed=False,
+            last_keyword_type=SMSConsentStatus.KEYWORD_OPT_OUT,
+            opted_out_at=timezone.now(),
+        )
+
+        result = send_compliant_sms(
+            self.homeowner.phone_number,
+            "Your agreement is ready.",
+            related_object=self.agreement,
+        )
+
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["reason_code"], "opted_out")
+        durable = SMSConsent.objects.get(phone_number_e164="+12105550002")
+        self.assertTrue(durable.opted_out)
+        self.assertFalse(durable.can_send_sms)
+
+    def test_customer_sms_preference_blocks_send_and_logs_email_fallback(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        CustomerNotificationPreference.objects.create(
+            customer_email=self.homeowner.email,
+            homeowner=self.homeowner,
+            channel_preferences={
+                "in_app_enabled": True,
+                "email_enabled": True,
+                "sms_enabled": False,
+            },
+        )
+
+        result = send_compliant_sms(
+            self.homeowner.phone_number,
+            "Your agreement is ready.",
+            related_object=self.agreement,
+        )
+
+        self.assertTrue(result["blocked"])
+        self.assertEqual(result["reason_code"], "sms_channel_disabled")
+        blocked_event = ContractorActivityEvent.objects.filter(
+            contractor=self.contractor,
+            event_type="sms_blocked",
+            metadata__phone="+12105550002",
+        ).latest("id")
+        self.assertEqual(blocked_event.metadata.get("email_fallback_decision"), "recommended")
+        self.assertEqual(blocked_event.metadata.get("email_fallback_reason"), "sms_channel_disabled")
 
     def test_stop_keyword_blocks_sending_and_logs_opt_out(self):
         set_sms_opt_in(
@@ -7881,6 +7934,19 @@ class SMSComplianceTests(TestCase):
                 metadata__phone="+12105550002",
             ).exists()
         )
+
+    @override_settings(TWILIO_REQUIRE_WEBHOOK_SIGNATURE=True, TWILIO_AUTH_TOKEN="test-token")
+    def test_inbound_webhook_rejects_missing_signature_when_strict(self):
+        response = self.client.post(
+            "/api/projects/twilio/inbound-sms/",
+            {
+                "From": "+12105550002",
+                "Body": "HELP",
+                "MessageSid": "SMHELPSTRICT",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
 
 
 class SMSAutomationTests(TestCase):

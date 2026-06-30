@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import os
 import logging
+import sys
 from typing import Iterable
 from urllib.parse import urlsplit, urlunsplit
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
 from django.utils import timezone
 
 from projects.models_sms import SMSConsentStatus
@@ -178,24 +180,35 @@ def handle_incoming_user_message(from_number: str, body: str, message_sid: str) 
 
 def validate_twilio_webhook_request(request) -> bool:
     """
-    Non-blocking request validation helper.
+    Twilio request validation helper.
 
-    If Twilio auth token or signature validation support is unavailable, we log and allow
-    the request so local/dev environments and staged rollouts keep working. Tighten this
-    in production once the deployed URL/signing configuration is finalized.
+    Local/dev and test environments may run without signed Twilio callbacks. Production
+    should set TWILIO_REQUIRE_WEBHOOK_SIGNATURE=True; when strict validation is enabled,
+    missing or invalid signatures are rejected.
     """
     signature = (request.headers.get("X-Twilio-Signature") or "").strip()
     auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", None) or os.getenv("TWILIO_AUTH_TOKEN")
+    strict = bool(
+        getattr(
+            settings,
+            "TWILIO_REQUIRE_WEBHOOK_SIGNATURE",
+            (not getattr(settings, "DEBUG", False) and "test" not in sys.argv),
+        )
+    )
 
     if not signature or not auth_token or RequestValidator is None:
-        logger.info(
+        log_method = logger.warning if strict else logger.info
+        log_method(
             "Twilio signature validation skipped",
             extra={
                 "has_signature": bool(signature),
                 "has_auth_token": bool(auth_token),
                 "validator_available": RequestValidator is not None,
+                "strict": strict,
             },
         )
+        if strict:
+            raise PermissionDenied("Twilio webhook signature validation is required.")
         return True
 
     try:
@@ -206,9 +219,13 @@ def validate_twilio_webhook_request(request) -> bool:
         valid = validator.validate(public_url, request.POST, signature)
         if not valid:
             logger.warning("Twilio signature validation failed", extra={"path": request.path})
+            if strict:
+                raise PermissionDenied("Invalid Twilio webhook signature.")
         return bool(valid)
     except Exception:
         logger.exception("Twilio signature validation error", extra={"path": request.path})
+        if strict:
+            raise PermissionDenied("Twilio webhook signature validation failed.")
         return True
 
 

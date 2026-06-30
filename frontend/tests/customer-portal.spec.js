@@ -1033,6 +1033,21 @@ const portalPayload = {
       email_enabled: true,
       sms_enabled: false,
     },
+    sms_status: {
+      phone_number_e164: "+12105551212",
+      sms_enabled: false,
+      sms_opted_out: false,
+      can_send_sms: false,
+      consent_on_file: false,
+      opted_in_at: null,
+      opted_out_at: null,
+      quiet_hours: {
+        enabled: true,
+        start_hour: 21,
+        end_hour: 8,
+        notice: "Most SMS notifications pause overnight unless the update is urgent.",
+      },
+    },
     frequency: "immediate",
     groups: {
       Projects: ["project_request_updates", "contractor_responses", "agreement_updates", "milestone_updates", "invoice_payment_updates"],
@@ -5599,6 +5614,10 @@ test("customer notification preferences save and reminder details show supplies"
   await expect(page.getByTestId("notification-category-maintenance_due_soon")).toBeChecked();
   await expect(page.getByTestId("notification-channel-email_enabled")).toBeChecked();
   await expect(page.getByTestId("notification-channel-sms_enabled")).not.toBeChecked();
+  await expect(page.getByTestId("customer-sms-status-panel")).toContainText("SMS status");
+  await expect(page.getByTestId("customer-sms-status-label")).toContainText("No SMS consent on file");
+  await expect(page.getByTestId("customer-sms-status-phone")).toContainText("+12105551212");
+  await expect(page.getByTestId("customer-sms-quiet-hours")).toContainText("pause overnight");
   await page.getByTestId("notification-category-maintenance_due_soon").uncheck();
   await page.getByTestId("notification-category-recommended_supplies").uncheck();
   await page.getByTestId("notification-channel-email_enabled").uncheck();

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from django.http import HttpResponse
+from django.core.exceptions import PermissionDenied
 from django.views.decorators.csrf import csrf_exempt
 from twilio.twiml.messaging_response import MessagingResponse
 
@@ -84,6 +85,16 @@ def sms_webhook(request):
             },
         )
         return _twiml_response(response_text)
+    except PermissionDenied:
+        logger.warning(
+            "Inbound Twilio SMS webhook rejected by signature validation",
+            extra={
+                "from_number": from_number,
+                "normalized_body": normalized_body,
+                "message_sid": message_sid,
+            },
+        )
+        raise
     except Exception:
         logger.exception(
             "Inbound Twilio SMS webhook failed",
