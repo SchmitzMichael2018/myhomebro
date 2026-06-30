@@ -7080,14 +7080,14 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Build and finish');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Final walkthrough');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).not.toContainText('No milestones found');
-  await expect(page.getByTestId('milestone-completed-badge-501')).toContainText('Completed');
+  await expect(page.getByTestId('milestone-status-501')).toContainText('Completed');
   await expect(page.getByTestId('milestone-progress-501')).toContainText('100%');
   await expect(page.getByTestId('milestone-progress-bar-501')).toHaveAttribute('style', /width: 100%/);
   await expect(page.getByTestId('milestone-payment-status-501')).toContainText('Paid');
   await expect(page.getByTestId('milestone-payment-status-501')).not.toContainText('Pending');
   await expect(page.getByTestId('milestone-progress-501')).not.toHaveText('0%');
   await expect(page.getByTestId('milestone-actions-501')).toContainText('View');
-  await expect(page.getByTestId('milestone-complete-action-502')).toContainText('Complete in Milestones');
+  await expect(page.getByTestId('milestone-complete-action-502')).toContainText('Complete Milestone');
   await expect(page.getByTestId('milestone-complete-action-502')).toHaveAttribute(
     'href',
     `/app/milestones?agreement=${workspaceId}&milestone=502`
@@ -7199,7 +7199,7 @@ test('agreement workspace routes active milestone action to milestone completion
   });
 
   await expect(page.getByTestId('agreement-operations-next-action')).toContainText('Complete Milestone');
-  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Complete in Milestones');
+  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Complete Milestone');
   await expect(page.getByTestId('agreement-overview-secondary-cta')).toHaveCount(0);
   await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('1 of 3 complete');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Paid');

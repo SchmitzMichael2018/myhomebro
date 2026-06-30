@@ -972,7 +972,7 @@ export default function MilestoneList() {
                                         const invoiceReason = getInvoiceBlockReason(m);
 
                                         const milestoneDisplay = getMilestoneDisplay(m);
-                                        const paymentDisplay = milestoneDisplay.paymentStatus;
+                                        const paymentDisplay = milestoneDisplay.paymentLabel;
                                         const statusPill =
                                           paymentDisplay === "Paid"
                                             ? "Paid"

@@ -2958,9 +2958,61 @@ export default function AgreementDetail({
         : milestoneDataKnown
           ? 'No milestones found'
           : 'No milestone data loaded';
-  const openInvoiceRows = (
-    Array.isArray(norm.invoices) ? norm.invoices : []
-  ).filter((invoice) => {
+  const invoiceRows = Array.isArray(norm.invoices) ? norm.invoices : [];
+  const invoiceRowsById = new Map(
+    invoiceRows
+      .map((invoice) => [
+        String(invoice?.id || invoice?.invoice_id || '').trim(),
+        invoice,
+      ])
+      .filter(([invoiceId]) => invoiceId)
+  );
+  const milestoneDisplaySource = (milestone) => {
+    if (!milestone || typeof milestone !== 'object') return milestone;
+    const existingInvoice =
+      milestone.invoice && typeof milestone.invoice === 'object'
+        ? milestone.invoice
+        : null;
+    const invoiceId = String(
+      milestone.invoice_id ||
+        (milestone.invoice && typeof milestone.invoice !== 'object'
+          ? milestone.invoice
+          : '') ||
+        ''
+    ).trim();
+    const matchedInvoice =
+      existingInvoice ||
+      (invoiceId ? invoiceRowsById.get(invoiceId) : null) ||
+      invoiceRows.find((invoice) => {
+        const invoiceMilestoneId = String(
+          invoice?.milestone_id ||
+            invoice?.milestone ||
+            invoice?.milestone?.id ||
+            ''
+        ).trim();
+        return invoiceMilestoneId && invoiceMilestoneId === String(milestone.id);
+      });
+    return matchedInvoice
+      ? {
+          ...milestone,
+          invoice: matchedInvoice,
+          invoice_status:
+            milestone.invoice_status ||
+            matchedInvoice.status ||
+            matchedInvoice.invoice_status,
+          invoice_paid:
+            milestone.invoice_paid ||
+            matchedInvoice.invoice_paid ||
+            matchedInvoice.status === 'paid',
+          paid_at: milestone.paid_at || matchedInvoice.paid_at,
+          escrow_released:
+            milestone.escrow_released || matchedInvoice.escrow_released,
+          escrow_released_at:
+            milestone.escrow_released_at || matchedInvoice.escrow_released_at,
+        }
+      : milestone;
+  };
+  const openInvoiceRows = invoiceRows.filter((invoice) => {
     const status = String(
       invoice?.status || invoice?.workflow_status || ''
     ).toLowerCase();
@@ -3185,7 +3237,7 @@ export default function AgreementDetail({
                     reason: `${activeMilestones.length} active milestone${activeMilestones.length === 1 ? '' : 's'} need progress or completion handling.`,
                     status: 'Work active',
                     effort: '5-15 min',
-                    cta: 'Complete in Milestones',
+                    cta: 'Complete Milestone',
                     href: milestoneCompletionUrl,
                     secondaryCta: hasActionablePayments
                       ? 'View Payment Details'
@@ -3757,7 +3809,9 @@ export default function AgreementDetail({
                       </thead>
                       <tbody className="divide-y divide-white/10">
                         {milestonePreviewRows.map((m, index) => {
-                          const display = getMilestoneDisplay(m);
+                          const display = getMilestoneDisplay(
+                            milestoneDisplaySource(m)
+                          );
                           const progress = display.displayProgressPercent;
                           const label = display.displayStatus;
                           return (
@@ -3780,7 +3834,6 @@ export default function AgreementDetail({
                                   data-testid={`milestone-preview-status-${m.id}`}
                                   className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(label)}`}
                                 >
-                                  {display.isCompleted ? '✓ ' : ''}
                                   {label}
                                 </span>
                               </td>
@@ -3811,7 +3864,7 @@ export default function AgreementDetail({
                                 data-testid={`milestone-preview-payment-${m.id}`}
                                 className="px-3 py-3 text-sky-100/80"
                               >
-                                {display.paymentStatus}
+                                {display.paymentLabel}
                               </td>
                             </tr>
                           );
@@ -3821,7 +3874,9 @@ export default function AgreementDetail({
                   </div>
                   <div className="mt-4 space-y-3 md:hidden">
                     {milestonePreviewRows.map((m, index) => {
-                      const display = getMilestoneDisplay(m);
+                      const display = getMilestoneDisplay(
+                        milestoneDisplaySource(m)
+                      );
                       const progress = display.displayProgressPercent;
                       return (
                         <div
@@ -3838,15 +3893,14 @@ export default function AgreementDetail({
                               </div>
                             </div>
                             <span
-                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(milestoneStatusLabel(m))}`}
+                              className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(display.statusLabel)}`}
                             >
-                              {display.isCompleted ? '✓ ' : ''}
                               {display.displayStatus}
                             </span>
                           </div>
                           <div className="mt-3 text-sm text-sky-100/80">
                             {progress}% / {formatMoney(m.amount)} /{' '}
-                            {display.paymentStatus}
+                            {display.paymentLabel}
                           </div>
                           <div className="mt-2 h-2 rounded-full bg-white/15">
                             <div
@@ -5298,19 +5352,18 @@ export default function AgreementDetail({
                 {milestones.map((m) => {
                   const refunded = isRefundedMilestone(m);
                   const amendmentBlocked = isMilestoneAmendmentBlocked(m);
-                  const display = getMilestoneDisplay(m);
-                  const label = display.displayStatus;
-                  const progress = display.displayProgressPercent;
+                  const displayMilestone = milestoneDisplaySource(m);
+                  const display = getMilestoneDisplay(displayMilestone, {
+                    agreementId: id,
+                    primaryActionUrl: milestoneCompletionUrlFor(m),
+                  });
+                  const label = display.statusLabel;
+                  const progress = display.progressPercent;
                   const milestoneViewUrl = milestoneViewUrlFor(m);
-                  const milestoneCompletionPath = milestoneCompletionUrlFor(m);
+                  const milestoneCompletionPath = display.primaryActionUrl;
                   const canCompleteInMilestones =
-                    m?.id && !display.isCompleted && !amendmentBlocked;
-                  const canRefundMilestone =
-                    display.isPaid &&
-                    (m?.refund_url ||
-                      m?.refundUrl ||
-                      m?.can_refund ||
-                      m?.refundable);
+                    display.canComplete && !amendmentBlocked;
+                  const canRefundMilestone = display.canRefund;
                   const refundUrl =
                     m?.refund_url ||
                     m?.refundUrl ||
@@ -5363,14 +5416,6 @@ export default function AgreementDetail({
                             <span className="font-semibold text-white">
                               {m.title}
                             </span>
-                            {display.isCompleted ? (
-                              <span
-                                data-testid={`milestone-completed-badge-${m.id}`}
-                                className="inline-flex items-center rounded-full border border-emerald-300/50 bg-emerald-400/15 px-2.5 py-1 text-[11px] font-extrabold text-emerald-100"
-                              >
-                                ✓ Completed
-                              </span>
-                            ) : null}
                           </div>
                           <div className="mt-1 text-xs font-semibold text-sky-100/65">
                             {formatMoney(m.amount)}
@@ -5381,12 +5426,11 @@ export default function AgreementDetail({
                           data-testid={`milestone-status-${m.id}`}
                           className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(label)}`}
                         >
-                          {display.isCompleted ? '✓ ' : ''}
                           {label}
                         </span>
                         <span
                           data-testid={`milestone-lifecycle-${m.id}`}
-                          className={`ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-extrabold ${milestoneLifecycleTone(
+                          className={`hidden items-center rounded-full border px-2 py-0.5 text-[11px] font-extrabold ${milestoneLifecycleTone(
                             lifecycleState
                           )}`}
                           title={`Timeline state: ${milestoneLifecycleLabel(lifecycleState)}`}
@@ -5397,19 +5441,19 @@ export default function AgreementDetail({
                           role={m.milestone_role}
                           projectMode={norm.project_mode}
                           milestone={m}
-                          className="ml-2"
+                          className="hidden"
                           dataTestId={`agreement-milestone-role-${m.id}`}
                           title={roleLabel}
                         />
                         <MilestoneSafetyBadges
                           projectMode={norm.project_mode}
                           milestone={m}
-                          className="ml-2"
+                          className="hidden"
                           dataTestId={`agreement-milestone-safety-${m.id}`}
                         />
                         <InspectionStatusBadge
                           status={m.inspection_status}
-                          className="ml-2"
+                          className="hidden"
                           dataTestId={`agreement-milestone-inspection-${m.id}`}
                         />
                         {amendmentBlocked ? (
@@ -5468,7 +5512,7 @@ export default function AgreementDetail({
                                 : 'text-white'
                             }`}
                           >
-                            {display.paymentStatus}
+                            {display.paymentLabel}
                           </div>
                         </div>
                         <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2">
@@ -5476,7 +5520,7 @@ export default function AgreementDetail({
                             Due
                           </div>
                           <div className="mt-1 font-semibold text-white">
-                            {m.due_date || m.completion_date || '-'}
+                            {display.dueLabel}
                           </div>
                         </div>
                         <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2">
@@ -5484,7 +5528,7 @@ export default function AgreementDetail({
                             Action State
                           </div>
                           <div className="mt-1 font-semibold text-white">
-                            {milestoneLifecycleLabel(lifecycleState)}
+                            {display.actionStateLabel}
                           </div>
                         </div>
                       </div>
@@ -5505,7 +5549,7 @@ export default function AgreementDetail({
                             href={milestoneCompletionPath}
                             className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
                           >
-                            Complete in Milestones
+                            {display.primaryActionLabel}
                           </a>
                         ) : null}
                         {canRefundMilestone ? (
