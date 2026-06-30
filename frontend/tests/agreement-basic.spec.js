@@ -7289,6 +7289,7 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
       {
         id: 702,
         agreement: workspaceId,
+        agreement_is_locked: true,
         order: 2,
         title: 'Target milestone to complete',
         amount: '7000.00',
@@ -7340,7 +7341,13 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
   await expect(page.getByTestId('milestone-modal-content')).toBeVisible();
   await expect(page.getByTestId('milestone-modal-content')).toHaveClass(/bg-white/);
   await expect(page.getByTestId('milestone-modal-content')).toContainText('Target milestone to complete');
-  await expect(page.getByTestId('milestone-deeplink-action-702')).toContainText('Complete');
+  await expect(page.getByTestId('milestone-deeplink-action-702')).toContainText('Review Milestone');
+  await expect(page.getByTestId('milestone-locked-explanation')).toContainText('This milestone is part of a signed agreement');
+  await expect(page.getByTestId('milestone-attachments-section')).toContainText('Add Completion Photos / Documents');
+  await expect(page.getByTestId('milestone-attachments-section')).toContainText('Upload photos, receipts, or documents');
+  await expect(page.getByTestId('milestone-request-change-helper')).toContainText('Use this if the milestone scope, price, or timing changed');
+  await expect(page.getByTestId('milestone-final-action-section')).toContainText('Final Action');
+  await expect(page.getByTestId('milestone-final-complete-action')).toContainText('Complete Milestone');
 
   await page.setViewportSize({ width: 390, height: 900 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

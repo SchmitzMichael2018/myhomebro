@@ -984,6 +984,9 @@ export default function MilestoneList() {
 
                                         const canRefund = canOpenRefundModalFromRow(m);
                                         const refundReason = getRefundBlockReason(m);
+                                        const isSignedLockedMilestone = Boolean(
+                                          m._signedLike || m.agreement_is_locked || m.agreement_locked
+                                        );
 
                                         return (
                                           <tr
@@ -1139,9 +1142,9 @@ export default function MilestoneList() {
                                                       setDetailOpen(true);
                                                     }}
                                                     className="px-3 py-2 text-xs rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold"
-                                                    title="Complete → Review"
+                                                    title={isSignedLockedMilestone ? "Review milestone completion details" : "Complete milestone"}
                                                   >
-                                                    ✓ Complete
+                                                    {isSignedLockedMilestone ? "Review Milestone" : "Complete Milestone"}
                                                   </button>
                                                 ) : isCompletedNotInvoiced(m) ? (
                                                   <>
@@ -1151,7 +1154,7 @@ export default function MilestoneList() {
                                                       className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-500 font-semibold cursor-default"
                                                       title="Already completed"
                                                     >
-                                                      ✓ Completed
+                                                      Completed
                                                     </button>
 
                                                     <button
@@ -1179,7 +1182,7 @@ export default function MilestoneList() {
                                                     className="px-3 py-2 text-xs rounded-md border border-gray-200 bg-gray-100 text-gray-400 font-semibold cursor-not-allowed"
                                                     title={completeReason || "Not eligible to complete"}
                                                   >
-                                                    ✓ Complete
+                                                    Complete
                                                   </button>
                                                 )}
 

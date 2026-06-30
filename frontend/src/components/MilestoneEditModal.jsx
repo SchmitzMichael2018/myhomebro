@@ -1,7 +1,7 @@
 // src/components/MilestoneEditModal.jsx
 // v2026-03-03 — FIX: allow completing milestones even when agreement is signed/locked
 // - Split "editReadOnly" (fields locked) from "actionReadOnly" (actions disabled)
-// - Signed/locked agreements: fields remain read-only, but ✓ Complete → Review is available
+// - Signed/locked agreements: fields remain read-only, but completion review is available
 // - Completed agreements + URL readonly (?readonly=1): still action-disabled (no Complete / Save / uploads / comments)
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
@@ -26,7 +26,7 @@ const fmtMoney = (n) => {
   return num.toLocaleString(undefined, { style: "currency", currency: "USD" });
 };
 
-// Normalize various input forms (Date/string) → "YYYY-MM-DD" or ""
+// Normalize various input forms (Date/string) to "YYYY-MM-DD" or ""
 function toDateOnly(v) {
   if (!v) return "";
   const s = String(v).trim();
@@ -203,7 +203,7 @@ export default function MilestoneEditModal({
   const navigate = useNavigate();
   const location = useLocation();
 
-  // ✅ URL-driven readonly override (used for Invoice → Milestone Detail)
+  // URL-driven readonly override (used for Invoice to Milestone Detail)
   const readonlyFromUrl = useMemo(() => {
     try {
       const qs = new URLSearchParams(location?.search || "");
@@ -290,7 +290,7 @@ export default function MilestoneEditModal({
    * - editReadOnly: disables editing fields (signed/completed/url-readonly)
    * - actionReadOnly: disables actions (completed/url-readonly ONLY)
    *
-   * Signed/locked should still allow "Complete → Review" (workflow), but keep fields view-only.
+   * Signed/locked should still allow completion review, but keep fields view-only.
    */
   const editReadOnly = lockedSigned || lockedCompleted || readonlyFromUrl;
   const actionReadOnly = lockedCompleted || readonlyFromUrl;
@@ -1059,11 +1059,14 @@ export default function MilestoneEditModal({
   const links = meta.links || {};
   const previewSignedUrl = links.previewSignedUrl || null;
 
+  const lockedSignedExplanation =
+    "This milestone is part of a signed agreement, so the milestone details cannot be edited directly. You can add completion notes, upload supporting files, or request a change if the scope needs to change.";
+
   const lockedBanner =
     lockedCompleted
       ? "This agreement is completed. View only — no amendments allowed."
       : lockedSigned
-      ? "This agreement is signed/locked. Milestones are view-only for editing. Use Request Change to route through an amendment."
+      ? lockedSignedExplanation
       : "";
 
   const gateBadge =
@@ -1115,7 +1118,7 @@ export default function MilestoneEditModal({
             aria-label="Close"
             title="Close"
           >
-            ✕
+            X
           </button>
         </div>
 
@@ -1123,8 +1126,8 @@ export default function MilestoneEditModal({
           {invoiceReadonlyBanner}
 
           {lockedBanner ? (
-            <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              <div className="font-semibold">Locked</div>
+            <div data-testid="milestone-locked-explanation" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <div className="font-semibold">{lockedSigned ? "Signed agreement milestone" : "Locked milestone"}</div>
               <div className="mt-1">
                 {lockedBanner}
                 {lockMessage ? (
@@ -1136,16 +1139,20 @@ export default function MilestoneEditModal({
                   <button
                     type="button"
                     onClick={() => setShowRequestChange((v) => !v)}
-                    className="rounded bg-amber-900 px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+                    className="rounded border border-amber-300 bg-white px-3 py-1.5 text-sm font-semibold text-amber-950 hover:bg-amber-100"
                   >
                     {showRequestChange ? "Hide Request Change" : "Request Change"}
                   </button>
+                  <p data-testid="milestone-request-change-helper" className="mt-2 text-xs leading-5 text-amber-900">
+                    Use this if the milestone scope, price, or timing changed from the signed agreement.
+                  </p>
                 </div>
               ) : null}
             </div>
           ) : null}
 
-          <div className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+          <section data-testid="milestone-status-section" className="mb-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+            <div className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Milestone Status</div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <div>
                 <span className="font-semibold">Customer</span>: {homeowner || "—"}
@@ -1215,10 +1222,10 @@ export default function MilestoneEditModal({
                 </span>
               )}
             </div>
-          </div>
+          </section>
 
           {showRequestChange && !lockedCompleted ? (
-            <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm">
+            <section data-testid="milestone-request-change-section" className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-3 py-3 text-sm">
               <div className="flex items-center justify-between">
                 <div className="font-semibold text-blue-900">Request Change</div>
                 <div className="text-xs text-blue-800">
@@ -1348,7 +1355,7 @@ export default function MilestoneEditModal({
                   </div>
                 </div>
               </div>
-            </div>
+            </section>
           ) : null}
 
           {Boolean(currentMilestone?.is_rework) ? (
@@ -1419,6 +1426,10 @@ export default function MilestoneEditModal({
             </div>
           ) : null}
 
+          <section className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+              {editReadOnly ? "Signed Scope Reference" : "Milestone Details"}
+            </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
               <label className="mb-1 block text-sm font-medium text-gray-700">
@@ -1507,6 +1518,7 @@ export default function MilestoneEditModal({
               />
             </div>
           </div>
+          </section>
 
           {/* ✅ Actions */}
           {!editReadOnly ? (
@@ -1546,10 +1558,10 @@ export default function MilestoneEditModal({
                 }`}
                 title={completionGate.ok ? "Submit completion for review." : completionGate.reason}
               >
-                ✓ Complete → Review
+                Complete Milestone
               </button>
             </div>
-          ) : (
+          ) : !lockedSigned ? (
             <div className="mt-4 flex items-center gap-2">
               <button
                 type="button"
@@ -1572,7 +1584,7 @@ export default function MilestoneEditModal({
                   }`}
                   title={completionGate.ok ? "Submit completion for review." : completionGate.reason}
                 >
-                  ✓ Complete → Review
+                  Complete Milestone
                 </button>
               ) : (
                 <div className="text-xs text-gray-500">
@@ -1580,16 +1592,29 @@ export default function MilestoneEditModal({
                 </div>
               )}
             </div>
-          )}
+          ) : null}
 
-          <div className="mt-6">
-            <div className="text-sm font-medium text-gray-700">Files</div>
+          <section data-testid="milestone-attachments-section" className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-semibold text-gray-800">Attachments</div>
+            <p className="mt-1 text-xs leading-5 text-gray-500">
+              Upload photos, receipts, or documents that support this milestone completion.
+            </p>
             <div className="mt-2 flex items-center gap-2">
-              <input
-                type="file"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
-                disabled={uploading || actionReadOnly}
-              />
+              <label
+                className={`inline-flex rounded bg-white px-3 py-1.5 text-sm font-semibold text-gray-800 ring-1 ring-gray-200 hover:bg-gray-100 ${
+                  uploading || actionReadOnly ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+                }`}
+              >
+                Add Completion Photos / Documents
+                <input
+                  type="file"
+                  className="sr-only"
+                  aria-label="Add Completion Photos / Documents"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                  disabled={uploading || actionReadOnly}
+                />
+              </label>
+              {file ? <span className="text-xs text-gray-600">{file.name}</span> : null}
               <button
                 onClick={uploadFile}
                 disabled={!file || uploading || actionReadOnly}
@@ -1666,10 +1691,10 @@ export default function MilestoneEditModal({
                 </button>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className="mt-6">
-            <div className="text-sm font-medium text-gray-700">Comments</div>
+          <section data-testid="milestone-completion-notes-section" className="mt-6 rounded-xl border border-slate-200 bg-white p-4">
+            <div className="text-sm font-semibold text-gray-800">Completion Notes</div>
 
             <div className="mt-2 max-h-40 overflow-y-auto rounded border bg-gray-50 p-2 text-xs">
               {loadingComments ? (
@@ -1703,7 +1728,7 @@ export default function MilestoneEditModal({
                 type="text"
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
-                placeholder={actionReadOnly ? "Read-only view — comments disabled" : "Add a comment…"}
+                placeholder={actionReadOnly ? "Read-only view - comments disabled" : "Add completion notes..."}
                 className={`flex-1 rounded border px-3 py-2 text-sm ${
                   actionReadOnly ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""
                 }`}
@@ -1728,7 +1753,40 @@ export default function MilestoneEditModal({
             <div className="mt-2 text-xs text-gray-500">
               Complete is disabled until agreement requirements are satisfied.
             </div>
-          </div>
+          </section>
+
+          {lockedSigned ? (
+            <section data-testid="milestone-final-action-section" className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-gray-800">Final Action</div>
+              <p className="mt-1 text-xs leading-5 text-gray-500">
+                Completion is available only when the existing signing, funding, and milestone rules allow it.
+              </p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded bg-gray-800 px-3 py-2 text-sm font-medium text-white hover:bg-black"
+                >
+                  Close
+                </button>
+                {canShowComplete ? (
+                  <button
+                    data-testid="milestone-final-complete-action"
+                    onClick={completeToReview}
+                    disabled={!completionGate.ok}
+                    className={`rounded px-3 py-2 text-sm font-semibold ${
+                      completionGate.ok
+                        ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                        : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                    }`}
+                    title={completionGate.ok ? "Submit completion for review." : completionGate.reason}
+                  >
+                    Complete Milestone
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
         </div>
       </div>
     </div>

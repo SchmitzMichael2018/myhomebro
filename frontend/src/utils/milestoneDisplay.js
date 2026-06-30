@@ -334,6 +334,11 @@ export function getMilestoneDisplay(milestone, options = {}) {
     milestone?.amendment_review_status !== 'pending' &&
     !milestone?.locked &&
     !milestone?.agreement_is_completed;
+  const isSignedLocked = !!(
+    milestone?.agreement_is_locked ||
+    milestone?.agreementIsLocked ||
+    milestone?.agreement_locked
+  );
   const primaryActionUrl =
     options.primaryActionUrl ||
     (agreementId
@@ -358,7 +363,9 @@ export function getMilestoneDisplay(milestone, options = {}) {
     dueTone: dueLabel === 'No due date' ? 'muted' : 'neutral',
     primaryActionLabel: isCompleted
       ? 'View Milestone'
-      : canComplete
+      : isSignedLocked
+        ? 'Review Milestone'
+        : canComplete
         ? 'Complete Milestone'
         : 'View Milestone',
     primaryActionUrl,
