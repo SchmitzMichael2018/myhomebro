@@ -56,6 +56,15 @@ import {
   assignAgreementToSubaccount,
   unassignAgreementFromSubaccount,
 } from '../api/assignments';
+import {
+  getMilestoneDisplay,
+  isMilestoneCompleted,
+  milestoneDisplayPaymentStatus,
+  milestoneDisplayProgressPercent,
+  milestoneDisplayStatus,
+  milestoneStatusKey as getMilestoneStatusKey,
+  milestoneStatusTone,
+} from '../utils/milestoneDisplay.js';
 
 const pick = (...vals) =>
   vals.find((v) => v !== undefined && v !== null && v !== '') ?? '';
@@ -124,136 +133,24 @@ const RefundedBadge = () => (
   </span>
 );
 
-const milestoneStatusLabel = (m) => {
-  const raw = String(pick(m?.status, m?.state) || '').trim();
-  const normalized = raw.toLowerCase();
-  if (
-    [
-      'completed',
-      'complete',
-      'approved',
-      'paid',
-      'earned',
-      'released',
-    ].includes(normalized) ||
-    isMilestoneComplete(m)
-  ) {
-    return 'Completed';
-  }
-  if (raw) return titleCase(raw);
-  if (m?.is_invoiced) return 'Invoiced';
-  return 'Incomplete';
-};
+const milestoneStatusLabel = (m) => milestoneDisplayStatus(m);
 
 function isMilestoneComplete(m) {
-  const status = milestoneStatusKey(m);
-  if (
-    [
-      'completed',
-      'complete',
-      'approved',
-      'paid',
-      'earned',
-      'released',
-      'cancelled',
-      'archived',
-    ].includes(status)
-  ) {
-    return true;
-  }
-  return (
-    !!m?.approved ||
-    !!m?.is_complete ||
-    !!m?.is_completed ||
-    !!m?.completed ||
-    !!(m?.completed_at || m?.completed_on || m?.completed_date)
-  );
+  return isMilestoneCompleted(m);
 }
 
-const milestoneStatusKey = (m) =>
-  String(
-    pick(
-      m?.workflow_status,
-      m?.lifecycle_state,
-      m?.milestone_lifecycle_state,
-      m?.status,
-      m?.state
-    ) || ''
-  )
-    .trim()
-    .toLowerCase();
+const milestoneStatusKey = (m) => getMilestoneStatusKey(m);
 
 function milestoneProgressPercent(m) {
-  const explicit = Number(
-    pick(m?.percent_complete, m?.progress_percent, m?.completion_percent, '')
-  );
-  if (Number.isFinite(explicit) && explicit >= 0) {
-    return Math.max(0, Math.min(100, Math.round(explicit)));
-  }
-  const status = milestoneStatusKey(m);
-  if (isMilestoneComplete(m)) return 100;
-  if (
-    status.includes('active') ||
-    status.includes('progress') ||
-    status.includes('started') ||
-    status.includes('submitted') ||
-    status.includes('review')
-  ) {
-    return 50;
-  }
-  return 0;
+  return milestoneDisplayProgressPercent(m);
 }
 
 function milestonePaymentStatus(m) {
-  const raw = String(
-    pick(
-      m?.payment_status,
-      m?.invoice_status,
-      m?.payout_status,
-      m?.draw_status,
-      ''
-    )
-  )
-    .trim()
-    .toLowerCase();
-  if (raw) return titleCase(raw);
-  const status = milestoneStatusKey(m);
-  if (
-    ['paid', 'released', 'earned'].includes(status) ||
-    m?.is_paid ||
-    m?.paid_at ||
-    m?.released_at ||
-    m?.payment_released_at
-  ) {
-    return 'Paid';
-  }
-  if (m?.is_invoiced || m?.invoice || m?.invoice_id || m?.draw_request_id) {
-    return 'Pending';
-  }
-  return 'Not requested';
+  return milestoneDisplayPaymentStatus(m);
 }
 
 function statusBadgeTone(label) {
-  const normalized = String(label || '').toLowerCase();
-  if (normalized.includes('complete') || normalized.includes('paid')) {
-    return 'border-emerald-200 bg-emerald-50 text-emerald-800';
-  }
-  if (
-    normalized.includes('active') ||
-    normalized.includes('progress') ||
-    normalized.includes('signed') ||
-    normalized.includes('funded')
-  ) {
-    return 'border-blue-200 bg-blue-50 text-blue-800';
-  }
-  if (
-    normalized.includes('pending') ||
-    normalized.includes('waiting') ||
-    normalized.includes('unpaid')
-  ) {
-    return 'border-amber-200 bg-amber-50 text-amber-800';
-  }
-  return 'border-slate-200 bg-slate-100 text-slate-700';
+  return milestoneStatusTone(label);
 }
 
 const isRefundedMilestone = (m) =>
@@ -3094,7 +2991,6 @@ export default function AgreementDetail({
   });
   const hasActionablePayments =
     openInvoiceRows.length > 0 || activeDrawRows.length > 0;
-  const milestoneCompletionUrl = `/app/milestones?agreement=${id}`;
   const paymentActionUrl = `/app/payments?agreement=${id}`;
   const pdfStatusLabel = norm.currentPdfUrl
     ? norm.currentPdfVersion != null
@@ -3165,6 +3061,13 @@ export default function AgreementDetail({
     milestones.find((milestone) => milestoneProgressPercent(milestone) < 100) ||
     milestones[0] ||
     null;
+  const milestoneCompletionUrlFor = (milestone = currentMilestone) =>
+    `/app/milestones?agreement=${id}${
+      milestone?.id ? `&milestone=${milestone.id}` : ''
+    }`;
+  const milestoneCompletionUrl = milestoneCompletionUrlFor(currentMilestone);
+  const milestoneViewUrlFor = (milestone) =>
+    milestone?.id ? `/app/milestones/${milestone.id}` : milestoneCompletionUrl;
   const currentMilestoneLabel = currentMilestone
     ? `${currentMilestone.order || milestones.indexOf(currentMilestone) + 1}. ${currentMilestone.title || 'Untitled milestone'}`
     : milestoneDataKnown
@@ -3269,7 +3172,7 @@ export default function AgreementDetail({
                   effort: '5-10 min',
                   cta: hasActionablePayments
                     ? 'View Payment Details'
-                    : 'Open Milestones',
+                    : 'Review milestones',
                   href: hasActionablePayments
                     ? paymentActionUrl
                     : milestoneCompletionUrl,
@@ -3282,7 +3185,7 @@ export default function AgreementDetail({
                     reason: `${activeMilestones.length} active milestone${activeMilestones.length === 1 ? '' : 's'} need progress or completion handling.`,
                     status: 'Work active',
                     effort: '5-15 min',
-                    cta: 'Open milestones',
+                    cta: 'Complete in Milestones',
                     href: milestoneCompletionUrl,
                     secondaryCta: hasActionablePayments
                       ? 'View Payment Details'
@@ -3298,7 +3201,7 @@ export default function AgreementDetail({
                         'Funding or direct-pay readiness is in place and the loaded milestone plan still has work to start.',
                       status: 'Ready to start',
                       effort: '5 min',
-                      cta: 'Open milestones',
+                      cta: 'Start in Milestones',
                       href: milestoneCompletionUrl,
                       secondaryCta: 'Review assignments',
                       secondaryTab: 'activity',
@@ -3334,7 +3237,7 @@ export default function AgreementDetail({
                               'At least one loaded milestone is still incomplete.',
                             status: 'Work in progress',
                             effort: '5-15 min',
-                            cta: 'Open milestones',
+                            cta: 'Manage in Milestones',
                             href: milestoneCompletionUrl,
                             secondaryCta: hasActionablePayments
                               ? 'View Payment Details'
@@ -3854,8 +3757,9 @@ export default function AgreementDetail({
                       </thead>
                       <tbody className="divide-y divide-white/10">
                         {milestonePreviewRows.map((m, index) => {
-                          const progress = milestoneProgressPercent(m);
-                          const label = milestoneStatusLabel(m);
+                          const display = getMilestoneDisplay(m);
+                          const progress = display.displayProgressPercent;
+                          const label = display.displayStatus;
                           return (
                             <tr key={m.id || `${m.title}-${index}`}>
                               <td className="px-3 py-3 text-sky-100/70">
@@ -3873,19 +3777,28 @@ export default function AgreementDetail({
                               </td>
                               <td className="px-3 py-3">
                                 <span
+                                  data-testid={`milestone-preview-status-${m.id}`}
                                   className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(label)}`}
                                 >
+                                  {display.isCompleted ? '✓ ' : ''}
                                   {label}
                                 </span>
                               </td>
                               <td className="px-3 py-3">
                                 <div className="flex items-center gap-2">
-                                  <span className="w-10 text-xs font-semibold text-sky-100">
+                                  <span
+                                    data-testid={`milestone-preview-progress-${m.id}`}
+                                    className="w-10 text-xs font-semibold text-sky-100"
+                                  >
                                     {progress}%
                                   </span>
                                   <div className="h-2 w-24 rounded-full bg-white/15">
                                     <div
-                                      className="h-2 rounded-full bg-blue-600"
+                                      className={`h-2 rounded-full ${
+                                        display.isCompleted
+                                          ? 'bg-emerald-500'
+                                          : 'bg-blue-500'
+                                      }`}
                                       style={{ width: `${progress}%` }}
                                     />
                                   </div>
@@ -3894,8 +3807,11 @@ export default function AgreementDetail({
                               <td className="px-3 py-3 font-semibold text-white">
                                 {formatMoney(m.amount)}
                               </td>
-                              <td className="px-3 py-3 text-sky-100/80">
-                                {milestonePaymentStatus(m)}
+                              <td
+                                data-testid={`milestone-preview-payment-${m.id}`}
+                                className="px-3 py-3 text-sky-100/80"
+                              >
+                                {display.paymentStatus}
                               </td>
                             </tr>
                           );
@@ -3905,7 +3821,8 @@ export default function AgreementDetail({
                   </div>
                   <div className="mt-4 space-y-3 md:hidden">
                     {milestonePreviewRows.map((m, index) => {
-                      const progress = milestoneProgressPercent(m);
+                      const display = getMilestoneDisplay(m);
+                      const progress = display.displayProgressPercent;
                       return (
                         <div
                           key={m.id || `${m.title}-${index}`}
@@ -3923,12 +3840,23 @@ export default function AgreementDetail({
                             <span
                               className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(milestoneStatusLabel(m))}`}
                             >
-                              {milestoneStatusLabel(m)}
+                              {display.isCompleted ? '✓ ' : ''}
+                              {display.displayStatus}
                             </span>
                           </div>
                           <div className="mt-3 text-sm text-sky-100/80">
                             {progress}% / {formatMoney(m.amount)} /{' '}
-                            {milestonePaymentStatus(m)}
+                            {display.paymentStatus}
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-white/15">
+                            <div
+                              className={`h-2 rounded-full ${
+                                display.isCompleted
+                                  ? 'bg-emerald-500'
+                                  : 'bg-blue-500'
+                              }`}
+                              style={{ width: `${progress}%` }}
+                            />
                           </div>
                         </div>
                       );
@@ -4492,16 +4420,20 @@ export default function AgreementDetail({
 
       <div
         data-testid="agreement-workspace-panel-signatures"
-        className={workspaceTab === 'signatures' ? 'space-y-4' : 'hidden'}
+        className={
+          workspaceTab === 'signatures'
+            ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
+            : 'hidden'
+        }
       >
         <WorkflowHint hint={agreementHint} testId="agreement-detail-hint" />
 
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm">
           <div className="mb-3">
-            <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-sky-100/60">
               Primary Actions
             </h3>
-            <div className="mt-1 text-sm text-slate-600">
+            <div className="mt-1 text-sm text-sky-100/70">
               Handle signatures, documents, and the next key job action from one
               place.
             </div>
@@ -4565,7 +4497,7 @@ export default function AgreementDetail({
               type="button"
               data-testid="agreement-support-button"
               onClick={() => setSupportOpen(true)}
-              className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-white/15"
             >
               Support
             </button>
@@ -4575,7 +4507,7 @@ export default function AgreementDetail({
                 data-testid="invite-subcontractor-button"
                 type="button"
                 onClick={() => setInviteFormOpen((open) => !open)}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-white/15"
               >
                 {inviteFormOpen ? 'Close Invite Form' : 'Invite Subcontractor'}
               </button>
@@ -4625,37 +4557,37 @@ export default function AgreementDetail({
 
         <section
           data-testid="agreement-signatures-pdf-history"
-          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          className="rounded-2xl border border-white/10 bg-white/10 p-5 shadow-sm"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="text-lg font-semibold text-slate-950">
+              <h3 className="text-lg font-semibold text-white">
                 PDF History
               </h3>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-sky-100/70">
                 Current and historical agreement PDFs are available here with
                 signatures.
               </p>
             </div>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+            <span className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100">
               {norm.pdfVersions?.length
                 ? `${norm.pdfVersions.length} version${norm.pdfVersions.length === 1 ? '' : 's'}`
                 : 'No history yet'}
             </span>
           </div>
 
-          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="mt-4 rounded-xl border border-white/10 bg-[#041735]/80 p-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="text-sm font-semibold text-slate-950">
+                <div className="text-sm font-semibold text-white">
                   Current PDF{' '}
                   {norm.currentPdfVersion != null ? (
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-sky-100/60">
                       (v{norm.currentPdfVersion})
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-1 text-xs text-slate-500">
+                <div className="mt-1 text-xs text-sky-100/60">
                   {norm.currentPdfUrl
                     ? 'Latest stored PDF is available.'
                     : 'No current PDF URL available yet.'}
@@ -4702,22 +4634,22 @@ export default function AgreementDetail({
                 return (
                   <div
                     key={v.id ?? `${verNum}-${v.created_at ?? ''}`}
-                    className="rounded-xl border border-slate-200 bg-white p-3"
+                    className="rounded-xl border border-white/10 bg-[#041735]/80 p-3"
                   >
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
-                        <div className="text-sm font-semibold text-slate-950">
+                        <div className="text-sm font-semibold text-white">
                           v{verNum || '-'}{' '}
                           {kind ? (
-                            <span className="ml-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
+                            <span className="ml-2 rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
                               {kind}
                             </span>
                           ) : null}
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs text-sky-100/60">
                           Created: {fmtDateTime(v?.created_at) || '-'}
                         </div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="mt-1 text-xs text-sky-100/60">
                           {v?.signed_by_contractor
                             ? 'Contractor signed'
                             : 'Contractor not signed'}{' '}
@@ -4762,7 +4694,7 @@ export default function AgreementDetail({
               })}
             </div>
           ) : (
-            <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="mt-3 rounded-xl border border-dashed border-white/15 bg-white/10 px-4 py-3 text-sm text-sky-100/70">
               No historical PDF versions found yet.
             </div>
           )}
@@ -4771,14 +4703,18 @@ export default function AgreementDetail({
 
       <div
         data-testid="agreement-workspace-panel-activity"
-        className={workspaceTab === 'activity' ? 'space-y-4' : 'hidden'}
+        className={
+          workspaceTab === 'activity'
+            ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
+            : 'hidden'
+        }
       >
         <section className="space-y-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">
+            <h3 className="text-lg font-semibold text-white">
               Team & Assignments
             </h3>
-            <div className="mt-1 text-sm text-slate-600">
+            <div className="mt-1 text-sm text-sky-100/70">
               Manage who owns the agreement and who is helping deliver the work.
             </div>
           </div>
@@ -4798,12 +4734,14 @@ export default function AgreementDetail({
           {isContractor && (
             <div
               data-testid="subcontractor-section"
-              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4"
+              className="rounded-2xl border border-white/10 bg-white/10 p-6 shadow-sm space-y-4"
             >
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div>
-                  <h3 className="text-lg font-semibold">Subcontractors</h3>
-                  <div className="text-xs text-gray-500">
+                  <h3 className="text-lg font-semibold text-white">
+                    Subcontractors
+                  </h3>
+                  <div className="text-xs text-sky-100/60">
                     Invite collaborators for this agreement. Financial controls
                     stay with the contractor owner.
                   </div>
@@ -4811,15 +4749,15 @@ export default function AgreementDetail({
               </div>
 
               {inviteFormOpen && (
-                <div className="rounded border bg-gray-50 p-4 grid gap-3 md:grid-cols-2">
+                <div className="rounded border border-white/10 bg-[#041735]/80 p-4 grid gap-3 md:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1">
+                    <label className="block text-sm font-medium mb-1 text-sky-100">
                       Email
                     </label>
                     <input
                       data-testid="subcontractor-email-input"
                       type="email"
-                      className="w-full rounded border px-3 py-2 text-sm"
+                      className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                       value={invitationForm.invite_email}
                       onChange={(e) =>
                         setInvitationForm((prev) => ({
@@ -4831,11 +4769,11 @@ export default function AgreementDetail({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1">
+                    <label className="block text-sm font-medium mb-1 text-sky-100">
                       Name
                     </label>
                     <input
-                      className="w-full rounded border px-3 py-2 text-sm"
+                      className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                       value={invitationForm.invite_name}
                       onChange={(e) =>
                         setInvitationForm((prev) => ({
@@ -4999,12 +4937,16 @@ export default function AgreementDetail({
 
       <div
         data-testid="agreement-workspace-panel-documents"
-        className={workspaceTab === 'documents' ? 'space-y-4' : 'hidden'}
+        className={
+          workspaceTab === 'documents'
+            ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
+            : 'hidden'
+        }
       >
         <section className="space-y-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Documents</h3>
-            <div className="mt-1 text-sm text-slate-600">
+            <h3 className="text-lg font-semibold text-white">Documents</h3>
+            <div className="mt-1 text-sm text-sky-100/70">
               Supporting attachments and warranty records stay here. Agreement
               PDF history is available under Signatures & PDF.
             </div>
@@ -5012,17 +4954,17 @@ export default function AgreementDetail({
 
           <div
             data-testid="agreement-warranties-section"
-            className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-4"
+            className="rounded-2xl border border-white/10 bg-white/10 p-6 shadow-sm space-y-4"
           >
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <h3
                   data-testid="agreement-warranties-heading"
-                  className="text-lg font-semibold"
+                  className="text-lg font-semibold text-white"
                 >
                   Warranty Records
                 </h3>
-                <div className="text-xs text-gray-500">
+                <div className="text-xs text-sky-100/60">
                   Phase 1 records active warranty coverage linked to this
                   agreement. It does not change the signed PDF warranty
                   snapshot.
@@ -5042,14 +4984,14 @@ export default function AgreementDetail({
             </div>
 
             {warrantyEditorOpen && (
-              <div className="rounded border bg-gray-50 p-4 grid gap-3 md:grid-cols-2">
+              <div className="rounded border border-white/10 bg-[#041735]/80 p-4 grid gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 text-sky-100">
                     Title
                   </label>
                   <input
                     data-testid="warranty-title-input"
-                    className="w-full rounded border px-3 py-2 text-sm"
+                    className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.title}
                     onChange={(e) =>
                       setWarrantyForm((prev) => ({
@@ -5062,11 +5004,11 @@ export default function AgreementDetail({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 text-sky-100">
                     Coverage Details
                   </label>
                   <textarea
-                    className="w-full rounded border px-3 py-2 text-sm"
+                    className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     rows={4}
                     value={warrantyForm.coverage_details}
                     onChange={(e) =>
@@ -5080,11 +5022,11 @@ export default function AgreementDetail({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 text-sky-100">
                     Exclusions
                   </label>
                   <textarea
-                    className="w-full rounded border px-3 py-2 text-sm"
+                    className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     rows={3}
                     value={warrantyForm.exclusions}
                     onChange={(e) =>
@@ -5098,11 +5040,11 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 text-sky-100">
                     Start Date
                   </label>
                   <input
-                    className="w-full rounded border px-3 py-2 text-sm"
+                    className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     type="date"
                     value={warrantyForm.start_date}
                     onChange={(e) =>
@@ -5115,11 +5057,11 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 text-sky-100">
                     End Date
                   </label>
                   <input
-                    className="w-full rounded border px-3 py-2 text-sm"
+                    className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     type="date"
                     value={warrantyForm.end_date}
                     onChange={(e) =>
@@ -5132,11 +5074,11 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 text-sky-100">
                     Status
                   </label>
                   <select
-                    className="w-full rounded border px-3 py-2 text-sm"
+                    className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.status}
                     onChange={(e) =>
                       setWarrantyForm((prev) => ({
@@ -5152,11 +5094,11 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 text-sky-100">
                     Applies To
                   </label>
                   <select
-                    className="w-full rounded border px-3 py-2 text-sm"
+                    className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.applies_to}
                     onChange={(e) =>
                       setWarrantyForm((prev) => ({
@@ -5179,7 +5121,7 @@ export default function AgreementDetail({
                       setWarrantyEditorOpen(false);
                       resetWarrantyForm();
                     }}
-                    className="px-4 py-2 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    className="px-4 py-2 rounded border border-white/15 bg-white/10 text-sky-100 hover:bg-white/15"
                   >
                     Cancel
                   </button>
@@ -5201,11 +5143,11 @@ export default function AgreementDetail({
             )}
 
             {warrantiesLoading ? (
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-sky-100/70">
                 Loading warranty records...
               </div>
             ) : warranties.length === 0 ? (
-              <div className="text-sm text-gray-500">
+              <div className="text-sm text-sky-100/70">
                 No warranty records added yet.
               </div>
             ) : (
@@ -5214,28 +5156,28 @@ export default function AgreementDetail({
                   <div
                     key={warranty.id}
                     data-testid={`warranty-card-${warranty.id}`}
-                    className="rounded border p-4 bg-gray-50"
+                    className="rounded border border-white/10 bg-[#041735]/80 p-4"
                   >
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
-                        <div className="text-sm font-semibold text-gray-900">
+                        <div className="text-sm font-semibold text-white">
                           {warranty.title}
                         </div>
-                        <div className="mt-1 text-xs text-gray-500">
+                        <div className="mt-1 text-xs text-sky-100/60">
                           {warranty.applies_to
                             ? `Applies to: ${String(warranty.applies_to)
                                 .replaceAll('_', ' ')
                                 .replace(/^\w/, (c) => c.toUpperCase())}`
                             : 'Applies to: -'}
                         </div>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-sky-100/60">
                           {warranty.start_date || '-'} to{' '}
                           {warranty.end_date || '-'}
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <span className="inline-flex rounded-full border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-700">
+                        <span className="inline-flex rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-xs font-semibold text-sky-100">
                           {String(warranty.status || 'active')
                             .replaceAll('_', ' ')
                             .replace(/^\w/, (c) => c.toUpperCase())}
@@ -5307,40 +5249,46 @@ export default function AgreementDetail({
 
       <div
         data-testid="agreement-workspace-panel-milestones"
-        className={workspaceTab === 'milestones' ? 'space-y-4' : 'hidden'}
+        className={
+          workspaceTab === 'milestones'
+            ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
+            : 'hidden'
+        }
       >
         {/* Milestones */}
         <section className="space-y-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Milestones</h3>
-            <div className="mt-1 text-sm text-slate-600">
+            <h3 className="text-lg font-semibold text-white">Milestones</h3>
+            <div className="mt-1 text-sm text-sky-100/70">
               Track execution, assignment overrides, review state, and payout
               readiness in one place.
             </div>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-white/10 p-6 shadow-sm space-y-3">
             <div className="flex items-end justify-between gap-3 flex-wrap">
               <div>
-                <h3 className="text-lg font-semibold">Milestone Control</h3>
+                <h3 className="text-lg font-semibold text-white">
+                  Milestone Control
+                </h3>
                 <div
                   data-testid="agreement-milestones-progress"
-                  className="mt-1 text-xs font-semibold text-slate-500"
+                  className="mt-1 text-xs font-semibold text-sky-100/60"
                 >
                   {milestoneProgressLabel}
                 </div>
               </div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-sky-100/60">
                 Assign individual milestones to override agreement assignment.
               </div>
             </div>
 
             {resolvedMilestones.loading ? (
-              <p className="text-gray-500">Loading milestones...</p>
+              <p className="text-sky-100/70">Loading milestones...</p>
             ) : resolvedMilestones.error ? (
-              <p className="text-rose-600">{resolvedMilestones.error}</p>
+              <p className="text-rose-200">{resolvedMilestones.error}</p>
             ) : !milestones.length ? (
-              <p className="text-gray-500">
+              <p className="text-sky-100/70">
                 {milestoneDataKnown
                   ? 'No milestones found.'
                   : 'No milestone data loaded yet.'}
@@ -5350,7 +5298,23 @@ export default function AgreementDetail({
                 {milestones.map((m) => {
                   const refunded = isRefundedMilestone(m);
                   const amendmentBlocked = isMilestoneAmendmentBlocked(m);
-                  const label = milestoneStatusLabel(m);
+                  const display = getMilestoneDisplay(m);
+                  const label = display.displayStatus;
+                  const progress = display.displayProgressPercent;
+                  const milestoneViewUrl = milestoneViewUrlFor(m);
+                  const milestoneCompletionPath = milestoneCompletionUrlFor(m);
+                  const canCompleteInMilestones =
+                    m?.id && !display.isCompleted && !amendmentBlocked;
+                  const canRefundMilestone =
+                    display.isPaid &&
+                    (m?.refund_url ||
+                      m?.refundUrl ||
+                      m?.can_refund ||
+                      m?.refundable);
+                  const refundUrl =
+                    m?.refund_url ||
+                    m?.refundUrl ||
+                    `${milestoneCompletionPath}&action=refund`;
                   const lifecycleState = String(
                     m.milestone_lifecycle_state ||
                       m.lifecycle_state ||
@@ -5387,13 +5351,39 @@ export default function AgreementDetail({
                     <div
                       key={m.id}
                       data-testid={`milestone-card-${m.id}`}
-                      className="border rounded-lg p-3 bg-gray-50"
+                      className={`rounded-xl border p-4 ${
+                        display.isCompleted
+                          ? 'border-emerald-300/40 bg-emerald-500/10'
+                          : 'border-white/10 bg-[#041735]/80'
+                      }`}
                     >
-                      <div className="text-sm">
-                        <span className="font-semibold">{m.title}</span> - $
-                        {toMoney(m.amount).toFixed(2)}
+                      <div className="flex flex-wrap items-start justify-between gap-3 text-sm">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-semibold text-white">
+                              {m.title}
+                            </span>
+                            {display.isCompleted ? (
+                              <span
+                                data-testid={`milestone-completed-badge-${m.id}`}
+                                className="inline-flex items-center rounded-full border border-emerald-300/50 bg-emerald-400/15 px-2.5 py-1 text-[11px] font-extrabold text-emerald-100"
+                              >
+                                ✓ Completed
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-1 text-xs font-semibold text-sky-100/65">
+                            {formatMoney(m.amount)}
+                          </div>
+                        </div>
                         {refunded ? <RefundedBadge /> : null}
-                        <span className="text-gray-500"> ({label})</span>
+                        <span
+                          data-testid={`milestone-status-${m.id}`}
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeTone(label)}`}
+                        >
+                          {display.isCompleted ? '✓ ' : ''}
+                          {label}
+                        </span>
                         <span
                           data-testid={`milestone-lifecycle-${m.id}`}
                           className={`ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-extrabold ${milestoneLifecycleTone(
@@ -5435,7 +5425,7 @@ export default function AgreementDetail({
                       {amendmentBlocked ? (
                         <div
                           data-testid={`milestone-amendment-block-message-${m.id}`}
-                          className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+                          className="mt-3 rounded-lg border border-amber-300/40 bg-amber-400/10 p-3 text-sm text-amber-100"
                         >
                           This milestone is affected by a pending de-scope
                           amendment. Completion submission and invoice/payment
@@ -5444,57 +5434,107 @@ export default function AgreementDetail({
                       ) : null}
 
                       <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/60">
                             Progress
                           </div>
-                          <div className="mt-1 font-semibold text-slate-900">
-                            {milestoneProgressPercent(m)}%
+                          <div
+                            data-testid={`milestone-progress-${m.id}`}
+                            className="mt-1 font-semibold text-white"
+                          >
+                            {progress}%
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-white/15">
+                            <div
+                              data-testid={`milestone-progress-bar-${m.id}`}
+                              className={`h-2 rounded-full ${
+                                display.isCompleted
+                                  ? 'bg-emerald-500'
+                                  : 'bg-blue-500'
+                              }`}
+                              style={{ width: `${progress}%` }}
+                            />
                           </div>
                         </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/60">
                             Payment
                           </div>
-                          <div className="mt-1 font-semibold text-slate-900">
-                            {milestonePaymentStatus(m)}
+                          <div
+                            data-testid={`milestone-payment-status-${m.id}`}
+                            className={`mt-1 font-semibold ${
+                              display.isPaid
+                                ? 'text-emerald-100'
+                                : 'text-white'
+                            }`}
+                          >
+                            {display.paymentStatus}
                           </div>
                         </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/60">
                             Due
                           </div>
-                          <div className="mt-1 font-semibold text-slate-900">
+                          <div className="mt-1 font-semibold text-white">
                             {m.due_date || m.completion_date || '-'}
                           </div>
                         </div>
-                        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
-                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <div className="rounded-lg border border-white/10 bg-white/10 px-3 py-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/60">
                             Action State
                           </div>
-                          <div className="mt-1 font-semibold text-slate-900">
+                          <div className="mt-1 font-semibold text-white">
                             {milestoneLifecycleLabel(lifecycleState)}
                           </div>
                         </div>
                       </div>
 
+                      <div
+                        data-testid={`milestone-actions-${m.id}`}
+                        className="mt-3 flex flex-wrap gap-2"
+                      >
+                        <a
+                          href={milestoneViewUrl}
+                          className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-white/15"
+                        >
+                          View
+                        </a>
+                        {canCompleteInMilestones ? (
+                          <a
+                            data-testid={`milestone-complete-action-${m.id}`}
+                            href={milestoneCompletionPath}
+                            className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                          >
+                            Complete in Milestones
+                          </a>
+                        ) : null}
+                        {canRefundMilestone ? (
+                          <a
+                            href={refundUrl}
+                            className="rounded-lg border border-rose-300/40 bg-rose-400/10 px-3 py-2 text-xs font-semibold text-rose-100 hover:bg-rose-400/15"
+                          >
+                            Refund
+                          </a>
+                        ) : null}
+                      </div>
+
                       <details
                         data-testid={`milestone-team-controls-${m.id}`}
-                        className="mt-3 rounded-xl border border-slate-200 bg-white p-3"
+                        className="mt-3 rounded-xl border border-white/10 bg-white/10 p-3"
                       >
-                        <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                        <summary className="cursor-pointer text-sm font-semibold text-white">
                           Advanced assignment controls
                         </summary>
 
-                        <div className="mt-3 text-sm text-gray-600">
-                          <span className="font-semibold text-gray-900">
+                        <div className="mt-3 text-sm text-sky-100/70">
+                          <span className="font-semibold text-white">
                             Assigned Worker:
                           </span>{' '}
                           {m.assigned_worker_display || 'Unassigned'}
                         </div>
 
-                        <div className="mt-2 text-sm text-gray-600">
-                          <span className="font-semibold text-gray-900">
+                        <div className="mt-2 text-sm text-sky-100/70">
+                          <span className="font-semibold text-white">
                             Reviewer:
                           </span>{' '}
                           {m.reviewer_display || 'Contractor Owner'}
@@ -5502,9 +5542,9 @@ export default function AgreementDetail({
 
                         <div
                           data-testid={`milestone-review-state-${m.id}`}
-                          className="mt-2 text-sm text-gray-600"
+                          className="mt-2 text-sm text-sky-100/70"
                         >
-                          <span className="font-semibold text-gray-900">
+                          <span className="font-semibold text-white">
                             Review:
                           </span>{' '}
                           {m.subcontractor_review_requested
@@ -5895,20 +5935,24 @@ export default function AgreementDetail({
 
       <div
         data-testid="agreement-workspace-panel-funding"
-        className={workspaceTab === 'funding' ? 'space-y-4' : 'hidden'}
+        className={
+          workspaceTab === 'funding'
+            ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
+            : 'hidden'
+        }
       >
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div
             data-testid="agreement-funding-status"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm"
           >
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">
               Funding Status
             </div>
-            <div className="mt-2 text-lg font-semibold text-slate-950">
+            <div className="mt-2 text-lg font-semibold text-white">
               {fundingStatusLabel}
             </div>
-            <div className="mt-1 text-xs text-slate-500">
+            <div className="mt-1 text-xs text-sky-100/60">
               {norm.isDirectPay
                 ? 'Direct Pay uses invoice pay links instead of escrow funding.'
                 : norm.isSigned
@@ -5918,43 +5962,43 @@ export default function AgreementDetail({
           </div>
           <div
             data-testid="agreement-payment-summary"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm"
           >
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">
               Payment Summary
             </div>
-            <div className="mt-2 text-lg font-semibold text-slate-950">
+            <div className="mt-2 text-lg font-semibold text-white">
               {formatMoney(norm.totalCost)}
             </div>
-            <div className="mt-1 text-xs text-slate-500">
+            <div className="mt-1 text-xs text-sky-100/60">
               {paymentModeLabel(norm.payment_mode)} / {paymentStructure || 'standard'}
             </div>
           </div>
           <div
             data-testid="agreement-outstanding-balance"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm"
           >
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">
               Outstanding Balance
             </div>
-            <div className="mt-2 text-lg font-semibold text-slate-950">
+            <div className="mt-2 text-lg font-semibold text-white">
               {formatMoney(outstandingBalanceTotal)}
             </div>
-            <div className="mt-1 text-xs text-slate-500">
+            <div className="mt-1 text-xs text-sky-100/60">
               From open invoices and active draw requests currently loaded.
             </div>
           </div>
           <div
             data-testid="agreement-invoice-summary"
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm"
           >
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/60">
               Invoice Summary
             </div>
-            <div className="mt-2 text-lg font-semibold text-slate-950">
+            <div className="mt-2 text-lg font-semibold text-white">
               {invoiceSummaryLabel}
             </div>
-            <div className="mt-1 text-xs text-slate-500">
+            <div className="mt-1 text-xs text-sky-100/60">
               Invoice logic is unchanged; this summarizes existing invoice rows.
             </div>
           </div>
@@ -5962,19 +6006,19 @@ export default function AgreementDetail({
 
         {/* Project Totals & Fee Summary (Contractor View) */}
         {!norm.isDirectPay && (
-          <section className="rounded-2xl border border-dashed border-gray-300 bg-gray-50 p-6 shadow-sm">
+          <section className="rounded-2xl border border-dashed border-white/15 bg-white/10 p-6 shadow-sm">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-semibold text-gray-900">
+              <h3 className="text-base font-semibold text-white">
                 Funding Status Detail
               </h3>
               {fundingPreview && (
-                <div className="text-[11px] text-gray-500 text-right space-y-0.5">
+                <div className="text-[11px] text-sky-100/60 text-right space-y-0.5">
                   {tierLabel && <div>{tierLabel}</div>}
                   {ratePercent && (
                     <div>Current platform rate: {ratePercent}% + $1</div>
                   )}
                   {fundingPreview.high_risk_applied && (
-                    <div className="text-[11px] text-amber-700">
+                    <div className="text-[11px] text-amber-100">
                       High-risk surcharge applied for this project type.
                     </div>
                   )}
@@ -5983,11 +6027,11 @@ export default function AgreementDetail({
             </div>
 
             {fundingLoading ? (
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-sky-100/65">
                 Loading fee &amp; escrow summary...
               </div>
             ) : fundingError ? (
-              <div className="text-xs text-red-600">{fundingError}</div>
+              <div className="text-xs text-rose-200">{fundingError}</div>
             ) : fundingPreview ? (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -6014,7 +6058,7 @@ export default function AgreementDetail({
                     value={formatMoney(fundingPreview.homeowner_escrow)}
                   />
                 </div>
-                <p className="mt-2 text-[11px] text-gray-500">
+                <p className="mt-2 text-[11px] text-sky-100/60">
                   This summary shows your estimated take-home after the
                   MyHomeBro platform fee. Stripe processing fees (card/ACH) may
                   slightly adjust the final payout. If these numbers don&apos;t
@@ -6023,7 +6067,7 @@ export default function AgreementDetail({
                 </p>
               </>
             ) : (
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-sky-100/65">
                 Fee and escrow detail is not available yet.
               </div>
             )}

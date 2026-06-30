@@ -7057,6 +7057,9 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Prep and mobilization');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Build and finish');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Paid');
+  await expect(page.getByTestId('milestone-preview-status-501')).toContainText('Completed');
+  await expect(page.getByTestId('milestone-preview-progress-501')).toContainText('100%');
+  await expect(page.getByTestId('milestone-preview-payment-501')).toContainText('Paid');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).not.toContainText('Assigned Worker');
   await expect(page.getByTestId('agreement-overview-timeline')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-documents-summary')).toBeVisible();
@@ -7069,20 +7072,34 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-workspace-nav-payments')).toHaveAttribute('href', '/app/payments');
   await expect(page.getByTestId('agreement-workspace-breadcrumb')).toContainText('Agreements');
   await page.getByTestId('agreement-workspace-tab-milestones').click();
+  await expect(page.getByTestId('agreement-workspace-panel-milestones')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-milestones-progress')).toContainText('1 of 3 complete');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Prep and mobilization');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Build and finish');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Final walkthrough');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).not.toContainText('No milestones found');
+  await expect(page.getByTestId('milestone-completed-badge-501')).toContainText('Completed');
+  await expect(page.getByTestId('milestone-progress-501')).toContainText('100%');
+  await expect(page.getByTestId('milestone-progress-bar-501')).toHaveAttribute('style', /width: 100%/);
+  await expect(page.getByTestId('milestone-payment-status-501')).toContainText('Paid');
+  await expect(page.getByTestId('milestone-progress-501')).not.toHaveText('0%');
+  await expect(page.getByTestId('milestone-actions-501')).toContainText('View');
+  await expect(page.getByTestId('milestone-complete-action-502')).toContainText('Complete in Milestones');
+  await expect(page.getByTestId('milestone-complete-action-502')).toHaveAttribute(
+    'href',
+    `/app/milestones?agreement=${workspaceId}&milestone=502`
+  );
   await expect(page.getByTestId('milestone-team-controls-501')).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('milestone-team-controls-501')).toContainText('Advanced assignment controls');
   await page.getByTestId('agreement-workspace-tab-activity').click();
+  await expect(page.getByTestId('agreement-workspace-panel-activity')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-workspace-panel-activity')).toContainText('Assign Entire Agreement');
   await page.getByTestId('agreement-workspace-tab-overview').click();
   await expect(page.getByTestId('agreement-workspace-tab-activity')).toContainText('Team & Assignments');
   await expect(page.getByTestId('agreement-workspace-tabs')).not.toContainText('Activity');
 
   await page.getByTestId('agreement-workspace-tab-funding').click();
+  await expect(page.getByTestId('agreement-workspace-panel-funding')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-funding-status')).toBeVisible();
   await expect(page.getByTestId('agreement-payment-summary')).toContainText('$6,400.00');
   await expect(page.getByTestId('agreement-outstanding-balance')).toContainText('$1,250.00');
@@ -7091,6 +7108,7 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-workspace-panel-funding')).not.toContainText('Draw Requests');
 
   await page.getByTestId('agreement-workspace-tab-signatures').click();
+  await expect(page.getByTestId('agreement-workspace-panel-signatures')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-signatures-pdf-history')).toBeVisible();
   await expect(page.getByTestId('agreement-signatures-pdf-history')).toContainText('PDF History');
   await page.getByRole('button', { name: 'Preview PDF' }).click();
@@ -7100,6 +7118,7 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Download PDF');
 
   await page.getByTestId('agreement-workspace-tab-documents').click();
+  await expect(page.getByTestId('agreement-workspace-panel-documents')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-workspace-panel-documents')).not.toContainText('PDF Versions');
   await expect(page.getByTestId('agreement-workspace-panel-documents')).not.toContainText('PDF History');
 
@@ -7177,13 +7196,15 @@ test('agreement workspace routes active milestone action to milestone completion
   });
 
   await expect(page.getByTestId('agreement-operations-next-action')).toContainText('Complete Milestone');
-  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Open milestones');
+  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Complete in Milestones');
   await expect(page.getByTestId('agreement-overview-secondary-cta')).toHaveCount(0);
   await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('1 of 3 complete');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Paid');
 
   await page.getByTestId('agreement-overview-primary-cta').click();
-  await expect(page).toHaveURL(new RegExp(`/app/milestones\\?agreement=${workspaceId}$`));
+  await expect(page).toHaveURL(
+    new RegExp(`/app/milestones\\?agreement=${workspaceId}&milestone=602$`)
+  );
 });
 
 test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {
