@@ -6982,16 +6982,26 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
         agreement: workspaceId,
         order: 1,
         title: 'Prep and mobilization',
-        amount: '1400.00',
-        status: 'completed',
+        amount: '7000.00',
+        status: 'paid',
+        payment_status: 'paid',
+        paid_at: '2026-06-25T12:00:00Z',
       },
       {
         id: 502,
         agreement: workspaceId,
         order: 2,
         title: 'Build and finish',
-        amount: '5000.00',
+        amount: '7000.00',
         status: 'active',
+      },
+      {
+        id: 503,
+        agreement: workspaceId,
+        order: 3,
+        title: 'Final walkthrough',
+        amount: '6000.00',
+        status: 'pending',
       },
     ],
     fundingPreview: {
@@ -7042,22 +7052,27 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-overview-secondary-cta')).toContainText('Review PDF');
   await expect(page.getByTestId('agreement-project-snapshot')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('Signature needed');
-  await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('1 of 2 complete');
+  await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('1 of 3 complete');
   await expect(page.getByTestId('agreement-overview-status-summary')).not.toContainText('0 of 0');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Prep and mobilization');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Build and finish');
+  await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Paid');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).not.toContainText('Assigned Worker');
   await expect(page.getByTestId('agreement-overview-timeline')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-documents-summary')).toBeVisible();
+  await expect(page.getByTestId('agreement-overview-command-center')).toHaveClass(/bg-\[#061d42\]/);
+  await expect(page.getByTestId('agreement-project-snapshot')).toHaveClass(/bg-\[#061d42\]/);
+  await expect(page.getByTestId('agreement-overview-milestone-preview')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-workspace-nav-back')).toHaveAttribute('href', '/app/agreements');
   await expect(page.getByTestId('agreement-workspace-nav-customer')).toHaveAttribute('href', '/app/customers/1');
   await expect(page.getByTestId('agreement-workspace-nav-records')).toHaveAttribute('href', '/app/customers/records');
   await expect(page.getByTestId('agreement-workspace-nav-payments')).toHaveAttribute('href', '/app/payments');
   await expect(page.getByTestId('agreement-workspace-breadcrumb')).toContainText('Agreements');
   await page.getByTestId('agreement-workspace-tab-milestones').click();
-  await expect(page.getByTestId('agreement-milestones-progress')).toContainText('1 of 2 complete');
+  await expect(page.getByTestId('agreement-milestones-progress')).toContainText('1 of 3 complete');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Prep and mobilization');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Build and finish');
+  await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Final walkthrough');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).not.toContainText('No milestones found');
   await expect(page.getByTestId('milestone-team-controls-501')).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('milestone-team-controls-501')).toContainText('Advanced assignment controls');
@@ -7072,7 +7087,8 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-payment-summary')).toContainText('$6,400.00');
   await expect(page.getByTestId('agreement-outstanding-balance')).toContainText('$1,250.00');
   await expect(page.getByTestId('agreement-invoice-summary')).toContainText('1 open');
-  await expect(page.getByTestId('agreement-draw-requests')).toBeVisible();
+  await expect(page.getByTestId('agreement-workspace-panel-funding')).not.toContainText('SMS Status');
+  await expect(page.getByTestId('agreement-workspace-panel-funding')).not.toContainText('Draw Requests');
 
   await page.getByTestId('agreement-workspace-tab-signatures').click();
   await expect(page.getByTestId('agreement-signatures-pdf-history')).toBeVisible();
@@ -7097,6 +7113,77 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-workspace-header')).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
+});
+
+test('agreement workspace routes active milestone action to milestone completion flow', async ({
+  page,
+}) => {
+  const workspaceId = AGREEMENT_ID + 52;
+  const agreement = {
+    id: workspaceId,
+    agreement_id: workspaceId,
+    project_title: 'Active Milestone Project',
+    title: 'Active Milestone Project',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'funded',
+    workflow_status: 'funded',
+    total_cost: '20000.00',
+    signed_by_contractor: true,
+    signed_by_homeowner: true,
+    is_fully_signed: true,
+    escrow_funded: true,
+    invoices: [],
+    amendment_requests: [],
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [
+      {
+        id: 601,
+        agreement: workspaceId,
+        order: 1,
+        title: 'Completed paid milestone',
+        amount: '7000.00',
+        status: 'paid',
+        payment_status: 'paid',
+        paid_at: '2026-06-25T12:00:00Z',
+      },
+      {
+        id: 602,
+        agreement: workspaceId,
+        order: 2,
+        title: 'Window and insulation installation',
+        amount: '7000.00',
+        status: 'active',
+      },
+      {
+        id: 603,
+        agreement: workspaceId,
+        order: 3,
+        title: 'Final walkthrough',
+        amount: '6000.00',
+        status: 'pending',
+      },
+    ],
+  });
+
+  await page.goto(`/app/agreements/${workspaceId}/workspace`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('agreement-operations-next-action')).toContainText('Complete Milestone');
+  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Open milestones');
+  await expect(page.getByTestId('agreement-overview-secondary-cta')).toHaveCount(0);
+  await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('1 of 3 complete');
+  await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Paid');
+
+  await page.getByTestId('agreement-overview-primary-cta').click();
+  await expect(page).toHaveURL(new RegExp(`/app/milestones\\?agreement=${workspaceId}$`));
 });
 
 test('agreement wizard step 4 shows a custom warranty summary preview', async ({ page }) => {
