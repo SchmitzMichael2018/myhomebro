@@ -80,7 +80,10 @@ export function isMilestonePaid(milestone) {
     !!milestone?.is_paid ||
     !!milestone?.invoice_paid ||
     !!milestone?.invoice_paid_at ||
+    !!milestone?.escrow_released ||
+    !!milestone?.escrow_released_at ||
     !!milestone?.is_released ||
+    !!milestone?.release_at ||
     !!milestone?.paid_at ||
     !!milestone?.released_at ||
     !!milestone?.payment_released_at ||
@@ -138,7 +141,19 @@ export function milestoneDisplayPaymentStatus(milestone) {
   ) {
     return 'Paid';
   }
-  if (raw) return titleCase(raw);
+  if (raw) {
+    if (['pending', 'unpaid', 'payment_pending', 'invoice_pending'].includes(raw)) {
+      return milestone?.is_invoiced ||
+        milestone?.invoice ||
+        milestone?.invoice_id ||
+        milestone?.draw_request_id
+        ? 'Pending Payment'
+        : 'Not requested';
+    }
+    if (raw.includes('invoice') && raw.includes('paid')) return 'Paid';
+    if (raw.includes('payout') && raw.includes('complete')) return 'Paid';
+    return titleCase(raw);
+  }
 
   if (
     milestone?.is_invoiced ||
@@ -146,9 +161,24 @@ export function milestoneDisplayPaymentStatus(milestone) {
     milestone?.invoice_id ||
     milestone?.draw_request_id
   ) {
-    return 'Pending';
+    return 'Pending Payment';
   }
   return 'Not requested';
+}
+
+export function milestoneDisplayPhaseLabel(milestone) {
+  const paymentStatus = milestoneDisplayPaymentStatus(milestone);
+  if (paymentStatus === 'Paid') return 'Paid';
+  if (
+    milestone?.is_invoiced ||
+    milestone?.invoice ||
+    milestone?.invoice_id ||
+    milestone?.draw_request_id
+  ) {
+    return 'Invoiced / Pending Payment';
+  }
+  if (isMilestoneCompleted(milestone)) return 'Completed (Not Invoiced)';
+  return 'Incomplete';
 }
 
 export function milestoneDisplayStatus(milestone) {

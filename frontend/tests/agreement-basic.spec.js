@@ -7292,6 +7292,8 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
     'href',
     `/app/agreements/${workspaceId}/workspace?tab=milestones`
   );
+  await expect(page.getByTestId('milestone-row-701')).toContainText('Paid');
+  await expect(page.getByTestId('milestone-row-701')).not.toContainText('Pending');
   await expect(page.getByTestId('milestone-row-702')).toContainText('Target milestone to complete');
   await expect(page.getByTestId('milestone-row-702')).toHaveClass(/bg-blue-50/);
   await expect(page.getByTestId('milestone-row-801')).toHaveCount(0);

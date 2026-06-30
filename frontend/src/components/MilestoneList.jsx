@@ -9,6 +9,10 @@ import api from "../api";
 import toast from "react-hot-toast";
 import { useLocation, useNavigate } from "react-router-dom";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import {
+  getMilestoneDisplay,
+  milestoneDisplayPhaseLabel,
+} from "../utils/milestoneDisplay.js";
 import { ProjectModeBadge, PROJECT_MODE_OPTIONS, normalizeProjectModeFilter, normalizeProjectMode } from "./projectMode.jsx";
 import { MilestoneRoleBadge, MilestoneSafetyBadges, InspectionStatusBadge, deriveMilestoneRoleLabel } from "./milestoneRole.jsx";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
@@ -162,7 +166,22 @@ const isPaidFromInvoice = (m, invoicesMap) => {
 };
 
 const deriveMilestonePhaseLabel = (m, invoicesMap) => {
+  const invoiceId = getInvoiceIdFromMilestone(m);
+  const inv = invoiceId ? invoicesMap[String(invoiceId)] : null;
+  const displayMilestone = inv
+    ? {
+        ...m,
+        invoice_status: inv.status || inv.invoice_status || inv.state,
+        escrow_released: inv.escrow_released,
+        escrow_released_at: inv.escrow_released_at,
+        invoice_paid: String(inv.status || inv.invoice_status || inv.state || "").toLowerCase() === "paid",
+      }
+    : m;
+
   if (isPaidFromInvoice(m, invoicesMap)) return "Paid";
+  const helperLabel = milestoneDisplayPhaseLabel(displayMilestone);
+  if (helperLabel === "Invoiced / Pending Payment") return "Invoiced";
+  if (helperLabel) return helperLabel;
 
   const completed = m.completed === true;
   const invoiced = m.is_invoiced === true || !!getInvoiceIdFromMilestone(m);
@@ -952,7 +971,16 @@ export default function MilestoneList() {
                                         const completeReason = getCompleteBlockReason(m);
                                         const invoiceReason = getInvoiceBlockReason(m);
 
-                                        const statusPill = m._phaseLabel === "Paid" ? "Paid" : m._late ? "Late" : m._phaseLabel;
+                                        const milestoneDisplay = getMilestoneDisplay(m);
+                                        const paymentDisplay = milestoneDisplay.paymentStatus;
+                                        const statusPill =
+                                          paymentDisplay === "Paid"
+                                            ? "Paid"
+                                            : m._late
+                                              ? "Late"
+                                              : m._phaseLabel === "Invoiced"
+                                                ? "Invoiced / Pending Payment"
+                                                : m._phaseLabel;
 
                                         const canRefund = canOpenRefundModalFromRow(m);
                                         const refundReason = getRefundBlockReason(m);
