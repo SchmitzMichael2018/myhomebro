@@ -24,6 +24,7 @@ const invoiceStatusKey = (milestone) => {
       milestone?.invoice_status,
       invoice?.status,
       invoice?.invoice_status,
+      invoice?.display_status,
       invoice?.state,
       ''
     )
@@ -73,6 +74,9 @@ export function isMilestoneCompleted(milestone) {
 export function isMilestonePaid(milestone) {
   const status = milestoneStatusKey(milestone);
   const invoice = nestedInvoice(milestone);
+  const invoiceEvidenceStatus = normalizeKey(
+    pick(invoice?.display_status, invoice?.status, invoice?.invoice_status)
+  );
   const paymentStatus = normalizeKey(
     pick(
       milestone?.payment_status,
@@ -98,6 +102,15 @@ export function isMilestonePaid(milestone) {
       'invoice_paid',
       'invoiced_paid',
     ].includes(paymentStatus) ||
+    [
+      'paid',
+      'released',
+      'earned',
+      'settled',
+      'approved',
+      'complete',
+      'completed',
+    ].includes(invoiceEvidenceStatus) ||
     !!milestone?.is_paid ||
     !!milestone?.invoice_paid ||
     !!milestone?.invoice_paid_at ||

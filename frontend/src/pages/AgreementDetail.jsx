@@ -1699,6 +1699,8 @@ export default function AgreementDetail({
   const [paymentTargetDraw, setPaymentTargetDraw] = useState(null);
   const [externalPayments, setExternalPayments] = useState([]);
   const [externalPaymentsLoading, setExternalPaymentsLoading] = useState(false);
+  const [workspaceInvoices, setWorkspaceInvoices] = useState([]);
+  const [workspaceInvoicesLoaded, setWorkspaceInvoicesLoaded] = useState(false);
   const [workspaceMilestones, setWorkspaceMilestones] = useState([]);
   const [workspaceMilestonesLoading, setWorkspaceMilestonesLoading] =
     useState(false);
@@ -1987,6 +1989,43 @@ export default function AgreementDetail({
       cancelled = true;
     };
   }, [agreement?.milestones, agreement?.milestone_set, id]);
+
+  useEffect(() => {
+    if (!id) {
+      setWorkspaceInvoices([]);
+      setWorkspaceInvoicesLoaded(false);
+      return;
+    }
+
+    let cancelled = false;
+    const fetchWorkspaceInvoices = async () => {
+      try {
+        const { data } = await api.get('/projects/invoices/', {
+          params: { agreement: id, page_size: 500, _ts: Date.now() },
+        });
+        const rows = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.results)
+            ? data.results
+            : [];
+        if (!cancelled) {
+          setWorkspaceInvoices(rows);
+          setWorkspaceInvoicesLoaded(true);
+        }
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) {
+          setWorkspaceInvoices([]);
+          setWorkspaceInvoicesLoaded(false);
+        }
+      }
+    };
+
+    fetchWorkspaceInvoices();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
 
   const fetchSubcontractorInvitations = async () => {
     if (!id || !isContractor) return;
@@ -2958,7 +2997,18 @@ export default function AgreementDetail({
         : milestoneDataKnown
           ? 'No milestones found'
           : 'No milestone data loaded';
-  const invoiceRows = Array.isArray(norm.invoices) ? norm.invoices : [];
+  const embeddedInvoiceRows = Array.isArray(norm.invoices) ? norm.invoices : [];
+  const invoiceRows = [
+    ...embeddedInvoiceRows,
+    ...workspaceInvoices.filter((invoice) => {
+      const invoiceId = String(invoice?.id || invoice?.invoice_id || '').trim();
+      if (!invoiceId) return true;
+      return !embeddedInvoiceRows.some(
+        (existing) =>
+          String(existing?.id || existing?.invoice_id || '').trim() === invoiceId
+      );
+    }),
+  ];
   const invoiceRowsById = new Map(
     invoiceRows
       .map((invoice) => [
@@ -3337,8 +3387,10 @@ export default function AgreementDetail({
   const outstandingBalanceTotal = openInvoiceTotal + activeDrawTotal;
   const invoiceSummaryLabel = openInvoiceRows.length
     ? `${openInvoiceRows.length} open / ${formatMoney(openInvoiceTotal)}`
-    : norm.invoices?.length
-      ? `${norm.invoices.length} invoice${norm.invoices.length === 1 ? '' : 's'} tracked`
+    : invoiceRows.length
+      ? `${invoiceRows.length} invoice${invoiceRows.length === 1 ? '' : 's'} tracked`
+      : workspaceInvoicesLoaded
+        ? 'No invoices yet'
       : 'No invoices yet';
   const drawSummaryLabel = isProgressPayments
     ? activeDrawRows.length
@@ -6478,16 +6530,38 @@ export default function AgreementDetail({
         )}
 
         {!isProgressPayments ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h3 className="text-lg font-semibold mb-3">Invoices</h3>
-            {!norm.invoices || norm.invoices.length === 0 ? (
-              <p className="text-gray-500">No invoices yet.</p>
+          <div
+            data-testid="agreement-invoice-records"
+            className="rounded-2xl border border-white/10 bg-white/10 p-6 shadow-sm"
+          >
+            <h3 className="text-lg font-semibold mb-3 text-white">Invoices</h3>
+            {!invoiceRows.length ? (
+              <p className="text-sky-100/65">
+                {workspaceInvoicesLoaded
+                  ? 'No invoices yet.'
+                  : 'Loading invoice records...'}
+              </p>
             ) : (
-              <ul className="space-y-1">
-                {norm.invoices.map((inv) => (
-                  <li key={inv.id} className="text-sm">
-                    - #{inv.id} - ${toMoney(inv.amount).toFixed(2)} (
-                    {inv.status})
+              <ul className="space-y-2">
+                {invoiceRows.map((inv) => (
+                  <li
+                    key={inv.id || inv.invoice_id}
+                    className="rounded-xl border border-white/10 bg-[#041735]/80 px-4 py-3 text-sm text-sky-100"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="font-semibold text-white">
+                        #{inv.invoice_number || inv.id || inv.invoice_id}
+                      </span>
+                      <span>{formatMoney(inv.amount || inv.total_amount)}</span>
+                      <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
+                        {inv.display_status || inv.status || 'Tracked'}
+                      </span>
+                    </div>
+                    {inv.milestone_title ? (
+                      <div className="mt-1 text-xs text-sky-100/60">
+                        {inv.milestone_title}
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>

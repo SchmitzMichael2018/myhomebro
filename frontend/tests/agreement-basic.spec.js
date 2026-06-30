@@ -442,7 +442,7 @@ async function installStep2AutoDraftRoutes(
 
 async function installStep4FinalizeRoutes(
   page,
-  { agreement, milestones = [], fundingPreview = null, events = {} }
+  { agreement, milestones = [], invoices = null, fundingPreview = null, events = {} }
 ) {
   await installWizardAuthRoutes(page);
 
@@ -605,6 +605,19 @@ async function installStep4FinalizeRoutes(
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ results: milestones }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/invoices\/?(\?.*)?$/, async (route) => {
+    const invoiceRows = Array.isArray(invoices)
+      ? invoices
+      : Array.isArray(agreement?.invoices)
+        ? agreement.invoices
+        : [];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: invoiceRows }),
     });
   });
 
@@ -6968,9 +6981,7 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
         signed_by_homeowner: false,
       },
     ],
-    invoices: [
-      { id: 88, amount: '1250.00', status: 'unpaid' },
-    ],
+    invoices: [],
     amendment_requests: [],
   };
 
@@ -6986,7 +6997,6 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
         status: 'completed',
         payment_status: 'pending',
         invoice_status: 'pending',
-        paid_at: '2026-06-25T12:00:00Z',
       },
       {
         id: 502,
@@ -7003,6 +7013,31 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
         title: 'Final walkthrough',
         amount: '6000.00',
         status: 'pending',
+      },
+    ],
+    invoices: [
+      {
+        id: 77,
+        agreement: workspaceId,
+        agreement_id: workspaceId,
+        milestone_id: 501,
+        milestone_title: 'Prep and mobilization',
+        invoice_number: 'INV-77',
+        amount: '7000.00',
+        status: 'paid',
+        display_status: 'Paid',
+        escrow_released: true,
+        escrow_released_at: '2026-06-25T12:00:00Z',
+      },
+      {
+        id: 88,
+        agreement: workspaceId,
+        agreement_id: workspaceId,
+        milestone_id: 502,
+        milestone_title: 'Build and finish',
+        amount: '1250.00',
+        status: 'unpaid',
+        display_status: 'Unpaid',
       },
     ],
     fundingPreview: {
@@ -7107,6 +7142,9 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-payment-summary')).toContainText('$6,400.00');
   await expect(page.getByTestId('agreement-outstanding-balance')).toContainText('$1,250.00');
   await expect(page.getByTestId('agreement-invoice-summary')).toContainText('1 open');
+  await expect(page.getByTestId('agreement-invoice-records')).toContainText('INV-77');
+  await expect(page.getByTestId('agreement-invoice-records')).toContainText('Paid');
+  await expect(page.getByTestId('agreement-invoice-records')).toContainText('Build and finish');
   await expect(page.getByTestId('agreement-workspace-panel-funding')).not.toContainText('SMS Status');
   await expect(page.getByTestId('agreement-workspace-panel-funding')).not.toContainText('Draw Requests');
 
