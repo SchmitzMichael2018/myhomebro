@@ -38,6 +38,7 @@ const NO_AUTH_HEADER_PATHS = new Set([
   "/auth/login/",
   "/auth/refresh/",
   "/auth/register/",
+  "/accounts/auth/customer-register/",
   "/auth/password-reset/request/",
   "/auth/password-reset/confirm/",
   "/auth/password-reset/complete/",

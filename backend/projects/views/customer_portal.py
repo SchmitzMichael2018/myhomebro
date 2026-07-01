@@ -84,6 +84,7 @@ from projects.services.customer_notification_preferences import (
     notification_preferences_for_email,
     notification_preferences_payload,
 )
+from projects.services.customer_accounts import ensure_customer_identity_for_user
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorDiscoveryInvite, ContractorOpportunity
 from projects.models_dispute import Dispute
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
@@ -4986,7 +4987,7 @@ class CustomerPortalAccountView(APIView):
         if not email:
             return Response({"detail": "Your account does not have an email address."}, status=status.HTTP_400_BAD_REQUEST)
         if not _request_has_records(email):
-            return Response({"detail": "No customer records are connected to this account email yet."}, status=status.HTTP_404_NOT_FOUND)
+            ensure_customer_identity_for_user(request.user)
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_200_OK)
 
 

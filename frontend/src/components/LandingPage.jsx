@@ -162,6 +162,13 @@ export default function LandingPage() {
               <Sparkles className="h-4 w-4" aria-hidden="true" />
               Start a Project
             </button>
+            <button
+              type="button"
+              onClick={() => navigate("/create-account")}
+              className="hidden rounded-xl border border-amber-300/35 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60 sm:inline-flex"
+            >
+              Create Free Account
+            </button>
 
             {loginOpen ? (
               <LoginDropdown navigate={navigate} onLoginSelect={() => setLoginOpen(false)} />
@@ -215,6 +222,14 @@ export default function LandingPage() {
             >
               <Play className="h-5 w-5 text-amber-300" aria-hidden="true" />
               How It Works
+            </button>
+            <button
+              type="button"
+              data-testid="landing-create-free-account-button"
+              onClick={() => navigate("/create-account")}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-300/35 bg-amber-300/10 px-6 py-4 text-base font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+            >
+              Create Free Account
             </button>
           </div>
 
@@ -283,6 +298,16 @@ function LoginDropdown({ navigate, onLoginSelect }) {
             className="mt-3 w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/22 transition hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
           >
             Customer Log In
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              onLoginSelect?.();
+              navigate("/create-account");
+            }}
+            className="mt-3 w-full rounded-xl border border-amber-300/35 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+          >
+            Create Free Account
           </button>
         </div>
 

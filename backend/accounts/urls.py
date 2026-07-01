@@ -1,7 +1,7 @@
 # backend/accounts/urls.py
 
 from django.urls import path, include
-from .views import ContractorRegistrationView
+from .views import ContractorRegistrationView, CustomerRegistrationView
 from .email_verification_views import EmailVerificationView
 from .password_reset import (
     PasswordResetRequestView,
@@ -20,6 +20,11 @@ urlpatterns = [
         "auth/contractor-register/",
         ContractorRegistrationView.as_view(),
         name="contractor-register",
+    ),
+    path(
+        "auth/customer-register/",
+        CustomerRegistrationView.as_view(),
+        name="customer-register",
     ),
 
     # Email Verification -------------------------------------------------------

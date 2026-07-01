@@ -1,17 +1,52 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
+from django.core.mail import send_mail
 from django.db import transaction, IntegrityError
+from django.urls import NoReverseMatch, reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from rest_framework import serializers
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from projects.models import Contractor
+from projects.services.customer_accounts import (
+    get_or_create_customer_account_identity,
+    split_customer_name,
+)
 
 User = get_user_model()
 REQUIRE_EMAIL_VERIFICATION = getattr(
     settings, "ACCOUNTS_REQUIRE_EMAIL_VERIFICATION", True
 )
+
+
+def customer_accounts_require_email_verification() -> bool:
+    return getattr(settings, "CUSTOMER_ACCOUNTS_REQUIRE_EMAIL_VERIFICATION", True)
+
+
+def send_customer_account_verification_email(user) -> None:
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    try:
+        verify_url = reverse("accounts:verify_email", kwargs={"uidb64": uid, "token": token})
+    except NoReverseMatch:
+        verify_url = reverse("verify_email", kwargs={"uidb64": uid, "token": token})
+    full_url = f"{getattr(settings, 'SITE_URL', '').rstrip()}{verify_url}"
+    send_mail(
+        "Verify Your Email - MyHomeBro",
+        (
+            "Welcome to MyHomeBro!\n\n"
+            "Please verify your email address to finish setting up your customer account:\n"
+            f"{full_url}\n\n"
+            "-- MyHomeBro"
+        ),
+        getattr(settings, "DEFAULT_FROM_EMAIL", "info@myhomebro.com"),
+        [user.email],
+        fail_silently=False,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -242,6 +277,94 @@ class ContractorRegistrationSerializer(serializers.ModelSerializer):
 # ──────────────────────────────────────────────────────────────────────────────
 # Account Settings (Change Email / Password)
 # ──────────────────────────────────────────────────────────────────────────────
+
+class CustomerRegistrationSerializer(serializers.Serializer):
+    full_name = serializers.CharField(max_length=255)
+    email = serializers.EmailField()
+    phone_number = serializers.CharField(required=False, allow_blank=True, default="")
+    password = serializers.CharField(
+        write_only=True,
+        validators=[validate_password],
+        style={"input_type": "password"},
+        trim_whitespace=False,
+    )
+
+    def validate_email(self, value):
+        email = (value or "").strip().lower()
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("A MyHomeBro account with this email already exists.")
+        return email
+
+    def validate_full_name(self, value):
+        cleaned = (value or "").strip()
+        if not cleaned:
+            raise serializers.ValidationError("Enter your full name.")
+        return cleaned
+
+    def create(self, validated_data):
+        full_name = validated_data["full_name"].strip()
+        email = validated_data["email"].strip().lower()
+        phone = (validated_data.get("phone_number") or "").strip()
+        first_name, last_name = split_customer_name(full_name)
+
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    email=email,
+                    password=validated_data["password"],
+                    first_name=first_name,
+                    last_name=last_name,
+                )
+                require_verification = customer_accounts_require_email_verification()
+                user.is_active = not require_verification
+                user.is_verified = not require_verification
+                update_fields = ["is_active", "is_verified"]
+                if hasattr(user, "phone_number"):
+                    user.phone_number = phone
+                    update_fields.append("phone_number")
+                user.save(update_fields=update_fields)
+
+                homeowner, created = get_or_create_customer_account_identity(
+                    full_name=full_name,
+                    email=email,
+                    phone=phone,
+                )
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {"email": ["A MyHomeBro account with this email already exists."]}
+            )
+
+        self.homeowner = homeowner
+        self.homeowner_created = created
+        if customer_accounts_require_email_verification():
+            send_customer_account_verification_email(user)
+        return user
+
+    def to_representation(self, user):
+        homeowner = getattr(self, "homeowner", None)
+        payload = {
+            "ok": True,
+            "message": (
+                "Account created. Please check your email to verify your account."
+                if customer_accounts_require_email_verification()
+                else "Account created."
+            ),
+            "next_step": "verify_email" if customer_accounts_require_email_verification() else "add_property",
+            "user": PublicUserSerializer(user).data,
+            "customer": {
+                "id": getattr(homeowner, "id", None),
+                "full_name": getattr(homeowner, "full_name", ""),
+                "email": getattr(homeowner, "email", getattr(user, "email", "")),
+                "phone_number": getattr(homeowner, "phone_number", ""),
+                "created": bool(getattr(self, "homeowner_created", False)),
+            },
+        }
+        if user.is_active:
+            refresh = RefreshToken.for_user(user)
+            payload["refresh"] = str(refresh)
+            payload["access"] = str(refresh.access_token)
+        return payload
+
 
 class ChangeEmailSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True)

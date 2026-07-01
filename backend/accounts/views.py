@@ -6,7 +6,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 import logging
 
-from .serializers import ContractorRegistrationSerializer
+from .serializers import ContractorRegistrationSerializer, CustomerRegistrationSerializer
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -79,6 +79,21 @@ class ContractorRegistrationView(APIView):
 
     def post(self, request, *args, **kwargs):
         serializer = ContractorRegistrationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        user = serializer.save()
+        return Response(serializer.to_representation(user), status=status.HTTP_201_CREATED)
+
+
+class CustomerRegistrationView(APIView):
+    """
+    POST to create a homeowner/customer account without requiring a project.
+    Email verification is sent by the customer registration serializer.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        serializer = CustomerRegistrationSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()

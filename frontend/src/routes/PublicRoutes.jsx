@@ -34,6 +34,8 @@ import CustomerPortalPage from "../pages/CustomerPortalPage.jsx"; // /portal
 import ContractorClaimPage from "../pages/ContractorClaimPage.jsx";
 import TenantMaintenanceRequestPage from "../pages/TenantMaintenanceRequestPage.jsx";
 import TenantMaintenanceStatusPage from "../pages/TenantMaintenanceStatusPage.jsx";
+import CustomerAccountOnboardingPage from "../pages/CustomerAccountOnboardingPage.jsx";
+import EmailVerifiedPage from "../pages/EmailVerifiedPage.jsx";
 
 function PortalTokenRedirect() {
   const { token = "" } = useParams();
@@ -52,6 +54,8 @@ export default function PublicRoutes() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginForm />} />
       <Route path="/signup" element={<SignUpForm />} />
+      <Route path="/create-account" element={<CustomerAccountOnboardingPage />} />
+      <Route path="/email-verified" element={<EmailVerifiedPage />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
 
       {/* Public signature / magic links */}

@@ -2,7 +2,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.conf import settings
 from django.core.mail import send_mail
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes  # ✅ Corrected
 from django.contrib.auth.tokens import default_token_generator
@@ -37,7 +37,10 @@ def user_post_save_handler(sender, instance, created, **kwargs):
             try:
                 uid = urlsafe_base64_encode(force_bytes(instance.pk))
                 token = default_token_generator.make_token(instance)
-                verify_url = reverse('verify_email', kwargs={'uidb64': uid, 'token': token})
+                try:
+                    verify_url = reverse('accounts:verify_email', kwargs={'uidb64': uid, 'token': token})
+                except NoReverseMatch:
+                    verify_url = reverse('verify_email', kwargs={'uidb64': uid, 'token': token})
                 full_url = f"{settings.SITE_URL}{verify_url}"
                 
                 subject = "Verify Your Email - MyHomeBro"
