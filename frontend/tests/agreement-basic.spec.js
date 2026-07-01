@@ -7331,11 +7331,19 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
     'href',
     `/app/agreements/${workspaceId}/workspace?tab=milestones`
   );
+  await expect(page.getByTestId(`milestone-agreement-header-${workspaceId}`)).toContainText('Deep Linked Milestone Project');
+  await expect(page.getByTestId(`milestone-agreement-header-${workspaceId}`)).toContainText('Jordan Demo');
+  await expect(page.getByTestId(`milestone-agreement-header-${workspaceId}`)).toContainText('1 of 2');
   await expect(page.getByTestId('milestone-row-701')).toContainText('Paid');
   await expect(page.getByTestId('milestone-row-701')).not.toContainText('Pending');
+  await expect(page.getByTestId('milestone-row-701')).toContainText('Completed');
+  await expect(page.getByTestId('milestone-progress-bar-701')).toHaveAttribute('style', /width: 100%/);
+  await expect(page.getByTestId('milestone-actions-701')).not.toContainText('Complete Milestone');
   await expect(page.getByTestId('milestone-row-702')).toContainText('Target milestone to complete');
   await expect(page.getByTestId('milestone-row-702')).toHaveClass(/bg-blue-50/);
   await expect(page.getByTestId('milestone-row-801')).toHaveCount(0);
+  await expect(page.getByTestId('milestone-secondary-details-701')).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('milestone-row-701')).not.toContainText('Escrow funded');
   await expect(page.getByTestId('milestone-modal-backdrop')).toBeVisible();
   await expect(page.getByTestId('milestone-modal-backdrop')).toHaveClass(/bg-slate-950\/85/);
   await expect(page.getByTestId('milestone-modal-content')).toBeVisible();

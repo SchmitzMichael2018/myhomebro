@@ -765,6 +765,50 @@ export default function MilestoneList() {
     { key: "rework", label: "Rework Work Orders" },
   ];
 
+  const toneClasses = {
+    success: "border-emerald-300/40 bg-emerald-400/15 text-emerald-100",
+    active: "border-blue-300/40 bg-blue-400/15 text-blue-100",
+    warning: "border-amber-300/45 bg-amber-400/15 text-amber-100",
+    danger: "border-rose-300/45 bg-rose-400/15 text-rose-100",
+    muted: "border-white/10 bg-white/[0.06] text-sky-100/62",
+    neutral: "border-white/14 bg-white/[0.08] text-sky-100",
+  };
+
+  const chipClass = (tone = "neutral") =>
+    `inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-bold ${toneClasses[tone] || toneClasses.neutral}`;
+
+  const agreementProgress = (milestones = []) => {
+    const total = milestones.length;
+    const complete = milestones.filter((m) => getMilestoneDisplay(m).isCompleted).length;
+    const percent = total ? Math.round((complete / total) * 100) : 0;
+    return { total, complete, percent };
+  };
+
+  const agreementFundingLabel = (agreement) => {
+    const paymentMode = getPaymentMode(agreement);
+    if (paymentMode === "direct") return "Direct Pay";
+    return isEscrowFunded(agreement) ? "Escrow funded" : "Escrow not funded";
+  };
+
+  const renderProgressBar = (percent, tone = "active", testId) => {
+    const fill =
+      tone === "success"
+        ? "bg-emerald-400"
+        : tone === "warning"
+          ? "bg-amber-400"
+          : tone === "danger"
+            ? "bg-rose-400"
+            : "bg-blue-400";
+    return (
+      <div className="flex items-center gap-3">
+        <div className="h-2.5 min-w-24 flex-1 overflow-hidden rounded-full bg-white/10">
+          <div data-testid={testId} className={`h-full rounded-full ${fill}`} style={{ width: `${Math.max(0, Math.min(100, percent))}%` }} />
+        </div>
+        <span className="w-11 text-right text-xs font-bold tabular-nums text-sky-100/78">{percent}%</span>
+      </div>
+    );
+  };
+
   // Common header cell classes (clean column separation)
   const thBase =
     "px-4 py-3 text-xs font-extrabold uppercase tracking-wide text-slate-700 border-r border-slate-200 last:border-r-0";
@@ -862,8 +906,285 @@ export default function MilestoneList() {
         </div>
       </div>
 
-      {/* Agreement-first table */}
-      <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)] backdrop-blur">
+      {/* Agreement operations board */}
+      <div className="space-y-4" data-testid="milestone-operations-board">
+        {loading ? (
+          <div className="rounded-[24px] border border-white/10 bg-[#061d42]/95 p-8 text-center text-sky-100/70">
+            Loading milestones...
+          </div>
+        ) : agreementGroups.length === 0 ? (
+          <div className="rounded-[24px] border border-dashed border-white/16 bg-[#061d42]/82 p-8 text-center text-sky-100/70">
+            No milestones found.
+          </div>
+        ) : (
+          agreementGroups.map((g) => {
+            const agId = String(g.agId);
+            const isOpen = openAgreements.has(agId);
+            const totalLabel = getAgreementTotal(g.ag, g.allMilestones);
+            const progress = agreementProgress(g.allMilestones);
+            const agreementNum = g.agreementNumber ? `#${g.agreementNumber}` : `#${agId}`;
+            const matchCount = Number(g.matchCount || 0);
+            const matchSet = matchSetByAgreement.get(agId) || new Set();
+            const milestonesToShow = isFiltering ? g.allMilestones.filter((m) => matchSet.has(String(m.id))) : g.allMilestones;
+            const signedLabel = isAgreementFullySigned(g.ag) ? "Fully signed" : isAgreementSigned(g.ag) ? "Signature pending" : "Not signed";
+
+            return (
+              <section
+                key={`ops-ag-${agId}`}
+                data-testid={`milestone-agreement-group-${agId}`}
+                className="overflow-hidden rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)]"
+              >
+                <button
+                  type="button"
+                  data-testid={`milestone-agreement-header-${agId}`}
+                  onClick={() => toggleAgreement(agId)}
+                  className="flex w-full flex-col gap-4 border-b border-white/10 bg-[#082a5a] p-5 text-left hover:bg-[#0a3168] lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-bold uppercase tracking-[0.16em] text-sky-200/70">Agreement {agreementNum}</span>
+                      <span className={chipClass("active")}>{agreementFundingLabel(g.ag)}</span>
+                      <span className={chipClass(isAgreementFullySigned(g.ag) ? "success" : "warning")}>{signedLabel}</span>
+                    </div>
+                    <div className="mt-2 text-xl font-extrabold text-white">{g.projectTitle || "Untitled agreement"}</div>
+                    <div className="mt-1 text-sm text-sky-100/68">Customer: {g.homeownerName || "No customer"} · Total: {totalLabel}</div>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-[minmax(12rem,18rem)_auto_auto] sm:items-center">
+                    <div>
+                      <div className="mb-1 flex items-center justify-between text-xs font-bold uppercase tracking-[0.14em] text-sky-100/60">
+                        <span>Milestone progress</span>
+                        <span>{progress.complete} of {progress.total}</span>
+                      </div>
+                      {renderProgressBar(progress.percent, progress.percent >= 100 ? "success" : "active", `milestone-agreement-progress-${agId}`)}
+                    </div>
+                    <span className={chipClass(matchCount > 0 ? "warning" : "muted")}>{matchCount} matching</span>
+                    <span className={chipClass("neutral")}>{isOpen ? "Collapse" : "Expand"}</span>
+                  </div>
+                </button>
+
+                {isOpen ? (
+                  <div className="space-y-3 p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                      <div className="text-sm text-sky-100/68">
+                        {milestonesToShow.length} milestone{milestonesToShow.length === 1 ? "" : "s"} shown for this agreement.
+                      </div>
+                      <a
+                        href={`/app/agreements/${agId}/workspace?tab=milestones`}
+                        className="rounded-xl border border-blue-300/35 bg-blue-500/14 px-4 py-2 text-sm font-bold text-blue-100 hover:bg-blue-500/22"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        Open Agreement Workspace
+                      </a>
+                    </div>
+
+                    {milestonesToShow.length === 0 ? (
+                      <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.03] p-6 text-center text-sm text-sky-100/64">
+                        No matching milestones for this agreement.
+                      </div>
+                    ) : (
+                      milestonesToShow.map((m) => {
+                        const milestoneDisplay = getMilestoneDisplay(m, { agreementId: agId });
+                        const allowED = canEditDelete(m);
+                        const allowComplete = canComplete(m);
+                        const isRowBusy = busy.has(m.id);
+                        const completeReason = getCompleteBlockReason(m);
+                        const invoiceReason = getInvoiceBlockReason(m);
+                        const canRefund = canOpenRefundModalFromRow(m);
+                        const refundReason = getRefundBlockReason(m);
+                        const isSignedLockedMilestone = Boolean(m._signedLike || m.agreement_is_locked || m.agreement_locked);
+                        const isFocused = focusId && String(m.id) === String(focusId);
+                        const isCompleted = milestoneDisplay.isCompleted;
+                        const isPaid = milestoneDisplay.paymentLabel === "Paid";
+                        const activeTone = milestoneDisplay.actionStateTone === "active" || String(milestoneDisplay.statusLabel).toLowerCase().includes("active");
+                        const cardTone = isCompleted
+                          ? "border-emerald-300/32 bg-emerald-400/8"
+                          : activeTone
+                            ? "border-blue-300/35 bg-blue-400/10"
+                            : "border-white/10 bg-white/[0.045]";
+                        const rowClass = [
+                          "rounded-2xl border p-4 transition",
+                          cardTone,
+                          isRowBusy ? "opacity-70" : "",
+                          isFocused ? "bg-blue-50 ring-2 ring-blue-300" : "",
+                        ].join(" ");
+
+                        return (
+                          <article
+                            id={`mhb-milestone-row-${m.id}`}
+                            data-testid={`milestone-row-${m.id}`}
+                            key={`ops-m-${m.id}`}
+                            className={rowClass}
+                          >
+                            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {isCompleted ? (
+                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400 text-sm font-black text-slate-950" aria-hidden="true">
+                                      ✓
+                                    </span>
+                                  ) : null}
+                                  <h3 className="text-lg font-extrabold text-white">{m.title || "Untitled milestone"}</h3>
+                                  {activeTone && !isCompleted ? <span className={chipClass("active")}>Current</span> : null}
+                                  {m._late && !isPaid ? <span className={chipClass("danger")}>Late</span> : null}
+                                </div>
+                                <p className="mt-2 line-clamp-2 text-sm leading-6 text-sky-100/68">
+                                  {m.description || m.scope || m.notes || "No description provided."}
+                                </p>
+
+                                <div className="mt-4 grid gap-3 md:grid-cols-4">
+                                  <div className="rounded-xl border border-white/10 bg-slate-950/22 p-3">
+                                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-100/48">Status</div>
+                                    <div data-testid={`milestone-status-${m.id}`} className="mt-2">
+                                      <span className={chipClass(milestoneDisplay.statusTone)}>{milestoneDisplay.statusLabel}</span>
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-white/10 bg-slate-950/22 p-3">
+                                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-100/48">Payment</div>
+                                    <div data-testid={`milestone-payment-status-${m.id}`} className="mt-2">
+                                      <span className={chipClass(milestoneDisplay.paymentTone)}>{milestoneDisplay.paymentLabel}</span>
+                                    </div>
+                                  </div>
+                                  <div className="rounded-xl border border-white/10 bg-slate-950/22 p-3">
+                                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-100/48">Amount</div>
+                                    <div className="mt-2 text-sm font-extrabold text-white">{money(m.amount)}</div>
+                                  </div>
+                                  <div className="rounded-xl border border-white/10 bg-slate-950/22 p-3">
+                                    <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-100/48">Due</div>
+                                    <div className="mt-2 text-sm font-extrabold text-white">{m._dueRaw || "No due date"}</div>
+                                  </div>
+                                </div>
+
+                                <div data-testid={`milestone-progress-${m.id}`} className="mt-4">
+                                  {renderProgressBar(
+                                    milestoneDisplay.progressPercent,
+                                    milestoneDisplay.progressTone,
+                                    `milestone-progress-bar-${m.id}`
+                                  )}
+                                </div>
+
+                                <details
+                                  data-testid={`milestone-secondary-details-${m.id}`}
+                                  className="mt-4 rounded-xl border border-white/10 bg-slate-950/18 px-4 py-3 text-sm text-sky-100/68"
+                                >
+                                  <summary className="cursor-pointer font-bold text-sky-100">Secondary details</summary>
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    <ProjectModeBadge mode={m._ag?.project_mode || m.project_mode} dataTestId={`milestone-project-mode-${m.id}`} />
+                                    <MilestoneRoleBadge
+                                      role={m.milestone_role}
+                                      projectMode={m._ag?.project_mode || m.project_mode}
+                                      milestone={m}
+                                      dataTestId={`milestone-role-${m.id}`}
+                                      title={deriveMilestoneRoleLabel({ projectMode: m._ag?.project_mode || m.project_mode, milestone: m })}
+                                    />
+                                    <MilestoneSafetyBadges projectMode={m._ag?.project_mode || m.project_mode} milestone={m} dataTestId={`milestone-safety-${m.id}`} />
+                                    <InspectionStatusBadge status={m.inspection_status} dataTestId={`milestone-inspection-${m.id}`} />
+                                    <span data-testid={`milestone-project-class-${m.id}`} className={chipClass("muted")}>{m._projectClassLabel}</span>
+                                  </div>
+                                  {m.rework_origin_milestone_id ? (
+                                    <div className="mt-3">
+                                      Original milestone:{" "}
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigate(`/app/milestones?focus=${m.rework_origin_milestone_id}`);
+                                        }}
+                                        className="font-extrabold text-blue-200 hover:underline"
+                                      >
+                                        #{m.rework_origin_milestone_id} - View
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  {allowED ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      <button type="button" onClick={() => openEdit(m)} className="rounded-lg border border-white/14 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-white/8">
+                                        Edit draft details
+                                      </button>
+                                      <button type="button" onClick={() => removeItem(m)} className="rounded-lg border border-rose-300/35 px-3 py-2 text-xs font-bold text-rose-100 hover:bg-rose-400/10">
+                                        Delete draft
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </details>
+                              </div>
+
+                              <div data-testid={`milestone-actions-${m.id}`} className="flex flex-col gap-2 rounded-2xl border border-white/10 bg-slate-950/22 p-3">
+                                <div className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100/48">Next action</div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDetailItem(m);
+                                    setDetailOpen(true);
+                                  }}
+                                  className="rounded-xl border border-blue-300/35 bg-blue-500/14 px-4 py-2.5 text-sm font-bold text-blue-100 hover:bg-blue-500/22"
+                                >
+                                  View
+                                </button>
+
+                                {allowComplete ? (
+                                  <button
+                                    data-testid={`milestone-deeplink-action-${m.id}`}
+                                    type="button"
+                                    onClick={() => {
+                                      setDetailItem(m);
+                                      setDetailOpen(true);
+                                    }}
+                                    className="rounded-xl border border-emerald-300/35 bg-emerald-400/14 px-4 py-2.5 text-sm font-bold text-emerald-100 hover:bg-emerald-400/22"
+                                    title={isSignedLockedMilestone ? "Review milestone completion details" : "Complete milestone"}
+                                  >
+                                    {isSignedLockedMilestone ? "Review Milestone" : "Complete Milestone"}
+                                  </button>
+                                ) : isCompletedNotInvoiced(m) ? (
+                                  <button
+                                    data-testid={`milestone-invoice-button-${m.id}`}
+                                    type="button"
+                                    onClick={() => {
+                                      const reason = getInvoiceBlockReason(m);
+                                      if (reason) {
+                                        ensureEscrowOrRoute(m, reason);
+                                        return;
+                                      }
+                                      createInvoiceAndGo(m);
+                                    }}
+                                    className="rounded-xl border border-indigo-300/35 bg-indigo-400/14 px-4 py-2.5 text-sm font-bold text-indigo-100 hover:bg-indigo-400/22"
+                                    title={invoiceReason || "Create invoice for this completed milestone"}
+                                  >
+                                    Invoice
+                                  </button>
+                                ) : !isCompleted && completeReason ? (
+                                  <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-sky-100/62">
+                                    {completeReason}
+                                  </div>
+                                ) : null}
+
+                                {canRefund ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openRefundForMilestone(m)}
+                                    className="rounded-xl border border-rose-300/35 bg-rose-400/12 px-4 py-2.5 text-sm font-bold text-rose-100 hover:bg-rose-400/20"
+                                    title={refundReason || "Refund via agreement refund tool."}
+                                  >
+                                    Refund
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+                ) : null}
+              </section>
+            );
+          })
+        )}
+      </div>
+
+      {/* Legacy table retained temporarily during operational board migration. */}
+      {false ? (
+      <div className="hidden overflow-hidden rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)] backdrop-blur" aria-hidden="true">
         <div className="overflow-x-auto">
           <table className="min-w-[860px] w-full text-sm">
             <thead className="bg-slate-100">
@@ -1236,6 +1557,7 @@ export default function MilestoneList() {
           </table>
         </div>
       </div>
+      ) : null}
 
       {/* Modals */}
       {editOpen && editItem && (
