@@ -1,11 +1,91 @@
 import { expect, test } from '@playwright/test';
 
-async function mockPublicPresenceWithOpportunities(page, initialRows) {
+function makeOpportunity(overrides = {}) {
+  const sourceLabel = overrides.source_kind_label || 'Website';
+  const title = overrides.project_title || `${sourceLabel} Project Lead`;
+  return {
+    bid_id: overrides.bid_id || `lead-${overrides.source_id || 101}`,
+    source_kind: overrides.source_kind || 'lead',
+    source_kind_label: sourceLabel,
+    lead_source: overrides.lead_source || 'quote_request',
+    lead_source_label: overrides.lead_source_label || sourceLabel,
+    lead_source_filter: overrides.lead_source_filter || 'website',
+    is_website_lead: Boolean(overrides.is_website_lead),
+    is_new_website_lead: Boolean(overrides.is_new_website_lead),
+    workspace_stage: overrides.workspace_stage || 'new_lead',
+    workspace_stage_label: overrides.workspace_stage_label || 'New Lead',
+    source_id: overrides.source_id || 101,
+    source_reference: overrides.source_reference || `Lead #${overrides.source_id || 101}`,
+    project_title: title,
+    customer_name: overrides.customer_name || `${sourceLabel} Customer`,
+    customer_email: overrides.customer_email || `${String(sourceLabel).toLowerCase().replace(/\s+/g, '')}@example.com`,
+    customer_phone: overrides.customer_phone || '512-555-0101',
+    location: overrides.location || 'Austin, TX',
+    project_class: overrides.project_class || 'residential',
+    project_class_label: overrides.project_class_label || 'Residential',
+    project_type: overrides.project_type || 'Remodel',
+    project_subtype: overrides.project_subtype || '',
+    bid_amount: overrides.bid_amount || null,
+    bid_amount_label: overrides.bid_amount_label || '$4,500.00',
+    submitted_at: overrides.submitted_at || '2026-06-22T15:20:00Z',
+    status: overrides.status || 'submitted',
+    status_label: overrides.status_label || 'Submitted',
+    status_group: overrides.status_group || 'open',
+    linked_agreement_id: overrides.linked_agreement_id || null,
+    linked_agreement_label: overrides.linked_agreement_label || '',
+    linked_agreement_reference: overrides.linked_agreement_reference || '',
+    linked_agreement_url: overrides.linked_agreement_url || '',
+    notes: overrides.notes || `Lead received from ${sourceLabel}.`,
+    timeline: overrides.timeline || 'Within the next month',
+    budget_text: overrides.budget_text || '$4,500.00',
+    milestone_preview: overrides.milestone_preview || ['Review request', 'Prepare estimate'],
+    request_signals: overrides.request_signals || ['Guided Intake', 'Budget Provided'],
+    request_snapshot: {
+      project_title: title,
+      project_type: overrides.project_type || 'Remodel',
+      project_subtype: overrides.project_subtype || '',
+      refined_description: overrides.notes || `Lead received from ${sourceLabel}.`,
+      location: overrides.location || 'Austin, TX',
+      request_path_label: overrides.request_path_label || 'Request a Quote',
+      measurement_handling: 'Site visit recommended',
+      timeline: overrides.timeline || 'Within the next month',
+      budget: overrides.budget_text || '$4,500.00',
+      clarification_summary: [{ key: 'source', label: 'Source', value: sourceLabel }],
+      clarification_count: 1,
+      photo_count: overrides.photo_count || 0,
+      photos: [],
+      milestones: overrides.milestone_preview || ['Review request', 'Prepare estimate'],
+      request_signals: overrides.request_signals || ['Guided Intake', 'Budget Provided'],
+    },
+    next_action: overrides.next_action || { key: 'review_bid', label: 'Review Lead', target: '' },
+  };
+}
+
+function buildSummary(rows) {
+  return {
+    total_bids: rows.length,
+    new_leads: rows.filter((row) => row.workspace_stage === 'new_lead').length,
+    follow_up_leads: rows.filter((row) => row.workspace_stage === 'follow_up').length,
+    active_bids: rows.filter((row) => row.workspace_stage === 'active_bid').length,
+    closed: rows.filter((row) => row.workspace_stage === 'closed').length,
+    property_work_order_count: rows.filter((row) => row.source_kind === 'property_work_order').length,
+    website_leads: rows.filter((row) => row.is_website_lead).length,
+    new_website_leads: rows.filter((row) => row.is_website_lead && row.workspace_stage === 'new_lead').length,
+    website_leads_needing_follow_up: rows.filter(
+      (row) => row.is_website_lead && ['new_lead', 'follow_up'].includes(row.workspace_stage)
+    ).length,
+    marketplace_eligibility: {
+      verification_status: 'verified',
+      stripe_ready: true,
+      action_needed: false,
+    },
+  };
+}
+
+async function mockUnifiedOpportunityPipeline(page, rows = []) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
-
-  const state = { opportunities: [...initialRows] };
 
   await page.route('**/api/projects/whoami/', async (route) => {
     await route.fulfill({
@@ -15,10 +95,36 @@ async function mockPublicPresenceWithOpportunities(page, initialRows) {
     });
   });
   await page.route('**/api/payments/onboarding/status/', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ onboarding_status: 'complete', connected: true }) });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ onboarding_status: 'complete', connected: true }),
+    });
   });
   await page.route('**/api/projects/contractors/me/**', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 77 }) });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 77, public_profile: {} }),
+    });
+  });
+  await page.route('**/api/projects/contractor/bids/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: rows, summary: buildSummary(rows) }),
+    });
+  });
+  await page.route('**/api/projects/contractor/public-leads/101/create-agreement/**', async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        agreement_id: 901,
+        wizard_url: '/app/agreements/901/wizard?step=1',
+        created: true,
+      }),
+    });
   });
   await page.route('**/api/projects/contractor/public-profile/', async (route) => {
     await route.fulfill({
@@ -39,7 +145,11 @@ async function mockPublicPresenceWithOpportunities(page, initialRows) {
     });
   });
   await page.route('**/api/projects/contractor/public-profile/qr/', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ qr_svg: 'data:image/svg+xml;base64,PHN2Zy8+' }) });
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ qr_svg: 'data:image/svg+xml;base64,PHN2Zy8+' }),
+    });
   });
   await page.route('**/api/projects/contractor/gallery/', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
@@ -47,153 +157,163 @@ async function mockPublicPresenceWithOpportunities(page, initialRows) {
   await page.route('**/api/projects/contractor/reviews/', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
   });
-  await page.route('**/api/projects/contractor-opportunities/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: state.opportunities }),
-    });
+  await page.route('**/api/projects/contractor/website/**', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({}) });
   });
-  await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
-    const hasPending = state.opportunities.some((row) => row.status === 'pending');
-    const hasConverted = state.opportunities.some((row) => row.status === 'converted');
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        activation_type: hasPending || hasConverted ? 'homeowner_selected' : 'traditional_signup',
-        has_prefilled_profile: false,
-        has_pending_opportunities: hasPending,
-        pending_opportunity_count: state.opportunities.filter((row) => row.status === 'pending').length,
-        has_converted_opportunity: hasConverted,
-        latest_agreement_id: hasConverted ? 901 : null,
-        latest_agreement_url: hasConverted ? '/app/agreements/901/wizard?step=1' : '',
-        should_show_activation_guide: hasPending || hasConverted,
-        guide_sections: {
-          public_leads: {
-            visible: hasPending,
-            completed: false,
-            dismissed: false,
-            title: 'A homeowner request may be waiting',
-            description: 'Nothing has been sent to a homeowner without your confirmation.',
-            action_url: '/app/marketing?tab=leads',
-            action_label: 'Open Website Leads',
-          },
-          draft_agreement: {
-            visible: hasConverted,
-            completed: false,
-            dismissed: false,
-            title: 'Draft agreements are starting points',
-            description: 'Draft agreements are starting points, not final contracts.',
-            action_url: '/app/agreements/901/wizard?step=1',
-            action_label: 'Open Draft Agreement',
-          },
-        },
-      }),
-    });
-  });
-  await page.route('**/api/projects/contractor-activation-summary/dismiss/', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        should_show_activation_guide: false,
-        has_pending_opportunities: false,
-        pending_opportunity_count: 0,
-        guide_sections: {
-          public_leads: { visible: false, completed: false, dismissed: true },
-          draft_agreement: { visible: false, completed: false, dismissed: false },
-        },
-      }),
-    });
-  });
-  await page.route(/.*\/api\/projects\/contractor-opportunities\/101\/accept\/$/, async (route) => {
-    state.opportunities = state.opportunities.map((row) =>
-      row.id === 101
-        ? {
-            ...row,
-            status: 'converted',
-            accepted_at: '2026-05-17T14:00:00Z',
-            agreement_id: 901,
-            converted_agreement: 901,
-            next_url: '/app/agreements/901/wizard?step=1',
-          }
-        : row
-    );
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(state.opportunities[0]),
-    });
-  });
-
-  return state;
 }
 
-test('Website Leads tab loads ContractorOpportunity rows and accepts into draft agreement handoff', async ({ page }) => {
-  await mockPublicPresenceWithOpportunities(page, [
-    {
-      id: 101,
-      opportunity_id: 101,
-      source: 'contractor_opportunity',
-      status: 'pending',
-      full_name: 'Casey Homeowner',
-      email: 'casey@example.com',
-      phone: '512-555-2222',
-      project_title: 'Concrete Patio Extension',
-      project_type: 'Concrete',
-      project_subtype: 'Patio',
-      project_description: 'Extend the existing patio with concrete.',
-      refined_description: 'Extend the concrete patio and prepare the area for contractor review.',
-      city: 'Austin',
-      state: 'TX',
-      zip_code: '78701',
-      timeline: 'Within the next month',
-      budget_min: '2500.00',
-      budget_max: '5000.00',
-      selected_by_homeowner: true,
-      selected_at: '2026-05-17T13:00:00Z',
-      directory_business_name: 'Bright Build Co',
-      measurements: ['12 ft x 10 ft patio', '6 ft extension'],
-      photos_count: 2,
-    },
-  ]);
+test('Marketing remains setup-only and hands public leads to Opportunities', async ({ page }) => {
+  await mockUnifiedOpportunityPipeline(page, []);
 
   await page.goto('/app/marketing?tab=leads', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
 
-  await expect(page.getByTestId('contractor-contextual-guide-modal')).toContainText(
-    'A homeowner selected your business for project review.'
+  await expect(page.getByTestId('public-presence-title')).toContainText('Online Presence Setup');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
+    'Leads from your profile, QR code, and website appear in Opportunities.'
   );
-  await expect(page.getByTestId('public-leads-activation-banner')).toContainText(
-    'This homeowner request came through MyHomeBro public discovery.'
-  );
-  await page.getByTestId('contractor-contextual-guide-dismiss').click();
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Casey Homeowner');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Homeowner selected you');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Concrete Patio Extension');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('This request came from a homeowner project intake');
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('12 ft x 10 ft patio');
-  await expect(page.getByRole('button', { name: 'Accept Opportunity' })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Accept Opportunity' }).click();
-
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText('Draft Ready');
-  await expect(page.getByRole('button', { name: 'Open Draft Agreement' }).first()).toBeVisible();
-  await page.getByRole('button', { name: 'Open Draft Agreement' }).first().click();
-  await expect(page).toHaveURL(/\/app\/agreements\/901\/wizard\?step=1$/);
+  await expect(page.getByRole('button', { name: 'Website Leads' })).toHaveCount(0);
+  await expect(page.getByTestId('public-presence-leads-tab')).toHaveCount(0);
 });
 
-test('Website Leads tab shows opportunity empty state', async ({ page }) => {
-  await mockPublicPresenceWithOpportunities(page, []);
+test('public profile, QR, website, and landing leads land in unified Opportunities', async ({ page }) => {
+  const rows = [
+    makeOpportunity({
+      bid_id: 'lead-101',
+      source_id: 101,
+      source_kind: 'quote_request',
+      source_kind_label: 'Website',
+      lead_source: 'quote_request',
+      lead_source_filter: 'website',
+      is_website_lead: true,
+      is_new_website_lead: true,
+      project_title: 'Website Concrete Patio',
+      customer_name: 'Website Customer',
+      next_action: { key: 'convert_to_agreement', label: 'Convert to Agreement', target: '' },
+    }),
+    makeOpportunity({
+      bid_id: 'lead-102',
+      source_id: 102,
+      source_kind_label: 'Public Profile',
+      lead_source: 'public_profile',
+      lead_source_filter: 'public_profile',
+      is_website_lead: true,
+      is_new_website_lead: true,
+      project_title: 'Profile Bathroom Request',
+      customer_name: 'Profile Customer',
+    }),
+    makeOpportunity({
+      bid_id: 'lead-103',
+      source_id: 103,
+      source_kind_label: 'QR Code',
+      lead_source: 'qr',
+      lead_source_filter: 'qr',
+      is_website_lead: true,
+      is_new_website_lead: true,
+      project_title: 'QR Deck Repair',
+      customer_name: 'QR Customer',
+    }),
+    makeOpportunity({
+      bid_id: 'lead-104',
+      source_id: 104,
+      source_kind_label: 'Landing',
+      lead_source: 'landing_page',
+      lead_source_filter: 'landing',
+      is_website_lead: true,
+      is_new_website_lead: true,
+      project_title: 'Landing Fence Repair',
+      customer_name: 'Landing Customer',
+    }),
+    makeOpportunity({
+      bid_id: 'lead-105',
+      source_id: 105,
+      source_kind_label: 'Portal',
+      lead_source: 'customer_portal',
+      lead_source_filter: 'portal',
+      project_title: 'Portal Roof Request',
+      customer_name: 'Portal Customer',
+    }),
+    makeOpportunity({
+      bid_id: 'lead-106',
+      source_id: 106,
+      source_kind_label: 'Marketplace',
+      lead_source: 'marketplace',
+      lead_source_filter: 'marketplace',
+      project_title: 'Marketplace Drywall Request',
+      customer_name: 'Marketplace Customer',
+    }),
+    makeOpportunity({
+      bid_id: 'lead-107',
+      source_id: 107,
+      source_kind_label: 'Manual',
+      lead_source: 'manual',
+      lead_source_filter: 'manual',
+      project_title: 'Manual Paint Request',
+      customer_name: 'Manual Customer',
+    }),
+  ];
+  await mockUnifiedOpportunityPipeline(page, rows);
 
-  await page.goto('/app/marketing?tab=leads', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Website Leads' }).click();
+  await page.goto('/app/opportunities?source=website', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'No homeowner requests yet. Share your public profile or wait for matching project requests.'
-  );
-  await expect(page.getByTestId('public-presence-leads-tab')).toContainText(
-    'Choose a homeowner request to review its details and next steps.'
-  );
+  await expect(page.getByTestId('contractor-bids-title')).toContainText('Opportunities');
+  await expect(page.getByTestId('bids-summary-website-leads')).toContainText('4');
+  await expect(page.getByTestId('lead-row-lead-101')).toContainText('Website Customer');
+  await expect(page.getByTestId('lead-source-lead-101')).toContainText('Website');
+  await expect(page.getByTestId('lead-row-lead-102')).toHaveCount(0);
+
+  await page.getByTestId('bids-summary-website-leads').click();
+  await expect(page.getByTestId('lead-row-lead-101')).toContainText('Website Customer');
+  await expect(page.getByTestId('lead-row-lead-102')).toContainText('Profile Customer');
+  await expect(page.getByTestId('lead-row-lead-103')).toContainText('QR Customer');
+  await expect(page.getByTestId('lead-row-lead-104')).toContainText('Landing Customer');
+  await expect(page.getByTestId('lead-row-lead-105')).toHaveCount(0);
+
+  await page.getByTestId('workspace-source-website').click();
+  await expect(page.getByTestId('lead-row-lead-101')).toContainText('Website Customer');
+  await expect(page.getByTestId('lead-row-lead-104')).toHaveCount(0);
+
+  await page.getByTestId('workspace-source-landing').click();
+  await expect(page.getByTestId('lead-row-lead-104')).toContainText('Landing Customer');
+
+  await page.getByTestId('workspace-source-qr').click();
+  await expect(page.getByTestId('lead-row-lead-103')).toContainText('QR Customer');
+
+  await page.getByTestId('workspace-source-portal').click();
+  await expect(page.getByTestId('lead-row-lead-105')).toContainText('Portal Customer');
+
+  await page.getByTestId('workspace-source-marketplace').click();
+  await expect(page.getByTestId('lead-row-lead-106')).toContainText('Marketplace Customer');
+
+  await page.getByTestId('workspace-source-manual').click();
+  await expect(page.getByTestId('lead-row-lead-107')).toContainText('Manual Customer');
+});
+
+test('opening a public website opportunity uses the unified detail and agreement handoff', async ({ page }) => {
+  await mockUnifiedOpportunityPipeline(page, [
+    makeOpportunity({
+      bid_id: 'lead-101',
+      source_id: 101,
+      source_kind: 'quote_request',
+      source_kind_label: 'Website',
+      lead_source: 'quote_request',
+      lead_source_filter: 'website',
+      is_website_lead: true,
+      is_new_website_lead: true,
+      project_title: 'Website Concrete Patio',
+      customer_name: 'Website Customer',
+      next_action: { key: 'convert_to_agreement', label: 'Convert to Agreement', target: '' },
+    }),
+  ]);
+
+  await page.goto('/app/opportunities?source=website', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('lead-row-lead-101').click();
+
+  await expect(page.getByTestId('bids-detail-drawer')).toBeVisible();
+  await expect(page.getByTestId('lead-detail-container')).toContainText('Website Concrete Patio');
+  await expect(page.getByTestId('lead-detail-container')).toContainText('Website Customer');
+  await expect(page.getByTestId('lead-action-section')).toContainText('Convert to Agreement');
+
+  await page.getByRole('button', { name: 'Close bid details' }).click();
+  await page.getByTestId('lead-row-action-lead-101').click();
+  await expect(page.getByTestId('convert-to-agreement-panel')).toBeVisible();
 });
