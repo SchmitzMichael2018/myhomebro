@@ -39,19 +39,26 @@ function isConvertToAgreementRow(row) {
   return false;
 }
 
-function SummaryCard({ label, value, tone = "slate", testId }) {
+function SummaryCard({ label, value, tone = "slate", testId, active = false, onClick }) {
   const tones = {
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
-    amber: "border-amber-200 bg-amber-50 text-amber-900",
-    indigo: "border-indigo-200 bg-indigo-50 text-indigo-900",
-    slate: "border-slate-200 bg-white text-slate-900",
+    emerald: "border-emerald-400/40 bg-emerald-400/10 text-emerald-100",
+    amber: "border-amber-400/40 bg-amber-400/10 text-amber-100",
+    indigo: "border-indigo-400/40 bg-indigo-400/10 text-indigo-100",
+    slate: "border-slate-600 bg-slate-900/70 text-slate-100",
   };
 
   return (
-    <div data-testid={testId} className={`rounded-xl border p-4 shadow-sm ${tones[tone] || tones.slate}`}>
+    <button
+      type="button"
+      data-testid={testId}
+      onClick={onClick}
+      className={`min-h-[92px] rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-950/60 focus:outline-none focus:ring-2 focus:ring-blue-300 ${
+        tones[tone] || tones.slate
+      } ${active ? "border-blue-300 bg-blue-950/70 ring-2 ring-blue-400/40" : ""}`}
+    >
       <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{label}</div>
       <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
-    </div>
+    </button>
   );
 }
 
@@ -89,9 +96,10 @@ function SectionCard({ title, testId, children, subtitle = "", className = "" })
 
 function workspaceStageFromRow(row) {
   const stage = normalize(row?.workspace_stage);
+  const sourceKind = normalize(row?.source_kind);
+  if (sourceKind === "property_work_order" && !["follow_up", "active_bid", "closed"].includes(stage)) return "work_order";
   if (stage) return stage;
   const statusGroup = normalize(row?.status_group);
-  const sourceKind = normalize(row?.source_kind);
   if (statusGroup === "declined_expired") return "closed";
   if (sourceKind === "lead" && (statusGroup === "open" || normalize(row?.status) === "submitted")) return "new_lead";
   return "active_bid";
@@ -101,7 +109,8 @@ function workspaceStageLabel(stage) {
   if (stage === "new_lead") return "New Lead";
   if (stage === "follow_up") return "Follow-Up";
   if (stage === "closed") return "Closed / Archived";
-  return "Active Bid";
+  if (stage === "work_order") return "Work Order";
+  return "Active Opportunity";
 }
 
 function workspaceStageTone(stage) {
@@ -132,6 +141,56 @@ function moneyToNumber(value) {
   if (!text) return 0;
   const amount = Number.parseFloat(text);
   return Number.isFinite(amount) ? amount : 0;
+}
+
+function sourceKeyForRow(row) {
+  const sourceKind = normalize(row?.source_kind);
+  if (sourceKind === "property_work_order") return "work_orders";
+
+  const raw = normalize(row?.lead_source_filter || row?.lead_source || row?.source_kind_label || row?.source_kind);
+  if (raw === "website_leads") return "website_leads";
+  if (["website", "quote_request", "website_quote", "website_contact", "request_quote"].includes(raw)) return "website";
+  if (["landing", "landing_page", "public_intake"].includes(raw)) return "landing";
+  if (["qr", "qr_code"].includes(raw)) return "qr";
+  if (["portal", "customer_portal", "customer_request"].includes(raw)) return "portal";
+  if (["marketplace", "marketplace_request", "marketplace_opportunity"].includes(raw)) return "marketplace";
+  if (["manual", "direct", "contractor_sent_form", "intake", "lead"].includes(raw)) return "manual";
+  return raw || "manual";
+}
+
+function rowMatchesSourceFilter(row, filter) {
+  if (filter === "all") return true;
+  if (filter === "website_leads") return Boolean(row?.is_website_lead);
+  return sourceKeyForRow(row) === filter;
+}
+
+function receivedLabel(value) {
+  if (!value) return "Received date unknown";
+  const timestamp = toTimestamp(value);
+  if (!timestamp) return fmtDate(value);
+  const diffDays = Math.max(0, Math.floor((Date.now() - timestamp) / 86400000));
+  if (diffDays === 0) return "Received today";
+  if (diffDays === 1) return "Received yesterday";
+  if (diffDays < 30) return `Received ${diffDays} days ago`;
+  return `Received ${fmtDate(value)}`;
+}
+
+function nextBestActionLine(row) {
+  const stage = workspaceStageFromRow(row);
+  const sourceKind = normalize(row?.source_kind);
+  const nextKey = normalize(row?.next_action?.key);
+  if (sourceKind === "property_work_order") {
+    if (nextKey === "accept_property_work_order") return "Decide whether to accept this routed work order.";
+    if (nextKey === "prepare_agreement_draft") return "Accepted work order is ready to become an agreement draft.";
+    if (nextKey === "open_agreement") return "Continue the agreement already created for this work order.";
+    return "Review the work order details and decide the next step.";
+  }
+  if (isConvertToAgreementRow(row)) return "Review the customer request and convert it into an agreement.";
+  if (stage === "new_lead") return "Review the lead, then create an estimate or save it for follow-up.";
+  if (stage === "follow_up") return "Follow up with the customer or resume the estimate workflow.";
+  if (stage === "closed") return row?.status_note || "Review the history for this closed opportunity.";
+  if (nextKey === "open_agreement" && row?.linked_agreement_url) return "Agreement is ready to manage from the workspace.";
+  return "Review the opportunity and choose the next sales step.";
 }
 
 function prioritizeSignals(signals) {
@@ -429,9 +488,17 @@ export default function ContractorBidsPage() {
     if (normalizedSource === "property_work_order") {
       setActiveWorkspaceTab("work_order");
       setSourceFilter("all");
-    } else if (["website", "website_leads", "public_profile", "qr"].includes(normalizedSource)) {
+    } else if (["website", "website_leads", "landing", "landing_page", "public_profile", "qr", "portal", "customer_portal", "marketplace", "manual"].includes(normalizedSource)) {
       setActiveWorkspaceTab("new_lead");
-      setSourceFilter(normalizedSource === "website" ? "website" : normalizedSource);
+      setSourceFilter(
+        normalizedSource === "landing_page"
+          ? "landing"
+          : normalizedSource === "public_profile"
+            ? "website_leads"
+            : normalizedSource === "customer_portal"
+              ? "portal"
+              : normalizedSource
+      );
     } else {
       setSourceFilter("all");
     }
@@ -447,14 +514,7 @@ export default function ContractorBidsPage() {
         return false;
       }
       if (!requestMatchesFilter(row, requestFilter)) return false;
-      if (sourceFilter !== "all") {
-        const rowSource = normalize(row.lead_source_filter || row.source_kind);
-        if (sourceFilter === "website_leads") {
-          if (!row.is_website_lead) return false;
-        } else if (rowSource !== sourceFilter) {
-          return false;
-        }
-      }
+      if (!rowMatchesSourceFilter(row, sourceFilter)) return false;
       if (statusFilter !== "all" && normalize(row.status) !== statusFilter) return false;
       if (projectClassFilter !== "all" && normalize(row.project_class) !== projectClassFilter) return false;
       if (!q) return true;
@@ -509,7 +569,9 @@ export default function ContractorBidsPage() {
   const marketplaceStatusLabel = marketplaceStatus.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
   const activeStageLabel =
-    activeWorkspaceTab === "new_lead"
+    activeWorkspaceTab === "all"
+      ? "All Opportunities"
+      : activeWorkspaceTab === "new_lead"
       ? "New Leads"
       : activeWorkspaceTab === "follow_up"
         ? "Follow-Up"
@@ -519,7 +581,9 @@ export default function ContractorBidsPage() {
             ? "Work Orders"
             : "Active Opportunities";
   const activeStageNoun =
-    activeWorkspaceTab === "new_lead"
+    activeWorkspaceTab === "all"
+      ? "opportunity"
+      : activeWorkspaceTab === "new_lead"
       ? "lead"
       : activeWorkspaceTab === "follow_up"
         ? "follow-up lead"
@@ -570,6 +634,25 @@ export default function ContractorBidsPage() {
     ],
     [summary.active_bids, summary.closed, summary.follow_up_leads, summary.new_leads, summary.work_orders]
   );
+  const sourceFilterOptions = useMemo(
+    () => [
+      { key: "all", label: "All" },
+      { key: "website", label: "Website" },
+      { key: "landing", label: "Landing" },
+      { key: "qr", label: "QR" },
+      { key: "portal", label: "Portal" },
+      { key: "marketplace", label: "Marketplace" },
+      { key: "manual", label: "Manual" },
+      { key: "work_orders", label: "Work Orders" },
+    ],
+    []
+  );
+  const activeSourceLabel = sourceFilterOptions.find((option) => option.key === sourceFilter)?.label || "All";
+  const selectStage = (stage, source = "all") => {
+    setActiveWorkspaceTab(stage);
+    setSourceFilter(source);
+    setRequestFilter("all");
+  };
   const activeSortLabel = sortOptions.find((option) => option.key === sortBy)?.label || "Recommended";
   const activeFilterLabel = requestFilterOptions.find((option) => option.key === requestFilter)?.label || "All";
 
@@ -670,11 +753,17 @@ export default function ContractorBidsPage() {
   const selectedNextActionKey = normalize(selectedRow?.next_action?.key);
   const selectedPrimaryActionLabel =
     selectedIsPropertyWorkOrder
-      ? selectedRow?.next_action?.label || "View Details"
+      ? selectedNextActionKey === "accept_property_work_order"
+        ? "Accept Work Order"
+        : selectedNextActionKey === "prepare_agreement_draft"
+          ? "Convert to Agreement"
+          : selectedNextActionKey === "open_agreement"
+            ? "Open Agreement"
+            : selectedRow?.next_action?.label || "View Details"
       : selectedCanConvertToAgreement
       ? "Convert to Agreement"
       : selectedStage === "new_lead" || selectedStage === "follow_up"
-      ? "Create Bid"
+      ? "Create Estimate"
       : selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
         : selectedRow?.next_action?.label || "View Details";
@@ -700,17 +789,18 @@ export default function ContractorBidsPage() {
   const rowPrimaryActionLabel = (row) => {
     if (normalize(row?.source_kind) === "property_work_order") {
       const nextKey = normalize(row?.next_action?.key);
-      if (nextKey === "accept_property_work_order") return "Accept";
-      if (nextKey === "prepare_agreement_draft") return "Prepare Agreement Draft";
-      if (nextKey === "open_agreement") return "Open Agreement Draft";
+      if (nextKey === "accept_property_work_order") return "Accept Work Order";
+      if (nextKey === "prepare_agreement_draft") return "Convert to Agreement";
+      if (nextKey === "open_agreement") return "Open Agreement";
       return row?.next_action?.label || "View Details";
     }
     if (isConvertToAgreementRow(row)) return "Convert to Agreement";
     const stage = workspaceStageFromRow(row);
-    if (stage === "new_lead") return "Review Request";
-    if (stage === "follow_up") return "Review Lead";
+    if (stage === "new_lead") return "Review Lead";
+    if (stage === "follow_up") return "Follow Up";
     if (stage === "closed") return "View Details";
     if (normalize(row?.next_action?.key) === "open_agreement" && row?.linked_agreement_url) return "Open Agreement";
+    if (stage === "active_bid") return "Create Estimate";
     return row?.next_action?.label || "View Details";
   };
 
@@ -887,6 +977,35 @@ export default function ContractorBidsPage() {
     runAction(row);
   };
 
+  const emptyStateTitle =
+    sourceFilter === "website" || sourceFilter === "website_leads"
+      ? "No website leads"
+      : sourceFilter === "landing"
+        ? "No landing page leads"
+        : sourceFilter === "qr"
+          ? "No QR leads"
+          : sourceFilter === "portal"
+            ? "No portal leads"
+            : sourceFilter === "marketplace"
+              ? "No marketplace leads"
+              : sourceFilter === "manual"
+                ? "No manual leads"
+                : activeWorkspaceTab === "follow_up"
+                  ? "No follow-up items"
+                  : activeWorkspaceTab === "active_bid"
+                    ? "No active opportunities"
+                    : activeWorkspaceTab === "work_order"
+                      ? "No work orders"
+                      : activeWorkspaceTab === "closed"
+                        ? "No closed opportunities"
+                        : "No opportunities match your current filters";
+  const emptyStateCopy =
+    sourceFilter !== "all"
+      ? "Try another source, clear filters, or check back when new leads arrive."
+      : activeWorkspaceTab === "new_lead"
+        ? "New lead requests will appear here as customers submit project details."
+        : "Try another stage, clear filters, or check back when more activity lands in the pipeline.";
+
   return (
     <ContractorPageSurface
       variant="operational"
@@ -917,67 +1036,110 @@ export default function ContractorBidsPage() {
 
       <section
         data-testid="contractor-marketplace-eligibility-status"
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        className="rounded-xl border border-blue-300/20 bg-slate-950/50 px-4 py-3 shadow-sm"
       >
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Marketplace Eligibility</div>
-            <div className="mt-1 text-sm text-slate-700">
-              Status: <span className="font-semibold text-slate-950">{marketplaceStatusLabel}</span>
-              {marketplaceEligibility.preferred ? <span className="ml-2 font-semibold text-emerald-700">Preferred</span> : null}
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-100/70">Marketplace status</div>
+            <div className="mt-1 text-sm text-blue-50">
+              {marketplaceStatusLabel}
+              {marketplaceEligibility.preferred ? <span className="ml-2 font-semibold text-emerald-300">Preferred</span> : null}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs font-semibold">
-            <span className={`rounded-full border px-3 py-1 ${marketplaceStatus === "verified" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : marketplaceStatus === "suspended" || marketplaceStatus === "rejected" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+            <span className={`rounded-full border px-3 py-1 ${marketplaceStatus === "verified" ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-200" : marketplaceStatus === "suspended" || marketplaceStatus === "rejected" ? "border-rose-300/40 bg-rose-400/10 text-rose-200" : "border-amber-300/40 bg-amber-400/10 text-amber-100"}`}>
               {marketplaceStatusLabel}
             </span>
-            <span className={`rounded-full border px-3 py-1 ${marketplaceEligibility.stripe_ready ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+            <span className={`rounded-full border px-3 py-1 ${marketplaceEligibility.stripe_ready ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-200" : "border-amber-300/40 bg-amber-400/10 text-amber-100"}`}>
               {marketplaceEligibility.stripe_ready ? "Stripe ready" : "Stripe setup needed"}
             </span>
             {marketplaceEligibility.action_needed ? (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700">Action needed before new routed opportunities</span>
+              <button
+                type="button"
+                onClick={() => navigate("/app/profile")}
+                className="rounded-full border border-amber-300/40 bg-amber-400/10 px-3 py-1 text-amber-100 hover:bg-amber-400/20"
+              >
+                Finish setup for routed opportunities
+              </button>
             ) : (
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-700">Eligible for matching</span>
+              <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-emerald-200">Eligible for matching</span>
             )}
           </div>
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <SummaryCard label="New Leads" value={String(summary.new_leads)} tone="slate" testId="bids-summary-new-leads" />
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+        <SummaryCard
+          label="New Leads"
+          value={String(summary.new_leads)}
+          tone="slate"
+          testId="bids-summary-new-leads"
+          active={activeWorkspaceTab === "new_lead" && sourceFilter === "all"}
+          onClick={() => selectStage("new_lead")}
+        />
         <SummaryCard
           label="Website Leads"
           value={String(summary.website_leads)}
           tone="emerald"
           testId="bids-summary-website-leads"
+          active={sourceFilter === "website_leads"}
+          onClick={() => selectStage("new_lead", "website_leads")}
         />
         <SummaryCard
           label="New Website Leads / Needs Follow-Up"
           value={`${summary.new_website_leads} / ${summary.website_leads_needing_follow_up}`}
           tone="amber"
           testId="bids-summary-new-website-leads"
+          active={sourceFilter === "website_leads" && activeWorkspaceTab === "new_lead"}
+          onClick={() => selectStage("new_lead", "website_leads")}
         />
         <SummaryCard
           label="Follow-Up"
           value={String(summary.follow_up_leads)}
           tone="amber"
           testId="bids-summary-follow-up"
+          active={activeWorkspaceTab === "follow_up" && sourceFilter === "all"}
+          onClick={() => selectStage("follow_up")}
         />
         <SummaryCard
           label="Active Opportunities"
           value={String(summary.active_bids)}
           tone="indigo"
           testId="bids-summary-active-bids"
+          active={activeWorkspaceTab === "active_bid" && sourceFilter === "all"}
+          onClick={() => selectStage("active_bid")}
         />
-        <SummaryCard label="Closed / Archived" value={String(summary.closed)} tone="amber" testId="bids-summary-closed" />
-        <SummaryCard label="Total Opportunities" value={String(rows.length)} tone="emerald" testId="bids-summary-total" />
+        <SummaryCard
+          label="Work Orders"
+          value={String(summary.work_orders)}
+          tone="indigo"
+          testId="bids-summary-work-orders"
+          active={activeWorkspaceTab === "work_order"}
+          onClick={() => selectStage("work_order", "work_orders")}
+        />
+        <SummaryCard
+          label="Closed / Archived"
+          value={String(summary.closed)}
+          tone="amber"
+          testId="bids-summary-closed"
+          active={activeWorkspaceTab === "closed" && sourceFilter === "all"}
+          onClick={() => selectStage("closed")}
+        />
+        <SummaryCard
+          label="Total Opportunities"
+          value={String(rows.length)}
+          tone="emerald"
+          testId="bids-summary-total"
+          active={activeWorkspaceTab === "all" && sourceFilter === "all" && requestFilter === "all"}
+          onClick={() => selectStage("all")}
+        />
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-blue-300/15 bg-slate-950/60 p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">{activeStageLabel}</h2>
-            <div className="mt-1 text-sm text-slate-500">
+            <h2 className="text-lg font-semibold text-white">{activeStageLabel}</h2>
+            <div className="mt-1 text-sm text-blue-100/70">
               {loading
                 ? "Loading opportunity workspace..."
                 : `${visibleRows.length} ${activeStageNoun}${visibleRows.length === 1 ? "" : "s"} · ${activeSortLabel} · ${activeFilterLabel}`}
@@ -993,12 +1155,12 @@ export default function ContractorBidsPage() {
                 onClick={() => setActiveWorkspaceTab(tab.key)}
                 className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                   activeWorkspaceTab === tab.key
-                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "border-blue-300 bg-blue-600 text-white shadow-sm"
+                    : "border-blue-300/20 bg-slate-900/60 text-blue-100 hover:bg-slate-800"
                 }`}
               >
                 <span>{tab.label}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${activeWorkspaceTab === tab.key ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"}`}>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${activeWorkspaceTab === tab.key ? "bg-white/15 text-white" : "bg-blue-400/10 text-blue-100"}`}>
                   {tab.count}
                 </span>
               </button>
@@ -1008,13 +1170,13 @@ export default function ContractorBidsPage() {
 
         <div className="mt-5 grid gap-3 lg:grid-cols-2">
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-blue-50">
               Sort by
               <select
                 data-testid="workspace-sort-control"
                 value={sortBy}
                 onChange={(event) => setSortBy(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="mt-1 w-full rounded-lg border border-blue-300/20 bg-slate-900 px-3 py-2 text-white"
               >
                 {sortOptions.map((option) => (
                   <option key={option.key} value={option.key}>
@@ -1024,13 +1186,13 @@ export default function ContractorBidsPage() {
               </select>
             </label>
 
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-blue-50">
               Project class
               <select
                 data-testid="bids-filter-project-class"
                 value={projectClassFilter}
                 onChange={(event) => setProjectClassFilter(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="mt-1 w-full rounded-lg border border-blue-300/20 bg-slate-900 px-3 py-2 text-white"
               >
                 <option value="all">All</option>
                 <option value="residential">Residential</option>
@@ -1038,13 +1200,13 @@ export default function ContractorBidsPage() {
               </select>
             </label>
 
-            <label className="text-sm font-medium text-slate-700">
+            <label className="text-sm font-medium text-blue-50">
               Status
               <select
                 data-testid="bids-filter-status"
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+                className="mt-1 w-full rounded-lg border border-blue-300/20 bg-slate-900 px-3 py-2 text-white"
               >
                 <option value="all">All</option>
                 <option value="draft">Draft</option>
@@ -1059,7 +1221,7 @@ export default function ContractorBidsPage() {
             </label>
           </div>
 
-          <label className="text-sm font-medium text-slate-700">
+          <label className="text-sm font-medium text-blue-50">
             Search
             <input
               data-testid="bids-search"
@@ -1067,9 +1229,37 @@ export default function ContractorBidsPage() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Project, customer, or signal"
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
+              className="mt-1 w-full rounded-lg border border-blue-300/20 bg-slate-900 px-3 py-2 text-white placeholder:text-blue-100/50"
             />
           </label>
+        </div>
+
+        <div className="mt-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-100/60">Lead source</div>
+          <div className="mt-2 flex flex-wrap gap-2" data-testid="workspace-source-chips">
+            {sourceFilterOptions.map((option) => {
+              const active = sourceFilter === option.key;
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  data-testid={`workspace-source-${option.key}`}
+                  onClick={() => {
+                    setSourceFilter(option.key);
+                    if (option.key === "work_orders") setActiveWorkspaceTab("work_order");
+                    else if (activeWorkspaceTab === "work_order") setActiveWorkspaceTab("new_lead");
+                  }}
+                  className={`inline-flex items-center rounded-full border px-3 py-2 text-sm font-semibold transition ${
+                    active
+                      ? "border-blue-300 bg-blue-600 text-white shadow-sm"
+                      : "border-blue-300/20 bg-slate-900/60 text-blue-100 hover:bg-slate-800"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2" data-testid="workspace-filter-chips">
@@ -1083,8 +1273,8 @@ export default function ContractorBidsPage() {
                 onClick={() => setRequestFilter(option.key)}
                 className={`inline-flex items-center rounded-full border px-3 py-2 text-sm font-semibold transition ${
                   active
-                    ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                    : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                    ? "border-blue-300 bg-blue-600 text-white shadow-sm"
+                    : "border-blue-300/20 bg-slate-900/60 text-blue-100 hover:bg-slate-800"
                 }`}
               >
                 {option.label}
@@ -1093,7 +1283,7 @@ export default function ContractorBidsPage() {
           })}
         </div>
 
-        <div className="mt-3 text-xs text-slate-500">
+        <div className="mt-3 text-xs text-blue-100/60">
           {activeWorkspaceTab === "new_lead"
             ? "New leads are requests you can review before you start the bid workflow."
             : activeWorkspaceTab === "active_bid"
@@ -1104,85 +1294,86 @@ export default function ContractorBidsPage() {
         </div>
 
         {loading ? (
-          <div className="mt-5 text-sm text-slate-500">Loading opportunity workspace...</div>
+          <div className="mt-5 text-sm text-blue-100/70">Loading opportunity workspace...</div>
         ) : visibleRows.length === 0 ? (
           <div
             data-testid="bids-empty"
-            className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-600"
+            className="mt-5 rounded-xl border border-dashed border-blue-300/25 bg-slate-900/60 p-6 text-sm text-blue-100/70"
           >
-            No opportunities match your current filters.
+            <div className="text-base font-semibold text-white">{emptyStateTitle}</div>
+            <p className="mt-1">{emptyStateCopy}</p>
           </div>
         ) : (
-          <div className="mt-5 overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Project</th>
-                  <th className="px-3 py-2">Customer</th>
-                  <th className="px-3 py-2">Location</th>
-                  <th className="px-3 py-2">Signals</th>
-                  <th className="px-3 py-2">Project Class</th>
-                  <th className="px-3 py-2">Bid Amount</th>
-                  <th className="px-3 py-2">Submitted Date</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((row) => (
-                  <tr
-                    key={`${row.source_kind}-${row.bid_id}`}
-                    data-testid={`lead-row-${row.bid_id}`}
-                    className={`cursor-pointer border-b border-slate-100 align-top hover:bg-slate-50 ${
-                      workspaceStageFromRow(row) === "new_lead"
-                        ? "bg-blue-50/30"
-                        : workspaceStageFromRow(row) === "follow_up"
-                          ? "bg-amber-50/40"
-                          : ""
-                    }`}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => setSelectedRow(row)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        setSelectedRow(row);
-                      }
-                    }}
-                  >
-                    <td className="px-3 py-3">
-                      <div className="font-semibold text-slate-900">{row.project_title}</div>
-                      <div className="mt-1 text-xs text-slate-500">{row.source_reference}</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-5 grid gap-4" data-testid="opportunity-card-feed">
+            {visibleRows.map((row) => {
+              const stage = workspaceStageFromRow(row);
+              const actionLabel = rowPrimaryActionLabel(row);
+              const signals = prioritizeSignals(row.request_signals).slice(0, 4);
+              return (
+                <article
+                  key={`${row.source_kind}-${row.bid_id}`}
+                  data-testid={`lead-row-${row.bid_id}`}
+                  className={`rounded-2xl border p-4 shadow-sm transition hover:border-blue-300/60 hover:bg-slate-900/90 ${
+                    stage === "new_lead"
+                      ? "border-blue-300/25 bg-blue-950/35"
+                      : stage === "follow_up"
+                        ? "border-amber-300/25 bg-amber-950/20"
+                        : stage === "closed"
+                          ? "border-slate-600 bg-slate-900/60"
+                          : "border-blue-300/15 bg-slate-900/70"
+                  }`}
+                >
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <button type="button" className="min-w-0 flex-1 text-left" onClick={() => setSelectedRow(row)}>
+                      <div className="flex flex-wrap items-center gap-2">
                         {row.source_kind_label ? (
                           <span
                             data-testid={`lead-source-${row.bid_id}`}
-                            className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-800"
+                            className="inline-flex rounded-full border border-emerald-300/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100"
                           >
                             {row.source_kind_label}
                           </span>
                         ) : null}
                         <span
                           data-testid={`lead-stage-${row.bid_id}`}
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${workspaceStageTone(
-                            workspaceStageFromRow(row)
-                          )}`}
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${workspaceStageTone(stage)}`}
                         >
-                          {workspaceStageLabel(workspaceStageFromRow(row))}
+                          {workspaceStageLabel(stage)}
+                        </span>
+                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusTone(row.status)}`}>
+                          {row.status_label}
                         </span>
                       </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="font-semibold text-slate-900">{row.customer_name}</div>
-                      <div className="mt-1 text-xs text-slate-500">{row.customer_email || row.customer_phone || "-"}</div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="text-sm font-semibold text-slate-900">{row.location || "-"}</div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-2">
-                        {Array.isArray(row.request_signals) && row.request_signals.length ? (
-                          prioritizeSignals(row.request_signals).slice(0, 4).map((signal) => (
+
+                      <h3 className="mt-3 text-lg font-bold text-white">{row.project_title}</h3>
+                      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-sm text-blue-100/70">
+                        <span className="font-semibold text-blue-50">{row.customer_name}</span>
+                        <span>{row.customer_email || row.customer_phone || "No contact listed"}</span>
+                        <span>{row.location || "Location unavailable"}</span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                        <div className="rounded-xl border border-blue-300/10 bg-slate-950/50 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">Value</div>
+                          <div className="mt-1 font-bold text-white">{row.bid_amount_label || "-"}</div>
+                        </div>
+                        <div className="rounded-xl border border-blue-300/10 bg-slate-950/50 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">Received</div>
+                          <div className="mt-1 font-bold text-white">{receivedLabel(row.submitted_at)}</div>
+                        </div>
+                        <div className="rounded-xl border border-blue-300/10 bg-slate-950/50 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">Project Class</div>
+                          <div className="mt-1 font-bold text-white">{row.project_class_label || "Residential"}</div>
+                        </div>
+                        <div className="rounded-xl border border-blue-300/10 bg-slate-950/50 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">Reference</div>
+                          <div className="mt-1 font-bold text-white">{row.source_reference || "-"}</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {signals.length ? (
+                          signals.map((signal) => (
                             <span
                               key={`${row.bid_id}-${signal}`}
                               className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${signalTone(signal)}`}
@@ -1191,23 +1382,17 @@ export default function ContractorBidsPage() {
                             </span>
                           ))
                         ) : (
-                          <span className="text-xs text-slate-500">No signals yet</span>
+                          <span className="text-xs text-blue-100/60">No signals yet</span>
                         )}
                       </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800">
-                        {row.project_class_label || "Residential"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 font-semibold text-slate-900">{row.bid_amount_label || "-"}</td>
-                    <td className="px-3 py-3 text-slate-700">{fmtDate(row.submitted_at)}</td>
-                    <td className="px-3 py-3">
-                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(row.status)}`}>
-                        {row.status_label}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3">
+
+                      <div className="mt-4 rounded-xl border border-blue-300/15 bg-blue-950/30 p-3">
+                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">Next best action</div>
+                        <div className="mt-1 text-sm font-semibold text-blue-50">{nextBestActionLine(row)}</div>
+                      </div>
+                    </button>
+
+                    <div className="flex shrink-0 flex-col gap-2 sm:flex-row lg:w-56 lg:flex-col">
                       <button
                         type="button"
                         data-testid={`lead-row-action-${row.bid_id}`}
@@ -1216,18 +1401,23 @@ export default function ContractorBidsPage() {
                           handleRowPrimaryAction(row);
                         }}
                         disabled={actionBusyId === String(row.bid_id)}
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-blue-300 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 disabled:opacity-60"
                       >
-                        {actionBusyId === String(row.bid_id)
-                          ? "Working..."
-                          : rowPrimaryActionLabel(row)}
+                        {actionBusyId === String(row.bid_id) ? "Working..." : actionLabel}
                         <ArrowRight size={14} />
                       </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedRow(row)}
+                        className="inline-flex w-full items-center justify-center rounded-lg border border-blue-300/25 bg-slate-900 px-4 py-2 text-sm font-semibold text-blue-100 hover:bg-slate-800"
+                      >
+                        View Details
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         )}
       </section>
