@@ -633,23 +633,6 @@ function buildSummary(rows) {
     website_leads_needing_follow_up: rows.filter(
       (row) => row.is_website_lead && ["new_lead", "follow_up"].includes(row.workspace_stage)
     ).length,
-    profile_strength_percent: 68,
-    profile_complete: true,
-    review_count: 3,
-    rating_average: 4.7,
-    insurance_uploaded: true,
-    website_published: true,
-    response_rate: 91,
-    marketplace_eligibility: {
-      stripe_ready: true,
-      license_uploaded: false,
-      insurance_uploaded: true,
-      website_published: true,
-      profile_completion_percent: 68,
-      review_count: 3,
-      rating_average: 4.7,
-      response_rate: 91,
-    },
   };
 }
 
@@ -795,13 +778,12 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("bids-summary-new-leads")).toHaveCount(0);
   await expect(page.getByTestId("workspace-source-chips")).toHaveCount(0);
   await expect(page.getByTestId("workspace-filter-chips")).toHaveCount(0);
-  await expect(page.getByTestId("contractor-trust-score-card")).toContainText("Trust Score");
-  await expect(page.getByTestId("contractor-trust-score-card")).toContainText("Profile Strength");
-  await expect(page.getByTestId("contractor-trust-score-card")).toContainText("Higher trust scores");
-  await expect(page.getByTestId("trust-score-item-license")).toContainText("License uploaded");
-  await expect(page.getByTestId("trust-score-item-license")).toContainText("Needs upload");
-  await expect(page.getByTestId("contractor-trust-score-card")).not.toContainText("You are not eligible");
-  await expect(page.getByTestId("contractor-trust-score-card")).not.toContainText("Blocked");
+  await expect(page.getByTestId("contractor-trust-score-card")).toHaveCount(0);
+  await expect(page.getByText("Trust Score")).toHaveCount(0);
+  await expect(page.getByText("Profile Strength")).toHaveCount(0);
+  await expect(page.getByText("License uploaded")).toHaveCount(0);
+  await expect(page.getByText("Insurance uploaded")).toHaveCount(0);
+  await expect(page.getByText("Profile completeness")).toHaveCount(0);
   await expect(page.getByTestId("contractor-marketplace-eligibility-status")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Website Leads" })).toHaveCount(0);
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
