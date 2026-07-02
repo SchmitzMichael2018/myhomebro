@@ -120,6 +120,32 @@ function moneyToNumber(value) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
+function firstPresent(...values) {
+  return values.find((value) => {
+    const text = String(value || "").trim();
+    return text && text !== "-";
+  }) || "";
+}
+
+function opportunityValueDisplay(row) {
+  const snapshot = row?.request_snapshot || {};
+  const customerBudget = firstPresent(snapshot.budget, row?.budget_text, row?.customer_budget_label, row?.customer_budget);
+  if (customerBudget) return { label: "Budget", value: customerBudget, tone: "text-emerald-100" };
+
+  const estimate = firstPresent(
+    row?.ai_estimate_label,
+    row?.estimated_amount_label,
+    row?.estimated_budget_label,
+    row?.estimate_amount_label,
+    row?.estimated_value_label,
+    snapshot.ai_estimate_label,
+    snapshot.estimated_amount_label
+  );
+  if (estimate) return { label: "Estimated", value: estimate, tone: "text-sky-100" };
+
+  return { label: "Budget", value: "Budget not provided", tone: "text-blue-100/70" };
+}
+
 function sourceKeyForRow(row) {
   const sourceKind = normalize(row?.source_kind);
   if (sourceKind === "property_work_order") return "work_orders";
@@ -728,6 +754,30 @@ export default function ContractorBidsPage() {
           ? "This opportunity is closed, but you can still review the history."
           : "Continue the current bid workflow from here.";
   const selectedCanOpenAgreement = selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url;
+  const selectedValueDisplay = opportunityValueDisplay(selectedRow);
+  const selectedCustomerId = firstPresent(
+    selectedRow?.customer_id,
+    selectedRow?.homeowner_id,
+    selectedRow?.homeowner?.id,
+    selectedSnapshot?.customer_id,
+    selectedSnapshot?.homeowner_id
+  );
+  const selectedServiceLocation = firstPresent(
+    selectedRow?.service_location,
+    selectedRow?.address,
+    selectedRow?.location,
+    selectedSnapshot?.service_location,
+    selectedSnapshot?.address,
+    selectedSnapshot?.location
+  );
+  const selectedProjectDescription = firstPresent(
+    selectedSnapshot?.project_scope_summary,
+    selectedSnapshot?.refined_description,
+    selectedRow?.notes,
+    selectedRow?.project_description
+  );
+  const selectedTimeline = firstPresent(selectedSnapshot?.timeline, selectedRow?.timeline);
+  const selectedScheduleSupported = Boolean(selectedRow?.schedule_estimate_url || selectedRow?.calendar_event_url);
   const rowPrimaryActionLabel = (row) => {
     if (normalize(row?.source_kind) === "property_work_order") {
       const nextKey = normalize(row?.next_action?.key);
@@ -1111,6 +1161,7 @@ export default function ContractorBidsPage() {
               const stage = workspaceStageFromRow(row);
               const actionLabel = rowPrimaryActionLabel(row);
               const signals = prioritizeSignals(row.request_signals).slice(0, 4);
+              const valueDisplay = opportunityValueDisplay(row);
               return (
                 <article
                   key={`${row.source_kind}-${row.bid_id}`}
@@ -1156,8 +1207,8 @@ export default function ContractorBidsPage() {
 
                       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                         <div className="rounded-xl border border-blue-300/10 bg-slate-950/50 p-3">
-                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">Value</div>
-                          <div className="mt-1 font-bold text-white">{row.bid_amount_label || "-"}</div>
+                          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">{valueDisplay.label}</div>
+                          <div className={`mt-1 font-bold ${valueDisplay.tone}`}>{valueDisplay.value}</div>
                         </div>
                         <div className="rounded-xl border border-blue-300/10 bg-slate-950/50 p-3">
                           <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-100/50">Received</div>
@@ -1225,25 +1276,29 @@ export default function ContractorBidsPage() {
       </section>
 
       {selectedRow ? (
-        <div className="fixed inset-0 z-50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
           <button
             type="button"
-            aria-label="Close bid details"
-            className="absolute inset-0 bg-black/40"
+            aria-label="Close opportunity review backdrop"
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
             onClick={closeDrawer}
           />
-          <aside
+          <div
             data-testid="bids-detail-drawer"
-            className="absolute right-0 top-0 flex h-full w-full max-w-xl flex-col border-l border-slate-200 bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="opportunity-review-title"
+            className="relative flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
           >
             <div className="flex items-start justify-between border-b border-slate-200 p-5">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Bid Detail</div>
-                <h3 className="mt-2 text-2xl font-extrabold text-slate-900">{selectedRow.project_title}</h3>
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Opportunity Review</div>
+                <h3 id="opportunity-review-title" className="mt-2 text-2xl font-extrabold text-slate-900">{selectedRow.project_title}</h3>
                 <div className="mt-2 text-sm text-slate-600">{selectedRow.customer_name}</div>
               </div>
               <button
                 type="button"
+                aria-label="Close bid details"
                 onClick={closeDrawer}
                 className="rounded-lg border border-slate-300 bg-white p-2 text-slate-600 hover:bg-slate-50"
               >
@@ -1253,18 +1308,24 @@ export default function ContractorBidsPage() {
 
             <div className="flex-1 overflow-y-auto p-5" data-testid="lead-detail-container">
               <SectionCard
-                title="Lead Overview"
+                title="Project Details"
                 testId="lead-overview"
-                subtitle="A fast read on what this opportunity is and where it came from."
+                subtitle="The customer's request details, separated from your recommended next steps."
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <DetailField label="Project Title" value={selectedRow.project_title} />
-                  <DetailField label="Project Type" value={selectedRow.project_type || selectedRow.project_class_label || "-"} />
-                  <DetailField label="Area / Subtype" value={selectedRow.project_subtype || "-"} />
-                  <DetailField label="Project Family" value={selectedSnapshot.project_family_label || selectedRow.project_class_label || "-"} />
-                  <DetailField label="Location" value={selectedRow.location || "-"} />
-                  <DetailField label="Request Path" value={selectedRow.request_path_label || "Project request"} />
+                  <DetailField label="Customer" value={selectedRow.customer_name || "-"} />
+                  <DetailField label="Contact" value={firstPresent(selectedRow.customer_email, selectedRow.customer_phone, "No contact listed")} />
+                  <DetailField label="Source" value={selectedRow.source_kind_label || "Lead"} />
+                  <DetailField label="Received" value={fmtDate(selectedRow.submitted_at)} />
                   <DetailField label="Status" value={selectedRow.status_label} />
+                  <DetailField label="Project Type" value={firstPresent(selectedRow.project_type, selectedRow.project_class_label, "-")} />
+                  <DetailField label="Project Family" value={selectedSnapshot.project_family_label || selectedRow.project_class_label || "-"} />
+                  <DetailField label="Project Class" value={selectedRow.project_class_label || "-"} />
+                  {selectedRow.project_subtype ? <DetailField label="Area / Subtype" value={selectedRow.project_subtype} /> : null}
+                  {selectedTimeline ? <DetailField label="Timeline" value={selectedTimeline} /> : null}
+                  <DetailField label={selectedValueDisplay.label} value={selectedValueDisplay.value} />
+                  {selectedServiceLocation ? <DetailField label="Service Location" value={selectedServiceLocation} /> : null}
                   {selectedIsPropertyWorkOrder ? (
                     <>
                       <DetailField label="Work Order" value={selectedRow.work_order_number || selectedRow.source_reference || "-"} />
@@ -1275,13 +1336,12 @@ export default function ContractorBidsPage() {
                     </>
                   ) : null}
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                  <DetailField label="Customer" value={selectedRow.customer_name || "-"} />
-                  <DetailField label="Email" value={selectedRow.customer_email || "-"} />
-                  <DetailField label="Phone" value={selectedRow.customer_phone || "-"} />
+                <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project Description</div>
+                  <div className="mt-2">{selectedProjectDescription || "No project description was provided."}</div>
                 </div>
                 <div className="mt-4 text-xs text-slate-500">
-                  Source: {selectedRow.source_kind_label || "Lead"} · Submitted: {fmtDate(selectedRow.submitted_at)} · Agreement: {selectedRow.linked_agreement_reference || "-"}
+                  Reference: {selectedRow.source_reference || "-"} · Agreement: {selectedRow.linked_agreement_reference || "-"}
                 </div>
                 {selectedProjectTypeCue ? (
                   <div
@@ -1305,7 +1365,155 @@ export default function ContractorBidsPage() {
                   </div>
                 ) : null}
               </SectionCard>
+              <SectionCard
+                title="Recommended Next Steps"
+                testId="lead-action-section"
+                subtitle="Choose the next sales action for this opportunity."
+              >
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                  {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order"
+                    ? "This property management work order needs your response. Accept it if you can take the job, or decline it to close the request for your workspace."
+                    : selectedIsPropertyWorkOrder && selectedNextActionKey === "prepare_agreement_draft"
+                      ? "This work order is accepted. Prepare an agreement draft to continue in the existing MyHomeBro agreement workflow."
+                      : selectedIsPropertyWorkOrder && selectedNextActionKey === "open_agreement"
+                        ? "The draft agreement is ready. Open it to continue scope review, signing, and later funding steps."
+                        : selectedStage === "new_lead"
+                          ? "Review the request, schedule an estimate if needed, then convert it into an agreement when the scope is clear."
+                          : selectedStage === "follow_up"
+                            ? "This lead is saved for later. Follow up with the customer or create your estimate when ready."
+                            : selectedStage === "closed"
+                              ? "This opportunity is closed for now, but the record stays here for reference."
+                              : selectedCanOpenAgreement
+                                ? "This opportunity already has a linked agreement. Open it to continue the project workflow."
+                                : "Continue the current bid workflow from here."}
+                </div>
 
+                {(selectedStage === "new_lead" || selectedStage === "follow_up") && !selectedIsPropertyWorkOrder ? (
+                  <div
+                    className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+                    data-testid="create-bid-context-note"
+                  >
+                    {selectedCreateBidContext}
+                  </div>
+                ) : null}
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {selectedStage !== "closed" && !selectedCanOpenAgreement ? (
+                    <button
+                      type="button"
+                      data-testid="schedule-estimate-action"
+                      disabled={!selectedScheduleSupported}
+                      onClick={() => {
+                        if (selectedRow?.schedule_estimate_url) navigate(selectedRow.schedule_estimate_url);
+                        else if (selectedRow?.calendar_event_url) navigate(selectedRow.calendar_event_url);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
+                      title={
+                        selectedScheduleSupported
+                          ? "Schedule an estimate using the existing calendar flow."
+                          : "Calendar estimate scheduling is coming soon."
+                      }
+                    >
+                      Schedule Estimate
+                      {!selectedScheduleSupported ? <span className="text-xs font-medium">(Coming soon)</span> : null}
+                    </button>
+                  ) : null}
+
+                  {selectedStage === "closed" && !selectedCanOpenAgreement ? null : selectedCanOpenAgreement ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(selectedRow.linked_agreement_url)}
+                      data-testid="lead-detail-primary-action"
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                    >
+                      {selectedPrimaryActionLabel}
+                      <ExternalLink size={14} />
+                    </button>
+                  ) : selectedCanConvertToAgreement ? (
+                    <button
+                      type="button"
+                      onClick={() => setConvertPanelOpen(true)}
+                      data-testid="convert-to-agreement-action"
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+                    >
+                      {selectedPrimaryActionLabel}
+                      <ArrowRight size={14} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => runAction(selectedRow)}
+                      disabled={actionBusyId === String(selectedRow.bid_id)}
+                      data-testid={
+                        selectedStage === "new_lead" || selectedStage === "follow_up"
+                          ? "create-bid-action"
+                          : "lead-detail-primary-action"
+                      }
+                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+                    >
+                      {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedPrimaryActionLabel}
+                      <ExternalLink size={14} />
+                    </button>
+                  )}
+
+                  {selectedCustomerId ? (
+                    <button
+                      type="button"
+                      data-testid="open-customer-workspace-action"
+                      onClick={() => navigate(`/app/customers/${selectedCustomerId}`)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      Open Customer Workspace
+                    </button>
+                  ) : null}
+
+                  {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order" ? (
+                    <button
+                      type="button"
+                      onClick={() => respondToPropertyWorkOrder(selectedRow, "decline")}
+                      disabled={actionBusyId === String(selectedRow.bid_id)}
+                      data-testid="decline-property-work-order-action"
+                      className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+                    >
+                      Decline
+                    </button>
+                  ) : null}
+                  {selectedStage === "new_lead" && !selectedIsPropertyWorkOrder ? (
+                    <button
+                      type="button"
+                      onClick={() => patchLeadStatus(selectedRow, "follow_up", { keepSelected: true, nextWorkspaceTab: "follow_up" })}
+                      disabled={actionBusyId === String(selectedRow.bid_id)}
+                      data-testid="follow-up-action-button"
+                      className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                    >
+                      Follow Up
+                    </button>
+                  ) : null}
+                  {selectedStage === "follow_up" && !selectedIsPropertyWorkOrder ? (
+                    <button
+                      type="button"
+                      onClick={() => patchLeadStatus(selectedRow, "new", { keepSelected: true, nextWorkspaceTab: "new_lead" })}
+                      disabled={actionBusyId === String(selectedRow.bid_id)}
+                      data-testid="resume-review-action"
+                      className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                    >
+                      Resume Review
+                    </button>
+                  ) : null}
+                  {selectedRow?.source_reference ? (
+                    <button
+                      type="button"
+                      onClick={() => copyReference(selectedRow.source_reference, selectedRow.bid_id)}
+                      data-testid="lead-detail-secondary-action"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                      <Copy size={14} />
+                      {copiedRefId === String(selectedRow.bid_id) ? "Copied" : "Copy Reference"}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="mt-3 text-xs text-slate-500">{selectedPrimaryActionHint}</div>
+              </SectionCard>
               <SectionCard
                 title="Project Snapshot"
                 testId="project-snapshot"
@@ -1314,8 +1522,8 @@ export default function ContractorBidsPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <DetailField label="Scope Summary" value={selectedSnapshot.project_scope_summary || selectedSnapshot.refined_description || selectedRow.notes || "-"} />
                   <DetailField label="Measurements" value={selectedSnapshot.measurement_handling || selectedRow.measurement_handling || "-"} />
-                  <DetailField label="Timing" value={selectedSnapshot.timeline || selectedRow.timeline || "-"} />
-                  <DetailField label="Budget" value={selectedSnapshot.budget || selectedRow.bid_amount_label || "-"} />
+                  {selectedTimeline ? <DetailField label="Timing" value={selectedTimeline} /> : null}
+                  <DetailField label={selectedValueDisplay.label} value={selectedValueDisplay.value} />
                 </div>
                 {selectedClarifications.length ? (
                   <div className="mt-4">
@@ -1521,124 +1729,6 @@ export default function ContractorBidsPage() {
                 </div>
               </SectionCard>
 
-              <SectionCard
-                title="Suggested Next Step"
-                testId="suggested-next-step-section"
-                subtitle="Keep the decision simple and move the opportunity forward from here."
-              >
-                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
-                  {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order"
-                    ? "This property management work order needs your response. Accept it if you can take the job, or decline it to close the request for your workspace."
-                    : selectedIsPropertyWorkOrder && selectedNextActionKey === "prepare_agreement_draft"
-                      ? "This work order is accepted. Prepare an agreement draft to continue in the existing MyHomeBro agreement workflow."
-                      : selectedIsPropertyWorkOrder && selectedNextActionKey === "open_agreement"
-                        ? "The draft agreement is ready. Open it to continue scope review, signing, and later funding steps."
-                        : selectedStage === "new_lead"
-                    ? "This request is ready for a bid decision. Review the details, then create your bid when you're ready."
-                    : selectedStage === "follow_up"
-                      ? "This lead is saved for later. Resume it when you are ready or create your bid now."
-                    : selectedStage === "closed"
-                      ? "This opportunity is closed for now, but the record stays here for reference."
-                      : selectedRow.next_action?.label || "Continue the existing bid workflow."}
-                </div>
-                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4" data-testid="lead-action-section">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                    {selectedIsPropertyWorkOrder ? "Work Order Actions" : "Lead Actions"}
-                  </div>
-                  {(selectedStage === "new_lead" || selectedStage === "follow_up") && !selectedIsPropertyWorkOrder ? (
-                    <div
-                      className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
-                      data-testid="create-bid-context-note"
-                    >
-                      {selectedCreateBidContext}
-                    </div>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    {selectedStage === "closed" && !selectedCanOpenAgreement ? null : selectedCanOpenAgreement ? (
-                      <button
-                        type="button"
-                        onClick={() => navigate(selectedRow.linked_agreement_url)}
-                        data-testid="lead-detail-primary-action"
-                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
-                      >
-                        {selectedPrimaryActionLabel}
-                        <ExternalLink size={14} />
-                      </button>
-                    ) : selectedCanConvertToAgreement ? (
-                      <button
-                        type="button"
-                        onClick={() => setConvertPanelOpen(true)}
-                        data-testid="convert-to-agreement-action"
-                        className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
-                      >
-                        {selectedPrimaryActionLabel}
-                        <ArrowRight size={14} />
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => runAction(selectedRow)}
-                        disabled={actionBusyId === String(selectedRow.bid_id)}
-                        data-testid={
-                          selectedStage === "new_lead" || selectedStage === "follow_up"
-                            ? "create-bid-action"
-                            : "lead-detail-primary-action"
-                        }
-                        className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
-                      >
-                        {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedPrimaryActionLabel}
-                        <ExternalLink size={14} />
-                      </button>
-                    )}
-                    {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order" ? (
-                      <button
-                        type="button"
-                        onClick={() => respondToPropertyWorkOrder(selectedRow, "decline")}
-                        disabled={actionBusyId === String(selectedRow.bid_id)}
-                        data-testid="decline-property-work-order-action"
-                        className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
-                      >
-                        Decline
-                      </button>
-                    ) : null}
-                    {selectedStage === "new_lead" && !selectedIsPropertyWorkOrder ? (
-                      <button
-                        type="button"
-                        onClick={() => patchLeadStatus(selectedRow, "follow_up", { keepSelected: true, nextWorkspaceTab: "follow_up" })}
-                        disabled={actionBusyId === String(selectedRow.bid_id)}
-                        data-testid="follow-up-action-button"
-                        className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
-                      >
-                        Save for Later
-                      </button>
-                    ) : null}
-                    {selectedStage === "follow_up" && !selectedIsPropertyWorkOrder ? (
-                      <button
-                        type="button"
-                        onClick={() => patchLeadStatus(selectedRow, "new", { keepSelected: true, nextWorkspaceTab: "new_lead" })}
-                        disabled={actionBusyId === String(selectedRow.bid_id)}
-                        data-testid="resume-review-action"
-                        className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
-                      >
-                        Resume Review
-                      </button>
-                    ) : null}
-                    {selectedRow?.source_reference ? (
-                      <button
-                        type="button"
-                        onClick={() => copyReference(selectedRow.source_reference, selectedRow.bid_id)}
-                        data-testid="lead-detail-secondary-action"
-                        className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        <Copy size={14} />
-                        {copiedRefId === String(selectedRow.bid_id) ? "Copied" : "Copy Reference"}
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="mt-3 text-xs text-slate-500">{selectedPrimaryActionHint}</div>
-                </div>
-              </SectionCard>
-
               <SectionCard title="Internal Notes" testId="lead-notes-section">
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   {selectedRow.notes || "No bid notes were provided."}
@@ -1667,7 +1757,7 @@ export default function ContractorBidsPage() {
                 </div>
               </div>
             </div>
-          </aside>
+          </div>
         </div>
       ) : null}
       <ConvertToAgreementPanel

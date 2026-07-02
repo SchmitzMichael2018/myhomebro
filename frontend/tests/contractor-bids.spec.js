@@ -219,6 +219,7 @@ const bidRows = [
     source_reference: "Lead #5",
     project_title: "Retail Buildout",
     customer_name: "Linked Commercial Lead",
+    customer_id: 505,
     customer_email: "linked@example.com",
     customer_phone: "",
     location: "Dallas, TX",
@@ -810,7 +811,11 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
 
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
+  await expect(page.getByTestId("lead-overview")).toContainText("Project Details");
   await expect(page.getByTestId("lead-action-section")).toBeVisible();
+  await expect(page.getByTestId("lead-action-section")).toContainText("Recommended Next Steps");
+  await expect(page.getByTestId("lead-action-section")).toContainText("Schedule Estimate");
+  await expect(page.getByTestId("schedule-estimate-action")).toBeDisabled();
   await expect(page.getByTestId("response-prep-section")).toBeVisible();
   await expect(page.getByTestId("response-starter-section")).toBeVisible();
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Photos are available to review");
@@ -821,7 +826,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("photos-section")).toContainText("Shower area");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demolition");
   await expect(page.getByTestId("request-signals-section")).toContainText("Multi-Quote Request");
-  await expect(page.getByTestId("suggested-next-step-section")).toContainText("ready for a bid decision");
+  await expect(page.getByTestId("lead-action-section")).toContainText("convert it into an agreement");
   await expect(page.getByTestId("response-templates-section")).toBeVisible();
   await expect(page.getByTestId("response-template-general")).toContainText("General Response");
   await expect(page.getByTestId("response-template-photos")).toContainText("With Photos");
@@ -829,7 +834,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("response-template-copy-general")).toContainText("Copied");
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Bathroom remodels are clearer");
   await expect(page.getByTestId("create-bid-action")).toContainText("Create Estimate");
-  await expect(page.getByTestId("follow-up-action-button")).toContainText("Save for Later");
+  await expect(page.getByTestId("follow-up-action-button")).toContainText("Follow Up");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
@@ -857,7 +862,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-row-lead-4")).toContainText("Closed / Archived");
   await page.getByTestId("lead-row-lead-4").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
-  await expect(page.getByTestId("suggested-next-step-section")).toContainText("closed for now");
+  await expect(page.getByTestId("lead-action-section")).toContainText("closed for now");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
@@ -875,6 +880,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("project-phases-section")).toContainText("Demo Phase");
   await expect(page.getByTestId("request-signals-section")).toContainText("Photos");
   await expect(page.getByTestId("lead-detail-primary-action")).toContainText("Open Agreement");
+  await expect(page.getByTestId("open-customer-workspace-action")).toContainText("Open Customer Workspace");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);

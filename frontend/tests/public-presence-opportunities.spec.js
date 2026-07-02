@@ -308,6 +308,9 @@ test('opening a public website opportunity uses the unified detail and agreement
   await page.getByTestId('lead-row-lead-101').click();
 
   await expect(page.getByTestId('bids-detail-drawer')).toBeVisible();
+  await expect(page.getByTestId('lead-overview')).toContainText('Project Details');
+  await expect(page.getByTestId('lead-action-section')).toContainText('Recommended Next Steps');
+  await expect(page.getByTestId('schedule-estimate-action')).toContainText('Schedule Estimate');
   await expect(page.getByTestId('lead-detail-container')).toContainText('Website Concrete Patio');
   await expect(page.getByTestId('lead-detail-container')).toContainText('Website Customer');
   await expect(page.getByTestId('lead-action-section')).toContainText('Convert to Agreement');
