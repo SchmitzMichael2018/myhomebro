@@ -39,29 +39,6 @@ function isConvertToAgreementRow(row) {
   return false;
 }
 
-function SummaryCard({ label, value, tone = "slate", testId, active = false, onClick }) {
-  const tones = {
-    emerald: "border-emerald-400/40 bg-emerald-400/10 text-emerald-100",
-    amber: "border-amber-400/40 bg-amber-400/10 text-amber-100",
-    indigo: "border-indigo-400/40 bg-indigo-400/10 text-indigo-100",
-    slate: "border-slate-600 bg-slate-900/70 text-slate-100",
-  };
-
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={onClick}
-      className={`min-h-[92px] rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:bg-blue-950/60 focus:outline-none focus:ring-2 focus:ring-blue-300 ${
-        tones[tone] || tones.slate
-      } ${active ? "border-blue-300 bg-blue-950/70 ring-2 ring-blue-400/40" : ""}`}
-    >
-      <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
-    </button>
-  );
-}
-
 function statusTone(status) {
   const normalized = normalize(status);
   if (normalized === "awarded") return "border-emerald-200 bg-emerald-50 text-emerald-800";
@@ -342,21 +319,21 @@ function buildResponseStarter({ snapshot, signals, stage, projectIntelligence })
   if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) {
     parts.push("I reviewed the photos and will confirm the scope before I price the work.");
   } else {
-    parts.push("I’ll review the scope and follow up if anything needs clarification.");
+    parts.push("I'll review the scope and follow up if anything needs clarification.");
   }
 
   if (normalize(snapshot?.measurement_handling) === "site visit required") {
     parts.push("I may want to verify measurements on site before final pricing.");
   } else if (normalize(snapshot?.measurement_handling) === "provided") {
-    parts.push("I’ll check the provided measurements against the work requested.");
+    parts.push("I'll check the provided measurements against the work requested.");
   }
 
   if (snapshot?.timeline || signalSet.has("timeline provided")) {
-    parts.push("I’ll also confirm timing and availability.");
+    parts.push("I'll also confirm timing and availability.");
   }
 
   if (normalize(snapshot?.request_path_label) === "multi-quote request" || signalSet.has("multi-quote request")) {
-    parts.push("It looks like the customer is comparing options, so I’ll keep the response clear and practical.");
+    parts.push("It looks like the customer is comparing options, so I'll keep the response clear and practical.");
   }
 
   return parts.join(" ");
@@ -374,7 +351,7 @@ function buildCreateBidContext({ snapshot, signals, projectIntelligence }) {
   if (snapshot?.timeline || signalSet.has("timeline provided")) parts.push("Timing guidance is available.");
   if ((snapshot?.clarification_count || 0) > 0 || signalSet.has("clarifications answered")) parts.push("Clarified details are available.");
   if (parts.length) return parts.join(" ");
-  return "Review the request details and create your bid when you’re ready.";
+  return "Review the request details and create your bid when you're ready.";
 }
 
 function buildResponseTemplates({ snapshot, signals }) {
@@ -386,7 +363,7 @@ function buildResponseTemplates({ snapshot, signals }) {
   templates.push({
     key: "general",
     label: "General Response",
-    text: "Thanks for sharing your project details. I’ve reviewed your request and would be happy to take a closer look and provide an estimate.",
+    text: "Thanks for sharing your project details. I've reviewed your request and would be happy to take a closer look and provide an estimate.",
   });
 
   if ((snapshot?.photo_count || 0) > 0 || signalSet.has("photos")) {
@@ -565,8 +542,102 @@ export default function ContractorBidsPage() {
     return counts;
   }, [rows]);
   const marketplaceEligibility = serverSummary?.marketplace_eligibility || {};
-  const marketplaceStatus = normalize(marketplaceEligibility.verification_status || "unverified");
-  const marketplaceStatusLabel = marketplaceStatus.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  const trustProfile = useMemo(() => {
+    const percentCandidates = [
+      serverSummary?.trust_score,
+      serverSummary?.profile_strength,
+      serverSummary?.profile_strength_percent,
+      serverSummary?.profile_completion_percent,
+      marketplaceEligibility?.trust_score,
+      marketplaceEligibility?.profile_strength,
+      marketplaceEligibility?.profile_completion_percent,
+    ];
+    const explicitPercent = percentCandidates
+      .map((value) => Number(value))
+      .find((value) => Number.isFinite(value) && value >= 0);
+
+    const profileComplete = Boolean(
+      serverSummary?.profile_complete ||
+        serverSummary?.public_profile_complete ||
+        marketplaceEligibility?.profile_complete ||
+        marketplaceEligibility?.public_profile_complete
+    );
+    const paymentReady = Boolean(marketplaceEligibility?.stripe_ready || serverSummary?.stripe_ready || serverSummary?.payment_ready);
+    const licenseUploaded = Boolean(
+      marketplaceEligibility?.license_uploaded ||
+        marketplaceEligibility?.license_on_file ||
+        serverSummary?.license_uploaded ||
+        serverSummary?.license_on_file
+    );
+    const insuranceUploaded = Boolean(
+      marketplaceEligibility?.insurance_uploaded ||
+        marketplaceEligibility?.insurance_on_file ||
+        serverSummary?.insurance_uploaded ||
+        serverSummary?.insurance_on_file
+    );
+    const websitePublished = Boolean(
+      serverSummary?.website_published ||
+        serverSummary?.public_profile_published ||
+        marketplaceEligibility?.website_published ||
+        marketplaceEligibility?.public_profile_published
+    );
+    const reviewCount = Number(serverSummary?.review_count ?? marketplaceEligibility?.review_count ?? 0);
+    const rating = Number(serverSummary?.rating_average ?? serverSummary?.average_rating ?? marketplaceEligibility?.rating_average ?? 0);
+    const responseRate = Number(serverSummary?.response_rate ?? marketplaceEligibility?.response_rate ?? 0);
+    const hasResponseData = Number.isFinite(responseRate) && responseRate > 0;
+
+    const items = [
+      {
+        key: "payment",
+        label: "Payment ready",
+        complete: paymentReady,
+        value: paymentReady ? "Ready" : "Needs setup",
+      },
+      {
+        key: "profile",
+        label: "Profile completeness",
+        complete: profileComplete || (Number.isFinite(explicitPercent) && explicitPercent >= 70),
+        value: Number.isFinite(explicitPercent) ? `${Math.min(100, Math.round(explicitPercent))}%` : profileComplete ? "Strong" : "Needs detail",
+      },
+      {
+        key: "reviews",
+        label: "Reviews / ratings",
+        complete: reviewCount > 0 || rating > 0,
+        value: reviewCount > 0 ? `${reviewCount} review${reviewCount === 1 ? "" : "s"}` : rating > 0 ? `${rating.toFixed(1)} rating` : "No reviews yet",
+      },
+      {
+        key: "license",
+        label: "License uploaded",
+        complete: licenseUploaded,
+        value: licenseUploaded ? "On file" : "Needs upload",
+      },
+      {
+        key: "insurance",
+        label: "Insurance uploaded",
+        complete: insuranceUploaded,
+        value: insuranceUploaded ? "On file" : "Needs upload",
+      },
+      {
+        key: "website",
+        label: "Website/profile published",
+        complete: websitePublished,
+        value: websitePublished ? "Published" : "Draft",
+      },
+      {
+        key: "response",
+        label: "Response performance",
+        complete: hasResponseData ? responseRate >= 80 : true,
+        value: hasResponseData ? `${Math.round(responseRate)}%` : "Tracking soon",
+      },
+    ];
+
+    const completeCount = items.filter((item) => item.complete).length;
+    const score = Number.isFinite(explicitPercent)
+      ? Math.min(100, Math.max(0, Math.round(explicitPercent)))
+      : Math.round((completeCount / items.length) * 100);
+
+    return { score, items };
+  }, [marketplaceEligibility, serverSummary]);
 
   const activeStageLabel =
     activeWorkspaceTab === "all"
@@ -604,57 +675,26 @@ export default function ContractorBidsPage() {
       { key: "highest_value", label: isClosedView ? "Highest Value" : "Highest Value" },
     ];
   }, [activeWorkspaceTab]);
-  const requestFilterOptions = useMemo(
-    () => [
-      { key: "all", label: "All" },
-      { key: "has_photos", label: "Has Photos" },
-      { key: "budget_provided", label: "Budget Provided" },
-      { key: "timeline_provided", label: "Timeline Provided" },
-      { key: "clarifications_included", label: "Clarifications Included" },
-      { key: "multi_quote", label: "Multi-Quote" },
-      {
-        key: "needs_attention",
-        label:
-          activeWorkspaceTab === "new_lead"
-            ? "Needs Response"
-            : activeWorkspaceTab === "follow_up"
-              ? "Needs Follow-Up"
-              : "Needs Attention",
-      },
-    ],
-    [activeWorkspaceTab]
-  );
   const workspaceTabs = useMemo(
     () => [
+      { key: "all", label: "All", count: rows.length, testId: "leads-tab-all" },
       { key: "new_lead", label: "New Leads", count: summary.new_leads, testId: "leads-tab-new" },
       { key: "follow_up", label: "Follow-Up", count: summary.follow_up_leads, testId: "leads-tab-follow-up" },
       { key: "active_bid", label: "Active Opportunities", count: summary.active_bids, testId: "leads-tab-active" },
       { key: "work_order", label: "Work Orders", count: summary.work_orders, testId: "leads-tab-work-orders" },
       { key: "closed", label: "Closed / Archived", count: summary.closed, testId: "leads-tab-closed" },
     ],
-    [summary.active_bids, summary.closed, summary.follow_up_leads, summary.new_leads, summary.work_orders]
+    [rows.length, summary.active_bids, summary.closed, summary.follow_up_leads, summary.new_leads, summary.work_orders]
   );
-  const sourceFilterOptions = useMemo(
-    () => [
-      { key: "all", label: "All" },
-      { key: "website", label: "Website" },
-      { key: "landing", label: "Landing" },
-      { key: "qr", label: "QR" },
-      { key: "portal", label: "Portal" },
-      { key: "marketplace", label: "Marketplace" },
-      { key: "manual", label: "Manual" },
-      { key: "work_orders", label: "Work Orders" },
-    ],
-    []
-  );
-  const activeSourceLabel = sourceFilterOptions.find((option) => option.key === sourceFilter)?.label || "All";
-  const selectStage = (stage, source = "all") => {
-    setActiveWorkspaceTab(stage);
-    setSourceFilter(source);
-    setRequestFilter("all");
-  };
   const activeSortLabel = sortOptions.find((option) => option.key === sortBy)?.label || "Recommended";
-  const activeFilterLabel = requestFilterOptions.find((option) => option.key === requestFilter)?.label || "All";
+  const hasActiveFilters = sourceFilter !== "all" || requestFilter !== "all" || statusFilter !== "all" || projectClassFilter !== "all" || search.trim();
+  const resetFilters = () => {
+    setSourceFilter("all");
+    setRequestFilter("all");
+    setStatusFilter("all");
+    setProjectClassFilter("all");
+    setSearch("");
+  };
 
   const outcomeNote =
     normalize(selectedRow?.status_label) === "not selected"
@@ -1025,114 +1065,42 @@ export default function ContractorBidsPage() {
             Review new leads first, then move into active opportunities and closed work without leaving the same workspace.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => navigate("/app/marketing?tab=leads")}
-          className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          Website Leads
-        </button>
       </div>
 
       <section
-        data-testid="contractor-marketplace-eligibility-status"
-        className="rounded-xl border border-blue-300/20 bg-slate-950/50 px-4 py-3 shadow-sm"
+        data-testid="contractor-trust-score-card"
+        className="rounded-2xl border border-blue-300/20 bg-slate-950/70 p-4 shadow-sm"
       >
-        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-100/70">Marketplace status</div>
-            <div className="mt-1 text-sm text-blue-50">
-              {marketplaceStatusLabel}
-              {marketplaceEligibility.preferred ? <span className="ml-2 font-semibold text-emerald-300">Preferred</span> : null}
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl border border-emerald-300/25 bg-emerald-400/10 text-xl font-extrabold text-emerald-100">
+              {trustProfile.score}
+            </div>
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-100/70">Trust Score</div>
+              <div className="mt-1 text-lg font-bold text-white">Profile Strength</div>
+              <p className="mt-1 max-w-2xl text-sm text-blue-100/70">
+                Higher trust scores can help customers feel more confident and may improve marketplace ranking.
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-            <span className={`rounded-full border px-3 py-1 ${marketplaceStatus === "verified" ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-200" : marketplaceStatus === "suspended" || marketplaceStatus === "rejected" ? "border-rose-300/40 bg-rose-400/10 text-rose-200" : "border-amber-300/40 bg-amber-400/10 text-amber-100"}`}>
-              {marketplaceStatusLabel}
-            </span>
-            <span className={`rounded-full border px-3 py-1 ${marketplaceEligibility.stripe_ready ? "border-emerald-300/40 bg-emerald-400/10 text-emerald-200" : "border-amber-300/40 bg-amber-400/10 text-amber-100"}`}>
-              {marketplaceEligibility.stripe_ready ? "Stripe ready" : "Stripe setup needed"}
-            </span>
-            {marketplaceEligibility.action_needed ? (
-              <button
-                type="button"
-                onClick={() => navigate("/app/profile")}
-                className="rounded-full border border-amber-300/40 bg-amber-400/10 px-3 py-1 text-amber-100 hover:bg-amber-400/20"
+          <div className="grid gap-2 sm:grid-cols-2 lg:max-w-2xl lg:grid-cols-3" data-testid="trust-score-items">
+            {trustProfile.items.slice(0, 6).map((item) => (
+              <div
+                key={item.key}
+                data-testid={`trust-score-item-${item.key}`}
+                className={`rounded-xl border px-3 py-2 text-sm ${
+                  item.complete
+                    ? "border-emerald-300/25 bg-emerald-400/10 text-emerald-100"
+                    : "border-amber-300/25 bg-amber-400/10 text-amber-100"
+                }`}
               >
-                Finish setup for routed opportunities
-              </button>
-            ) : (
-              <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-3 py-1 text-emerald-200">Eligible for matching</span>
-            )}
+                <div className="text-xs font-semibold uppercase tracking-[0.12em] opacity-75">{item.label}</div>
+                <div className="mt-1 font-bold">{item.value}</div>
+              </div>
+            ))}
           </div>
         </div>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        <SummaryCard
-          label="New Leads"
-          value={String(summary.new_leads)}
-          tone="slate"
-          testId="bids-summary-new-leads"
-          active={activeWorkspaceTab === "new_lead" && sourceFilter === "all"}
-          onClick={() => selectStage("new_lead")}
-        />
-        <SummaryCard
-          label="Website Leads"
-          value={String(summary.website_leads)}
-          tone="emerald"
-          testId="bids-summary-website-leads"
-          active={sourceFilter === "website_leads"}
-          onClick={() => selectStage("new_lead", "website_leads")}
-        />
-        <SummaryCard
-          label="New Website Leads / Needs Follow-Up"
-          value={`${summary.new_website_leads} / ${summary.website_leads_needing_follow_up}`}
-          tone="amber"
-          testId="bids-summary-new-website-leads"
-          active={sourceFilter === "website_leads" && activeWorkspaceTab === "new_lead"}
-          onClick={() => selectStage("new_lead", "website_leads")}
-        />
-        <SummaryCard
-          label="Follow-Up"
-          value={String(summary.follow_up_leads)}
-          tone="amber"
-          testId="bids-summary-follow-up"
-          active={activeWorkspaceTab === "follow_up" && sourceFilter === "all"}
-          onClick={() => selectStage("follow_up")}
-        />
-        <SummaryCard
-          label="Active Opportunities"
-          value={String(summary.active_bids)}
-          tone="indigo"
-          testId="bids-summary-active-bids"
-          active={activeWorkspaceTab === "active_bid" && sourceFilter === "all"}
-          onClick={() => selectStage("active_bid")}
-        />
-        <SummaryCard
-          label="Work Orders"
-          value={String(summary.work_orders)}
-          tone="indigo"
-          testId="bids-summary-work-orders"
-          active={activeWorkspaceTab === "work_order"}
-          onClick={() => selectStage("work_order", "work_orders")}
-        />
-        <SummaryCard
-          label="Closed / Archived"
-          value={String(summary.closed)}
-          tone="amber"
-          testId="bids-summary-closed"
-          active={activeWorkspaceTab === "closed" && sourceFilter === "all"}
-          onClick={() => selectStage("closed")}
-        />
-        <SummaryCard
-          label="Total Opportunities"
-          value={String(rows.length)}
-          tone="emerald"
-          testId="bids-summary-total"
-          active={activeWorkspaceTab === "all" && sourceFilter === "all" && requestFilter === "all"}
-          onClick={() => selectStage("all")}
-        />
       </section>
 
       <section className="rounded-2xl border border-blue-300/15 bg-slate-950/60 p-5 shadow-sm">
@@ -1142,7 +1110,7 @@ export default function ContractorBidsPage() {
             <div className="mt-1 text-sm text-blue-100/70">
               {loading
                 ? "Loading opportunity workspace..."
-                : `${visibleRows.length} ${activeStageNoun}${visibleRows.length === 1 ? "" : "s"} · ${activeSortLabel} · ${activeFilterLabel}`}
+                : `${visibleRows.length} ${activeStageNoun}${visibleRows.length === 1 ? "" : "s"} · ${activeSortLabel}`}
             </div>
           </div>
 
@@ -1152,7 +1120,11 @@ export default function ContractorBidsPage() {
                 key={tab.key}
                 type="button"
                 data-testid={tab.testId}
-                onClick={() => setActiveWorkspaceTab(tab.key)}
+                onClick={() => {
+                  setActiveWorkspaceTab(tab.key);
+                  setSourceFilter("all");
+                  setRequestFilter("all");
+                }}
                 className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                   activeWorkspaceTab === tab.key
                     ? "border-blue-300 bg-blue-600 text-white shadow-sm"
@@ -1234,54 +1206,18 @@ export default function ContractorBidsPage() {
           </label>
         </div>
 
-        <div className="mt-4">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-blue-100/60">Lead source</div>
-          <div className="mt-2 flex flex-wrap gap-2" data-testid="workspace-source-chips">
-            {sourceFilterOptions.map((option) => {
-              const active = sourceFilter === option.key;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  data-testid={`workspace-source-${option.key}`}
-                  onClick={() => {
-                    setSourceFilter(option.key);
-                    if (option.key === "work_orders") setActiveWorkspaceTab("work_order");
-                    else if (activeWorkspaceTab === "work_order") setActiveWorkspaceTab("new_lead");
-                  }}
-                  className={`inline-flex items-center rounded-full border px-3 py-2 text-sm font-semibold transition ${
-                    active
-                      ? "border-blue-300 bg-blue-600 text-white shadow-sm"
-                      : "border-blue-300/20 bg-slate-900/60 text-blue-100 hover:bg-slate-800"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
+        {hasActiveFilters ? (
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              data-testid="opportunities-reset-filters"
+              onClick={resetFilters}
+              className="rounded-lg border border-blue-300/25 bg-slate-900 px-4 py-2 text-sm font-semibold text-blue-100 hover:bg-slate-800"
+            >
+              Reset filters
+            </button>
           </div>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2" data-testid="workspace-filter-chips">
-          {requestFilterOptions.map((option) => {
-            const active = requestFilter === option.key;
-            return (
-              <button
-                key={option.key}
-                type="button"
-                data-testid={`workspace-filter-${option.key}`}
-                onClick={() => setRequestFilter(option.key)}
-                className={`inline-flex items-center rounded-full border px-3 py-2 text-sm font-semibold transition ${
-                  active
-                    ? "border-blue-300 bg-blue-600 text-white shadow-sm"
-                    : "border-blue-300/20 bg-slate-900/60 text-blue-100 hover:bg-slate-800"
-                }`}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
+        ) : null}
 
         <div className="mt-3 text-xs text-blue-100/60">
           {activeWorkspaceTab === "new_lead"
@@ -1877,3 +1813,6 @@ export default function ContractorBidsPage() {
     </ContractorPageSurface>
   );
 }
+
+
+

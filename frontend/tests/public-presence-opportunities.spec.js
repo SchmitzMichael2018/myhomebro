@@ -74,10 +74,18 @@ function buildSummary(rows) {
     website_leads_needing_follow_up: rows.filter(
       (row) => row.is_website_lead && ['new_lead', 'follow_up'].includes(row.workspace_stage)
     ).length,
+    profile_strength_percent: 72,
+    profile_complete: true,
+    review_count: 2,
+    insurance_uploaded: true,
+    website_published: true,
     marketplace_eligibility: {
-      verification_status: 'verified',
       stripe_ready: true,
-      action_needed: false,
+      license_uploaded: false,
+      insurance_uploaded: true,
+      website_published: true,
+      profile_completion_percent: 72,
+      review_count: 2,
     },
   };
 }
@@ -256,35 +264,37 @@ test('public profile, QR, website, and landing leads land in unified Opportuniti
   await page.goto('/app/opportunities?source=website', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('contractor-bids-title')).toContainText('Opportunities');
-  await expect(page.getByTestId('bids-summary-website-leads')).toContainText('4');
+  await expect(page.getByTestId('bids-summary-website-leads')).toHaveCount(0);
+  await expect(page.getByTestId('workspace-source-chips')).toHaveCount(0);
+  await expect(page.getByTestId('contractor-trust-score-card')).toContainText('Trust Score');
   await expect(page.getByTestId('lead-row-lead-101')).toContainText('Website Customer');
   await expect(page.getByTestId('lead-source-lead-101')).toContainText('Website');
   await expect(page.getByTestId('lead-row-lead-102')).toHaveCount(0);
 
-  await page.getByTestId('bids-summary-website-leads').click();
+  await page.goto('/app/opportunities?source=public_profile', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('lead-row-lead-101')).toContainText('Website Customer');
   await expect(page.getByTestId('lead-row-lead-102')).toContainText('Profile Customer');
   await expect(page.getByTestId('lead-row-lead-103')).toContainText('QR Customer');
   await expect(page.getByTestId('lead-row-lead-104')).toContainText('Landing Customer');
   await expect(page.getByTestId('lead-row-lead-105')).toHaveCount(0);
 
-  await page.getByTestId('workspace-source-website').click();
+  await page.goto('/app/opportunities?source=website', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('lead-row-lead-101')).toContainText('Website Customer');
   await expect(page.getByTestId('lead-row-lead-104')).toHaveCount(0);
 
-  await page.getByTestId('workspace-source-landing').click();
+  await page.goto('/app/opportunities?source=landing', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('lead-row-lead-104')).toContainText('Landing Customer');
 
-  await page.getByTestId('workspace-source-qr').click();
+  await page.goto('/app/opportunities?source=qr', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('lead-row-lead-103')).toContainText('QR Customer');
 
-  await page.getByTestId('workspace-source-portal').click();
+  await page.goto('/app/opportunities?source=portal', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('lead-row-lead-105')).toContainText('Portal Customer');
 
-  await page.getByTestId('workspace-source-marketplace').click();
+  await page.goto('/app/opportunities?source=marketplace', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('lead-row-lead-106')).toContainText('Marketplace Customer');
 
-  await page.getByTestId('workspace-source-manual').click();
+  await page.goto('/app/opportunities?source=manual', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('lead-row-lead-107')).toContainText('Manual Customer');
 });
 

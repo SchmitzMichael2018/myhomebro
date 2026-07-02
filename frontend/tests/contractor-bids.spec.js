@@ -633,6 +633,23 @@ function buildSummary(rows) {
     website_leads_needing_follow_up: rows.filter(
       (row) => row.is_website_lead && ["new_lead", "follow_up"].includes(row.workspace_stage)
     ).length,
+    profile_strength_percent: 68,
+    profile_complete: true,
+    review_count: 3,
+    rating_average: 4.7,
+    insurance_uploaded: true,
+    website_published: true,
+    response_rate: 91,
+    marketplace_eligibility: {
+      stripe_ready: true,
+      license_uploaded: false,
+      insurance_uploaded: true,
+      website_published: true,
+      profile_completion_percent: 68,
+      review_count: 3,
+      rating_average: 4.7,
+      response_rate: 91,
+    },
   };
 }
 
@@ -775,19 +792,26 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("leads-tab-follow-up")).toContainText("Follow-Up");
   await expect(page.getByTestId("leads-tab-active")).toContainText("Active Opportunities");
   await expect(page.getByTestId("leads-tab-closed")).toContainText("Closed / Archived");
-  await expect(page.getByTestId("bids-summary-new-leads")).toContainText("New Leads");
-  await expect(page.getByTestId("bids-summary-follow-up")).toContainText("Follow-Up");
-  await expect(page.getByTestId("bids-summary-active-bids")).toContainText("Active Opportunities");
-  await expect(page.getByTestId("bids-summary-closed")).toContainText("Closed / Archived");
-  await expect(page.getByTestId("bids-summary-total")).toContainText("Total Opportunities");
+  await expect(page.getByTestId("bids-summary-new-leads")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-source-chips")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-filter-chips")).toHaveCount(0);
+  await expect(page.getByTestId("contractor-trust-score-card")).toContainText("Trust Score");
+  await expect(page.getByTestId("contractor-trust-score-card")).toContainText("Profile Strength");
+  await expect(page.getByTestId("contractor-trust-score-card")).toContainText("Higher trust scores");
+  await expect(page.getByTestId("trust-score-item-license")).toContainText("License uploaded");
+  await expect(page.getByTestId("trust-score-item-license")).toContainText("Needs upload");
+  await expect(page.getByTestId("contractor-trust-score-card")).not.toContainText("You are not eligible");
+  await expect(page.getByTestId("contractor-trust-score-card")).not.toContainText("Blocked");
+  await expect(page.getByTestId("contractor-marketplace-eligibility-status")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Website Leads" })).toHaveCount(0);
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Guided Intake");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Photos");
   await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Review Lead");
-  await page.getByTestId("bids-summary-follow-up").click();
+  await page.getByTestId("leads-tab-follow-up").click();
   await expect(page.getByTestId("lead-row-lead-8")).toBeVisible();
   await expect(page.getByTestId("lead-row-lead-6")).toHaveCount(0);
-  await page.getByTestId("bids-summary-new-leads").click();
+  await page.getByTestId("leads-tab-new").click();
   await expect(page.getByTestId("lead-row-lead-6")).toBeVisible();
   await expect(page.locator('article[data-testid^="lead-row-"]').nth(0)).toContainText("Bathroom Remodel");
   await expect(page.locator('article[data-testid^="lead-row-"]').nth(1)).toContainText("Guest Bath Refresh");
@@ -798,7 +822,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.locator('article[data-testid^="lead-row-"]').nth(1)).toContainText("Bathroom Remodel");
 
   await page.getByTestId("workspace-sort-control").selectOption("recommended");
-  await page.getByTestId("workspace-filter-has_photos").click();
+  await page.getByTestId("bids-search").fill("Bathroom Remodel");
   await expect(page.locator('article[data-testid^="lead-row-"]')).toHaveCount(1);
   await expect(page.getByTestId("lead-row-lead-6")).toBeVisible();
 
@@ -828,7 +852,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
-  await page.getByTestId("workspace-filter-all").click();
+  await page.getByTestId("opportunities-reset-filters").click();
 
   await page.getByTestId("leads-tab-follow-up").click();
   await expect(page.getByTestId("lead-row-lead-8")).toContainText("Follow-Up");
@@ -891,7 +915,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   expect(consoleErrors.filter((msg) => msg.includes("Failed to load bids"))).toHaveLength(0);
 });
 
-test("website leads are summarized, labeled, and filterable in opportunities", async ({ page }) => {
+test("website and public-source leads are labeled in the simplified opportunities pipeline", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
   });
@@ -1042,31 +1066,30 @@ test("website leads are summarized, labeled, and filterable in opportunities", a
 
   await page.goto("/app/opportunities?source=website", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByTestId("bids-summary-website-leads")).toContainText("4");
-  await expect(page.getByTestId("bids-summary-new-website-leads")).toContainText("4 / 4");
+  await expect(page.getByTestId("bids-summary-website-leads")).toHaveCount(0);
+  await expect(page.getByTestId("workspace-source-chips")).toHaveCount(0);
   await expect(page.getByTestId("lead-row-lead-901")).toContainText("Website Customer");
   await expect(page.getByTestId("lead-source-lead-901")).toContainText("Website");
   await expect(page.getByTestId("lead-row-lead-902")).toHaveCount(0);
   await expect(page.getByTestId("lead-row-lead-903")).toHaveCount(0);
 
-  await page.getByTestId("workspace-source-landing").click();
+  await page.goto("/app/opportunities?source=landing", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("lead-row-lead-904")).toContainText("Landing Customer");
   await expect(page.getByTestId("lead-row-lead-901")).toHaveCount(0);
 
-  await page.getByTestId("workspace-source-qr").click();
+  await page.goto("/app/opportunities?source=qr", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("lead-row-lead-903")).toContainText("QR Customer");
 
-  await page.getByTestId("workspace-source-portal").click();
+  await page.goto("/app/opportunities?source=portal", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("lead-row-lead-905")).toContainText("Portal Customer");
 
-  await page.getByTestId("workspace-source-marketplace").click();
+  await page.goto("/app/opportunities?source=marketplace", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("lead-row-lead-906")).toContainText("Marketplace Customer");
 
-  await page.getByTestId("workspace-source-manual").click();
+  await page.goto("/app/opportunities?source=manual", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("lead-row-lead-907")).toContainText("Manual Customer");
 
   await page.goto("/app/opportunities?source=public_profile", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("bids-summary-website-leads")).toContainText("4");
   await expect(page.getByTestId("lead-row-lead-901")).toContainText("Website Customer");
   await expect(page.getByTestId("lead-row-lead-902")).toContainText("Profile Customer");
   await expect(page.getByTestId("lead-source-lead-902")).toContainText("Public Profile");
@@ -1158,7 +1181,6 @@ test("contractor bids workspace renders property management work orders and rout
 
   await page.goto("/app/opportunities?source=property_work_order", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("leads-tab-work-orders")).toContainText("Work Orders");
-  await page.getByTestId("workspace-source-work_orders").click();
   await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("Property Management Work Order");
   await expect(page.getByTestId("lead-source-opportunity-31")).toContainText("Property Management Work Order");
   await expect(page.getByTestId("lead-row-opportunity-31")).toContainText("PWO-000031");
