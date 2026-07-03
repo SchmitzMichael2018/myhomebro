@@ -308,12 +308,20 @@ test('opening a public website opportunity uses the unified detail and agreement
   await page.getByTestId('lead-row-lead-101').click();
 
   await expect(page.getByTestId('bids-detail-drawer')).toBeVisible();
-  await expect(page.getByTestId('lead-overview')).toContainText('Project Details');
+  await expect(page.getByTestId('opportunity-review-tab-overview')).toHaveClass(/bg-slate-900/);
+  await expect(page.getByTestId('opportunity-overview-tab-panel')).toContainText('Overview');
+  await expect(page.getByTestId('opportunity-overview-tab-panel')).toContainText('Website Concrete Patio');
+  await expect(page.getByTestId('opportunity-overview-tab-panel')).toContainText('Website Customer');
   await expect(page.getByTestId('lead-action-section')).toContainText('Recommended Next Steps');
+  await expect(page.getByTestId('lead-action-section')).toContainText('Convert to Agreement');
+  await page.getByTestId('opportunity-review-tab-project').click();
+  await expect(page.getByTestId('lead-overview')).toContainText('Project Details');
+  await page.getByTestId('opportunity-review-tab-next').click();
   await expect(page.getByTestId('schedule-estimate-action')).toContainText('Schedule Estimate');
   await expect(page.getByTestId('lead-detail-container')).toContainText('Website Concrete Patio');
   await expect(page.getByTestId('lead-detail-container')).toContainText('Website Customer');
-  await expect(page.getByTestId('lead-action-section')).toContainText('Convert to Agreement');
+  await page.getByTestId('opportunity-review-tab-history').click();
+  await expect(page.getByTestId('request-signals-section')).toBeVisible();
 
   await page.getByRole('button', { name: 'Close bid details' }).click();
   await page.getByTestId('lead-row-action-lead-101').click();

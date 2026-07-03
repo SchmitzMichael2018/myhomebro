@@ -434,6 +434,7 @@ export default function ContractorBidsPage() {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
+  const [detailTab, setDetailTab] = useState("overview");
   const [convertPanelOpen, setConvertPanelOpen] = useState(false);
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState("new_lead");
   const [sortBy, setSortBy] = useState("recommended");
@@ -484,6 +485,10 @@ export default function ContractorBidsPage() {
   useEffect(() => {
     loadWorkspace();
   }, []);
+
+  useEffect(() => {
+    if (selectedRow) setDetailTab("overview");
+  }, [selectedRow?.bid_id]);
 
   useEffect(() => {
     const source = new URLSearchParams(location.search).get("source");
@@ -778,6 +783,12 @@ export default function ContractorBidsPage() {
   );
   const selectedTimeline = firstPresent(selectedSnapshot?.timeline, selectedRow?.timeline);
   const selectedScheduleSupported = Boolean(selectedRow?.schedule_estimate_url || selectedRow?.calendar_event_url);
+  const detailTabs = [
+    { key: "overview", label: "Overview" },
+    { key: "project", label: "Project Details" },
+    { key: "next", label: "Next Steps" },
+    { key: "history", label: "History" },
+  ];
   const rowPrimaryActionLabel = (row) => {
     if (normalize(row?.source_kind) === "property_work_order") {
       const nextKey = normalize(row?.next_action?.key);
@@ -1306,11 +1317,62 @@ export default function ContractorBidsPage() {
               </button>
             </div>
 
+            <div className="flex gap-2 overflow-x-auto border-b border-slate-200 bg-slate-50 px-5 py-3" data-testid="opportunity-review-tabs">
+              {detailTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  data-testid={`opportunity-review-tab-${tab.key}`}
+                  onClick={() => setDetailTab(tab.key)}
+                  className={`shrink-0 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    detailTab === tab.key
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
             <div className="flex-1 overflow-y-auto p-5" data-testid="lead-detail-container">
+              {detailTab === "overview" ? (
+                <SectionCard
+                  title="Overview"
+                  testId="opportunity-overview-tab-panel"
+                  subtitle="The short version: what the customer needs and what to do next."
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedRow.source_kind_label ? (
+                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                        {selectedRow.source_kind_label}
+                      </span>
+                    ) : null}
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${workspaceStageTone(selectedStage)}`}>
+                      {workspaceStageLabel(selectedStage)}
+                    </span>
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(selectedRow.status)}`}>
+                      {selectedRow.status_label}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <DetailField label="Project" value={selectedRow.project_title} />
+                    <DetailField label="Customer" value={selectedRow.customer_name || "-"} />
+                    <DetailField label="Received" value={fmtDate(selectedRow.submitted_at)} />
+                    <DetailField label={selectedValueDisplay.label} value={selectedValueDisplay.value} />
+                  </div>
+                  <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project Description</div>
+                    <div className="mt-2">{selectedProjectDescription || "No project description was provided."}</div>
+                  </div>
+                </SectionCard>
+              ) : null}
+
               <SectionCard
                 title="Project Details"
                 testId="lead-overview"
                 subtitle="The customer's request details, separated from your recommended next steps."
+                className={detailTab === "project" ? "" : "hidden"}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <DetailField label="Project Title" value={selectedRow.project_title} />
@@ -1369,6 +1431,7 @@ export default function ContractorBidsPage() {
                 title="Recommended Next Steps"
                 testId="lead-action-section"
                 subtitle="Choose the next sales action for this opportunity."
+                className={detailTab === "overview" || detailTab === "next" ? "" : "hidden"}
               >
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order"
@@ -1518,6 +1581,7 @@ export default function ContractorBidsPage() {
                 title="Project Snapshot"
                 testId="project-snapshot"
                 subtitle="Useful project details pulled from the request and the structured intake."
+                className={detailTab === "project" ? "" : "hidden"}
               >
                 <div className="grid gap-3 sm:grid-cols-2">
                   <DetailField label="Scope Summary" value={selectedSnapshot.project_scope_summary || selectedSnapshot.refined_description || selectedRow.notes || "-"} />
@@ -1543,6 +1607,7 @@ export default function ContractorBidsPage() {
                 title="Recommended Setup"
                 testId="recommended-setup-section"
                 subtitle="A suggested starting point based on the project details provided."
+                className={detailTab === "project" ? "" : "hidden"}
               >
                 <div className="grid gap-3 sm:grid-cols-3">
                   <DetailField
@@ -1580,6 +1645,7 @@ export default function ContractorBidsPage() {
                 title="Photos and Reference Images"
                 testId="photos-section"
                 subtitle="Visual context helps the contractor understand scope faster."
+                className={detailTab === "project" ? "" : "hidden"}
               >
                 {selectedPhotos.length ? (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1615,6 +1681,7 @@ export default function ContractorBidsPage() {
                 title="Project Phases"
                 testId="project-phases-section"
                 subtitle="Readable plan phases from the current request."
+                className={detailTab === "project" ? "" : "hidden"}
               >
                 {selectedMilestones.length ? (
                   <div className="space-y-3">
@@ -1637,6 +1704,7 @@ export default function ContractorBidsPage() {
                   title="Before You Respond"
                   testId="response-prep-section"
                   subtitle="A short checklist to help you prepare a useful bid."
+                  className={detailTab === "next" ? "" : "hidden"}
                 >
                   <ul className="space-y-2 text-sm text-slate-700">
                     {selectedBidPrepItems.map((item) => (
@@ -1654,6 +1722,7 @@ export default function ContractorBidsPage() {
                   title="Suggested First Response"
                   testId="response-starter-section"
                   subtitle="This is a helper, not a sent message."
+                  className={detailTab === "next" ? "" : "hidden"}
                 >
                   <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                     {selectedResponseStarter}
@@ -1676,6 +1745,7 @@ export default function ContractorBidsPage() {
                   title="Quick Response Templates"
                   testId="response-templates-section"
                   subtitle="Short starting points you can copy into a response or bid note."
+                  className={detailTab === "next" ? "" : "hidden"}
                 >
                   <div className="space-y-3">
                     {selectedResponseTemplates.map((template) => {
@@ -1712,6 +1782,7 @@ export default function ContractorBidsPage() {
                 title="Request Signals"
                 testId="request-signals-section"
                 subtitle="Quick human-readable cues that help you judge the request at a glance."
+                className={detailTab === "history" ? "" : "hidden"}
               >
                 <div className="flex flex-wrap gap-2">
                   {selectedSignals.length ? (
@@ -1729,7 +1800,7 @@ export default function ContractorBidsPage() {
                 </div>
               </SectionCard>
 
-              <SectionCard title="Internal Notes" testId="lead-notes-section">
+              <SectionCard title="Internal Notes" testId="lead-notes-section" className={detailTab === "history" ? "" : "hidden"}>
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   {selectedRow.notes || "No bid notes were provided."}
                 </div>
@@ -1742,7 +1813,7 @@ export default function ContractorBidsPage() {
                 />
               </SectionCard>
 
-              <div className="mt-5 rounded-xl border border-slate-200 bg-white p-4">
+              <div className={`mt-5 rounded-xl border border-slate-200 bg-white p-4 ${detailTab === "history" ? "" : "hidden"}`}>
                 <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Reference</div>
                 <div className="mt-2 flex items-center gap-3">
                   <div className="text-sm font-semibold text-slate-900">{selectedRow.source_reference}</div>
@@ -1754,6 +1825,9 @@ export default function ContractorBidsPage() {
                     <Copy size={14} />
                     {copiedRefId === String(selectedRow.bid_id) ? "Copied" : "Copy"}
                   </button>
+                </div>
+                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  Detailed status-change history is not available for this opportunity yet.
                 </div>
               </div>
             </div>

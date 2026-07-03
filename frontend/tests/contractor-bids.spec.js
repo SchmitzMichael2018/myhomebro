@@ -811,22 +811,30 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
 
   await page.getByTestId("lead-row-action-lead-6").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
-  await expect(page.getByTestId("lead-overview")).toContainText("Project Details");
+  await expect(page.getByTestId("opportunity-review-tab-overview")).toHaveClass(/bg-slate-900/);
+  await expect(page.getByTestId("opportunity-overview-tab-panel")).toContainText("Overview");
   await expect(page.getByTestId("lead-action-section")).toBeVisible();
   await expect(page.getByTestId("lead-action-section")).toContainText("Recommended Next Steps");
   await expect(page.getByTestId("lead-action-section")).toContainText("Schedule Estimate");
   await expect(page.getByTestId("schedule-estimate-action")).toBeDisabled();
-  await expect(page.getByTestId("response-prep-section")).toBeVisible();
-  await expect(page.getByTestId("response-starter-section")).toBeVisible();
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Photos are available to review");
+  await expect(page.getByTestId("lead-action-section")).toContainText("convert it into an agreement");
+
+  await page.getByTestId("opportunity-review-tab-project").click();
+  await expect(page.getByTestId("lead-overview")).toContainText("Project Details");
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
   await expect(page.getByTestId("lead-overview")).toContainText("Project Family");
   await expect(page.getByTestId("project-snapshot")).toContainText("Scope Summary");
   await expect(page.getByTestId("project-type-cue")).toContainText("Bathroom remodel-focused review");
   await expect(page.getByTestId("photos-section")).toContainText("Shower area");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demolition");
+
+  await page.getByTestId("opportunity-review-tab-history").click();
   await expect(page.getByTestId("request-signals-section")).toContainText("Multi-Quote Request");
-  await expect(page.getByTestId("lead-action-section")).toContainText("convert it into an agreement");
+
+  await page.getByTestId("opportunity-review-tab-next").click();
+  await expect(page.getByTestId("response-prep-section")).toBeVisible();
+  await expect(page.getByTestId("response-starter-section")).toBeVisible();
   await expect(page.getByTestId("response-templates-section")).toBeVisible();
   await expect(page.getByTestId("response-template-general")).toContainText("General Response");
   await expect(page.getByTestId("response-template-photos")).toContainText("With Photos");
@@ -846,7 +854,9 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-stage-lead-8")).toContainText("Follow-Up");
   await expect(page.getByTestId("lead-row-action-lead-8")).toContainText("Follow Up");
   await page.getByTestId("lead-row-action-lead-8").click();
+  await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
+  await page.getByTestId("opportunity-review-tab-next").click();
   await expect(page.getByTestId("resume-review-action")).toContainText("Resume Review");
   await expect(page.getByTestId("create-bid-action")).toContainText("Create Estimate");
   await page.getByRole("button", { name: "Close bid details" }).click();
@@ -870,6 +880,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.getByTestId("lead-row-lead-5").click();
   await expect(page.getByTestId("lead-detail-container")).toBeVisible();
   await expect(page.getByTestId("lead-action-section")).toBeVisible();
+  await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("lead-overview")).toContainText("Project Title");
   await expect(page.getByTestId("lead-overview")).toContainText("Project Family");
   await expect(page.getByTestId("project-snapshot")).toContainText("Scope Summary");
@@ -878,7 +889,9 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("recommended-setup-section")).toContainText("Project Type");
   await expect(page.getByTestId("photos-section")).toContainText("layout.png");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demo Phase");
+  await page.getByTestId("opportunity-review-tab-history").click();
   await expect(page.getByTestId("request-signals-section")).toContainText("Photos");
+  await page.getByTestId("opportunity-review-tab-next").click();
   await expect(page.getByTestId("lead-detail-primary-action")).toContainText("Open Agreement");
   await expect(page.getByTestId("open-customer-workspace-action")).toContainText("Open Customer Workspace");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
@@ -1179,10 +1192,12 @@ test("contractor bids workspace renders property management work orders and rout
   await expect(page.getByTestId("lead-row-action-opportunity-31")).toContainText("Accept Work Order");
 
   await page.getByTestId("lead-row-opportunity-31").click();
+  await expect(page.getByTestId("opportunity-overview-tab-panel")).toContainText("Overview");
+  await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
+  await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("lead-overview")).toContainText("Work Order");
   await expect(page.getByTestId("lead-overview")).toContainText("Unit B");
   await expect(page.getByTestId("photos-section")).toContainText("leak.jpg");
-  await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
   await page.getByRole("button", { name: "Close bid details" }).click();
 
   await page.getByTestId("lead-row-action-opportunity-31").click();
@@ -1413,6 +1428,7 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
 
   await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
+  await page.getByTestId("opportunity-review-tab-next").click();
   await expect(page.getByTestId("response-prep-section")).toBeVisible();
   await expect(page.getByTestId("response-starter-section")).toBeVisible();
   await expect(page.getByTestId("create-bid-context-note")).toBeVisible();
