@@ -35,6 +35,12 @@ const subaccountsPayload = {
       overdue_milestone_count: 1,
       last_activity_at: "2026-04-19T10:00:00Z",
       last_login: "2026-04-18T18:30:00Z",
+      capabilities: [
+        { skill_id: 10, skill_name: "Painting", skill_level: "skilled", skill_level_label: "Skilled" },
+        { skill_id: 11, skill_name: "Drywall", skill_level: "expert", skill_level_label: "Expert" },
+        { skill_id: 12, skill_name: "General Labor", skill_level: "lead", skill_level_label: "Lead" },
+        { skill_id: 13, skill_name: "Cleanup", skill_level: "working", skill_level_label: "Working" },
+      ],
     },
     {
       id: 2,
@@ -49,6 +55,9 @@ const subaccountsPayload = {
       overdue_milestone_count: 0,
       last_activity_at: "2026-04-20T14:00:00Z",
       last_login: "2026-04-20T13:00:00Z",
+      capabilities: [
+        { skill_id: 20, skill_name: "Plumbing", skill_level: "working", skill_level_label: "Working" },
+      ],
     },
   ],
 };
@@ -500,6 +509,31 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.getByTestId("team-overview-members")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-overview-assign-work")).toBeVisible();
   await expect(page.getByTestId("team-overview-review-work")).toBeVisible();
+});
+
+test("team members page separates permissions from capabilities and filters by trade skill", async ({ page }) => {
+  await installTeamRoutes(page);
+
+  await page.goto("/app/team/members", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByText("Employees and capabilities")).toBeVisible();
+  await expect(page.getByText("Permission roles control what employees can do in MyHomeBro.")).toBeVisible();
+  await expect(page.getByText("With capabilities")).toBeVisible();
+  await expect(page.getByTestId("team-member-row-1")).toContainText("Permission role");
+  await expect(page.getByTestId("team-member-row-1")).toContainText("Trade capabilities");
+  await expect(page.getByTestId("team-member-row-1")).toContainText("Painting - Skilled");
+  await expect(page.getByTestId("team-member-row-1")).toContainText("+1 more");
+
+  await page.getByTestId("team-capability-filter").selectOption("10");
+  await expect(page.getByTestId("team-active-filter-summary")).toContainText("with Painting");
+  await expect(page.getByTestId("team-member-row-1")).toBeVisible();
+  await expect(page.getByTestId("team-member-row-2")).toHaveCount(0);
+
+  await page.getByTestId("team-skill-level-filter").selectOption("expert");
+  await expect(page.getByText("No employees match these filters")).toBeVisible();
+
+  await page.getByTestId("team-clear-filters").click();
+  await expect(page.getByTestId("team-member-row-2")).toBeVisible();
 });
 
 test("assignments page filters by project class and status", async ({ page }) => {
