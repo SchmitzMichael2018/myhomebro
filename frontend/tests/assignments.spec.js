@@ -258,6 +258,15 @@ test("assignments page shows all projects and work controls", async ({ page }) =
   await expect(page.locator('[data-testid="assign-work-assignee-select"] optgroup[label="Subcontractors"]')).toHaveCount(1);
   await expect(page.getByTestId("assign-work-assignee-select")).toContainText("Taylor Crew");
   await expect(page.getByTestId("assign-work-assignee-select")).toContainText("Skyline Subs");
+  await expect(page.getByTestId("assign-work-drawer")).toContainText("Customer: Acme LLC");
+  await expect(page.getByTestId("assign-work-drawer")).toContainText("Employee milestone assignment");
+  await expect(page.getByTestId("assign-work-drawer")).toContainText("Assignment target");
+  await expect(page.getByTestId("assign-work-drawer")).toContainText("Milestone actions");
+  await expect(page.getByTestId("assign-work-drawer")).toContainText("0 milestones selected");
+  await expect(page.getByTestId("assign-work-milestone-row-2001")).toContainText("Cabinet Install");
+  await expect(page.getByTestId("assign-work-milestone-row-2001")).toContainText("Due");
+  await expect(page.getByTestId("assign-work-milestone-row-2001")).toContainText("Assignment");
+  await expect(page.getByRole("button", { name: "Assign selected" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove Assignment" }).first()).toBeVisible();
 });
 
