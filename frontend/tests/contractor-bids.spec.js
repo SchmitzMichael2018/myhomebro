@@ -1179,6 +1179,46 @@ test("contractor bids workspace renders property management work orders and rout
       }),
     });
   });
+  await page.route("**/api/projects/crew-recommendations/preview/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        source_summary: {
+          source_type: "opportunity",
+          source_id: 31,
+          project_title: "Repair sink leak",
+          project_type: "Plumbing",
+          project_subtype: "Urgent",
+        },
+        required_capabilities: [
+          {
+            skill_id: 10,
+            skill_name: "Plumbing",
+            skill_slug: "plumbing",
+            quantity: 1,
+            minimum_skill_level: "working",
+            reason: "Matched from project details.",
+          },
+        ],
+        recommended_members: [
+          {
+            subaccount_id: 44,
+            display_name: "Pat Plumbing",
+            matched_skill_id: 10,
+            matched_skill_name: "Plumbing",
+            skill_level: "skilled",
+            skill_level_label: "Skilled",
+            explanation: "Pat Plumbing has Plumbing capability at Skilled level.",
+            warnings: [],
+          },
+        ],
+        gaps: [],
+        warnings: [{ type: "schedule_data", message: "Opportunity dates are not confirmed yet." }],
+        advisory_notice: "Recommended Crew is advisory only.",
+      }),
+    });
+  });
 
   await page.goto("/app/opportunities?source=property_work_order", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("leads-tab-work-orders")).toContainText("Work Orders");
@@ -1193,6 +1233,10 @@ test("contractor bids workspace renders property management work orders and rout
 
   await page.getByTestId("lead-row-opportunity-31").click();
   await expect(page.getByTestId("opportunity-overview-tab-panel")).toContainText("Overview");
+  await expect(page.getByTestId("recommended-crew-panel")).toContainText("Recommended Crew");
+  await expect(page.getByTestId("recommended-crew-panel")).toContainText("1x Plumbing");
+  await expect(page.getByTestId("recommended-crew-panel")).toContainText("Pat Plumbing");
+  await expect(page.getByTestId("recommended-crew-panel")).toContainText("advisory");
   await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
   await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("lead-overview")).toContainText("Work Order");

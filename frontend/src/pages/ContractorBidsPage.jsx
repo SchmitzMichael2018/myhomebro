@@ -427,6 +427,131 @@ function buildResponseTemplates({ snapshot, signals }) {
   return templates.slice(0, 4);
 }
 
+function crewPreviewSourceForRow(row) {
+  if (!row) return null;
+  const linkedAgreementId = row.linked_agreement_id || row.agreement_id;
+  if (linkedAgreementId) {
+    return { source_type: "agreement", source_id: Number(linkedAgreementId) };
+  }
+  const sourceKind = normalize(row.source_kind);
+  if (sourceKind === "quote_request" || sourceKind === "lead") return null;
+  const sourceId = row.source_id || row.opportunity_id || row.id;
+  if (!sourceId) return null;
+  return { source_type: "opportunity", source_id: Number(sourceId) };
+}
+
+function AdvisoryCrewPanel({ preview, loading, error }) {
+  const required = Array.isArray(preview?.required_capabilities) ? preview.required_capabilities : [];
+  const members = Array.isArray(preview?.recommended_members) ? preview.recommended_members : [];
+  const gaps = Array.isArray(preview?.gaps) ? preview.gaps : [];
+  const warnings = Array.isArray(preview?.warnings) ? preview.warnings : [];
+
+  return (
+    <div
+      className="mt-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4"
+      data-testid="recommended-crew-panel"
+    >
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-indigo-700">
+            Advisory
+          </div>
+          <div className="mt-1 text-base font-bold text-slate-900">Recommended Crew</div>
+          <div className="mt-1 text-sm text-slate-700">
+            {preview?.advisory_notice ||
+              "Recommended Crew is advisory only. Review before assigning work."}
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="mt-4 text-sm font-semibold text-indigo-800">Loading crew preview...</div>
+      ) : error ? (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {error}
+        </div>
+      ) : (
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Needed Capabilities
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {required.length ? (
+                required.map((item) => (
+                  <span
+                    key={`${item.skill_name}-${item.quantity}`}
+                    className="inline-flex rounded-full border border-white bg-white px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm"
+                  >
+                    {item.quantity || 1}x {item.skill_name}
+                  </span>
+                ))
+              ) : (
+                <span className="text-sm text-slate-600">No capability needs detected yet.</span>
+              )}
+            </div>
+
+            <div className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Skill Gaps
+            </div>
+            <div className="mt-2 space-y-2">
+              {gaps.length ? (
+                gaps.map((gap) => (
+                  <div key={`${gap.skill_name}-${gap.missing_quantity}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                    Missing {gap.missing_quantity} {gap.skill_name}
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-emerald-800">
+                  No capability gaps found from current employee data.
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+              Suggested Employees
+            </div>
+            <div className="mt-2 space-y-2">
+              {members.length ? (
+                members.map((member) => (
+                  <div key={`${member.subaccount_id}-${member.matched_skill_id}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                    <div className="font-semibold text-slate-900">{member.display_name}</div>
+                    <div className="mt-1 text-slate-600">
+                      {member.matched_skill_name} - {member.skill_level_label}
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">{member.explanation}</div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+                  No matching employees found yet.
+                </div>
+              )}
+            </div>
+
+            {warnings.length ? (
+              <>
+                <div className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Warnings
+                </div>
+                <div className="mt-2 space-y-2">
+                  {warnings.slice(0, 4).map((warning, index) => (
+                    <div key={`${warning.type}-${index}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                      {warning.message}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ContractorBidsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -447,6 +572,9 @@ export default function ContractorBidsPage() {
   const [copiedRefId, setCopiedRefId] = useState("");
   const [contractorBrandVoice, setContractorBrandVoice] = useState({});
   const [serverSummary, setServerSummary] = useState({});
+  const [crewPreview, setCrewPreview] = useState(null);
+  const [crewPreviewLoading, setCrewPreviewLoading] = useState(false);
+  const [crewPreviewError, setCrewPreviewError] = useState("");
 
   useEffect(() => {
     return () => {
@@ -489,6 +617,37 @@ export default function ContractorBidsPage() {
   useEffect(() => {
     if (selectedRow) setDetailTab("overview");
   }, [selectedRow?.bid_id]);
+
+  useEffect(() => {
+    let active = true;
+    const source = crewPreviewSourceForRow(selectedRow);
+    setCrewPreview(null);
+    setCrewPreviewError("");
+    if (!source) {
+      setCrewPreviewError("Crew preview is available after this lead becomes an opportunity or agreement.");
+      setCrewPreviewLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+    async function loadCrewPreview() {
+      try {
+        setCrewPreviewLoading(true);
+        const { data } = await api.post("/projects/crew-recommendations/preview/", source);
+        if (!active) return;
+        setCrewPreview(data || null);
+      } catch (err) {
+        if (!active) return;
+        setCrewPreviewError(err?.response?.data?.detail || "Crew preview is not available for this opportunity yet.");
+      } finally {
+        if (active) setCrewPreviewLoading(false);
+      }
+    }
+    loadCrewPreview();
+    return () => {
+      active = false;
+    };
+  }, [selectedRow?.bid_id, selectedRow?.source_id, selectedRow?.linked_agreement_id]);
 
   useEffect(() => {
     const source = new URLSearchParams(location.search).get("source");
@@ -1365,6 +1524,11 @@ export default function ContractorBidsPage() {
                     <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project Description</div>
                     <div className="mt-2">{selectedProjectDescription || "No project description was provided."}</div>
                   </div>
+                  <AdvisoryCrewPanel
+                    preview={crewPreview}
+                    loading={crewPreviewLoading}
+                    error={crewPreviewError}
+                  />
                 </SectionCard>
               ) : null}
 
