@@ -208,3 +208,172 @@ class CrewRecommendationPreviewTests(TestCase):
         self.assertTrue(plan["suggested_milestone_assignments"])
         self.assertEqual(plan["suggested_milestone_assignments"][0]["target_type"], "milestone")
         self.assertFalse(plan["suggested_milestone_assignments"][0]["apply_safe"])
+
+    def test_opportunity_draft_validate_apply_is_blocked_and_read_only(self):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "opportunity", "source_id": self.opportunity.id},
+            format="json",
+        )
+        draft_id = draft_response.data["id"]
+        before_agreement_assignments = AgreementAssignment.objects.count()
+        before_milestone_assignments = MilestoneAssignment.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_id}/validate-apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["apply_ready"])
+        self.assertTrue(any(issue["type"] == "source_not_apply_ready" for issue in response.data["blocking_issues"]))
+        self.assertEqual(AgreementAssignment.objects.count(), before_agreement_assignments)
+        self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)
+
+    def test_agreement_draft_validate_apply_returns_safe_targets_without_assigning(self):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        draft_id = draft_response.data["id"]
+        before_agreement_assignments = AgreementAssignment.objects.count()
+        before_milestone_assignments = MilestoneAssignment.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_id}/validate-apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["apply_ready"])
+        self.assertTrue(response.data["safe_targets"])
+        self.assertTrue(response.data["selected_targets"]["agreement_assignments"])
+        self.assertTrue(response.data["selected_targets"]["milestone_assignments"])
+        self.assertEqual(response.data["blocking_issues"], [])
+        self.assertEqual(response.data["required_confirmations"], [])
+        self.assertEqual(AgreementAssignment.objects.count(), before_agreement_assignments)
+        self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)
+
+    def test_non_supervisor_overlap_blocks_validate_apply(self):
+        other_project = Project.objects.create(contractor=self.contractor, homeowner=self.homeowner, title="Overlap")
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Painting",
+            description="Paint trim.",
+            start="2026-08-03",
+            end="2026-08-06",
+        )
+        AgreementAssignment.objects.create(agreement=other_agreement, subaccount=self.employee)
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        before_assignments = AgreementAssignment.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/validate-apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["apply_ready"])
+        self.assertTrue(any(issue["type"] == "non_supervisor_overlap" for issue in response.data["blocking_issues"]))
+        self.assertEqual(AgreementAssignment.objects.count(), before_assignments)
+
+    def test_supervisor_overlap_requires_confirmation(self):
+        supervisor_user = get_user_model().objects.create_user(email="supervisor@example.com", password="test-pass-123")
+        supervisor = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=supervisor_user,
+            display_name="Zed Supervisor",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_SUPERVISOR,
+            is_active=True,
+        )
+        EmployeeCapability.objects.create(subaccount=supervisor, skill=self.painting, skill_level="skilled")
+        other_project = Project.objects.create(contractor=self.contractor, homeowner=self.homeowner, title="Supervisor Overlap")
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Painting",
+            description="Paint trim.",
+            start="2026-08-03",
+            end="2026-08-06",
+        )
+        AgreementAssignment.objects.create(agreement=other_agreement, subaccount=supervisor)
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        before_assignments = AgreementAssignment.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/validate-apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["apply_ready"])
+        self.assertEqual(response.data["blocking_issues"], [])
+        self.assertTrue(any(item["type"] == "supervisor_overlap" for item in response.data["required_confirmations"]))
+        self.assertTrue(any(item["type"] == "supervisor_overlap" for item in response.data["warnings"]))
+        self.assertEqual(AgreementAssignment.objects.count(), before_assignments)
+
+        confirmed = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/validate-apply/",
+            {"confirmations": {"supervisor_overlap_subaccount_ids": [supervisor.id]}},
+            format="json",
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertTrue(confirmed.data["apply_ready"])
+        self.assertEqual(confirmed.data["required_confirmations"], [])
+        self.assertEqual(AgreementAssignment.objects.count(), before_assignments)
+
+    def test_existing_milestone_assignee_requires_replacement_confirmation(self):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        milestone = self.agreement.milestones.first()
+        other_user = get_user_model().objects.create_user(email="other-worker@example.com", password="test-pass-123")
+        other_employee = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=other_user,
+            display_name="Other Worker",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+            is_active=True,
+        )
+        MilestoneAssignment.objects.create(milestone=milestone, subaccount=other_employee)
+        before_milestone_assignments = MilestoneAssignment.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/validate-apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["apply_ready"])
+        self.assertEqual(response.data["blocking_issues"], [])
+        self.assertTrue(any(item["type"] == "replace_milestone_assignment" for item in response.data["required_confirmations"]))
+        self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)
+
+        confirmed = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/validate-apply/",
+            {"confirmations": {"replace_milestone_ids": [milestone.id]}},
+            format="json",
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertTrue(confirmed.data["apply_ready"])
+        self.assertEqual(confirmed.data["required_confirmations"], [])
+        self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)

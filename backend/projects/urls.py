@@ -173,7 +173,11 @@ from .views.employee_milestones import (
 
 from .views.employee_profile import EmployeeMeProfileView
 from .views.workforce import WorkforceCatalogView
-from .views.crew_recommendations import CrewAssignmentDraftCreateView, CrewRecommendationPreviewView
+from .views.crew_recommendations import (
+    CrewAssignmentDraftCreateView,
+    CrewAssignmentDraftValidateApplyView,
+    CrewRecommendationPreviewView,
+)
 
 from .views.employee_agreements import (
     my_agreements,
@@ -800,6 +804,7 @@ urlpatterns = [
     path("contractor-opportunities/<int:opportunity_id>/create-agreement-draft/", ContractorOpportunityAgreementDraftView.as_view()),
     path("crew-recommendations/preview/", CrewRecommendationPreviewView.as_view()),
     path("crew-recommendations/drafts/", CrewAssignmentDraftCreateView.as_view()),
+    path("crew-recommendations/drafts/<int:draft_id>/validate-apply/", CrewAssignmentDraftValidateApplyView.as_view()),
     path("contractor-activation-summary/", ContractorActivationSummaryView.as_view()),
     path("contractor-activation-summary/dismiss/", ContractorActivationSummaryDismissView.as_view()),
     path("contractors/directory-claim/<uuid:token>/", ContractorDirectoryClaimView.as_view()),

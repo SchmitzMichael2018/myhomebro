@@ -9,7 +9,9 @@ from projects.services.crew_recommendations import (
     build_crew_recommendation_preview,
     create_assignment_draft_from_preview,
     resolve_source_context,
+    validate_assignment_draft_apply,
 )
+from projects.models import CrewAssignmentDraft
 from projects.utils.accounts import get_contractor_for_user
 
 
@@ -66,3 +68,27 @@ class CrewAssignmentDraftCreateView(APIView):
 
         draft = create_assignment_draft_from_preview(context, created_by=request.user)
         return Response(draft, status=status.HTTP_201_CREATED)
+
+
+class CrewAssignmentDraftValidateApplyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, draft_id: int, *args, **kwargs):
+        contractor = get_contractor_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor context required."}, status=status.HTTP_403_FORBIDDEN)
+
+        draft = (
+            CrewAssignmentDraft.objects.select_related("contractor", "source_agreement", "source_opportunity")
+            .filter(id=draft_id, contractor=contractor)
+            .first()
+        )
+        if draft is None:
+            return Response({"detail": "Assignment draft not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        result = validate_assignment_draft_apply(
+            draft,
+            confirmations=request.data.get("confirmations") or {},
+            selected_targets=request.data.get("selected_targets") or {},
+        )
+        return Response(result, status=status.HTTP_200_OK)

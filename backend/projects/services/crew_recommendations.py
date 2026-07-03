@@ -14,9 +14,11 @@ from projects.models import (
     CrewAssignmentDraft,
     EmployeeCapability,
     Milestone,
+    MilestoneAssignment,
     Skill,
 )
 from projects.models_contractor_discovery import ContractorOpportunity
+from projects.services.assignment_conflicts import evaluate_assignment_conflicts
 
 
 ADVISORY_NOTICE = (
@@ -345,6 +347,311 @@ def create_assignment_draft_from_preview(ctx: SourceContext, *, created_by=None)
         created_by=created_by if getattr(created_by, "is_authenticated", False) else None,
     )
     return serialize_assignment_draft(draft)
+
+
+def _int_set(values: Any) -> set[int]:
+    if not isinstance(values, (list, tuple, set)):
+        return set()
+    parsed: set[int] = set()
+    for value in values:
+        try:
+            parsed.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    return parsed
+
+
+def _subaccount_label(subaccount: ContractorSubAccount | None, fallback: str = "Employee") -> str:
+    if subaccount is None:
+        return fallback
+    return subaccount.display_name or getattr(getattr(subaccount, "user", None), "email", "") or fallback
+
+
+def _target_key(prefix: str, *parts: Any) -> str:
+    return ":".join([prefix, *(str(part) for part in parts if part is not None)])
+
+
+def validate_assignment_draft_apply(
+    draft: CrewAssignmentDraft,
+    *,
+    confirmations: dict[str, Any] | None = None,
+    selected_targets: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    confirmations = confirmations or {}
+    selected_targets = selected_targets or {}
+    confirmed_supervisor_sub_ids = _int_set(confirmations.get("supervisor_overlap_subaccount_ids"))
+    confirmed_replace_milestone_ids = _int_set(confirmations.get("replace_milestone_ids"))
+    selected_agreement_sub_ids = _int_set(selected_targets.get("agreement_subaccount_ids"))
+    selected_milestone_ids = _int_set(selected_targets.get("milestone_ids"))
+
+    plan = draft.assignment_plan or {}
+    source_summary = (draft.preview_snapshot or {}).get("source_summary", {})
+    response: dict[str, Any] = {
+        "draft_id": draft.id,
+        "source_summary": source_summary,
+        "apply_ready": False,
+        "apply_enabled": False,
+        "apply_disabled_reason": "Apply coming soon.",
+        "selected_targets": {
+            "agreement_assignments": [],
+            "milestone_assignments": [],
+        },
+        "safe_targets": [],
+        "blocking_issues": [],
+        "warnings": [],
+        "required_confirmations": [],
+        "advisory_notice": "This is a validation preview only. No assignments were created.",
+    }
+
+    if draft.source_type != CrewAssignmentDraft.SOURCE_AGREEMENT or not draft.source_agreement_id:
+        response["blocking_issues"].append(
+            {
+                "type": "source_not_apply_ready",
+                "message": "Only agreement-source assignment drafts can be validated for apply readiness.",
+            }
+        )
+        return response
+
+    agreement = (
+        Agreement.objects.select_related("project")
+        .filter(id=draft.source_agreement_id, contractor=draft.contractor)
+        .first()
+    )
+    if agreement is None:
+        response["blocking_issues"].append(
+            {
+                "type": "agreement_not_found",
+                "message": "The source agreement is no longer available for this contractor.",
+            }
+        )
+        return response
+
+    agreement_targets = list(plan.get("suggested_agreement_assignments") or [])
+    milestone_targets = list(plan.get("suggested_milestone_assignments") or [])
+    if selected_agreement_sub_ids:
+        filtered = []
+        for target in agreement_targets:
+            try:
+                if int(target.get("subaccount_id") or 0) in selected_agreement_sub_ids:
+                    filtered.append(target)
+            except (TypeError, ValueError):
+                continue
+        agreement_targets = filtered
+    if selected_milestone_ids:
+        filtered = []
+        for target in milestone_targets:
+            try:
+                if int(target.get("milestone_id") or 0) in selected_milestone_ids:
+                    filtered.append(target)
+            except (TypeError, ValueError):
+                continue
+        milestone_targets = filtered
+
+    if not agreement_targets and not milestone_targets:
+        response["blocking_issues"].append(
+            {
+                "type": "no_targets",
+                "message": "No assignment targets are selected in this draft.",
+            }
+        )
+        return response
+
+    subaccount_ids = set()
+    for target in [*agreement_targets, *milestone_targets]:
+        try:
+            subaccount_ids.add(int(target.get("subaccount_id")))
+        except (TypeError, ValueError):
+            continue
+    subaccounts = {
+        subaccount.id: subaccount
+        for subaccount in ContractorSubAccount.objects.select_related("user").filter(
+            id__in=subaccount_ids,
+            parent_contractor=draft.contractor,
+        )
+    }
+    conflict_cache: dict[int, dict[str, Any]] = {}
+
+    def validate_subaccount(target: dict[str, Any], target_key: str) -> tuple[ContractorSubAccount | None, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+        blockers: list[dict[str, Any]] = []
+        warnings: list[dict[str, Any]] = []
+        required: list[dict[str, Any]] = []
+        subaccount_id = target.get("subaccount_id")
+        try:
+            subaccount_id = int(subaccount_id)
+        except (TypeError, ValueError):
+            blockers.append({"type": "invalid_employee", "target_key": target_key, "message": "Draft target is missing a valid employee."})
+            return None, blockers, warnings, required
+
+        subaccount = subaccounts.get(subaccount_id)
+        if subaccount is None:
+            blockers.append({"type": "employee_not_found", "target_key": target_key, "message": "Employee is no longer available for this contractor."})
+            return None, blockers, warnings, required
+        if not subaccount.is_active:
+            blockers.append(
+                {
+                    "type": "employee_inactive",
+                    "target_key": target_key,
+                    "subaccount_id": subaccount.id,
+                    "message": f"{_subaccount_label(subaccount)} is inactive.",
+                }
+            )
+
+        if subaccount.id not in conflict_cache:
+            conflict_cache[subaccount.id] = evaluate_assignment_conflicts(
+                contractor=draft.contractor,
+                subaccount=subaccount,
+                agreement=agreement,
+                create_missing_schedule=False,
+            )
+        conflict_result = conflict_cache[subaccount.id]
+        conflicts = list(conflict_result.get("conflicts") or [])
+        if conflicts and conflict_result.get("is_supervisor"):
+            warning = {
+                "type": "supervisor_overlap",
+                "target_key": target_key,
+                "subaccount_id": subaccount.id,
+                "message": f"{_subaccount_label(subaccount)} has overlapping assignments; supervisor overlap requires confirmation.",
+                "conflicts": conflicts,
+            }
+            warnings.append(warning)
+            if subaccount.id not in confirmed_supervisor_sub_ids:
+                required.append(
+                    {
+                        "type": "supervisor_overlap",
+                        "target_key": target_key,
+                        "subaccount_id": subaccount.id,
+                        "message": f"Confirm supervisor overlap for {_subaccount_label(subaccount)}.",
+                    }
+                )
+        elif conflicts:
+            blockers.append(
+                {
+                    "type": "non_supervisor_overlap",
+                    "target_key": target_key,
+                    "subaccount_id": subaccount.id,
+                    "message": f"{_subaccount_label(subaccount)} is already assigned to overlapping agreement(s).",
+                    "conflicts": conflicts,
+                }
+            )
+
+        if conflict_result.get("schedule_warning"):
+            warnings.append(
+                {
+                    "type": "schedule_warning",
+                    "target_key": target_key,
+                    "subaccount_id": subaccount.id,
+                    "message": conflict_result.get("message") or "Schedule warning detected.",
+                    "schedule_issues": conflict_result.get("schedule_issues", []),
+                }
+            )
+        return subaccount, blockers, warnings, required
+
+    for target in agreement_targets:
+        target_key = _target_key("agreement", agreement.id, target.get("subaccount_id"))
+        subaccount, blockers, warnings, required = validate_subaccount(target, target_key)
+        already_assigned = bool(
+            subaccount
+            and AgreementAssignment.objects.filter(agreement=agreement, subaccount=subaccount).exists()
+        )
+        row = {
+            **target,
+            "target_key": target_key,
+            "agreement_id": agreement.id,
+            "status": "safe",
+            "already_assigned": already_assigned,
+            "blocking_issues": blockers,
+            "warnings": warnings,
+            "required_confirmations": required,
+        }
+        if blockers:
+            row["status"] = "blocked"
+        elif required:
+            row["status"] = "requires_confirmation"
+        response["selected_targets"]["agreement_assignments"].append(row)
+        response["blocking_issues"].extend(blockers)
+        response["warnings"].extend(warnings)
+        response["required_confirmations"].extend(required)
+        if row["status"] == "safe":
+            response["safe_targets"].append({"target_type": "agreement", "target_key": target_key})
+
+    milestone_ids = [target.get("milestone_id") for target in milestone_targets if target.get("milestone_id")]
+    milestones = {
+        milestone.id: milestone
+        for milestone in Milestone.objects.select_related("agreement").filter(
+            id__in=milestone_ids,
+            agreement=agreement,
+        )
+    }
+    existing_assignments = {
+        assignment.milestone_id: assignment
+        for assignment in MilestoneAssignment.objects.select_related("subaccount", "subaccount__user").filter(milestone_id__in=milestone_ids)
+    }
+    for target in milestone_targets:
+        milestone_id = target.get("milestone_id")
+        target_key = _target_key("milestone", milestone_id, target.get("subaccount_id"))
+        subaccount, blockers, warnings, required = validate_subaccount(target, target_key)
+        try:
+            milestone_id = int(milestone_id)
+        except (TypeError, ValueError):
+            blockers.append({"type": "invalid_milestone", "target_key": target_key, "message": "Draft target is missing a valid milestone."})
+            milestone = None
+        else:
+            milestone = milestones.get(milestone_id)
+            if milestone is None:
+                blockers.append({"type": "milestone_not_found", "target_key": target_key, "message": "Milestone is no longer available on this agreement."})
+
+        existing = existing_assignments.get(milestone_id)
+        if existing and (not subaccount or existing.subaccount_id != subaccount.id):
+            warning = {
+                "type": "milestone_replacement",
+                "target_key": target_key,
+                "milestone_id": milestone_id,
+                "message": f"{getattr(milestone, 'title', 'This milestone')} already has an assignee.",
+                "existing_subaccount_id": existing.subaccount_id,
+                "existing_display_name": _subaccount_label(existing.subaccount),
+            }
+            warnings.append(warning)
+            if milestone_id not in confirmed_replace_milestone_ids:
+                required.append(
+                    {
+                        "type": "replace_milestone_assignment",
+                        "target_key": target_key,
+                        "milestone_id": milestone_id,
+                        "message": f"Confirm replacement for {getattr(milestone, 'title', 'this milestone')}.",
+                    }
+                )
+        elif existing and subaccount and existing.subaccount_id == subaccount.id:
+            warnings.append(
+                {
+                    "type": "milestone_already_assigned",
+                    "target_key": target_key,
+                    "milestone_id": milestone_id,
+                    "message": f"{getattr(milestone, 'title', 'This milestone')} is already assigned to {_subaccount_label(subaccount)}.",
+                }
+            )
+
+        row = {
+            **target,
+            "target_key": target_key,
+            "agreement_id": agreement.id,
+            "status": "safe",
+            "blocking_issues": blockers,
+            "warnings": warnings,
+            "required_confirmations": required,
+        }
+        if blockers:
+            row["status"] = "blocked"
+        elif required:
+            row["status"] = "requires_confirmation"
+        response["selected_targets"]["milestone_assignments"].append(row)
+        response["blocking_issues"].extend(blockers)
+        response["warnings"].extend(warnings)
+        response["required_confirmations"].extend(required)
+        if row["status"] == "safe":
+            response["safe_targets"].append({"target_type": "milestone", "target_key": target_key})
+
+    response["apply_ready"] = not response["blocking_issues"] and not response["required_confirmations"]
+    return response
 
 
 def build_crew_recommendation_preview(ctx: SourceContext) -> dict[str, Any]:

@@ -1220,6 +1220,28 @@ test("contractor bids workspace renders property management work orders and rout
     });
   });
   await page.route("**/api/projects/crew-recommendations/drafts/**", async (route) => {
+    if (route.request().url().includes("/validate-apply/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          draft_id: 501,
+          apply_ready: false,
+          apply_enabled: false,
+          apply_disabled_reason: "Apply coming soon.",
+          selected_targets: {
+            agreement_assignments: [],
+            milestone_assignments: [],
+          },
+          safe_targets: [{ target_type: "agreement", target_key: "agreement:932:44" }],
+          blocking_issues: [{ type: "source_not_apply_ready", message: "Only agreement-source assignment drafts can be validated for apply readiness." }],
+          warnings: [{ type: "schedule_warning", message: "Opportunity must become an agreement before applying." }],
+          required_confirmations: [{ type: "future_agreement", message: "Convert this opportunity before applying assignments." }],
+          advisory_notice: "This is a validation preview only. No assignments were created.",
+        }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -1304,6 +1326,11 @@ test("contractor bids workspace renders property management work orders and rout
   await expect(page.getByTestId("assignment-draft-modal")).toContainText("Assignment Draft");
   await expect(page.getByTestId("assignment-draft-modal")).toContainText("Pat Plumbing");
   await expect(page.getByTestId("assignment-draft-modal")).toContainText("Future agreement assignment");
+  await page.getByTestId("assignment-draft-validate-apply").click();
+  await expect(page.getByTestId("assignment-draft-validation-results")).toContainText("Needs review");
+  await expect(page.getByTestId("assignment-draft-safe-rows")).toContainText("agreement:932:44");
+  await expect(page.getByTestId("assignment-draft-blockers")).toContainText("Only agreement-source");
+  await expect(page.getByTestId("assignment-draft-confirmations")).toContainText("Convert this opportunity");
   await expect(page.getByTestId("assignment-draft-apply-disabled")).toContainText("Apply coming soon.");
   await page.getByTestId("assignment-draft-modal").getByRole("button", { name: "Close assignment draft" }).click();
   await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");

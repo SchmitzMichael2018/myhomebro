@@ -571,7 +571,7 @@ function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDra
   );
 }
 
-function AssignmentDraftModal({ draft, open, onClose }) {
+function AssignmentDraftModal({ draft, open, onClose, validation, validationLoading, validationError, onCheckReadiness }) {
   if (!open || !draft) return null;
   const required = Array.isArray(draft.required_capabilities) ? draft.required_capabilities : [];
   const members = Array.isArray(draft.recommended_members) ? draft.recommended_members : [];
@@ -581,6 +581,10 @@ function AssignmentDraftModal({ draft, open, onClose }) {
   const agreementTargets = Array.isArray(plan.suggested_agreement_assignments) ? plan.suggested_agreement_assignments : [];
   const milestoneTargets = Array.isArray(plan.suggested_milestone_assignments) ? plan.suggested_milestone_assignments : [];
   const source = draft.source_summary || {};
+  const blockers = Array.isArray(validation?.blocking_issues) ? validation.blocking_issues : [];
+  const validationWarnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
+  const requiredConfirmations = Array.isArray(validation?.required_confirmations) ? validation.required_confirmations : [];
+  const safeTargets = Array.isArray(validation?.safe_targets) ? validation.safe_targets : [];
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
@@ -618,6 +622,51 @@ function AssignmentDraftModal({ draft, open, onClose }) {
         <div className="overflow-y-auto p-5">
           <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
             {draft.advisory_notice || "This draft is advisory only."}
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Apply Readiness</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Validation checks employee status, source agreement ownership, conflicts, and milestone replacement risk.
+                </div>
+              </div>
+              <button
+                type="button"
+                data-testid="assignment-draft-validate-apply"
+                onClick={onCheckReadiness}
+                disabled={validationLoading}
+                className="inline-flex items-center justify-center rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {validationLoading ? "Checking..." : "Check apply readiness"}
+              </button>
+            </div>
+            {validationError ? (
+              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                {validationError}
+              </div>
+            ) : null}
+            {validation ? (
+              <div className="mt-3 grid gap-3 lg:grid-cols-4" data-testid="assignment-draft-validation-results">
+                <div className={`rounded-lg border px-3 py-2 text-sm ${validation.apply_ready ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900"}`}>
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em]">Status</div>
+                  <div className="mt-1 font-semibold">{validation.apply_ready ? "Ready later" : "Needs review"}</div>
+                </div>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em]">Safe Rows</div>
+                  <div className="mt-1 font-semibold">{safeTargets.length}</div>
+                </div>
+                <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em]">Blockers</div>
+                  <div className="mt-1 font-semibold">{blockers.length}</div>
+                </div>
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <div className="text-xs font-semibold uppercase tracking-[0.14em]">Confirmations</div>
+                  <div className="mt-1 font-semibold">{requiredConfirmations.length}</div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -709,6 +758,52 @@ function AssignmentDraftModal({ draft, open, onClose }) {
               </div>
             </SectionCard>
           </div>
+
+          {validation ? (
+            <div className="mt-4 grid gap-4 lg:grid-cols-3">
+              <SectionCard title="Safe Rows" testId="assignment-draft-safe-rows">
+                <div className="space-y-2">
+                  {safeTargets.length ? safeTargets.map((target) => (
+                    <div key={target.target_key} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-sm text-emerald-800">
+                      {target.target_type} - {target.target_key}
+                    </div>
+                  )) : <div className="text-sm text-slate-600">No safe rows yet.</div>}
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Apply Blockers" testId="assignment-draft-blockers">
+                <div className="space-y-2">
+                  {blockers.length ? blockers.map((issue, index) => (
+                    <div key={`${issue.type}-${index}`} className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm text-rose-800">
+                      {issue.message}
+                    </div>
+                  )) : <div className="text-sm text-slate-600">No blocking issues found.</div>}
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Confirmations" testId="assignment-draft-confirmations">
+                <div className="space-y-2">
+                  {requiredConfirmations.length ? requiredConfirmations.map((item, index) => (
+                    <div key={`${item.type}-${index}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                      {item.message}
+                    </div>
+                  )) : <div className="text-sm text-slate-600">No extra confirmations required.</div>}
+                </div>
+              </SectionCard>
+            </div>
+          ) : null}
+
+          {validationWarnings.length ? (
+            <SectionCard title="Validation Warnings" testId="assignment-draft-validation-warnings" className="mt-4">
+              <div className="space-y-2">
+                {validationWarnings.slice(0, 6).map((warning, index) => (
+                  <div key={`${warning.type}-${index}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                    {warning.message}
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
@@ -760,6 +855,9 @@ export default function ContractorBidsPage() {
   const [assignmentDraftOpen, setAssignmentDraftOpen] = useState(false);
   const [assignmentDraftLoading, setAssignmentDraftLoading] = useState(false);
   const [assignmentDraftError, setAssignmentDraftError] = useState("");
+  const [assignmentDraftValidation, setAssignmentDraftValidation] = useState(null);
+  const [assignmentDraftValidationLoading, setAssignmentDraftValidationLoading] = useState(false);
+  const [assignmentDraftValidationError, setAssignmentDraftValidationError] = useState("");
 
   useEffect(() => {
     return () => {
@@ -811,6 +909,8 @@ export default function ContractorBidsPage() {
     setAssignmentDraft(null);
     setAssignmentDraftOpen(false);
     setAssignmentDraftError("");
+    setAssignmentDraftValidation(null);
+    setAssignmentDraftValidationError("");
     if (!source) {
       setCrewPreviewError("Crew preview is available after this lead becomes an opportunity or agreement.");
       setCrewPreviewLoading(false);
@@ -1160,6 +1260,8 @@ export default function ContractorBidsPage() {
     setAssignmentDraft(null);
     setAssignmentDraftOpen(false);
     setAssignmentDraftError("");
+    setAssignmentDraftValidation(null);
+    setAssignmentDraftValidationError("");
     setCopiedRefId("");
   };
 
@@ -1174,6 +1276,8 @@ export default function ContractorBidsPage() {
     try {
       const { data } = await api.post("/projects/crew-recommendations/drafts/", source);
       setAssignmentDraft(data || null);
+      setAssignmentDraftValidation(null);
+      setAssignmentDraftValidationError("");
       setAssignmentDraftOpen(true);
       toast.success("Assignment draft created for review.");
     } catch (err) {
@@ -1181,6 +1285,21 @@ export default function ContractorBidsPage() {
       setAssignmentDraftError(err?.response?.data?.detail || "Could not create this assignment draft.");
     } finally {
       setAssignmentDraftLoading(false);
+    }
+  };
+
+  const validateAssignmentDraft = async () => {
+    if (!assignmentDraft?.id) return;
+    setAssignmentDraftValidationLoading(true);
+    setAssignmentDraftValidationError("");
+    try {
+      const { data } = await api.post(`/projects/crew-recommendations/drafts/${assignmentDraft.id}/validate-apply/`, {});
+      setAssignmentDraftValidation(data || null);
+    } catch (err) {
+      console.error(err);
+      setAssignmentDraftValidationError(err?.response?.data?.detail || "Could not check apply readiness.");
+    } finally {
+      setAssignmentDraftValidationLoading(false);
     }
   };
 
@@ -2222,6 +2341,10 @@ export default function ContractorBidsPage() {
         draft={assignmentDraft}
         open={assignmentDraftOpen}
         onClose={() => setAssignmentDraftOpen(false)}
+        validation={assignmentDraftValidation}
+        validationLoading={assignmentDraftValidationLoading}
+        validationError={assignmentDraftValidationError}
+        onCheckReadiness={validateAssignmentDraft}
       />
       </div>
     </ContractorPageSurface>
