@@ -585,6 +585,11 @@ function AssignmentDraftModal({
   applyResult,
   confirmedSupervisorIds,
   onToggleSupervisorConfirmation,
+  selectedMilestoneIds,
+  confirmedReplacementMilestoneIds,
+  onToggleMilestoneSelection,
+  onToggleReplacementConfirmation,
+  onApplyMilestoneTargets,
 }) {
   if (!open || !draft) return null;
   const required = Array.isArray(draft.required_capabilities) ? draft.required_capabilities : [];
@@ -603,7 +608,14 @@ function AssignmentDraftModal({
     ? validation.selected_targets.agreement_assignments
     : [];
   const agreementBlockers = agreementValidationRows.flatMap((target) => target.blocking_issues || []);
+  const milestoneValidationRows = Array.isArray(validation?.selected_targets?.milestone_assignments)
+    ? validation.selected_targets.milestone_assignments
+    : [];
+  const milestoneRowsById = new Map(milestoneValidationRows.map((target) => [Number(target.milestone_id), target]));
+  const selectedMilestoneSet = new Set(selectedMilestoneIds || []);
+  const confirmedReplacementSet = new Set(confirmedReplacementMilestoneIds || []);
   const agreementConfirmations = requiredConfirmations.filter((item) => item.type === "supervisor_overlap");
+  const replacementConfirmations = requiredConfirmations.filter((item) => item.type === "replace_milestone_assignment");
   const confirmedSupervisorSet = new Set(confirmedSupervisorIds || []);
   const hasSafeAgreementTargets = agreementValidationRows.some((target) => target.status === "safe" || target.status === "requires_confirmation");
   const supervisorConfirmationsMet = agreementConfirmations.every((item) => confirmedSupervisorSet.has(Number(item.subaccount_id)));
@@ -613,6 +625,22 @@ function AssignmentDraftModal({
     agreementBlockers.length === 0 &&
     supervisorConfirmationsMet &&
     !applyResult?.applied;
+  const selectedMilestoneRows = milestoneValidationRows.filter((target) => selectedMilestoneSet.has(Number(target.milestone_id)));
+  const selectedMilestoneBlockers = selectedMilestoneRows.flatMap((target) => target.blocking_issues || []);
+  const selectedReplacementConfirmations = replacementConfirmations.filter((item) => selectedMilestoneSet.has(Number(item.milestone_id)));
+  const replacementConfirmationsMet = selectedReplacementConfirmations.every((item) => confirmedReplacementSet.has(Number(item.milestone_id)));
+  const selectedMilestoneSupervisorConfirmations = agreementConfirmations.filter((item) =>
+    selectedMilestoneRows.some((target) => Number(target.subaccount_id) === Number(item.subaccount_id))
+  );
+  const selectedMilestoneSupervisorConfirmationsMet = selectedMilestoneSupervisorConfirmations.every((item) =>
+    confirmedSupervisorSet.has(Number(item.subaccount_id))
+  );
+  const canApplyMilestoneTargets =
+    Boolean(validation) &&
+    selectedMilestoneRows.length > 0 &&
+    selectedMilestoneBlockers.length === 0 &&
+    replacementConfirmationsMet &&
+    selectedMilestoneSupervisorConfirmationsMet;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
@@ -753,9 +781,27 @@ function AssignmentDraftModal({
                 {milestoneTargets.length ? (
                   milestoneTargets.map((target) => (
                     <div key={`milestone-${target.milestone_id}-${target.subaccount_id}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
-                      <div className="font-semibold text-slate-900">{target.milestone_title}</div>
-                      <div className="mt-1 text-slate-600">{target.display_name} - {target.matched_skill_name}</div>
-                      <div className="mt-1 text-xs text-slate-500">{target.reason}</div>
+                      <div className="flex items-start gap-2">
+                        {validation ? (
+                          <input
+                            type="checkbox"
+                            data-testid={`assignment-draft-milestone-select-${target.milestone_id}`}
+                            className="mt-1"
+                            checked={selectedMilestoneSet.has(Number(target.milestone_id))}
+                            onChange={() => onToggleMilestoneSelection(Number(target.milestone_id))}
+                          />
+                        ) : null}
+                        <div>
+                          <div className="font-semibold text-slate-900">{target.milestone_title}</div>
+                          <div className="mt-1 text-slate-600">{target.display_name} - {target.matched_skill_name}</div>
+                          <div className="mt-1 text-xs text-slate-500">{target.reason}</div>
+                          {milestoneRowsById.get(Number(target.milestone_id))?.status ? (
+                            <div className="mt-1 text-xs font-semibold text-slate-600">
+                              Status: {milestoneRowsById.get(Number(target.milestone_id)).status.replaceAll("_", " ")}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -824,6 +870,17 @@ function AssignmentDraftModal({
                           Confirm supervisor overlap
                         </label>
                       ) : null}
+                      {item.type === "replace_milestone_assignment" && item.milestone_id ? (
+                        <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-amber-950">
+                          <input
+                            type="checkbox"
+                            data-testid={`assignment-draft-replace-confirm-${item.milestone_id}`}
+                            checked={confirmedReplacementSet.has(Number(item.milestone_id))}
+                            onChange={() => onToggleReplacementConfirmation(Number(item.milestone_id))}
+                          />
+                          Confirm milestone replacement
+                        </label>
+                      ) : null}
                     </div>
                   )) : <div className="text-sm text-slate-600">No extra confirmations required.</div>}
                 </div>
@@ -856,7 +913,7 @@ function AssignmentDraftModal({
                   {applyResult.message || (applyResult.applied ? "Agreement-level assignments applied." : "Assignments were not applied.")}
                 </div>
                 <div className="text-slate-600">
-                  Applied {Array.isArray(applyResult.applied_targets) ? applyResult.applied_targets.length : 0}; skipped {Array.isArray(applyResult.skipped_targets) ? applyResult.skipped_targets.length : 0}.
+                  Agreement applied {Array.isArray(applyResult.applied_targets) ? applyResult.applied_targets.length : 0}; milestone applied {Array.isArray(applyResult.milestone_targets?.applied) ? applyResult.milestone_targets.applied.length : 0}.
                 </div>
                 {Array.isArray(applyResult.applied_targets) && applyResult.applied_targets.length ? (
                   <div className="space-y-1">
@@ -872,6 +929,15 @@ function AssignmentDraftModal({
                     {applyResult.skipped_targets.map((target) => (
                       <div key={target.target_key || target.assignment_id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
                         {target.display_name || "Target"} skipped: {target.reason || "Already handled."}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {Array.isArray(applyResult.milestone_targets?.applied) && applyResult.milestone_targets.applied.length ? (
+                  <div className="space-y-1">
+                    {applyResult.milestone_targets.applied.map((target) => (
+                      <div key={target.target_key || target.assignment_id} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-emerald-800">
+                        {target.display_name} assigned to {target.milestone_title}
                       </div>
                     ))}
                   </div>
@@ -894,6 +960,16 @@ function AssignmentDraftModal({
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {applyLoading ? "Applying..." : "Apply agreement assignments"}
+          </button>
+          <button
+            type="button"
+            data-testid="assignment-draft-apply-milestones"
+            onClick={onApplyMilestoneTargets}
+            disabled={!canApplyMilestoneTargets || applyLoading}
+            title="This will update milestone assignment records and calendar-facing views."
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {applyLoading ? "Applying..." : "Apply selected milestones"}
           </button>
           <button
             type="button"
@@ -950,6 +1026,8 @@ export default function ContractorBidsPage() {
   const [assignmentDraftApplyError, setAssignmentDraftApplyError] = useState("");
   const [assignmentDraftApplyResult, setAssignmentDraftApplyResult] = useState(null);
   const [confirmedSupervisorIds, setConfirmedSupervisorIds] = useState([]);
+  const [selectedMilestoneIds, setSelectedMilestoneIds] = useState([]);
+  const [confirmedReplacementMilestoneIds, setConfirmedReplacementMilestoneIds] = useState([]);
 
   useEffect(() => {
     return () => {
@@ -1006,6 +1084,8 @@ export default function ContractorBidsPage() {
     setAssignmentDraftApplyError("");
     setAssignmentDraftApplyResult(null);
     setConfirmedSupervisorIds([]);
+    setSelectedMilestoneIds([]);
+    setConfirmedReplacementMilestoneIds([]);
     if (!source) {
       setCrewPreviewError("Crew preview is available after this lead becomes an opportunity or agreement.");
       setCrewPreviewLoading(false);
@@ -1360,6 +1440,8 @@ export default function ContractorBidsPage() {
     setAssignmentDraftApplyError("");
     setAssignmentDraftApplyResult(null);
     setConfirmedSupervisorIds([]);
+    setSelectedMilestoneIds([]);
+    setConfirmedReplacementMilestoneIds([]);
     setCopiedRefId("");
   };
 
@@ -1379,6 +1461,8 @@ export default function ContractorBidsPage() {
       setAssignmentDraftApplyError("");
       setAssignmentDraftApplyResult(null);
       setConfirmedSupervisorIds([]);
+      setSelectedMilestoneIds([]);
+      setConfirmedReplacementMilestoneIds([]);
       setAssignmentDraftOpen(true);
       toast.success("Assignment draft created for review.");
     } catch (err) {
@@ -1397,6 +1481,22 @@ export default function ContractorBidsPage() {
     });
   };
 
+  const toggleMilestoneSelection = (milestoneId) => {
+    setSelectedMilestoneIds((prev) => {
+      const value = Number(milestoneId);
+      if (!value) return prev;
+      return prev.includes(value) ? prev.filter((id) => id !== value) : [...prev, value];
+    });
+  };
+
+  const toggleReplacementConfirmation = (milestoneId) => {
+    setConfirmedReplacementMilestoneIds((prev) => {
+      const value = Number(milestoneId);
+      if (!value) return prev;
+      return prev.includes(value) ? prev.filter((id) => id !== value) : [...prev, value];
+    });
+  };
+
   const validateAssignmentDraft = async () => {
     if (!assignmentDraft?.id) return;
     setAssignmentDraftValidationLoading(true);
@@ -1405,6 +1505,8 @@ export default function ContractorBidsPage() {
     try {
       const { data } = await api.post(`/projects/crew-recommendations/drafts/${assignmentDraft.id}/validate-apply/`, {});
       setAssignmentDraftValidation(data || null);
+      setSelectedMilestoneIds([]);
+      setConfirmedReplacementMilestoneIds([]);
     } catch (err) {
       console.error(err);
       setAssignmentDraftValidationError(err?.response?.data?.detail || "Could not check apply readiness.");
@@ -1440,6 +1542,41 @@ export default function ContractorBidsPage() {
       if (payload.validation) setAssignmentDraftValidation(payload.validation);
       setAssignmentDraftApplyResult(payload?.draft_id ? payload : null);
       setAssignmentDraftApplyError(payload?.message || payload?.detail || "Could not apply this assignment draft.");
+    } finally {
+      setAssignmentDraftApplyLoading(false);
+    }
+  };
+
+  const applyMilestoneAssignmentDraft = async () => {
+    if (!assignmentDraft?.id || !selectedMilestoneIds.length) return;
+    const confirmed = window.confirm(
+      "Apply selected milestone assignments?\n\nThis will update milestone assignment records and calendar-facing views."
+    );
+    if (!confirmed) return;
+    setAssignmentDraftApplyLoading(true);
+    setAssignmentDraftApplyError("");
+    try {
+      const { data } = await api.post(`/projects/crew-recommendations/drafts/${assignmentDraft.id}/apply/`, {
+        confirmations: {
+          supervisor_overlap_subaccount_ids: confirmedSupervisorIds,
+          replace_milestone_ids: confirmedReplacementMilestoneIds,
+        },
+        selected_targets: {
+          include_agreements: false,
+          include_milestones: true,
+          milestone_ids: selectedMilestoneIds,
+        },
+      });
+      setAssignmentDraftApplyResult(data || null);
+      if (data?.validation) setAssignmentDraftValidation(data.validation);
+      setAssignmentDraft((prev) => (prev ? { ...prev, status: data?.status || prev.status, applied_at: data?.applied_at || prev.applied_at } : prev));
+      toast.success("Milestone assignments applied.");
+    } catch (err) {
+      console.error(err);
+      const payload = err?.response?.data || {};
+      if (payload.validation) setAssignmentDraftValidation(payload.validation);
+      setAssignmentDraftApplyResult(payload?.draft_id ? payload : null);
+      setAssignmentDraftApplyError(payload?.message || payload?.detail || "Could not apply selected milestone assignments.");
     } finally {
       setAssignmentDraftApplyLoading(false);
     }
@@ -2493,6 +2630,11 @@ export default function ContractorBidsPage() {
         applyResult={assignmentDraftApplyResult}
         confirmedSupervisorIds={confirmedSupervisorIds}
         onToggleSupervisorConfirmation={toggleSupervisorConfirmation}
+        selectedMilestoneIds={selectedMilestoneIds}
+        confirmedReplacementMilestoneIds={confirmedReplacementMilestoneIds}
+        onToggleMilestoneSelection={toggleMilestoneSelection}
+        onToggleReplacementConfirmation={toggleReplacementConfirmation}
+        onApplyMilestoneTargets={applyMilestoneAssignmentDraft}
       />
       </div>
     </ContractorPageSurface>

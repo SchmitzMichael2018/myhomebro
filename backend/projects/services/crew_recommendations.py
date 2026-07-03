@@ -23,6 +23,7 @@ from projects.models import (
 )
 from projects.models_contractor_discovery import ContractorOpportunity
 from projects.services.assignment_conflicts import evaluate_assignment_conflicts
+from projects.services.milestone_payouts import sync_milestone_payout
 
 
 ADVISORY_NOTICE = (
@@ -393,6 +394,7 @@ def validate_assignment_draft_apply(
     confirmed_replace_milestone_ids = _int_set(confirmations.get("replace_milestone_ids"))
     selected_agreement_sub_ids = _int_set(selected_targets.get("agreement_subaccount_ids"))
     selected_milestone_ids = _int_set(selected_targets.get("milestone_ids"))
+    include_agreements = selected_targets.get("include_agreements", True) is not False
     include_milestones = selected_targets.get("include_milestones", True) is not False
 
     plan = draft.assignment_plan or {}
@@ -437,7 +439,7 @@ def validate_assignment_draft_apply(
         )
         return response
 
-    agreement_targets = list(plan.get("suggested_agreement_assignments") or [])
+    agreement_targets = list(plan.get("suggested_agreement_assignments") or []) if include_agreements else []
     milestone_targets = list(plan.get("suggested_milestone_assignments") or []) if include_milestones else []
     if selected_agreement_sub_ids:
         filtered = []
@@ -672,7 +674,12 @@ def apply_assignment_draft_agreement_targets(
     selected_targets: dict[str, Any] | None = None,
     applied_by=None,
 ) -> dict[str, Any]:
-    selected_targets = {**(selected_targets or {}), "include_milestones": False}
+    selected_targets = {**(selected_targets or {})}
+    if "include_milestones" not in selected_targets:
+        selected_targets["include_milestones"] = False
+    if selected_targets.get("include_milestones") and not _int_set(selected_targets.get("milestone_ids")):
+        selected_targets["include_milestones"] = False
+    milestone_apply_requested = bool(selected_targets.get("include_milestones"))
 
     with transaction.atomic():
         locked = CrewAssignmentDraft.objects.select_for_update().select_related("contractor", "source_agreement").get(id=draft.id)
@@ -689,12 +696,24 @@ def apply_assignment_draft_agreement_targets(
                 "validation": validation,
                 "applied_targets": [],
                 "skipped_targets": [],
+                "milestone_targets": {
+                    "applied": [],
+                    "skipped": [],
+                    "blocked": [
+                        target
+                        for target in validation.get("selected_targets", {}).get("milestone_assignments", [])
+                        if target.get("status") in {"blocked", "requires_confirmation"}
+                    ],
+                },
                 "message": "Assignment draft is not safe to apply.",
             }
 
         agreement = Agreement.objects.get(id=locked.source_agreement_id, contractor=locked.contractor)
         applied_targets: list[dict[str, Any]] = []
         skipped_targets: list[dict[str, Any]] = []
+        applied_milestones: list[dict[str, Any]] = []
+        skipped_milestones: list[dict[str, Any]] = []
+        blocked_milestones: list[dict[str, Any]] = []
 
         for target in validation["selected_targets"]["agreement_assignments"]:
             if target.get("status") != "safe":
@@ -723,6 +742,70 @@ def apply_assignment_draft_agreement_targets(
             else:
                 skipped_targets.append({**result_row, "reason": "Already assigned."})
 
+        milestone_ids = [
+            target.get("milestone_id")
+            for target in validation["selected_targets"]["milestone_assignments"]
+            if target.get("milestone_id")
+        ]
+        milestones = {
+            milestone.id: milestone
+            for milestone in Milestone.objects.filter(id__in=milestone_ids, agreement=agreement)
+        }
+        for target in validation["selected_targets"]["milestone_assignments"]:
+            if target.get("status") != "safe":
+                blocked_milestones.append({**target, "reason": "Target was not safe."})
+                continue
+            try:
+                milestone_id = int(target.get("milestone_id"))
+                subaccount_id = int(target.get("subaccount_id"))
+            except (TypeError, ValueError):
+                blocked_milestones.append({**target, "reason": "Milestone target was invalid."})
+                continue
+            milestone = milestones.get(milestone_id)
+            if milestone is None:
+                blocked_milestones.append({**target, "reason": "Milestone is no longer available on this agreement."})
+                continue
+            subaccount = ContractorSubAccount.objects.get(id=subaccount_id, parent_contractor=locked.contractor, is_active=True)
+            existing = MilestoneAssignment.objects.filter(milestone=milestone).select_related("subaccount").first()
+            if existing and existing.subaccount_id == subaccount.id:
+                skipped_milestones.append(
+                    {
+                        "target_key": target.get("target_key"),
+                        "agreement_id": agreement.id,
+                        "milestone_id": milestone.id,
+                        "milestone_title": milestone.title,
+                        "subaccount_id": subaccount.id,
+                        "display_name": _subaccount_label(subaccount),
+                        "assignment_id": existing.id,
+                        "reason": "Already assigned.",
+                    }
+                )
+                continue
+            if existing:
+                previous_subaccount_id = existing.subaccount_id
+                existing.subaccount = subaccount
+                existing.save(update_fields=["subaccount"])
+                assignment = existing
+                action = "replaced"
+            else:
+                assignment = MilestoneAssignment.objects.create(milestone=milestone, subaccount=subaccount)
+                previous_subaccount_id = None
+                action = "created"
+            sync_milestone_payout(milestone.id)
+            applied_milestones.append(
+                {
+                    "target_key": target.get("target_key"),
+                    "agreement_id": agreement.id,
+                    "milestone_id": milestone.id,
+                    "milestone_title": milestone.title,
+                    "subaccount_id": subaccount.id,
+                    "display_name": _subaccount_label(subaccount),
+                    "assignment_id": assignment.id,
+                    "action": action,
+                    "previous_subaccount_id": previous_subaccount_id,
+                }
+            )
+
         result = {
             "applied": True,
             "status": "applied",
@@ -731,8 +814,16 @@ def apply_assignment_draft_agreement_targets(
             "applied_targets": applied_targets,
             "skipped_targets": skipped_targets,
             "milestone_targets": {
-                "applied": [],
-                "message": "Milestone apply coming soon.",
+                "applied": applied_milestones,
+                "skipped": skipped_milestones,
+                "blocked": blocked_milestones,
+                "message": (
+                    "Milestone assignments applied."
+                    if applied_milestones
+                    else "No milestone assignments were changed."
+                    if milestone_apply_requested
+                    else "Milestone apply coming soon."
+                ),
             },
             "validation": validation,
             "applied_at": timezone.now().isoformat(),

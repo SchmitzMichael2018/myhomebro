@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from unittest.mock import patch
 from rest_framework.test import APIClient
 
 from projects.models import (
@@ -523,3 +524,110 @@ class CrewRecommendationPreviewTests(TestCase):
         self.assertTrue(confirmed.data["applied"])
         self.assertTrue(AgreementAssignment.objects.filter(agreement=self.agreement, subaccount=supervisor).exists())
         self.assertEqual(MilestoneAssignment.objects.count(), 0)
+
+    @patch("projects.services.crew_recommendations.sync_milestone_payout")
+    def test_apply_selected_milestone_creates_milestone_assignment_and_syncs_payout(self, mock_sync):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        milestone = self.agreement.milestones.first()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/apply/",
+            {
+                "selected_targets": {
+                    "include_agreements": False,
+                    "include_milestones": True,
+                    "milestone_ids": [milestone.id],
+                }
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["applied"])
+        self.assertEqual(AgreementAssignment.objects.filter(agreement=self.agreement).count(), 0)
+        self.assertEqual(MilestoneAssignment.objects.count(), 1)
+        assignment = MilestoneAssignment.objects.get(milestone=milestone)
+        self.assertEqual(assignment.subaccount, self.employee)
+        self.assertEqual(response.data["milestone_targets"]["applied"][0]["action"], "created")
+        mock_sync.assert_called_once_with(milestone.id)
+
+    @patch("projects.services.crew_recommendations.sync_milestone_payout")
+    def test_apply_selected_milestone_blocks_existing_assignee_without_confirmation(self, mock_sync):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        milestone = self.agreement.milestones.first()
+        other_user = get_user_model().objects.create_user(email="blocked-existing@example.com", password="test-pass-123")
+        other_employee = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=other_user,
+            display_name="Blocked Existing",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+            is_active=True,
+        )
+        existing = MilestoneAssignment.objects.create(milestone=milestone, subaccount=other_employee)
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/apply/",
+            {
+                "selected_targets": {
+                    "include_agreements": False,
+                    "include_milestones": True,
+                    "milestone_ids": [milestone.id],
+                }
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(response.data["applied"])
+        self.assertTrue(response.data["milestone_targets"]["blocked"])
+        existing.refresh_from_db()
+        self.assertEqual(existing.subaccount, other_employee)
+        mock_sync.assert_not_called()
+
+    @patch("projects.services.crew_recommendations.sync_milestone_payout")
+    def test_apply_selected_milestone_replacement_confirmation_updates_assignment(self, mock_sync):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        milestone = self.agreement.milestones.first()
+        other_user = get_user_model().objects.create_user(email="replace-existing@example.com", password="test-pass-123")
+        other_employee = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=other_user,
+            display_name="Replace Existing",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+            is_active=True,
+        )
+        existing = MilestoneAssignment.objects.create(milestone=milestone, subaccount=other_employee)
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/apply/",
+            {
+                "confirmations": {"replace_milestone_ids": [milestone.id]},
+                "selected_targets": {
+                    "include_agreements": False,
+                    "include_milestones": True,
+                    "milestone_ids": [milestone.id],
+                },
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        existing.refresh_from_db()
+        self.assertEqual(existing.subaccount, self.employee)
+        self.assertEqual(MilestoneAssignment.objects.count(), 1)
+        applied = response.data["milestone_targets"]["applied"][0]
+        self.assertEqual(applied["action"], "replaced")
+        self.assertEqual(applied["previous_subaccount_id"], other_employee.id)
+        mock_sync.assert_called_once_with(milestone.id)

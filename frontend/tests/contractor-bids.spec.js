@@ -1221,10 +1221,62 @@ test("contractor bids workspace renders property management work orders and rout
   });
   await page.route("**/api/projects/crew-recommendations/drafts/**", async (route) => {
     if (route.request().url().includes("/apply/")) {
+      const payload = route.request().postDataJSON();
+      const applyingMilestones = payload?.selected_targets?.include_milestones;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({
+        body: JSON.stringify(applyingMilestones ? {
+          applied: true,
+          status: "applied",
+          draft_id: 501,
+          agreement_id: 932,
+          applied_targets: [],
+          skipped_targets: [],
+          milestone_targets: {
+            applied: [
+              {
+                target_key: "milestone:3001:44",
+                agreement_id: 932,
+                milestone_id: 3001,
+                milestone_title: "Repair sink leak",
+                subaccount_id: 44,
+                display_name: "Pat Plumbing",
+                assignment_id: 8001,
+                action: "created",
+              },
+            ],
+            skipped: [],
+            blocked: [],
+            message: "Milestone assignments applied.",
+          },
+          validation: {
+            draft_id: 501,
+            apply_ready: true,
+            selected_targets: {
+              agreement_assignments: [],
+              milestone_assignments: [
+                {
+                  target_key: "milestone:3001:44",
+                  status: "safe",
+                  agreement_id: 932,
+                  milestone_id: 3001,
+                  milestone_title: "Repair sink leak",
+                  subaccount_id: 44,
+                  display_name: "Pat Plumbing",
+                  blocking_issues: [],
+                  warnings: [],
+                  required_confirmations: [],
+                },
+              ],
+            },
+            safe_targets: [{ target_type: "milestone", target_key: "milestone:3001:44" }],
+            blocking_issues: [],
+            warnings: [],
+            required_confirmations: [],
+          },
+          message: "Agreement-level assignments applied.",
+        } : {
           applied: true,
           status: "applied",
           draft_id: 501,
@@ -1257,7 +1309,20 @@ test("contractor bids workspace renders property management work orders and rout
                   required_confirmations: [],
                 },
               ],
-              milestone_assignments: [],
+              milestone_assignments: [
+                {
+                  target_key: "milestone:3001:44",
+                  status: "safe",
+                  agreement_id: 932,
+                  milestone_id: 3001,
+                  milestone_title: "Repair sink leak",
+                  subaccount_id: 44,
+                  display_name: "Pat Plumbing",
+                  blocking_issues: [],
+                  warnings: [],
+                  required_confirmations: [],
+                },
+              ],
             },
             safe_targets: [{ target_type: "agreement", target_key: "agreement:932:44" }],
             blocking_issues: [],
@@ -1290,10 +1355,26 @@ test("contractor bids workspace renders property management work orders and rout
                 warnings: [],
                 required_confirmations: [],
               },
-            ],
-            milestone_assignments: [],
-          },
-          safe_targets: [{ target_type: "agreement", target_key: "agreement:932:44" }],
+              ],
+              milestone_assignments: [
+                {
+                  target_key: "milestone:3001:44",
+                  status: "safe",
+                  agreement_id: 932,
+                  milestone_id: 3001,
+                  milestone_title: "Repair sink leak",
+                  subaccount_id: 44,
+                  display_name: "Pat Plumbing",
+                  blocking_issues: [],
+                  warnings: [],
+                  required_confirmations: [],
+                },
+              ],
+            },
+          safe_targets: [
+            { target_type: "agreement", target_key: "agreement:932:44" },
+            { target_type: "milestone", target_key: "milestone:3001:44" },
+          ],
           blocking_issues: [],
           warnings: [],
           required_confirmations: [],
@@ -1357,7 +1438,20 @@ test("contractor bids workspace renders property management work orders and rout
               reason: "Suggested for agreement-level assignment after contractor review.",
             },
           ],
-          suggested_milestone_assignments: [],
+          suggested_milestone_assignments: [
+            {
+              target_type: "milestone",
+              agreement_id: 932,
+              milestone_id: 3001,
+              milestone_title: "Repair sink leak",
+              subaccount_id: 44,
+              display_name: "Pat Plumbing",
+              matched_skill_name: "Plumbing",
+              skill_level_label: "Skilled",
+              apply_safe: false,
+              reason: "Milestone text appears to match this employee capability; review before applying.",
+            },
+          ],
         },
         apply_enabled: false,
         apply_disabled_reason: "Apply coming soon.",
@@ -1398,6 +1492,13 @@ test("contractor bids workspace renders property management work orders and rout
   await page.getByTestId("assignment-draft-apply-agreement").click();
   await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Agreement-level assignments applied");
   await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Pat Plumbing assigned to agreement #932");
+  await page.getByTestId("assignment-draft-milestone-select-3001").check();
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("calendar-facing views");
+    await dialog.accept();
+  });
+  await page.getByTestId("assignment-draft-apply-milestones").click();
+  await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Pat Plumbing assigned to Repair sink leak");
   await expect(page.getByTestId("assignment-draft-apply-disabled")).toContainText("Apply coming soon.");
   await page.getByTestId("assignment-draft-modal").getByRole("button", { name: "Close assignment draft" }).click();
   await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
