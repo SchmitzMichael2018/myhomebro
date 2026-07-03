@@ -10,6 +10,7 @@ from rest_framework import serializers
 
 from projects.models import ContractorSubAccount
 from projects.services.team_attention import build_subaccount_work_summary
+from projects.serializers.workforce import EmployeeCapabilitySerializer
 
 User = get_user_model()
 
@@ -23,6 +24,7 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
     active_assignment_count = serializers.SerializerMethodField()
     pending_review_count = serializers.SerializerMethodField()
     overdue_milestone_count = serializers.SerializerMethodField()
+    capabilities = EmployeeCapabilitySerializer(many=True, read_only=True)
 
     class Meta:
         model = ContractorSubAccount
@@ -42,6 +44,7 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
             "active_assignment_count",
             "pending_review_count",
             "overdue_milestone_count",
+            "capabilities",
         ]
         read_only_fields = fields
 

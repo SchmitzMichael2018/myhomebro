@@ -22,6 +22,11 @@ export default function EmployeeProfile() {
   const [err, setErr] = useState("");
 
   const [profile, setProfile] = useState(null);
+  const [skillCatalog, setSkillCatalog] = useState([]);
+  const [skillLevels, setSkillLevels] = useState([]);
+  const [capabilities, setCapabilities] = useState([]);
+  const [newSkillId, setNewSkillId] = useState("");
+  const [newSkillLevel, setNewSkillLevel] = useState("working");
 
   const [form, setForm] = useState({
     first_name: "",
@@ -50,9 +55,29 @@ export default function EmployeeProfile() {
     setLoading(true);
     setErr("");
     try {
-      const res = await api.get("/projects/employee/profile/");
+      const [profileRes, catalogRes] = await Promise.all([
+        api.get("/projects/employee/profile/"),
+        api.get("/projects/workforce/catalog/"),
+      ]);
+      const res = profileRes;
       const p = res.data?.profile || null;
+      const catalog = Array.isArray(catalogRes.data?.skills) ? catalogRes.data.skills : [];
+      const levels = Array.isArray(catalogRes.data?.skill_levels) ? catalogRes.data.skill_levels : [];
       setProfile(p);
+      setSkillCatalog(catalog);
+      setSkillLevels(levels);
+      setCapabilities(
+        Array.isArray(p?.capabilities)
+          ? p.capabilities.map((item) => ({
+              skill_id: item.skill_id,
+              skill_name: item.skill_name,
+              skill_slug: item.skill_slug,
+              skill_level: item.skill_level || "working",
+              skill_level_label: item.skill_level_label || "Working",
+            }))
+          : []
+      );
+      setNewSkillLevel(levels[1]?.value || levels[0]?.value || "working");
 
       setForm({
         first_name: p?.first_name || "",
@@ -103,6 +128,17 @@ export default function EmployeeProfile() {
       Object.entries(form).forEach(([k, v]) => {
         fd.append(k, v ?? "");
       });
+      fd.append(
+        "capabilities_json",
+        JSON.stringify(
+          capabilities
+            .filter((item) => item.skill_id && item.skill_level)
+            .map((item) => ({
+              skill_id: Number(item.skill_id),
+              skill_level: item.skill_level,
+            }))
+        )
+      );
 
       if (photoFile) fd.append("photo", photoFile);
       if (dlFile) fd.append("drivers_license_file", dlFile);
@@ -114,6 +150,17 @@ export default function EmployeeProfile() {
 
       const p = res.data?.profile || null;
       setProfile(p);
+      setCapabilities(
+        Array.isArray(p?.capabilities)
+          ? p.capabilities.map((item) => ({
+              skill_id: item.skill_id,
+              skill_name: item.skill_name,
+              skill_slug: item.skill_slug,
+              skill_level: item.skill_level || "working",
+              skill_level_label: item.skill_level_label || "Working",
+            }))
+          : []
+      );
 
       setPhotoFile(null);
       setDlFile(null);
@@ -124,6 +171,49 @@ export default function EmployeeProfile() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function skillLabel(skillId) {
+    const row = skillCatalog.find((skill) => String(skill.id) === String(skillId));
+    return row?.name || "Capability";
+  }
+
+  function levelLabel(value) {
+    const row = skillLevels.find((level) => String(level.value) === String(value));
+    return row?.label || String(value || "Working");
+  }
+
+  function addCapability() {
+    if (!newSkillId) return;
+    if (capabilities.some((item) => String(item.skill_id) === String(newSkillId))) {
+      setErr("That capability is already listed.");
+      return;
+    }
+    setErr("");
+    setCapabilities((current) => [
+      ...current,
+      {
+        skill_id: Number(newSkillId),
+        skill_name: skillLabel(newSkillId),
+        skill_level: newSkillLevel || "working",
+        skill_level_label: levelLabel(newSkillLevel || "working"),
+      },
+    ]);
+    setNewSkillId("");
+  }
+
+  function removeCapability(skillId) {
+    setCapabilities((current) => current.filter((item) => String(item.skill_id) !== String(skillId)));
+  }
+
+  function updateCapabilityLevel(skillId, level) {
+    setCapabilities((current) =>
+      current.map((item) =>
+        String(item.skill_id) === String(skillId)
+          ? { ...item, skill_level: level, skill_level_label: levelLabel(level) }
+          : item
+      )
+    );
   }
 
   return (
@@ -407,6 +497,107 @@ export default function EmployeeProfile() {
                   className="w-full border rounded-lg px-3 py-2 min-h-[120px]"
                 />
               </Field>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl bg-white border border-slate-200 p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="font-semibold text-slate-900">Capabilities</div>
+                <div className="mt-1 text-sm text-slate-500">
+                  Track the trades and skill levels you can be assigned for later workforce planning.
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto]">
+              <Field label="Trade / Skill">
+                <select
+                  value={newSkillId}
+                  onChange={(event) => setNewSkillId(event.target.value)}
+                  className="w-full border rounded-lg px-3 py-2"
+                  data-testid="employee-capability-skill-select"
+                >
+                  <option value="">Select capability</option>
+                  {skillCatalog
+                    .filter((skill) => !capabilities.some((item) => String(item.skill_id) === String(skill.id)))
+                    .map((skill) => (
+                      <option key={skill.id} value={skill.id}>
+                        {skill.name}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+
+              <Field label="Skill Level">
+                <select
+                  value={newSkillLevel}
+                  onChange={(event) => setNewSkillLevel(event.target.value)}
+                  className="w-full border rounded-lg px-3 py-2"
+                  data-testid="employee-capability-level-select"
+                >
+                  {skillLevels.map((level) => (
+                    <option key={level.value} value={level.value}>
+                      {level.label}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={addCapability}
+                  disabled={!newSkillId}
+                  className="w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                  data-testid="employee-capability-add"
+                >
+                  Add capability
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {capabilities.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+                  No capabilities listed yet.
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-3" data-testid="employee-capabilities-list">
+                  {capabilities.map((capability) => (
+                    <div
+                      key={capability.skill_id}
+                      className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">
+                          {capability.skill_name || skillLabel(capability.skill_id)}
+                        </div>
+                        <div className="text-xs text-slate-500">{levelLabel(capability.skill_level)}</div>
+                      </div>
+                      <select
+                        value={capability.skill_level}
+                        onChange={(event) => updateCapabilityLevel(capability.skill_id, event.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-sm"
+                        aria-label={`Skill level for ${capability.skill_name || skillLabel(capability.skill_id)}`}
+                      >
+                        {skillLevels.map((level) => (
+                          <option key={level.value} value={level.value}>
+                            {level.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => removeCapability(capability.skill_id)}
+                        className="rounded-lg border border-red-200 bg-white px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </>

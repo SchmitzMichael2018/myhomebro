@@ -106,6 +106,14 @@ class MilestoneRole(models.TextChoices):
     INSPECTION_CHECKPOINT = "inspection_checkpoint", "Inspection Checkpoint"
 
 
+class EmployeeSkillLevel(models.TextChoices):
+    BEGINNER = "beginner", "Beginner"
+    WORKING = "working", "Working"
+    SKILLED = "skilled", "Skilled"
+    LEAD = "lead", "Lead"
+    EXPERT = "expert", "Expert"
+
+
 class RecurrencePattern(models.TextChoices):
     WEEKLY = "weekly", "Weekly"
     MONTHLY = "monthly", "Monthly"
@@ -2860,6 +2868,39 @@ class EmployeeProfile(models.Model):
 
     def __str__(self) -> str:
         return f"EmployeeProfile(subaccount_id={self.subaccount_id})"
+
+
+class EmployeeCapability(models.Model):
+    subaccount = models.ForeignKey(
+        ContractorSubAccount,
+        on_delete=models.CASCADE,
+        related_name="capabilities",
+    )
+    skill = models.ForeignKey(
+        Skill,
+        on_delete=models.PROTECT,
+        related_name="employee_capabilities",
+    )
+    skill_level = models.CharField(
+        max_length=24,
+        choices=EmployeeSkillLevel.choices,
+        default=EmployeeSkillLevel.WORKING,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["skill__name", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subaccount", "skill"],
+                name="unique_employee_capability_per_skill",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.subaccount_id}: {self.skill.name} ({self.get_skill_level_display()})"
 
 
 class AgreementAssignment(models.Model):

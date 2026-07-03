@@ -69,6 +69,12 @@ function WorkBadge({ count, tone = "neutral", label }) {
   );
 }
 
+function capabilityLabel(capability) {
+  const skill = capability?.skill_name || capability?.skill_slug || "Capability";
+  const level = capability?.skill_level_label || capability?.skill_level || "";
+  return level ? `${skill} - ${level}` : skill;
+}
+
 export default function TeamPage() {
   const navigate = useNavigate();
   const { data: identity, loading: whoLoading, error: whoError } = useWhoAmI();
@@ -93,6 +99,8 @@ export default function TeamPage() {
   });
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [capabilityFilter, setCapabilityFilter] = useState("");
+  const [skillLevelFilter, setSkillLevelFilter] = useState("");
 
   const fetchSubaccounts = async () => {
     try {
@@ -224,6 +232,46 @@ export default function TeamPage() {
     return { activeMembers, activeWork, pendingReviews, overdue };
   }, [subaccounts]);
 
+  const capabilityOptions = useMemo(() => {
+    const byId = new Map();
+    subaccounts.forEach((row) => {
+      (Array.isArray(row.capabilities) ? row.capabilities : []).forEach((capability) => {
+        if (!capability?.skill_id) return;
+        byId.set(String(capability.skill_id), {
+          id: String(capability.skill_id),
+          name: capability.skill_name || capability.skill_slug || "Capability",
+        });
+      });
+    });
+    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [subaccounts]);
+
+  const skillLevelOptions = useMemo(() => {
+    const byValue = new Map();
+    subaccounts.forEach((row) => {
+      (Array.isArray(row.capabilities) ? row.capabilities : []).forEach((capability) => {
+        if (!capability?.skill_level) return;
+        byValue.set(String(capability.skill_level), {
+          value: String(capability.skill_level),
+          label: capability.skill_level_label || capability.skill_level,
+        });
+      });
+    });
+    return Array.from(byValue.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [subaccounts]);
+
+  const filteredSubaccounts = useMemo(() => {
+    return subaccounts.filter((row) => {
+      const capabilities = Array.isArray(row.capabilities) ? row.capabilities : [];
+      if (!capabilityFilter && !skillLevelFilter) return true;
+      return capabilities.some((capability) => {
+        const skillMatches = !capabilityFilter || String(capability.skill_id) === String(capabilityFilter);
+        const levelMatches = !skillLevelFilter || String(capability.skill_level) === String(skillLevelFilter);
+        return skillMatches && levelMatches;
+      });
+    });
+  }, [capabilityFilter, skillLevelFilter, subaccounts]);
+
   if (whoLoading) {
     return (
       <div className="p-6">
@@ -293,6 +341,53 @@ export default function TeamPage() {
         <CountPill label="Overdue" value={teamSummary.overdue || attentionCounts.overdue_milestone_count || 0} />
       </section>
 
+      <section className="rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-800">Capability Filters</h2>
+            <p className="mt-1 text-sm text-gray-500">Filter employees by trade and optional skill level.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setCapabilityFilter("");
+              setSkillLevelFilter("");
+            }}
+            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Clear filters
+          </button>
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <select
+            value={capabilityFilter}
+            onChange={(event) => setCapabilityFilter(event.target.value)}
+            className="rounded-md border px-3 py-2 text-sm"
+            data-testid="team-capability-filter"
+          >
+            <option value="">All capabilities</option>
+            {capabilityOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={skillLevelFilter}
+            onChange={(event) => setSkillLevelFilter(event.target.value)}
+            className="rounded-md border px-3 py-2 text-sm"
+            data-testid="team-skill-level-filter"
+          >
+            <option value="">All skill levels</option>
+            {skillLevelOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </section>
+
       <section className="bg-white border rounded-xl shadow-sm p-4 md:p-5">
         <h2 className="mb-3 text-sm font-semibold text-gray-800">Add Employee</h2>
 
@@ -354,16 +449,18 @@ export default function TeamPage() {
 
       <section className="rounded-xl border bg-white shadow-sm">
         <div className="border-b px-4 py-3 font-semibold">
-          Team Members ({subaccounts.length})
+          Team Members ({filteredSubaccounts.length} of {subaccounts.length})
         </div>
 
         {subsError ? <div className="px-4 py-3 text-sm text-red-700">{subsError}</div> : null}
 
         {loadingSubs ? (
           <div className="px-4 py-4 text-sm text-gray-500">Loading…</div>
-        ) : subaccounts.length === 0 ? (
+        ) : filteredSubaccounts.length === 0 ? (
           <div className="px-4 py-4 text-sm text-gray-500">
-            No employees yet. Add one above to assign work and keep the team moving.
+            {subaccounts.length === 0
+              ? "No employees yet. Add one above to assign work and keep the team moving."
+              : "No employees match the selected capability filters."}
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -379,7 +476,7 @@ export default function TeamPage() {
                 </tr>
               </thead>
               <tbody>
-                {subaccounts.map((sub) => {
+                {filteredSubaccounts.map((sub) => {
                   const workCount = Number(sub.active_assignment_count || 0);
                   const pendingReviewCount = Number(sub.pending_review_count || 0);
                   const overdueCount = Number(sub.overdue_milestone_count || 0);
@@ -396,6 +493,23 @@ export default function TeamPage() {
                         <div className="mt-1 text-xs text-gray-500">
                           Assignments: {Number(sub.assignment_count || 0)}
                         </div>
+                        {Array.isArray(sub.capabilities) && sub.capabilities.length ? (
+                          <div className="mt-2 flex max-w-xs flex-wrap gap-1">
+                            {sub.capabilities.slice(0, 4).map((capability) => (
+                              <span
+                                key={`${sub.id}-${capability.skill_id}`}
+                                className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800"
+                              >
+                                {capabilityLabel(capability)}
+                              </span>
+                            ))}
+                            {sub.capabilities.length > 4 ? (
+                              <span className="text-[11px] font-semibold text-slate-500">
+                                +{sub.capabilities.length - 4}
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">

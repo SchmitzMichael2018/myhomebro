@@ -76,6 +76,7 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
         return (
             ContractorSubAccount.objects.filter(parent_contractor=contractor)
             .select_related("user", "parent_contractor")
+            .prefetch_related("capabilities__skill")
             .order_by("-created_at")
         )
 
