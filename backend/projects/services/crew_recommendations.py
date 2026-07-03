@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import json
 from typing import Any
 
+from django.core.serializers.json import DjangoJSONEncoder
+from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 
 from projects.models import (
     Agreement,
@@ -329,6 +333,8 @@ def serialize_assignment_draft(draft: CrewAssignmentDraft) -> dict[str, Any]:
         "assignment_plan": assignment_plan,
         "apply_enabled": bool(draft.apply_enabled and assignment_plan.get("apply_enabled")),
         "apply_disabled_reason": assignment_plan.get("apply_disabled_reason", "Apply coming soon."),
+        "applied_at": draft.applied_at.isoformat() if draft.applied_at else None,
+        "apply_result": draft.apply_result or {},
         "created_at": draft.created_at.isoformat() if draft.created_at else None,
     }
 
@@ -371,6 +377,10 @@ def _target_key(prefix: str, *parts: Any) -> str:
     return ":".join([prefix, *(str(part) for part in parts if part is not None)])
 
 
+def _json_safe(value: Any) -> Any:
+    return json.loads(json.dumps(value, cls=DjangoJSONEncoder))
+
+
 def validate_assignment_draft_apply(
     draft: CrewAssignmentDraft,
     *,
@@ -383,6 +393,7 @@ def validate_assignment_draft_apply(
     confirmed_replace_milestone_ids = _int_set(confirmations.get("replace_milestone_ids"))
     selected_agreement_sub_ids = _int_set(selected_targets.get("agreement_subaccount_ids"))
     selected_milestone_ids = _int_set(selected_targets.get("milestone_ids"))
+    include_milestones = selected_targets.get("include_milestones", True) is not False
 
     plan = draft.assignment_plan or {}
     source_summary = (draft.preview_snapshot or {}).get("source_summary", {})
@@ -427,7 +438,7 @@ def validate_assignment_draft_apply(
         return response
 
     agreement_targets = list(plan.get("suggested_agreement_assignments") or [])
-    milestone_targets = list(plan.get("suggested_milestone_assignments") or [])
+    milestone_targets = list(plan.get("suggested_milestone_assignments") or []) if include_milestones else []
     if selected_agreement_sub_ids:
         filtered = []
         for target in agreement_targets:
@@ -652,6 +663,88 @@ def validate_assignment_draft_apply(
 
     response["apply_ready"] = not response["blocking_issues"] and not response["required_confirmations"]
     return response
+
+
+def apply_assignment_draft_agreement_targets(
+    draft: CrewAssignmentDraft,
+    *,
+    confirmations: dict[str, Any] | None = None,
+    selected_targets: dict[str, Any] | None = None,
+    applied_by=None,
+) -> dict[str, Any]:
+    selected_targets = {**(selected_targets or {}), "include_milestones": False}
+
+    with transaction.atomic():
+        locked = CrewAssignmentDraft.objects.select_for_update().select_related("contractor", "source_agreement").get(id=draft.id)
+        validation = validate_assignment_draft_apply(
+            locked,
+            confirmations=confirmations or {},
+            selected_targets=selected_targets,
+        )
+        if validation["blocking_issues"] or validation["required_confirmations"] or not validation["apply_ready"]:
+            return {
+                "applied": False,
+                "status": "blocked",
+                "draft_id": locked.id,
+                "validation": validation,
+                "applied_targets": [],
+                "skipped_targets": [],
+                "message": "Assignment draft is not safe to apply.",
+            }
+
+        agreement = Agreement.objects.get(id=locked.source_agreement_id, contractor=locked.contractor)
+        applied_targets: list[dict[str, Any]] = []
+        skipped_targets: list[dict[str, Any]] = []
+
+        for target in validation["selected_targets"]["agreement_assignments"]:
+            if target.get("status") != "safe":
+                skipped_targets.append({**target, "reason": "Target was not safe."})
+                continue
+            try:
+                subaccount_id = int(target.get("subaccount_id"))
+            except (TypeError, ValueError):
+                skipped_targets.append({**target, "reason": "Target employee was invalid."})
+                continue
+            subaccount = ContractorSubAccount.objects.get(id=subaccount_id, parent_contractor=locked.contractor, is_active=True)
+            assignment, created = AgreementAssignment.objects.get_or_create(
+                agreement=agreement,
+                subaccount=subaccount,
+            )
+            result_row = {
+                "target_key": target.get("target_key"),
+                "agreement_id": agreement.id,
+                "subaccount_id": subaccount.id,
+                "display_name": _subaccount_label(subaccount),
+                "assignment_id": assignment.id,
+                "created": created,
+            }
+            if created:
+                applied_targets.append(result_row)
+            else:
+                skipped_targets.append({**result_row, "reason": "Already assigned."})
+
+        result = {
+            "applied": True,
+            "status": "applied",
+            "draft_id": locked.id,
+            "agreement_id": agreement.id,
+            "applied_targets": applied_targets,
+            "skipped_targets": skipped_targets,
+            "milestone_targets": {
+                "applied": [],
+                "message": "Milestone apply coming soon.",
+            },
+            "validation": validation,
+            "applied_at": timezone.now().isoformat(),
+            "message": "Agreement-level assignments applied.",
+        }
+        locked.status = CrewAssignmentDraft.STATUS_APPLIED
+        locked.applied_at = timezone.now()
+        locked.applied_by = applied_by if getattr(applied_by, "is_authenticated", False) else None
+        locked.apply_result = _json_safe(result)
+        locked.save(update_fields=["status", "applied_at", "applied_by", "apply_result", "updated_at"])
+        result["applied_at"] = locked.applied_at.isoformat()
+        return result
 
 
 def build_crew_recommendation_preview(ctx: SourceContext) -> dict[str, Any]:

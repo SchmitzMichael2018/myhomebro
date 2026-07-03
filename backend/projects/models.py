@@ -2912,8 +2912,10 @@ class CrewAssignmentDraft(models.Model):
     ]
 
     STATUS_DRAFT = "draft"
+    STATUS_APPLIED = "applied"
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Draft"),
+        (STATUS_APPLIED, "Applied"),
     ]
 
     contractor = models.ForeignKey(
@@ -2947,6 +2949,15 @@ class CrewAssignmentDraft(models.Model):
         blank=True,
         related_name="created_crew_assignment_drafts",
     )
+    applied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="applied_crew_assignment_drafts",
+    )
+    applied_at = models.DateTimeField(null=True, blank=True)
+    apply_result = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

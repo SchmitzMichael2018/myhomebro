@@ -174,6 +174,7 @@ from .views.employee_milestones import (
 from .views.employee_profile import EmployeeMeProfileView
 from .views.workforce import WorkforceCatalogView
 from .views.crew_recommendations import (
+    CrewAssignmentDraftApplyView,
     CrewAssignmentDraftCreateView,
     CrewAssignmentDraftValidateApplyView,
     CrewRecommendationPreviewView,
@@ -805,6 +806,7 @@ urlpatterns = [
     path("crew-recommendations/preview/", CrewRecommendationPreviewView.as_view()),
     path("crew-recommendations/drafts/", CrewAssignmentDraftCreateView.as_view()),
     path("crew-recommendations/drafts/<int:draft_id>/validate-apply/", CrewAssignmentDraftValidateApplyView.as_view()),
+    path("crew-recommendations/drafts/<int:draft_id>/apply/", CrewAssignmentDraftApplyView.as_view()),
     path("contractor-activation-summary/", ContractorActivationSummaryView.as_view()),
     path("contractor-activation-summary/dismiss/", ContractorActivationSummaryDismissView.as_view()),
     path("contractors/directory-claim/<uuid:token>/", ContractorDirectoryClaimView.as_view()),

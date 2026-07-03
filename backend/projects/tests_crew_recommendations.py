@@ -377,3 +377,149 @@ class CrewRecommendationPreviewTests(TestCase):
         self.assertTrue(confirmed.data["apply_ready"])
         self.assertEqual(confirmed.data["required_confirmations"], [])
         self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)
+
+    def test_apply_creates_agreement_assignments_only_and_marks_draft_applied(self):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        draft_id = draft_response.data["id"]
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_id}/apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["applied"])
+        self.assertEqual(AgreementAssignment.objects.filter(agreement=self.agreement).count(), 1)
+        self.assertTrue(AgreementAssignment.objects.filter(agreement=self.agreement, subaccount=self.employee).exists())
+        self.assertEqual(MilestoneAssignment.objects.count(), 0)
+        self.assertTrue(response.data["applied_targets"])
+        self.assertEqual(response.data["milestone_targets"]["applied"], [])
+        self.assertIn("coming soon", response.data["milestone_targets"]["message"].lower())
+        draft = CrewAssignmentDraft.objects.get(id=draft_id)
+        self.assertEqual(draft.status, CrewAssignmentDraft.STATUS_APPLIED)
+        self.assertIsNotNone(draft.applied_at)
+        self.assertEqual(draft.applied_by, self.owner_user)
+        self.assertTrue(draft.apply_result["applied"])
+
+    def test_apply_is_idempotent_for_existing_agreement_assignment(self):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        draft_id = draft_response.data["id"]
+
+        first = self.client.post(f"/api/projects/crew-recommendations/drafts/{draft_id}/apply/", {}, format="json")
+        second = self.client.post(f"/api/projects/crew-recommendations/drafts/{draft_id}/apply/", {}, format="json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(AgreementAssignment.objects.filter(agreement=self.agreement, subaccount=self.employee).count(), 1)
+        self.assertEqual(second.data["applied_targets"], [])
+        self.assertTrue(second.data["skipped_targets"])
+        self.assertEqual(second.data["skipped_targets"][0]["reason"], "Already assigned.")
+        self.assertEqual(MilestoneAssignment.objects.count(), 0)
+
+    def test_opportunity_draft_apply_is_blocked(self):
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "opportunity", "source_id": self.opportunity.id},
+            format="json",
+        )
+        before_agreement_assignments = AgreementAssignment.objects.count()
+        before_milestone_assignments = MilestoneAssignment.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(response.data["applied"])
+        self.assertEqual(AgreementAssignment.objects.count(), before_agreement_assignments)
+        self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)
+
+    def test_apply_blocks_non_supervisor_conflict(self):
+        other_project = Project.objects.create(contractor=self.contractor, homeowner=self.homeowner, title="Overlap")
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Painting",
+            description="Paint trim.",
+            start="2026-08-03",
+            end="2026-08-06",
+        )
+        AgreementAssignment.objects.create(agreement=other_agreement, subaccount=self.employee)
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        before_assignments = AgreementAssignment.objects.count()
+
+        response = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/apply/",
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(response.data["applied"])
+        self.assertTrue(any(issue["type"] == "non_supervisor_overlap" for issue in response.data["validation"]["blocking_issues"]))
+        self.assertEqual(AgreementAssignment.objects.count(), before_assignments)
+        self.assertEqual(MilestoneAssignment.objects.count(), 0)
+
+    def test_apply_supervisor_conflict_requires_confirmation(self):
+        supervisor_user = get_user_model().objects.create_user(email="apply-supervisor@example.com", password="test-pass-123")
+        supervisor = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=supervisor_user,
+            display_name="Zed Supervisor",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_SUPERVISOR,
+            is_active=True,
+        )
+        EmployeeCapability.objects.create(subaccount=supervisor, skill=self.painting, skill_level="skilled")
+        other_project = Project.objects.create(contractor=self.contractor, homeowner=self.homeowner, title="Supervisor Overlap")
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            project_type="Painting",
+            description="Paint trim.",
+            start="2026-08-03",
+            end="2026-08-06",
+        )
+        AgreementAssignment.objects.create(agreement=other_agreement, subaccount=supervisor)
+        draft_response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+        before_assignments = AgreementAssignment.objects.count()
+
+        blocked = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/apply/",
+            {},
+            format="json",
+        )
+        self.assertEqual(blocked.status_code, 409)
+        self.assertFalse(blocked.data["applied"])
+        self.assertTrue(any(item["type"] == "supervisor_overlap" for item in blocked.data["validation"]["required_confirmations"]))
+        self.assertEqual(AgreementAssignment.objects.count(), before_assignments)
+
+        confirmed = self.client.post(
+            f"/api/projects/crew-recommendations/drafts/{draft_response.data['id']}/apply/",
+            {"confirmations": {"supervisor_overlap_subaccount_ids": [supervisor.id]}},
+            format="json",
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        self.assertTrue(confirmed.data["applied"])
+        self.assertTrue(AgreementAssignment.objects.filter(agreement=self.agreement, subaccount=supervisor).exists())
+        self.assertEqual(MilestoneAssignment.objects.count(), 0)

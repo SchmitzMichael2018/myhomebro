@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.services.crew_recommendations import (
+    apply_assignment_draft_agreement_targets,
     build_crew_recommendation_preview,
     create_assignment_draft_from_preview,
     resolve_source_context,
@@ -91,4 +92,31 @@ class CrewAssignmentDraftValidateApplyView(APIView):
             confirmations=request.data.get("confirmations") or {},
             selected_targets=request.data.get("selected_targets") or {},
         )
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class CrewAssignmentDraftApplyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, draft_id: int, *args, **kwargs):
+        contractor = get_contractor_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor context required."}, status=status.HTTP_403_FORBIDDEN)
+
+        draft = (
+            CrewAssignmentDraft.objects.select_related("contractor", "source_agreement", "source_opportunity")
+            .filter(id=draft_id, contractor=contractor)
+            .first()
+        )
+        if draft is None:
+            return Response({"detail": "Assignment draft not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        result = apply_assignment_draft_agreement_targets(
+            draft,
+            confirmations=request.data.get("confirmations") or {},
+            selected_targets=request.data.get("selected_targets") or {},
+            applied_by=request.user,
+        )
+        if not result.get("applied"):
+            return Response(result, status=status.HTTP_409_CONFLICT)
         return Response(result, status=status.HTTP_200_OK)

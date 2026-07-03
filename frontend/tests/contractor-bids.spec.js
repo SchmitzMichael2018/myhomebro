@@ -1220,23 +1220,83 @@ test("contractor bids workspace renders property management work orders and rout
     });
   });
   await page.route("**/api/projects/crew-recommendations/drafts/**", async (route) => {
+    if (route.request().url().includes("/apply/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          applied: true,
+          status: "applied",
+          draft_id: 501,
+          agreement_id: 932,
+          applied_targets: [
+            {
+              target_key: "agreement:932:44",
+              agreement_id: 932,
+              subaccount_id: 44,
+              display_name: "Pat Plumbing",
+              assignment_id: 7001,
+              created: true,
+            },
+          ],
+          skipped_targets: [],
+          milestone_targets: { applied: [], message: "Milestone apply coming soon." },
+          validation: {
+            draft_id: 501,
+            apply_ready: true,
+            selected_targets: {
+              agreement_assignments: [
+                {
+                  target_key: "agreement:932:44",
+                  status: "safe",
+                  agreement_id: 932,
+                  subaccount_id: 44,
+                  display_name: "Pat Plumbing",
+                  blocking_issues: [],
+                  warnings: [],
+                  required_confirmations: [],
+                },
+              ],
+              milestone_assignments: [],
+            },
+            safe_targets: [{ target_type: "agreement", target_key: "agreement:932:44" }],
+            blocking_issues: [],
+            warnings: [],
+            required_confirmations: [],
+          },
+          message: "Agreement-level assignments applied.",
+        }),
+      });
+      return;
+    }
     if (route.request().url().includes("/validate-apply/")) {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
           draft_id: 501,
-          apply_ready: false,
+          apply_ready: true,
           apply_enabled: false,
           apply_disabled_reason: "Apply coming soon.",
           selected_targets: {
-            agreement_assignments: [],
+            agreement_assignments: [
+              {
+                target_key: "agreement:932:44",
+                status: "safe",
+                agreement_id: 932,
+                subaccount_id: 44,
+                display_name: "Pat Plumbing",
+                blocking_issues: [],
+                warnings: [],
+                required_confirmations: [],
+              },
+            ],
             milestone_assignments: [],
           },
           safe_targets: [{ target_type: "agreement", target_key: "agreement:932:44" }],
-          blocking_issues: [{ type: "source_not_apply_ready", message: "Only agreement-source assignment drafts can be validated for apply readiness." }],
-          warnings: [{ type: "schedule_warning", message: "Opportunity must become an agreement before applying." }],
-          required_confirmations: [{ type: "future_agreement", message: "Convert this opportunity before applying assignments." }],
+          blocking_issues: [],
+          warnings: [],
+          required_confirmations: [],
           advisory_notice: "This is a validation preview only. No assignments were created.",
         }),
       });
@@ -1249,8 +1309,8 @@ test("contractor bids workspace renders property management work orders and rout
         id: 501,
         status: "draft",
         source_summary: {
-          source_type: "opportunity",
-          source_id: 31,
+          source_type: "agreement",
+          source_id: 932,
           project_title: "Repair sink leak",
           project_type: "Plumbing",
           project_subtype: "Urgent",
@@ -1285,15 +1345,16 @@ test("contractor bids workspace renders property management work orders and rout
           apply_disabled_reason: "Apply coming soon.",
           suggested_agreement_assignments: [
             {
-              target_type: "future_agreement",
-              source_type: "opportunity",
-              source_id: 31,
+              target_type: "agreement",
+              agreement_id: 932,
+              source_type: "agreement",
+              source_id: 932,
               subaccount_id: 44,
               display_name: "Pat Plumbing",
               matched_skill_name: "Plumbing",
               skill_level_label: "Skilled",
               apply_safe: false,
-              reason: "Opportunity must be converted to an agreement before assignment can be applied.",
+              reason: "Suggested for agreement-level assignment after contractor review.",
             },
           ],
           suggested_milestone_assignments: [],
@@ -1325,12 +1386,18 @@ test("contractor bids workspace renders property management work orders and rout
   await page.getByTestId("assignment-draft-create").click();
   await expect(page.getByTestId("assignment-draft-modal")).toContainText("Assignment Draft");
   await expect(page.getByTestId("assignment-draft-modal")).toContainText("Pat Plumbing");
-  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Future agreement assignment");
+  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Agreement-level assignment");
   await page.getByTestId("assignment-draft-validate-apply").click();
-  await expect(page.getByTestId("assignment-draft-validation-results")).toContainText("Needs review");
+  await expect(page.getByTestId("assignment-draft-validation-results")).toContainText("Ready later");
   await expect(page.getByTestId("assignment-draft-safe-rows")).toContainText("agreement:932:44");
-  await expect(page.getByTestId("assignment-draft-blockers")).toContainText("Only agreement-source");
-  await expect(page.getByTestId("assignment-draft-confirmations")).toContainText("Convert this opportunity");
+  await expect(page.getByTestId("assignment-draft-blockers")).toContainText("No blocking issues found");
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toContain("This will create assignment records");
+    await dialog.accept();
+  });
+  await page.getByTestId("assignment-draft-apply-agreement").click();
+  await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Agreement-level assignments applied");
+  await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Pat Plumbing assigned to agreement #932");
   await expect(page.getByTestId("assignment-draft-apply-disabled")).toContainText("Apply coming soon.");
   await page.getByTestId("assignment-draft-modal").getByRole("button", { name: "Close assignment draft" }).click();
   await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");

@@ -571,7 +571,21 @@ function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDra
   );
 }
 
-function AssignmentDraftModal({ draft, open, onClose, validation, validationLoading, validationError, onCheckReadiness }) {
+function AssignmentDraftModal({
+  draft,
+  open,
+  onClose,
+  validation,
+  validationLoading,
+  validationError,
+  onCheckReadiness,
+  onApplyAgreementTargets,
+  applyLoading,
+  applyError,
+  applyResult,
+  confirmedSupervisorIds,
+  onToggleSupervisorConfirmation,
+}) {
   if (!open || !draft) return null;
   const required = Array.isArray(draft.required_capabilities) ? draft.required_capabilities : [];
   const members = Array.isArray(draft.recommended_members) ? draft.recommended_members : [];
@@ -585,6 +599,20 @@ function AssignmentDraftModal({ draft, open, onClose, validation, validationLoad
   const validationWarnings = Array.isArray(validation?.warnings) ? validation.warnings : [];
   const requiredConfirmations = Array.isArray(validation?.required_confirmations) ? validation.required_confirmations : [];
   const safeTargets = Array.isArray(validation?.safe_targets) ? validation.safe_targets : [];
+  const agreementValidationRows = Array.isArray(validation?.selected_targets?.agreement_assignments)
+    ? validation.selected_targets.agreement_assignments
+    : [];
+  const agreementBlockers = agreementValidationRows.flatMap((target) => target.blocking_issues || []);
+  const agreementConfirmations = requiredConfirmations.filter((item) => item.type === "supervisor_overlap");
+  const confirmedSupervisorSet = new Set(confirmedSupervisorIds || []);
+  const hasSafeAgreementTargets = agreementValidationRows.some((target) => target.status === "safe" || target.status === "requires_confirmation");
+  const supervisorConfirmationsMet = agreementConfirmations.every((item) => confirmedSupervisorSet.has(Number(item.subaccount_id)));
+  const canApplyAgreementTargets =
+    Boolean(validation) &&
+    hasSafeAgreementTargets &&
+    agreementBlockers.length === 0 &&
+    supervisorConfirmationsMet &&
+    !applyResult?.applied;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
@@ -786,6 +814,16 @@ function AssignmentDraftModal({ draft, open, onClose, validation, validationLoad
                   {requiredConfirmations.length ? requiredConfirmations.map((item, index) => (
                     <div key={`${item.type}-${index}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
                       {item.message}
+                      {item.type === "supervisor_overlap" && item.subaccount_id ? (
+                        <label className="mt-2 flex items-center gap-2 text-xs font-semibold text-amber-950">
+                          <input
+                            type="checkbox"
+                            checked={confirmedSupervisorSet.has(Number(item.subaccount_id))}
+                            onChange={() => onToggleSupervisorConfirmation(Number(item.subaccount_id))}
+                          />
+                          Confirm supervisor overlap
+                        </label>
+                      ) : null}
                     </div>
                   )) : <div className="text-sm text-slate-600">No extra confirmations required.</div>}
                 </div>
@@ -804,9 +842,59 @@ function AssignmentDraftModal({ draft, open, onClose, validation, validationLoad
               </div>
             </SectionCard>
           ) : null}
+
+          {applyError ? (
+            <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+              {applyError}
+            </div>
+          ) : null}
+
+          {applyResult ? (
+            <SectionCard title="Apply Result" testId="assignment-draft-apply-result" className="mt-4">
+              <div className="space-y-2 text-sm">
+                <div className={applyResult.applied ? "font-semibold text-emerald-800" : "font-semibold text-amber-900"}>
+                  {applyResult.message || (applyResult.applied ? "Agreement-level assignments applied." : "Assignments were not applied.")}
+                </div>
+                <div className="text-slate-600">
+                  Applied {Array.isArray(applyResult.applied_targets) ? applyResult.applied_targets.length : 0}; skipped {Array.isArray(applyResult.skipped_targets) ? applyResult.skipped_targets.length : 0}.
+                </div>
+                {Array.isArray(applyResult.applied_targets) && applyResult.applied_targets.length ? (
+                  <div className="space-y-1">
+                    {applyResult.applied_targets.map((target) => (
+                      <div key={target.target_key || target.assignment_id} className="rounded-lg border border-emerald-200 bg-white px-3 py-2 text-emerald-800">
+                        {target.display_name} assigned to agreement #{target.agreement_id}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {Array.isArray(applyResult.skipped_targets) && applyResult.skipped_targets.length ? (
+                  <div className="space-y-1">
+                    {applyResult.skipped_targets.map((target) => (
+                      <div key={target.target_key || target.assignment_id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                        {target.display_name || "Target"} skipped: {target.reason || "Already handled."}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </SectionCard>
+          ) : null}
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <div className="mr-auto text-xs font-semibold text-slate-600">
+            This will create assignment records and appear on team calendars.
+          </div>
+          <button
+            type="button"
+            data-testid="assignment-draft-apply-agreement"
+            onClick={onApplyAgreementTargets}
+            disabled={!canApplyAgreementTargets || applyLoading}
+            title="This will create assignment records and appear on team calendars."
+            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {applyLoading ? "Applying..." : "Apply agreement assignments"}
+          </button>
           <button
             type="button"
             data-testid="assignment-draft-apply-disabled"
@@ -858,6 +946,10 @@ export default function ContractorBidsPage() {
   const [assignmentDraftValidation, setAssignmentDraftValidation] = useState(null);
   const [assignmentDraftValidationLoading, setAssignmentDraftValidationLoading] = useState(false);
   const [assignmentDraftValidationError, setAssignmentDraftValidationError] = useState("");
+  const [assignmentDraftApplyLoading, setAssignmentDraftApplyLoading] = useState(false);
+  const [assignmentDraftApplyError, setAssignmentDraftApplyError] = useState("");
+  const [assignmentDraftApplyResult, setAssignmentDraftApplyResult] = useState(null);
+  const [confirmedSupervisorIds, setConfirmedSupervisorIds] = useState([]);
 
   useEffect(() => {
     return () => {
@@ -911,6 +1003,9 @@ export default function ContractorBidsPage() {
     setAssignmentDraftError("");
     setAssignmentDraftValidation(null);
     setAssignmentDraftValidationError("");
+    setAssignmentDraftApplyError("");
+    setAssignmentDraftApplyResult(null);
+    setConfirmedSupervisorIds([]);
     if (!source) {
       setCrewPreviewError("Crew preview is available after this lead becomes an opportunity or agreement.");
       setCrewPreviewLoading(false);
@@ -1262,6 +1357,9 @@ export default function ContractorBidsPage() {
     setAssignmentDraftError("");
     setAssignmentDraftValidation(null);
     setAssignmentDraftValidationError("");
+    setAssignmentDraftApplyError("");
+    setAssignmentDraftApplyResult(null);
+    setConfirmedSupervisorIds([]);
     setCopiedRefId("");
   };
 
@@ -1278,6 +1376,9 @@ export default function ContractorBidsPage() {
       setAssignmentDraft(data || null);
       setAssignmentDraftValidation(null);
       setAssignmentDraftValidationError("");
+      setAssignmentDraftApplyError("");
+      setAssignmentDraftApplyResult(null);
+      setConfirmedSupervisorIds([]);
       setAssignmentDraftOpen(true);
       toast.success("Assignment draft created for review.");
     } catch (err) {
@@ -1288,10 +1389,19 @@ export default function ContractorBidsPage() {
     }
   };
 
+  const toggleSupervisorConfirmation = (subaccountId) => {
+    setConfirmedSupervisorIds((prev) => {
+      const value = Number(subaccountId);
+      if (!value) return prev;
+      return prev.includes(value) ? prev.filter((id) => id !== value) : [...prev, value];
+    });
+  };
+
   const validateAssignmentDraft = async () => {
     if (!assignmentDraft?.id) return;
     setAssignmentDraftValidationLoading(true);
     setAssignmentDraftValidationError("");
+    setAssignmentDraftApplyError("");
     try {
       const { data } = await api.post(`/projects/crew-recommendations/drafts/${assignmentDraft.id}/validate-apply/`, {});
       setAssignmentDraftValidation(data || null);
@@ -1300,6 +1410,38 @@ export default function ContractorBidsPage() {
       setAssignmentDraftValidationError(err?.response?.data?.detail || "Could not check apply readiness.");
     } finally {
       setAssignmentDraftValidationLoading(false);
+    }
+  };
+
+  const applyAssignmentDraft = async () => {
+    if (!assignmentDraft?.id) return;
+    const confirmed = window.confirm(
+      "Apply agreement-level assignments?\n\nThis will create assignment records and appear on team calendars. Milestone assignments are still coming soon."
+    );
+    if (!confirmed) return;
+    setAssignmentDraftApplyLoading(true);
+    setAssignmentDraftApplyError("");
+    try {
+      const { data } = await api.post(`/projects/crew-recommendations/drafts/${assignmentDraft.id}/apply/`, {
+        confirmations: {
+          supervisor_overlap_subaccount_ids: confirmedSupervisorIds,
+        },
+        selected_targets: {
+          include_milestones: false,
+        },
+      });
+      setAssignmentDraftApplyResult(data || null);
+      if (data?.validation) setAssignmentDraftValidation(data.validation);
+      setAssignmentDraft((prev) => (prev ? { ...prev, status: data?.status || prev.status, applied_at: data?.applied_at || prev.applied_at } : prev));
+      toast.success("Agreement assignments applied.");
+    } catch (err) {
+      console.error(err);
+      const payload = err?.response?.data || {};
+      if (payload.validation) setAssignmentDraftValidation(payload.validation);
+      setAssignmentDraftApplyResult(payload?.draft_id ? payload : null);
+      setAssignmentDraftApplyError(payload?.message || payload?.detail || "Could not apply this assignment draft.");
+    } finally {
+      setAssignmentDraftApplyLoading(false);
     }
   };
 
@@ -2345,6 +2487,12 @@ export default function ContractorBidsPage() {
         validationLoading={assignmentDraftValidationLoading}
         validationError={assignmentDraftValidationError}
         onCheckReadiness={validateAssignmentDraft}
+        onApplyAgreementTargets={applyAssignmentDraft}
+        applyLoading={assignmentDraftApplyLoading}
+        applyError={assignmentDraftApplyError}
+        applyResult={assignmentDraftApplyResult}
+        confirmedSupervisorIds={confirmedSupervisorIds}
+        onToggleSupervisorConfirmation={toggleSupervisorConfirmation}
       />
       </div>
     </ContractorPageSurface>
