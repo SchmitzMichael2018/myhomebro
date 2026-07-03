@@ -11,6 +11,7 @@ try:
     from .models import (
         Skill,
         Contractor,
+        CrewAssignmentDraft,
         EmployeeCapability,
         Homeowner,
         Project,
@@ -40,6 +41,7 @@ try:
     )
 except Exception:  # pragma: no cover
     Skill = Contractor = Homeowner = Project = Agreement = AgreementWarranty = None
+    CrewAssignmentDraft = None
     EmployeeCapability = None
     ContractorGalleryItem = ContractorPublicProfile = ContractorReview = None
     Milestone = MilestoneFile = MilestoneComment = None
@@ -161,6 +163,16 @@ if EmployeeCapability is not None:
         list_filter = ("skill", "skill_level")
         search_fields = ("subaccount__display_name", "subaccount__user__email", "skill__name", "skill__slug")
         ordering = ("subaccount__display_name", "skill__name")
+
+
+if CrewAssignmentDraft is not None:
+    @admin.register(CrewAssignmentDraft)
+    class CrewAssignmentDraftAdmin(admin.ModelAdmin):
+        list_display = ("id", "contractor", "source_type", "status", "apply_enabled", "created_at")
+        list_filter = ("source_type", "status", "apply_enabled")
+        search_fields = ("contractor__business_name", "contractor__user__email")
+        readonly_fields = ("preview_snapshot", "assignment_plan", "created_at", "updated_at")
+        ordering = ("-created_at", "-id")
 
 
 # Contractor

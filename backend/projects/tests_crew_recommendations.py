@@ -7,9 +7,11 @@ from projects.models import (
     AgreementAssignment,
     Contractor,
     ContractorSubAccount,
+    CrewAssignmentDraft,
     EmployeeCapability,
     Homeowner,
     Milestone,
+    MilestoneAssignment,
     Project,
     Skill,
 )
@@ -149,3 +151,60 @@ class CrewRecommendationPreviewTests(TestCase):
         self.assertEqual(AgreementAssignment.objects.count(), before_assignments)
         self.assertTrue(any(row["type"] == "schedule_conflict" for row in response.data["warnings"]))
         self.assertTrue(response.data["recommended_members"])
+
+    def test_opportunity_assignment_draft_does_not_mutate_source_or_assignments(self):
+        before_status = self.opportunity.status
+        before_agreement_assignments = AgreementAssignment.objects.count()
+        before_milestone_assignments = MilestoneAssignment.objects.count()
+
+        response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "opportunity", "source_id": self.opportunity.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.opportunity.refresh_from_db()
+        self.assertEqual(self.opportunity.status, before_status)
+        self.assertEqual(AgreementAssignment.objects.count(), before_agreement_assignments)
+        self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)
+        self.assertEqual(CrewAssignmentDraft.objects.count(), 1)
+        draft = CrewAssignmentDraft.objects.get()
+        self.assertEqual(draft.source_type, "opportunity")
+        self.assertEqual(draft.source_opportunity_id, self.opportunity.id)
+        self.assertFalse(draft.apply_enabled)
+        self.assertFalse(response.data["apply_enabled"])
+        self.assertEqual(response.data["apply_disabled_reason"], "Apply coming soon.")
+        suggestions = response.data["assignment_plan"]["suggested_agreement_assignments"]
+        self.assertTrue(suggestions)
+        self.assertEqual(suggestions[0]["target_type"], "future_agreement")
+        self.assertFalse(suggestions[0]["apply_safe"])
+
+    def test_agreement_assignment_draft_proposes_targets_without_creating_assignments(self):
+        before_agreement_assignments = AgreementAssignment.objects.count()
+        before_milestone_assignments = MilestoneAssignment.objects.count()
+        before_agreement_status = self.agreement.status
+        before_agreement_total = self.agreement.total_cost
+
+        response = self.client.post(
+            "/api/projects/crew-recommendations/drafts/",
+            {"source_type": "agreement", "source_id": self.agreement.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.agreement.refresh_from_db()
+        self.assertEqual(self.agreement.status, before_agreement_status)
+        self.assertEqual(self.agreement.total_cost, before_agreement_total)
+        self.assertEqual(AgreementAssignment.objects.count(), before_agreement_assignments)
+        self.assertEqual(MilestoneAssignment.objects.count(), before_milestone_assignments)
+        self.assertEqual(CrewAssignmentDraft.objects.count(), 1)
+        draft = CrewAssignmentDraft.objects.get()
+        self.assertEqual(draft.source_agreement_id, self.agreement.id)
+        self.assertFalse(draft.apply_enabled)
+        plan = response.data["assignment_plan"]
+        self.assertTrue(plan["suggested_agreement_assignments"])
+        self.assertEqual(plan["suggested_agreement_assignments"][0]["target_type"], "agreement")
+        self.assertTrue(plan["suggested_milestone_assignments"])
+        self.assertEqual(plan["suggested_milestone_assignments"][0]["target_type"], "milestone")
+        self.assertFalse(plan["suggested_milestone_assignments"][0]["apply_safe"])

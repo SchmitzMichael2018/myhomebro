@@ -1219,6 +1219,69 @@ test("contractor bids workspace renders property management work orders and rout
       }),
     });
   });
+  await page.route("**/api/projects/crew-recommendations/drafts/**", async (route) => {
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 501,
+        status: "draft",
+        source_summary: {
+          source_type: "opportunity",
+          source_id: 31,
+          project_title: "Repair sink leak",
+          project_type: "Plumbing",
+          project_subtype: "Urgent",
+        },
+        required_capabilities: [
+          {
+            skill_id: 10,
+            skill_name: "Plumbing",
+            skill_slug: "plumbing",
+            quantity: 1,
+            minimum_skill_level: "working",
+            reason: "Matched from project details.",
+          },
+        ],
+        recommended_members: [
+          {
+            subaccount_id: 44,
+            display_name: "Pat Plumbing",
+            matched_skill_id: 10,
+            matched_skill_name: "Plumbing",
+            skill_level: "skilled",
+            skill_level_label: "Skilled",
+            explanation: "Pat Plumbing has Plumbing capability at Skilled level.",
+            warnings: [],
+          },
+        ],
+        gaps: [],
+        warnings: [{ type: "schedule_data", message: "Opportunity dates are not confirmed yet." }],
+        advisory_notice: "Recommended Crew is advisory only.",
+        assignment_plan: {
+          apply_enabled: false,
+          apply_disabled_reason: "Apply coming soon.",
+          suggested_agreement_assignments: [
+            {
+              target_type: "future_agreement",
+              source_type: "opportunity",
+              source_id: 31,
+              subaccount_id: 44,
+              display_name: "Pat Plumbing",
+              matched_skill_name: "Plumbing",
+              skill_level_label: "Skilled",
+              apply_safe: false,
+              reason: "Opportunity must be converted to an agreement before assignment can be applied.",
+            },
+          ],
+          suggested_milestone_assignments: [],
+        },
+        apply_enabled: false,
+        apply_disabled_reason: "Apply coming soon.",
+        created_at: "2026-08-01T12:00:00Z",
+      }),
+    });
+  });
 
   await page.goto("/app/opportunities?source=property_work_order", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("leads-tab-work-orders")).toContainText("Work Orders");
@@ -1237,6 +1300,12 @@ test("contractor bids workspace renders property management work orders and rout
   await expect(page.getByTestId("recommended-crew-panel")).toContainText("1x Plumbing");
   await expect(page.getByTestId("recommended-crew-panel")).toContainText("Pat Plumbing");
   await expect(page.getByTestId("recommended-crew-panel")).toContainText("advisory");
+  await page.getByTestId("assignment-draft-create").click();
+  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Assignment Draft");
+  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Pat Plumbing");
+  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Future agreement assignment");
+  await expect(page.getByTestId("assignment-draft-apply-disabled")).toContainText("Apply coming soon.");
+  await page.getByTestId("assignment-draft-modal").getByRole("button", { name: "Close assignment draft" }).click();
   await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
   await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("lead-overview")).toContainText("Work Order");

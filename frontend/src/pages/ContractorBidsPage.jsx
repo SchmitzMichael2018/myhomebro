@@ -440,11 +440,12 @@ function crewPreviewSourceForRow(row) {
   return { source_type: "opportunity", source_id: Number(sourceId) };
 }
 
-function AdvisoryCrewPanel({ preview, loading, error }) {
+function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDraft, draftError }) {
   const required = Array.isArray(preview?.required_capabilities) ? preview.required_capabilities : [];
   const members = Array.isArray(preview?.recommended_members) ? preview.recommended_members : [];
   const gaps = Array.isArray(preview?.gaps) ? preview.gaps : [];
   const warnings = Array.isArray(preview?.warnings) ? preview.warnings : [];
+  const canCreateDraft = Boolean(preview && !loading && !error);
 
   return (
     <div
@@ -462,7 +463,25 @@ function AdvisoryCrewPanel({ preview, loading, error }) {
               "Recommended Crew is advisory only. Review before assigning work."}
           </div>
         </div>
+        {canCreateDraft ? (
+          <button
+            type="button"
+            data-testid="assignment-draft-create"
+            onClick={onCreateDraft}
+            disabled={creatingDraft}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-semibold text-indigo-800 shadow-sm hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <ClipboardList size={16} />
+            {creatingDraft ? "Creating draft..." : "Create assignment draft"}
+          </button>
+        ) : null}
       </div>
+
+      {draftError ? (
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+          {draftError}
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="mt-4 text-sm font-semibold text-indigo-800">Loading crew preview...</div>
@@ -552,6 +571,168 @@ function AdvisoryCrewPanel({ preview, loading, error }) {
   );
 }
 
+function AssignmentDraftModal({ draft, open, onClose }) {
+  if (!open || !draft) return null;
+  const required = Array.isArray(draft.required_capabilities) ? draft.required_capabilities : [];
+  const members = Array.isArray(draft.recommended_members) ? draft.recommended_members : [];
+  const gaps = Array.isArray(draft.gaps) ? draft.gaps : [];
+  const warnings = Array.isArray(draft.warnings) ? draft.warnings : [];
+  const plan = draft.assignment_plan || {};
+  const agreementTargets = Array.isArray(plan.suggested_agreement_assignments) ? plan.suggested_agreement_assignments : [];
+  const milestoneTargets = Array.isArray(plan.suggested_milestone_assignments) ? plan.suggested_milestone_assignments : [];
+  const source = draft.source_summary || {};
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
+      <button
+        type="button"
+        aria-label="Close assignment draft backdrop"
+        className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assignment-draft-title"
+        data-testid="assignment-draft-modal"
+        className="relative flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between border-b border-slate-200 p-5">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-700">Review Only</div>
+            <h3 id="assignment-draft-title" className="mt-2 text-2xl font-extrabold text-slate-900">Assignment Draft</h3>
+            <div className="mt-2 text-sm text-slate-600">
+              {source.project_title || "Crew recommendation"} - {source.source_type || "source"} #{source.source_id || draft.id}
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Close assignment draft"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white p-2 text-slate-600 hover:bg-slate-50"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto p-5">
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900">
+            {draft.advisory_notice || "This draft is advisory only."}
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <SectionCard title="Crew Needs" testId="assignment-draft-needs">
+              <div className="flex flex-wrap gap-2">
+                {required.length ? (
+                  required.map((item) => (
+                    <span key={`${item.skill_name}-${item.quantity}`} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-800">
+                      {item.quantity || 1}x {item.skill_name}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-sm text-slate-600">No capability needs detected.</span>
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Suggested Employees" testId="assignment-draft-members">
+              <div className="space-y-2">
+                {members.length ? (
+                  members.map((member) => (
+                    <div key={`${member.subaccount_id}-${member.matched_skill_id}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <div className="font-semibold text-slate-900">{member.display_name}</div>
+                      <div className="mt-1 text-slate-600">{member.matched_skill_name} - {member.skill_level_label}</div>
+                      <div className="mt-1 text-xs text-slate-500">{member.explanation}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-slate-600">No suggested employees in this draft.</div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <SectionCard title="Proposed Agreement Targets" testId="assignment-draft-agreement-targets">
+              <div className="space-y-2">
+                {agreementTargets.length ? (
+                  agreementTargets.map((target) => (
+                    <div key={`agreement-${target.subaccount_id}-${target.target_type}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <div className="font-semibold text-slate-900">{target.display_name}</div>
+                      <div className="mt-1 text-slate-600">
+                        {target.target_type === "agreement" ? "Agreement-level assignment" : "Future agreement assignment"}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-500">{target.reason}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-slate-600">No agreement-level targets suggested.</div>
+                )}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Proposed Milestone Targets" testId="assignment-draft-milestone-targets">
+              <div className="space-y-2">
+                {milestoneTargets.length ? (
+                  milestoneTargets.map((target) => (
+                    <div key={`milestone-${target.milestone_id}-${target.subaccount_id}`} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <div className="font-semibold text-slate-900">{target.milestone_title}</div>
+                      <div className="mt-1 text-slate-600">{target.display_name} - {target.matched_skill_name}</div>
+                      <div className="mt-1 text-xs text-slate-500">{target.reason}</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-slate-600">No safe milestone-level targets suggested yet.</div>
+                )}
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <SectionCard title="Gaps" testId="assignment-draft-gaps">
+              <div className="space-y-2">
+                {gaps.length ? gaps.map((gap) => (
+                  <div key={`${gap.skill_name}-${gap.missing_quantity}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                    Missing {gap.missing_quantity} {gap.skill_name}
+                  </div>
+                )) : <div className="text-sm text-slate-600">No capability gaps recorded.</div>}
+              </div>
+            </SectionCard>
+
+            <SectionCard title="Warnings" testId="assignment-draft-warnings">
+              <div className="space-y-2">
+                {warnings.length ? warnings.map((warning, index) => (
+                  <div key={`${warning.type}-${index}`} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-900">
+                    {warning.message}
+                  </div>
+                )) : <div className="text-sm text-slate-600">No warnings recorded.</div>}
+              </div>
+            </SectionCard>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <button
+            type="button"
+            data-testid="assignment-draft-apply-disabled"
+            disabled
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-500"
+          >
+            {draft.apply_disabled_reason || "Apply coming soon."}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ContractorBidsPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -575,6 +756,10 @@ export default function ContractorBidsPage() {
   const [crewPreview, setCrewPreview] = useState(null);
   const [crewPreviewLoading, setCrewPreviewLoading] = useState(false);
   const [crewPreviewError, setCrewPreviewError] = useState("");
+  const [assignmentDraft, setAssignmentDraft] = useState(null);
+  const [assignmentDraftOpen, setAssignmentDraftOpen] = useState(false);
+  const [assignmentDraftLoading, setAssignmentDraftLoading] = useState(false);
+  const [assignmentDraftError, setAssignmentDraftError] = useState("");
 
   useEffect(() => {
     return () => {
@@ -623,6 +808,9 @@ export default function ContractorBidsPage() {
     const source = crewPreviewSourceForRow(selectedRow);
     setCrewPreview(null);
     setCrewPreviewError("");
+    setAssignmentDraft(null);
+    setAssignmentDraftOpen(false);
+    setAssignmentDraftError("");
     if (!source) {
       setCrewPreviewError("Crew preview is available after this lead becomes an opportunity or agreement.");
       setCrewPreviewLoading(false);
@@ -969,7 +1157,31 @@ export default function ContractorBidsPage() {
   const closeDrawer = () => {
     setSelectedRow(null);
     setConvertPanelOpen(false);
+    setAssignmentDraft(null);
+    setAssignmentDraftOpen(false);
+    setAssignmentDraftError("");
     setCopiedRefId("");
+  };
+
+  const createAssignmentDraft = async () => {
+    const source = crewPreviewSourceForRow(selectedRow);
+    if (!source) {
+      setAssignmentDraftError("Assignment drafts are available after this lead becomes an opportunity or agreement.");
+      return;
+    }
+    setAssignmentDraftLoading(true);
+    setAssignmentDraftError("");
+    try {
+      const { data } = await api.post("/projects/crew-recommendations/drafts/", source);
+      setAssignmentDraft(data || null);
+      setAssignmentDraftOpen(true);
+      toast.success("Assignment draft created for review.");
+    } catch (err) {
+      console.error(err);
+      setAssignmentDraftError(err?.response?.data?.detail || "Could not create this assignment draft.");
+    } finally {
+      setAssignmentDraftLoading(false);
+    }
   };
 
   const copyReference = async (value, rowId) => {
@@ -1528,6 +1740,9 @@ export default function ContractorBidsPage() {
                     preview={crewPreview}
                     loading={crewPreviewLoading}
                     error={crewPreviewError}
+                    onCreateDraft={createAssignmentDraft}
+                    creatingDraft={assignmentDraftLoading}
+                    draftError={assignmentDraftError}
                   />
                 </SectionCard>
               ) : null}
@@ -2002,6 +2217,11 @@ export default function ContractorBidsPage() {
         open={convertPanelOpen && Boolean(selectedRow)}
         row={selectedRow}
         onClose={() => setConvertPanelOpen(false)}
+      />
+      <AssignmentDraftModal
+        draft={assignmentDraft}
+        open={assignmentDraftOpen}
+        onClose={() => setAssignmentDraftOpen(false)}
       />
       </div>
     </ContractorPageSurface>

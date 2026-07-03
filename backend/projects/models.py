@@ -2903,6 +2903,64 @@ class EmployeeCapability(models.Model):
         return f"{self.subaccount_id}: {self.skill.name} ({self.get_skill_level_display()})"
 
 
+class CrewAssignmentDraft(models.Model):
+    SOURCE_OPPORTUNITY = "opportunity"
+    SOURCE_AGREEMENT = "agreement"
+    SOURCE_TYPE_CHOICES = [
+        (SOURCE_OPPORTUNITY, "Opportunity"),
+        (SOURCE_AGREEMENT, "Agreement"),
+    ]
+
+    STATUS_DRAFT = "draft"
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+    ]
+
+    contractor = models.ForeignKey(
+        Contractor,
+        on_delete=models.CASCADE,
+        related_name="crew_assignment_drafts",
+    )
+    source_type = models.CharField(max_length=24, choices=SOURCE_TYPE_CHOICES, db_index=True)
+    source_opportunity = models.ForeignKey(
+        ContractorOpportunity,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="crew_assignment_drafts",
+    )
+    source_agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="crew_assignment_drafts",
+    )
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    preview_snapshot = models.JSONField(default=dict, blank=True)
+    assignment_plan = models.JSONField(default=dict, blank=True)
+    apply_enabled = models.BooleanField(default=False)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_crew_assignment_drafts",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["contractor", "source_type", "status"]),
+            models.Index(fields=["contractor", "created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"CrewAssignmentDraft({self.source_type}={self.source_opportunity_id or self.source_agreement_id})"
+
+
 class AgreementAssignment(models.Model):
     agreement = models.ForeignKey(
         "projects.Agreement",

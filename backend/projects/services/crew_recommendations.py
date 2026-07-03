@@ -11,6 +11,7 @@ from projects.models import (
     AgreementAssignment,
     Contractor,
     ContractorSubAccount,
+    CrewAssignmentDraft,
     EmployeeCapability,
     Milestone,
     Skill,
@@ -92,6 +93,10 @@ def _source_summary(ctx: SourceContext) -> dict[str, Any]:
         "start": ctx.start.isoformat() if ctx.start else None,
         "end": ctx.end.isoformat() if ctx.end else None,
     }
+
+
+def _safe_source_id(ctx: SourceContext, source_type: str) -> int | None:
+    return ctx.source_id if ctx.source_type == source_type else None
 
 
 def _resolve_opportunity(*, contractor: Contractor, source_id: int) -> SourceContext:
@@ -203,6 +208,26 @@ def infer_required_capabilities(ctx: SourceContext) -> list[dict[str, Any]]:
     return required
 
 
+def _skill_rule_terms(skill_name: str) -> tuple[str, ...]:
+    for rule_skill_name, terms in TRADE_RULES:
+        if rule_skill_name == skill_name:
+            return terms
+    return (skill_name.lower(),)
+
+
+def _milestone_matches_member(milestone: Milestone, member: dict[str, Any]) -> bool:
+    text = _lower_text(
+        milestone.title,
+        milestone.description,
+        milestone.normalized_milestone_type,
+        milestone.materials_hint,
+    )
+    skill_name = _safe_text(member.get("matched_skill_name"))
+    if not skill_name:
+        return False
+    return any(term in text for term in _skill_rule_terms(skill_name))
+
+
 def _assignment_warnings_for_member(ctx: SourceContext, subaccount: ContractorSubAccount) -> list[str]:
     if not ctx.start or not ctx.end:
         return ["No project start/end dates available; schedule conflict check is limited."]
@@ -221,6 +246,105 @@ def _assignment_warnings_for_member(ctx: SourceContext, subaccount: ContractorSu
             f"Already assigned to overlapping agreement: {_safe_text(getattr(project, 'title', '')) or f'Agreement #{agreement.id}'}."
         )
     return warnings
+
+
+def _build_assignment_plan(ctx: SourceContext, preview: dict[str, Any]) -> dict[str, Any]:
+    recommended_members = list(preview.get("recommended_members") or [])
+    source_summary = preview.get("source_summary") or _source_summary(ctx)
+    agreement_target_id = ctx.source_id if ctx.source_type == "agreement" else None
+
+    suggested_agreement_assignments: list[dict[str, Any]] = []
+    seen_members: set[int] = set()
+    for member in recommended_members:
+        subaccount_id = member.get("subaccount_id")
+        if not subaccount_id or subaccount_id in seen_members:
+            continue
+        seen_members.add(subaccount_id)
+        suggested_agreement_assignments.append(
+            {
+                "target_type": "agreement" if agreement_target_id else "future_agreement",
+                "agreement_id": agreement_target_id,
+                "source_type": source_summary.get("source_type"),
+                "source_id": source_summary.get("source_id"),
+                "subaccount_id": subaccount_id,
+                "display_name": member.get("display_name", ""),
+                "matched_skill_name": member.get("matched_skill_name", ""),
+                "skill_level_label": member.get("skill_level_label", ""),
+                "apply_safe": False,
+                "reason": (
+                    "Suggested for agreement-level assignment after contractor review."
+                    if agreement_target_id
+                    else "Opportunity must be converted to an agreement before assignment can be applied."
+                ),
+            }
+        )
+
+    suggested_milestone_assignments: list[dict[str, Any]] = []
+    if ctx.source_type == "agreement":
+        milestones = (
+            Milestone.objects.filter(agreement_id=ctx.source_id, subaccount_assignment__isnull=True)
+            .order_by("order", "id")
+        )
+        for milestone in milestones:
+            member = next((candidate for candidate in recommended_members if _milestone_matches_member(milestone, candidate)), None)
+            if not member:
+                continue
+            suggested_milestone_assignments.append(
+                {
+                    "target_type": "milestone",
+                    "agreement_id": ctx.source_id,
+                    "milestone_id": milestone.id,
+                    "milestone_title": milestone.title,
+                    "subaccount_id": member.get("subaccount_id"),
+                    "display_name": member.get("display_name", ""),
+                    "matched_skill_name": member.get("matched_skill_name", ""),
+                    "skill_level_label": member.get("skill_level_label", ""),
+                    "apply_safe": False,
+                    "reason": "Milestone text appears to match this employee capability; review before applying.",
+                }
+            )
+
+    return {
+        "apply_enabled": False,
+        "apply_disabled_reason": "Apply coming soon.",
+        "suggested_agreement_assignments": suggested_agreement_assignments,
+        "suggested_milestone_assignments": suggested_milestone_assignments,
+    }
+
+
+def serialize_assignment_draft(draft: CrewAssignmentDraft) -> dict[str, Any]:
+    preview = draft.preview_snapshot or {}
+    assignment_plan = draft.assignment_plan or {}
+    return {
+        "id": draft.id,
+        "status": draft.status,
+        "source_summary": preview.get("source_summary", {}),
+        "required_capabilities": preview.get("required_capabilities", []),
+        "recommended_members": preview.get("recommended_members", []),
+        "gaps": preview.get("gaps", []),
+        "warnings": preview.get("warnings", []),
+        "advisory_notice": preview.get("advisory_notice", ADVISORY_NOTICE),
+        "assignment_plan": assignment_plan,
+        "apply_enabled": bool(draft.apply_enabled and assignment_plan.get("apply_enabled")),
+        "apply_disabled_reason": assignment_plan.get("apply_disabled_reason", "Apply coming soon."),
+        "created_at": draft.created_at.isoformat() if draft.created_at else None,
+    }
+
+
+def create_assignment_draft_from_preview(ctx: SourceContext, *, created_by=None) -> dict[str, Any]:
+    preview = build_crew_recommendation_preview(ctx)
+    assignment_plan = _build_assignment_plan(ctx, preview)
+    draft = CrewAssignmentDraft.objects.create(
+        contractor=ctx.contractor,
+        source_type=ctx.source_type,
+        source_opportunity_id=_safe_source_id(ctx, "opportunity"),
+        source_agreement_id=_safe_source_id(ctx, "agreement"),
+        preview_snapshot=preview,
+        assignment_plan=assignment_plan,
+        apply_enabled=False,
+        created_by=created_by if getattr(created_by, "is_authenticated", False) else None,
+    )
+    return serialize_assignment_draft(draft)
 
 
 def build_crew_recommendation_preview(ctx: SourceContext) -> dict[str, Any]:
