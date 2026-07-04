@@ -228,6 +228,11 @@ test("assignments page shows all projects and work controls", async ({ page }) =
 
   await page.goto("/app/team/assignments", { waitUntil: "domcontentloaded" });
 
+  await expect(page.getByTestId("assignments-operations-summary")).toContainText("Workforce Operations");
+  await expect(page.getByTestId("assignments-operations-summary")).toContainText("Total Agreements");
+  await expect(page.getByTestId("assignments-operations-summary")).toContainText("Assigned Work");
+  await expect(page.getByTestId("assignments-operations-summary")).toContainText("Unassigned Work");
+  await expect(page.getByTestId("assignments-filter-summary")).toContainText("Showing all 2 agreements");
   await expect(page.getByText("Residential Refresh")).toBeVisible();
   await expect(page.getByText("Commercial Buildout")).toBeVisible();
   await expect(page.getByTestId("assignment-row-101")).toContainText("No owner");

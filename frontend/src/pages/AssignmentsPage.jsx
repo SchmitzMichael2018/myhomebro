@@ -61,6 +61,41 @@ function Badge({ children, tone = "neutral" }) {
   );
 }
 
+function OperationMetric({ label, value, tone = "neutral" }) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-900"
+      : tone === "danger"
+      ? "border-rose-200 bg-rose-50 text-rose-900"
+      : tone === "bordered"
+      ? "border-blue-200 bg-blue-50 text-blue-900"
+      : "border-slate-200 bg-white text-slate-900";
+  return (
+    <div className={`rounded-xl border p-3 shadow-sm ${toneClass}`}>
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] opacity-75">{label}</div>
+      <div className="mt-1 text-2xl font-bold">{Number(value || 0).toLocaleString()}</div>
+    </div>
+  );
+}
+
+function HealthChip({ label, value, tone = "neutral" }) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : tone === "danger"
+      ? "border-rose-200 bg-rose-50 text-rose-800"
+      : "border-slate-200 bg-slate-50 text-slate-700";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClass}`}>
+      <span>{label} {Number(value || 0).toLocaleString()}</span>
+    </span>
+  );
+}
+
 function Btn({ children, onClick, disabled, tone = "primary", title, ...rest }) {
   const cls =
     tone === "primary"
@@ -672,6 +707,17 @@ export default function AssignmentsPage() {
     return agreements.find((a) => String(a.id) === String(drawerAgreementId)) || null;
   }, [drawerAgreementId, agreements]);
 
+  const activeFilterSummary = useMemo(() => {
+    const parts = [];
+    if (projectClassFilter !== "all") parts.push(projectClassLabel(projectClassFilter));
+    if (assignmentStatusFilter !== "all") parts.push(formatAgreementStatus(assignmentStatusFilter));
+    if (onlyWithDates) parts.push("with dates");
+    if (search.trim()) parts.push(`matching "${search.trim()}"`);
+    if (subaccountFilter) parts.push(`team member ID ${subaccountFilter}`);
+    if (!parts.length) return `Showing all ${filteredAgreements.length} agreements.`;
+    return `Showing ${filteredAgreements.length} agreements filtered by ${parts.join(", ")}.`;
+  }, [assignmentStatusFilter, filteredAgreements.length, onlyWithDates, projectClassFilter, search, subaccountFilter]);
+
   /* -----------------------------
      Render
   ----------------------------- */
@@ -687,28 +733,38 @@ export default function AssignmentsPage() {
       <div className="space-y-5">
       <HubTabs tabs={teamHubTabs} />
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="mhb-helper-text mt-4">
-            All projects stay visible here. Use the owner controls for project supervision and the drawer for milestone work.
+      <section className="rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-white shadow-sm" data-testid="assignments-operations-summary">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Workforce Operations</div>
+            <h2 className="mt-2 text-2xl font-bold">Assignment health dashboard</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-200">
+              Scan agreement ownership, milestone coverage, review pressure, and overdue work from one operational view.
+            </p>
           </div>
+          <Btn tone="secondary" onClick={loadAll} disabled={busy || loading} title="Reload">
+            Refresh
+          </Btn>
         </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <OperationMetric label="Total Agreements" value={statusCounts.all} />
+          <OperationMetric label="Assigned Work" value={statusCounts.assigned} tone="good" />
+          <OperationMetric label="Unassigned Work" value={statusCounts.unassigned} tone="bordered" />
+          <OperationMetric label="Awaiting Review" value={statusCounts.awaiting_review} tone="warn" />
+          <OperationMetric label="Overdue" value={statusCounts.overdue} tone="danger" />
+        </div>
+      </section>
 
-        <Btn tone="secondary" onClick={loadAll} disabled={busy || loading} title="Reload">
-          Refresh
-        </Btn>
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="assignments-filter-panel">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search agreements (title/homeowner)…"
-              className="flex-1 rounded-lg border border-gray-300 px-3 py-2"
+              className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
-            <label className="flex items-center gap-2 text-sm text-gray-700">
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-700">
               <input
                 type="checkbox"
                 checked={onlyWithDates}
@@ -718,12 +774,12 @@ export default function AssignmentsPage() {
             </label>
           </div>
 
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-center 2xl:justify-between">
             <div className="flex flex-wrap items-center gap-2">
               <select
                 value={projectClassFilter}
                 onChange={(e) => updateQueryParam("project_class", e.target.value)}
-                className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700"
                 data-testid="assignments-project-class-filter"
               >
                 <option value="all">All Projects</option>
@@ -744,9 +800,9 @@ export default function AssignmentsPage() {
                   data-testid={`assignments-status-filter-${key}`}
                   onClick={() => updateQueryParam("assignment_status", key)}
                   className={[
-                    "rounded-full border px-3 py-1.5 text-sm font-semibold transition",
+                    "rounded-full border px-3 py-2 text-sm font-semibold transition",
                     assignmentStatusFilter === key
-                      ? "border-slate-900 bg-slate-900 text-white"
+                      ? "border-blue-700 bg-blue-700 text-white shadow-sm"
                       : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-white",
                   ].join(" ")}
                 >
@@ -755,18 +811,27 @@ export default function AssignmentsPage() {
               ))}
             </div>
 
-            <div className="text-xs text-gray-500">
-              {subaccountFilter ? `Filtered to one team member (ID ${subaccountFilter}).` : "Use the team links to jump into a filtered work view."}
+            <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600" data-testid="assignments-filter-summary">
+              {activeFilterSummary}
             </div>
           </div>
         </div>
-      </div>
+      </section>
 
       {loading ? (
-        <div className="text-gray-500">Loading…</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="assignments-loading-state">
+          <div className="h-4 w-56 animate-pulse rounded bg-slate-200" />
+          <div className="mt-4 grid gap-3">
+            <div className="h-24 animate-pulse rounded-xl bg-slate-100" />
+            <div className="h-24 animate-pulse rounded-xl bg-slate-100" />
+          </div>
+        </div>
       ) : filteredAgreements.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-gray-500">
-          No projects match your filters. Clear the project type or status chips to see more work.
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">
+          <div className="font-semibold text-slate-900">No assignment records match this view</div>
+          <div className="mt-1">
+            Clear the project type, status, search, or date filters to bring more agreements back into the operations list.
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
@@ -784,6 +849,9 @@ export default function AssignmentsPage() {
             const ownerLine = summary.hasOwner
               ? `${summary.ownerName}${summary.ownerRole ? ` • ${summary.ownerRole}` : ""}`
               : "No owner";
+            const assignedPct = summary.totalMilestones
+              ? Math.round((summary.assignedMilestonesCount / summary.totalMilestones) * 100)
+              : 0;
 
             const statusLabel =
               summary.status === "unassigned"
@@ -811,57 +879,71 @@ export default function AssignmentsPage() {
               <div
                 key={agreementId}
                 data-testid={`assignment-row-${agreementId}`}
-                className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm"
+                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-slate-300"
               >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="min-w-0 flex-1 space-y-3">
-                    <div className="min-w-0">
-                      <div className="truncate text-lg font-bold text-slate-900" title={title}>
+                <div className="grid gap-4 xl:grid-cols-[minmax(240px,0.9fr)_minmax(360px,1.25fr)_170px] xl:items-start">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone={projectClassTone(projectClass)}>{projectClassLabel(projectClass)}</Badge>
+                      <Badge tone={statusTone}>{formatAgreementStatus(statusLabel)}</Badge>
+                    </div>
+                    <div className="mt-3 min-w-0">
+                      <div className="truncate text-lg font-bold text-slate-950" title={title}>
                         {title}
                       </div>
-                      <div className="mt-1 truncate text-sm text-gray-500" title={homeowner}>
+                      <div className="mt-1 truncate text-sm font-medium text-slate-600" title={homeowner}>
                         Customer: {homeowner}
                       </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600">
-                        <span className="font-semibold text-slate-700">Owner:</span>
-                        {" "}
-                        <span>{ownerLine}</span>
-                        <span className="text-slate-300">|</span>
+                      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold text-slate-500">
                         <span>{fmtDate(start)}</span>
                         {end ? (
                           <>
-                            <span className="text-slate-300">•</span>
+                            <span className="text-slate-300">to</span>
                             <span>{fmtDate(end)}</span>
                           </>
                         ) : null}
                       </div>
                     </div>
+                  </div>
 
-                    <div className="flex flex-wrap gap-2 text-xs font-semibold">
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-700">
-                        Total {summary.totalMilestones}
-                      </span>
-                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-800">
-                        Assigned {summary.assignedMilestonesCount}
-                      </span>
-                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-700">
-                        Unassigned {summary.unassignedMilestonesCount}
-                      </span>
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800">
-                        Review {summary.awaitingReviewCount}
-                      </span>
-                      <span className="rounded-full border border-rose-200 bg-rose-50 px-2.5 py-1 text-rose-800">
-                        Overdue {summary.overdueCount}
-                      </span>
+                  <div className="min-w-0 space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        <span>Assignment progress</span>
+                        <span>{assignedPct}%</span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-emerald-500"
+                          style={{ width: `${Math.min(Math.max(assignedPct, 0), 100)}%` }}
+                        />
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
-                      <Badge tone={projectClassTone(projectClass)}>{projectClassLabel(projectClass)}</Badge>
-                      <Badge tone={statusTone}>{formatAgreementStatus(statusLabel)}</Badge>
+                      <HealthChip label="Assigned" value={summary.assignedMilestonesCount} tone="good" />
+                      <HealthChip label="Unassigned" value={summary.unassignedMilestonesCount} />
+                      <HealthChip label="Awaiting Review" value={summary.awaitingReviewCount} tone="warn" />
+                      <HealthChip label="Overdue" value={summary.overdueCount} tone="danger" />
+                      <HealthChip label="Total" value={summary.totalMilestones} />
+                    </div>
+
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      <span className="font-semibold text-slate-800">Owner:</span> {ownerLine}
                     </div>
                   </div>
 
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                  <div className="flex flex-col gap-2 xl:items-stretch">
+                    <button
+                      type="button"
+                      onClick={() => openDrawer(agreementId)}
+                      disabled={busy}
+                      className="w-full rounded-xl bg-blue-600 px-3.5 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:opacity-60"
+                      title={summary.actionButtonLabel}
+                      data-testid={`assignment-work-button-${agreementId}`}
+                    >
+                      {summary.actionButtonLabel}
+                    </button>
                     <Btn
                       tone="secondary"
                       onClick={() => openOwnerEditor(agreementId, ownerId)}
@@ -883,17 +965,6 @@ export default function AssignmentsPage() {
                         Remove Owner
                       </Btn>
                     ) : null}
-
-                    <button
-                      type="button"
-                      onClick={() => openDrawer(agreementId)}
-                      disabled={busy}
-                      className="shrink-0 rounded-lg bg-blue-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
-                      title={summary.actionButtonLabel}
-                      data-testid={`assignment-work-button-${agreementId}`}
-                    >
-                      {summary.actionButtonLabel}
-                    </button>
                   </div>
                 </div>
 
