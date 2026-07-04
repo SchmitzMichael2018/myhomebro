@@ -61,6 +61,7 @@ import Expenses from "../pages/ExpensesPage.jsx";
 import Disputes from "../pages/DisputesPages.jsx";
 import TeamSchedule from "../pages/TeamSchedule.jsx";
 import TeamPage from "../pages/TeamPage.jsx";
+import TeamEmployeeDetailPage from "../pages/TeamEmployeeDetailPage.jsx";
 import TeamOverviewPage from "../pages/TeamOverviewPage.jsx";
 import SubcontractorsPage from "../pages/SubcontractorsPage.jsx";
 import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
@@ -168,6 +169,7 @@ export function protectedRoutes() {
 
           <Route path="team" element={<TeamOverviewPage />} />
           <Route path="team/members" element={<TeamPage />} />
+          <Route path="team/employees/:subaccountId" element={<TeamEmployeeDetailPage />} />
           <Route path="team/subcontractors" element={<SubcontractorsPage />} />
           <Route path="team/assignments" element={<AssignmentsPage />} />
           <Route path="team/schedule" element={<TeamSchedule />} />

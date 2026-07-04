@@ -682,7 +682,7 @@ export default function TeamPage() {
 
                     <div className="flex flex-wrap gap-2 xl:max-w-[240px] xl:justify-end">
                       <button
-                        onClick={() => navigate(`/app/employee/profile?subaccount=${sub.id}`)}
+                        onClick={() => navigate(`/app/team/employees/${sub.id}`)}
                         className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
                         type="button"
                         data-testid={`team-member-manage-${sub.id}`}

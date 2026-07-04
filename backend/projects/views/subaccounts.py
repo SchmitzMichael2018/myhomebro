@@ -8,12 +8,13 @@ from django.db import transaction
 from django.utils.crypto import get_random_string
 
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied, ValidationError
 
-from projects.models import ContractorSubAccount, Milestone, SubcontractorCompletionStatus
+from projects.models import ContractorSubAccount, EmployeeCapability, EmployeeSkillLevel, Milestone, Skill, SubcontractorCompletionStatus
 from projects.models_subcontractor import SubcontractorInvitation, SubcontractorInvitationStatus
 from projects.serializers.subaccounts import (
     ContractorSubAccountSerializer,
@@ -147,6 +148,63 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
 
         subaccount.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["patch"], url_path="capabilities")
+    @transaction.atomic
+    def capabilities(self, request, *args, **kwargs):
+        contractor = self._require_contractor_owner()
+        subaccount = self.get_object()
+        if subaccount.parent_contractor_id != contractor.id:
+            raise PermissionDenied("You do not own this team member.")
+
+        incoming = request.data.get("capabilities", None)
+        if incoming is None:
+            incoming = []
+        if not isinstance(incoming, list):
+            raise ValidationError({"capabilities": "Capabilities must be a list."})
+
+        skill_ids = set()
+        valid_levels = {value for value, _label in EmployeeSkillLevel.choices}
+        normalized = []
+        for index, item in enumerate(incoming):
+            if not isinstance(item, dict):
+                raise ValidationError({"capabilities": f"Capability #{index + 1} must be an object."})
+            raw_skill_id = item.get("skill_id") or item.get("skill")
+            if not raw_skill_id:
+                raise ValidationError({"capabilities": f"Capability #{index + 1} requires skill_id."})
+            try:
+                skill_id = int(raw_skill_id)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError({"capabilities": f"Capability #{index + 1} has an invalid skill_id."}) from exc
+            if skill_id in skill_ids:
+                raise ValidationError({"capabilities": "Duplicate capabilities are not allowed."})
+            skill_ids.add(skill_id)
+            level = str(item.get("skill_level") or "").strip().lower()
+            if level not in valid_levels:
+                raise ValidationError({"capabilities": f"Capability #{index + 1} has an invalid skill level."})
+            normalized.append({"skill_id": skill_id, "skill_level": level})
+
+        existing_ids = set(Skill.objects.filter(id__in=skill_ids).values_list("id", flat=True))
+        missing = sorted(skill_ids - existing_ids)
+        if missing:
+            raise ValidationError({"capabilities": f"Unknown skill id(s): {', '.join(map(str, missing))}."})
+
+        wanted = {item["skill_id"]: item["skill_level"] for item in normalized}
+        EmployeeCapability.objects.filter(subaccount=subaccount).exclude(skill_id__in=wanted.keys()).delete()
+        for skill_id, level in wanted.items():
+            EmployeeCapability.objects.update_or_create(
+                subaccount=subaccount,
+                skill_id=skill_id,
+                defaults={"skill_level": level},
+            )
+
+        refreshed = (
+            ContractorSubAccount.objects.filter(pk=subaccount.pk)
+            .select_related("user", "parent_contractor")
+            .prefetch_related("capabilities__skill")
+            .get()
+        )
+        return Response(ContractorSubAccountSerializer(refreshed, context={"request": request}).data)
 
 
 class WhoAmIView(APIView):

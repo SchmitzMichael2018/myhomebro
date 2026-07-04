@@ -77,6 +77,24 @@ const subaccountsPayload = {
   ],
 };
 
+const workforceCatalogPayload = {
+  skills: [
+    { id: 10, name: "Painting", slug: "painting" },
+    { id: 11, name: "Drywall", slug: "drywall" },
+    { id: 12, name: "General Labor", slug: "general-labor" },
+    { id: 13, name: "Cleanup", slug: "cleanup" },
+    { id: 20, name: "Plumbing", slug: "plumbing" },
+    { id: 30, name: "Tile", slug: "tile" },
+  ],
+  skill_levels: [
+    { value: "beginner", label: "Beginner" },
+    { value: "working", label: "Working" },
+    { value: "skilled", label: "Skilled" },
+    { value: "lead", label: "Lead" },
+    { value: "expert", label: "Expert" },
+  ],
+};
+
 const agreementsPayload = {
   results: [
     {
@@ -308,6 +326,10 @@ const calendarPayload = {
 };
 
 async function installTeamRoutes(page) {
+  const subaccountRows = JSON.parse(JSON.stringify(subaccountsPayload.results));
+  const skillLabel = (value) => workforceCatalogPayload.skill_levels.find((level) => level.value === value)?.label || value;
+  const skillById = (id) => workforceCatalogPayload.skills.find((skill) => String(skill.id) === String(id));
+
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
   });
@@ -384,10 +406,56 @@ async function installTeamRoutes(page) {
       });
       return;
     }
+    const capabilityMatch = url.pathname.match(/\/api\/projects\/subaccounts\/(\d+)\/capabilities\/$/);
+    if (capabilityMatch) {
+      const id = Number(capabilityMatch[1]);
+      const row = subaccountRows.find((item) => Number(item.id) === id);
+      if (!row) {
+        await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not found." }) });
+        return;
+      }
+      const payload = route.request().postDataJSON();
+      row.capabilities = (payload.capabilities || []).map((capability, index) => {
+        const skill = skillById(capability.skill_id);
+        return {
+          id: index + 100,
+          skill_id: Number(capability.skill_id),
+          skill_name: skill?.name || `Skill ${capability.skill_id}`,
+          skill_slug: skill?.slug || "",
+          skill_level: capability.skill_level,
+          skill_level_label: skillLabel(capability.skill_level),
+        };
+      });
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(row),
+      });
+      return;
+    }
+    const detailMatch = url.pathname.match(/\/api\/projects\/subaccounts\/(\d+)\/$/);
+    if (detailMatch) {
+      const id = Number(detailMatch[1]);
+      const row = subaccountRows.find((item) => Number(item.id) === id);
+      await route.fulfill({
+        status: row ? 200 : 404,
+        contentType: "application/json",
+        body: JSON.stringify(row || { detail: "Not found." }),
+      });
+      return;
+    }
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify(subaccountsPayload),
+      body: JSON.stringify({ results: subaccountRows }),
+    });
+  });
+
+  await page.route("**/api/projects/workforce/catalog/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(workforceCatalogPayload),
     });
   });
 
@@ -544,12 +612,34 @@ test("team members page separates permissions from capabilities and filters by t
   await expect(page.getByTestId("team-member-manage-1")).toBeVisible();
   await expect(page.getByTestId("team-member-row-3")).toContainText("No trade capabilities assigned");
 
+  await page.getByTestId("team-member-manage-1").click();
+  await expect(page).toHaveURL(/\/app\/team\/employees\/1/);
+  await expect(page.getByTestId("team-employee-detail-page")).toContainText("Taylor Crew");
+  await expect(page.getByTestId("team-employee-permission-role")).toContainText("Supervisor");
+  await expect(page.getByTestId("team-employee-capabilities-section")).toContainText("Trade Capabilities");
+  await expect(page.getByTestId("team-employee-capability-list")).toContainText("Painting");
+  await page.getByTestId("team-employee-add-skill").selectOption("30");
+  await page.getByTestId("team-employee-add-level").selectOption("lead");
+  await page.getByTestId("team-employee-add-capability").click();
+  await expect(page.getByTestId("team-employee-capability-list")).toContainText("Tile");
+  await page.getByTestId("team-employee-capability-level-10").selectOption("expert");
+  await expect(page.getByTestId("team-employee-capability-10")).toContainText("Painting");
+  await page.getByTestId("team-employee-capability-remove-30").click();
+  await expect(page.getByTestId("team-employee-capability-list")).not.toContainText("Tile");
+  await expect(page.getByTestId("team-employee-schedule-summary")).toContainText("working day");
+  await expect(page.getByTestId("team-employee-assigned-work-summary")).toContainText("Active");
+
+  await page.goto("/app/team/employees/3", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("team-employee-no-capabilities")).toContainText("No capabilities assigned");
+
+  await page.goto("/app/team/members", { waitUntil: "domcontentloaded" });
+
   await page.getByTestId("team-capability-filter").selectOption("10");
   await expect(page.getByTestId("team-active-filter-summary")).toContainText("with Painting");
   await expect(page.getByTestId("team-member-row-1")).toBeVisible();
   await expect(page.getByTestId("team-member-row-2")).toHaveCount(0);
 
-  await page.getByTestId("team-skill-level-filter").selectOption("expert");
+  await page.getByTestId("team-skill-level-filter").selectOption("working");
   await expect(page.getByText("No employees match these filters")).toBeVisible();
 
   await page.getByTestId("team-clear-filters").click();

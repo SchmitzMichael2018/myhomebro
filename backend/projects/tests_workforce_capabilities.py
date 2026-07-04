@@ -120,3 +120,64 @@ class WorkforceCapabilityApiTests(TestCase):
         self.assertEqual(rows[0]["role"], ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES)
         self.assertEqual(rows[0]["capabilities"][0]["skill_name"], "Painting")
         self.assertEqual(rows[0]["capabilities"][0]["skill_level"], "lead")
+
+    def test_contractor_owner_can_replace_employee_capabilities(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/capabilities/",
+            {
+                "capabilities": [
+                    {"skill_id": self.painting.id, "skill_level": "working"},
+                    {"skill_id": self.drywall.id, "skill_level": "expert"},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["id"], self.subaccount.id)
+        self.assertEqual({row["skill_name"] for row in response.data["capabilities"]}, {"Painting", "Drywall"})
+        self.assertEqual(EmployeeCapability.objects.filter(subaccount=self.subaccount).count(), 2)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/capabilities/",
+            {"capabilities": [{"skill_id": self.painting.id, "skill_level": "lead"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(EmployeeCapability.objects.filter(subaccount=self.subaccount).count(), 1)
+        self.assertEqual(EmployeeCapability.objects.get(subaccount=self.subaccount).skill_level, "lead")
+        self.subaccount.refresh_from_db()
+        self.assertEqual(self.subaccount.role, ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES)
+
+    def test_contractor_capability_endpoint_rejects_duplicates(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/capabilities/",
+            {
+                "capabilities": [
+                    {"skill_id": self.painting.id, "skill_level": "working"},
+                    {"skill_id": self.painting.id, "skill_level": "expert"},
+                ]
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Duplicate capabilities", str(response.data))
+        self.assertEqual(EmployeeCapability.objects.filter(subaccount=self.subaccount).count(), 0)
+
+    def test_employee_cannot_use_contractor_capability_endpoint(self):
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/capabilities/",
+            {"capabilities": [{"skill_id": self.painting.id, "skill_level": "lead"}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(EmployeeCapability.objects.filter(subaccount=self.subaccount).count(), 0)
