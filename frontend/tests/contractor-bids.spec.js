@@ -735,6 +735,8 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   });
 
   let authHeader = "";
+  let createAgreementCalls = 0;
+  let estimateAppointmentCalls = 0;
   await page.route("**/api/projects/whoami/", async (route) => {
     await route.fulfill({
       status: 200,
@@ -758,6 +760,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   });
 
   await page.route("**/api/projects/contractor/public-leads/3/create-agreement/**", async (route) => {
+    createAgreementCalls += 1;
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -766,6 +769,45 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
         detail_url: "/app/agreements/900",
         wizard_url: "/app/agreements/900/wizard?step=1",
         created: true,
+      }),
+    });
+  });
+
+  await page.route("**/api/projects/contractor-opportunities/estimate-appointments/**", async (route) => {
+    estimateAppointmentCalls += 1;
+    const payload = route.request().postDataJSON();
+    expect(payload.source_type).toBe("lead");
+    expect(payload.source_id).toBe(6);
+    expect(payload.appointment_type).toBe("in_person");
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        appointment: {
+          id: 7001,
+          source_type: "lead",
+          source_id: 6,
+          status: "scheduled",
+          appointment_type: payload.appointment_type,
+          appointment_type_label: "In-Person Estimate",
+          scheduled_start: payload.scheduled_start,
+          duration_minutes: payload.duration_minutes,
+          notes: payload.notes,
+          customer_name: payload.customer_name,
+          customer_email: payload.customer_email,
+          customer_phone: payload.customer_phone,
+          service_location: payload.service_location,
+          opportunity_title: "Bathroom Remodel",
+          opportunity_reference: "Lead #6",
+          created_at: "2026-08-01T12:00:00Z",
+        },
+        source_summary: {
+          source_type: "lead",
+          source_id: 6,
+          project_title: "Bathroom Remodel",
+          reference: "Lead #6",
+        },
+        customer_message: "Hi New Lead Customer, this confirms our in-person estimate for Bathroom Remodel.",
       }),
     });
   });
@@ -790,7 +832,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Guided Intake");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Photos");
-  await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Review Lead");
+  await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Request Clarification");
   await page.getByTestId("leads-tab-follow-up").click();
   await expect(page.getByTestId("lead-row-lead-8")).toBeVisible();
   await expect(page.getByTestId("lead-row-lead-6")).toHaveCount(0);
@@ -816,9 +858,31 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-action-section")).toBeVisible();
   await expect(page.getByTestId("lead-action-section")).toContainText("Recommended Next Steps");
   await expect(page.getByTestId("lead-action-section")).toContainText("Schedule Estimate");
-  await expect(page.getByTestId("schedule-estimate-action")).toBeDisabled();
+  await expect(page.getByTestId("schedule-estimate-action")).toBeEnabled();
+  await expect(page.getByTestId("opportunity-prerequisite-checklist")).toContainText("Before conversion");
+  await expect(page.getByTestId("opportunity-prerequisite-status")).toBeVisible();
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Photos are available to review");
   await expect(page.getByTestId("lead-action-section")).toContainText("convert it into an agreement");
+  await page.getByTestId("schedule-estimate-action").click();
+  await expect(page.getByTestId("schedule-estimate-modal")).toBeVisible();
+  await expect(page.getByTestId("schedule-estimate-customer-name")).toHaveValue("New Lead Customer");
+  await expect(page.getByTestId("schedule-estimate-customer-email")).toHaveValue("newlead@example.com");
+  await expect(page.getByTestId("schedule-estimate-location")).toHaveValue("Austin, TX");
+  await page.getByTestId("schedule-estimate-date").fill("");
+  await page.getByTestId("schedule-estimate-submit").click();
+  await expect(page.getByTestId("schedule-estimate-error")).toContainText("Date and start time are required");
+  await page.getByTestId("schedule-estimate-date").fill("2026-08-12");
+  await page.getByTestId("schedule-estimate-time").fill("10:30");
+  await page.getByTestId("schedule-estimate-notes").fill("Confirm tile measurements.");
+  await page.getByTestId("schedule-estimate-submit").click();
+  await expect(page.getByTestId("schedule-estimate-confirmation")).toContainText("Estimate Scheduled");
+  await expect(page.getByTestId("schedule-estimate-email-customer")).toHaveAttribute("href", /mailto:/);
+  await expect(page.getByTestId("schedule-estimate-call-customer")).toBeDisabled();
+  await expect(page.getByTestId("schedule-estimate-copy-message")).toContainText("Copy Message");
+  expect(estimateAppointmentCalls).toBe(1);
+  expect(createAgreementCalls).toBe(0);
+  await page.getByTestId("schedule-estimate-modal").getByRole("button", { name: "Close schedule estimate" }).click();
+  await expect(page.getByTestId("opportunity-overview-lifecycle-status")).toContainText("Estimate Scheduled");
 
   await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("lead-overview")).toContainText("Project Details");
@@ -838,10 +902,14 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("response-templates-section")).toBeVisible();
   await expect(page.getByTestId("response-template-general")).toContainText("General Response");
   await expect(page.getByTestId("response-template-photos")).toContainText("With Photos");
+  await expect(page.getByTestId("response-starter-email-action")).toHaveAttribute("href", /mailto:/);
+  await expect(page.getByTestId("response-starter-call-action")).toBeDisabled();
+  await expect(page.getByTestId("response-starter-call-action")).toHaveAttribute("title", "Customer phone is not available.");
+  await expect(page.getByTestId("response-starter-text-action")).toBeDisabled();
   await page.getByTestId("response-template-copy-general").click();
   await expect(page.getByTestId("response-template-copy-general")).toContainText("Copied");
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Bathroom remodels are clearer");
-  await expect(page.getByTestId("create-bid-action")).toContainText("Create Estimate");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Send Estimate Response");
   await expect(page.getByTestId("follow-up-action-button")).toContainText("Follow Up");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
@@ -852,20 +920,22 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.getByTestId("leads-tab-follow-up").click();
   await expect(page.getByTestId("lead-row-lead-8")).toContainText("Follow-Up");
   await expect(page.getByTestId("lead-stage-lead-8")).toContainText("Follow-Up");
-  await expect(page.getByTestId("lead-row-action-lead-8")).toContainText("Follow Up");
+  await expect(page.getByTestId("lead-row-action-lead-8")).toContainText("Send Estimate Response");
   await page.getByTestId("lead-row-action-lead-8").click();
   await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
   await page.getByTestId("opportunity-review-tab-next").click();
   await expect(page.getByTestId("resume-review-action")).toContainText("Resume Review");
-  await expect(page.getByTestId("create-bid-action")).toContainText("Create Estimate");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Send Estimate Response");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
   await page.getByTestId("leads-tab-active").click();
   await expect(page.getByTestId("lead-row-intake-2")).toContainText("Active Opportunity");
   await expect(page.getByTestId("lead-row-lead-3")).toContainText("Active Opportunity");
+  await expect(page.getByTestId("lead-lifecycle-lead-3")).toContainText("Ready to Convert");
   await expect(page.getByTestId("lead-row-lead-5")).toContainText("Open Agreement");
+  await expect(page.getByTestId("lead-lifecycle-lead-5")).toContainText("Converted");
   await expect(page.getByTestId("lead-row-intake-2")).toContainText("Guided Intake");
 
   await page.getByTestId("leads-tab-closed").click();
@@ -885,7 +955,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-overview")).toContainText("Project Family");
   await expect(page.getByTestId("project-snapshot")).toContainText("Scope Summary");
   await expect(page.getByTestId("project-snapshot")).toContainText("Budget");
-  await expect(page.getByTestId("recommended-setup-section")).toContainText("Recommended Setup");
+  await expect(page.getByTestId("recommended-setup-section")).toContainText("Suggested Setup");
   await expect(page.getByTestId("recommended-setup-section")).toContainText("Project Type");
   await expect(page.getByTestId("photos-section")).toContainText("layout.png");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demo Phase");
@@ -1473,6 +1543,8 @@ test("contractor bids workspace renders property management work orders and rout
 
   await page.getByTestId("lead-row-opportunity-31").click();
   await expect(page.getByTestId("opportunity-overview-tab-panel")).toContainText("Overview");
+  await expect(page.getByTestId("planning-preview-section")).toContainText("Planning preview");
+  await page.getByTestId("planning-preview-section").locator("summary").click();
   await expect(page.getByTestId("recommended-crew-panel")).toContainText("Recommended Crew");
   await expect(page.getByTestId("recommended-crew-panel")).toContainText("1x Plumbing");
   await expect(page.getByTestId("recommended-crew-panel")).toContainText("Pat Plumbing");
@@ -2252,7 +2324,7 @@ test("contractor bids workspace can create a bid from a follow-up lead", async (
   await page.getByTestId("leads-tab-follow-up").click();
   await page.getByTestId("lead-row-action-lead-8").click();
   await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
-  await expect(page.getByTestId("create-bid-action")).toContainText("Create Estimate");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Send Estimate Response");
   await page.getByTestId("create-bid-action").click();
   await expect(page).toHaveURL("/app/agreements/902/wizard?step=1");
 });

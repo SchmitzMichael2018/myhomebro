@@ -94,7 +94,7 @@ from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorMeView
 from .views.activity_feed import ContractorActivityFeedView
-from .views.contractor_bids import ContractorBidsView
+from .views.contractor_bids import ContractorBidsView, OpportunityEstimateAppointmentCreateView
 from .views.website_builder import (
     ContractorWebsiteAiAssistView,
     ContractorWebsitePageDetailView,
@@ -800,6 +800,7 @@ urlpatterns = [
     path("admin/contractor-directory/<int:entry_id>/", AdminContractorDirectoryView.as_view()),
     path("admin/contractor-opportunities/", AdminContractorOpportunityListView.as_view()),
     path("contractor-opportunities/", ContractorBidsView.as_view()),
+    path("contractor-opportunities/estimate-appointments/", OpportunityEstimateAppointmentCreateView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/accept/", ContractorOpportunityAcceptView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/decline/", ContractorOpportunityDeclineView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/create-agreement-draft/", ContractorOpportunityAgreementDraftView.as_view()),

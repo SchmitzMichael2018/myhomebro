@@ -609,6 +609,91 @@ class ContractorOpportunity(models.Model):
         return f"Opportunity #{self.pk} for {self.directory_entry_id}"
 
 
+class OpportunityEstimateAppointment(models.Model):
+    SOURCE_PUBLIC_LEAD = "lead"
+    SOURCE_INTAKE = "intake"
+    SOURCE_OPPORTUNITY = "opportunity"
+    SOURCE_CHOICES = [
+        (SOURCE_PUBLIC_LEAD, "Public Lead"),
+        (SOURCE_INTAKE, "Project Intake"),
+        (SOURCE_OPPORTUNITY, "Contractor Opportunity"),
+    ]
+
+    TYPE_PHONE = "phone_call"
+    TYPE_VIDEO = "video_call"
+    TYPE_IN_PERSON = "in_person"
+    TYPE_CHOICES = [
+        (TYPE_PHONE, "Phone Call"),
+        (TYPE_VIDEO, "Video Call"),
+        (TYPE_IN_PERSON, "In-Person Estimate"),
+    ]
+
+    STATUS_SCHEDULED = "scheduled"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = [
+        (STATUS_SCHEDULED, "Scheduled"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="opportunity_estimate_appointments",
+    )
+    source_type = models.CharField(max_length=24, choices=SOURCE_CHOICES, db_index=True)
+    public_lead = models.ForeignKey(
+        "projects.PublicContractorLead",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="estimate_appointments",
+    )
+    project_intake = models.ForeignKey(
+        "projects.ProjectIntake",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="estimate_appointments",
+    )
+    contractor_opportunity = models.ForeignKey(
+        "projects.ContractorOpportunity",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="estimate_appointments",
+    )
+    opportunity_title = models.CharField(max_length=255, blank=True, default="")
+    opportunity_reference = models.CharField(max_length=80, blank=True, default="")
+    customer_name = models.CharField(max_length=255, blank=True, default="")
+    customer_email = models.EmailField(blank=True, default="")
+    customer_phone = models.CharField(max_length=50, blank=True, default="")
+    service_location = models.CharField(max_length=500, blank=True, default="")
+    appointment_type = models.CharField(max_length=24, choices=TYPE_CHOICES)
+    scheduled_start = models.DateTimeField(db_index=True)
+    duration_minutes = models.PositiveSmallIntegerField(default=60)
+    notes = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_SCHEDULED, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_estimate_appointments",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-scheduled_start", "-id"]
+        indexes = [
+            models.Index(fields=["contractor", "scheduled_start"], name="projects_op_est_con_8f2d7d_idx"),
+            models.Index(fields=["source_type", "scheduled_start"], name="projects_op_est_sou_c7d6e4_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Estimate appointment #{self.pk} for {self.opportunity_reference or self.source_type}"
+
+
 class ContractorDiscoveryInvite(models.Model):
     CHANNEL_SMS = "sms"
     CHANNEL_EMAIL = "email"

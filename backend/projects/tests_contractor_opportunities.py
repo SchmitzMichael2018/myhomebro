@@ -9,6 +9,7 @@ from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
     ContractorOpportunity,
+    OpportunityEstimateAppointment,
 )
 from projects.models_project_intake import ProjectIntake
 from projects.models_sms import SMSAutomationDecision, SMSConsent
@@ -441,6 +442,103 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(len(response.data["results"]), 1)
         self.assertEqual(response.data["results"][0]["customer_email"], "casey@example.com")
         self.assertEqual(response.data["results"][0]["status"], "submitted")
+
+    def test_contractor_can_schedule_estimate_without_converting_opportunity(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        self.client.force_authenticate(self.contractor_user)
+
+        response = self.client.post(
+            "/api/projects/contractor-opportunities/estimate-appointments/",
+            {
+                "source_type": "opportunity",
+                "source_id": opportunity.id,
+                "scheduled_start": "2026-08-12T14:30:00Z",
+                "duration_minutes": 60,
+                "appointment_type": "in_person",
+                "notes": "Confirm slab access.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(OpportunityEstimateAppointment.objects.count(), 1)
+        appointment = OpportunityEstimateAppointment.objects.get()
+        self.assertEqual(appointment.contractor, self.contractor)
+        self.assertEqual(appointment.contractor_opportunity, opportunity)
+        self.assertEqual(appointment.customer_email, "casey@example.com")
+        self.assertEqual(appointment.customer_phone, "512-555-2222")
+        self.assertEqual(appointment.service_location, "123 Main St\nAustin, TX, 78701")
+        self.assertIn("Concrete Patio Extension", response.data["customer_message"])
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.status, ContractorOpportunity.STATUS_PENDING)
+        self.assertEqual(Agreement.objects.count(), 0)
+
+        list_response = self.client.get("/api/projects/contractor-opportunities/", {"status": "submitted"})
+        self.assertEqual(list_response.status_code, 200)
+        self.assertTrue(list_response.data["results"][0]["estimate_scheduled"])
+        self.assertEqual(
+            list_response.data["results"][0]["latest_estimate_appointment"]["id"],
+            appointment.id,
+        )
+
+    def test_schedule_estimate_requires_contact_data(self):
+        self.intake.customer_email = ""
+        self.intake.customer_phone = ""
+        self.intake.save(update_fields=["customer_email", "customer_phone", "updated_at"])
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        self.client.force_authenticate(self.contractor_user)
+
+        response = self.client.post(
+            "/api/projects/contractor-opportunities/estimate-appointments/",
+            {
+                "source_type": "opportunity",
+                "source_id": opportunity.id,
+                "scheduled_start": "2026-08-12T14:30:00Z",
+                "duration_minutes": 60,
+                "appointment_type": "phone_call",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("contact", response.data)
+        self.assertEqual(OpportunityEstimateAppointment.objects.count(), 0)
+        self.assertEqual(Agreement.objects.count(), 0)
+
+    def test_unrelated_contractor_cannot_schedule_estimate(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        self.client.force_authenticate(self.other_user)
+
+        response = self.client.post(
+            "/api/projects/contractor-opportunities/estimate-appointments/",
+            {
+                "source_type": "opportunity",
+                "source_id": opportunity.id,
+                "scheduled_start": "2026-08-12T14:30:00Z",
+                "duration_minutes": 60,
+                "appointment_type": "phone_call",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(OpportunityEstimateAppointment.objects.count(), 0)
+        self.assertEqual(Agreement.objects.count(), 0)
 
     def test_converted_opportunities_return_agreement_info(self):
         self.client.post(

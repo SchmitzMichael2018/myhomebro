@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, ClipboardList, Copy, ExternalLink, X } from "lucide-react";
+import { ArrowRight, ClipboardList, Copy, ExternalLink, Mail, MessageSquare, Phone, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
@@ -47,6 +47,42 @@ function statusTone(status) {
   if (normalized === "declined" || normalized === "expired") return "border-rose-200 bg-rose-50 text-rose-800";
   if (normalized === "draft" || normalized === "submitted") return "border-slate-200 bg-slate-50 text-slate-700";
   return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function lifecycleStatus(row) {
+  const stage = workspaceStageFromRow(row);
+  const status = normalize(row?.status);
+  const statusGroup = normalize(row?.status_group);
+  const sourceKind = normalize(row?.source_kind);
+  const nextKey = normalize(row?.next_action?.key);
+  const hasAgreement = Boolean(row?.linked_agreement_id || row?.agreement_id || row?.linked_agreement_url);
+
+  if (hasAgreement || nextKey === "open_agreement") {
+    return { label: "Converted", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+  }
+  if (stage === "closed" || status === "declined" || status === "expired" || statusGroup === "declined_expired") {
+    return { label: "Declined", tone: "border-rose-200 bg-rose-50 text-rose-800" };
+  }
+  if (row?.latest_estimate_appointment || row?.estimate_scheduled) {
+    return { label: "Estimate Scheduled", tone: "border-indigo-200 bg-indigo-50 text-indigo-800" };
+  }
+  if (sourceKind === "property_work_order" && nextKey === "accept_property_work_order") {
+    return { label: "Needs Response", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+  }
+  if (isConvertToAgreementRow(row) || status === "awarded" || statusGroup === "awarded" || nextKey === "prepare_agreement_draft") {
+    return { label: "Ready to Convert", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+  }
+  if (stage === "new_lead" || stage === "follow_up" || status === "draft" || status === "submitted" || status === "open") {
+    return { label: "Estimate Needed", tone: "border-sky-200 bg-sky-50 text-sky-800" };
+  }
+  if (status === "under_review" || statusGroup === "under_review") {
+    return { label: "Needs Response", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+  }
+  return { label: "Needs Response", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+}
+
+function hasLinkedAgreement(row) {
+  return Boolean(row?.linked_agreement_id || row?.agreement_id || row?.linked_agreement_url);
 }
 
 function DetailField({ label, value }) {
@@ -470,6 +506,304 @@ function buildResponseTemplates({ snapshot, signals }) {
   }
 
   return templates.slice(0, 4);
+}
+
+function encodeContactMessage(message) {
+  return encodeURIComponent(String(message || "").trim());
+}
+
+function buildEmailHref(email, subject, message) {
+  const cleanEmail = String(email || "").trim();
+  if (!cleanEmail) return "";
+  return `mailto:${cleanEmail}?subject=${encodeContactMessage(subject)}&body=${encodeContactMessage(message)}`;
+}
+
+function buildSmsHref(phone, message) {
+  const cleanPhone = String(phone || "").trim();
+  if (!cleanPhone) return "";
+  return `sms:${cleanPhone}?&body=${encodeContactMessage(message)}`;
+}
+
+function ContactActionButton({ kind, href, disabledReason, children, testId, onClick }) {
+  const icon =
+    kind === "email" ? <Mail size={14} /> : kind === "text" ? <MessageSquare size={14} /> : <Phone size={14} />;
+  const baseClass =
+    "inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition";
+  if (!href) {
+    return (
+      <button
+        type="button"
+        data-testid={testId}
+        disabled
+        title={disabledReason}
+        className={`${baseClass} cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500`}
+      >
+        {icon}
+        {children}
+      </button>
+    );
+  }
+  return (
+    <a
+      data-testid={testId}
+      href={href}
+      onClick={onClick}
+      className={`${baseClass} border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}
+    >
+      {icon}
+      {children}
+    </a>
+  );
+}
+
+function scheduleSourceForRow(row) {
+  if (!row?.source_id) return null;
+  const kind = normalize(row.source_kind);
+  if (kind === "lead" || kind === "quote_request") return { source_type: "lead", source_id: row.source_id };
+  if (kind === "intake") return { source_type: "intake", source_id: row.source_id };
+  if (kind === "marketplace" || kind === "property_work_order") return { source_type: "opportunity", source_id: row.source_id };
+  return null;
+}
+
+function defaultScheduleDate() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function defaultScheduleTime() {
+  return "09:00";
+}
+
+function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
+  const source = scheduleSourceForRow(row);
+  const [date, setDate] = useState(defaultScheduleDate());
+  const [time, setTime] = useState(defaultScheduleTime());
+  const [duration, setDuration] = useState("60");
+  const [appointmentType, setAppointmentType] = useState("phone_call");
+  const [notes, setNotes] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [serviceLocation, setServiceLocation] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!open || !row) return;
+    setDate(defaultScheduleDate());
+    setTime(defaultScheduleTime());
+    setDuration("60");
+    setAppointmentType(row.location ? "in_person" : "phone_call");
+    setNotes("");
+    setCustomerName(row.customer_name || "");
+    setCustomerEmail(row.customer_email || row.request_snapshot?.customer_email || "");
+    setCustomerPhone(row.customer_phone || row.request_snapshot?.customer_phone || "");
+    setServiceLocation(row.location || row.request_snapshot?.location || "");
+    setError("");
+    setLoading(false);
+    setResult(null);
+    setCopied(false);
+  }, [open, row?.bid_id]);
+
+  if (!open || !row) return null;
+
+  const hasContact = Boolean(customerEmail || customerPhone);
+  const message = result?.customer_message || "";
+  const emailHref = buildEmailHref(customerEmail, `Estimate appointment for ${row.project_title || "your project"}`, message);
+  const smsHref = buildSmsHref(customerPhone, message);
+  const telHref = customerPhone ? `tel:${customerPhone}` : "";
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    if (!source) {
+      setError("This opportunity is missing a schedulable source.");
+      return;
+    }
+    if (!customerName.trim()) {
+      setError("Customer name is required.");
+      return;
+    }
+    if (!customerEmail.trim() && !customerPhone.trim()) {
+      setError("Customer email or phone is required.");
+      return;
+    }
+    if (!date || !time) {
+      setError("Date and start time are required.");
+      return;
+    }
+    if (appointmentType === "in_person" && !serviceLocation.trim()) {
+      setError("Service location is required for an in-person estimate.");
+      return;
+    }
+
+    const scheduledStart = new Date(`${date}T${time}`);
+    if (Number.isNaN(scheduledStart.getTime())) {
+      setError("Choose a valid date and start time.");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { data } = await api.post("/projects/contractor-opportunities/estimate-appointments/", {
+        ...source,
+        customer_name: customerName,
+        customer_email: customerEmail,
+        customer_phone: customerPhone,
+        service_location: serviceLocation,
+        appointment_type: appointmentType,
+        scheduled_start: scheduledStart.toISOString(),
+        duration_minutes: Number(duration || 60),
+        notes,
+      });
+      setResult(data || {});
+      onScheduled?.(data);
+      toast.success("Estimate appointment scheduled.");
+    } catch (err) {
+      console.error(err);
+      const payload = err?.response?.data;
+      if (payload?.detail) setError(payload.detail);
+      else if (payload && typeof payload === "object") {
+        const first = Object.values(payload).flat().find(Boolean);
+        setError(first || "Could not schedule this estimate.");
+      } else {
+        setError("Could not schedule this estimate.");
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyMessage = async () => {
+    if (!message || !navigator?.clipboard?.writeText) return;
+    await navigator.clipboard.writeText(message);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
+      <button type="button" aria-label="Close schedule estimate backdrop" className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="schedule-estimate-title"
+        data-testid="schedule-estimate-modal"
+        className="relative flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+      >
+        <div className="flex items-start justify-between border-b border-slate-200 p-5">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">Estimate Appointment</div>
+            <h3 id="schedule-estimate-title" className="mt-2 text-2xl font-extrabold text-slate-950">Schedule Estimate</h3>
+            <p className="mt-1 text-sm text-slate-600">{row.project_title} - {row.source_reference}</p>
+          </div>
+          <button type="button" aria-label="Close schedule estimate" onClick={onClose} className="rounded-lg border border-slate-300 bg-white p-2 text-slate-600 hover:bg-slate-50">
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={submit} className="flex-1 overflow-y-auto p-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="text-sm font-semibold text-slate-800">
+              Customer name
+              <input data-testid="schedule-estimate-customer-name" value={customerName} onChange={(event) => setCustomerName(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Customer email
+              <input data-testid="schedule-estimate-customer-email" type="email" value={customerEmail} onChange={(event) => setCustomerEmail(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Customer phone
+              <input data-testid="schedule-estimate-customer-phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Appointment type
+              <select data-testid="schedule-estimate-type" value={appointmentType} onChange={(event) => setAppointmentType(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                <option value="phone_call">Phone call</option>
+                <option value="video_call">Video call</option>
+                <option value="in_person">In-person estimate</option>
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Date
+              <input data-testid="schedule-estimate-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Start time
+              <input data-testid="schedule-estimate-time" type="time" value={time} onChange={(event) => setTime(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-semibold text-slate-800">
+              Duration
+              <select data-testid="schedule-estimate-duration" value={duration} onChange={(event) => setDuration(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour</option>
+                <option value="90">1.5 hours</option>
+                <option value="120">2 hours</option>
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-800 md:col-span-2">
+              Service address / location
+              <input data-testid="schedule-estimate-location" value={serviceLocation} onChange={(event) => setServiceLocation(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm font-semibold text-slate-800 md:col-span-2">
+              Notes
+              <textarea data-testid="schedule-estimate-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Access notes, call details, or questions to cover" />
+            </label>
+          </div>
+
+          {!hasContact ? (
+            <div data-testid="schedule-estimate-missing-contact" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950">
+              Add an email or phone number before scheduling.
+            </div>
+          ) : null}
+          {error ? (
+            <div data-testid="schedule-estimate-error" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800">
+              {error}
+            </div>
+          ) : null}
+
+          {result?.appointment ? (
+            <div data-testid="schedule-estimate-confirmation" className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="text-sm font-bold text-emerald-950">Estimate Scheduled</div>
+              <p className="mt-2 text-sm text-emerald-900">{message}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <ContactActionButton kind="email" href={emailHref} disabledReason="Customer email is not available." testId="schedule-estimate-email-customer">
+                  Email Customer
+                </ContactActionButton>
+                <ContactActionButton kind="call" href={telHref} disabledReason="Customer phone is not available." testId="schedule-estimate-call-customer">
+                  Call Customer
+                </ContactActionButton>
+                <ContactActionButton kind="text" href={smsHref} disabledReason="Customer phone is not available." testId="schedule-estimate-text-customer">
+                  Text Customer
+                </ContactActionButton>
+                <button type="button" onClick={copyMessage} data-testid="schedule-estimate-copy-message" className="inline-flex items-center gap-2 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100">
+                  <Copy size={14} />
+                  {copied ? "Copied" : "Copy Message"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
+            <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              Close
+            </button>
+            <button
+              type="submit"
+              data-testid="schedule-estimate-submit"
+              disabled={loading || Boolean(result?.appointment)}
+              className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {loading ? "Scheduling..." : result?.appointment ? "Scheduled" : "Schedule Estimate"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 function crewPreviewSourceForRow(row) {
@@ -1073,6 +1407,7 @@ export default function ContractorBidsPage() {
   const [confirmedSupervisorIds, setConfirmedSupervisorIds] = useState([]);
   const [selectedMilestoneIds, setSelectedMilestoneIds] = useState([]);
   const [confirmedReplacementMilestoneIds, setConfirmedReplacementMilestoneIds] = useState([]);
+  const [scheduleEstimateOpen, setScheduleEstimateOpen] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -1391,6 +1726,7 @@ export default function ContractorBidsPage() {
   const selectedCanConvertToAgreement = isConvertToAgreementRow(selectedRow);
   const selectedIsPropertyWorkOrder = normalize(selectedRow?.source_kind) === "property_work_order";
   const selectedNextActionKey = normalize(selectedRow?.next_action?.key);
+  const selectedLifecycle = lifecycleStatus(selectedRow);
   const selectedPrimaryActionLabel =
     selectedIsPropertyWorkOrder
       ? selectedNextActionKey === "accept_property_work_order"
@@ -1403,7 +1739,7 @@ export default function ContractorBidsPage() {
       : selectedCanConvertToAgreement
       ? "Convert to Agreement"
       : selectedStage === "new_lead" || selectedStage === "follow_up"
-      ? "Create Estimate"
+      ? "Send Estimate Response"
       : selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
         : selectedRow?.next_action?.label || "View Details";
@@ -1453,7 +1789,48 @@ export default function ContractorBidsPage() {
     [selectedProjectDescription]
   );
   const selectedTimeline = firstPresent(selectedSnapshot?.timeline, selectedRow?.timeline);
-  const selectedScheduleSupported = Boolean(selectedRow?.schedule_estimate_url || selectedRow?.calendar_event_url);
+  const selectedCustomerEmail = String(selectedRow?.customer_email || selectedSnapshot?.customer_email || "").trim();
+  const selectedCustomerPhone = String(selectedRow?.customer_phone || selectedSnapshot?.customer_phone || "").trim();
+  const selectedResponseSubject = `Re: ${selectedRow?.project_title || "Your project request"}`;
+  const selectedResponseMessage = selectedResponseStarter || "Thanks for sharing your project details. I will review the request and follow up with next steps.";
+  const selectedEmailHref = buildEmailHref(selectedCustomerEmail, selectedResponseSubject, selectedResponseMessage);
+  const selectedTelHref = selectedCustomerPhone ? `tel:${selectedCustomerPhone}` : "";
+  const selectedSmsHref = buildSmsHref(selectedCustomerPhone, selectedResponseMessage);
+  const selectedScheduleSource = scheduleSourceForRow(selectedRow);
+  const selectedCanScheduleEstimate = Boolean(selectedScheduleSource && (selectedCustomerEmail || selectedCustomerPhone));
+  const selectedScheduleDisabledReason = !selectedScheduleSource
+    ? "This opportunity is missing source data for scheduling."
+    : !(selectedCustomerEmail || selectedCustomerPhone)
+      ? "Customer email or phone is required before scheduling."
+      : "";
+  const selectedChecklistItems = useMemo(() => {
+    const items = [];
+    const signalSet = new Set((Array.isArray(selectedSignals) ? selectedSignals : []).map(normalize));
+    const hasScope = Boolean(selectedProjectDescription);
+    const hasContact = Boolean(selectedCustomerEmail || selectedCustomerPhone);
+    const hasBudget = Boolean(selectedSnapshot?.budget || selectedRow?.budget_text || selectedRow?.bid_amount_label);
+    const hasTiming = Boolean(selectedTimeline || signalSet.has("timeline provided"));
+    const hasMeasurements = Boolean(selectedSnapshot?.measurement_handling || signalSet.has("measurements noted"));
+    items.push({ key: "scope", label: "Scope reviewed", complete: hasScope });
+    items.push({ key: "contact", label: "Customer contact available", complete: hasContact });
+    items.push({ key: "budget", label: "Budget or estimate basis available", complete: hasBudget });
+    items.push({ key: "timing", label: "Timeline reviewed", complete: hasTiming });
+    if (normalize(selectedSnapshot?.measurement_handling) === "site visit required") {
+      items.push({ key: "measurements", label: "Measurements or site visit acknowledged", complete: hasMeasurements });
+    }
+    return items;
+  }, [
+    selectedCustomerEmail,
+    selectedCustomerPhone,
+    selectedProjectDescription,
+    selectedRow?.bid_amount_label,
+    selectedRow?.budget_text,
+    selectedSignals,
+    selectedSnapshot,
+    selectedTimeline,
+  ]);
+  const selectedChecklistComplete = selectedChecklistItems.every((item) => item.complete);
+  const selectedPlanningIsSecondary = Boolean(selectedRow && !hasLinkedAgreement(selectedRow));
   const detailTabs = [
     { key: "overview", label: "Overview" },
     { key: "project", label: "Project Details" },
@@ -1470,17 +1847,18 @@ export default function ContractorBidsPage() {
     }
     if (isConvertToAgreementRow(row)) return "Convert to Agreement";
     const stage = workspaceStageFromRow(row);
-    if (stage === "new_lead") return "Review Lead";
-    if (stage === "follow_up") return "Follow Up";
+    if (stage === "new_lead") return "Request Clarification";
+    if (stage === "follow_up") return "Send Estimate Response";
     if (stage === "closed") return "View Details";
     if (normalize(row?.next_action?.key) === "open_agreement" && row?.linked_agreement_url) return "Open Agreement";
-    if (stage === "active_bid") return "Create Estimate";
+    if (stage === "active_bid") return "Send Estimate Response";
     return row?.next_action?.label || "View Details";
   };
 
   const closeDrawer = () => {
     setSelectedRow(null);
     setConvertPanelOpen(false);
+    setScheduleEstimateOpen(false);
     setAssignmentDraft(null);
     setAssignmentDraftOpen(false);
     setAssignmentDraftError("");
@@ -1492,6 +1870,37 @@ export default function ContractorBidsPage() {
     setSelectedMilestoneIds([]);
     setConfirmedReplacementMilestoneIds([]);
     setCopiedRefId("");
+  };
+
+  const handleEstimateScheduled = (data) => {
+    const appointment = data?.appointment;
+    if (!appointment) return;
+    setSelectedRow((prev) =>
+      prev
+        ? {
+            ...prev,
+            latest_estimate_appointment: appointment,
+            estimate_scheduled: true,
+          }
+        : prev
+    );
+    setRows((prev) =>
+      prev.map((row) => {
+        const source = scheduleSourceForRow(row);
+        if (
+          source &&
+          source.source_type === appointment.source_type &&
+          Number(source.source_id) === Number(appointment.source_id)
+        ) {
+          return {
+            ...row,
+            latest_estimate_appointment: appointment,
+            estimate_scheduled: true,
+          };
+        }
+        return row;
+      })
+    );
   };
 
   const createAssignmentDraft = async () => {
@@ -1931,7 +2340,7 @@ export default function ContractorBidsPage() {
                 <option value="follow_up">Follow-Up</option>
                 <option value="accepted">Accepted</option>
                 <option value="under_review">Under Review</option>
-                <option value="awarded">Awarded</option>
+                <option value="awarded">Ready to Convert</option>
                 <option value="declined">Declined</option>
                 <option value="expired">Not Selected</option>
               </select>
@@ -1991,6 +2400,7 @@ export default function ContractorBidsPage() {
               const actionLabel = rowPrimaryActionLabel(row);
               const signals = prioritizeSignals(row.request_signals).slice(0, 4);
               const valueDisplay = opportunityValueDisplay(row);
+              const lifecycle = lifecycleStatus(row);
               return (
                 <article
                   key={`${row.source_kind}-${row.bid_id}`}
@@ -2022,8 +2432,11 @@ export default function ContractorBidsPage() {
                         >
                           {workspaceStageLabel(stage)}
                         </span>
-                        <span className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusTone(row.status)}`}>
-                          {row.status_label}
+                        <span
+                          data-testid={`lead-lifecycle-${row.bid_id}`}
+                          className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-semibold ${lifecycle.tone}`}
+                        >
+                          {lifecycle.label}
                         </span>
                       </div>
 
@@ -2127,7 +2540,7 @@ export default function ContractorBidsPage() {
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
                     <span className="font-semibold text-slate-800">{selectedRow.customer_name}</span>
                     {selectedRow.source_kind_label ? <span>{selectedRow.source_kind_label}</span> : null}
-                    <span>{selectedRow.status_label}</span>
+                    <span data-testid="opportunity-review-lifecycle-status">{selectedLifecycle.label}</span>
                   </div>
                 </div>
               <button
@@ -2176,8 +2589,11 @@ export default function ContractorBidsPage() {
                         <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${workspaceStageTone(selectedStage)}`}>
                           {workspaceStageLabel(selectedStage)}
                         </span>
-                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(selectedRow.status)}`}>
-                          {selectedRow.status_label}
+                        <span
+                          data-testid="opportunity-overview-lifecycle-status"
+                          className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${selectedLifecycle.tone}`}
+                        >
+                          {selectedLifecycle.label}
                         </span>
                       </div>
                       <div className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Overview</div>
@@ -2222,14 +2638,41 @@ export default function ContractorBidsPage() {
                     </ModalSection>
                   </div>
 
-                  <AdvisoryCrewPanel
-                    preview={crewPreview}
-                    loading={crewPreviewLoading}
-                    error={crewPreviewError}
-                    onCreateDraft={createAssignmentDraft}
-                    creatingDraft={assignmentDraftLoading}
-                    draftError={assignmentDraftError}
-                  />
+                  {selectedPlanningIsSecondary ? (
+                    <details
+                      data-testid="planning-preview-section"
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <summary className="cursor-pointer text-sm font-bold text-slate-800">
+                        Planning preview
+                        <span className="ml-2 text-xs font-semibold text-slate-500">
+                          Advisory only before agreement creation
+                        </span>
+                      </summary>
+                      <p className="mt-3 text-sm text-slate-600">
+                        Crew and setup ideas are planning aids at this stage. They are not confirmed project assignments or a committed project plan.
+                      </p>
+                      <div className="mt-4">
+                        <AdvisoryCrewPanel
+                          preview={crewPreview}
+                          loading={crewPreviewLoading}
+                          error={crewPreviewError}
+                          onCreateDraft={createAssignmentDraft}
+                          creatingDraft={assignmentDraftLoading}
+                          draftError={assignmentDraftError}
+                        />
+                      </div>
+                    </details>
+                  ) : (
+                    <AdvisoryCrewPanel
+                      preview={crewPreview}
+                      loading={crewPreviewLoading}
+                      error={crewPreviewError}
+                      onCreateDraft={createAssignmentDraft}
+                      creatingDraft={assignmentDraftLoading}
+                      draftError={assignmentDraftError}
+                    />
+                  )}
                 </section>
               ) : null}
 
@@ -2245,7 +2688,7 @@ export default function ContractorBidsPage() {
                   <DetailField label="Contact" value={firstPresent(selectedRow.customer_email, selectedRow.customer_phone, "No contact listed")} />
                   <DetailField label="Source" value={selectedRow.source_kind_label || "Lead"} />
                   <DetailField label="Received" value={fmtDate(selectedRow.submitted_at)} />
-                  <DetailField label="Status" value={selectedRow.status_label} />
+                  <DetailField label="Lifecycle Status" value={selectedLifecycle.label} />
                   <DetailField label="Project Type" value={firstPresent(selectedRow.project_type, selectedRow.project_class_label, "-")} />
                   <DetailField label="Project Family" value={selectedSnapshot.project_family_label || selectedRow.project_class_label || "-"} />
                   <DetailField label="Project Class" value={selectedRow.project_class_label || "-"} />
@@ -2309,6 +2752,49 @@ export default function ContractorBidsPage() {
                 subtitle="Choose the next sales action for this opportunity."
                 className={detailTab === "overview" || detailTab === "next" ? "" : "hidden"}
               >
+                <div
+                  data-testid="opportunity-prerequisite-checklist"
+                  className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-slate-950">Before conversion</div>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Review these items before sending an estimate response or converting this request into an agreement.
+                      </p>
+                    </div>
+                    <span
+                      data-testid="opportunity-prerequisite-status"
+                      className={`rounded-full border px-3 py-1 text-xs font-bold ${
+                        selectedChecklistComplete
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                          : "border-amber-200 bg-amber-50 text-amber-900"
+                      }`}
+                    >
+                      {selectedChecklistComplete ? "Ready" : "Needs review"}
+                    </span>
+                  </div>
+                  <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {selectedChecklistItems.map((item) => (
+                      <li
+                        key={item.key}
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium ${
+                          item.complete
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                            : "border-amber-200 bg-amber-50 text-amber-950"
+                        }`}
+                      >
+                        {item.complete ? "Complete: " : "Review: "}
+                        {item.label}
+                      </li>
+                    ))}
+                  </ul>
+                  {!selectedChecklistComplete ? (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950">
+                      Some prerequisites need review before conversion. You can still continue when you have confirmed them outside MyHomeBro.
+                    </div>
+                  ) : null}
+                </div>
                 <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
                   {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order"
                     ? "This property management work order needs your response. Accept it if you can take the job, or decline it to close the request for your workspace."
@@ -2341,20 +2827,13 @@ export default function ContractorBidsPage() {
                     <button
                       type="button"
                       data-testid="schedule-estimate-action"
-                      disabled={!selectedScheduleSupported}
-                      onClick={() => {
-                        if (selectedRow?.schedule_estimate_url) navigate(selectedRow.schedule_estimate_url);
-                        else if (selectedRow?.calendar_event_url) navigate(selectedRow.calendar_event_url);
-                      }}
-                      className="inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2 text-sm font-semibold text-sky-800 hover:bg-sky-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-500"
-                      title={
-                        selectedScheduleSupported
-                          ? "Schedule an estimate using the existing calendar flow."
-                          : "Calendar estimate scheduling is coming soon."
-                      }
+                      disabled={!selectedCanScheduleEstimate}
+                      onClick={() => setScheduleEstimateOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none"
+                      title={selectedScheduleDisabledReason || "Schedule an estimate appointment with this customer."}
                     >
                       Schedule Estimate
-                      {!selectedScheduleSupported ? <span className="text-xs font-medium">(Coming soon)</span> : null}
+                      {!selectedCanScheduleEstimate ? <span className="text-xs font-medium">(Unavailable)</span> : null}
                     </button>
                   ) : null}
 
@@ -2480,9 +2959,9 @@ export default function ContractorBidsPage() {
               </SectionCard>
 
               <SectionCard
-                title="Recommended Setup"
+                title="Suggested Setup"
                 testId="recommended-setup-section"
-                subtitle="A suggested starting point based on the project details provided."
+                subtitle="Advisory only. Use this as a starting point while you confirm scope, pricing, and agreement details."
                 className={detailTab === "project" ? "" : "hidden"}
               >
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -2510,10 +2989,10 @@ export default function ContractorBidsPage() {
                 </div>
                 <div
                   data-testid="recommended-setup-note"
-                  className="mt-3 rounded-xl border border-white/80 bg-white/80 px-4 py-3 text-sm text-slate-700"
+                  className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950"
                 >
                   {selectedProjectSetup.recommendationNote ||
-                    "This is a suggested setup. You can still choose a different path when you create the bid."}
+                    "This is a suggested setup only. Confirm project details before using it to shape an estimate or agreement."}
                 </div>
               </SectionCard>
 
@@ -2604,6 +3083,32 @@ export default function ContractorBidsPage() {
                     {selectedResponseStarter}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3">
+                    <ContactActionButton
+                      kind="email"
+                      href={selectedEmailHref}
+                      disabledReason="Customer email is not available."
+                      testId="response-starter-email-action"
+                      onClick={() => copyReference(selectedResponseStarter, `${selectedRow.bid_id}-starter-email`)}
+                    >
+                      Email Customer
+                    </ContactActionButton>
+                    <ContactActionButton
+                      kind="call"
+                      href={selectedTelHref}
+                      disabledReason="Customer phone is not available."
+                      testId="response-starter-call-action"
+                    >
+                      Call Customer
+                    </ContactActionButton>
+                    <ContactActionButton
+                      kind="text"
+                      href={selectedSmsHref}
+                      disabledReason="Customer phone is not available."
+                      testId="response-starter-text-action"
+                      onClick={() => copyReference(selectedResponseStarter, `${selectedRow.bid_id}-starter-text`)}
+                    >
+                      Text Customer
+                    </ContactActionButton>
                     <button
                       type="button"
                       onClick={() => copyReference(selectedResponseStarter, `${selectedRow.bid_id}-starter`)}
@@ -2646,6 +3151,32 @@ export default function ContractorBidsPage() {
                               <Copy size={14} />
                               {copiedRefId === copyId ? "Copied" : "Copy"}
                             </button>
+                            <ContactActionButton
+                              kind="email"
+                              href={buildEmailHref(selectedCustomerEmail, selectedResponseSubject, template.text)}
+                              disabledReason="Customer email is not available."
+                              testId={`response-template-email-${template.key}`}
+                              onClick={() => copyReference(template.text, `${copyId}-email`)}
+                            >
+                              Email
+                            </ContactActionButton>
+                            <ContactActionButton
+                              kind="call"
+                              href={selectedTelHref}
+                              disabledReason="Customer phone is not available."
+                              testId={`response-template-call-${template.key}`}
+                            >
+                              Call
+                            </ContactActionButton>
+                            <ContactActionButton
+                              kind="text"
+                              href={buildSmsHref(selectedCustomerPhone, template.text)}
+                              disabledReason="Customer phone is not available."
+                              testId={`response-template-text-${template.key}`}
+                              onClick={() => copyReference(template.text, `${copyId}-text`)}
+                            >
+                              Text
+                            </ContactActionButton>
                           </div>
                         </div>
                       );
@@ -2714,6 +3245,12 @@ export default function ContractorBidsPage() {
         open={convertPanelOpen && Boolean(selectedRow)}
         row={selectedRow}
         onClose={() => setConvertPanelOpen(false)}
+      />
+      <ScheduleEstimateModal
+        row={selectedRow}
+        open={scheduleEstimateOpen && Boolean(selectedRow)}
+        onClose={() => setScheduleEstimateOpen(false)}
+        onScheduled={handleEstimateScheduled}
       />
       <AssignmentDraftModal
         draft={assignmentDraft}

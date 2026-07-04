@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.db.models import Q
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import AgreementProjectClass, PublicContractorLead
-from projects.models_contractor_discovery import ContractorOpportunity
+from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
 from projects.models_customer_portal import PropertyWorkOrder
 from projects.models_project_intake import ProjectIntake
 from projects.services.agreements.project_create import resolve_contractor_for_user
@@ -42,6 +45,15 @@ def _safe_text(value) -> str:
 def _format_date(value):
     if not value:
         return None
+
+
+def _format_datetime(value):
+    if not value:
+        return None
+    try:
+        return value.isoformat()
+    except Exception:
+        return None
     try:
         return value.isoformat()
     except Exception:
@@ -67,6 +79,96 @@ def _agreement_reference(agreement) -> str:
     if project_number:
         return f"Agreement {project_number}"
     return f"Agreement #{agreement.id}"
+
+
+def _serialize_estimate_appointment(appointment) -> dict | None:
+    if appointment is None:
+        return None
+    return {
+        "id": appointment.id,
+        "source_type": appointment.source_type,
+        "source_id": (
+            appointment.public_lead_id
+            or appointment.project_intake_id
+            or appointment.contractor_opportunity_id
+        ),
+        "status": appointment.status,
+        "appointment_type": appointment.appointment_type,
+        "appointment_type_label": appointment.get_appointment_type_display(),
+        "scheduled_start": _format_datetime(appointment.scheduled_start),
+        "duration_minutes": appointment.duration_minutes,
+        "notes": appointment.notes,
+        "customer_name": appointment.customer_name,
+        "customer_email": appointment.customer_email,
+        "customer_phone": appointment.customer_phone,
+        "service_location": appointment.service_location,
+        "opportunity_title": appointment.opportunity_title,
+        "opportunity_reference": appointment.opportunity_reference,
+        "created_at": _format_datetime(appointment.created_at),
+    }
+
+
+def _appointment_key(source_type: str, source_id) -> tuple[str, int] | None:
+    try:
+        value = int(source_id)
+    except (TypeError, ValueError):
+        return None
+    normalized = _safe_text(source_type).lower()
+    if normalized in {"lead", "quote_request", "public_lead"}:
+        return ("lead", value)
+    if normalized in {"intake", "project_intake"}:
+        return ("intake", value)
+    if normalized in {"opportunity", "marketplace", "property_work_order"}:
+        return ("opportunity", value)
+    return None
+
+
+def _latest_appointments_for_rows(contractor, rows: list[dict]) -> dict[tuple[str, int], OpportunityEstimateAppointment]:
+    wanted: set[tuple[str, int]] = set()
+    for row in rows:
+        key = _appointment_key(row.get("source_kind"), row.get("source_id"))
+        if key:
+            wanted.add(key)
+    if not wanted:
+        return {}
+
+    lead_ids = [source_id for source_type, source_id in wanted if source_type == "lead"]
+    intake_ids = [source_id for source_type, source_id in wanted if source_type == "intake"]
+    opportunity_ids = [source_id for source_type, source_id in wanted if source_type == "opportunity"]
+    query = Q()
+    if lead_ids:
+        query |= Q(source_type=OpportunityEstimateAppointment.SOURCE_PUBLIC_LEAD, public_lead_id__in=lead_ids)
+    if intake_ids:
+        query |= Q(source_type=OpportunityEstimateAppointment.SOURCE_INTAKE, project_intake_id__in=intake_ids)
+    if opportunity_ids:
+        query |= Q(source_type=OpportunityEstimateAppointment.SOURCE_OPPORTUNITY, contractor_opportunity_id__in=opportunity_ids)
+    if not query:
+        return {}
+
+    appointments = (
+        OpportunityEstimateAppointment.objects.filter(contractor=contractor, status=OpportunityEstimateAppointment.STATUS_SCHEDULED)
+        .filter(query)
+        .order_by("source_type", "public_lead_id", "project_intake_id", "contractor_opportunity_id", "-scheduled_start", "-id")
+    )
+    out: dict[tuple[str, int], OpportunityEstimateAppointment] = {}
+    for appointment in appointments:
+        key = _appointment_key(
+            appointment.source_type,
+            appointment.public_lead_id or appointment.project_intake_id or appointment.contractor_opportunity_id,
+        )
+        if key and key not in out:
+            out[key] = appointment
+    return out
+
+
+def _attach_estimate_appointments(contractor, rows: list[dict]) -> list[dict]:
+    latest_by_key = _latest_appointments_for_rows(contractor, rows)
+    for row in rows:
+        key = _appointment_key(row.get("source_kind"), row.get("source_id"))
+        appointment = latest_by_key.get(key) if key else None
+        row["latest_estimate_appointment"] = _serialize_estimate_appointment(appointment)
+        row["estimate_scheduled"] = bool(appointment)
+    return rows
 
 
 def _milestone_preview(payload) -> list[str]:
@@ -1146,6 +1248,7 @@ class ContractorBidsView(APIView):
             ),
             reverse=True,
         )
+        rows = _attach_estimate_appointments(contractor, rows)
 
         status_filter = _safe_text(request.GET.get("status", "")).lower()
         project_class_filter = _safe_text(request.GET.get("project_class", "")).lower()
@@ -1219,4 +1322,159 @@ class ContractorBidsView(APIView):
                 },
             },
             status=200,
+        )
+
+
+def _resolve_estimate_source(contractor, source_type: str, source_id, request=None):
+    key = _appointment_key(source_type, source_id)
+    if key is None:
+        return None, {}, "Unsupported opportunity source."
+    normalized_type, normalized_id = key
+
+    if normalized_type == "lead":
+        lead = (
+            contractor.public_leads.select_related("converted_agreement", "source_intake", "source_intake__agreement")
+            .prefetch_related("source_intake__clarification_photos")
+            .filter(pk=normalized_id)
+            .first()
+        )
+        if lead is None:
+            return None, {}, "Opportunity source not found."
+        return lead, _bid_row_from_lead(lead, request=request), ""
+
+    if normalized_type == "intake":
+        intake = (
+            ProjectIntake.objects.filter(contractor=contractor, pk=normalized_id)
+            .select_related("agreement", "public_lead", "public_lead__converted_agreement")
+            .prefetch_related("clarification_photos")
+            .first()
+        )
+        if intake is None:
+            return None, {}, "Opportunity source not found."
+        return intake, _bid_row_from_intake(intake, request=request), ""
+
+    opportunity = (
+        ContractorOpportunity.objects.filter(pk=normalized_id)
+        .filter(Q(directory_entry__claimed_by_contractor=contractor) | Q(accepted_by_contractor=contractor))
+        .select_related(
+            "converted_agreement",
+            "directory_entry",
+            "property_work_order",
+            "property_work_order__linked_agreement",
+            "property_work_order__property_management_company",
+            "property_work_order__property_profile",
+            "property_work_order__unit",
+            "property_work_order__tenant",
+            "property_work_order__source_tenant_request",
+        )
+        .prefetch_related(
+            "property_work_order__attachments",
+            "property_work_order__source_tenant_request__attachments",
+        )
+        .first()
+    )
+    if opportunity is None:
+        return None, {}, "Opportunity source not found."
+    if getattr(opportunity, "property_work_order_id", None):
+        return opportunity, _bid_row_from_property_work_order_opportunity(opportunity, request=request), ""
+    return opportunity, _bid_row_from_marketplace_opportunity(opportunity, request=request), ""
+
+
+def _estimate_source_kwargs(source_type: str, source) -> dict:
+    normalized_type = _appointment_key(source_type, getattr(source, "id", None))[0]
+    if normalized_type == "lead":
+        return {"source_type": OpportunityEstimateAppointment.SOURCE_PUBLIC_LEAD, "public_lead": source}
+    if normalized_type == "intake":
+        return {"source_type": OpportunityEstimateAppointment.SOURCE_INTAKE, "project_intake": source}
+    return {"source_type": OpportunityEstimateAppointment.SOURCE_OPPORTUNITY, "contractor_opportunity": source}
+
+
+def _estimate_customer_message(appointment: OpportunityEstimateAppointment) -> str:
+    local_start = timezone.localtime(appointment.scheduled_start)
+    when = f"{local_start.strftime('%b')} {local_start.day}, {local_start.year} at {local_start.strftime('%I:%M %p').lstrip('0')}"
+    type_label = appointment.get_appointment_type_display().lower()
+    location = f" at {appointment.service_location}" if appointment.service_location and appointment.appointment_type == appointment.TYPE_IN_PERSON else ""
+    return (
+        f"Hi {appointment.customer_name or 'there'}, this confirms our {type_label} for "
+        f"{appointment.opportunity_title or 'your project'} on {when}{location}. "
+        "Please let me know if anything changes before then."
+    )
+
+
+class OpportunityEstimateAppointmentCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        source_type = _safe_text(request.data.get("source_type"))
+        source_id = request.data.get("source_id")
+        source, row, error = _resolve_estimate_source(contractor, source_type, source_id, request=request)
+        if error:
+            return Response({"detail": error}, status=status.HTTP_400_BAD_REQUEST)
+
+        customer_name = _safe_text(request.data.get("customer_name")) or _safe_text(row.get("customer_name"))
+        customer_email = _safe_text(request.data.get("customer_email")) or _safe_text(row.get("customer_email"))
+        customer_phone = _safe_text(request.data.get("customer_phone")) or _safe_text(row.get("customer_phone"))
+        service_location = _safe_text(request.data.get("service_location")) or _safe_text(row.get("location"))
+        appointment_type = _safe_text(request.data.get("appointment_type"))
+        scheduled_start_raw = _safe_text(request.data.get("scheduled_start"))
+        notes = _safe_text(request.data.get("notes"))
+
+        errors = {}
+        if not customer_name:
+            errors["customer_name"] = ["Customer name is required."]
+        if not customer_email and not customer_phone:
+            errors["contact"] = ["Customer email or phone is required."]
+        if appointment_type not in dict(OpportunityEstimateAppointment.TYPE_CHOICES):
+            errors["appointment_type"] = ["Choose phone_call, video_call, or in_person."]
+        if appointment_type == OpportunityEstimateAppointment.TYPE_IN_PERSON and not service_location:
+            errors["service_location"] = ["Service location is required for an in-person estimate."]
+
+        scheduled_start = parse_datetime(scheduled_start_raw) if scheduled_start_raw else None
+        if scheduled_start is None:
+            errors["scheduled_start"] = ["Scheduled start is required."]
+        elif timezone.is_naive(scheduled_start):
+            scheduled_start = timezone.make_aware(scheduled_start, timezone.get_current_timezone())
+
+        try:
+            duration_minutes = int(request.data.get("duration_minutes") or 60)
+        except (TypeError, ValueError):
+            duration_minutes = 0
+        if duration_minutes < 15 or duration_minutes > 480:
+            errors["duration_minutes"] = ["Duration must be between 15 and 480 minutes."]
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        appointment = OpportunityEstimateAppointment.objects.create(
+            contractor=contractor,
+            **_estimate_source_kwargs(source_type, source),
+            opportunity_title=_safe_text(row.get("project_title")),
+            opportunity_reference=_safe_text(row.get("source_reference")),
+            customer_name=customer_name,
+            customer_email=customer_email,
+            customer_phone=customer_phone,
+            service_location=service_location,
+            appointment_type=appointment_type,
+            scheduled_start=scheduled_start,
+            duration_minutes=duration_minutes,
+            notes=notes,
+            created_by=request.user,
+        )
+        message = _estimate_customer_message(appointment)
+        return Response(
+            {
+                "appointment": _serialize_estimate_appointment(appointment),
+                "source_summary": {
+                    "source_type": appointment.source_type,
+                    "source_id": appointment.public_lead_id or appointment.project_intake_id or appointment.contractor_opportunity_id,
+                    "project_title": appointment.opportunity_title,
+                    "reference": appointment.opportunity_reference,
+                },
+                "customer_message": message,
+            },
+            status=status.HTTP_201_CREATED,
         )
