@@ -97,6 +97,99 @@ function canSend(status) {
   return ["draft", "contractor_signed", "sent_to_homeowner"].includes(s);
 }
 
+function getAgreementId(er) {
+  return String(er?.agreement || er?.agreement_id || "");
+}
+
+function isEscrowAgreement(agreement) {
+  const values = [
+    agreement?.payment_model,
+    agreement?.payment_type,
+    agreement?.payment_method,
+    agreement?.funding_type,
+    agreement?.escrow_status,
+    agreement?.project?.payment_model,
+    agreement?.project?.payment_type,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return values.includes("escrow");
+}
+
+function isEscrowExpense(er, agreement) {
+  const kind = String(er?.request_kind || er?.funding_source || "").toLowerCase();
+  return kind.includes("escrow") || isEscrowAgreement(agreement);
+}
+
+function fundingSourceLabel(er, agreement) {
+  return isEscrowExpense(er, agreement) ? "Incidentals Reserve" : "Reimbursement";
+}
+
+function categoryLabel(v) {
+  const raw = String(v || "other").replaceAll("_", " ");
+  return raw.replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function expenseMerchant(er) {
+  return (
+    er?.merchant ||
+    er?.vendor ||
+    er?.supplier ||
+    er?.store_name ||
+    er?.description ||
+    "Unspecified merchant"
+  );
+}
+
+function submittedByLabel(er) {
+  return (
+    er?.submitted_by_name ||
+    er?.created_by_name ||
+    er?.contractor_name ||
+    er?.submitted_by?.full_name ||
+    er?.created_by?.full_name ||
+    "Contractor"
+  );
+}
+
+function hasReceipt(er) {
+  return Boolean(er?.receipt_url || er?.receipt || (Array.isArray(er?.attachments) && er.attachments.length));
+}
+
+function statusBucket(status) {
+  const s = normalizeStatus(status);
+  if (["homeowner_accepted", "approved", "paid", "released", "pending_release"].includes(s)) return "approved";
+  if (["homeowner_rejected", "denied", "cancelled"].includes(s)) return "rejected";
+  if (["draft", "submitted", "contractor_signed", "sent_to_homeowner", "held"].includes(s)) return "pending";
+  return s || "unknown";
+}
+
+function getReserveValue(agreement, names) {
+  for (const name of names) {
+    const value = agreement?.[name] ?? agreement?.project?.[name];
+    if (value !== undefined && value !== null && value !== "" && !Number.isNaN(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
+}
+
+function getAuditEvents(er) {
+  const events = [
+    ["Created", er?.created_at],
+    ["Submitted", er?.submitted_at],
+    ["Contractor signed", er?.contractor_signed_at],
+    ["Customer acted", er?.homeowner_acted_at],
+    ["Approved", er?.approved_at],
+    ["Denied", er?.denied_at],
+    ["Paid", er?.paid_at],
+    ["Released", er?.released_at],
+    ["Updated", er?.updated_at],
+  ].filter(([, at]) => Boolean(at));
+  return events;
+}
+
 async function tryGet(urls, config) {
   let lastErr = null;
   for (const u of urls) {
@@ -238,6 +331,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
 
   const [form, setForm] = useState({
     agreement: "",
+    category: "other",
     description: "",
     amount: "",
     incurred_date: todayISO(),
@@ -256,6 +350,9 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
     setForm((f) => ({ ...f, files: picked }));
   };
 
+  const selectedAgreement = agreements.find((a) => String(a.id) === String(form.agreement));
+  const selectedIsEscrow = isEscrowAgreement(selectedAgreement);
+
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!form.agreement) return toast.error("Please select an agreement.");
@@ -264,6 +361,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
 
     await onAdd({
       agreement: form.agreement,
+      category: form.category || "other",
+      request_kind: selectedIsEscrow ? "escrow_reimbursement" : "direct_expense",
       description: form.description.trim(),
       amount: Number(form.amount),
       incurred_date: form.incurred_date || todayISO(),
@@ -274,6 +373,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
 
     setForm({
       agreement: "",
+      category: "other",
       description: "",
       amount: "",
       incurred_date: todayISO(),
@@ -309,7 +409,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-3">
-        <label className={labelClass}>Description</label>
+        <label className={labelClass}>Merchant / Title</label>
         <input
           name="description"
           placeholder="Expense title (e.g., Nails, Dumpster fee)"
@@ -318,6 +418,22 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
           className={inputClass}
           required
         />
+      </div>
+
+      <div className="md:col-span-2">
+        <label className={labelClass}>Category</label>
+        <select
+          name="category"
+          value={form.category}
+          onChange={onChange}
+          className={inputClass}
+        >
+          <option value="materials">Materials</option>
+          <option value="permit">Permit</option>
+          <option value="rental">Rental</option>
+          <option value="delivery">Delivery</option>
+          <option value="other">Other</option>
+        </select>
       </div>
 
       <div className="md:col-span-2">
@@ -334,7 +450,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
         />
       </div>
 
-      <div className="md:col-span-3">
+      <div className="md:col-span-1">
         <label className={labelClass}>Expense Date</label>
         <input
           name="incurred_date"
@@ -378,15 +494,20 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-12 flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-4 sm:flex-row sm:items-center">
-        <label className="inline-flex min-h-[46px] items-center gap-2 rounded-xl border border-white/10 bg-slate-900/55 px-3 text-sm font-semibold text-sky-100/80">
-          <input
-            type="checkbox"
-            name="send_to_homeowner"
-            checked={!!form.send_to_homeowner}
-            onChange={onChange}
-          />
-          Sign & Send to Customer immediately
-        </label>
+        <div className="space-y-2">
+          <div className="inline-flex min-h-[34px] items-center rounded-full border border-white/10 bg-slate-900/55 px-3 text-xs font-bold uppercase tracking-wide text-sky-100/75">
+            Funding source: {selectedIsEscrow ? "Incidentals Reserve" : "Reimbursement"}
+          </div>
+          <label className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-white/10 bg-slate-900/55 px-3 text-sm font-semibold text-sky-100/80">
+            <input
+              type="checkbox"
+              name="send_to_homeowner"
+              checked={!!form.send_to_homeowner}
+              onChange={onChange}
+            />
+            Sign & Send to Customer immediately
+          </label>
+        </div>
 
         <button
           type="submit"
@@ -410,6 +531,12 @@ export default function ExpensesPage() {
   const [expenseRequests, setExpenseRequests] = useState([]);
 
   const [agreementFilter, setAgreementFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [fundingFilter, setFundingFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [merchantFilter, setMerchantFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
+  const [searchFilter, setSearchFilter] = useState("");
 
   const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [attachmentsLoading, setAttachmentsLoading] = useState(false);
@@ -743,6 +870,8 @@ export default function ExpensesPage() {
           description: form.description,
           amount: form.amount,
           incurred_date: form.incurred_date,
+          request_kind: form.request_kind || "direct_expense",
+          category: form.category || "other",
           notes_to_homeowner: form.notes_to_homeowner || "",
         }
       );
@@ -777,15 +906,114 @@ export default function ExpensesPage() {
     }
   };
 
+  const enrichedExpenses = useMemo(() => {
+    return (expenseRequests || []).map((er) => {
+      const aId = getAgreementId(er);
+      const agreement = agreementsMap.get(aId);
+      const fundingSource = fundingSourceLabel(er, agreement);
+      return {
+        ...er,
+        _agreement: agreement,
+        _agreementId: aId,
+        _projectTitle: projectFromExpenseRequest(er, agreementsMap),
+        _merchant: expenseMerchant(er),
+        _categoryLabel: categoryLabel(er.category),
+        _fundingSource: fundingSource,
+        _fundingKey: fundingSource === "Incidentals Reserve" ? "incidentals" : "reimbursement",
+        _statusBucket: statusBucket(er.status),
+        _submittedBy: submittedByLabel(er),
+        _hasReceipt: hasReceipt(er),
+      };
+    });
+  }, [expenseRequests, agreementsMap]);
+
   const filtered = useMemo(() => {
     const sel = String(agreementFilter || "");
-    if (!sel) return expenseRequests;
-    return (expenseRequests || []).filter((er) => String(er.agreement || er.agreement_id || "") === sel);
-  }, [expenseRequests, agreementFilter]);
+    const statusSel = String(statusFilter || "");
+    const fundingSel = String(fundingFilter || "");
+    const categorySel = String(categoryFilter || "");
+    const merchantSel = merchantFilter.trim().toLowerCase();
+    const searchSel = searchFilter.trim().toLowerCase();
+
+    return enrichedExpenses.filter((er) => {
+      if (sel && er._agreementId !== sel) return false;
+      if (statusSel && er._statusBucket !== statusSel) return false;
+      if (fundingSel && er._fundingKey !== fundingSel) return false;
+      if (categorySel && String(er.category || "other") !== categorySel) return false;
+      if (dateFilter && String(er.incurred_date || "").slice(0, 10) !== dateFilter) return false;
+      if (merchantSel && !er._merchant.toLowerCase().includes(merchantSel)) return false;
+      if (searchSel) {
+        const haystack = [
+          er._merchant,
+          er.description,
+          er.notes_to_homeowner,
+          er._projectTitle,
+          er._fundingSource,
+          er._categoryLabel,
+          er.status_label,
+          er.status,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(searchSel)) return false;
+      }
+      return true;
+    });
+  }, [
+    agreementFilter,
+    categoryFilter,
+    dateFilter,
+    enrichedExpenses,
+    fundingFilter,
+    merchantFilter,
+    searchFilter,
+    statusFilter,
+  ]);
 
   const totalAmount = useMemo(() => {
     return (filtered || []).reduce((s, x) => s + Number(x.amount || 0), 0);
   }, [filtered]);
+
+  const dashboard = useMemo(() => {
+    const all = enrichedExpenses;
+    const pending = all.filter((x) => x._statusBucket === "pending");
+    const approved = all.filter((x) => x._statusBucket === "approved");
+    const rejected = all.filter((x) => x._statusBucket === "rejected");
+    const incidentals = all.filter((x) => x._fundingKey === "incidentals");
+    const incidentalsSpent = incidentals.reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const escrowAgreements = agreements.filter((a) => isEscrowAgreement(a));
+    const configuredReserve = escrowAgreements.reduce((sum, a) => {
+      const value = getReserveValue(a, [
+        "incidentals_reserve_original",
+        "incidentals_reserve_amount",
+        "incidentals_reserve",
+        "incidentals_budget",
+        "escrow_incidentals_reserve",
+      ]);
+      return sum + Number(value || 0);
+    }, 0);
+    return {
+      totalSpent: all.reduce((sum, x) => sum + Number(x.amount || 0), 0),
+      pendingReimbursements: pending.filter((x) => x._fundingKey === "reimbursement").length,
+      approvedExpenses: approved.length,
+      rejectedExpenses: rejected.length,
+      incidentalsSpent,
+      originalReserve: configuredReserve || null,
+      remainingReserve: configuredReserve ? Math.max(configuredReserve - incidentalsSpent, 0) : null,
+      hasEscrowProjects: escrowAgreements.length > 0 || incidentals.length > 0,
+    };
+  }, [agreements, enrichedExpenses]);
+
+  const clearFilters = () => {
+    setAgreementFilter("");
+    setStatusFilter("");
+    setFundingFilter("");
+    setCategoryFilter("");
+    setMerchantFilter("");
+    setDateFilter("");
+    setSearchFilter("");
+  };
 
   if (!enabled) {
     return (
@@ -805,18 +1033,68 @@ export default function ExpensesPage() {
     <ContractorPageSurface
       eyebrow="Business"
       title="Expenses"
-      subtitle="Track customer-facing expense requests, receipts, and resend status from one cleaner workspace."
+      subtitle="Review project expense activity across reimbursements and escrow incidentals without changing payment behavior."
       variant="operational"
       actions={
         <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1.5 text-sm font-semibold text-sky-100/80">
-          Total:&nbsp;<span className="font-semibold">{toMoney(totalAmount)}</span>
+          Filtered:&nbsp;<span className="font-semibold">{toMoney(totalAmount)}</span>
         </div>
       }
     >
       <div className="space-y-6">
+      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6" data-testid="expenses-summary">
+        {[
+          ["Pending Reimbursements", dashboard.pendingReimbursements],
+          ["Approved Expenses", dashboard.approvedExpenses],
+          ["Rejected Expenses", dashboard.rejectedExpenses],
+          ["Total Spent", toMoney(dashboard.totalSpent)],
+          ["Original Reserve", dashboard.originalReserve !== null ? toMoney(dashboard.originalReserve) : "Not configured"],
+          ["Remaining Reserve", dashboard.remainingReserve !== null ? toMoney(dashboard.remainingReserve) : "Not configured"],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm">
+            <div className="text-xs font-bold uppercase tracking-wide text-sky-100/60">{label}</div>
+            <div className="mt-2 text-2xl font-bold text-white">{value}</div>
+          </div>
+        ))}
+      </section>
+
+      <section className="rounded-2xl border border-white/10 bg-slate-950/45 p-5 shadow-sm" data-testid="incidentals-reserve-panel">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-lg font-bold text-white">Incidentals Reserve</div>
+            <p className="mt-1 max-w-3xl text-sm text-sky-100/70">
+              Escrow incidentals are tracked as a separate project budget bucket. Unused reserve refunding is future behavior and is not applied here.
+            </p>
+          </div>
+          <div className="grid min-w-[260px] grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-white/10 p-3">
+              <div className="text-[11px] font-bold uppercase text-sky-100/55">Original</div>
+              <div className="text-sm font-bold text-white">{dashboard.originalReserve !== null ? toMoney(dashboard.originalReserve) : "--"}</div>
+            </div>
+            <div className="rounded-xl bg-white/10 p-3">
+              <div className="text-[11px] font-bold uppercase text-sky-100/55">Spent</div>
+              <div className="text-sm font-bold text-white">{toMoney(dashboard.incidentalsSpent)}</div>
+            </div>
+            <div className="rounded-xl bg-white/10 p-3">
+              <div className="text-[11px] font-bold uppercase text-sky-100/55">Remaining</div>
+              <div className="text-sm font-bold text-white">{dashboard.remainingReserve !== null ? toMoney(dashboard.remainingReserve) : "--"}</div>
+            </div>
+          </div>
+        </div>
+        {dashboard.hasEscrowProjects && dashboard.originalReserve === null ? (
+          <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-400/10 px-4 py-3 text-sm font-semibold text-amber-100">
+            No Incidentals Reserve has been configured.
+          </div>
+        ) : null}
+        {!dashboard.hasEscrowProjects ? (
+          <div className="mt-4 rounded-xl border border-sky-300/20 bg-sky-400/10 px-4 py-3 text-sm text-sky-100/75">
+            Direct-pay projects continue to use the existing reimbursement request workflow.
+          </div>
+        ) : null}
+      </section>
       <div>
         <div className="text-sm text-sky-100/70">
-          Unified on Expense Requests with multiple receipts/photos. Resend supported.
+          Create direct-pay reimbursement requests or escrow incidentals using the existing expense request workflow.
         </div>
       </div>
 
@@ -855,18 +1133,136 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-white/10 bg-slate-950/35">
+      <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-7" data-testid="expenses-filters">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+        </select>
+        <select value={fundingFilter} onChange={(e) => setFundingFilter(e.target.value)} className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60">
+          <option value="">All funding</option>
+          <option value="incidentals">Incidentals Reserve</option>
+          <option value="reimbursement">Reimbursement</option>
+        </select>
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60">
+          <option value="">All categories</option>
+          <option value="materials">Materials</option>
+          <option value="permit">Permit</option>
+          <option value="rental">Rental</option>
+          <option value="delivery">Delivery</option>
+          <option value="other">Other</option>
+        </select>
+        <input value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} type="date" className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60" />
+        <input value={merchantFilter} onChange={(e) => setMerchantFilter(e.target.value)} placeholder="Merchant" className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/45 focus:border-sky-300/60" />
+        <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Search notes, project, receipt" className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/45 focus:border-sky-300/60 xl:col-span-2" />
+        <button type="button" onClick={clearFilters} className="min-h-[42px] rounded-xl border border-white/16 bg-slate-900/70 px-3.5 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15">
+          Clear filters
+        </button>
+      </div>
+
+      <div className="mb-3 text-xs font-semibold text-sky-100/60">
+        Active filters: {[agreementFilter && "Project", statusFilter && "Status", fundingFilter && "Funding", categoryFilter && "Category", dateFilter && "Date", merchantFilter && "Merchant", searchFilter && "Search"].filter(Boolean).join(", ") || "None"}
+      </div>
+
+      <div className="space-y-3" data-testid="expenses-ledger">
+        {loading ? (
+          <div className="rounded-2xl border border-white/10 bg-slate-950/35 px-6 py-10 text-center text-sky-100/65">
+            Loading expenses...
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-white/14 bg-slate-950/35 px-6 py-10 text-center text-sm text-sky-100/70">
+            {enrichedExpenses.length
+              ? "No expenses match the current filters."
+              : "No expenses recorded yet. Direct-pay projects can request reimbursement, and escrow projects can charge approved incidentals against the reserve."}
+          </div>
+        ) : (
+          filtered.map((er, idx) => {
+            const status = er.status || "--";
+            const receiptUrl = er.receipt_url || er.attachments?.[0]?.url || null;
+            return (
+              <div key={er.id || idx} className="grid gap-4 rounded-2xl border border-white/10 bg-white/8 p-4 text-sky-100/78 lg:grid-cols-[1.5fr_0.85fr_0.75fr_0.85fr_0.9fr_1fr_auto] lg:items-center">
+                <div>
+                  <button type="button" onClick={() => openModal(er)} className="text-left">
+                    <div className="text-base font-bold text-white">{er._merchant}</div>
+                    <div className="mt-1 text-xs text-sky-100/55">{er._projectTitle}</div>
+                  </button>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-sky-100/50">Category</div>
+                  <div className="mt-1 font-semibold text-sky-50">{er._categoryLabel}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-sky-100/50">Amount</div>
+                  <div className="mt-1 font-bold text-white">{toMoney(er.amount)}</div>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-sky-100/50">Status</div>
+                  <span className={`mt-1 inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusPillClasses(status)}`}>
+                    {statusLabel(status)}
+                  </span>
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-sky-100/50">Receipt</div>
+                  {receiptUrl ? (
+                    <a className="mt-1 inline-flex font-semibold text-sky-200 underline decoration-sky-300/50 underline-offset-2" href={receiptUrl} target="_blank" rel="noreferrer">
+                      Open
+                    </a>
+                  ) : er._hasReceipt ? (
+                    <div className="mt-1 font-semibold text-sky-100/70">Attached</div>
+                  ) : (
+                    <div className="mt-1 text-sky-100/45">Missing</div>
+                  )}
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-sky-100/50">Submitted / Funding</div>
+                  <div className="mt-1 font-semibold text-sky-50">{er._submittedBy}</div>
+                  <div className="mt-1 text-xs text-sky-100/60">{er.incurred_date || "--"}</div>
+                  <span className="mt-2 inline-flex rounded-full border border-white/12 bg-white/10 px-2.5 py-1 text-xs font-bold text-sky-100">
+                    {er._fundingSource}
+                  </span>
+                </div>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <label className="cursor-pointer rounded-lg border border-white/16 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/15">
+                    Upload
+                    <input type="file" multiple className="hidden" accept="image/*,.pdf" onChange={(evt) => handleUpload(er, evt)} />
+                  </label>
+                  <button type="button" onClick={() => openModal(er)} className="rounded-lg border border-white/16 bg-slate-900/70 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/15">
+                    View
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canSend(status)}
+                    onClick={() => {
+                      openModal(er);
+                      setTimeout(() => handleSendOrResend(er), 0);
+                    }}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold text-white ${canSend(status) ? "border border-sky-300/40 bg-sky-500/80 hover:bg-sky-400/80" : "cursor-not-allowed border border-white/10 bg-slate-700 text-sky-100/45"}`}
+                  >
+                    {sendButtonLabel(status)}
+                  </button>
+                  <button type="button" onClick={() => handleDeleteExpenseRequest(er.id)} className="rounded-lg border border-rose-300/35 bg-rose-500/10 px-3 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/18">
+                    Delete
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-xl border border-white/10 bg-slate-950/35">
         <table className="min-w-[1150px] w-full text-sm">
           <thead className="bg-white/8 text-sky-100/75">
             <tr>
-              <th className="px-3 py-2 text-left">Created</th>
-              <th className="px-3 py-2 text-left">Agreement</th>
-              <th className="px-3 py-2 text-left">Project</th>
-              <th className="px-3 py-2 text-left">Description</th>
+              <th className="px-3 py-2 text-left">Merchant</th>
+              <th className="px-3 py-2 text-left">Category</th>
               <th className="px-3 py-2 text-right">Amount</th>
-              <th className="px-3 py-2 text-left">Expense Date</th>
               <th className="px-3 py-2 text-left">Status</th>
               <th className="px-3 py-2 text-left">Receipt</th>
+              <th className="px-3 py-2 text-left">Submitted By</th>
+              <th className="px-3 py-2 text-left">Date</th>
+              <th className="px-3 py-2 text-left">Funding Source</th>
               <th className="px-3 py-2 text-right">Actions</th>
             </tr>
           </thead>
@@ -1008,18 +1404,28 @@ export default function ExpensesPage() {
               const projectTitle = projectFromExpenseRequest(activeExpense, agreementsMap);
               const status = activeExpense.status || "—";
               const createdAt = activeExpense.created_at || null;
+              const fundingSource = fundingSourceLabel(activeExpense, a);
+              const merchant = expenseMerchant(activeExpense);
               const incurred = activeExpense.incurred_date || "—";
 
               return (
                 <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                     <div>
-                      <div className="text-lg font-semibold text-gray-900">{activeExpense.description || "—"}</div>
+                      <div className="text-lg font-semibold text-gray-900">{merchant}</div>
                       <div className="text-sm text-gray-700 mt-1">
                         Amount: <span className="font-semibold">{toMoney(activeExpense.amount)}</span>
                       </div>
 
                       <div className="text-xs text-gray-600 mt-2 space-y-1">
+                        <div>
+                          <span className="text-gray-500">Category:</span>{" "}
+                          <span className="font-semibold">{categoryLabel(activeExpense.category)}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Funding Source:</span>{" "}
+                          <span className="font-semibold">{fundingSource}</span>
+                        </div>
                         <div>
                           <span className="text-gray-500">Agreement:</span>{" "}
                           <span className="font-semibold">{agreementText}</span>
@@ -1056,9 +1462,9 @@ export default function ExpensesPage() {
               );
             })()}
 
-            {/* Timeline */}
+            {/* Audit history */}
             <div className="rounded-xl border border-gray-200 bg-white p-4">
-              <div className="text-sm font-semibold text-gray-900 mb-2">Timeline</div>
+              <div className="text-sm font-semibold text-gray-900 mb-2">Audit History</div>
               <div className="text-sm text-gray-700 space-y-1">
                 <div>• Created: {prettyDT(activeExpense.created_at)}</div>
                 {activeExpense.contractor_signed_at ? (
