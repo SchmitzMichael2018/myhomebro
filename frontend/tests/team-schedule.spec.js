@@ -144,6 +144,9 @@ test("team schedule shows daily operations board and filters employees", async (
   await expect(page.getByTestId("team-schedule-employee-card-1")).toContainText("Painting - Skilled");
   await expect(page.getByTestId("team-schedule-employee-card-1")).toContainText("Employee Supervisor");
   await expect(page.getByTestId("team-schedule-employee-card-2")).toContainText("Available");
+  await expect(page.getByTestId("team-schedule-pagination")).toContainText("Showing 1-2 of 2 employees");
+  await expect(page.getByTestId("team-schedule-prev-page")).toBeDisabled();
+  await expect(page.getByTestId("team-schedule-next-page")).toBeDisabled();
 
   await page.getByTestId("team-schedule-capability-filter").selectOption("20");
   await expect(page.getByTestId("team-schedule-filter-summary")).toContainText("Plumbing");

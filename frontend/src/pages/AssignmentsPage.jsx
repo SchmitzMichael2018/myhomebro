@@ -1,4 +1,4 @@
-﻿// frontend/src/pages/AssignmentsPage.jsx
+// frontend/src/pages/AssignmentsPage.jsx
 // v2026-01-09 â€” Assignments Option A (ROW DENSITY UPDATE)
 // Goal: compact row layout so it scales cleanly to 10+ agreements (no big blocks)
 // v2026-02-09 â€” remove "UI v2026-01-09 (Row Density)" label
@@ -558,7 +558,7 @@ export default function AssignmentsPage() {
       }
 
       await assignAgreementToSubaccount(agreementId, Number(subId));
-      toast.success("Owner assigned.");
+      toast.success("Project supervisor assigned.");
 
       try {
         const stA = await fetchAgreementAssignmentStatus(agreementId);
@@ -584,7 +584,7 @@ export default function AssignmentsPage() {
     setBusy(true);
     try {
       await unassignAgreementFromSubaccount(agreementId, Number(subId));
-      toast.success("Owner removed.");
+      toast.success("Project supervisor removed.");
 
       try {
         const stA = await fetchAgreementAssignmentStatus(agreementId);
@@ -601,7 +601,7 @@ export default function AssignmentsPage() {
   }
 
   async function confirmRemoveOwner(agreementId, agreementTitle, ownerName) {
-    const message = `Remove project owner?\nThis will remove ${ownerName} as the project owner for ${agreementTitle}. It will not change milestone assignments.`;
+    const message = `Remove project supervisor?\nThis will remove ${ownerName} as the project supervisor for ${agreementTitle}. It will not change milestone assignments.`;
     if (typeof window !== "undefined" && !window.confirm(message)) return;
     const ok = await unassignAgreement(agreementId);
     if (ok) closeOwnerEditor(agreementId);
@@ -725,7 +725,7 @@ export default function AssignmentsPage() {
     <ContractorPageSurface
       eyebrow="Team"
       title="Assignments"
-      subtitle="Assign project ownership and milestone work without leaving the operational console."
+      subtitle="Assign project supervisors and milestone work without leaving the operational console."
       variant="operational"
       className="max-w-[1680px]"
       contentClassName="w-full"
@@ -739,7 +739,7 @@ export default function AssignmentsPage() {
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Workforce Operations</div>
             <h2 className="mt-2 text-2xl font-bold">Assignment health dashboard</h2>
             <p className="mt-2 text-sm leading-6 text-slate-200">
-              Scan agreement ownership, milestone coverage, review pressure, and overdue work from one operational view.
+              Scan agreement supervision, milestone coverage, review pressure, and overdue work from one operational view.
             </p>
           </div>
           <Btn tone="secondary" onClick={loadAll} disabled={busy || loading} title="Reload">
@@ -848,7 +848,7 @@ export default function AssignmentsPage() {
             const ownerId = assignees[0]?.id ? String(assignees[0].id) : "";
             const ownerLine = summary.hasOwner
               ? `${summary.ownerName}${summary.ownerRole ? ` • ${summary.ownerRole}` : ""}`
-              : "No owner";
+              : "No project supervisor";
             const assignedPct = summary.totalMilestones
               ? Math.round((summary.assignedMilestonesCount / summary.totalMilestones) * 100)
               : 0;
@@ -929,7 +929,7 @@ export default function AssignmentsPage() {
                     </div>
 
                     <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                      <span className="font-semibold text-slate-800">Owner:</span> {ownerLine}
+                      <span className="font-semibold text-slate-800">Project Supervisor:</span> {ownerLine}
                     </div>
                   </div>
 
@@ -948,10 +948,10 @@ export default function AssignmentsPage() {
                       tone="secondary"
                       onClick={() => openOwnerEditor(agreementId, ownerId)}
                       disabled={busy}
-                      title={summary.hasOwner ? "Change project owner" : "Assign project owner"}
+                      title={summary.hasOwner ? "Change project supervisor" : "Assign project supervisor"}
                       data-testid={`assignment-owner-button-${agreementId}`}
                     >
-                      {summary.hasOwner ? "Change Owner" : "Assign Owner"}
+                      {summary.hasOwner ? "Change Supervisor" : "Assign Supervisor"}
                     </Btn>
 
                     {summary.hasOwner ? (
@@ -959,10 +959,10 @@ export default function AssignmentsPage() {
                         tone="secondary"
                         onClick={() => confirmRemoveOwner(agreementId, title, summary.ownerName)}
                         disabled={busy}
-                        title="Remove project owner"
+                        title="Remove project supervisor"
                         data-testid={`assignment-remove-owner-button-${agreementId}`}
                       >
-                        Remove Owner
+                        Remove Supervisor
                       </Btn>
                     ) : null}
                   </div>
@@ -975,12 +975,12 @@ export default function AssignmentsPage() {
                   >
                     <div className="flex flex-col gap-3">
                       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Project Owner / Supervisor
+                        Project Supervisor
                       </div>
                       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                         <div className="min-w-0">
                           <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                            Select owner / supervisor
+                            Select project supervisor
                           </label>
                           <select
                             value={selectedEmployee[String(agreementId)] || ""}
@@ -991,7 +991,7 @@ export default function AssignmentsPage() {
                             }}
                             disabled={busy}
                             className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm"
-                            title="Select owner or supervisor"
+                            title="Select project supervisor"
                             data-testid={`assignment-owner-select-${agreementId}`}
                           >
                             <option value="">— Select —</option>
@@ -1010,7 +1010,7 @@ export default function AssignmentsPage() {
                               if (ok) closeOwnerEditor(agreementId);
                             }}
                             disabled={busy || !selectedEmployee[String(agreementId)]}
-                            title={summary.hasOwner ? "Change project owner" : "Assign project owner"}
+                            title={summary.hasOwner ? "Change project supervisor" : "Assign project supervisor"}
                           >
                             Save
                           </Btn>
@@ -1052,5 +1052,3 @@ export default function AssignmentsPage() {
     </ContractorPageSurface>
   );
 }
-
-

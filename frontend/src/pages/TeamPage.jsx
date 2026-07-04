@@ -100,7 +100,7 @@ function CapabilityChips({ capabilities = [], limit = 3 }) {
   if (!capabilities.length) {
     return (
       <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-        No trade capabilities listed yet.
+        No trade capabilities assigned. Manage this employee profile to add trade skills.
       </div>
     );
   }
@@ -681,6 +681,14 @@ export default function TeamPage() {
                     </div>
 
                     <div className="flex flex-wrap gap-2 xl:max-w-[240px] xl:justify-end">
+                      <button
+                        onClick={() => navigate(`/app/employee/profile?subaccount=${sub.id}`)}
+                        className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
+                        type="button"
+                        data-testid={`team-member-manage-${sub.id}`}
+                      >
+                        Manage Employee
+                      </button>
                       <button
                         onClick={() => navigate(`/app/team/assignments?subaccount=${sub.id}`)}
                         className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"

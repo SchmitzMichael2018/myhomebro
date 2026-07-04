@@ -139,6 +139,8 @@ export default function TeamSchedule() {
   const [capabilityFilter, setCapabilityFilter] = useState("");
   const [workFilter, setWorkFilter] = useState("all");
   const [rangeDays, setRangeDays] = useState("7");
+  const [employeePage, setEmployeePage] = useState(1);
+  const [employeePageSize, setEmployeePageSize] = useState(20);
 
   const [exDate, setExDate] = useState("");
   const [exIsWorking, setExIsWorking] = useState(false);
@@ -283,6 +285,17 @@ export default function TeamSchedule() {
       return capabilityMatches && workMatches;
     });
   }, [capabilityFilter, subs, workFilter]);
+
+  useEffect(() => {
+    setEmployeePage(1);
+  }, [capabilityFilter, workFilter]);
+
+  const totalEmployeePages = Math.max(Math.ceil(filteredEmployees.length / employeePageSize), 1);
+  const safeEmployeePage = Math.min(employeePage, totalEmployeePages);
+  const pagedEmployees = filteredEmployees.slice(
+    (safeEmployeePage - 1) * employeePageSize,
+    safeEmployeePage * employeePageSize
+  );
 
   const todayWorking = Boolean(selectedId && schedule?.[dayFieldForDate(new Date())]);
   const availableCount = subs.filter((sub) => Number(sub.active_assignment_count || 0) === 0).length;
@@ -496,7 +509,7 @@ export default function TeamSchedule() {
             </label>
           </div>
           <div className="mt-3 rounded-xl border border-white/10 bg-slate-900/45 px-3 py-2 text-sm text-sky-100/75" data-testid="team-schedule-filter-summary">
-            Showing {filteredEmployees.length} of {subs.length} employees | {activeFilterSummary}
+            Showing {Math.min(safeEmployeePage * employeePageSize, filteredEmployees.length)} of {filteredEmployees.length} employees | {activeFilterSummary}
           </div>
         </section>
 
@@ -508,7 +521,7 @@ export default function TeamSchedule() {
               No employees match these filters.
             </div>
           ) : (
-            filteredEmployees.map((employee) => {
+            pagedEmployees.map((employee) => {
               const isSelected = String(employee.id) === String(selectedId);
               const activeCount = Number(employee.active_assignment_count || 0);
               const reviewCount = Number(employee.pending_review_count || 0);
@@ -551,7 +564,50 @@ export default function TeamSchedule() {
           )}
         </section>
 
-        <div className="hidden">
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/12 bg-slate-950/45 p-3 text-sm text-sky-100/75 sm:flex-row sm:items-center sm:justify-between" data-testid="team-schedule-pagination">
+          <div>
+            Showing {pagedEmployees.length ? (safeEmployeePage - 1) * employeePageSize + 1 : 0}-
+            {Math.min(safeEmployeePage * employeePageSize, filteredEmployees.length)} of {filteredEmployees.length} employees
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2">
+              <span>Page size</span>
+              <select
+                value={employeePageSize}
+                onChange={(event) => {
+                  setEmployeePageSize(Number(event.target.value));
+                  setEmployeePage(1);
+                }}
+                className="mhb-operational-control rounded-lg px-2 py-1"
+                data-testid="team-schedule-page-size"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={() => setEmployeePage((page) => Math.max(page - 1, 1))}
+              disabled={safeEmployeePage <= 1}
+              className="mhb-operational-filter-chip rounded-lg px-3 py-1.5 font-semibold disabled:opacity-50"
+              data-testid="team-schedule-prev-page"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              onClick={() => setEmployeePage((page) => Math.min(page + 1, totalEmployeePages))}
+              disabled={safeEmployeePage >= totalEmployeePages}
+              className="mhb-operational-filter-chip rounded-lg px-3 py-1.5 font-semibold disabled:opacity-50"
+              data-testid="team-schedule-next-page"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+
+      <div className="hidden">
         <div>
           <div className="text-sm font-semibold text-sky-100/75">
             Set weekly work days (Sun–Sat), add exceptions, and see the assigned work tied to the selected employee.

@@ -126,6 +126,7 @@ export default function SubcontractorsPage() {
   const [assignMilestonesLoading, setAssignMilestonesLoading] = useState(false);
   const [assignDecision, setAssignDecision] = useState(null);
   const [assignOverrideReason, setAssignOverrideReason] = useState("");
+  const [inviteSearch, setInviteSearch] = useState("");
   const [inviteForm, setInviteForm] = useState({
     agreement_id: "",
     invite_name: "",
@@ -241,6 +242,18 @@ export default function SubcontractorsPage() {
       }),
     [assignmentRows, invitationRows, submissionRows]
   );
+
+  const inviteSearchResults = useMemo(() => {
+    const q = String(inviteSearch || "").trim().toLowerCase();
+    return directoryRows
+      .filter((row) => {
+        if (!q) return true;
+        return [row.display_name, row.email, row.status]
+          .map((value) => String(value || "").toLowerCase())
+          .some((value) => value.includes(q));
+      })
+      .slice(0, 6);
+  }, [directoryRows, inviteSearch]);
 
   const acceptedInvitesForAgreement = useMemo(
     () =>
@@ -746,7 +759,11 @@ export default function SubcontractorsPage() {
           subtitle="Invite a subcontractor to collaborate on one agreement."
           onClose={() => setInviteOpen(false)}
         >
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2" data-testid="subcontractors-invite-modal">
+            <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 1</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">Select Agreement</div>
+            </div>
             <select
               value={inviteForm.agreement_id}
               onChange={(e) =>
@@ -761,6 +778,51 @@ export default function SubcontractorsPage() {
                 </option>
               ))}
             </select>
+            <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-white p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Step 2</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">Search existing subcontractors</div>
+              <p className="mt-1 text-xs text-slate-500">
+                Choose a preferred or previously used subcontractor, search your directory, or enter a manual invite below.
+              </p>
+              <input
+                value={inviteSearch}
+                onChange={(event) => setInviteSearch(event.target.value)}
+                className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Search preferred, previously used, or marketplace directory"
+                data-testid="subcontractors-invite-search"
+              />
+              <div className="mt-3 grid gap-2">
+                {inviteSearchResults.length ? inviteSearchResults.map((row) => (
+                  <button
+                    key={row.key || row.email}
+                    type="button"
+                    onClick={() => {
+                      setInviteForm((prev) => ({
+                        ...prev,
+                        invite_name: row.display_name || "",
+                        invite_email: row.email || "",
+                      }));
+                    }}
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm hover:bg-slate-100"
+                    data-testid={`subcontractors-invite-existing-${row.key || row.subcontractor_user_id || row.email}`}
+                  >
+                    <span className="font-semibold text-slate-900">{row.display_name || row.email}</span>
+                    <span className="ml-2 text-xs text-slate-500">{row.email}</span>
+                    <span className="ml-2 rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800">
+                      {Number(row.agreements_count || 0) > 0 ? "Previously used" : "Directory"}
+                    </span>
+                  </button>
+                )) : (
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                    No directory match. Use manual invite by name and email below.
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="sm:col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Manual invite</div>
+              <div className="mt-1 text-sm text-slate-600">Use this when no existing subcontractor is selected.</div>
+            </div>
             <input
               value={inviteForm.invite_name}
               onChange={(e) =>
@@ -1031,4 +1093,5 @@ export default function SubcontractorsPage() {
       ) : null}
     </ContractorPageSurface>
   );
+
 }
