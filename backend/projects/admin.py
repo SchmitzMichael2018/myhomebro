@@ -63,6 +63,12 @@ except Exception:  # pragma: no cover
     AgreementAttachment = None  # type: ignore
 
 try:
+    from .models_contractor_discovery import ContractorEstimateAvailabilityWindow, OpportunityEstimateAppointment  # type: ignore
+except Exception:  # pragma: no cover
+    ContractorEstimateAvailabilityWindow = None  # type: ignore
+    OpportunityEstimateAppointment = None  # type: ignore
+
+try:
     from .models_ai_artifacts import DisputeAIArtifact  # type: ignore
 except Exception:  # pragma: no cover
     DisputeAIArtifact = None  # type: ignore
@@ -336,6 +342,34 @@ if DeferredSMSAutomation is not None:
 # ─────────────────────────────────────────────────────────────
 # Project Intake
 # ─────────────────────────────────────────────────────────────
+if OpportunityEstimateAppointment is not None:
+    @admin.register(OpportunityEstimateAppointment)
+    class OpportunityEstimateAppointmentAdmin(admin.ModelAdmin):
+        list_display = (
+            "id",
+            "contractor",
+            "source_type",
+            "status",
+            "requested_by",
+            "appointment_type",
+            "scheduled_start",
+            "duration_minutes",
+            "customer_name",
+        )
+        list_filter = ("status", "requested_by", "appointment_type", "source_type", "scheduled_start")
+        search_fields = ("customer_name", "customer_email", "customer_phone", "opportunity_title", "opportunity_reference")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ContractorEstimateAvailabilityWindow is not None:
+    @admin.register(ContractorEstimateAvailabilityWindow)
+    class ContractorEstimateAvailabilityWindowAdmin(admin.ModelAdmin):
+        list_display = ("id", "contractor", "weekday", "start_time", "end_time", "timezone", "appointment_type", "duration_minutes", "is_active")
+        list_filter = ("is_active", "weekday", "appointment_type", "timezone")
+        search_fields = ("contractor__business_name", "contractor__user__email", "notes")
+        readonly_fields = ("created_at", "updated_at")
+
+
 if ProjectIntake is not None:
     @admin.register(ProjectIntake)
     class ProjectIntakeAdmin(admin.ModelAdmin):

@@ -17,6 +17,7 @@ from .models_dispute import Dispute, DisputeAttachment
 from .models_invite import ContractorInvite  # noqa: F401
 from .models_contractor_discovery import (  # noqa: F401
     ContractorDirectoryDiscovery,
+    ContractorEstimateAvailabilityWindow,
     ContractorDirectoryClaimToken,
     ContractorDirectoryEntry,
     ContractorDirectoryListing,

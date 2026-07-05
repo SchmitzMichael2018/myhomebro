@@ -98,6 +98,13 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
         "scheduled_start": _format_datetime(appointment.scheduled_start),
         "duration_minutes": appointment.duration_minutes,
         "notes": appointment.notes,
+        "requested_by": appointment.requested_by,
+        "timezone": appointment.timezone,
+        "confirmed_at": _format_datetime(appointment.confirmed_at),
+        "declined_at": _format_datetime(appointment.declined_at),
+        "decline_reason": appointment.decline_reason,
+        "proposed_start": _format_datetime(appointment.proposed_start),
+        "customer_message": appointment.customer_message,
         "customer_name": appointment.customer_name,
         "customer_email": appointment.customer_email,
         "customer_phone": appointment.customer_phone,
@@ -1462,9 +1469,13 @@ class OpportunityEstimateAppointmentCreateView(APIView):
             scheduled_start=scheduled_start,
             duration_minutes=duration_minutes,
             notes=notes,
+            requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
+            timezone=_safe_text(request.data.get("timezone")) or "America/Chicago",
             created_by=request.user,
         )
         message = _estimate_customer_message(appointment)
+        appointment.customer_message = message
+        appointment.save(update_fields=["customer_message", "updated_at"])
         return Response(
             {
                 "appointment": _serialize_estimate_appointment(appointment),

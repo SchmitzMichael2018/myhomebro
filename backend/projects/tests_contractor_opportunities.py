@@ -1,13 +1,16 @@
 from unittest.mock import patch
+from datetime import time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models import Agreement, Contractor, Homeowner, Notification
 from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
+    ContractorEstimateAvailabilityWindow,
     ContractorOpportunity,
     OpportunityEstimateAppointment,
 )
@@ -470,6 +473,10 @@ class ContractorOpportunityFlowTests(TestCase):
         appointment = OpportunityEstimateAppointment.objects.get()
         self.assertEqual(appointment.contractor, self.contractor)
         self.assertEqual(appointment.contractor_opportunity, opportunity)
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_SCHEDULED)
+        self.assertEqual(appointment.requested_by, OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR)
+        self.assertEqual(appointment.timezone, "America/Chicago")
+        self.assertIn("Concrete Patio Extension", appointment.customer_message)
         self.assertEqual(appointment.customer_email, "casey@example.com")
         self.assertEqual(appointment.customer_phone, "512-555-2222")
         self.assertEqual(appointment.service_location, "123 Main St\nAustin, TX, 78701")
@@ -485,6 +492,71 @@ class ContractorOpportunityFlowTests(TestCase):
             list_response.data["results"][0]["latest_estimate_appointment"]["id"],
             appointment.id,
         )
+        self.assertEqual(
+            list_response.data["results"][0]["latest_estimate_appointment"]["requested_by"],
+            OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
+        )
+
+    def test_estimate_availability_window_model_defaults(self):
+        window = ContractorEstimateAvailabilityWindow.objects.create(
+            contractor=self.contractor,
+            weekday=ContractorEstimateAvailabilityWindow.WEEKDAY_TUESDAY,
+            start_time=time(9, 0),
+            end_time=time(12, 0),
+        )
+
+        self.assertEqual(window.timezone, "America/Chicago")
+        self.assertEqual(window.appointment_type, OpportunityEstimateAppointment.TYPE_IN_PERSON)
+        self.assertEqual(window.duration_minutes, 60)
+        self.assertTrue(window.is_active)
+        self.assertEqual(str(window), f"Estimate availability #{window.pk} for contractor {self.contractor.id}")
+
+    def test_customer_requested_estimate_appointment_state_fields(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        requested_start = timezone.now() + timedelta(days=3)
+        proposed_start = requested_start + timedelta(days=1)
+
+        appointment = OpportunityEstimateAppointment.objects.create(
+            contractor=self.contractor,
+            source_type=OpportunityEstimateAppointment.SOURCE_OPPORTUNITY,
+            contractor_opportunity=opportunity,
+            opportunity_title="Concrete Patio Extension",
+            customer_name="Casey Homeowner",
+            customer_email="casey@example.com",
+            appointment_type=OpportunityEstimateAppointment.TYPE_PHONE,
+            scheduled_start=requested_start,
+            duration_minutes=45,
+            status=OpportunityEstimateAppointment.STATUS_REQUESTED,
+            requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CUSTOMER,
+            timezone="America/Chicago",
+            proposed_start=proposed_start,
+            customer_message="I prefer this estimate time.",
+        )
+
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_REQUESTED)
+        self.assertEqual(appointment.requested_by, OpportunityEstimateAppointment.REQUESTED_BY_CUSTOMER)
+        self.assertEqual(appointment.proposed_start, proposed_start)
+        self.assertEqual(appointment.customer_message, "I prefer this estimate time.")
+
+        appointment.status = OpportunityEstimateAppointment.STATUS_CONFIRMED
+        appointment.confirmed_at = timezone.now()
+        appointment.save(update_fields=["status", "confirmed_at", "updated_at"])
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_CONFIRMED)
+        self.assertIsNotNone(appointment.confirmed_at)
+
+        appointment.status = OpportunityEstimateAppointment.STATUS_DECLINED
+        appointment.declined_at = timezone.now()
+        appointment.decline_reason = "Customer requested a different window."
+        appointment.save(update_fields=["status", "declined_at", "decline_reason", "updated_at"])
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_DECLINED)
+        self.assertIn("different window", appointment.decline_reason)
 
     def test_schedule_estimate_requires_contact_data(self):
         self.intake.customer_email = ""

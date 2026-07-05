@@ -629,10 +629,25 @@ class OpportunityEstimateAppointment(models.Model):
     ]
 
     STATUS_SCHEDULED = "scheduled"
+    STATUS_REQUESTED = "requested"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_PROPOSED = "proposed"
+    STATUS_DECLINED = "declined"
     STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_SCHEDULED, "Scheduled"),
+        (STATUS_REQUESTED, "Requested"),
+        (STATUS_CONFIRMED, "Confirmed"),
+        (STATUS_PROPOSED, "Proposed"),
+        (STATUS_DECLINED, "Declined"),
         (STATUS_CANCELLED, "Cancelled"),
+    ]
+
+    REQUESTED_BY_CONTRACTOR = "contractor"
+    REQUESTED_BY_CUSTOMER = "customer"
+    REQUESTED_BY_CHOICES = [
+        (REQUESTED_BY_CONTRACTOR, "Contractor"),
+        (REQUESTED_BY_CUSTOMER, "Customer"),
     ]
 
     contractor = models.ForeignKey(
@@ -673,6 +688,13 @@ class OpportunityEstimateAppointment(models.Model):
     duration_minutes = models.PositiveSmallIntegerField(default=60)
     notes = models.TextField(blank=True, default="")
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_SCHEDULED, db_index=True)
+    requested_by = models.CharField(max_length=24, choices=REQUESTED_BY_CHOICES, default=REQUESTED_BY_CONTRACTOR, db_index=True)
+    timezone = models.CharField(max_length=64, blank=True, default="America/Chicago")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    declined_at = models.DateTimeField(null=True, blank=True)
+    decline_reason = models.TextField(blank=True, default="")
+    proposed_start = models.DateTimeField(null=True, blank=True)
+    customer_message = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -688,10 +710,62 @@ class OpportunityEstimateAppointment(models.Model):
         indexes = [
             models.Index(fields=["contractor", "scheduled_start"], name="projects_op_est_con_8f2d7d_idx"),
             models.Index(fields=["source_type", "scheduled_start"], name="projects_op_est_sou_c7d6e4_idx"),
+            models.Index(fields=["contractor", "status", "scheduled_start"], name="projects_op_est_sta_705f8c_idx"),
         ]
 
     def __str__(self) -> str:
         return f"Estimate appointment #{self.pk} for {self.opportunity_reference or self.source_type}"
+
+
+class ContractorEstimateAvailabilityWindow(models.Model):
+    WEEKDAY_SUNDAY = 6
+    WEEKDAY_MONDAY = 0
+    WEEKDAY_TUESDAY = 1
+    WEEKDAY_WEDNESDAY = 2
+    WEEKDAY_THURSDAY = 3
+    WEEKDAY_FRIDAY = 4
+    WEEKDAY_SATURDAY = 5
+    WEEKDAY_CHOICES = [
+        (WEEKDAY_MONDAY, "Monday"),
+        (WEEKDAY_TUESDAY, "Tuesday"),
+        (WEEKDAY_WEDNESDAY, "Wednesday"),
+        (WEEKDAY_THURSDAY, "Thursday"),
+        (WEEKDAY_FRIDAY, "Friday"),
+        (WEEKDAY_SATURDAY, "Saturday"),
+        (WEEKDAY_SUNDAY, "Sunday"),
+    ]
+
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="estimate_availability_windows",
+    )
+    weekday = models.PositiveSmallIntegerField(choices=WEEKDAY_CHOICES, db_index=True)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    timezone = models.CharField(max_length=64, default="America/Chicago")
+    appointment_type = models.CharField(
+        max_length=24,
+        choices=OpportunityEstimateAppointment.TYPE_CHOICES,
+        default=OpportunityEstimateAppointment.TYPE_IN_PERSON,
+    )
+    duration_minutes = models.PositiveSmallIntegerField(default=60)
+    is_active = models.BooleanField(default=True, db_index=True)
+    notes = models.CharField(max_length=255, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["contractor_id", "weekday", "start_time", "id"]
+        indexes = [
+            models.Index(fields=["contractor", "is_active", "weekday"], name="projects_est_avail_idx"),
+        ]
+        constraints = [
+            models.CheckConstraint(check=models.Q(end_time__gt=models.F("start_time")), name="projects_est_av_end_gt_start"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Estimate availability #{self.pk} for contractor {self.contractor_id}"
 
 
 class ContractorDiscoveryInvite(models.Model):
