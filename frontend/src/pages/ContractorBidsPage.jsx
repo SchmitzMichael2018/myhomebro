@@ -63,6 +63,9 @@ function lifecycleStatus(row) {
   if (stage === "closed" || status === "declined" || status === "expired" || statusGroup === "declined_expired") {
     return { label: "Declined", tone: "border-rose-200 bg-rose-50 text-rose-800" };
   }
+  if (row?.estimate_completed || normalize(row?.latest_estimate_appointment?.status) === "completed") {
+    return { label: "Estimate Completed", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+  }
   if (row?.latest_estimate_appointment || row?.estimate_scheduled) {
     return { label: "Estimate Scheduled", tone: "border-indigo-200 bg-indigo-50 text-indigo-800" };
   }
@@ -87,7 +90,7 @@ function hasLinkedAgreement(row) {
 
 function DetailField({ label, value }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-xl bg-slate-50 p-4">
       <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
       <div className="mt-2 text-sm font-semibold text-slate-900">{value || "-"}</div>
     </div>
@@ -98,7 +101,7 @@ function SectionCard({ title, testId, children, subtitle = "", className = "" })
   return (
     <section
       data-testid={testId}
-      className={`rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm ${className}`.trim()}
+      className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 ${className}`.trim()}
     >
       <div className="text-sm font-semibold text-slate-900">{title}</div>
       {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
@@ -134,6 +137,96 @@ function SummaryMetric({ label, value, tone = "slate" }) {
   );
 }
 
+function InfoRow({ label, value, testId = "" }) {
+  return (
+    <div data-testid={testId || undefined} className="rounded-lg bg-slate-50 px-3 py-2">
+      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-950">{value || "-"}</div>
+    </div>
+  );
+}
+
+function formatAppointmentWindow(appointment) {
+  if (!appointment) return "";
+  const date = fmtDate(appointment.start_at || appointment.date || appointment.scheduled_for);
+  const time = appointment.start_time || appointment.time || "";
+  const type = appointment.appointment_type_label || appointment.appointment_type || "Estimate";
+  return [date, time, type].filter(Boolean).join(" - ");
+}
+
+function buildAvailabilitySummary({ row, lifecycle, canScheduleEstimate }) {
+  const appointment = row?.latest_estimate_appointment;
+  const workload =
+    firstPresent(
+      row?.workload_indicator,
+      row?.capacity_summary,
+      row?.request_snapshot?.workload_indicator,
+      row?.request_snapshot?.capacity_summary
+    ) || "Workload data is not connected to this opportunity yet.";
+  const fit =
+    firstPresent(
+      row?.project_fit_summary,
+      row?.request_snapshot?.project_fit_summary,
+      row?.project_class_label,
+      row?.project_type
+    ) || "Fit is based on request details only.";
+
+  return {
+    estimate:
+      appointment
+        ? formatAppointmentWindow(appointment)
+        : canScheduleEstimate
+          ? "Ready to schedule with customer contact on file."
+          : "Add customer contact before scheduling.",
+    project:
+      lifecycle?.label === "Converted"
+        ? "Continue planning from the linked agreement."
+        : lifecycle?.label === "Ready to Convert"
+          ? "Project timing can be confirmed during agreement setup."
+          : "Project availability is confirmed after estimate and scope review.",
+    workload,
+    capacity:
+      appointment
+        ? "Estimate is on the calendar; project capacity still needs agreement review."
+        : "No appointment scheduled yet.",
+    fit,
+  };
+}
+
+function buildPlanningGuidance({ projectIntelligence, projectSetup, snapshot, row }) {
+  const description = firstPresent(
+    snapshot?.project_scope_summary,
+    snapshot?.refined_description,
+    row?.notes,
+    row?.project_description
+  );
+  const signals = Array.isArray(row?.request_signals) ? row.request_signals : [];
+  const hasPhotos = Number(snapshot?.photo_count || 0) > 0 || signals.map(normalize).includes("photos");
+  const complexity =
+    normalize(projectSetup?.suggestedWorkflow).includes("remodel") || normalize(description).includes("full")
+      ? "Higher complexity"
+      : normalize(projectSetup?.suggestedWorkflow).includes("repair")
+        ? "Focused repair"
+        : "Standard review";
+  const trades =
+    firstPresent(
+      projectSetup?.recommendedProjectType,
+      projectSetup?.projectFamilyLabel,
+      projectIntelligence?.familyLabel,
+      row?.project_type
+    ) || "General trade review";
+  const duration =
+    firstPresent(snapshot?.timeline, row?.timeline) ||
+    (complexity === "Higher complexity" ? "Confirm during estimate" : "Likely short once scope is confirmed");
+  const risks = [];
+  if (!description) risks.push("Scope details are light.");
+  if (!hasPhotos) risks.push("Photos are not attached.");
+  if (!snapshot?.budget && !row?.budget_text && !row?.bid_amount_label) risks.push("Budget basis is missing.");
+  if (normalize(snapshot?.measurement_handling) === "site visit required") risks.push("Site visit or measurements may be required.");
+  if (!risks.length) risks.push("No major request risks detected from existing intake data.");
+  return { complexity, trades, duration, risks };
+}
+
 function splitDescriptionBullets(text) {
   const raw = String(text || "").trim();
   if (!raw) return [];
@@ -164,11 +257,11 @@ function workspaceStageFromRow(row) {
 }
 
 function workspaceStageLabel(stage) {
-  if (stage === "new_lead") return "New Lead";
+  if (stage === "new_lead") return "Lead Received";
   if (stage === "follow_up") return "Follow-Up";
   if (stage === "closed") return "Closed / Archived";
   if (stage === "work_order") return "Work Order";
-  return "Active Opportunity";
+  return "Needs Review";
 }
 
 function workspaceStageTone(stage) {
@@ -1452,10 +1545,9 @@ export default function ContractorBidsPage() {
   }, [selectedRow?.bid_id]);
 
   useEffect(() => {
-    let active = true;
-    const source = crewPreviewSourceForRow(selectedRow);
     setCrewPreview(null);
     setCrewPreviewError("");
+    setCrewPreviewLoading(false);
     setAssignmentDraft(null);
     setAssignmentDraftOpen(false);
     setAssignmentDraftError("");
@@ -1466,30 +1558,6 @@ export default function ContractorBidsPage() {
     setConfirmedSupervisorIds([]);
     setSelectedMilestoneIds([]);
     setConfirmedReplacementMilestoneIds([]);
-    if (!source) {
-      setCrewPreviewError("Crew preview is available after this lead becomes an opportunity or agreement.");
-      setCrewPreviewLoading(false);
-      return () => {
-        active = false;
-      };
-    }
-    async function loadCrewPreview() {
-      try {
-        setCrewPreviewLoading(true);
-        const { data } = await api.post("/projects/crew-recommendations/preview/", source);
-        if (!active) return;
-        setCrewPreview(data || null);
-      } catch (err) {
-        if (!active) return;
-        setCrewPreviewError(err?.response?.data?.detail || "Crew preview is not available for this opportunity yet.");
-      } finally {
-        if (active) setCrewPreviewLoading(false);
-      }
-    }
-    loadCrewPreview();
-    return () => {
-      active = false;
-    };
   }, [selectedRow?.bid_id, selectedRow?.source_id, selectedRow?.linked_agreement_id]);
 
   useEffect(() => {
@@ -1738,8 +1806,10 @@ export default function ContractorBidsPage() {
             : selectedRow?.next_action?.label || "View Details"
       : selectedCanConvertToAgreement
       ? "Convert to Agreement"
+      : selectedLifecycle.label === "Estimate Scheduled"
+      ? "View Appointment"
       : selectedStage === "new_lead" || selectedStage === "follow_up"
-      ? "Send Estimate Response"
+      ? "Schedule Estimate"
       : selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
         : selectedRow?.next_action?.label || "View Details";
@@ -1754,13 +1824,19 @@ export default function ContractorBidsPage() {
             : "Review the property management work order details."
       : selectedCanConvertToAgreement
       ? "Review the request and adjust the draft before sending the agreement."
+      : selectedLifecycle.label === "Estimate Scheduled"
+      ? "Review the scheduled estimate details, then follow up with the customer if anything changes."
       : selectedStage === "new_lead"
-      ? "This starts the existing bid workflow for the reviewed request."
+      ? "Schedule the estimate first so scope, timing, and pricing are grounded before conversion."
       : selectedStage === "follow_up"
-        ? "This lead is saved for later. Create your bid when you're ready."
+        ? "Resume customer follow-up and schedule or complete the estimate before conversion."
         : selectedStage === "closed"
           ? "This opportunity is closed, but you can still review the history."
           : "Continue the current bid workflow from here.";
+  const selectedCreateBidActionLabel =
+    selectedStage === "new_lead" || selectedStage === "follow_up"
+      ? "Send Estimate Response"
+      : selectedPrimaryActionLabel;
   const selectedCanOpenAgreement = selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url;
   const selectedValueDisplay = opportunityValueDisplay(selectedRow);
   const selectedCustomerId = firstPresent(
@@ -1803,6 +1879,25 @@ export default function ContractorBidsPage() {
     : !(selectedCustomerEmail || selectedCustomerPhone)
       ? "Customer email or phone is required before scheduling."
       : "";
+  const selectedAvailability = useMemo(
+    () =>
+      buildAvailabilitySummary({
+        row: selectedRow,
+        lifecycle: selectedLifecycle,
+        canScheduleEstimate: selectedCanScheduleEstimate,
+      }),
+    [selectedCanScheduleEstimate, selectedLifecycle, selectedRow]
+  );
+  const selectedPlanningGuidance = useMemo(
+    () =>
+      buildPlanningGuidance({
+        projectIntelligence: selectedProjectIntelligence,
+        projectSetup: selectedProjectSetup,
+        snapshot: selectedSnapshot,
+        row: selectedRow,
+      }),
+    [selectedProjectIntelligence, selectedProjectSetup, selectedRow, selectedSnapshot]
+  );
   const selectedChecklistItems = useMemo(() => {
     const items = [];
     const signalSet = new Set((Array.isArray(selectedSignals) ? selectedSignals : []).map(normalize));
@@ -1830,12 +1925,11 @@ export default function ContractorBidsPage() {
     selectedTimeline,
   ]);
   const selectedChecklistComplete = selectedChecklistItems.every((item) => item.complete);
-  const selectedPlanningIsSecondary = Boolean(selectedRow && !hasLinkedAgreement(selectedRow));
   const detailTabs = [
     { key: "overview", label: "Overview" },
     { key: "project", label: "Project Details" },
     { key: "next", label: "Next Steps" },
-    { key: "history", label: "History" },
+    { key: "history", label: "Activity" },
   ];
   const rowPrimaryActionLabel = (row) => {
     if (normalize(row?.source_kind) === "property_work_order") {
@@ -1847,7 +1941,7 @@ export default function ContractorBidsPage() {
     }
     if (isConvertToAgreementRow(row)) return "Convert to Agreement";
     const stage = workspaceStageFromRow(row);
-    if (stage === "new_lead") return "Request Clarification";
+    if (stage === "new_lead") return "Schedule Estimate";
     if (stage === "follow_up") return "Send Estimate Response";
     if (stage === "closed") return "View Details";
     if (normalize(row?.next_action?.key) === "open_agreement" && row?.linked_agreement_url) return "Open Agreement";
@@ -2638,41 +2732,84 @@ export default function ContractorBidsPage() {
                     </ModalSection>
                   </div>
 
-                  {selectedPlanningIsSecondary ? (
-                    <details
-                      data-testid="planning-preview-section"
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                  <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+                    <ModalSection
+                      title="Availability"
+                      testId="opportunity-availability-section"
+                      subtitle="Existing scheduling and capacity context for deciding whether to pursue this job."
                     >
-                      <summary className="cursor-pointer text-sm font-bold text-slate-800">
-                        Planning preview
-                        <span className="ml-2 text-xs font-semibold text-slate-500">
-                          Advisory only before agreement creation
-                        </span>
-                      </summary>
-                      <p className="mt-3 text-sm text-slate-600">
-                        Crew and setup ideas are planning aids at this stage. They are not confirmed project assignments or a committed project plan.
-                      </p>
-                      <div className="mt-4">
-                        <AdvisoryCrewPanel
-                          preview={crewPreview}
-                          loading={crewPreviewLoading}
-                          error={crewPreviewError}
-                          onCreateDraft={createAssignmentDraft}
-                          creatingDraft={assignmentDraftLoading}
-                          draftError={assignmentDraftError}
-                        />
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <InfoRow label="Earliest estimate availability" value={selectedAvailability.estimate} />
+                        <InfoRow label="Earliest project availability" value={selectedAvailability.project} />
+                        <InfoRow label="Current workload" value={selectedAvailability.workload} />
+                        <InfoRow label="Capacity summary" value={selectedAvailability.capacity} />
                       </div>
-                    </details>
-                  ) : (
-                    <AdvisoryCrewPanel
-                      preview={crewPreview}
-                      loading={crewPreviewLoading}
-                      error={crewPreviewError}
-                      onCreateDraft={createAssignmentDraft}
-                      creatingDraft={assignmentDraftLoading}
-                      draftError={assignmentDraftError}
-                    />
-                  )}
+                      <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
+                        Project fit: {selectedAvailability.fit}
+                      </div>
+                    </ModalSection>
+
+                    <ModalSection
+                      title="Customer"
+                      testId="opportunity-customer-section"
+                      subtitle="Contact details and browser-safe outreach actions."
+                    >
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <InfoRow label="Customer" value={selectedRow.customer_name || "Customer unavailable"} />
+                        <InfoRow label="Preferred contact" value={firstPresent(selectedSnapshot.preferred_contact, selectedRow.preferred_contact, "Not provided")} />
+                        <InfoRow label="Phone" value={selectedCustomerPhone || "Not provided"} />
+                        <InfoRow label="Email" value={selectedCustomerEmail || "Not provided"} />
+                      </div>
+                      <InfoRow label="Address" value={selectedServiceLocation || "Service address not provided"} testId="opportunity-customer-address" />
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <ContactActionButton kind="call" href={selectedTelHref} disabledReason="Customer phone is not available." testId="customer-call-action">
+                          Call
+                        </ContactActionButton>
+                        <ContactActionButton kind="email" href={selectedEmailHref} disabledReason="Customer email is not available." testId="customer-email-action">
+                          Email
+                        </ContactActionButton>
+                        <ContactActionButton kind="text" href={selectedSmsHref} disabledReason="Customer phone is not available." testId="customer-text-action">
+                          Text
+                        </ContactActionButton>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            copyReference(
+                              [selectedRow.customer_name, selectedCustomerPhone, selectedCustomerEmail, selectedServiceLocation].filter(Boolean).join("\n"),
+                              `${selectedRow.bid_id}-contact`
+                            )
+                          }
+                          data-testid="customer-copy-contact-action"
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <Copy size={14} />
+                          {copiedRefId === `${selectedRow.bid_id}-contact` ? "Copied" : "Copy Contact"}
+                        </button>
+                      </div>
+                    </ModalSection>
+                  </div>
+
+                  <ModalSection
+                    title="Planning Guidance"
+                    testId="planning-guidance-section"
+                    subtitle="Advisory only. This is not a confirmed project plan or staffing recommendation."
+                  >
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      <InfoRow label="Estimated complexity" value={selectedPlanningGuidance.complexity} />
+                      <InfoRow label="Estimated trades involved" value={selectedPlanningGuidance.trades} />
+                      <InfoRow label="Estimated duration" value={selectedPlanningGuidance.duration} />
+                    </div>
+                    <div className="mt-3">
+                      <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Potential risks</div>
+                      <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                        {selectedPlanningGuidance.risks.map((risk) => (
+                          <li key={risk} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950">
+                            {risk}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </ModalSection>
                 </section>
               ) : null}
 
@@ -2832,7 +2969,7 @@ export default function ContractorBidsPage() {
                       className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none"
                       title={selectedScheduleDisabledReason || "Schedule an estimate appointment with this customer."}
                     >
-                      Schedule Estimate
+                      {selectedLifecycle.label === "Estimate Scheduled" ? "View Appointment" : "Schedule Estimate"}
                       {!selectedCanScheduleEstimate ? <span className="text-xs font-medium">(Unavailable)</span> : null}
                     </button>
                   ) : null}
@@ -2869,7 +3006,7 @@ export default function ContractorBidsPage() {
                       }
                       className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
                     >
-                      {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedPrimaryActionLabel}
+                      {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedCreateBidActionLabel}
                       <ExternalLink size={14} />
                     </button>
                   )}
@@ -3220,10 +3357,14 @@ export default function ContractorBidsPage() {
                 />
               </SectionCard>
 
-              <div className={`mt-5 rounded-xl border border-slate-200 bg-white p-4 ${detailTab === "history" ? "" : "hidden"}`}>
-                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Reference</div>
-                <div className="mt-2 flex items-center gap-3">
-                  <div className="text-sm font-semibold text-slate-900">{selectedRow.source_reference}</div>
+              <div data-testid="opportunity-activity-timeline" className={`mt-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 ${detailTab === "history" ? "" : "hidden"}`}>
+                <div className="text-sm font-bold text-slate-950">Activity Timeline</div>
+                <p className="mt-1 text-sm text-slate-600">Current opportunity activity from existing request data.</p>
+                <div className="mt-4 flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Reference</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900">{selectedRow.source_reference || "No reference available"}</div>
+                  </div>
                   <button
                     type="button"
                     onClick={() => copyReference(selectedRow.source_reference, selectedRow.bid_id)}
@@ -3233,8 +3374,8 @@ export default function ContractorBidsPage() {
                     {copiedRefId === String(selectedRow.bid_id) ? "Copied" : "Copy"}
                   </button>
                 </div>
-                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-                  Detailed status-change history is not available for this opportunity yet.
+                <div className="mt-4 rounded-xl border border-dashed border-sky-300 bg-sky-50 px-4 py-5 text-sm text-sky-900">
+                  Status-change history is not available yet. Customer request signals, notes, and reference details are shown above for review.
                 </div>
               </div>
             </div>

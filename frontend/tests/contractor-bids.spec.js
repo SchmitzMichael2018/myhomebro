@@ -832,7 +832,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Guided Intake");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Photos");
-  await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Request Clarification");
+  await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Schedule Estimate");
   await page.getByTestId("leads-tab-follow-up").click();
   await expect(page.getByTestId("lead-row-lead-8")).toBeVisible();
   await expect(page.getByTestId("lead-row-lead-6")).toHaveCount(0);
@@ -931,8 +931,8 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
   await page.getByTestId("leads-tab-active").click();
-  await expect(page.getByTestId("lead-row-intake-2")).toContainText("Active Opportunity");
-  await expect(page.getByTestId("lead-row-lead-3")).toContainText("Active Opportunity");
+  await expect(page.getByTestId("lead-row-intake-2")).toContainText("Needs Review");
+  await expect(page.getByTestId("lead-row-lead-3")).toContainText("Needs Review");
   await expect(page.getByTestId("lead-lifecycle-lead-3")).toContainText("Ready to Convert");
   await expect(page.getByTestId("lead-row-lead-5")).toContainText("Open Agreement");
   await expect(page.getByTestId("lead-lifecycle-lead-5")).toContainText("Converted");
@@ -1543,36 +1543,10 @@ test("contractor bids workspace renders property management work orders and rout
 
   await page.getByTestId("lead-row-opportunity-31").click();
   await expect(page.getByTestId("opportunity-overview-tab-panel")).toContainText("Overview");
-  await expect(page.getByTestId("planning-preview-section")).toContainText("Planning preview");
-  await page.getByTestId("planning-preview-section").locator("summary").click();
-  await expect(page.getByTestId("recommended-crew-panel")).toContainText("Recommended Crew");
-  await expect(page.getByTestId("recommended-crew-panel")).toContainText("1x Plumbing");
-  await expect(page.getByTestId("recommended-crew-panel")).toContainText("Pat Plumbing");
-  await expect(page.getByTestId("recommended-crew-panel")).toContainText("advisory");
-  await page.getByTestId("assignment-draft-create").click();
-  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Assignment Draft");
-  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Pat Plumbing");
-  await expect(page.getByTestId("assignment-draft-modal")).toContainText("Agreement-level assignment");
-  await page.getByTestId("assignment-draft-validate-apply").click();
-  await expect(page.getByTestId("assignment-draft-validation-results")).toContainText("Ready later");
-  await expect(page.getByTestId("assignment-draft-safe-rows")).toContainText("agreement:932:44");
-  await expect(page.getByTestId("assignment-draft-blockers")).toContainText("No blocking issues found");
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("This will create assignment records");
-    await dialog.accept();
-  });
-  await page.getByTestId("assignment-draft-apply-agreement").click();
-  await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Agreement-level assignments applied");
-  await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Pat Plumbing assigned to agreement #932");
-  await page.getByTestId("assignment-draft-milestone-select-3001").check();
-  page.once("dialog", async (dialog) => {
-    expect(dialog.message()).toContain("calendar-facing views");
-    await dialog.accept();
-  });
-  await page.getByTestId("assignment-draft-apply-milestones").click();
-  await expect(page.getByTestId("assignment-draft-apply-result")).toContainText("Pat Plumbing assigned to Repair sink leak");
-  await expect(page.getByTestId("assignment-draft-apply-disabled")).toContainText("Apply coming soon.");
-  await page.getByTestId("assignment-draft-modal").getByRole("button", { name: "Close assignment draft" }).click();
+  await expect(page.getByTestId("opportunity-availability-section")).toContainText("Availability");
+  await expect(page.getByTestId("opportunity-customer-section")).toContainText("Customer");
+  await expect(page.getByTestId("planning-guidance-section")).toContainText("Planning Guidance");
+  await expect(page.getByTestId("bids-detail-drawer")).not.toContainText("Recommended Crew");
   await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
   await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("lead-overview")).toContainText("Work Order");
