@@ -103,6 +103,14 @@ from .views.public_estimate_availability import (
     PublicEstimateAppointmentRequestView,
     PublicEstimateAvailabilityView,
 )
+from .views.proposals import (
+    ProposalAttachmentDetailView,
+    ProposalAttachmentListCreateView,
+    ProposalDetailView,
+    ProposalListCreateView,
+    ProposalMeasurementDetailView,
+    ProposalMeasurementListCreateView,
+)
 from .views.website_builder import (
     ContractorWebsiteAiAssistView,
     ContractorWebsitePageDetailView,
@@ -816,6 +824,12 @@ urlpatterns = [
     path("contractor-opportunities/<int:opportunity_id>/accept/", ContractorOpportunityAcceptView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/decline/", ContractorOpportunityDeclineView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/create-agreement-draft/", ContractorOpportunityAgreementDraftView.as_view()),
+    path("proposals/", ProposalListCreateView.as_view()),
+    path("proposals/<int:proposal_id>/", ProposalDetailView.as_view()),
+    path("proposals/<int:proposal_id>/measurements/", ProposalMeasurementListCreateView.as_view()),
+    path("proposals/<int:proposal_id>/measurements/<int:measurement_id>/", ProposalMeasurementDetailView.as_view()),
+    path("proposals/<int:proposal_id>/attachments/", ProposalAttachmentListCreateView.as_view()),
+    path("proposals/<int:proposal_id>/attachments/<int:attachment_id>/", ProposalAttachmentDetailView.as_view()),
     path("crew-recommendations/preview/", CrewRecommendationPreviewView.as_view()),
     path("crew-recommendations/drafts/", CrewAssignmentDraftCreateView.as_view()),
     path("crew-recommendations/drafts/<int:draft_id>/validate-apply/", CrewAssignmentDraftValidateApplyView.as_view()),

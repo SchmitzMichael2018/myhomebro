@@ -69,6 +69,11 @@ except Exception:  # pragma: no cover
     OpportunityEstimateAppointment = None  # type: ignore
 
 try:
+    from .models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalMeasurement  # type: ignore
+except Exception:  # pragma: no cover
+    Proposal = ProposalActivity = ProposalAttachment = ProposalMeasurement = None  # type: ignore
+
+try:
     from .models_ai_artifacts import DisputeAIArtifact  # type: ignore
 except Exception:  # pragma: no cover
     DisputeAIArtifact = None  # type: ignore
@@ -368,6 +373,41 @@ if ContractorEstimateAvailabilityWindow is not None:
         list_filter = ("is_active", "weekday", "appointment_type", "timezone")
         search_fields = ("contractor__business_name", "contractor__user__email", "notes")
         readonly_fields = ("created_at", "updated_at")
+
+
+if Proposal is not None:
+    @admin.register(Proposal)
+    class ProposalAdmin(admin.ModelAdmin):
+        list_display = ("id", "contractor", "project_title", "status", "source_type", "source_id", "customer_name", "updated_at")
+        list_filter = ("status", "source_type", "created_at", "updated_at")
+        search_fields = ("project_title", "customer_name", "customer_email", "customer_phone", "service_location")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ProposalMeasurement is not None:
+    @admin.register(ProposalMeasurement)
+    class ProposalMeasurementAdmin(admin.ModelAdmin):
+        list_display = ("id", "proposal", "label", "location", "quantity", "unit", "updated_at")
+        search_fields = ("label", "location", "notes", "proposal__project_title")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ProposalAttachment is not None:
+    @admin.register(ProposalAttachment)
+    class ProposalAttachmentAdmin(admin.ModelAdmin):
+        list_display = ("id", "proposal", "attachment_type", "category", "original_name", "created_at")
+        list_filter = ("attachment_type", "category", "created_at")
+        search_fields = ("original_name", "caption", "notes", "proposal__project_title")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ProposalActivity is not None:
+    @admin.register(ProposalActivity)
+    class ProposalActivityAdmin(admin.ModelAdmin):
+        list_display = ("id", "proposal", "event_type", "message", "created_at")
+        list_filter = ("event_type", "created_at")
+        search_fields = ("message", "proposal__project_title")
+        readonly_fields = ("created_at",)
 
 
 if ProjectIntake is not None:

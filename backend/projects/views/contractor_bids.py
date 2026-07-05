@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 
 from projects.models import AgreementProjectClass, PublicContractorLead
 from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
+from projects.models_proposals import Proposal
 from projects.models_customer_portal import PropertyWorkOrder
 from projects.models_project_intake import ProjectIntake
 from projects.services.agreements.project_create import resolve_contractor_for_user
@@ -181,6 +182,54 @@ def _attach_estimate_appointments(contractor, rows: list[dict]) -> list[dict]:
         appointment = latest_by_key.get(key) if key else None
         row["latest_estimate_appointment"] = _serialize_estimate_appointment(appointment)
         row["estimate_scheduled"] = bool(appointment)
+    return rows
+
+
+def _serialize_proposal_summary(proposal: Proposal | None) -> dict | None:
+    if proposal is None:
+        return None
+    return {
+        "id": proposal.id,
+        "status": proposal.status,
+        "status_label": proposal.get_status_display(),
+        "project_title": proposal.project_title,
+        "source_type": proposal.source_type,
+        "source_id": proposal.source_id,
+        "updated_at": _format_datetime(proposal.updated_at),
+    }
+
+
+def _attach_proposals(contractor, rows: list[dict]) -> list[dict]:
+    wanted: set[tuple[str, int]] = set()
+    for row in rows:
+        key = _appointment_key(row.get("source_kind"), row.get("source_id"))
+        if key:
+            wanted.add(key)
+    if not wanted:
+        return rows
+
+    query = Q()
+    for source_type, source_id in wanted:
+        query |= Q(source_type=source_type, source_id=source_id)
+    if not query:
+        return rows
+
+    proposals = (
+        Proposal.objects.filter(contractor=contractor)
+        .filter(query)
+        .order_by("source_type", "source_id", "-updated_at", "-id")
+    )
+    by_key: dict[tuple[str, int], Proposal] = {}
+    for proposal in proposals:
+        key = (proposal.source_type, proposal.source_id)
+        if key not in by_key:
+            by_key[key] = proposal
+
+    for row in rows:
+        key = _appointment_key(row.get("source_kind"), row.get("source_id"))
+        proposal = by_key.get(key) if key else None
+        row["latest_proposal"] = _serialize_proposal_summary(proposal)
+        row["proposal_id"] = proposal.id if proposal else None
     return rows
 
 
@@ -1265,6 +1314,7 @@ class ContractorBidsView(APIView):
             reverse=True,
         )
         rows = _attach_estimate_appointments(contractor, rows)
+        rows = _attach_proposals(contractor, rows)
 
         status_filter = _safe_text(request.GET.get("status", "")).lower()
         project_class_filter = _safe_text(request.GET.get("project_class", "")).lower()

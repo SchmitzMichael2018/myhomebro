@@ -1520,6 +1520,7 @@ export default function ContractorBidsPage() {
   const [selectedMilestoneIds, setSelectedMilestoneIds] = useState([]);
   const [confirmedReplacementMilestoneIds, setConfirmedReplacementMilestoneIds] = useState([]);
   const [scheduleEstimateOpen, setScheduleEstimateOpen] = useState(false);
+  const [proposalBusy, setProposalBusy] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -1902,6 +1903,13 @@ export default function ContractorBidsPage() {
     : !(selectedCustomerEmail || selectedCustomerPhone)
       ? "Customer email or phone is required before scheduling."
       : "";
+  const selectedProposal = selectedRow?.latest_proposal || (selectedRow?.proposal_id ? { id: selectedRow.proposal_id } : null);
+  const selectedCanCreateProposal = Boolean(
+    selectedScheduleSource &&
+      selectedStage !== "closed" &&
+      !selectedCanOpenAgreement &&
+      (selectedRow?.latest_estimate_appointment || selectedRow?.estimate_scheduled || selectedProposal?.id)
+  );
   const selectedAvailability = useMemo(
     () =>
       buildAvailabilitySummary({
@@ -2018,6 +2026,59 @@ export default function ContractorBidsPage() {
         return row;
       })
     );
+  };
+
+  const createOrOpenProposal = async () => {
+    if (!selectedRow) return;
+    const existing = selectedRow.latest_proposal || (selectedRow.proposal_id ? { id: selectedRow.proposal_id } : null);
+    if (existing?.id) {
+      navigate(`/app/proposals/${existing.id}`);
+      return;
+    }
+    const source = scheduleSourceForRow(selectedRow);
+    if (!source) {
+      toast.error("This opportunity is missing source data for a proposal workspace.");
+      return;
+    }
+    setProposalBusy(true);
+    try {
+      const { data } = await api.post("/projects/proposals/", {
+        source_type: source.source_type,
+        source_id: source.source_id,
+        estimate_appointment_id: selectedRow.latest_estimate_appointment?.id || null,
+      });
+      const proposal = data?.proposal;
+      if (!proposal?.id) {
+        toast.error("Proposal workspace could not be opened.");
+        return;
+      }
+      const summary = {
+        id: proposal.id,
+        status: proposal.status,
+        status_label: proposal.status_label,
+        project_title: proposal.project_title,
+        source_type: proposal.source_type,
+        source_id: proposal.source_id,
+        updated_at: proposal.updated_at,
+      };
+      setSelectedRow((prev) => (prev ? { ...prev, latest_proposal: summary, proposal_id: proposal.id } : prev));
+      setRows((prev) =>
+        prev.map((row) => {
+          const rowSource = scheduleSourceForRow(row);
+          if (rowSource && rowSource.source_type === source.source_type && Number(rowSource.source_id) === Number(source.source_id)) {
+            return { ...row, latest_proposal: summary, proposal_id: proposal.id };
+          }
+          return row;
+        })
+      );
+      toast.success(data?.created ? "Proposal workspace created." : "Opening proposal workspace.");
+      navigate(`/app/proposals/${proposal.id}`);
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Could not create proposal workspace.");
+    } finally {
+      setProposalBusy(false);
+    }
   };
 
   const createAssignmentDraft = async () => {
@@ -3039,6 +3100,20 @@ export default function ContractorBidsPage() {
                     >
                       {selectedLifecycle.label === "Estimate Scheduled" ? "View Appointment" : "Schedule Estimate"}
                       {!selectedCanScheduleEstimate ? <span className="text-xs font-medium">(Unavailable)</span> : null}
+                    </button>
+                  ) : null}
+
+                  {selectedCanCreateProposal ? (
+                    <button
+                      type="button"
+                      data-testid="proposal-workspace-action"
+                      disabled={proposalBusy}
+                      onClick={createOrOpenProposal}
+                      className="inline-flex items-center gap-2 rounded-lg border border-blue-300/60 bg-blue-500/15 px-4 py-2 text-sm font-semibold text-blue-50 hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-60"
+                      title="Create or open the pre-agreement proposal workspace for site visit details, measurements, photos, documents, scope, and notes."
+                    >
+                      {proposalBusy ? "Opening..." : selectedProposal?.id ? "Open Proposal Workspace" : "Create Proposal"}
+                      <ClipboardList size={14} />
                     </button>
                   ) : null}
 
