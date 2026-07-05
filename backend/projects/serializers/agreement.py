@@ -582,6 +582,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     incidentals_reserve_pending = serializers.SerializerMethodField()
     incidentals_reserve_remaining = serializers.SerializerMethodField()
     incidentals_reserve_summary = serializers.SerializerMethodField()
+    escrow_funding_summary = serializers.SerializerMethodField()
 
     ai_scope = serializers.SerializerMethodField()
     ai_scope_input = AgreementAIScopeWriteSerializer(write_only=True, required=False)
@@ -1095,14 +1096,14 @@ class AgreementSerializer(serializers.ModelSerializer):
             return val
 
     def get_escrow_total_required(self, obj):
-        val = self.get_total(obj)
+        val = self._escrow_funding_amounts(obj)["total_required"]
         try:
             return float(val) if isinstance(val, Decimal) else float(Decimal(str(val)))
         except Exception:
             return None
 
     def get_remaining_to_fund(self, obj):
-        total_required = self.get_total(obj)
+        total_required = self._escrow_funding_amounts(obj)["total_required"]
         funded = getattr(obj, "escrow_funded_amount", None) or Decimal("0.00")
 
         try:
@@ -1116,6 +1117,45 @@ class AgreementSerializer(serializers.ModelSerializer):
             remaining = Decimal("0.00")
 
         return float(remaining)
+
+    def _escrow_funding_amounts(self, obj):
+        milestone_total = self.get_total(obj)
+        try:
+            milestone_total = milestone_total if isinstance(milestone_total, Decimal) else Decimal(str(milestone_total or "0"))
+        except Exception:
+            milestone_total = Decimal("0.00")
+        try:
+            incidentals = Decimal(str(getattr(obj, "incidentals_reserve_amount", 0) or 0))
+        except Exception:
+            incidentals = Decimal("0.00")
+        if incidentals < Decimal("0.00"):
+            incidentals = Decimal("0.00")
+        total_required = milestone_total + incidentals
+        try:
+            funded = Decimal(str(getattr(obj, "escrow_funded_amount", 0) or 0))
+        except Exception:
+            funded = Decimal("0.00")
+        remaining = total_required - funded
+        if remaining < Decimal("0.00"):
+            remaining = Decimal("0.00")
+        return {
+            "milestone_escrow_total": milestone_total,
+            "incidentals_reserve": incidentals,
+            "total_required": total_required,
+            "funded": funded,
+            "remaining": remaining,
+        }
+
+    def get_escrow_funding_summary(self, obj):
+        amounts = self._escrow_funding_amounts(obj)
+        return {
+            "milestone_escrow_total": f"{amounts['milestone_escrow_total']:.2f}",
+            "incidentals_reserve": f"{amounts['incidentals_reserve']:.2f}",
+            "total_required": f"{amounts['total_required']:.2f}",
+            "escrow_funded_amount": f"{amounts['funded']:.2f}",
+            "remaining_to_fund": f"{amounts['remaining']:.2f}",
+            "escrow_funded": bool(amounts["total_required"] > 0 and amounts["funded"] >= amounts["total_required"]),
+        }
 
     def get_ai_scope(self, obj):
         try:

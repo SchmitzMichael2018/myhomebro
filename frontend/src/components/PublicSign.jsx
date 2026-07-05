@@ -146,6 +146,8 @@ function PublicFundingCheckout({ fundingToken, agreementTitle, onPaid }) {
   }, [fundingToken]);
 
   const remaining = info?.remaining_to_fund != null ? Number(info.remaining_to_fund) : NaN;
+  const milestoneEscrowTotal = Number(info?.milestone_escrow_total || 0);
+  const incidentalsReserve = Number(info?.incidentals_reserve || 0);
 
   useEffect(() => {
     if (!fundingToken || !info) return;
@@ -271,7 +273,15 @@ function PublicFundingCheckout({ fundingToken, agreementTitle, onPaid }) {
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl bg-slate-50 p-3">
+          <div className="text-xs text-slate-500">Milestone escrow total</div>
+          <div className="text-lg font-bold text-slate-900">{money(milestoneEscrowTotal)}</div>
+        </div>
+        <div className="rounded-2xl bg-slate-50 p-3">
+          <div className="text-xs text-slate-500">Incidentals Reserve</div>
+          <div className="text-lg font-bold text-slate-900">{money(incidentalsReserve)}</div>
+        </div>
         <div className="rounded-2xl bg-slate-50 p-3">
           <div className="text-xs text-slate-500">Amount due now</div>
           <div className="text-lg font-bold text-slate-900">{money(remaining)}</div>
@@ -281,7 +291,7 @@ function PublicFundingCheckout({ fundingToken, agreementTitle, onPaid }) {
           <div className="text-lg font-bold text-slate-900">{money(info?.escrow_funded_amount)}</div>
         </div>
         <div className="rounded-2xl bg-slate-50 p-3">
-          <div className="text-xs text-slate-500">Total required</div>
+          <div className="text-xs text-slate-500">Total escrow required</div>
           <div className="text-lg font-bold text-slate-900">{money(info?.total_required)}</div>
         </div>
       </div>

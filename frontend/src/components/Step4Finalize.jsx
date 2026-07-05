@@ -1356,6 +1356,10 @@ export default function Step4Finalize({
 
   const homeownerEscrow =
     fundingPreview?.homeowner_escrow != null ? Number(fundingPreview.homeowner_escrow) : projectAmount;
+  const milestoneEscrowTotal =
+    fundingPreview?.milestone_escrow_total != null ? Number(fundingPreview.milestone_escrow_total) : projectAmount;
+  const incidentalsReserve =
+    fundingPreview?.incidentals_reserve != null ? Number(fundingPreview.incidentals_reserve) : Number(agreement?.incidentals_reserve_amount || 0);
 
   const fundedSoFar = Number(
     fundingPreview?.escrow_funded_amount ??
@@ -2323,10 +2327,16 @@ export default function Step4Finalize({
                   data-testid="financial-row-escrow-deposit"
                 >
                   <div className="text-[11px] uppercase tracking-wide text-indigo-700">
-                    Total Escrow Deposit
+                    Total Escrow Required
                   </div>
                   <div className="mt-1 text-lg font-semibold text-indigo-900 tabular-nums">
                     {formatMoney(homeownerEscrow)}
+                  </div>
+                  <div className="mt-2 grid gap-2 text-xs text-indigo-900/80 sm:grid-cols-2">
+                    <div>Milestone escrow: <span className="font-semibold">{formatMoney(milestoneEscrowTotal)}</span></div>
+                    <div>Incidentals Reserve: <span className="font-semibold">{formatMoney(incidentalsReserve)}</span></div>
+                    <div>Already funded: <span className="font-semibold">{formatMoney(fundedSoFar)}</span></div>
+                    <div>Remaining: <span className="font-semibold">{formatMoney(remainingToFund)}</span></div>
                   </div>
                   {fundingError ? <div className="mt-1 text-[11px] text-amber-700">{fundingError}</div> : null}
                 </div>

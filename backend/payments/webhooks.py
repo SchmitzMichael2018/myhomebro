@@ -1420,6 +1420,9 @@ def stripe_webhook(request):
             # Mark funded when reaching required
             try:
                 required = Decimal(str(getattr(ag, "total_cost", None) or total_required or "0.00")).quantize(Decimal("0.01"))
+                incidentals_required = Decimal(str(getattr(ag, "incidentals_reserve_amount", 0) or 0)).quantize(Decimal("0.01"))
+                if incidentals_required > 0:
+                    required += incidentals_required
             except Exception:
                 required = total_required
 

@@ -6132,9 +6132,23 @@ export default function AgreementDetail({
               <>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <SummaryCard
-                    label="Project Price (Customer Pays)"
-                    value={formatMoney(fundingPreview.project_amount)}
+                    label="Milestone Escrow Total"
+                    value={formatMoney(fundingPreview.milestone_escrow_total ?? fundingPreview.project_amount)}
                   />
+                  <SummaryCard
+                    label="Incidentals Reserve"
+                    value={formatMoney(fundingPreview.incidentals_reserve ?? agreement?.incidentals_reserve_amount ?? 0)}
+                  />
+                  <SummaryCard
+                    label="Total Escrow Required"
+                    value={formatMoney(fundingPreview.total_required ?? fundingPreview.homeowner_escrow)}
+                  />
+                  <SummaryCard
+                    label="Remaining to Fund"
+                    value={formatMoney(fundingPreview.remaining_to_fund)}
+                  />
+                </div>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                   <SummaryCard
                     label="MyHomeBro Platform Fee"
                     value={
@@ -6150,8 +6164,8 @@ export default function AgreementDetail({
                     value={formatMoney(fundingPreview.contractor_payout)}
                   />
                   <SummaryCard
-                    label="Total Escrow Deposit"
-                    value={formatMoney(fundingPreview.homeowner_escrow)}
+                    label="Already Funded"
+                    value={formatMoney(fundingPreview.escrow_funded_amount)}
                   />
                 </div>
                 <p className="mt-2 text-[11px] text-sky-100/60">

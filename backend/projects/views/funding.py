@@ -66,7 +66,12 @@ def _milestone_sum(agreement: Agreement) -> Decimal:
     return _to_decimal(total).quantize(Decimal("0.01"))
 
 
-def _get_total_required(agreement: Agreement, *, heal_db: bool = False) -> Decimal:
+def _incidentals_reserve_amount(agreement: Agreement) -> Decimal:
+    value = _to_decimal(getattr(agreement, "incidentals_reserve_amount", None)).quantize(Decimal("0.01"))
+    return max(value, Decimal("0.00"))
+
+
+def _get_milestone_required(agreement: Agreement, *, heal_db: bool = False) -> Decimal:
     ms_total = _milestone_sum(agreement)
     tc = _to_decimal(getattr(agreement, "total_cost", None)).quantize(Decimal("0.01"))
 
@@ -85,10 +90,30 @@ def _get_total_required(agreement: Agreement, *, heal_db: bool = False) -> Decim
     return Decimal("0.00")
 
 
-def _sync_funding_flags(agreement: Agreement, *, heal_total: bool = True, persist: bool = True) -> dict:
-    total_required = _get_total_required(agreement, heal_db=heal_total)
+def _get_total_required(agreement: Agreement, *, heal_db: bool = False) -> Decimal:
+    return (_get_milestone_required(agreement, heal_db=heal_db) + _incidentals_reserve_amount(agreement)).quantize(Decimal("0.01"))
+
+
+def _funding_breakdown(agreement: Agreement, *, heal_total: bool = True) -> dict:
+    milestone_total = _get_milestone_required(agreement, heal_db=heal_total)
+    incidentals_reserve = _incidentals_reserve_amount(agreement)
+    total_required = (milestone_total + incidentals_reserve).quantize(Decimal("0.01"))
     funded = _to_decimal(getattr(agreement, "escrow_funded_amount", None)).quantize(Decimal("0.01"))
     remaining = max(total_required - funded, Decimal("0.00"))
+    return {
+        "milestone_escrow_total": milestone_total,
+        "incidentals_reserve": incidentals_reserve,
+        "total_required": total_required,
+        "funded": funded,
+        "remaining": remaining,
+    }
+
+
+def _sync_funding_flags(agreement: Agreement, *, heal_total: bool = True, persist: bool = True) -> dict:
+    breakdown = _funding_breakdown(agreement, heal_total=heal_total)
+    total_required = breakdown["total_required"]
+    funded = breakdown["funded"]
+    remaining = breakdown["remaining"]
     is_funded = bool(total_required > 0 and funded >= total_required)
 
     if persist and hasattr(agreement, "escrow_funded"):
@@ -101,6 +126,8 @@ def _sync_funding_flags(agreement: Agreement, *, heal_total: bool = True, persis
                 logger.warning("Could not self-heal escrow_funded for Agreement %s: %s", agreement.id, e)
 
     return {
+        "milestone_escrow_total": breakdown["milestone_escrow_total"],
+        "incidentals_reserve": breakdown["incidentals_reserve"],
         "total_required": total_required,
         "funded": funded,
         "remaining": remaining,
@@ -198,6 +225,10 @@ def send_funding_link_for_agreement(
         "amount": f"{amount:.2f}",
         "currency": currency,
         "remaining_after": f"{(remaining - amount):.2f}",
+        "milestone_escrow_total": f"{sync['milestone_escrow_total']:.2f}",
+        "incidentals_reserve": f"{sync['incidentals_reserve']:.2f}",
+        "total_required": f"{sync['total_required']:.2f}",
+        "escrow_funded_amount": f"{sync['funded']:.2f}",
         "public_fund_url": public_fund_url,
         "expires_at": link.expires_at.isoformat(),
     }
@@ -342,6 +373,8 @@ class PublicFundingInfoView(APIView):
 
                 # Truth fields
                 "total_required": f"{sync['total_required']:.2f}",
+                "milestone_escrow_total": f"{sync['milestone_escrow_total']:.2f}",
+                "incidentals_reserve": f"{sync['incidentals_reserve']:.2f}",
                 "escrow_funded_amount": f"{sync['funded']:.2f}",
                 "remaining_to_fund": f"{sync['remaining']:.2f}",
                 "escrow_funded": bool(sync["escrow_funded"]),
@@ -565,6 +598,8 @@ class AgreementFundingPreviewView(APIView):
             return Response(
                 {
                     "total_required": f"{sync['total_required']:.2f}",
+                    "milestone_escrow_total": f"{sync['milestone_escrow_total']:.2f}",
+                    "incidentals_reserve": f"{sync['incidentals_reserve']:.2f}",
                     "escrow_funded_amount": f"{sync['funded']:.2f}",
                     "remaining_to_fund": f"{sync['remaining']:.2f}",
                     "escrow_funded": bool(sync["escrow_funded"]),
@@ -586,6 +621,8 @@ class AgreementFundingPreviewView(APIView):
         return Response(
             {
                 "total_required": f"{sync['total_required']:.2f}",
+                "milestone_escrow_total": f"{sync['milestone_escrow_total']:.2f}",
+                "incidentals_reserve": f"{sync['incidentals_reserve']:.2f}",
                 "escrow_funded_amount": f"{sync['funded']:.2f}",
                 "remaining_to_fund": f"{sync['remaining']:.2f}",
                 "escrow_funded": bool(sync["escrow_funded"]),

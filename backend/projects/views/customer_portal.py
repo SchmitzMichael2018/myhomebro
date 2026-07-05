@@ -4419,7 +4419,9 @@ def _project_payment_rows(agreement) -> tuple[dict, list[dict], list[dict]]:
             }
         )
 
-    escrow_total = Decimal(str(getattr(agreement, "total_cost", 0) or 0))
+    milestone_escrow_total = Decimal(str(getattr(agreement, "total_cost", 0) or 0)).quantize(Decimal("0.01"))
+    incidentals_reserve_amount = Decimal(str(getattr(agreement, "incidentals_reserve_amount", 0) or 0)).quantize(Decimal("0.01"))
+    escrow_total = milestone_escrow_total + max(incidentals_reserve_amount, Decimal("0.00"))
     escrow_funded = bool(getattr(agreement, "escrow_funded", False))
     paid_total = sum(
         Decimal(str(row["amount"] or "0.00"))
@@ -4431,6 +4433,12 @@ def _project_payment_rows(agreement) -> tuple[dict, list[dict], list[dict]]:
         "payment_mode_label": "Escrow" if _safe_text(getattr(agreement, "payment_mode", "")) == "escrow" else "Direct Pay",
         "agreement_total": str(escrow_total),
         "agreement_total_label": f"${escrow_total:,.2f}",
+        "milestone_escrow_total": str(milestone_escrow_total),
+        "milestone_escrow_total_label": f"${milestone_escrow_total:,.2f}",
+        "incidentals_reserve_amount": str(max(incidentals_reserve_amount, Decimal('0.00'))),
+        "incidentals_reserve_amount_label": f"${max(incidentals_reserve_amount, Decimal('0.00')):,.2f}",
+        "total_escrow_required": str(escrow_total),
+        "total_escrow_required_label": f"${escrow_total:,.2f}",
         "escrow_funded": escrow_funded,
         "escrow_funded_label": "Funded" if escrow_funded else "Waiting for funding",
         "remaining_to_fund": str(max(Decimal("0.00"), escrow_total - paid_total if escrow_total else Decimal("0.00"))),

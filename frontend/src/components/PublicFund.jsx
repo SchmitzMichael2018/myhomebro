@@ -260,6 +260,8 @@ export default function PublicFund() {
   const projectTitle = info.project_title || "Your project";
   const fundedSoFar = Number(info.escrow_funded_amount || 0);
   const totalRequired = Number(info.total_required || 0);
+  const milestoneEscrowTotal = Number(info.milestone_escrow_total || info.milestone_total || 0);
+  const incidentalsReserve = Number(info.incidentals_reserve || 0);
 
   return (
     <Shell>
@@ -267,7 +269,21 @@ export default function PublicFund() {
         <div className="text-xl font-extrabold text-primary">Fund Escrow</div>
         <div className="mt-1 text-sm text-gray-600">{projectTitle}</div>
 
-        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-2xl border bg-light p-3">
+            <div className="text-xs text-gray-500">Milestone escrow total</div>
+            <div className="text-lg font-bold text-dark">
+              ${milestoneEscrowTotal.toFixed(2)}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border bg-light p-3">
+            <div className="text-xs text-gray-500">Incidentals Reserve</div>
+            <div className="text-lg font-bold text-dark">
+              ${incidentalsReserve.toFixed(2)}
+            </div>
+          </div>
+
           <div className="rounded-2xl border bg-light p-3">
             <div className="text-xs text-gray-500">Amount due now</div>
             <div className="text-lg font-bold text-dark">
@@ -283,7 +299,7 @@ export default function PublicFund() {
           </div>
 
           <div className="rounded-2xl border bg-light p-3">
-            <div className="text-xs text-gray-500">Total required</div>
+            <div className="text-xs text-gray-500">Total escrow required</div>
             <div className="text-lg font-bold text-dark">
               ${totalRequired.toFixed(2)}
             </div>

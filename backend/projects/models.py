@@ -1693,6 +1693,12 @@ class Agreement(models.Model):
                 total_amt = Decimal(str(self.total_cost or "0"))
             except Exception:
                 total_amt = Decimal("0.00")
+            try:
+                incidentals_amt = Decimal(str(self.incidentals_reserve_amount or "0"))
+            except Exception:
+                incidentals_amt = Decimal("0.00")
+            if incidentals_amt > Decimal("0.00"):
+                total_amt += incidentals_amt
 
             if total_amt > 0 and funded_amt >= total_amt:
                 self.escrow_funded = True
@@ -1703,13 +1709,19 @@ class Agreement(models.Model):
                     ProjectStatus.FUNDED,
                 ):
                     self.status = ProjectStatus.FUNDED
+                if kwargs.get("update_fields") is not None:
+                    kwargs["update_fields"] = set(kwargs["update_fields"]) | {"escrow_funded", "status"}
 
             elif self.signature_is_satisfied and self.status == ProjectStatus.DRAFT:
                 self.status = ProjectStatus.SIGNED
+                if kwargs.get("update_fields") is not None:
+                    kwargs["update_fields"] = set(kwargs["update_fields"]) | {"status"}
 
         else:
             if self.signature_is_satisfied and self.status == ProjectStatus.DRAFT:
                 self.status = ProjectStatus.SIGNED
+                if kwargs.get("update_fields") is not None:
+                    kwargs["update_fields"] = set(kwargs["update_fields"]) | {"status"}
 
         super().save(*args, **kwargs)
 
