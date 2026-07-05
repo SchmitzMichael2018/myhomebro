@@ -78,6 +78,7 @@ from projects.services.customer_notification_cleanup import (
     cleanup_preferences_payload,
     next_cleanup_run_at,
 )
+from projects.views.public_estimate_availability import create_customer_estimate_request_for_opportunity
 from projects.services.customer_notification_preferences import (
     normalize_notification_categories,
     normalize_notification_channels,
@@ -5745,6 +5746,11 @@ class CustomerPortalRequestContractorSelectView(APIView):
                 )
             except ValueError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            estimate_request = selection.get("estimate_request") if isinstance(selection.get("estimate_request"), dict) else None
+            if estimate_request:
+                estimate_result, estimate_status = create_customer_estimate_request_for_opportunity(opportunity, estimate_request)
+                if estimate_status >= 400:
+                    return Response(estimate_result, status=estimate_status)
             created.append({"opportunity_id": opportunity.id, "status": opportunity.status})
         source_intake.post_submit_flow = "multi_contractor" if len(created) > 1 else "single_contractor"
         source_intake.post_submit_flow_selected_at = source_intake.post_submit_flow_selected_at or timezone.now()

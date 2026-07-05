@@ -39,6 +39,10 @@ function makeOpportunity(overrides = {}) {
     timeline: overrides.timeline || 'Within the next month',
     budget_text: overrides.budget_text || '$4,500.00',
     milestone_preview: overrides.milestone_preview || ['Review request', 'Prepare estimate'],
+    latest_estimate_appointment: overrides.latest_estimate_appointment || null,
+    estimate_scheduled: Boolean(overrides.estimate_scheduled),
+    estimate_preference: overrides.estimate_preference || '',
+    estimate_preference_notes: overrides.estimate_preference_notes || '',
     request_signals: overrides.request_signals || ['Guided Intake', 'Budget Provided'],
     request_snapshot: {
       project_title: title,
@@ -326,4 +330,41 @@ test('opening a public website opportunity uses the unified detail and agreement
   await page.getByRole('button', { name: 'Close bid details' }).click();
   await page.getByTestId('lead-row-action-lead-101').click();
   await expect(page.getByTestId('convert-to-agreement-panel')).toBeVisible();
+});
+
+test('opportunity review displays customer-requested estimate details as awaiting confirmation', async ({ page }) => {
+  await mockUnifiedOpportunityPipeline(page, [
+    makeOpportunity({
+      bid_id: 'lead-201',
+      source_id: 201,
+      source_kind: 'marketplace',
+      source_kind_label: 'Marketplace',
+      lead_source_filter: 'marketplace',
+      project_title: 'Requested Estimate Patio',
+      customer_name: 'Estimate Customer',
+      latest_estimate_appointment: {
+        id: 44,
+        status: 'requested',
+        requested_by: 'customer',
+        appointment_type: 'in_person',
+        appointment_type_label: 'In-Person Estimate',
+        scheduled_start: '2026-07-08T09:00:00-05:00',
+        duration_minutes: 30,
+        notes: 'Morning is best.',
+        customer_message: 'Your requested estimate appointment is awaiting contractor confirmation.',
+      },
+      estimate_scheduled: true,
+    }),
+  ]);
+
+  await page.goto('/app/opportunities?source=marketplace', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('lead-row-lead-201').click();
+
+  await expect(page.getByTestId('opportunity-overview-lifecycle-status')).toContainText('Estimate Requested');
+  await expect(page.getByTestId('opportunity-requested-estimate-time')).toContainText('In-Person Estimate');
+  await expect(page.getByTestId('opportunity-availability-section')).toContainText('Morning is best.');
+  await page.getByTestId('opportunity-review-tab-next').click();
+  await expect(page.getByTestId('confirm-estimate-request-action')).toBeVisible();
+  await expect(page.getByTestId('propose-estimate-time-action')).toBeVisible();
+  await expect(page.getByTestId('decline-estimate-request-action')).toBeVisible();
 });

@@ -58,6 +58,7 @@ from projects.services.contractor_discovery import (
 )
 from projects.services.google_places_contractors import geocode_project_location, search_google_places_contractors_with_diagnostics
 from projects.services.contractor_trade_relevance import contractor_entity_excluded, project_trade_intent, trade_fit
+from projects.views.public_estimate_availability import create_customer_estimate_request_for_opportunity
 
 
 def _safe_text(value) -> str:
@@ -267,6 +268,9 @@ def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
         "photos_count": len(opportunity.photos or []),
         "selected_by_homeowner": opportunity.selected_by_homeowner,
         "status": opportunity.status,
+        "estimate_preference": opportunity.estimate_preference,
+        "estimate_preference_label": opportunity.get_estimate_preference_display() if opportunity.estimate_preference else "",
+        "estimate_preference_notes": opportunity.estimate_preference_notes,
         "source": "contractor_opportunity",
         "selected_at": opportunity.selected_at,
         "created_at": opportunity.selected_at,
@@ -330,6 +334,11 @@ class PublicIntakeSelectContractorView(APIView):
                 )
             except ValueError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            estimate_request = selection.get("estimate_request") if isinstance(selection.get("estimate_request"), dict) else None
+            if estimate_request:
+                estimate_result, estimate_status = create_customer_estimate_request_for_opportunity(opportunity, estimate_request)
+                if estimate_status >= 400:
+                    return Response(estimate_result, status=estimate_status)
             created.append(_opportunity_payload(opportunity))
 
         return Response(

@@ -152,8 +152,14 @@ def _latest_appointments_for_rows(contractor, rows: list[dict]) -> dict[tuple[st
     if not query:
         return {}
 
+    visible_statuses = [
+        OpportunityEstimateAppointment.STATUS_REQUESTED,
+        OpportunityEstimateAppointment.STATUS_PROPOSED,
+        OpportunityEstimateAppointment.STATUS_CONFIRMED,
+        OpportunityEstimateAppointment.STATUS_SCHEDULED,
+    ]
     appointments = (
-        OpportunityEstimateAppointment.objects.filter(contractor=contractor, status=OpportunityEstimateAppointment.STATUS_SCHEDULED)
+        OpportunityEstimateAppointment.objects.filter(contractor=contractor, status__in=visible_statuses)
         .filter(query)
         .order_by("source_type", "public_lead_id", "project_intake_id", "contractor_opportunity_id", "-scheduled_start", "-id")
     )
@@ -738,6 +744,9 @@ def _bid_row_from_marketplace_opportunity(opportunity, request=None) -> dict:
         "linked_agreement_url": f"/app/agreements/{linked_agreement.id}" if linked_agreement else "",
         "notes": notes,
         "timeline": _safe_text(getattr(opportunity, "timeline", "")),
+        "estimate_preference": _safe_text(getattr(opportunity, "estimate_preference", "")),
+        "estimate_preference_label": opportunity.get_estimate_preference_display() if getattr(opportunity, "estimate_preference", "") else "",
+        "estimate_preference_notes": _safe_text(getattr(opportunity, "estimate_preference_notes", "")),
         "budget_text": _marketplace_budget_text(opportunity),
         "milestone_preview": [],
         "next_action": bid_next_action(

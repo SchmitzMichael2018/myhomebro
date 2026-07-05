@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
 import ContractorDiscoveryStep from "./intake/ContractorDiscoveryStep.jsx";
+import EstimateSlotPicker from "./intake/EstimateSlotPicker.jsx";
 
 const REQUEST_TYPES = [
   ["repair", "Repair"],
@@ -36,6 +37,10 @@ const PAYMENT_PREFERENCES = [
 
 const NEW_PROPERTY_VALUE = "__new_property__";
 const CUSTOMER_REQUEST_PAGE_SIZE = 10;
+
+function contractorSelectionKey(card) {
+  return String(card?.id || card?.directory_entry_id || card?.contractor_id || card?.business_name || "").trim();
+}
 
 const TENANT_MAINTENANCE_STATUS_ACTIONS = [
   ["under_review", "Mark Under Review"],
@@ -1999,6 +2004,7 @@ export default function CustomerRequests({
   const [editingRequest, setEditingRequest] = useState(null);
   const [contractorSearchRequest, setContractorSearchRequest] = useState(null);
   const [selectedContractors, setSelectedContractors] = useState([]);
+  const [estimatePreferences, setEstimatePreferences] = useState({});
   const [routingContractors, setRoutingContractors] = useState(false);
   const [contractorSearchLoading, setContractorSearchLoading] = useState(false);
   const [contractorSearchError, setContractorSearchError] = useState("");
@@ -2347,6 +2353,7 @@ export default function CustomerRequests({
   const closeContractorSearch = () => {
     setContractorSearchRequest(null);
     setSelectedContractors([]);
+    setEstimatePreferences({});
     setContractorSearchError("");
     setContractorSearchLoading(false);
     setRoutingContractors(false);
@@ -2356,6 +2363,7 @@ export default function CustomerRequests({
     setSelectedRequest(null);
     setEditingRequest(null);
     setSelectedContractors([]);
+    setEstimatePreferences({});
     setContractorSearchError("");
     setContractorSearchRequest({
       ...request,
@@ -2385,7 +2393,11 @@ export default function CustomerRequests({
     if (!contractorSearchRequest?.request_id || !selectedContractors.length) return;
     setRoutingContractors(true);
     try {
-      const response = await onRouteRequestContractors?.(contractorSearchRequest.request_id, selectedContractors);
+      const selectionsWithPreferences = selectedContractors.map((contractor) => {
+        const preference = estimatePreferences[contractorSelectionKey(contractor)];
+        return preference ? { ...contractor, estimate_request: preference } : contractor;
+      });
+      const response = await onRouteRequestContractors?.(contractorSearchRequest.request_id, selectionsWithPreferences);
       const updatedRequest =
         response?.portal?.requests?.find((row) => String(row.request_id) === String(contractorSearchRequest.request_id) && row.source_kind === "customer_request") ||
         null;
@@ -3178,9 +3190,18 @@ I need help installing shelves and patching drywall.`}
                   />
                 ) : (
                   <EmptyState title="Contractor search is not ready yet">
-                    Save this request and try again. We need a request record before showing contractor matches.
-                  </EmptyState>
-                )}
+                  Save this request and try again. We need a request record before showing contractor matches.
+                </EmptyState>
+              )}
+                {selectedContractors.some((contractor) => contractor?.contractor_id) ? (
+                  <EstimateSlotPicker
+                    contractors={selectedContractors}
+                    preferences={estimatePreferences}
+                    onChange={setEstimatePreferences}
+                    variant="portal"
+                    testId="customer-portal-estimate-slot-picker"
+                  />
+                ) : null}
                 <div className="flex flex-col gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="text-sm text-slate-300">
                     {selectedContractors.length

@@ -6,6 +6,7 @@ import AddressAutocomplete from "../AddressAutocomplete.jsx";
 import { PROJECT_MODE_OPTIONS, normalizeProjectMode, projectModeLabel } from "../projectMode.jsx";
 import { buildAssistedDiySafetyWarning } from "./projectSafety.js";
 import ContractorDiscoveryStep from "./ContractorDiscoveryStep.jsx";
+import EstimateSlotPicker from "./EstimateSlotPicker.jsx";
 import PaymentPreferenceHelp, {
   PAYMENT_PREFERENCE_OPTIONS,
   PAYMENT_PREFERENCE_SECTION_COPY,
@@ -51,6 +52,7 @@ function contractorSelectionKey(card) {
 function serializeSelectedContractor(card) {
   return {
     id: card?.id,
+    contractor_id: card?.contractor_id,
     directory_entry_id: card?.directory_entry_id,
     google_place_id: card?.google_place_id,
     business_name: card?.business_name,
@@ -457,6 +459,7 @@ export default function PublicIntakeWizard() {
   const [branchSubmitting, setBranchSubmitting] = useState(false);
   const [branchResult, setBranchResult] = useState(null);
   const [discoveryTargets, setDiscoveryTargets] = useState([]);
+  const [estimatePreferences, setEstimatePreferences] = useState({});
   const [clarificationUploading, setClarificationUploading] = useState(false);
   const [projectTypeTouched, setProjectTypeTouched] = useState(false);
   const [measurementsTouched, setMeasurementsTouched] = useState(false);
@@ -1081,7 +1084,11 @@ export default function PublicIntakeWizard() {
     }
 
     const selectedContractors = (Array.isArray(discoveryTargets) ? discoveryTargets : [])
-      .map(serializeSelectedContractor)
+      .map((row) => {
+        const serialized = serializeSelectedContractor(row);
+        const preference = estimatePreferences[contractorSelectionKey(serialized)];
+        return preference ? { ...serialized, estimate_request: preference } : serialized;
+      })
       .filter((row) => contractorSelectionKey(row));
     const manualSingle = { name: singleContractor.name, email: singleContractor.email, phone: singleContractor.phone };
     const manualContractors =
@@ -2557,6 +2564,17 @@ export default function PublicIntakeWizard() {
                 })}
               </div>
             </section>
+          ) : null}
+
+          {discoveryTargets.some((contractor) => contractor?.contractor_id) ? (
+            <div className="mt-5">
+              <EstimateSlotPicker
+                contractors={discoveryTargets}
+                preferences={estimatePreferences}
+                onChange={setEstimatePreferences}
+                testId="public-intake-estimate-slot-picker"
+              />
+            </div>
           ) : null}
 
           {branchResult?.post_submit_flow ? (

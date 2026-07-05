@@ -99,6 +99,10 @@ from .views.estimate_availability import (
     EstimateAvailabilityWindowDetailView,
     EstimateAvailabilityWindowListView,
 )
+from .views.public_estimate_availability import (
+    PublicEstimateAppointmentRequestView,
+    PublicEstimateAvailabilityView,
+)
 from .views.website_builder import (
     ContractorWebsiteAiAssistView,
     ContractorWebsitePageDetailView,
@@ -788,6 +792,8 @@ urlpatterns = [
     path("public-intake/photos/", PublicIntakeClarificationPhotoUploadView.as_view()),
     path("public-intake/start/", PublicIntakeStartView.as_view()),
     path("public-intake/contractor-search/", PublicIntakeContractorSearchView.as_view()),
+    path("public-intake/estimate-availability/", PublicEstimateAvailabilityView.as_view()),
+    path("public-intake/estimate-appointment-request/", PublicEstimateAppointmentRequestView.as_view()),
     path("public-intake/select-contractor/", PublicIntakeSelectContractorView.as_view()),
     path("public-intake/send-contractor-invites/", PublicIntakeSendContractorInvitesView.as_view()),
     path("admin/contractor-search/", AdminContractorSearchView.as_view()),

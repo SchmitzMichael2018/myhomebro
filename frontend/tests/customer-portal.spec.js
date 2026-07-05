@@ -2138,6 +2138,7 @@ test("customer portal is reachable from the landing page and loads secure record
   let submittedWorkOrderPayload = null;
   let submittedWorkOrderEditPayload = null;
   let submittedMarketplacePayload = null;
+  let submittedContractorSelectionPayload = null;
   let convertedWorkOrderCalled = false;
   let currentPortalPayload = portalPayload;
   let teamMembers = [];
@@ -3749,6 +3750,7 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/requests/9/contractors/select/") && method === "POST") {
+      submittedContractorSelectionPayload = JSON.parse(route.request().postData() || "{}");
       currentPortalPayload = {
         ...currentPortalPayload,
         requests: currentPortalPayload.requests.map((request) =>
@@ -4239,9 +4241,35 @@ test("customer portal is reachable from the landing page and loads secure record
     await route.fallback();
   });
 
-  await page.route("**/api/projects/public-intake/contractor-search/**", async (route) => {
+  await page.route(/.*\/(?:api\/)?projects\/public-intake\/.*/, async (route) => {
     const requestUrl = route.request().url();
     const method = route.request().method();
+    if (method === "GET" && requestUrl.includes("/estimate-availability/")) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          contractor_id: 77,
+          contractor_name: "Austin HVAC Pros",
+          has_availability: true,
+          slots: [
+            {
+              slot_id: "slot-77-1",
+              contractor_id: 77,
+              appointment_type: "in_person",
+              appointment_type_label: "In-Person Estimate",
+              date: "2026-07-08",
+              scheduled_start: "2026-07-08T09:00:00-05:00",
+              scheduled_end: "2026-07-08T09:30:00-05:00",
+              time: "9:00 AM",
+              duration_minutes: 30,
+              timezone: "America/Chicago",
+            },
+          ],
+        }),
+      });
+      return;
+    }
     if (method === "GET" && requestUrl.includes("token=portal-intake-token")) {
       await route.fulfill({
         status: 200,
@@ -4250,6 +4278,8 @@ test("customer portal is reachable from the landing page and loads secure record
           results: [
             {
               id: "directory:17",
+              contractor_id: 77,
+              directory_entry_id: 17,
               source: "directory",
               business_name: "Austin HVAC Pros",
               contact_name: "Alex Tech",
@@ -5102,9 +5132,15 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-request-find-contractor-customer-request-9").click();
   await expect(page.getByTestId("customer-request-contractor-search-modal")).toBeVisible();
   await page.getByTestId("public-intake-contractor-select-directory:17").click();
+  await expect(page.getByTestId("customer-portal-estimate-slot-picker")).toContainText("Preferred Estimate");
+  await expect(page.getByTestId("estimate-slot-flexible-directory:17")).toBeVisible();
+  await page.getByTestId("estimate-slot-flexible-directory:17").check();
   await expect(page.getByTestId("customer-request-route-contractors")).toBeEnabled();
   await page.getByTestId("customer-request-route-contractors").click();
   await expect(page.getByTestId("customer-request-contractor-search-modal")).toHaveCount(0);
+  await expect(submittedContractorSelectionPayload?.selected_contractors?.[0]?.estimate_request).toMatchObject({
+    preference: "flexible",
+  });
   await expect(page.getByTestId("customer-request-card-customer-request-9")).toContainText("Sent to 1 Contractor");
   await expect(page.getByTestId("customer-request-actions-customer-request-9")).not.toContainText("Delete Request");
   await page.getByTestId("customer-request-view-customer-request-9").click();

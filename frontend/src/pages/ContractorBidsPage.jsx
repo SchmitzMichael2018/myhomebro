@@ -66,6 +66,12 @@ function lifecycleStatus(row) {
   if (row?.estimate_completed || normalize(row?.latest_estimate_appointment?.status) === "completed") {
     return { label: "Estimate Completed", tone: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100" };
   }
+  if (normalize(row?.latest_estimate_appointment?.status) === "requested") {
+    return { label: "Estimate Requested", tone: "border-amber-400/50 bg-amber-500/15 text-amber-100" };
+  }
+  if (normalize(row?.estimate_preference) === "flexible") {
+    return { label: "Flexible Estimate", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
+  }
   if (row?.latest_estimate_appointment || row?.estimate_scheduled) {
     return { label: "Estimate Scheduled", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
   }
@@ -148,8 +154,16 @@ function InfoRow({ label, value, testId = "" }) {
 
 function formatAppointmentWindow(appointment) {
   if (!appointment) return "";
-  const date = fmtDate(appointment.start_at || appointment.date || appointment.scheduled_for);
-  const time = appointment.start_time || appointment.time || "";
+  const source = appointment.scheduled_start || appointment.start_at || appointment.date || appointment.scheduled_for;
+  const date = fmtDate(source);
+  let time = appointment.start_time || appointment.time || "";
+  if (!time && source) {
+    try {
+      time = new Date(source).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    } catch {
+      time = "";
+    }
+  }
   const type = appointment.appointment_type_label || appointment.appointment_type || "Estimate";
   return [date, time, type].filter(Boolean).join(" - ");
 }
@@ -174,7 +188,9 @@ function buildAvailabilitySummary({ row, lifecycle, canScheduleEstimate }) {
   return {
     estimate:
       appointment
-        ? formatAppointmentWindow(appointment)
+        ? `${normalize(appointment.status) === "requested" ? "Requested, awaiting confirmation: " : ""}${formatAppointmentWindow(appointment)}`
+        : normalize(row?.estimate_preference) === "flexible"
+          ? "Customer is flexible with scheduling."
         : canScheduleEstimate
           ? "Ready to schedule with customer contact on file."
           : "Add customer contact before scheduling.",
@@ -187,7 +203,9 @@ function buildAvailabilitySummary({ row, lifecycle, canScheduleEstimate }) {
     workload,
     capacity:
       appointment
-        ? "Estimate is on the calendar; project capacity still needs agreement review."
+        ? normalize(appointment.status) === "requested"
+          ? "Customer requested an estimate time. Confirm, propose another time, or contact the customer."
+          : "Estimate is on the calendar; project capacity still needs agreement review."
         : "No appointment scheduled yet.",
     fit,
   };
@@ -1807,6 +1825,8 @@ export default function ContractorBidsPage() {
             : selectedRow?.next_action?.label || "View Details"
       : selectedCanConvertToAgreement
       ? "Convert to Agreement"
+      : selectedLifecycle.label === "Estimate Requested"
+      ? "Confirm Estimate"
       : selectedLifecycle.label === "Estimate Scheduled"
       ? "View Appointment"
       : selectedStage === "new_lead" || selectedStage === "follow_up"
@@ -1825,6 +1845,8 @@ export default function ContractorBidsPage() {
             : "Review the property management work order details."
       : selectedCanConvertToAgreement
       ? "Review the request and adjust the draft before sending the agreement."
+      : selectedLifecycle.label === "Estimate Requested"
+      ? "Customer requested this estimate time. Confirm it, propose a different time, decline the request, or contact the customer before moving forward."
       : selectedLifecycle.label === "Estimate Scheduled"
       ? "Review the scheduled estimate details, then follow up with the customer if anything changes."
       : selectedStage === "new_lead"
@@ -2750,6 +2772,15 @@ export default function ContractorBidsPage() {
                     >
                       <div className="grid gap-2 sm:grid-cols-2">
                         <InfoRow label="Earliest estimate availability" value={selectedAvailability.estimate} />
+                        {selectedRow.latest_estimate_appointment?.status === "requested" ? (
+                          <>
+                            <InfoRow label="Requested Time" value={formatAppointmentWindow(selectedRow.latest_estimate_appointment)} testId="opportunity-requested-estimate-time" />
+                            <InfoRow label="Requested Type" value={selectedRow.latest_estimate_appointment.appointment_type_label} />
+                            <InfoRow label="Customer Notes" value={selectedRow.latest_estimate_appointment.notes || selectedRow.latest_estimate_appointment.customer_message || "No notes provided"} />
+                          </>
+                        ) : normalize(selectedRow?.estimate_preference) === "flexible" ? (
+                          <InfoRow label="Estimate Preference" value="Customer is flexible with scheduling." testId="opportunity-flexible-estimate" />
+                        ) : null}
                         <InfoRow label="Earliest project availability" value={selectedAvailability.project} />
                         <InfoRow label="Current workload" value={selectedAvailability.workload} />
                         <InfoRow label="Capacity summary" value={selectedAvailability.capacity} />
@@ -2970,7 +3001,34 @@ export default function ContractorBidsPage() {
                 ) : null}
 
                 <div className="mt-4 flex flex-wrap gap-3">
-                  {selectedStage !== "closed" && !selectedCanOpenAgreement ? (
+                  {selectedLifecycle.label === "Estimate Requested" ? (
+                    <>
+                      <button
+                        type="button"
+                        data-testid="confirm-estimate-request-action"
+                        onClick={() => toast("Estimate confirmation workflow is coming soon. Contact the customer to confirm for now.")}
+                        className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-400"
+                      >
+                        Confirm Estimate
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="propose-estimate-time-action"
+                        onClick={() => toast("Propose different time workflow is coming soon.")}
+                        className="inline-flex items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
+                      >
+                        Propose Different Time
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="decline-estimate-request-action"
+                        onClick={() => toast("Decline estimate request workflow is coming soon.")}
+                        className="inline-flex items-center gap-2 rounded-lg border border-rose-400/45 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/25"
+                      >
+                        Decline Estimate Request
+                      </button>
+                    </>
+                  ) : selectedStage !== "closed" && !selectedCanOpenAgreement ? (
                     <button
                       type="button"
                       data-testid="schedule-estimate-action"

@@ -510,6 +510,16 @@ class ContractorOpportunity(models.Model):
         (STATUS_EXPIRED, "Expired"),
         (STATUS_CONVERTED, "Converted"),
     ]
+    ESTIMATE_PREFERENCE_NONE = ""
+    ESTIMATE_PREFERENCE_SLOT = "slot"
+    ESTIMATE_PREFERENCE_FLEXIBLE = "flexible"
+    ESTIMATE_PREFERENCE_CONTACT_LATER = "contact_later"
+    ESTIMATE_PREFERENCE_CHOICES = [
+        (ESTIMATE_PREFERENCE_NONE, "No Estimate Preference"),
+        (ESTIMATE_PREFERENCE_SLOT, "Preferred Slot Requested"),
+        (ESTIMATE_PREFERENCE_FLEXIBLE, "Customer Flexible"),
+        (ESTIMATE_PREFERENCE_CONTACT_LATER, "Contact Later"),
+    ]
 
     directory_entry = models.ForeignKey(
         "projects.ContractorDirectoryEntry",
@@ -555,6 +565,14 @@ class ContractorOpportunity(models.Model):
     measurements = models.JSONField(default=list, blank=True)
     photos = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    estimate_preference = models.CharField(
+        max_length=24,
+        choices=ESTIMATE_PREFERENCE_CHOICES,
+        blank=True,
+        default=ESTIMATE_PREFERENCE_NONE,
+        db_index=True,
+    )
+    estimate_preference_notes = models.TextField(blank=True, default="")
     selected_by_homeowner = models.BooleanField(default=True, db_index=True)
     selected_at = models.DateTimeField(auto_now_add=True)
     accepted_at = models.DateTimeField(null=True, blank=True)

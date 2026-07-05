@@ -1,12 +1,12 @@
 from unittest.mock import patch
-from datetime import time, timedelta
+from datetime import datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner, Notification
+from projects.models import Agreement, AgreementAssignment, Contractor, Homeowner, Notification
 from projects.models_contractor_discovery import (
     ContractorDirectoryDiscovery,
     ContractorDirectoryEntry,
@@ -599,6 +599,149 @@ class ContractorOpportunityFlowTests(TestCase):
         delete = self.client.delete(f"/api/projects/estimate-availability/{window_id}/")
         self.assertEqual(delete.status_code, 204)
         self.assertEqual(ContractorEstimateAvailabilityWindow.objects.count(), 0)
+
+    def test_public_estimate_availability_expands_active_windows_into_slots(self):
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        ContractorEstimateAvailabilityWindow.objects.create(
+            contractor=self.contractor,
+            weekday=tomorrow.weekday(),
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            duration_minutes=30,
+            appointment_type=OpportunityEstimateAppointment.TYPE_IN_PERSON,
+            is_active=True,
+        )
+        ContractorEstimateAvailabilityWindow.objects.create(
+            contractor=self.contractor,
+            weekday=tomorrow.weekday(),
+            start_time=time(13, 0),
+            end_time=time(14, 0),
+            duration_minutes=30,
+            appointment_type=OpportunityEstimateAppointment.TYPE_PHONE,
+            is_active=False,
+        )
+
+        response = self.client.get(
+            "/api/projects/public-intake/estimate-availability/",
+            {
+                "contractor_id": self.contractor.id,
+                "start_date": tomorrow.isoformat(),
+                "end_date": tomorrow.isoformat(),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["has_availability"])
+        self.assertEqual(len(response.data["slots"]), 2)
+        self.assertEqual(response.data["slots"][0]["appointment_type"], OpportunityEstimateAppointment.TYPE_IN_PERSON)
+
+    def test_customer_estimate_appointment_request_creates_requested_status_only(self):
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        window = ContractorEstimateAvailabilityWindow.objects.create(
+            contractor=self.contractor,
+            weekday=tomorrow.weekday(),
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            duration_minutes=30,
+            appointment_type=OpportunityEstimateAppointment.TYPE_IN_PERSON,
+            is_active=True,
+        )
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        availability = self.client.get(
+            "/api/projects/public-intake/estimate-availability/",
+            {
+                "contractor_id": self.contractor.id,
+                "start_date": tomorrow.isoformat(),
+                "end_date": tomorrow.isoformat(),
+            },
+        )
+        slot = availability.data["slots"][0]
+
+        response = self.client.post(
+            "/api/projects/public-intake/estimate-appointment-request/",
+            {
+                "opportunity_id": opportunity.id,
+                "scheduled_start": slot["scheduled_start"],
+                "appointment_type": slot["appointment_type"],
+                "customer_notes": "Morning is best.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        appointment = OpportunityEstimateAppointment.objects.get()
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_REQUESTED)
+        self.assertEqual(appointment.requested_by, OpportunityEstimateAppointment.REQUESTED_BY_CUSTOMER)
+        self.assertEqual(appointment.contractor_opportunity, opportunity)
+        self.assertEqual(appointment.duration_minutes, window.duration_minutes)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.estimate_preference, ContractorOpportunity.ESTIMATE_PREFERENCE_SLOT)
+        self.assertEqual(Agreement.objects.count(), 0)
+        self.assertEqual(AgreementAssignment.objects.count(), 0)
+
+    def test_customer_estimate_request_rejects_disappeared_slot(self):
+        tomorrow = timezone.localdate() + timedelta(days=1)
+        ContractorEstimateAvailabilityWindow.objects.create(
+            contractor=self.contractor,
+            weekday=tomorrow.weekday(),
+            start_time=time(9, 0),
+            end_time=time(10, 0),
+            duration_minutes=30,
+            appointment_type=OpportunityEstimateAppointment.TYPE_IN_PERSON,
+            is_active=False,
+        )
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+
+        response = self.client.post(
+            "/api/projects/public-intake/estimate-appointment-request/",
+            {
+                "opportunity_id": opportunity.id,
+                "scheduled_start": timezone.make_aware(
+                    datetime.combine(tomorrow, time(9, 0)),
+                    timezone.get_current_timezone(),
+                ).isoformat(),
+                "appointment_type": OpportunityEstimateAppointment.TYPE_IN_PERSON,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["detail"], "That appointment is no longer available.")
+        self.assertEqual(OpportunityEstimateAppointment.objects.count(), 0)
+
+    def test_customer_flexible_estimate_preference_does_not_create_appointment(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+
+        response = self.client.post(
+            "/api/projects/public-intake/estimate-appointment-request/",
+            {
+                "opportunity_id": opportunity.id,
+                "preference": "flexible",
+                "customer_notes": "Any weekday morning works.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.estimate_preference, ContractorOpportunity.ESTIMATE_PREFERENCE_FLEXIBLE)
+        self.assertEqual(opportunity.estimate_preference_notes, "Any weekday morning works.")
+        self.assertEqual(OpportunityEstimateAppointment.objects.count(), 0)
 
     def test_estimate_availability_validation_blocks_invalid_windows(self):
         self.client.force_authenticate(self.contractor_user)
