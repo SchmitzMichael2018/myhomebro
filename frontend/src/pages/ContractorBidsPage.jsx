@@ -58,30 +58,30 @@ function lifecycleStatus(row) {
   const hasAgreement = Boolean(row?.linked_agreement_id || row?.agreement_id || row?.linked_agreement_url);
 
   if (hasAgreement || nextKey === "open_agreement") {
-    return { label: "Converted", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+    return { label: "Converted", tone: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100" };
   }
   if (stage === "closed" || status === "declined" || status === "expired" || statusGroup === "declined_expired") {
-    return { label: "Declined", tone: "border-rose-200 bg-rose-50 text-rose-800" };
+    return { label: "Declined", tone: "border-rose-400/45 bg-rose-500/15 text-rose-100" };
   }
   if (row?.estimate_completed || normalize(row?.latest_estimate_appointment?.status) === "completed") {
-    return { label: "Estimate Completed", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+    return { label: "Estimate Completed", tone: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100" };
   }
   if (row?.latest_estimate_appointment || row?.estimate_scheduled) {
-    return { label: "Estimate Scheduled", tone: "border-indigo-200 bg-indigo-50 text-indigo-800" };
+    return { label: "Estimate Scheduled", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
   }
   if (sourceKind === "property_work_order" && nextKey === "accept_property_work_order") {
-    return { label: "Needs Response", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+    return { label: "Needs Response", tone: "border-amber-400/50 bg-amber-500/15 text-amber-100" };
   }
   if (isConvertToAgreementRow(row) || status === "awarded" || statusGroup === "awarded" || nextKey === "prepare_agreement_draft") {
-    return { label: "Ready to Convert", tone: "border-emerald-200 bg-emerald-50 text-emerald-800" };
+    return { label: "Ready to Convert", tone: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100" };
   }
   if (stage === "new_lead" || stage === "follow_up" || status === "draft" || status === "submitted" || status === "open") {
-    return { label: "Estimate Needed", tone: "border-sky-200 bg-sky-50 text-sky-800" };
+    return { label: "Estimate Needed", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
   }
   if (status === "under_review" || statusGroup === "under_review") {
-    return { label: "Needs Response", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+    return { label: "Needs Response", tone: "border-amber-400/50 bg-amber-500/15 text-amber-100" };
   }
-  return { label: "Needs Response", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+  return { label: "Needs Response", tone: "border-amber-400/50 bg-amber-500/15 text-amber-100" };
 }
 
 function hasLinkedAgreement(row) {
@@ -90,9 +90,9 @@ function hasLinkedAgreement(row) {
 
 function DetailField({ label, value }) {
   return (
-    <div className="rounded-xl bg-slate-50 p-4">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
-      <div className="mt-2 text-sm font-semibold text-slate-900">{value || "-"}</div>
+    <div className="rounded-xl bg-slate-900/70 p-4 ring-1 ring-white/10">
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-slate-50">{value || "-"}</div>
     </div>
   );
 }
@@ -101,10 +101,10 @@ function SectionCard({ title, testId, children, subtitle = "", className = "" })
   return (
     <section
       data-testid={testId}
-      className={`rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 ${className}`.trim()}
+      className={`rounded-2xl bg-slate-900/75 p-5 shadow-sm ring-1 ring-white/10 ${className}`.trim()}
     >
-      <div className="text-sm font-semibold text-slate-900">{title}</div>
-      {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
+      <div className="text-sm font-semibold text-slate-50">{title}</div>
+      {subtitle ? <p className="mt-1 text-sm text-slate-300">{subtitle}</p> : null}
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -112,10 +112,10 @@ function SectionCard({ title, testId, children, subtitle = "", className = "" })
 
 function ModalSection({ title, testId, children, subtitle = "", className = "" }) {
   return (
-    <section data-testid={testId} className={`rounded-xl bg-white ${className}`.trim()}>
-      <div className="flex flex-col gap-1 border-b border-slate-100 pb-3">
-        <div className="text-sm font-bold text-slate-950">{title}</div>
-        {subtitle ? <p className="text-sm text-slate-600">{subtitle}</p> : null}
+    <section data-testid={testId} className={`rounded-2xl bg-slate-900/65 p-4 ring-1 ring-white/10 ${className}`.trim()}>
+      <div className="flex flex-col gap-1 border-b border-white/10 pb-3">
+        <div className="text-sm font-bold text-slate-50">{title}</div>
+        {subtitle ? <p className="text-sm text-slate-300">{subtitle}</p> : null}
       </div>
       <div className="pt-3">{children}</div>
     </section>
@@ -124,10 +124,10 @@ function ModalSection({ title, testId, children, subtitle = "", className = "" }
 
 function SummaryMetric({ label, value, tone = "slate" }) {
   const tones = {
-    slate: "bg-slate-50 text-slate-900",
-    emerald: "bg-emerald-50 text-emerald-900",
-    amber: "bg-amber-50 text-amber-900",
-    sky: "bg-sky-50 text-sky-900",
+    slate: "bg-slate-900/75 text-slate-50 ring-1 ring-white/10",
+    emerald: "bg-emerald-500/15 text-emerald-50 ring-1 ring-emerald-400/30",
+    amber: "bg-amber-500/15 text-amber-50 ring-1 ring-amber-400/35",
+    sky: "bg-blue-500/15 text-blue-50 ring-1 ring-blue-400/30",
   };
   return (
     <div className={`rounded-lg px-3 py-2 ${tones[tone] || tones.slate}`}>
@@ -139,9 +139,9 @@ function SummaryMetric({ label, value, tone = "slate" }) {
 
 function InfoRow({ label, value, testId = "" }) {
   return (
-    <div data-testid={testId || undefined} className="rounded-lg bg-slate-50 px-3 py-2">
-      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{label}</div>
-      <div className="mt-1 text-sm font-semibold text-slate-950">{value || "-"}</div>
+    <div data-testid={testId || undefined} className="rounded-lg bg-slate-950/55 px-3 py-2 ring-1 ring-white/10">
+      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-slate-50">{value || "-"}</div>
     </div>
   );
 }
@@ -265,20 +265,21 @@ function workspaceStageLabel(stage) {
 }
 
 function workspaceStageTone(stage) {
-  if (stage === "new_lead") return "border-blue-200 bg-blue-50 text-blue-700";
-  if (stage === "follow_up") return "border-amber-200 bg-amber-50 text-amber-700";
-  if (stage === "active_bid") return "border-indigo-200 bg-indigo-50 text-indigo-700";
-  return "border-slate-200 bg-slate-100 text-slate-600";
+  if (stage === "new_lead") return "border-blue-400/40 bg-blue-500/15 text-blue-100";
+  if (stage === "follow_up") return "border-amber-400/50 bg-amber-500/15 text-amber-100";
+  if (stage === "active_bid") return "border-blue-400/40 bg-blue-500/15 text-blue-100";
+  if (stage === "closed") return "border-rose-400/45 bg-rose-500/15 text-rose-100";
+  return "border-slate-500/50 bg-slate-700/50 text-slate-100";
 }
 
 function signalTone(signal) {
   const normalized = normalize(signal);
-  if (normalized === "guided intake" || normalized === "clarifications answered") return "border-emerald-200 bg-emerald-50 text-emerald-700";
-  if (normalized === "photos" || normalized === "multi-quote request") return "border-indigo-200 bg-indigo-50 text-indigo-700";
+  if (normalized === "guided intake" || normalized === "clarifications answered") return "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+  if (normalized === "photos" || normalized === "multi-quote request") return "border-blue-400/40 bg-blue-500/15 text-blue-100";
   if (normalized === "budget provided" || normalized === "timeline provided" || normalized === "measurements noted") {
-    return "border-sky-200 bg-sky-50 text-sky-700";
+    return "border-blue-400/40 bg-blue-500/15 text-blue-100";
   }
-  return "border-slate-200 bg-white text-slate-700";
+  return "border-slate-500/50 bg-slate-700/50 text-slate-100";
 }
 
 function toTimestamp(value) {
@@ -629,7 +630,7 @@ function ContactActionButton({ kind, href, disabledReason, children, testId, onC
         data-testid={testId}
         disabled
         title={disabledReason}
-        className={`${baseClass} cursor-not-allowed border-slate-200 bg-slate-100 text-slate-500`}
+        className={`${baseClass} cursor-not-allowed border-slate-600/60 bg-slate-800/70 text-slate-400`}
       >
         {icon}
         {children}
@@ -641,7 +642,7 @@ function ContactActionButton({ kind, href, disabledReason, children, testId, onC
       data-testid={testId}
       href={href}
       onClick={onClick}
-      className={`${baseClass} border-slate-300 bg-white text-slate-800 hover:bg-slate-50`}
+      className={`${baseClass} border-blue-300/35 bg-blue-500/15 text-blue-50 hover:bg-blue-500/25`}
     >
       {icon}
       {children}
@@ -2624,30 +2625,39 @@ export default function ContractorBidsPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="opportunity-review-title"
-            className="relative flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+            className="relative flex max-h-[94vh] w-full max-w-7xl flex-col overflow-hidden rounded-2xl border border-blue-300/20 bg-slate-950 shadow-2xl shadow-slate-950/60"
           >
-            <div className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
+            <div className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/95 backdrop-blur">
               <div className="flex items-start justify-between gap-4 p-5 pb-4">
                 <div className="min-w-0">
-                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Opportunity Review</div>
-                  <h3 id="opportunity-review-title" className="mt-2 truncate text-2xl font-extrabold text-slate-900">{selectedRow.project_title}</h3>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                    <span className="font-semibold text-slate-800">{selectedRow.customer_name}</span>
-                    {selectedRow.source_kind_label ? <span>{selectedRow.source_kind_label}</span> : null}
-                    <span data-testid="opportunity-review-lifecycle-status">{selectedLifecycle.label}</span>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-200/80">Opportunity Review</div>
+                  <h3 id="opportunity-review-title" className="mt-2 truncate text-2xl font-extrabold text-white">{selectedRow.project_title}</h3>
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-slate-300">
+                    <span className="font-semibold text-slate-100">{selectedRow.customer_name}</span>
+                    {selectedRow.source_kind_label ? (
+                      <span className="inline-flex rounded-full border border-blue-400/35 bg-blue-500/15 px-3 py-1 text-xs font-bold text-blue-100">
+                        {selectedRow.source_kind_label}
+                      </span>
+                    ) : null}
+                    <span
+                      data-testid="opportunity-review-lifecycle-status"
+                      className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${selectedLifecycle.tone}`}
+                    >
+                      {selectedLifecycle.label}
+                    </span>
                   </div>
                 </div>
               <button
                 type="button"
                 aria-label="Close bid details"
                 onClick={closeDrawer}
-                className="shrink-0 rounded-lg border border-slate-300 bg-white p-2 text-slate-600 hover:bg-slate-50"
+                className="shrink-0 rounded-lg border border-white/15 bg-white/10 p-2 text-slate-200 hover:bg-white/15"
               >
                 <X size={16} />
               </button>
               </div>
 
-              <div className="flex gap-2 overflow-x-auto bg-slate-50 px-5 py-3" data-testid="opportunity-review-tabs">
+              <div className="flex gap-2 overflow-x-auto bg-slate-900/80 px-5 py-3" data-testid="opportunity-review-tabs">
                 {detailTabs.map((tab) => (
                   <button
                     key={tab.key}
@@ -2656,8 +2666,8 @@ export default function ContractorBidsPage() {
                     onClick={() => setDetailTab(tab.key)}
                     className={`shrink-0 rounded-lg border px-5 py-2.5 text-sm font-bold transition ${
                       detailTab === tab.key
-                        ? "border-slate-900 bg-slate-900 text-white shadow-sm"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-100"
+                        ? "border-blue-300/60 bg-slate-900 bg-blue-500 text-white shadow-sm shadow-blue-950/30"
+                        : "border-white/10 bg-slate-800/70 text-slate-200 hover:border-blue-300/40 hover:bg-slate-800"
                     }`}
                   >
                     {tab.label}
@@ -2666,34 +2676,34 @@ export default function ContractorBidsPage() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-slate-50/70 p-5 sm:p-6" data-testid="lead-detail-container">
+            <div className="flex-1 overflow-y-auto bg-slate-950 p-5 [scrollbar-color:#475569_#0f172a] sm:p-6" data-testid="lead-detail-container">
               {detailTab === "overview" ? (
                 <section
                   data-testid="opportunity-overview-tab-panel"
-                  className="space-y-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                  className="space-y-6 rounded-2xl bg-slate-900/70 p-5 shadow-sm ring-1 ring-white/10"
                 >
                   <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr]">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         {selectedRow.source_kind_label ? (
-                          <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                          <span className="inline-flex rounded-full border border-blue-400/35 bg-blue-500/15 px-3 py-1 text-xs font-bold text-blue-100">
                             {selectedRow.source_kind_label}
                           </span>
                         ) : null}
-                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${workspaceStageTone(selectedStage)}`}>
+                        <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${workspaceStageTone(selectedStage)}`}>
                           {workspaceStageLabel(selectedStage)}
                         </span>
                         <span
                           data-testid="opportunity-overview-lifecycle-status"
-                          className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${selectedLifecycle.tone}`}
+                          className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${selectedLifecycle.tone}`}
                         >
                           {selectedLifecycle.label}
                         </span>
                       </div>
-                      <div className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-slate-500">Overview</div>
-                      <h4 className="mt-2 text-xl font-extrabold text-slate-950">{selectedRow.project_title}</h4>
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-                        <span className="font-semibold text-slate-900">{selectedRow.customer_name || "Customer unavailable"}</span>
+                      <div className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-blue-200/75">Overview</div>
+                      <h4 className="mt-2 text-xl font-extrabold text-white">{selectedRow.project_title}</h4>
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-300">
+                        <span className="font-semibold text-slate-50">{selectedRow.customer_name || "Customer unavailable"}</span>
                         <span>{firstPresent(selectedRow.customer_email, selectedRow.customer_phone, "No contact listed")}</span>
                         {selectedServiceLocation ? <span>{selectedServiceLocation}</span> : null}
                       </div>
@@ -2709,26 +2719,26 @@ export default function ContractorBidsPage() {
                   <div className="grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
                     <ModalSection title="Scope Summary" testId="overview-scope-summary" subtitle="A quick scan of the customer's request.">
                       {selectedDescriptionBullets.length ? (
-                        <ul className="space-y-2 text-sm text-slate-700">
+                        <ul className="space-y-2 text-sm leading-6 text-slate-200">
                           {selectedDescriptionBullets.map((item, index) => (
                             <li key={`${item}-${index}`} className="flex gap-2">
-                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                              <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-300" />
                               <span>{item}</span>
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                        <div className="rounded-lg bg-slate-950/55 px-3 py-2 text-sm text-slate-300 ring-1 ring-white/10">
                           No project description was provided.
                         </div>
                       )}
                     </ModalSection>
 
                     <ModalSection title="Recommended Next Action" testId="overview-next-action" subtitle="Primary action stays below for a deliberate click.">
-                      <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-900">
+                      <div className="rounded-xl border border-blue-400/35 bg-blue-500/15 px-4 py-3 text-base font-bold text-blue-50">
                         {selectedPrimaryActionLabel}
                       </div>
-                      <p className="mt-2 text-sm text-slate-600">{selectedPrimaryActionHint}</p>
+                      <p className="mt-3 text-sm leading-6 text-slate-300">{selectedPrimaryActionHint}</p>
                     </ModalSection>
                   </div>
 
@@ -2744,7 +2754,7 @@ export default function ContractorBidsPage() {
                         <InfoRow label="Current workload" value={selectedAvailability.workload} />
                         <InfoRow label="Capacity summary" value={selectedAvailability.capacity} />
                       </div>
-                      <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
+                      <div className="mt-3 rounded-lg border border-blue-400/35 bg-blue-500/15 px-3 py-2 text-sm font-semibold text-blue-50">
                         Project fit: {selectedAvailability.fit}
                       </div>
                     </ModalSection>
@@ -2780,7 +2790,7 @@ export default function ContractorBidsPage() {
                             )
                           }
                           data-testid="customer-copy-contact-action"
-                          className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                         >
                           <Copy size={14} />
                           {copiedRefId === `${selectedRow.bid_id}-contact` ? "Copied" : "Copy Contact"}
@@ -2800,10 +2810,10 @@ export default function ContractorBidsPage() {
                       <InfoRow label="Estimated duration" value={selectedPlanningGuidance.duration} />
                     </div>
                     <div className="mt-3">
-                      <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Potential risks</div>
+                      <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Potential risks</div>
                       <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                         {selectedPlanningGuidance.risks.map((risk) => (
-                          <li key={risk} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950">
+                          <li key={risk} className="rounded-lg border border-amber-400/35 bg-amber-500/15 px-3 py-2 text-sm font-semibold text-amber-50">
                             {risk}
                           </li>
                         ))}
@@ -2843,13 +2853,13 @@ export default function ContractorBidsPage() {
                     </>
                   ) : null}
                 </div>
-                <div className="mt-4 rounded-xl bg-white px-4 py-3 text-sm text-slate-700 ring-1 ring-slate-200">
-                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Project Description</div>
+                <div className="mt-4 rounded-xl bg-slate-900/70 px-4 py-3 text-sm text-slate-200 ring-1 ring-white/10">
+                  <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Project Description</div>
                   {selectedDescriptionBullets.length ? (
                     <ul className="mt-2 space-y-2">
                       {selectedDescriptionBullets.map((item, index) => (
                         <li key={`${item}-${index}`} className="flex gap-2">
-                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-400" />
+                          <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-blue-300" />
                           <span>{item}</span>
                         </li>
                       ))}
@@ -2858,26 +2868,26 @@ export default function ContractorBidsPage() {
                     <div className="mt-2">No project description was provided.</div>
                   )}
                 </div>
-                <div className="mt-4 text-xs text-slate-500">
+                <div className="mt-4 text-xs text-slate-400">
                   Reference: {selectedRow.source_reference || "-"} · Agreement: {selectedRow.linked_agreement_reference || "-"}
                 </div>
                 {selectedProjectTypeCue ? (
                   <div
                     data-testid="project-type-cue"
-                    className="mt-4 inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800"
+                    className="mt-4 inline-flex rounded-full border border-blue-400/35 bg-blue-500/15 px-3 py-1 text-xs font-semibold text-blue-100"
                   >
                     {selectedProjectTypeCue}
                   </div>
                 ) : null}
                 {outcomeNote ? (
-                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <div className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/15 px-4 py-3 text-sm text-amber-50">
                     {outcomeNote}
                   </div>
                 ) : null}
                 {selectedStage === "follow_up" ? (
                   <div
                     data-testid="follow-up-state-note"
-                    className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+                    className="mt-4 rounded-xl border border-amber-400/35 bg-amber-500/15 px-4 py-3 text-sm text-amber-50"
                   >
                     This lead is saved for later review. Resume it when you are ready or create your bid now.
                   </div>
@@ -2891,12 +2901,12 @@ export default function ContractorBidsPage() {
               >
                 <div
                   data-testid="opportunity-prerequisite-checklist"
-                  className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3"
+                  className="mb-4 rounded-xl bg-slate-950/45 px-4 py-3 ring-1 ring-white/10"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <div className="text-sm font-bold text-slate-950">Before conversion</div>
-                      <p className="mt-1 text-sm text-slate-600">
+                      <div className="text-sm font-bold text-slate-50">Before conversion</div>
+                      <p className="mt-1 text-sm text-slate-300">
                         Review these items before sending an estimate response or converting this request into an agreement.
                       </p>
                     </div>
@@ -2904,8 +2914,8 @@ export default function ContractorBidsPage() {
                       data-testid="opportunity-prerequisite-status"
                       className={`rounded-full border px-3 py-1 text-xs font-bold ${
                         selectedChecklistComplete
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                          : "border-amber-200 bg-amber-50 text-amber-900"
+                          ? "border-emerald-400/40 bg-emerald-500/15 text-emerald-100"
+                          : "border-amber-400/50 bg-amber-500/15 text-amber-100"
                       }`}
                     >
                       {selectedChecklistComplete ? "Ready" : "Needs review"}
@@ -2917,8 +2927,8 @@ export default function ContractorBidsPage() {
                         key={item.key}
                         className={`rounded-lg border px-3 py-2 text-sm font-medium ${
                           item.complete
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                            : "border-amber-200 bg-amber-50 text-amber-950"
+                            ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-50"
+                            : "border-amber-400/35 bg-amber-500/15 text-amber-50"
                         }`}
                       >
                         {item.complete ? "Complete: " : "Review: "}
@@ -2927,12 +2937,12 @@ export default function ContractorBidsPage() {
                     ))}
                   </ul>
                   {!selectedChecklistComplete ? (
-                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-950">
+                    <div className="mt-3 rounded-lg border border-amber-400/35 bg-amber-500/15 px-3 py-2 text-sm font-semibold text-amber-50">
                       Some prerequisites need review before conversion. You can still continue when you have confirmed them outside MyHomeBro.
                     </div>
                   ) : null}
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                <div className="rounded-xl bg-slate-950/45 px-4 py-3 text-sm leading-6 text-slate-200 ring-1 ring-white/10">
                   {selectedIsPropertyWorkOrder && selectedNextActionKey === "accept_property_work_order"
                     ? "This property management work order needs your response. Accept it if you can take the job, or decline it to close the request for your workspace."
                     : selectedIsPropertyWorkOrder && selectedNextActionKey === "prepare_agreement_draft"
@@ -2952,7 +2962,7 @@ export default function ContractorBidsPage() {
 
                 {(selectedStage === "new_lead" || selectedStage === "follow_up") && !selectedIsPropertyWorkOrder ? (
                   <div
-                    className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
+                    className="mt-3 rounded-xl bg-slate-950/45 px-4 py-3 text-sm text-slate-200 ring-1 ring-white/10"
                     data-testid="create-bid-context-note"
                   >
                     {selectedCreateBidContext}
@@ -2966,7 +2976,7 @@ export default function ContractorBidsPage() {
                       data-testid="schedule-estimate-action"
                       disabled={!selectedCanScheduleEstimate}
                       onClick={() => setScheduleEstimateOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:shadow-none"
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none"
                       title={selectedScheduleDisabledReason || "Schedule an estimate appointment with this customer."}
                     >
                       {selectedLifecycle.label === "Estimate Scheduled" ? "View Appointment" : "Schedule Estimate"}
@@ -2979,7 +2989,7 @@ export default function ContractorBidsPage() {
                       type="button"
                       onClick={() => navigate(selectedRow.linked_agreement_url)}
                       data-testid="lead-detail-primary-action"
-                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-400"
                     >
                       {selectedPrimaryActionLabel}
                       <ExternalLink size={14} />
@@ -2989,7 +2999,7 @@ export default function ContractorBidsPage() {
                       type="button"
                       onClick={() => setConvertPanelOpen(true)}
                       data-testid="convert-to-agreement-action"
-                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500"
+                      className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-400"
                     >
                       {selectedPrimaryActionLabel}
                       <ArrowRight size={14} />
@@ -3004,7 +3014,7 @@ export default function ContractorBidsPage() {
                           ? "create-bid-action"
                           : "lead-detail-primary-action"
                       }
-                      className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-400 disabled:opacity-60"
                     >
                       {actionBusyId === String(selectedRow.bid_id) ? "Working..." : selectedCreateBidActionLabel}
                       <ExternalLink size={14} />
@@ -3016,7 +3026,7 @@ export default function ContractorBidsPage() {
                       type="button"
                       data-testid="open-customer-workspace-action"
                       onClick={() => navigate(`/app/customers/${selectedCustomerId}`)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                     >
                       Open Customer Workspace
                     </button>
@@ -3028,7 +3038,7 @@ export default function ContractorBidsPage() {
                       onClick={() => respondToPropertyWorkOrder(selectedRow, "decline")}
                       disabled={actionBusyId === String(selectedRow.bid_id)}
                       data-testid="decline-property-work-order-action"
-                      className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-800 hover:bg-rose-100 disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-lg border border-rose-400/45 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/25 disabled:opacity-60"
                     >
                       Decline
                     </button>
@@ -3039,7 +3049,7 @@ export default function ContractorBidsPage() {
                       onClick={() => patchLeadStatus(selectedRow, "follow_up", { keepSelected: true, nextWorkspaceTab: "follow_up" })}
                       disabled={actionBusyId === String(selectedRow.bid_id)}
                       data-testid="follow-up-action-button"
-                      className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-lg border border-amber-400/45 bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/25 disabled:opacity-60"
                     >
                       Follow Up
                     </button>
@@ -3050,7 +3060,7 @@ export default function ContractorBidsPage() {
                       onClick={() => patchLeadStatus(selectedRow, "new", { keepSelected: true, nextWorkspaceTab: "new_lead" })}
                       disabled={actionBusyId === String(selectedRow.bid_id)}
                       data-testid="resume-review-action"
-                      className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      className="inline-flex items-center gap-2 rounded-lg border border-amber-400/45 bg-amber-500/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/25 disabled:opacity-60"
                     >
                       Resume Review
                     </button>
@@ -3060,14 +3070,14 @@ export default function ContractorBidsPage() {
                       type="button"
                       onClick={() => copyReference(selectedRow.source_reference, selectedRow.bid_id)}
                       data-testid="lead-detail-secondary-action"
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                     >
                       <Copy size={14} />
                       {copiedRefId === String(selectedRow.bid_id) ? "Copied" : "Copy Reference"}
                     </button>
                   ) : null}
                 </div>
-                <div className="mt-3 text-xs text-slate-500">{selectedPrimaryActionHint}</div>
+                <div className="mt-3 text-xs text-slate-400">{selectedPrimaryActionHint}</div>
               </SectionCard>
               <SectionCard
                 title="Project Snapshot"
@@ -3083,11 +3093,11 @@ export default function ContractorBidsPage() {
                 </div>
                 {selectedClarifications.length ? (
                   <div className="mt-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Clarification Answers</div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Clarification Answers</div>
                     <div className="mt-3 space-y-2">
                       {selectedClarifications.slice(0, 4).map((item) => (
-                        <div key={item.key || item.label} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                          <span className="font-semibold text-slate-900">{item.label}:</span> {item.value}
+                        <div key={item.key || item.label} className="rounded-xl bg-slate-950/45 px-3 py-2 text-sm text-slate-200 ring-1 ring-white/10">
+                          <span className="font-semibold text-slate-50">{item.label}:</span> {item.value}
                         </div>
                       ))}
                     </div>
@@ -3126,7 +3136,7 @@ export default function ContractorBidsPage() {
                 </div>
                 <div
                   data-testid="recommended-setup-note"
-                  className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950"
+                  className="mt-3 rounded-xl border border-amber-400/35 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-50"
                 >
                   {selectedProjectSetup.recommendationNote ||
                     "This is a suggested setup only. Confirm project details before using it to shape an estimate or agreement."}
@@ -3142,19 +3152,19 @@ export default function ContractorBidsPage() {
                 {selectedPhotos.length ? (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {selectedPhotos.map((photo) => (
-                      <div key={photo.id || photo.image_url || photo.url || photo.original_name} className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                      <div key={photo.id || photo.image_url || photo.url || photo.original_name} className="overflow-hidden rounded-2xl bg-slate-950/45 ring-1 ring-white/10">
                         {photo.image_url ? (
                           <img src={photo.image_url} alt={photo.caption || photo.original_name || "Clarification upload"} className="h-40 w-full object-cover" />
                         ) : (
-                          <div className="flex h-40 items-center justify-center bg-slate-100 text-sm text-slate-500">
+                          <div className="flex h-40 items-center justify-center bg-slate-900 text-sm text-slate-400">
                             Preview unavailable
                           </div>
                         )}
                         <div className="p-3">
-                          <div className="text-sm font-semibold text-slate-900">{photo.original_name || "Uploaded photo"}</div>
-                          {photo.caption ? <div className="mt-1 text-xs text-slate-500">{photo.caption}</div> : null}
+                          <div className="text-sm font-semibold text-slate-50">{photo.original_name || "Uploaded photo"}</div>
+                          {photo.caption ? <div className="mt-1 text-xs text-slate-400">{photo.caption}</div> : null}
                           {photo.url ? (
-                            <a href={photo.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-sky-700 hover:text-sky-900">
+                            <a href={photo.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-blue-200 hover:text-blue-100">
                               Open attachment
                             </a>
                           ) : null}
@@ -3163,7 +3173,7 @@ export default function ContractorBidsPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-600">
+                  <div className="rounded-xl border border-dashed border-slate-500/60 bg-slate-950/35 px-4 py-5 text-sm text-slate-300">
                     {selectedSnapshot.photo_count ? `${selectedSnapshot.photo_count} photo${selectedSnapshot.photo_count === 1 ? "" : "s"} attached.` : "No photos attached yet."}
                   </div>
                 )}
@@ -3178,14 +3188,14 @@ export default function ContractorBidsPage() {
                 {selectedMilestones.length ? (
                   <div className="space-y-3">
                     {selectedMilestones.map((item, index) => (
-                      <div key={item || index} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Phase {index + 1}</div>
-                        <div className="mt-1 text-sm font-semibold text-slate-900">{item}</div>
+                      <div key={item || index} className="rounded-xl bg-slate-950/45 px-4 py-3 ring-1 ring-white/10">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Phase {index + 1}</div>
+                        <div className="mt-1 text-sm font-semibold text-slate-50">{item}</div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-5 text-sm text-slate-600">
+                  <div className="rounded-xl border border-dashed border-slate-500/60 bg-slate-950/35 px-4 py-5 text-sm text-slate-300">
                     No project phases were added yet.
                   </div>
                 )}
@@ -3198,10 +3208,10 @@ export default function ContractorBidsPage() {
                   subtitle="A short checklist to help you prepare a useful bid."
                   className={detailTab === "next" ? "" : "hidden"}
                 >
-                  <ul className="space-y-2 text-sm text-slate-700">
+                  <ul className="space-y-2 text-sm text-slate-200">
                     {selectedBidPrepItems.map((item) => (
-                      <li key={item} className="flex items-start gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-                        <span className="mt-1 h-2 w-2 rounded-full bg-slate-400" />
+                      <li key={item} className="flex items-start gap-2 rounded-xl bg-slate-950/45 px-3 py-2 ring-1 ring-white/10">
+                        <span className="mt-1 h-2 w-2 rounded-full bg-blue-300" />
                         <span>{item}</span>
                       </li>
                     ))}
@@ -3216,7 +3226,7 @@ export default function ContractorBidsPage() {
                   subtitle="This is a helper, not a sent message."
                   className={detailTab === "next" ? "" : "hidden"}
                 >
-                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                  <div className="rounded-xl bg-slate-950/45 px-4 py-3 text-sm text-slate-200 ring-1 ring-white/10">
                     {selectedResponseStarter}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-3">
@@ -3249,7 +3259,7 @@ export default function ContractorBidsPage() {
                     <button
                       type="button"
                       onClick={() => copyReference(selectedResponseStarter, `${selectedRow.bid_id}-starter`)}
-                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                     >
                       <Copy size={14} />
                       Copy Starter
@@ -3272,17 +3282,17 @@ export default function ContractorBidsPage() {
                         <div
                           key={template.key}
                           data-testid={`response-template-${template.key}`}
-                          className="rounded-xl border border-slate-200 bg-white px-4 py-3"
+                          className="rounded-xl bg-slate-950/45 px-4 py-3 ring-1 ring-white/10"
                         >
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <div className="text-sm font-semibold text-slate-900">{template.label}</div>
-                              <p className="mt-2 text-sm text-slate-700">{template.text}</p>
+                              <div className="text-sm font-semibold text-slate-50">{template.label}</div>
+                              <p className="mt-2 text-sm text-slate-200">{template.text}</p>
                             </div>
                             <button
                               type="button"
                               onClick={() => copyReference(template.text, copyId)}
-                              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                              className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                               data-testid={`response-template-copy-${template.key}`}
                             >
                               <Copy size={14} />
@@ -3339,42 +3349,42 @@ export default function ContractorBidsPage() {
                       </span>
                     ))
                   ) : (
-                    <div className="text-sm text-slate-600">No request signals are available yet.</div>
+                    <div className="text-sm text-slate-300">No request signals are available yet.</div>
                   )}
                 </div>
               </SectionCard>
 
               <SectionCard title="Internal Notes" testId="lead-notes-section" className={detailTab === "history" ? "" : "hidden"}>
-                <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700">
+                <div className="rounded-xl bg-slate-950/45 px-4 py-3 text-sm text-slate-200 ring-1 ring-white/10">
                   {selectedRow.notes || "No bid notes were provided."}
                 </div>
                 <textarea
                   value={selectedRow.internal_notes || ""}
                   onChange={(e) => setSelectedRow((prev) => ({ ...prev, internal_notes: e.target.value }))}
                   rows={4}
-                  className="mt-4 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                  className="mt-4 w-full rounded-xl border border-slate-600 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500"
                   placeholder="Internal notes"
                 />
               </SectionCard>
 
-              <div data-testid="opportunity-activity-timeline" className={`mt-5 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 ${detailTab === "history" ? "" : "hidden"}`}>
-                <div className="text-sm font-bold text-slate-950">Activity Timeline</div>
-                <p className="mt-1 text-sm text-slate-600">Current opportunity activity from existing request data.</p>
-                <div className="mt-4 flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3">
+              <div data-testid="opportunity-activity-timeline" className={`mt-5 rounded-2xl bg-slate-900/75 p-5 shadow-sm ring-1 ring-white/10 ${detailTab === "history" ? "" : "hidden"}`}>
+                <div className="text-sm font-bold text-slate-50">Activity Timeline</div>
+                <p className="mt-1 text-sm text-slate-300">Current opportunity activity from existing request data.</p>
+                <div className="mt-4 flex items-center gap-3 rounded-xl bg-slate-950/45 px-4 py-3 ring-1 ring-white/10">
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Reference</div>
-                    <div className="mt-1 text-sm font-semibold text-slate-900">{selectedRow.source_reference || "No reference available"}</div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Reference</div>
+                    <div className="mt-1 text-sm font-semibold text-slate-50">{selectedRow.source_reference || "No reference available"}</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => copyReference(selectedRow.source_reference, selectedRow.bid_id)}
-                    className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-3 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                   >
                     <Copy size={14} />
                     {copiedRefId === String(selectedRow.bid_id) ? "Copied" : "Copy"}
                   </button>
                 </div>
-                <div className="mt-4 rounded-xl border border-dashed border-sky-300 bg-sky-50 px-4 py-5 text-sm text-sky-900">
+                <div className="mt-4 rounded-xl border border-dashed border-blue-400/35 bg-blue-500/15 px-4 py-5 text-sm text-blue-50">
                   Status-change history is not available yet. Customer request signals, notes, and reference details are shown above for review.
                 </div>
               </div>
