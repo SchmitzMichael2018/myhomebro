@@ -118,8 +118,10 @@ function isEscrowAgreement(agreement) {
 }
 
 function isEscrowExpense(er, agreement) {
-  const kind = String(er?.request_kind || er?.funding_source || "").toLowerCase();
-  return kind.includes("escrow") || isEscrowAgreement(agreement);
+  const funding = String(er?.funding_source || "").toLowerCase();
+  if (funding) return funding === "incidentals_reserve";
+  const kind = String(er?.request_kind || "").toLowerCase();
+  return kind.includes("escrow") && isEscrowAgreement(agreement);
 }
 
 function fundingSourceLabel(er, agreement) {
@@ -166,6 +168,22 @@ function statusBucket(status) {
 }
 
 function getReserveValue(agreement, names) {
+  const summary = agreement?.incidentals_reserve_summary || agreement?.project?.incidentals_reserve_summary;
+  if (summary) {
+    const lookup = {
+      incidentals_reserve_original: summary.original,
+      incidentals_reserve_amount: summary.original,
+      incidentals_reserve_pending: summary.pending,
+      incidentals_reserve_used: summary.spent,
+      incidentals_reserve_remaining: summary.remaining,
+    };
+    for (const name of names) {
+      const value = lookup[name];
+      if (value !== undefined && value !== null && value !== "" && !Number.isNaN(Number(value))) {
+        return Number(value);
+      }
+    }
+  }
   for (const name of names) {
     const value = agreement?.[name] ?? agreement?.project?.[name];
     if (value !== undefined && value !== null && value !== "" && !Number.isNaN(Number(value))) {
@@ -332,6 +350,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
   const [form, setForm] = useState({
     agreement: "",
     category: "other",
+    funding_source: "",
     description: "",
     amount: "",
     incurred_date: todayISO(),
@@ -352,6 +371,9 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
 
   const selectedAgreement = agreements.find((a) => String(a.id) === String(form.agreement));
   const selectedIsEscrow = isEscrowAgreement(selectedAgreement);
+  const selectedReserveRemaining = getReserveValue(selectedAgreement, ["incidentals_reserve_remaining", "incidentals_reserve_amount"]) || 0;
+  const incidentalsAvailable = selectedIsEscrow && selectedReserveRemaining > 0;
+  const selectedFundingSource = form.funding_source || (incidentalsAvailable ? "incidentals_reserve" : "reimbursement");
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -362,7 +384,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
     await onAdd({
       agreement: form.agreement,
       category: form.category || "other",
-      request_kind: selectedIsEscrow ? "escrow_reimbursement" : "direct_expense",
+      funding_source: selectedFundingSource,
+      request_kind: selectedFundingSource === "incidentals_reserve" ? "escrow_reimbursement" : "direct_expense",
       description: form.description.trim(),
       amount: Number(form.amount),
       incurred_date: form.incurred_date || todayISO(),
@@ -374,6 +397,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
     setForm({
       agreement: "",
       category: "other",
+      funding_source: "",
       description: "",
       amount: "",
       incurred_date: todayISO(),
@@ -437,6 +461,26 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-2">
+        <label className={labelClass}>Funding Source</label>
+        <select
+          name="funding_source"
+          value={selectedFundingSource}
+          onChange={onChange}
+          className={inputClass}
+        >
+          <option value="incidentals_reserve" disabled={!incidentalsAvailable}>
+            Incidentals Reserve
+          </option>
+          <option value="reimbursement">Reimbursement</option>
+        </select>
+        {!incidentalsAvailable ? (
+          <div className="mt-2 text-[11px] text-sky-100/60">
+            Incidentals Reserve is available only for escrow agreements with remaining reserve.
+          </div>
+        ) : null}
+      </div>
+
+      <div className="md:col-span-2">
         <label className={labelClass}>Amount</label>
         <input
           name="amount"
@@ -496,7 +540,7 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       <div className="md:col-span-12 flex flex-col items-start justify-between gap-4 border-t border-white/10 pt-4 sm:flex-row sm:items-center">
         <div className="space-y-2">
           <div className="inline-flex min-h-[34px] items-center rounded-full border border-white/10 bg-slate-900/55 px-3 text-xs font-bold uppercase tracking-wide text-sky-100/75">
-            Funding source: {selectedIsEscrow ? "Incidentals Reserve" : "Reimbursement"}
+            Funding source: {selectedFundingSource === "incidentals_reserve" ? "Incidentals Reserve" : "Reimbursement"}
           </div>
           <label className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-white/10 bg-slate-900/55 px-3 text-sm font-semibold text-sky-100/80">
             <input
@@ -871,6 +915,7 @@ export default function ExpensesPage() {
           amount: form.amount,
           incurred_date: form.incurred_date,
           request_kind: form.request_kind || "direct_expense",
+          funding_source: form.funding_source || "reimbursement",
           category: form.category || "other",
           notes_to_homeowner: form.notes_to_homeowner || "",
         }
@@ -981,7 +1026,6 @@ export default function ExpensesPage() {
     const approved = all.filter((x) => x._statusBucket === "approved");
     const rejected = all.filter((x) => x._statusBucket === "rejected");
     const incidentals = all.filter((x) => x._fundingKey === "incidentals");
-    const incidentalsSpent = incidentals.reduce((sum, x) => sum + Number(x.amount || 0), 0);
     const escrowAgreements = agreements.filter((a) => isEscrowAgreement(a));
     const configuredReserve = escrowAgreements.reduce((sum, a) => {
       const value = getReserveValue(a, [
@@ -993,11 +1037,28 @@ export default function ExpensesPage() {
       ]);
       return sum + Number(value || 0);
     }, 0);
+    const reservePending = escrowAgreements.reduce((sum, a) => {
+      const value = getReserveValue(a, ["incidentals_reserve_pending"]);
+      return sum + Number(value || 0);
+    }, 0);
+    const reserveSpent = escrowAgreements.reduce((sum, a) => {
+      const value = getReserveValue(a, ["incidentals_reserve_used"]);
+      return sum + Number(value || 0);
+    }, 0);
+    const fallbackPending = incidentals
+      .filter((x) => x._statusBucket === "pending")
+      .reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const fallbackSpent = incidentals
+      .filter((x) => x._statusBucket === "approved")
+      .reduce((sum, x) => sum + Number(x.amount || 0), 0);
+    const incidentalsPending = reservePending || fallbackPending;
+    const incidentalsSpent = reserveSpent || fallbackSpent;
     return {
       totalSpent: all.reduce((sum, x) => sum + Number(x.amount || 0), 0),
       pendingReimbursements: pending.filter((x) => x._fundingKey === "reimbursement").length,
       approvedExpenses: approved.length,
       rejectedExpenses: rejected.length,
+      incidentalsPending,
       incidentalsSpent,
       originalReserve: configuredReserve || null,
       remainingReserve: configuredReserve ? Math.max(configuredReserve - incidentalsSpent, 0) : null,
@@ -1048,6 +1109,7 @@ export default function ExpensesPage() {
           ["Approved Expenses", dashboard.approvedExpenses],
           ["Rejected Expenses", dashboard.rejectedExpenses],
           ["Total Spent", toMoney(dashboard.totalSpent)],
+          ["Pending Incidentals", toMoney(dashboard.incidentalsPending)],
           ["Original Reserve", dashboard.originalReserve !== null ? toMoney(dashboard.originalReserve) : "Not configured"],
           ["Remaining Reserve", dashboard.remainingReserve !== null ? toMoney(dashboard.remainingReserve) : "Not configured"],
         ].map(([label, value]) => (
@@ -1066,10 +1128,14 @@ export default function ExpensesPage() {
               Escrow incidentals are tracked as a separate project budget bucket. Unused reserve refunding is future behavior and is not applied here.
             </p>
           </div>
-          <div className="grid min-w-[260px] grid-cols-3 gap-2 text-center">
+          <div className="grid min-w-[320px] grid-cols-4 gap-2 text-center">
             <div className="rounded-xl bg-white/10 p-3">
               <div className="text-[11px] font-bold uppercase text-sky-100/55">Original</div>
               <div className="text-sm font-bold text-white">{dashboard.originalReserve !== null ? toMoney(dashboard.originalReserve) : "--"}</div>
+            </div>
+            <div className="rounded-xl bg-white/10 p-3">
+              <div className="text-[11px] font-bold uppercase text-sky-100/55">Pending</div>
+              <div className="text-sm font-bold text-white">{toMoney(dashboard.incidentalsPending)}</div>
             </div>
             <div className="rounded-xl bg-white/10 p-3">
               <div className="text-[11px] font-bold uppercase text-sky-100/55">Spent</div>
@@ -1456,6 +1522,22 @@ export default function ExpensesPage() {
                     <div className="mt-3 rounded-lg bg-white border border-gray-200 p-3">
                       <div className="text-xs font-semibold text-gray-700 mb-1">Customer Details</div>
                       <div className="text-sm text-gray-800 whitespace-pre-wrap">{activeExpense.notes_to_homeowner}</div>
+                    </div>
+                  ) : null}
+                  {activeExpense.reserve_impact ? (
+                    <div className="mt-3 grid gap-2 rounded-lg bg-white border border-gray-200 p-3 text-sm sm:grid-cols-3">
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500">Pending Impact</div>
+                        <div className="font-semibold text-gray-900">{toMoney(activeExpense.reserve_impact.pending_delta)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500">Spent Impact</div>
+                        <div className="font-semibold text-gray-900">{toMoney(activeExpense.reserve_impact.spent_delta)}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-semibold text-gray-500">Remaining After Approval</div>
+                        <div className="font-semibold text-gray-900">{toMoney(activeExpense.reserve_impact.remaining_after_approval)}</div>
+                      </div>
                     </div>
                   ) : null}
                 </div>

@@ -3845,6 +3845,10 @@ export default function Step1Details({
         nextAgreement.retainage_percent != null
           ? String(nextAgreement.retainage_percent)
           : prev.retainage_percent || "0.00",
+      incidentals_reserve_amount:
+        nextAgreement.incidentals_reserve_amount != null
+          ? String(nextAgreement.incidentals_reserve_amount)
+          : prev.incidentals_reserve_amount || "0.00",
       selected_template: nextSelectedTemplate,
       selected_template_id: nextSelectedTemplateId,
       selected_template_name_snapshot:
@@ -3882,6 +3886,10 @@ export default function Step1Details({
           nextAgreement.retainage_percent != null
             ? String(nextAgreement.retainage_percent)
             : dLocal?.retainage_percent || "0.00",
+        incidentals_reserve_amount:
+          nextAgreement.incidentals_reserve_amount != null
+            ? String(nextAgreement.incidentals_reserve_amount)
+            : dLocal?.incidentals_reserve_amount || "0.00",
         selected_template: nextSelectedTemplate,
         selected_template_id: nextSelectedTemplateId,
         selected_template_name_snapshot:
@@ -7778,6 +7786,31 @@ export default function Step1Details({
                   Used to schedule milestone dates. You can adjust dates later.
                 </div>
               </div>
+
+              {normalizePaymentMode(dLocal?.payment_mode) === "escrow" ? (
+                <div data-testid="agreement-incidentals-reserve-field" className="md:max-w-sm">
+                  <label className="mb-1 block text-sm font-medium text-slate-900">
+                    Incidentals Reserve
+                  </label>
+                  <input
+                    data-testid="agreement-incidentals-reserve-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    name="incidentals_reserve_amount"
+                    value={safeTrim(dLocal?.incidentals_reserve_amount || "0.00")}
+                    onChange={locked ? undefined : handleStep1LocalChange}
+                    disabled={locked}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 md:w-48"
+                  />
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Separate from milestones. Escrow funding integration is pending, so this stores the configured reserve for expense tracking only.
+                  </div>
+                  {step1FieldErrors.incidentals_reserve_amount ? (
+                    <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.incidentals_reserve_amount}</div>
+                  ) : null}
+                </div>
+              ) : null}
 
               <div>
                 <label className="mb-1 block text-sm font-medium text-slate-900">

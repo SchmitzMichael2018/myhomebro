@@ -36,6 +36,10 @@ class ExpenseRequest(models.Model):
         DIRECT_EXPENSE = "direct_expense", "Direct Expense"
         ESCROW_REIMBURSEMENT = "escrow_reimbursement", "Escrow Reimbursement"
 
+    class FundingSource(models.TextChoices):
+        REIMBURSEMENT = "reimbursement", "Reimbursement"
+        INCIDENTALS_RESERVE = "incidentals_reserve", "Incidentals Reserve"
+
     class Category(models.TextChoices):
         MATERIALS = "materials", "Materials"
         PERMIT = "permit", "Permit"
@@ -61,12 +65,19 @@ class ExpenseRequest(models.Model):
 
     description = models.CharField(max_length=255)
     amount = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
-    incurred_date = models.DateField(default=timezone.now)
+    incurred_date = models.DateField(default=timezone.localdate)
     request_kind = models.CharField(
         max_length=32,
         choices=RequestKind.choices,
         default=RequestKind.DIRECT_EXPENSE,
         db_index=True,
+    )
+    funding_source = models.CharField(
+        max_length=32,
+        choices=FundingSource.choices,
+        default=FundingSource.REIMBURSEMENT,
+        db_index=True,
+        help_text="How this expense is funded. Incidentals reserve is escrow-backed; reimbursement uses the existing direct-pay/customer approval workflow.",
     )
     category = models.CharField(max_length=32, choices=Category.choices, default=Category.OTHER, db_index=True)
 

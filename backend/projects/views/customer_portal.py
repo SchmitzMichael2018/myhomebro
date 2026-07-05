@@ -106,7 +106,14 @@ from projects.services.bid_workflow import (
 from projects.services.contractor_opportunities import create_property_work_order_agreement_draft
 from projects.services.invites_delivery import send_postmark_email, send_twilio_sms
 from projects.services.bid_notifications import create_bid_outcome_notifications
-from projects.services.escrow_reimbursements import approve_reimbursement, deny_reimbursement, escrow_ledger, serialize_ledger
+from projects.services.escrow_reimbursements import (
+    approve_reimbursement,
+    deny_reimbursement,
+    escrow_ledger,
+    incidentals_reserve_summary,
+    serialize_incidentals_reserve,
+    serialize_ledger,
+)
 from projects.services.contractor_reviews import review_eligibility, serialize_review, submit_customer_review
 from projects.services.smart_notifications import create_smart_notification
 from projects.services.notification_center import create_notification
@@ -3496,7 +3503,12 @@ def _payments(email: str, request=None) -> list[dict]:
                 "receipt_url": receipt_url,
                 "notes": _safe_text(getattr(reimbursement, "notes_to_homeowner", "")) or _safe_text(getattr(reimbursement, "description", "")),
                 "category": _safe_text(getattr(reimbursement, "category", "")),
+                "funding_source": _safe_text(getattr(reimbursement, "funding_source", "")) or "reimbursement",
+                "funding_source_label": "Incidentals Reserve"
+                if _safe_text(getattr(reimbursement, "funding_source", "")) == ExpenseRequest.FundingSource.INCIDENTALS_RESERVE
+                else "Reimbursement",
                 "escrow_ledger": ledger_payload,
+                "incidentals_reserve": serialize_incidentals_reserve(incidentals_reserve_summary(agreement, exclude_expense_id=reimbursement.id)) if agreement else None,
                 "can_approve": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER},
                 "can_deny": status_value in {ExpenseRequest.Status.SUBMITTED, ExpenseRequest.Status.SENT_TO_HOMEOWNER, ExpenseRequest.Status.APPROVED, ExpenseRequest.Status.PENDING_RELEASE},
                 "approve_url": f"/api/projects/customer-portal/{{token}}/reimbursements/{reimbursement.id}/approve/",
@@ -4427,6 +4439,7 @@ def _project_payment_rows(agreement) -> tuple[dict, list[dict], list[dict]]:
         "draw_count": len(draw_rows),
         "approved_unpaid_invoice_id": getattr(approved_unpaid, "id", None),
         "awaiting_review_draw_id": getattr(awaiting_review, "id", None),
+        "incidentals_reserve": serialize_incidentals_reserve(incidentals_reserve_summary(agreement)),
     }
     return summary, invoice_rows, draw_rows
 

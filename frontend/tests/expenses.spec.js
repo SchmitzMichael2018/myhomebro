@@ -17,6 +17,16 @@ const agreementsPayload = {
       project_title: "Kitchen Remodel",
       homeowner_name: "Jordan Customer",
       payment_model: "escrow",
+      payment_mode: "escrow",
+      incidentals_reserve_amount: "500.00",
+      incidentals_reserve_summary: {
+        original: "500.00",
+        pending: "55.00",
+        spent: "245.50",
+        remaining: "254.50",
+        configured: true,
+        escrow_funding_integration_pending: true,
+      },
     },
     {
       id: 202,
@@ -24,6 +34,7 @@ const agreementsPayload = {
       project_title: "Deck Repair",
       homeowner_name: "Casey Customer",
       payment_model: "direct_pay",
+      payment_mode: "direct",
     },
   ],
 };
@@ -37,6 +48,7 @@ const expensesPayload = {
       amount: "245.50",
       incurred_date: "2026-06-12",
       request_kind: "escrow_reimbursement",
+      funding_source: "incidentals_reserve",
       category: "materials",
       status: "approved",
       status_label: "Approved",
@@ -52,6 +64,7 @@ const expensesPayload = {
       amount: "85.00",
       incurred_date: "2026-06-14",
       request_kind: "direct_expense",
+      funding_source: "reimbursement",
       category: "permit",
       status: "sent_to_homeowner",
       status_label: "Sent to Customer",
@@ -106,7 +119,8 @@ test("expenses page shows financial operations dashboard and incidentals labels"
   await page.goto("/app/expenses");
 
   await expect(page.getByTestId("expenses-summary")).toContainText("Pending Reimbursements");
-  await expect(page.getByTestId("incidentals-reserve-panel")).toContainText("No Incidentals Reserve has been configured.");
+  await expect(page.getByTestId("incidentals-reserve-panel")).toContainText("$500.00");
+  await expect(page.getByTestId("incidentals-reserve-panel")).toContainText("$55.00");
   await expect(page.getByTestId("expenses-ledger")).toContainText("Home Depot");
   await expect(page.getByTestId("expenses-ledger")).toContainText("Incidentals Reserve");
   await expect(page.getByTestId("expenses-ledger")).toContainText("Reimbursement");
@@ -137,6 +151,7 @@ test("expenses page shows direct-pay reimbursement guidance when no escrow data 
           amount: "120.00",
           incurred_date: "2026-06-15",
           request_kind: "direct_expense",
+          funding_source: "reimbursement",
           category: "materials",
           status: "draft",
           created_at: "2026-06-15T14:00:00Z",
@@ -151,6 +166,7 @@ test("expenses page shows direct-pay reimbursement guidance when no escrow data 
           project_title: "Deck Repair",
           homeowner_name: "Casey Customer",
           payment_model: "direct_pay",
+          payment_mode: "direct",
         },
       ],
     }

@@ -408,6 +408,7 @@ function buildEmptyDLocal(projectFamilyContext = {}) {
     payment_structure: "simple",
     pricing_strategy: "fixed",
     retainage_percent: "0.00",
+    incidentals_reserve_amount: "0.00",
     description: "",
     address_line1: "",
     address_line2: "",
@@ -1409,6 +1410,8 @@ export default function AgreementWizard() {
         dLocal.agreement_mode === "maintenance" ? safeRecurringText(dLocal.recurring_summary_label) : "",
       payment_mode: dLocal.payment_mode || "escrow",
       payment_structure: dLocal.payment_structure || "simple",
+      incidentals_reserve_amount:
+        dLocal.payment_mode === "escrow" ? dLocal.incidentals_reserve_amount || "0.00" : "0.00",
       retainage_percent:
         String(dLocal.payment_structure || "simple").toLowerCase() === "progress"
           ? dLocal.retainage_percent || "0.00"
@@ -1756,6 +1759,10 @@ export default function AgreementWizard() {
               hydratedAgreement?.next_occurrence_date ?? prev.next_occurrence_date ?? "",
             description: nextDescription,
             payment_mode: hydratedAgreement?.payment_mode || prev.payment_mode,
+            incidentals_reserve_amount:
+              hydratedAgreement?.incidentals_reserve_amount != null
+                ? String(hydratedAgreement.incidentals_reserve_amount)
+                : prev.incidentals_reserve_amount || "0.00",
             payment_structure:
               hydratedAgreement?.payment_structure || prev.payment_structure || "simple",
             pricing_strategy:

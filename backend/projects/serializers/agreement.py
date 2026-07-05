@@ -578,6 +578,10 @@ class AgreementSerializer(serializers.ModelSerializer):
     display_total = serializers.SerializerMethodField()
     escrow_total_required = serializers.SerializerMethodField()
     remaining_to_fund = serializers.SerializerMethodField()
+    incidentals_reserve_used = serializers.SerializerMethodField()
+    incidentals_reserve_pending = serializers.SerializerMethodField()
+    incidentals_reserve_remaining = serializers.SerializerMethodField()
+    incidentals_reserve_summary = serializers.SerializerMethodField()
 
     ai_scope = serializers.SerializerMethodField()
     ai_scope_input = AgreementAIScopeWriteSerializer(write_only=True, required=False)
@@ -686,6 +690,33 @@ class AgreementSerializer(serializers.ModelSerializer):
             return getattr(obj, "selected_template_id", None)
         except Exception:
             return None
+
+    def _incidentals_summary(self, obj):
+        try:
+            from projects.services.escrow_reimbursements import incidentals_reserve_summary, serialize_incidentals_reserve
+
+            return serialize_incidentals_reserve(incidentals_reserve_summary(obj))
+        except Exception:
+            return {
+                "original": "0.00",
+                "pending": "0.00",
+                "spent": "0.00",
+                "remaining": "0.00",
+                "configured": False,
+                "escrow_funding_integration_pending": False,
+            }
+
+    def get_incidentals_reserve_used(self, obj):
+        return self._incidentals_summary(obj).get("spent", "0.00")
+
+    def get_incidentals_reserve_pending(self, obj):
+        return self._incidentals_summary(obj).get("pending", "0.00")
+
+    def get_incidentals_reserve_remaining(self, obj):
+        return self._incidentals_summary(obj).get("remaining", "0.00")
+
+    def get_incidentals_reserve_summary(self, obj):
+        return self._incidentals_summary(obj)
 
     def get_compliance_warning(self, obj):
         try:
@@ -1479,6 +1510,17 @@ class AgreementSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"retainage_percent": "Retainage percent must be between 0 and 100."}
             )
+
+        reserve_amount = attrs.get(
+            "incidentals_reserve_amount",
+            getattr(self.instance, "incidentals_reserve_amount", Decimal("0.00")),
+        )
+        try:
+            reserve_decimal = Decimal(str(reserve_amount or 0))
+        except Exception:
+            raise serializers.ValidationError({"incidentals_reserve_amount": "Enter a valid Incidentals Reserve amount."})
+        if reserve_decimal < 0:
+            raise serializers.ValidationError({"incidentals_reserve_amount": "Incidentals Reserve cannot be negative."})
 
         if project_class not in {
             AgreementProjectClass.RESIDENTIAL,

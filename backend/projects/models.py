@@ -1381,6 +1381,12 @@ class Agreement(models.Model):
 
     description = models.TextField(blank=True)
     total_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    incidentals_reserve_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Optional escrow incidentals reserve configured separately from milestone totals.",
+    )
     agreement_fee_total_cents = models.PositiveIntegerField(default=0)
     agreement_fee_allocated_cents = models.PositiveIntegerField(default=0)
     total_time_estimate = models.DurationField(null=True, blank=True)

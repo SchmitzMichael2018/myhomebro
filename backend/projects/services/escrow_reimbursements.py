@@ -76,6 +76,67 @@ def _reimbursement_amounts(agreement: Agreement, *, exclude_id: int | None = Non
     return released, reserved
 
 
+def _incidentals_queryset(agreement: Agreement, *, exclude_id: int | None = None):
+    qs = ExpenseRequest.objects.filter(
+        agreement=agreement,
+        funding_source=ExpenseRequest.FundingSource.INCIDENTALS_RESERVE,
+        is_archived=False,
+    )
+    if exclude_id:
+        qs = qs.exclude(pk=exclude_id)
+    return qs
+
+
+def incidentals_reserve_summary(agreement: Agreement | None, *, exclude_expense_id: int | None = None) -> dict:
+    original = money(getattr(agreement, "incidentals_reserve_amount", 0) if agreement else 0)
+    pending = Decimal("0.00")
+    spent = Decimal("0.00")
+    if agreement is not None:
+        pending_statuses = {
+            ExpenseRequest.Status.DRAFT,
+            ExpenseRequest.Status.SUBMITTED,
+            ExpenseRequest.Status.CONTRACTOR_SIGNED,
+            ExpenseRequest.Status.SENT_TO_HOMEOWNER,
+            ExpenseRequest.Status.HELD,
+        }
+        spent_statuses = {
+            ExpenseRequest.Status.APPROVED,
+            ExpenseRequest.Status.PENDING_RELEASE,
+            ExpenseRequest.Status.HOMEOWNER_ACCEPTED,
+            ExpenseRequest.Status.RELEASED,
+            ExpenseRequest.Status.PAID,
+        }
+        for expense in _incidentals_queryset(agreement, exclude_id=exclude_expense_id):
+            status = str(getattr(expense, "status", "") or "").lower()
+            amount = money(getattr(expense, "amount", 0))
+            if status in spent_statuses or getattr(expense, "released_at", None):
+                spent += amount
+            elif status in pending_statuses:
+                pending += amount
+    remaining = original - spent
+    if remaining < Decimal("0.00"):
+        remaining = Decimal("0.00")
+    return {
+        "original": original,
+        "pending": pending,
+        "spent": spent,
+        "remaining": remaining,
+        "configured": original > Decimal("0.00"),
+        "escrow_funding_integration_pending": original > Decimal("0.00"),
+    }
+
+
+def serialize_incidentals_reserve(summary: dict) -> dict:
+    return {
+        "original": f"{money(summary.get('original')):.2f}",
+        "pending": f"{money(summary.get('pending')):.2f}",
+        "spent": f"{money(summary.get('spent')):.2f}",
+        "remaining": f"{money(summary.get('remaining')):.2f}",
+        "configured": bool(summary.get("configured", False)),
+        "escrow_funding_integration_pending": bool(summary.get("escrow_funding_integration_pending", False)),
+    }
+
+
 def agreement_has_escrow_hold(agreement: Agreement) -> bool:
     return Dispute.objects.filter(
         agreement=agreement,
@@ -125,7 +186,10 @@ def validate_reimbursement(expense: ExpenseRequest, *, require_receipt: bool = T
     if agreement is None:
         return ReimbursementValidation(False, "Agreement is required.", {})
     ledger = escrow_ledger(agreement, exclude_reimbursement_id=expense.id)
+    is_incidentals = getattr(expense, "funding_source", "") == ExpenseRequest.FundingSource.INCIDENTALS_RESERVE
     if getattr(agreement, "payment_mode", "escrow") == "direct":
+        if is_incidentals:
+            return ReimbursementValidation(False, "Incidentals Reserve expenses require an escrow agreement.", ledger)
         return ReimbursementValidation(False, "Reimbursements from escrow require an escrow agreement.", ledger)
     if not getattr(agreement, "signature_is_satisfied", False):
         return ReimbursementValidation(False, "Agreement must be signed before reimbursement requests.", ledger)
@@ -137,6 +201,12 @@ def validate_reimbursement(expense: ExpenseRequest, *, require_receipt: bool = T
         return ReimbursementValidation(False, "This reimbursement is on admin hold.", ledger)
     if money(expense.amount) <= Decimal("0.00"):
         return ReimbursementValidation(False, "Amount must be greater than zero.", ledger)
+    if is_incidentals:
+        reserve = incidentals_reserve_summary(agreement, exclude_expense_id=expense.id)
+        if money(reserve.get("original")) <= Decimal("0.00"):
+            return ReimbursementValidation(False, "Incidentals Reserve has not been configured for this agreement.", ledger)
+        if money(expense.amount) > money(reserve.get("remaining")):
+            return ReimbursementValidation(False, "Requested amount exceeds remaining Incidentals Reserve.", ledger)
     if require_receipt:
         has_receipt = bool(getattr(expense, "receipt", None)) or expense.attachments.exists()
         if not has_receipt:
