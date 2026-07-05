@@ -558,6 +558,150 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_DECLINED)
         self.assertIn("different window", appointment.decline_reason)
 
+    def test_contractor_can_crud_estimate_availability_windows(self):
+        self.client.force_authenticate(self.contractor_user)
+
+        create = self.client.post(
+            "/api/projects/estimate-availability/",
+            {
+                "weekday": 0,
+                "start_time": "09:00",
+                "end_time": "12:00",
+                "timezone": "America/Chicago",
+                "appointment_type": OpportunityEstimateAppointment.TYPE_IN_PERSON,
+                "duration_minutes": 30,
+                "notes": "Front porch estimates.",
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(create.status_code, 201)
+        self.assertEqual(ContractorEstimateAvailabilityWindow.objects.count(), 1)
+        window_id = create.data["id"]
+        self.assertEqual(create.data["weekday_label"], "Monday")
+        self.assertEqual(create.data["duration_minutes"], 30)
+
+        listing = self.client.get("/api/projects/estimate-availability/")
+        self.assertEqual(listing.status_code, 200)
+        self.assertEqual(len(listing.data["results"]), 1)
+        self.assertEqual(listing.data["warning"], "")
+
+        update = self.client.patch(
+            f"/api/projects/estimate-availability/{window_id}/",
+            {"end_time": "11:30", "duration_minutes": 45, "notes": "Updated notes."},
+            format="json",
+        )
+        self.assertEqual(update.status_code, 200)
+        self.assertEqual(update.data["end_time"], "11:30")
+        self.assertEqual(update.data["duration_minutes"], 45)
+
+        delete = self.client.delete(f"/api/projects/estimate-availability/{window_id}/")
+        self.assertEqual(delete.status_code, 204)
+        self.assertEqual(ContractorEstimateAvailabilityWindow.objects.count(), 0)
+
+    def test_estimate_availability_validation_blocks_invalid_windows(self):
+        self.client.force_authenticate(self.contractor_user)
+
+        invalid_time = self.client.post(
+            "/api/projects/estimate-availability/",
+            {
+                "weekday": 1,
+                "start_time": "13:00",
+                "end_time": "12:00",
+                "timezone": "America/Chicago",
+                "appointment_type": OpportunityEstimateAppointment.TYPE_IN_PERSON,
+                "duration_minutes": 30,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(invalid_time.status_code, 400)
+        self.assertIn("end_time", invalid_time.data)
+
+        invalid_duration = self.client.post(
+            "/api/projects/estimate-availability/",
+            {
+                "weekday": 1,
+                "start_time": "09:00",
+                "end_time": "12:00",
+                "timezone": "America/Chicago",
+                "appointment_type": OpportunityEstimateAppointment.TYPE_IN_PERSON,
+                "duration_minutes": 5,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(invalid_duration.status_code, 400)
+        self.assertIn("duration_minutes", invalid_duration.data)
+
+    def test_estimate_availability_overlap_validation_allows_inactive_overlap(self):
+        ContractorEstimateAvailabilityWindow.objects.create(
+            contractor=self.contractor,
+            weekday=2,
+            start_time=time(9, 0),
+            end_time=time(12, 0),
+            duration_minutes=30,
+            appointment_type=OpportunityEstimateAppointment.TYPE_IN_PERSON,
+            is_active=True,
+        )
+        self.client.force_authenticate(self.contractor_user)
+
+        overlap = self.client.post(
+            "/api/projects/estimate-availability/",
+            {
+                "weekday": 2,
+                "start_time": "11:00",
+                "end_time": "13:00",
+                "timezone": "America/Chicago",
+                "appointment_type": OpportunityEstimateAppointment.TYPE_IN_PERSON,
+                "duration_minutes": 30,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(overlap.status_code, 400)
+        self.assertIn("non_field_errors", overlap.data)
+
+        inactive_overlap = self.client.post(
+            "/api/projects/estimate-availability/",
+            {
+                "weekday": 2,
+                "start_time": "11:00",
+                "end_time": "13:00",
+                "timezone": "America/Chicago",
+                "appointment_type": OpportunityEstimateAppointment.TYPE_IN_PERSON,
+                "duration_minutes": 30,
+                "is_active": False,
+            },
+            format="json",
+        )
+        self.assertEqual(inactive_overlap.status_code, 201)
+        self.assertEqual(ContractorEstimateAvailabilityWindow.objects.count(), 2)
+
+    def test_suspended_contractor_cannot_publish_estimate_availability(self):
+        self.contractor.marketplace_verification_status = Contractor.MARKETPLACE_SUSPENDED
+        self.contractor.save(update_fields=["marketplace_verification_status", "updated_at"])
+        self.client.force_authenticate(self.contractor_user)
+
+        response = self.client.post(
+            "/api/projects/estimate-availability/",
+            {
+                "weekday": 0,
+                "start_time": "09:00",
+                "end_time": "12:00",
+                "timezone": "America/Chicago",
+                "appointment_type": OpportunityEstimateAppointment.TYPE_IN_PERSON,
+                "duration_minutes": 30,
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Inactive contractors", response.data["detail"])
+        self.assertEqual(ContractorEstimateAvailabilityWindow.objects.count(), 0)
+
     def test_schedule_estimate_requires_contact_data(self):
         self.intake.customer_email = ""
         self.intake.customer_phone = ""

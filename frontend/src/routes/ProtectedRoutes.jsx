@@ -63,6 +63,7 @@ import TeamSchedule from "../pages/TeamSchedule.jsx";
 import TeamPage from "../pages/TeamPage.jsx";
 import TeamEmployeeDetailPage from "../pages/TeamEmployeeDetailPage.jsx";
 import TeamOverviewPage from "../pages/TeamOverviewPage.jsx";
+import EstimateAvailabilityPage from "../pages/EstimateAvailabilityPage.jsx";
 import SubcontractorsPage from "../pages/SubcontractorsPage.jsx";
 import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
 import PayoutHistoryPage from "../pages/PayoutHistoryPage.jsx";
@@ -173,6 +174,8 @@ export function protectedRoutes() {
           <Route path="team/subcontractors" element={<SubcontractorsPage />} />
           <Route path="team/assignments" element={<AssignmentsPage />} />
           <Route path="team/schedule" element={<TeamSchedule />} />
+          <Route path="team/estimate-availability" element={<EstimateAvailabilityPage />} />
+          <Route path="team/settings/estimate-availability" element={<Navigate to="/app/team/estimate-availability" replace />} />
           <Route path="team-overview" element={<Navigate to="/app/team" replace />} />
           <Route path="team-schedule" element={<Navigate to="/app/team/schedule" replace />} />
           <Route path="subcontractors" element={<Navigate to="/app/team/subcontractors" replace />} />

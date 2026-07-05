@@ -459,6 +459,14 @@ async function installTeamRoutes(page) {
     });
   });
 
+  await page.route("**/api/projects/estimate-availability/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [], warning: "No estimate availability has been configured." }),
+    });
+  });
+
   await page.route("**/api/projects/agreements**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname.match(/\/api\/projects\/agreements\/\d+\/milestones\/$/)) {
@@ -644,6 +652,138 @@ test("team members page separates permissions from capabilities and filters by t
 
   await page.getByTestId("team-clear-filters").click();
   await expect(page.getByTestId("team-member-row-2")).toBeVisible();
+});
+
+test("estimate availability settings support CRUD and weekly preview", async ({ page }) => {
+  await installTeamRoutes(page);
+
+  let nextId = 1;
+  let windows = [];
+  const labels = {
+    0: "Monday",
+    1: "Tuesday",
+    2: "Wednesday",
+    3: "Thursday",
+    4: "Friday",
+    5: "Saturday",
+    6: "Sunday",
+  };
+  const typeLabels = {
+    phone_call: "Phone Call",
+    video_call: "Video Call",
+    in_person: "In-Person Estimate",
+  };
+  const serialize = (window) => ({
+    ...window,
+    weekday_label: labels[window.weekday],
+    appointment_type_label: typeLabels[window.appointment_type],
+    created_at: "2026-07-05T12:00:00Z",
+    updated_at: "2026-07-05T12:00:00Z",
+  });
+
+  await page.route("**/api/projects/estimate-availability/**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    const detailMatch = url.pathname.match(/\/api\/projects\/estimate-availability\/(\d+)\/$/);
+
+    if (method === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          results: windows.map(serialize),
+          warning: windows.length ? "" : "No estimate availability has been configured.",
+        }),
+      });
+      return;
+    }
+
+    if (method === "POST") {
+      const payload = route.request().postDataJSON();
+      const row = {
+        id: nextId++,
+        weekday: Number(payload.weekday),
+        start_time: payload.start_time,
+        end_time: payload.end_time,
+        timezone: payload.timezone,
+        appointment_type: payload.appointment_type,
+        duration_minutes: Number(payload.duration_minutes),
+        notes: payload.notes || "",
+        is_active: Boolean(payload.is_active),
+      };
+      windows = [...windows, row];
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify(serialize(row)),
+      });
+      return;
+    }
+
+    if ((method === "PATCH" || method === "PUT") && detailMatch) {
+      const id = Number(detailMatch[1]);
+      const payload = route.request().postDataJSON();
+      windows = windows.map((window) =>
+        window.id === id
+          ? {
+              ...window,
+              ...payload,
+              weekday: payload.weekday === undefined ? window.weekday : Number(payload.weekday),
+              duration_minutes:
+                payload.duration_minutes === undefined ? window.duration_minutes : Number(payload.duration_minutes),
+              is_active: payload.is_active === undefined ? window.is_active : Boolean(payload.is_active),
+            }
+          : window
+      );
+      const row = windows.find((window) => window.id === id);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(serialize(row)),
+      });
+      return;
+    }
+
+    if (method === "DELETE" && detailMatch) {
+      const id = Number(detailMatch[1]);
+      windows = windows.filter((window) => window.id !== id);
+      await route.fulfill({ status: 204, body: "" });
+      return;
+    }
+
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not found." }) });
+  });
+
+  await page.goto("/app/team/estimate-availability", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("estimate-availability-page")).toContainText("Customers will only see these published estimate windows.");
+  await expect(page.getByTestId("estimate-availability-empty")).toContainText("No availability configured");
+
+  await page.getByTestId("estimate-availability-weekday").selectOption("0");
+  await page.getByTestId("estimate-availability-start").fill("09:00");
+  await page.getByTestId("estimate-availability-end").fill("11:00");
+  await page.getByTestId("estimate-availability-duration").selectOption("30");
+  await page.getByTestId("estimate-availability-type").selectOption("in_person");
+  await page.getByTestId("estimate-availability-notes").fill("Porch estimates only.");
+  await page.getByTestId("estimate-availability-save").click();
+
+  await expect(page.getByTestId("estimate-availability-row-1")).toContainText("Monday");
+  await expect(page.getByTestId("estimate-availability-row-1")).toContainText("9:00 AM to 11:00 AM");
+  await expect(page.getByTestId("estimate-availability-preview-day-0")).toContainText("9:00 AM");
+  await expect(page.getByTestId("estimate-availability-preview-day-0")).toContainText("10:30 AM");
+
+  await page.getByTestId("estimate-availability-edit-1").click();
+  await page.getByTestId("estimate-availability-end").fill("10:00");
+  await page.getByTestId("estimate-availability-save").click();
+  await expect(page.getByTestId("estimate-availability-row-1")).toContainText("9:00 AM to 10:00 AM");
+  await expect(page.getByTestId("estimate-availability-preview-day-0")).not.toContainText("10:30 AM");
+
+  await page.getByTestId("estimate-availability-toggle-1").click();
+  await expect(page.getByTestId("estimate-availability-row-1")).toContainText("Disabled");
+  await expect(page.getByTestId("estimate-availability-preview-day-0")).toContainText("No published slots");
+
+  await page.getByTestId("estimate-availability-delete-1").click();
+  await expect(page.getByTestId("estimate-availability-empty")).toContainText("No availability configured");
 });
 
 test("assignments page filters by project class and status", async ({ page }) => {
