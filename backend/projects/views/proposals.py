@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
@@ -9,6 +10,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from projects.models import Homeowner
 from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
 from projects.views.contractor_bids import (
@@ -34,11 +36,11 @@ def _proposal_status_label(status: str) -> str:
 
 
 def _proposal_source_type(value: str) -> str:
+    normalized = _safe_text(value).lower()
+    if normalized in {Proposal.SOURCE_PROPERTY_WORK_ORDER, Proposal.SOURCE_DASHBOARD}:
+        return normalized
     key = _appointment_key(value, 1)
     if key is None:
-        normalized = _safe_text(value).lower()
-        if normalized == Proposal.SOURCE_PROPERTY_WORK_ORDER:
-            return Proposal.SOURCE_PROPERTY_WORK_ORDER
         return ""
     return key[0]
 
@@ -209,6 +211,7 @@ def _snapshot_from_row(row: dict) -> dict:
         "project_title": _safe_text(row.get("project_title") or snapshot.get("project_title")),
         "project_summary": _safe_text(
             snapshot.get("project_scope_summary")
+            or snapshot.get("project_summary")
             or snapshot.get("refined_description")
             or row.get("notes")
             or row.get("project_description")
@@ -218,8 +221,77 @@ def _snapshot_from_row(row: dict) -> dict:
         "customer_name": _safe_text(row.get("customer_name") or snapshot.get("customer_name")),
         "customer_email": _safe_text(row.get("customer_email") or snapshot.get("customer_email")),
         "customer_phone": _safe_text(row.get("customer_phone") or snapshot.get("customer_phone")),
-        "service_location": _safe_text(row.get("location") or snapshot.get("location") or row.get("service_location")),
+        "service_location": _safe_text(row.get("location") or snapshot.get("location") or snapshot.get("service_location") or row.get("service_location")),
     }
+
+
+def _homeowner_address(homeowner: Homeowner) -> str:
+    parts = [
+        homeowner.street_address,
+        homeowner.address_line_2,
+        homeowner.city,
+        homeowner.state,
+        homeowner.zip_code,
+    ]
+    return ", ".join([_safe_text(part) for part in parts if _safe_text(part)])
+
+
+def _dashboard_source_id(contractor) -> int:
+    for _ in range(8):
+        candidate = secrets.randbelow(2_000_000_000) + 1
+        if not Proposal.objects.filter(
+            contractor=contractor,
+            source_type=Proposal.SOURCE_DASHBOARD,
+            source_id=candidate,
+        ).exists():
+            return candidate
+    return int(timezone.now().timestamp())
+
+
+def _dashboard_snapshot(contractor, request):
+    customer = None
+    customer_id = request.data.get("customer_id") or request.data.get("homeowner_id")
+    if customer_id:
+        try:
+            customer_id_int = int(customer_id)
+        except (TypeError, ValueError):
+            return None, {"customer_id": ["Choose a valid customer."]}
+        customer = Homeowner.objects.filter(created_by=contractor, pk=customer_id_int).first()
+        if customer is None:
+            return None, {"customer_id": ["Customer was not found."]}
+
+    customer_name = _safe_text(request.data.get("customer_name") or request.data.get("full_name"))
+    customer_email = _safe_text(request.data.get("customer_email") or request.data.get("email"))
+    customer_phone = _safe_text(request.data.get("customer_phone") or request.data.get("phone") or request.data.get("phone_number"))
+    service_location = _safe_text(request.data.get("service_location") or request.data.get("property_address") or request.data.get("address"))
+
+    if customer:
+        customer_name = customer_name or _safe_text(customer.full_name)
+        customer_email = customer_email or _safe_text(customer.email)
+        customer_phone = customer_phone or _safe_text(customer.phone_number)
+        service_location = service_location or _homeowner_address(customer)
+
+    project_title = _safe_text(request.data.get("project_title") or request.data.get("title"))
+    if not project_title:
+        return None, {"project_title": ["Project title is required."]}
+    if not customer_name:
+        return None, {"customer_name": ["Customer name is required."]}
+
+    desired_timeline = _safe_text(request.data.get("desired_timeline") or request.data.get("timeline"))
+    project_summary = _safe_text(request.data.get("project_summary") or request.data.get("project_description") or request.data.get("description"))
+    if desired_timeline:
+        project_summary = f"{project_summary}\n\nDesired timeline: {desired_timeline}".strip()
+
+    return {
+        "project_title": project_title,
+        "project_summary": project_summary,
+        "project_type": _safe_text(request.data.get("project_type")),
+        "project_subtype": _safe_text(request.data.get("project_subtype")),
+        "customer_name": customer_name,
+        "customer_email": customer_email,
+        "customer_phone": customer_phone,
+        "service_location": service_location,
+    }, None
 
 
 class ProposalListCreateView(APIView):
@@ -242,22 +314,34 @@ class ProposalListCreateView(APIView):
         source_type = _proposal_source_type(source_type_raw)
         if not source_type:
             return Response({"detail": "Unsupported opportunity source."}, status=400)
-        try:
-            source_id_int = int(source_id)
-        except (TypeError, ValueError):
-            return Response({"source_id": ["A valid source id is required."]}, status=400)
+
+        is_dashboard_estimate = source_type == Proposal.SOURCE_DASHBOARD
+        if is_dashboard_estimate and source_id in (None, ""):
+            source_id_int = _dashboard_source_id(contractor)
+        else:
+            try:
+                source_id_int = int(source_id)
+            except (TypeError, ValueError):
+                return Response({"source_id": ["A valid source id is required."]}, status=400)
 
         existing = _proposal_queryset(contractor).filter(source_type=source_type, source_id=source_id_int).first()
         if existing:
             return Response({"proposal": _serialize_proposal(existing, request=request), "created": False}, status=200)
 
-        source, row, error = _resolve_estimate_source(contractor, source_type, source_id_int, request=request)
-        if error:
-            return Response({"detail": error}, status=400)
+        if is_dashboard_estimate:
+            source = None
+            snapshot, field_errors = _dashboard_snapshot(contractor, request)
+            if field_errors:
+                return Response(field_errors, status=400)
+            row = {"request_snapshot": snapshot or {}}
+        else:
+            source, row, error = _resolve_estimate_source(contractor, source_type, source_id_int, request=request)
+            if error:
+                return Response({"detail": error}, status=400)
 
         appointment = None
         appointment_id = request.data.get("estimate_appointment_id") or request.data.get("appointment_id")
-        if appointment_id:
+        if appointment_id and not is_dashboard_estimate:
             appointment_source_type = {
                 Proposal.SOURCE_LEAD: OpportunityEstimateAppointment.SOURCE_PUBLIC_LEAD,
                 Proposal.SOURCE_INTAKE: OpportunityEstimateAppointment.SOURCE_INTAKE,

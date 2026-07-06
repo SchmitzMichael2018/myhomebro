@@ -340,6 +340,88 @@ export function getContractorNextActions({
     );
   }
 
+  const latestEstimateRequest = latestByDate(
+    (Array.isArray(publicLeads) ? publicLeads : []).filter((row) => {
+      const preference = normalizeStatus(row?.estimate_preference || row?.estimatePreference);
+      const appointmentStatus = normalizeStatus(
+        row?.estimate_appointment_status ||
+          row?.estimate_status ||
+          row?.appointment?.status ||
+          row?.estimate_appointment?.status
+      );
+      const label = normalizeStatus(`${row?.status_label || ""} ${row?.next_action?.label || ""}`);
+      return preference === "slot" || appointmentStatus === "requested" || label.includes("estimate requested");
+    }),
+    (row) => row?.estimate_requested_at || row?.submitted_at || row?.created_at || row?.updated_at
+  );
+  if (latestEstimateRequest) {
+    const opportunityId = latestEstimateRequest?.opportunity_id || latestEstimateRequest?.source_id || latestEstimateRequest?.id || "latest";
+    const customerName = pickFirst(
+      latestEstimateRequest?.customer_name,
+      latestEstimateRequest?.full_name,
+      latestEstimateRequest?.name
+    ) || "A customer";
+    const projectName = pickFirst(
+      latestEstimateRequest?.project_title,
+      latestEstimateRequest?.project_type,
+      latestEstimateRequest?.request_snapshot?.project_title
+    );
+    actions.push(
+      buildAction({
+        key: `estimate-request:${opportunityId}`,
+        dedupeKey: `estimate-request:${opportunityId}`,
+        title: "Confirm estimate appointment",
+        description: `${customerName} requested an estimate time${projectName ? ` for ${projectName}` : ""}.`,
+        buttonLabel: "Review opportunity",
+        navigationTarget: "/app/opportunities",
+        priorityScore: 96,
+        category: "customer",
+        source: "estimates",
+        actionType: "confirm_estimate_appointment",
+        summary: `${customerName} is waiting on estimate confirmation.`,
+        reason: "Confirming the site visit keeps the estimate-first workflow moving.",
+        urgency: "Today",
+        customer: customerName,
+        project: projectName,
+        receivedAt: latestEstimateRequest?.estimate_requested_at || latestEstimateRequest?.created_at,
+        updatedAt: latestEstimateRequest?.updated_at,
+        estimatedEffort: "2 minutes",
+        blocking: true,
+      })
+    );
+  }
+
+  const estimateWorkspaceActivity = latestByDate(
+    (Array.isArray(activityFeed) ? activityFeed : []).filter((item) => {
+      const text = normalizeStatus(`${item?.title || ""} ${item?.summary || ""} ${item?.message || ""}`);
+      return text.includes("estimate checklist") || text.includes("estimate workspace") || text.includes("customer waiting on estimate");
+    }),
+    (item) => item?.created_at || item?.updated_at
+  );
+  if (estimateWorkspaceActivity?.navigation_target) {
+    actions.push(
+      buildAction({
+        key: `estimate-activity:${estimateWorkspaceActivity?.id || estimateWorkspaceActivity?.navigation_target}`,
+        dedupeKey: estimateWorkspaceActivity?.navigation_target,
+        title: estimateWorkspaceActivity?.title || "Complete estimate checklist",
+        description: estimateWorkspaceActivity?.summary || "An estimate workspace has items waiting before an agreement can be prepared.",
+        buttonLabel: "Open estimate",
+        navigationTarget: estimateWorkspaceActivity?.navigation_target,
+        priorityScore: 74,
+        category: "project",
+        source: "estimates",
+        actionType: "complete_estimate_checklist",
+        summary: estimateWorkspaceActivity?.summary || "Complete the estimate checklist.",
+        reason: "Completed estimate details flow into the Agreement Wizard.",
+        urgency: "Soon",
+        customer: estimateWorkspaceActivity?.customer_name,
+        project: estimateWorkspaceActivity?.project_title,
+        updatedAt: estimateWorkspaceActivity?.created_at || estimateWorkspaceActivity?.updated_at,
+        estimatedEffort: "5 minutes",
+      })
+    );
+  }
+
   const agreementRows = [...(Array.isArray(agreements) ? agreements : [])].sort((left, right) => {
     const leftDate = parseDateAny(left?.updated_at || left?.created_at);
     const rightDate = parseDateAny(right?.updated_at || right?.created_at);

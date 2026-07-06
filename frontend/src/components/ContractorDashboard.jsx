@@ -20,7 +20,6 @@ import {
   BadgeCheck,
   WalletMinimal,
   FilePlus2,
-  ListPlus,
   HandCoins,
   Receipt,
   ClipboardCheck,
@@ -586,6 +585,346 @@ function ActionButton({ icon: Icon, label, onClick, primary, hint }) {
         {hint}
       </div>
     </div>
+  );
+}
+
+function formatCustomerAddress(customer) {
+  return [
+    customer?.street_address,
+    customer?.address_line_2,
+    customer?.city,
+    customer?.state,
+    customer?.zip_code,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+const emptyDashboardEstimateForm = {
+  customer_name: "",
+  customer_phone: "",
+  customer_email: "",
+  property_address: "",
+  project_title: "",
+  project_description: "",
+  desired_timeline: "",
+};
+
+function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
+  const [mode, setMode] = useState("existing");
+  const [customers, setCustomers] = useState([]);
+  const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [customerQuery, setCustomerQuery] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [existingForm, setExistingForm] = useState({
+    property_address: "",
+    project_title: "",
+    project_description: "",
+    desired_timeline: "",
+  });
+  const [newForm, setNewForm] = useState(emptyDashboardEstimateForm);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setMode("existing");
+    setCustomerQuery("");
+    setSelectedCustomerId("");
+    setExistingForm({
+      property_address: "",
+      project_title: "",
+      project_description: "",
+      desired_timeline: "",
+    });
+    setNewForm(emptyDashboardEstimateForm);
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || mode !== "existing") return;
+    let mounted = true;
+    (async () => {
+      try {
+        setLoadingCustomers(true);
+        const { data } = await api.get("/projects/homeowners/", { params: { page_size: 50 } });
+        if (!mounted) return;
+        setCustomers(Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : []);
+      } catch (error) {
+        console.error(error);
+        if (mounted) setCustomers([]);
+      } finally {
+        if (mounted) setLoadingCustomers(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, mode]);
+
+  const filteredCustomers = useMemo(() => {
+    const q = customerQuery.trim().toLowerCase();
+    if (!q) return customers;
+    return customers.filter((customer) =>
+      [
+        customer?.full_name,
+        customer?.email,
+        customer?.phone_number,
+        formatCustomerAddress(customer),
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(q))
+    );
+  }, [customerQuery, customers]);
+
+  const selectedCustomer = useMemo(
+    () => customers.find((customer) => String(customer.id) === String(selectedCustomerId)) || null,
+    [customers, selectedCustomerId]
+  );
+
+  useEffect(() => {
+    if (!selectedCustomer) return;
+    const address = formatCustomerAddress(selectedCustomer);
+    setExistingForm((current) => ({
+      ...current,
+      property_address: current.property_address || address,
+    }));
+  }, [selectedCustomer]);
+
+  const updateExisting = (event) => {
+    const { name, value } = event.target;
+    setExistingForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const updateNew = (event) => {
+    const { name, value } = event.target;
+    setNewForm((current) => ({ ...current, [name]: value }));
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    const isExisting = mode === "existing";
+    if (isExisting && !selectedCustomerId) {
+      toast.error("Choose an existing customer first.");
+      return;
+    }
+    const form = isExisting ? existingForm : newForm;
+    if (!form.project_title.trim()) {
+      toast.error("Project title is required.");
+      return;
+    }
+    if (!isExisting && !form.customer_name.trim()) {
+      toast.error("Customer name is required.");
+      return;
+    }
+
+    const payload = {
+      source_type: "dashboard",
+      customer_id: isExisting ? selectedCustomerId : undefined,
+      customer_name: isExisting ? selectedCustomer?.full_name : form.customer_name,
+      customer_email: isExisting ? selectedCustomer?.email : form.customer_email,
+      customer_phone: isExisting ? selectedCustomer?.phone_number : form.customer_phone,
+      property_address: form.property_address,
+      project_title: form.project_title,
+      project_description: form.project_description,
+      desired_timeline: form.desired_timeline,
+    };
+
+    try {
+      setSaving(true);
+      const { data } = await api.post("/projects/proposals/", payload);
+      const proposal = data?.proposal || data;
+      if (!proposal?.id) throw new Error("Estimate workspace was not returned.");
+      toast.success("Estimate workspace created.");
+      onCreated(proposal);
+    } catch (error) {
+      console.error(error);
+      const detail = error?.response?.data?.detail;
+      const firstFieldError = Object.values(error?.response?.data || {}).flat?.()?.[0];
+      toast.error(detail || firstFieldError || "Could not create estimate workspace.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onRequestClose={onClose}
+      className="mx-auto mt-10 w-[94vw] max-w-4xl overflow-hidden rounded-3xl border border-slate-700 bg-[#071a31] text-white shadow-[0_30px_90px_rgba(2,8,23,0.55)] outline-none"
+      overlayClassName="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/75 px-3 py-6"
+      contentLabel="Create Estimate"
+    >
+      <div className="border-b border-white/10 bg-[#0a2442] px-5 py-5 md:px-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">Estimate-first workflow</p>
+            <h2 className="mt-1 text-2xl font-black text-white">Create Estimate</h2>
+            <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-sky-100/78">
+              Start an Estimate Workspace from an existing customer or capture a new customer request.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-2xl border border-white/15 bg-white/10 p-2 text-sky-100 hover:bg-white/15"
+            aria-label="Close create estimate"
+          >
+            <X className="h-5 w-5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      <form onSubmit={submit} className="space-y-5 px-5 py-5 md:px-6">
+        <div className="grid gap-2 rounded-2xl border border-white/10 bg-white/6 p-1 sm:grid-cols-2">
+          {[
+            ["existing", "Existing Customer", "Search and start from a saved customer."],
+            ["new", "New Customer", "Capture the essentials and begin estimating."],
+          ].map(([value, label, helper]) => (
+            <button
+              key={value}
+              type="button"
+              data-testid={`dashboard-estimate-${value}-tab`}
+              onClick={() => setMode(value)}
+              className={`rounded-xl px-4 py-3 text-left transition ${
+                mode === value
+                  ? "bg-white text-slate-950 shadow-lg"
+                  : "text-sky-100/82 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <span className="block text-sm font-black">{label}</span>
+              <span className={`mt-1 block text-xs font-semibold ${mode === value ? "text-slate-600" : "text-sky-100/62"}`}>
+                {helper}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {mode === "existing" ? (
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <div className="rounded-2xl border border-white/10 bg-white/7 p-4">
+              <label className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/72" htmlFor="dashboard-estimate-customer-search">
+                Customer
+              </label>
+              <input
+                id="dashboard-estimate-customer-search"
+                data-testid="dashboard-estimate-customer-search"
+                value={customerQuery}
+                onChange={(event) => setCustomerQuery(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
+                placeholder="Search by name, email, phone, or address"
+              />
+              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                {loadingCustomers ? (
+                  <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70">
+                    Loading customers...
+                  </div>
+                ) : filteredCustomers.length ? (
+                  filteredCustomers.map((customer) => {
+                    const isSelected = String(customer.id) === String(selectedCustomerId);
+                    return (
+                      <button
+                        key={customer.id}
+                        type="button"
+                        data-testid={`dashboard-estimate-customer-${customer.id}`}
+                        onClick={() => setSelectedCustomerId(customer.id)}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                          isSelected
+                            ? "border-amber-200 bg-amber-200/18"
+                            : "border-white/10 bg-white/7 hover:border-white/20 hover:bg-white/10"
+                        }`}
+                      >
+                        <span className="block text-sm font-black text-white">{customer.full_name || "Unnamed customer"}</span>
+                        <span className="mt-1 block text-xs font-semibold text-sky-100/70">
+                          {[customer.email, customer.phone_number].filter(Boolean).join(" | ") || "No contact details"}
+                        </span>
+                        <span className="mt-1 block text-xs text-sky-100/55">{formatCustomerAddress(customer) || "No property address saved"}</span>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70">
+                    No matching customers found.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/7 p-4">
+              <div className="grid gap-4">
+                <FieldInput label="Property Address" name="property_address" value={existingForm.property_address} onChange={updateExisting} testId="dashboard-estimate-existing-property" />
+                <FieldInput label="Project Title" name="project_title" value={existingForm.project_title} onChange={updateExisting} required testId="dashboard-estimate-existing-title" />
+                <FieldInput label="Desired Timeline" name="desired_timeline" value={existingForm.desired_timeline} onChange={updateExisting} testId="dashboard-estimate-existing-timeline" />
+                <FieldTextarea label="Project Description" name="project_description" value={existingForm.project_description} onChange={updateExisting} testId="dashboard-estimate-existing-description" />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-white/10 bg-white/7 p-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <FieldInput label="Customer" name="customer_name" value={newForm.customer_name} onChange={updateNew} required testId="dashboard-estimate-new-customer" />
+              <FieldInput label="Phone" name="customer_phone" value={newForm.customer_phone} onChange={updateNew} testId="dashboard-estimate-new-phone" />
+              <FieldInput label="Email" name="customer_email" type="email" value={newForm.customer_email} onChange={updateNew} testId="dashboard-estimate-new-email" />
+              <FieldInput label="Property Address" name="property_address" value={newForm.property_address} onChange={updateNew} testId="dashboard-estimate-new-property" />
+              <FieldInput label="Project Title" name="project_title" value={newForm.project_title} onChange={updateNew} required testId="dashboard-estimate-new-title" />
+              <FieldInput label="Desired Timeline" name="desired_timeline" value={newForm.desired_timeline} onChange={updateNew} testId="dashboard-estimate-new-timeline" />
+              <div className="md:col-span-2">
+                <FieldTextarea label="Project Description" name="project_description" value={newForm.project_description} onChange={updateNew} testId="dashboard-estimate-new-description" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex flex-col-reverse gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-white/14 px-4 py-2.5 text-sm font-black text-sky-100 hover:bg-white/10"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            data-testid="dashboard-estimate-launch"
+            disabled={saving}
+            className="rounded-xl bg-amber-300 px-5 py-2.5 text-sm font-black text-slate-950 shadow-lg shadow-amber-950/20 hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "Creating..." : "Launch Estimate Workspace"}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function FieldInput({ label, testId, required = false, type = "text", ...props }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/72">
+        {label}{required ? " *" : ""}
+      </span>
+      <input
+        {...props}
+        type={type}
+        required={required}
+        data-testid={testId}
+        className="mt-2 w-full rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
+      />
+    </label>
+  );
+}
+
+function FieldTextarea({ label, testId, required = false, ...props }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/72">
+        {label}{required ? " *" : ""}
+      </span>
+      <textarea
+        {...props}
+        required={required}
+        data-testid={testId}
+        className="mt-2 min-h-[112px] w-full rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
+      />
+    </label>
   );
 }
 
@@ -1525,6 +1864,7 @@ export default function ContractorDashboard() {
   const [bidsSnapshotSummary, setBidsSnapshotSummary] = useState(null);
   const [bidsSnapshotRecent, setBidsSnapshotRecent] = useState([]);
 
+  const [showEstimateModal, setShowEstimateModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showAllNextActions, setShowAllNextActions] = useState(false);
   const [dismissedNextActionKeys, setDismissedNextActionKeys] = useState(() => new Set());
@@ -2243,7 +2583,7 @@ export default function ContractorDashboard() {
   );
 
   /* ----- navigation handlers ----- */
-  const goNewAgreement = () => navigate(`/app/agreements`);
+  const goNewAgreement = () => navigate(`/app/agreements/new/wizard?step=1`);
   const goStartWithAi = () => navigate(`/app/assistant`);
   const goStartFirstProjectWithAi = () =>
     navigate(`/app/assistant`, {
@@ -2257,7 +2597,12 @@ export default function ContractorDashboard() {
       },
     });
   const goNewIntake = () => navigate(`/app/intake/new`);
-  const goNewMilestone = () => navigate(`/app/milestones?new=1`);
+  const openCreateEstimate = () => setShowEstimateModal(true);
+  const closeCreateEstimate = () => setShowEstimateModal(false);
+  const onDashboardEstimateCreated = (proposal) => {
+    setShowEstimateModal(false);
+    navigate(`/app/proposals/${proposal.id}`);
+  };
   const goPayments = ({ moneyStatus = "all", projectClass = "all", recordType = "all" } = {}) => {
     const params = new URLSearchParams();
     if (moneyStatus && moneyStatus !== "all") params.set("money_status", moneyStatus);
@@ -2269,6 +2614,7 @@ export default function ContractorDashboard() {
   const goInvoices = () => goPayments();
   const goInvoicesDisputed = () => goPayments({ moneyStatus: "issues", recordType: "invoice" });
   const goCalendar = () => navigate(`/app/calendar`);
+  const goTodaySchedule = () => navigate(`/app/team/schedule`);
   const goAgreementScheduleLate = () => navigate(`/app/agreements?focus=schedule&range=late`);
   const goAgreementScheduleToday = () => navigate(`/app/agreements?focus=schedule&range=today`);
   const goAgreementScheduleTomorrow = () => navigate(`/app/agreements?focus=schedule&range=tomorrow`);
@@ -3142,17 +3488,28 @@ export default function ContractorDashboard() {
               tone="premium"
               className="mhb-dashboard-quick-actions p-5 shadow-[0_24px_58px_rgba(2,8,23,0.38)]"
             >
-              <div className="grid gap-5 xl:grid-cols-[minmax(15rem,0.6fr)_minmax(0,2.2fr)] xl:items-center">
+              <div className="grid gap-5 xl:grid-cols-[minmax(15rem,0.52fr)_minmax(0,2.35fr)] xl:items-center">
                 <div className="flex items-start gap-3">
                   <Sparkles className="mt-1 h-6 w-6 text-amber-300" aria-hidden="true" />
                   <span>
                     <span className="block text-2xl font-black text-white">Quick Actions</span>
-                    <span className="mt-1 block text-sm font-medium text-sky-100/76">Start the workday from here</span>
+                    <span className="mt-1 block text-sm font-medium text-sky-100/76">Choose your workflow</span>
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
                   <button
                     type="button"
+                    data-testid="dashboard-quick-action-create-estimate"
+                    onClick={openCreateEstimate}
+                    className="inline-flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-2xl border border-amber-200/65 bg-amber-300 px-4 text-center text-sm font-black text-slate-950 shadow-[0_18px_36px_rgba(251,191,36,0.22)] transition hover:-translate-y-px hover:bg-amber-200"
+                  >
+                    <ClipboardCheck className="h-5 w-5" />
+                    <span>Create Estimate</span>
+                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-700">Primary</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="dashboard-quick-action-new-agreement"
                     onClick={goNewAgreement}
                     className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
                   >
@@ -3161,27 +3518,30 @@ export default function ContractorDashboard() {
                   </button>
                   <button
                     type="button"
-                    onClick={goNewMilestone}
+                    data-testid="dashboard-quick-action-todays-schedule"
+                    onClick={goTodaySchedule}
                     className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
                   >
-                    <ListPlus className="h-5 w-5" />
-                    <span>New Milestone</span>
+                    <CalendarDays className="h-5 w-5" />
+                    <span>Today&apos;s Schedule</span>
                   </button>
                   <button
                     type="button"
-                    onClick={goInvoices}
-                    className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
-                  >
-                    <BadgeDollarSign className="h-5 w-5" />
-                    <span>Payment</span>
-                  </button>
-                  <button
-                    type="button"
+                    data-testid="dashboard-quick-action-expense"
                     onClick={openNewExpense}
                     className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
                   >
                     <HandCoins className="h-5 w-5" />
                     <span>Expense</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="dashboard-quick-action-payment"
+                    onClick={goInvoices}
+                    className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                  >
+                    <BadgeDollarSign className="h-5 w-5" />
+                    <span>Payment</span>
                   </button>
                 </div>
               </div>
@@ -3655,6 +4015,13 @@ export default function ContractorDashboard() {
       </div>
 
 
+      {!isEmployee ? (
+        <DashboardEstimateModal
+          isOpen={showEstimateModal}
+          onClose={closeCreateEstimate}
+          onCreated={onDashboardEstimateCreated}
+        />
+      ) : null}
       {!isEmployee ? <ExpenseRequestModal isOpen={showExpenseModal} onClose={onExpenseModalClose} /> : null}
 
       {!isEmployee ? (

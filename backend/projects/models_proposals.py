@@ -34,11 +34,13 @@ class Proposal(models.Model):
     SOURCE_INTAKE = "intake"
     SOURCE_OPPORTUNITY = "opportunity"
     SOURCE_PROPERTY_WORK_ORDER = "property_work_order"
+    SOURCE_DASHBOARD = "dashboard"
     SOURCE_CHOICES = [
         (SOURCE_LEAD, "Lead"),
         (SOURCE_INTAKE, "Intake"),
         (SOURCE_OPPORTUNITY, "Opportunity"),
         (SOURCE_PROPERTY_WORK_ORDER, "Property Work Order"),
+        (SOURCE_DASHBOARD, "Dashboard Estimate"),
     ]
 
     contractor = models.ForeignKey(
