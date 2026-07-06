@@ -939,7 +939,7 @@ export default function ProposalWorkspacePage() {
     setDraft((prev) => ({ ...prev, [key]: value }));
   }
 
-  async function saveProposal(payload, success = "Proposal saved.") {
+  async function saveProposal(payload, success = "Estimate saved.") {
     setSaving(true);
     try {
       const { data } = await api.patch(`/projects/proposals/${proposalId}/`, payload);
@@ -948,7 +948,7 @@ export default function ProposalWorkspacePage() {
       toast.success(success);
     } catch (error) {
       console.error(error);
-      toast.error(error?.response?.data?.detail || "Could not save proposal.");
+      toast.error(error?.response?.data?.detail || "Could not save estimate.");
     } finally {
       setSaving(false);
     }
@@ -1458,7 +1458,7 @@ export default function ProposalWorkspacePage() {
                   <option value="site_visit">Site Visit</option>
                   <option value="in_progress">Estimate In Progress</option>
                   <option value="ready">Estimate Ready</option>
-                  <option value="sent">Proposal Sent</option>
+                  <option value="sent">Estimate Sent</option>
                   <option value="viewed">Viewed</option>
                   <option value="accepted">Accepted</option>
                   <option value="declined">Declined</option>
@@ -1894,7 +1894,7 @@ export default function ProposalWorkspacePage() {
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="proposal-photo-gallery">
               {photos.length ? photos.map((item) => (
                 <div key={item.id} className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
-                  {item.url ? <img src={item.url} alt={item.caption || item.original_name || "Proposal photo"} className="h-40 w-full rounded-md object-cover" /> : null}
+                {item.url ? <img src={item.url} alt={item.caption || item.original_name || "Estimate photo"} className="h-40 w-full rounded-md object-cover" /> : null}
                   <div className="mt-2 text-sm font-bold text-slate-900">{item.caption || item.original_name || "Photo"}</div>
                   <button type="button" onClick={() => deleteAttachment(item.id)} className="mt-2 text-sm font-bold text-rose-700">Remove</button>
                 </div>

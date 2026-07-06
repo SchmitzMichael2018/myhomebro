@@ -832,7 +832,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("New Lead");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Guided Intake");
   await expect(page.getByTestId("lead-row-lead-6")).toContainText("Photos");
-  await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Schedule Estimate");
+  await expect(page.getByTestId("lead-row-action-lead-6")).toContainText("Schedule/Request Estimate");
   await page.getByTestId("leads-tab-follow-up").click();
   await expect(page.getByTestId("lead-row-lead-8")).toBeVisible();
   await expect(page.getByTestId("lead-row-lead-6")).toHaveCount(0);
@@ -857,7 +857,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("opportunity-overview-tab-panel")).toContainText("Overview");
   await expect(page.getByTestId("lead-action-section")).toBeVisible();
   await expect(page.getByTestId("lead-action-section")).toContainText("Recommended Next Steps");
-  await expect(page.getByTestId("lead-action-section")).toContainText("Schedule Estimate");
+  await expect(page.getByTestId("lead-action-section")).toContainText("Schedule/Request Estimate");
   await expect(page.getByTestId("schedule-estimate-action")).toBeEnabled();
   await expect(page.getByTestId("opportunity-prerequisite-checklist")).toContainText("Before conversion");
   await expect(page.getByTestId("opportunity-prerequisite-status")).toBeVisible();
@@ -909,7 +909,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.getByTestId("response-template-copy-general").click();
   await expect(page.getByTestId("response-template-copy-general")).toContainText("Copied");
   await expect(page.getByTestId("create-bid-context-note")).toContainText("Bathroom remodels are clearer");
-  await expect(page.getByTestId("create-bid-action")).toContainText("Send Estimate Response");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Open Estimate Workspace");
   await expect(page.getByTestId("follow-up-action-button")).toContainText("Follow Up");
   await expect(page.getByTestId("lead-detail-secondary-action")).toContainText("Copy Reference");
   await page.getByRole("button", { name: "Close bid details" }).click();
@@ -920,13 +920,13 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await page.getByTestId("leads-tab-follow-up").click();
   await expect(page.getByTestId("lead-row-lead-8")).toContainText("Follow-Up");
   await expect(page.getByTestId("lead-stage-lead-8")).toContainText("Follow-Up");
-  await expect(page.getByTestId("lead-row-action-lead-8")).toContainText("Send Estimate Response");
+  await expect(page.getByTestId("lead-row-action-lead-8")).toContainText("Schedule/Request Estimate");
   await page.getByTestId("lead-row-action-lead-8").click();
   await page.getByTestId("opportunity-review-tab-project").click();
   await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
   await page.getByTestId("opportunity-review-tab-next").click();
   await expect(page.getByTestId("resume-review-action")).toContainText("Resume Review");
-  await expect(page.getByTestId("create-bid-action")).toContainText("Send Estimate Response");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Schedule/Request Estimate");
   await page.getByRole("button", { name: "Close bid details" }).click();
   await expect(page.getByTestId("bids-detail-drawer")).toHaveCount(0);
 
@@ -955,7 +955,7 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("lead-overview")).toContainText("Project Family");
   await expect(page.getByTestId("project-snapshot")).toContainText("Scope Summary");
   await expect(page.getByTestId("project-snapshot")).toContainText("Budget");
-  await expect(page.getByTestId("recommended-setup-section")).toContainText("Suggested Setup");
+  await expect(page.getByTestId("recommended-setup-section")).toContainText("Estimate Prep Notes");
   await expect(page.getByTestId("recommended-setup-section")).toContainText("Project Type");
   await expect(page.getByTestId("photos-section")).toContainText("layout.png");
   await expect(page.getByTestId("project-phases-section")).toContainText("Demo Phase");
@@ -1545,7 +1545,7 @@ test("contractor bids workspace renders property management work orders and rout
   await expect(page.getByTestId("opportunity-overview-tab-panel")).toContainText("Overview");
   await expect(page.getByTestId("opportunity-availability-section")).toContainText("Availability");
   await expect(page.getByTestId("opportunity-customer-section")).toContainText("Customer");
-  await expect(page.getByTestId("planning-guidance-section")).toContainText("Planning Guidance");
+  await expect(page.getByTestId("opportunity-estimate-workspace-note")).toContainText("Estimate Workspace");
   await expect(page.getByTestId("bids-detail-drawer")).not.toContainText("Recommended Crew");
   await expect(page.getByTestId("decline-property-work-order-action")).toContainText("Decline");
   await page.getByTestId("opportunity-review-tab-project").click();
@@ -1566,7 +1566,7 @@ test("contractor bids workspace renders property management work orders and rout
   await expect(page).toHaveURL("/app/agreements/933/wizard?step=1");
 });
 
-test("contractor bids workspace lead helpers support create bid handoff", async ({ page }) => {
+test("contractor bids workspace lead helpers open the estimate scheduling flow", async ({ page }) => {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
   });
@@ -1786,25 +1786,11 @@ test("contractor bids workspace lead helpers support create bid handoff", async 
   await expect(page.getByTestId("response-prep-section")).toBeVisible();
   await expect(page.getByTestId("response-starter-section")).toBeVisible();
   await expect(page.getByTestId("create-bid-context-note")).toBeVisible();
-  await expect(page.getByTestId("create-bid-action")).toBeVisible();
+  await expect(page.getByTestId("create-bid-action")).toContainText("Schedule/Request Estimate");
 
   await page.getByTestId("create-bid-action").click();
-  await expect(page).toHaveURL("/app/agreements/901/wizard?step=1");
-  await expect(page.getByTestId("step1-no-template-review")).toBeVisible({ timeout: 10000 });
-  await expect(page.getByTestId("step1-no-template-preview-title")).toContainText("Bathroom Remodel");
-  await expect(page.getByTestId("step1-no-template-preview-scope")).toContainText("Thanks for sharing the details");
-  await page.getByRole("button", { name: "Continue with AI Draft" }).first().click();
-  const proposalDraftField = page.getByTestId("proposal-draft-textarea");
-  await expect(proposalDraftField).toBeVisible({ timeout: 10000 });
-  await expect(page.getByTestId("agreement-project-title-input")).toHaveValue("Bathroom Remodel");
-  await expect(proposalDraftField).toHaveValue(
-    /Thanks for sharing the details for Bathroom Remodel/
-  );
-
-  await proposalDraftField.fill("Custom contractor note");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByTestId("agreement-ai-generate-scope-button").click();
-  await expect(page.getByTestId("proposal-draft-textarea")).toBeVisible();
+  await expect(page.getByTestId("schedule-estimate-modal")).toBeVisible();
+  await expect(page.getByTestId("schedule-estimate-customer-email")).toHaveValue("newlead@example.com");
 });
 
 test("quote requests open the convert-to-agreement panel and persist the draft into the agreement wizard", async ({
@@ -2156,14 +2142,9 @@ test("contractor bids workspace keeps learning signals hidden when fallback draf
 
   await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-action-lead-6").click();
+  await expect(page.getByTestId("create-bid-action")).toContainText("Schedule/Request Estimate");
   await page.getByTestId("create-bid-action").click();
-  const noTemplateReview = page.getByTestId("step1-no-template-review");
-  if (await noTemplateReview.count()) {
-    await expect(noTemplateReview).toBeVisible({ timeout: 10000 });
-    await page.getByRole("button", { name: "Continue with AI Draft" }).first().click();
-  }
-  await expect(page.getByTestId("proposal-draft-textarea")).toBeVisible({ timeout: 10000 });
-  await page.getByTestId("agreement-ai-generate-scope-button").click();
+  await expect(page.getByTestId("schedule-estimate-modal")).toBeVisible();
   await expect(page.getByTestId("proposal-learning-note")).toHaveCount(0);
   await expect(page.getByTestId("proposal-learning-context-toggle")).toHaveCount(0);
   await expect(page.getByTestId("proposal-brand-note")).toHaveCount(0);
@@ -2298,9 +2279,9 @@ test("contractor bids workspace can create a bid from a follow-up lead", async (
   await page.getByTestId("leads-tab-follow-up").click();
   await page.getByTestId("lead-row-action-lead-8").click();
   await expect(page.getByTestId("follow-up-state-note")).toContainText("saved for later review");
-  await expect(page.getByTestId("create-bid-action")).toContainText("Send Estimate Response");
+  await expect(page.getByTestId("create-bid-action")).toContainText("Schedule/Request Estimate");
   await page.getByTestId("create-bid-action").click();
-  await expect(page).toHaveURL("/app/agreements/902/wizard?step=1");
+  await expect(page.getByTestId("schedule-estimate-modal")).toBeVisible();
 });
 
 test("contractor bids workspace shows a friendly empty state", async ({ page }) => {

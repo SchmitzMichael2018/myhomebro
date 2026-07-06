@@ -166,7 +166,8 @@ test("Agreement Wizard prefills editable fields from Estimate Workspace handoff"
   await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("agreement-assistant-prefill-banner")).toContainText("Estimate checklist data prefilled");
-  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Estimate Workspace input");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Estimate Prefill");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Agreement becomes the source of truth");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$200.00");
   await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Demo, prep, and install.");

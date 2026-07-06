@@ -3296,12 +3296,12 @@ export default function Step1Details({
         safeTrim(draftPayload.text || data?.normalized_description || "")
       );
       if (!nextDraft) {
-        throw new Error("Could not build a proposal draft.");
+        throw new Error("Could not build an estimate draft.");
       }
 
       if (currentDraft && currentDraft !== nextDraft) {
         const confirmed = window.confirm(
-          "Replace the current proposal draft with a draft based on this lead?"
+          "Replace the current estimate draft with a draft based on this lead?"
         );
         if (!confirmed) return;
       }
@@ -3360,7 +3360,7 @@ export default function Step1Details({
 
       if (currentDraft && currentDraft !== fallbackDraft) {
         const confirmed = window.confirm(
-          "Replace the current proposal draft with a draft based on this lead?"
+          "Replace the current estimate draft with a draft based on this lead?"
         );
         if (!confirmed) return;
       }

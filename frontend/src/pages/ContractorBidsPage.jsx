@@ -64,7 +64,10 @@ function lifecycleStatus(row) {
     return { label: "Declined", tone: "border-rose-400/45 bg-rose-500/15 text-rose-100" };
   }
   if (row?.estimate_completed || normalize(row?.latest_estimate_appointment?.status) === "completed") {
-    return { label: "Estimate Completed", tone: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100" };
+    if (row?.latest_proposal || row?.proposal_id) {
+      return { label: "Estimate Ready", tone: "border-emerald-400/40 bg-emerald-500/15 text-emerald-100" };
+    }
+    return { label: "Estimate In Progress", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
   }
   if (normalize(row?.latest_estimate_appointment?.status) === "requested") {
     return { label: "Estimate Requested", tone: "border-amber-400/50 bg-amber-500/15 text-amber-100" };
@@ -73,6 +76,9 @@ function lifecycleStatus(row) {
     return { label: "Flexible Estimate", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
   }
   if (row?.latest_estimate_appointment || row?.estimate_scheduled) {
+    if (row?.latest_proposal || row?.proposal_id) {
+      return { label: "Estimate In Progress", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
+    }
     return { label: "Estimate Scheduled", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
   }
   if (sourceKind === "property_work_order" && nextKey === "accept_property_work_order") {
@@ -209,40 +215,6 @@ function buildAvailabilitySummary({ row, lifecycle, canScheduleEstimate }) {
         : "No appointment scheduled yet.",
     fit,
   };
-}
-
-function buildPlanningGuidance({ projectIntelligence, projectSetup, snapshot, row }) {
-  const description = firstPresent(
-    snapshot?.project_scope_summary,
-    snapshot?.refined_description,
-    row?.notes,
-    row?.project_description
-  );
-  const signals = Array.isArray(row?.request_signals) ? row.request_signals : [];
-  const hasPhotos = Number(snapshot?.photo_count || 0) > 0 || signals.map(normalize).includes("photos");
-  const complexity =
-    normalize(projectSetup?.suggestedWorkflow).includes("remodel") || normalize(description).includes("full")
-      ? "Higher complexity"
-      : normalize(projectSetup?.suggestedWorkflow).includes("repair")
-        ? "Focused repair"
-        : "Standard review";
-  const trades =
-    firstPresent(
-      projectSetup?.recommendedProjectType,
-      projectSetup?.projectFamilyLabel,
-      projectIntelligence?.familyLabel,
-      row?.project_type
-    ) || "General trade review";
-  const duration =
-    firstPresent(snapshot?.timeline, row?.timeline) ||
-    (complexity === "Higher complexity" ? "Confirm during estimate" : "Likely short once scope is confirmed");
-  const risks = [];
-  if (!description) risks.push("Scope details are light.");
-  if (!hasPhotos) risks.push("Photos are not attached.");
-  if (!snapshot?.budget && !row?.budget_text && !row?.bid_amount_label) risks.push("Budget basis is missing.");
-  if (normalize(snapshot?.measurement_handling) === "site visit required") risks.push("Site visit or measurements may be required.");
-  if (!risks.length) risks.push("No major request risks detected from existing intake data.");
-  return { complexity, trades, duration, risks };
 }
 
 function splitDescriptionBullets(text) {
@@ -1824,14 +1796,18 @@ export default function ContractorBidsPage() {
           : selectedNextActionKey === "open_agreement"
             ? "Open Agreement"
             : selectedRow?.next_action?.label || "View Details"
+      : selectedLifecycle.label === "Estimate Requested"
+      ? "Confirm/Review Estimate Request"
+      : selectedLifecycle.label === "Estimate Scheduled"
+      ? "Open Estimate Workspace"
+      : selectedLifecycle.label === "Estimate In Progress"
+      ? "Continue Estimate"
+      : selectedLifecycle.label === "Estimate Ready"
+      ? "Create Agreement from Estimate"
       : selectedCanConvertToAgreement
       ? "Convert to Agreement"
-      : selectedLifecycle.label === "Estimate Requested"
-      ? "Confirm Estimate"
-      : selectedLifecycle.label === "Estimate Scheduled"
-      ? "View Appointment"
       : selectedStage === "new_lead" || selectedStage === "follow_up"
-      ? "Schedule Estimate"
+      ? "Schedule/Request Estimate"
       : selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url
         ? "Open Agreement"
         : selectedRow?.next_action?.label || "View Details";
@@ -1844,12 +1820,16 @@ export default function ContractorBidsPage() {
           : selectedNextActionKey === "open_agreement"
             ? "Open the draft agreement to continue the existing MyHomeBro agreement workflow."
             : "Review the property management work order details."
-      : selectedCanConvertToAgreement
-      ? "Review the request and adjust the draft before sending the agreement."
       : selectedLifecycle.label === "Estimate Requested"
       ? "Customer requested this estimate time. Confirm it, propose a different time, decline the request, or contact the customer before moving forward."
       : selectedLifecycle.label === "Estimate Scheduled"
-      ? "Review the scheduled estimate details, then follow up with the customer if anything changes."
+      ? "Open the Estimate Workspace for site visit notes, checklist capture, scope, pricing, incidentals, photos, and documents."
+      : selectedLifecycle.label === "Estimate In Progress"
+      ? "Continue the Estimate Workspace before creating the agreement."
+      : selectedLifecycle.label === "Estimate Ready"
+      ? "Open the Estimate Workspace and create the agreement from the completed estimate checklist."
+      : selectedCanConvertToAgreement
+      ? "Review the request and adjust the draft before sending the agreement."
       : selectedStage === "new_lead"
       ? "Schedule the estimate first so scope, timing, and pricing are grounded before conversion."
       : selectedStage === "follow_up"
@@ -1857,10 +1837,7 @@ export default function ContractorBidsPage() {
         : selectedStage === "closed"
           ? "This opportunity is closed, but you can still review the history."
           : "Continue the current bid workflow from here.";
-  const selectedCreateBidActionLabel =
-    selectedStage === "new_lead" || selectedStage === "follow_up"
-      ? "Send Estimate Response"
-      : selectedPrimaryActionLabel;
+  const selectedCreateBidActionLabel = selectedPrimaryActionLabel;
   const selectedCanOpenAgreement = selectedNextActionKey === "open_agreement" && selectedRow?.linked_agreement_url;
   const selectedValueDisplay = opportunityValueDisplay(selectedRow);
   const selectedCustomerId = firstPresent(
@@ -1910,6 +1887,15 @@ export default function ContractorBidsPage() {
       !selectedCanOpenAgreement &&
       (selectedRow?.latest_estimate_appointment || selectedRow?.estimate_scheduled || selectedProposal?.id)
   );
+  const selectedDetailActionSchedulesEstimate =
+    (selectedStage === "new_lead" || selectedStage === "follow_up") &&
+    selectedCreateBidActionLabel === "Schedule/Request Estimate";
+  const selectedDetailActionOpensEstimate =
+    selectedCanCreateProposal && ["Estimate Scheduled", "Estimate In Progress", "Estimate Ready"].includes(selectedLifecycle.label);
+  const selectedDetailActionDisabled =
+    actionBusyId === String(selectedRow?.bid_id) ||
+    (selectedDetailActionSchedulesEstimate && !selectedCanScheduleEstimate) ||
+    (selectedDetailActionOpensEstimate && proposalBusy);
   const selectedAvailability = useMemo(
     () =>
       buildAvailabilitySummary({
@@ -1918,16 +1904,6 @@ export default function ContractorBidsPage() {
         canScheduleEstimate: selectedCanScheduleEstimate,
       }),
     [selectedCanScheduleEstimate, selectedLifecycle, selectedRow]
-  );
-  const selectedPlanningGuidance = useMemo(
-    () =>
-      buildPlanningGuidance({
-        projectIntelligence: selectedProjectIntelligence,
-        projectSetup: selectedProjectSetup,
-        snapshot: selectedSnapshot,
-        row: selectedRow,
-      }),
-    [selectedProjectIntelligence, selectedProjectSetup, selectedRow, selectedSnapshot]
   );
   const selectedChecklistItems = useMemo(() => {
     const items = [];
@@ -1971,9 +1947,14 @@ export default function ContractorBidsPage() {
       return row?.next_action?.label || "View Details";
     }
     if (isConvertToAgreementRow(row)) return "Convert to Agreement";
+    const rowLifecycle = lifecycleStatus(row);
+    if (rowLifecycle.label === "Estimate Requested") return "Confirm/Review Estimate Request";
+    if (rowLifecycle.label === "Estimate Scheduled") return "Open Estimate Workspace";
+    if (rowLifecycle.label === "Estimate In Progress") return "Continue Estimate";
+    if (rowLifecycle.label === "Estimate Ready") return "Create Agreement from Estimate";
     const stage = workspaceStageFromRow(row);
-    if (stage === "new_lead") return "Schedule Estimate";
-    if (stage === "follow_up") return "Send Estimate Response";
+    if (stage === "new_lead") return "Schedule/Request Estimate";
+    if (stage === "follow_up") return "Schedule/Request Estimate";
     if (stage === "closed") return "View Details";
     if (normalize(row?.next_action?.key) === "open_agreement" && row?.linked_agreement_url) return "Open Agreement";
     if (stage === "active_bid") return "Send Estimate Response";
@@ -2037,7 +2018,7 @@ export default function ContractorBidsPage() {
     }
     const source = scheduleSourceForRow(selectedRow);
     if (!source) {
-      toast.error("This opportunity is missing source data for a proposal workspace.");
+      toast.error("This opportunity is missing source data for an estimate workspace.");
       return;
     }
     setProposalBusy(true);
@@ -2049,7 +2030,7 @@ export default function ContractorBidsPage() {
       });
       const proposal = data?.proposal;
       if (!proposal?.id) {
-        toast.error("Proposal workspace could not be opened.");
+        toast.error("Estimate Workspace could not be opened.");
         return;
       }
       const summary = {
@@ -2071,11 +2052,11 @@ export default function ContractorBidsPage() {
           return row;
         })
       );
-      toast.success(data?.created ? "Proposal workspace created." : "Opening proposal workspace.");
+      toast.success(data?.created ? "Estimate Workspace created." : "Opening Estimate Workspace.");
       navigate(`/app/proposals/${proposal.id}`);
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Could not create proposal workspace.");
+      toast.error(err?.response?.data?.detail || "Could not create estimate workspace.");
     } finally {
       setProposalBusy(false);
     }
@@ -2360,6 +2341,19 @@ export default function ContractorBidsPage() {
     } finally {
       setActionBusyId("");
     }
+  };
+
+  const runSelectedDetailAction = () => {
+    if (!selectedRow) return;
+    if (selectedDetailActionOpensEstimate) {
+      createOrOpenProposal();
+      return;
+    }
+    if (selectedDetailActionSchedulesEstimate) {
+      setScheduleEstimateOpen(true);
+      return;
+    }
+    runAction(selectedRow);
   };
 
   const handleRowPrimaryAction = (row) => {
@@ -2891,27 +2885,12 @@ export default function ContractorBidsPage() {
                     </ModalSection>
                   </div>
 
-                  <ModalSection
-                    title="Planning Guidance"
-                    testId="planning-guidance-section"
-                    subtitle="Advisory only. This is not a confirmed project plan or staffing recommendation."
+                  <div
+                    data-testid="opportunity-estimate-workspace-note"
+                    className="rounded-2xl border border-blue-400/25 bg-blue-500/10 px-4 py-3 text-sm font-semibold leading-6 text-blue-50"
                   >
-                    <div className="grid gap-2 sm:grid-cols-3">
-                      <InfoRow label="Estimated complexity" value={selectedPlanningGuidance.complexity} />
-                      <InfoRow label="Estimated trades involved" value={selectedPlanningGuidance.trades} />
-                      <InfoRow label="Estimated duration" value={selectedPlanningGuidance.duration} />
-                    </div>
-                    <div className="mt-3">
-                      <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-400">Potential risks</div>
-                      <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                        {selectedPlanningGuidance.risks.map((risk) => (
-                          <li key={risk} className="rounded-lg border border-amber-400/35 bg-amber-500/15 px-3 py-2 text-sm font-semibold text-amber-50">
-                            {risk}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </ModalSection>
+                    Scope, checklist answers, pricing, incidentals, photos, and documents now belong in the Estimate Workspace. Keep this review focused on triage, customer contact, and the estimate appointment.
+                  </div>
                 </section>
               ) : null}
 
@@ -3089,6 +3068,24 @@ export default function ContractorBidsPage() {
                         Decline Estimate Request
                       </button>
                     </>
+                  ) : selectedCanCreateProposal && ["Estimate Scheduled", "Estimate In Progress", "Estimate Ready"].includes(selectedLifecycle.label) ? (
+                    <button
+                      type="button"
+                      data-testid="proposal-workspace-action"
+                      disabled={proposalBusy}
+                      onClick={createOrOpenProposal}
+                      className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-400 disabled:cursor-not-allowed disabled:opacity-60"
+                      title="Open the Estimate Workspace for site visit details, measurements, photos, documents, scope, pricing, and incidentals."
+                    >
+                      {proposalBusy
+                        ? "Opening..."
+                        : selectedLifecycle.label === "Estimate Ready"
+                        ? "Create Agreement from Estimate"
+                        : selectedProposal?.id
+                        ? "Continue Estimate"
+                        : "Open Estimate Workspace"}
+                      <ClipboardList size={14} />
+                    </button>
                   ) : selectedStage !== "closed" && !selectedCanOpenAgreement ? (
                     <button
                       type="button"
@@ -3098,21 +3095,21 @@ export default function ContractorBidsPage() {
                       className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-400 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none"
                       title={selectedScheduleDisabledReason || "Schedule an estimate appointment with this customer."}
                     >
-                      {selectedLifecycle.label === "Estimate Scheduled" ? "View Appointment" : "Schedule Estimate"}
+                      {selectedLifecycle.label === "Flexible Estimate" ? "Request Estimate Time" : "Schedule Estimate"}
                       {!selectedCanScheduleEstimate ? <span className="text-xs font-medium">(Unavailable)</span> : null}
                     </button>
                   ) : null}
 
-                  {selectedCanCreateProposal ? (
+                  {selectedCanCreateProposal && !["Estimate Scheduled", "Estimate In Progress", "Estimate Ready"].includes(selectedLifecycle.label) ? (
                     <button
                       type="button"
                       data-testid="proposal-workspace-action"
                       disabled={proposalBusy}
                       onClick={createOrOpenProposal}
                       className="inline-flex items-center gap-2 rounded-lg border border-blue-300/60 bg-blue-500/15 px-4 py-2 text-sm font-semibold text-blue-50 hover:bg-blue-500/25 disabled:cursor-not-allowed disabled:opacity-60"
-                      title="Create or open the pre-agreement proposal workspace for site visit details, measurements, photos, documents, scope, and notes."
+                      title="Create or open the pre-agreement Estimate Workspace for site visit details, measurements, photos, documents, scope, pricing, and incidentals."
                     >
-                      {proposalBusy ? "Opening..." : selectedProposal?.id ? "Open Proposal Workspace" : "Create Proposal"}
+                      {proposalBusy ? "Opening..." : selectedProposal?.id ? "Open Estimate Workspace" : "Create Estimate"}
                       <ClipboardList size={14} />
                     </button>
                   ) : null}
@@ -3140,8 +3137,8 @@ export default function ContractorBidsPage() {
                   ) : (
                     <button
                       type="button"
-                      onClick={() => runAction(selectedRow)}
-                      disabled={actionBusyId === String(selectedRow.bid_id)}
+                      onClick={runSelectedDetailAction}
+                      disabled={selectedDetailActionDisabled}
                       data-testid={
                         selectedStage === "new_lead" || selectedStage === "follow_up"
                           ? "create-bid-action"
@@ -3239,9 +3236,9 @@ export default function ContractorBidsPage() {
               </SectionCard>
 
               <SectionCard
-                title="Suggested Setup"
+                title="Estimate Prep Notes"
                 testId="recommended-setup-section"
-                subtitle="Advisory only. Use this as a starting point while you confirm scope, pricing, and agreement details."
+                subtitle="Advisory only. Final scope, pricing, incidentals, photos, and documents belong in the Estimate Workspace."
                 className={detailTab === "project" ? "" : "hidden"}
               >
                 <div className="grid gap-3 sm:grid-cols-3">
@@ -3272,7 +3269,7 @@ export default function ContractorBidsPage() {
                   className="mt-3 rounded-xl border border-amber-400/35 bg-amber-500/15 px-4 py-3 text-sm font-medium text-amber-50"
                 >
                   {selectedProjectSetup.recommendationNote ||
-                    "This is a suggested setup only. Confirm project details before using it to shape an estimate or agreement."}
+                    "This is a suggested setup only. Confirm project details in the Estimate Workspace before using them to shape an agreement."}
                 </div>
               </SectionCard>
 

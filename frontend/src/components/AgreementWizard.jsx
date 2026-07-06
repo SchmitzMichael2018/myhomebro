@@ -2269,16 +2269,19 @@ export default function AgreementWizard() {
         >
           <div className="md:col-span-4">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/80">
-              Estimate Workspace input
+              Estimate Prefill
             </div>
             <div className="mt-1 font-semibold text-white">
-              Review and edit this estimate checklist data in the Agreement Wizard before sending.
+              Review the Estimate Workspace data first, then refine the contract, milestones, payment schedule, legal terms, and warranty before sending.
+            </div>
+            <div className="mt-1 text-xs font-semibold text-emerald-100/75">
+              Fields remain editable. After this draft is created, the Agreement becomes the source of truth for incidentals reserve, milestones, signatures, and funding.
             </div>
           </div>
           <div>
             <div className="text-xs font-semibold uppercase text-emerald-100/70">Estimate</div>
             <div className="font-bold text-white">
-              {proposalHandoffSummary.proposalId ? `#${proposalHandoffSummary.proposalId}` : "Proposal"}
+              {proposalHandoffSummary.proposalId ? `#${proposalHandoffSummary.proposalId}` : "Estimate"}
             </div>
           </div>
           <div>
@@ -2286,7 +2289,7 @@ export default function AgreementWizard() {
             <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.total)}</div>
           </div>
           <div>
-            <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals</div>
+            <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals Reserve</div>
             <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.incidentals)}</div>
           </div>
           <div>

@@ -118,7 +118,7 @@ const proposal = {
     total: "0.00",
     line_item_count: 0,
   },
-  activity: [{ id: 1, event_type: "created", message: "Proposal created", created_at: "2026-07-01T16:00:00Z" }],
+  activity: [{ id: 1, event_type: "created", message: "Estimate created", created_at: "2026-07-01T16:00:00Z" }],
   created_at: "2026-07-01T16:00:00Z",
   updated_at: "2026-07-01T16:00:00Z",
 };
@@ -251,7 +251,7 @@ function calculateTotals(items) {
   };
 }
 
-test("Create Proposal from Opportunity opens Proposal Workspace", async ({ page }) => {
+test("Create Estimate from Opportunity opens Estimate Workspace", async ({ page }) => {
   await installBaseMocks(page);
   let createPayload = null;
 
@@ -272,7 +272,7 @@ test("Create Proposal from Opportunity opens Proposal Workspace", async ({ page 
 
   await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
   await page.getByTestId("lead-row-lead-6").click();
-  await expect(page.getByTestId("proposal-workspace-action")).toContainText("Create Proposal");
+  await expect(page.getByTestId("proposal-workspace-action")).toContainText("Open Estimate Workspace");
   await page.getByTestId("proposal-workspace-action").click();
 
   await expect(page).toHaveURL(/\/app\/proposals\/42/);
@@ -281,7 +281,7 @@ test("Create Proposal from Opportunity opens Proposal Workspace", async ({ page 
   expect(createPayload).toEqual({ source_type: "lead", source_id: 6, estimate_appointment_id: 7001 });
 });
 
-test("Proposal Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {
+test("Estimate Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {
   await installBaseMocks(page);
   await installAgreementWizardMocks(page);
   let currentProposal = { ...proposal };
@@ -482,7 +482,7 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("estimate-ready-status")).toContainText("Estimate Ready");
 
   await page.getByTestId("proposal-nav-history").click();
-  await expect(page.getByTestId("proposal-history")).toContainText("Proposal created");
+  await expect(page.getByTestId("proposal-history")).toContainText("Estimate created");
 
   await page.getByTestId("proposal-summary-create-agreement").click();
   await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
