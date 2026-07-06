@@ -8,15 +8,17 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 
 const NAV = [
-  ["overview", "Overview"],
+  ["overview", "Estimate Checklist"],
   ["appointment", "Appointment"],
-  ["customer", "Customer"],
-  ["site", "Site Visit"],
+  ["customer", "Customer & Contact"],
+  ["site", "Site Access"],
   ["measurements", "Measurements"],
   ["photos", "Photos"],
   ["documents", "Documents"],
-  ["estimate", "Estimate Builder"],
-  ["scope", "Scope"],
+  ["estimate", "Line Items"],
+  ["incidentals", "Incidentals Reserve"],
+  ["scope", "Scope Notes"],
+  ["ready", "Ready for Agreement"],
   ["notes", "Notes"],
   ["history", "History"],
 ];
@@ -170,6 +172,154 @@ function buildProposalAgreementScope(proposal) {
     .join("\n\n");
 }
 
+function checklistPercent(items) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return 0;
+  return Math.round((rows.filter((item) => item.complete).length / rows.length) * 100);
+}
+
+function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) {
+  const contactReady = Boolean(compactText(proposal?.customer_name) && (compactText(proposal?.customer_email) || compactText(proposal?.customer_phone)));
+  const locationReady = Boolean(compactText(proposal?.service_location));
+  const hasAccessNotes = Boolean(compactText(draft?.access_notes) || locationReady);
+  const hasConditions = Boolean(compactText(draft?.site_conditions) || compactText(draft?.risk_notes));
+  const hasMeasurements = (proposal?.measurements || []).length > 0;
+  const hasFiles = (photos || []).length > 0 || (documents || []).length > 0;
+  const hasRequests = Boolean(compactText(draft?.customer_requests));
+  const hasScope = Boolean(compactText(draft?.included_work) || compactText(draft?.site_visit_notes) || compactText(proposal?.project_summary));
+  const hasExclusions = Boolean(compactText(draft?.excluded_work) || compactText(draft?.assumptions));
+  const hasLineItems = (proposal?.line_items || []).length > 0;
+  const incidentalsValue = Number(totals?.incidentals_reserve || 0);
+  const readyMinimum = contactReady && locationReady && hasScope && hasLineItems;
+
+  const items = [
+    {
+      key: "customer",
+      title: "Customer & Contact",
+      complete: contactReady,
+      required: true,
+      missing: contactReady ? [] : ["Customer name and at least one email or phone"],
+      target: "customer",
+      action: "Review contact",
+      summary: `${field(proposal?.customer_name, "No customer")} - ${field(proposal?.customer_email || proposal?.customer_phone, "No contact method")}`,
+    },
+    {
+      key: "site-access",
+      title: "Site Access",
+      complete: hasAccessNotes,
+      required: true,
+      missing: hasAccessNotes ? [] : ["Service location or access notes"],
+      target: "site",
+      action: "Add access notes",
+      summary: compactText(draft?.access_notes) || compactText(proposal?.service_location) || "No access details captured",
+    },
+    {
+      key: "conditions",
+      title: "Existing Conditions",
+      complete: hasConditions,
+      required: false,
+      missing: hasConditions ? [] : ["Existing conditions or risk notes"],
+      target: "site",
+      action: "Capture conditions",
+      summary: compactText(draft?.site_conditions) || compactText(draft?.risk_notes) || "No existing conditions documented",
+    },
+    {
+      key: "measurements",
+      title: "Measurements",
+      complete: hasMeasurements,
+      required: false,
+      missing: hasMeasurements ? [] : ["At least one measurement"],
+      target: "measurements",
+      action: "Add measurement",
+      summary: hasMeasurements ? `${proposal.measurements.length} measurement${proposal.measurements.length === 1 ? "" : "s"} captured` : "No measurements yet",
+    },
+    {
+      key: "files",
+      title: "Photos / Documents",
+      complete: hasFiles,
+      required: false,
+      missing: hasFiles ? [] : ["Photo or document"],
+      target: photos?.length ? "photos" : "documents",
+      action: "Attach files",
+      summary: `${(photos || []).length} photo${(photos || []).length === 1 ? "" : "s"}, ${(documents || []).length} document${(documents || []).length === 1 ? "" : "s"}`,
+    },
+    {
+      key: "requests",
+      title: "Customer Requests",
+      complete: hasRequests,
+      required: false,
+      missing: hasRequests ? [] : ["Customer preferences or requests"],
+      target: "site",
+      action: "Add requests",
+      summary: compactText(draft?.customer_requests) || "No customer requests documented",
+    },
+    {
+      key: "scope",
+      title: "Scope Notes",
+      complete: hasScope,
+      required: true,
+      missing: hasScope ? [] : ["Scope notes or included work"],
+      target: "scope",
+      action: "Write scope",
+      summary: compactText(draft?.included_work) || compactText(draft?.site_visit_notes) || compactText(proposal?.project_summary) || "No scope notes yet",
+    },
+    {
+      key: "exclusions",
+      title: "Exclusions / Assumptions",
+      complete: hasExclusions,
+      required: false,
+      missing: hasExclusions ? [] : ["Exclusions or assumptions"],
+      target: "scope",
+      action: "Add exclusions",
+      summary: compactText(draft?.excluded_work) || compactText(draft?.assumptions) || "No exclusions or assumptions captured",
+    },
+    {
+      key: "line-items",
+      title: "Estimate Line Items",
+      complete: hasLineItems,
+      required: true,
+      missing: hasLineItems ? [] : ["At least one estimate line item"],
+      target: "estimate",
+      action: "Add pricing",
+      summary: hasLineItems ? `${proposal.line_items.length} line item${proposal.line_items.length === 1 ? "" : "s"} - ${money(totals?.total)}` : "No estimate pricing yet",
+    },
+    {
+      key: "incidentals",
+      title: "Incidentals Reserve",
+      complete: incidentalsValue > 0,
+      required: false,
+      missing: incidentalsValue > 0 ? [] : ["Optional reserve not configured"],
+      target: "incidentals",
+      action: "Review reserve",
+      summary: incidentalsValue > 0 ? `${money(incidentalsValue)} reserve configured` : "No incidentals reserve configured",
+    },
+    {
+      key: "ready",
+      title: "Ready for Agreement",
+      complete: readyMinimum,
+      required: true,
+      missing: readyMinimum ? [] : ["Customer/contact", "site location", "scope notes", "estimate line items"].filter((label) => {
+        if (label === "Customer/contact") return !contactReady;
+        if (label === "site location") return !locationReady;
+        if (label === "scope notes") return !hasScope;
+        if (label === "estimate line items") return !hasLineItems;
+        return false;
+      }),
+      target: "ready",
+      action: "Review readiness",
+      summary: readyMinimum ? "Minimum estimate checklist is ready for Agreement Wizard review" : "Finish required checklist items before agreement review",
+    },
+  ];
+
+  return {
+    items,
+    percent: checklistPercent(items),
+    readyMinimum,
+    completedCount: items.filter((item) => item.complete).length,
+    requiredMissing: items.filter((item) => item.required && !item.complete),
+  };
+}
+
 function primeAgreementWizardForProposalDraft() {
   try {
     if (typeof window === "undefined" || !window.sessionStorage) return;
@@ -188,6 +338,42 @@ function Section({ id, active, title, children }) {
       <h2 className="text-lg font-bold text-slate-950">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
+  );
+}
+
+function ChecklistCard({ item, onOpen }) {
+  return (
+    <article
+      data-testid={`estimate-checklist-${item.key}`}
+      className={`rounded-xl border p-4 shadow-sm ${
+        item.complete ? "border-emerald-200 bg-emerald-50" : item.required ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${item.complete ? "bg-emerald-600 text-white" : "bg-white text-slate-400 ring-1 ring-slate-300"}`}>
+              {item.complete ? <Check size={16} /> : null}
+            </span>
+            <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
+            {item.required ? <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black uppercase text-white">Required</span> : null}
+          </div>
+          <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-700">{item.summary}</p>
+          {!item.complete && item.missing?.length ? (
+            <div className="mt-2 text-xs font-bold text-amber-800">
+              Missing: {item.missing.join(", ")}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => onOpen(item.target)}
+          className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+        >
+          {item.action}
+        </button>
+      </div>
+    </article>
   );
 }
 
@@ -244,6 +430,10 @@ export default function ProposalWorkspacePage() {
     [proposal]
   );
   const totals = proposal?.totals || {};
+  const estimateChecklist = useMemo(
+    () => buildEstimateChecklist({ proposal, draft, totals, photos, documents }),
+    [proposal, draft, totals, photos, documents]
+  );
 
   function createAgreementFromProposal() {
     if (!proposal) return;
@@ -300,7 +490,7 @@ export default function ProposalWorkspacePage() {
       },
       assistantContext: {
         source: "proposal",
-        source_label: "Proposal Workspace",
+        source_label: "Estimate Workspace",
         proposal_id: proposal.id,
         source_type: proposal.source_type || "",
         source_id: proposal.source_id || null,
@@ -334,7 +524,7 @@ export default function ProposalWorkspacePage() {
 
     writeSessionAssistantHandoff(handoff);
     primeAgreementWizardForProposalDraft();
-    toast.success("Proposal data loaded into the Agreement Wizard.");
+    toast.success("Estimate checklist loaded into the Agreement Wizard.");
     navigate("/app/agreements/new/wizard?step=1", { state: handoff });
   }
 
@@ -530,9 +720,9 @@ export default function ProposalWorkspacePage() {
 
   if (loading) {
     return (
-      <ContractorPageSurface eyebrow="Proposal Workspace" title="Loading proposal" subtitle="Preparing the pre-agreement workspace.">
+      <ContractorPageSurface eyebrow="Estimate Workspace" title="Loading estimate checklist" subtitle="Preparing the pre-agreement workspace.">
         <div className="rounded-xl bg-white p-8 text-sm font-semibold text-slate-600 ring-1 ring-slate-200" data-testid="proposal-loading">
-          Loading proposal...
+          Loading estimate checklist...
         </div>
       </ContractorPageSurface>
     );
@@ -540,7 +730,7 @@ export default function ProposalWorkspacePage() {
 
   if (!proposal) {
     return (
-      <ContractorPageSurface eyebrow="Proposal Workspace" title="Proposal not found" subtitle="This proposal could not be loaded.">
+      <ContractorPageSurface eyebrow="Estimate Workspace" title="Estimate checklist not found" subtitle="This estimate workspace could not be loaded.">
         <button className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white" onClick={() => navigate("/app/opportunities")}>
           Back to Opportunities
         </button>
@@ -555,9 +745,17 @@ export default function ProposalWorkspacePage() {
         <header className="sticky top-0 z-50 -mx-3 border-b border-white/10 bg-slate-950/95 px-3 py-3 backdrop-blur md:-mx-5 md:px-5">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-xs font-bold uppercase tracking-[0.2em] text-blue-200/80">Walkthrough Mode</div>
-              <h1 className="mt-1 truncate text-2xl font-black text-white">{proposal.project_title || "Proposal"}</h1>
+              <div className="text-xs font-bold uppercase tracking-[0.2em] text-blue-200/80">Estimate Checklist Walkthrough</div>
+              <h1 className="mt-1 truncate text-2xl font-black text-white">{proposal.project_title || "Estimate"}</h1>
               <p className="mt-1 text-sm font-semibold text-slate-300">{proposal.customer_name || "Customer"} - {proposal.service_location || "Site visit"}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-blue-100" data-testid="walkthrough-checklist-progress">
+                  {estimateChecklist.percent}% complete
+                </span>
+                <span className={`rounded-full px-3 py-1 text-xs font-black ${estimateChecklist.readyMinimum ? "bg-emerald-400 text-emerald-950" : "bg-amber-300 text-amber-950"}`}>
+                  {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Checklist in progress"}
+                </span>
+              </div>
             </div>
             <button
               type="button"
@@ -572,6 +770,26 @@ export default function ProposalWorkspacePage() {
 
         <main className="mx-auto max-w-4xl space-y-4 py-4">
           <section className="rounded-2xl bg-white p-4 text-slate-950 shadow-xl" data-testid="walkthrough-primary-actions">
+            <div className="mb-3">
+              <div className="text-xs font-black uppercase tracking-wide text-slate-500">Next capture steps</div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2" data-testid="walkthrough-estimate-checklist">
+                {estimateChecklist.items.slice(0, 6).map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => {
+                      setWalkthroughMode(false);
+                      setActive(item.target);
+                    }}
+                    className={`rounded-xl px-3 py-2 text-left text-sm font-black ${
+                      item.complete ? "bg-emerald-50 text-emerald-900" : "bg-slate-100 text-slate-800"
+                    }`}
+                  >
+                    {item.complete ? "✓ " : "□ "}{item.title}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="flex min-h-20 cursor-pointer items-center justify-center gap-3 rounded-2xl bg-blue-600 px-4 py-4 text-lg font-black text-white shadow-sm">
                 <Camera size={24} /> Take Photo
@@ -735,9 +953,9 @@ export default function ProposalWorkspacePage() {
 
   return (
     <ContractorPageSurface
-      eyebrow="Proposal Workspace"
-      title={proposal.project_title || "Proposal Workspace"}
-      subtitle="Capture site visit details, measurements, photos, documents, scope, and internal notes before agreement drafting."
+      eyebrow="Estimate Workspace"
+      title={proposal.project_title || "Estimate Checklist"}
+      subtitle="Work through the estimate checklist, capture site visit details, and feed the existing Agreement Wizard when ready."
       actions={
         <>
           <button
@@ -754,7 +972,7 @@ export default function ProposalWorkspacePage() {
             className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-slate-800"
             onClick={createAgreementFromProposal}
           >
-            <FileSignature size={16} /> Create Agreement from Proposal
+            <FileSignature size={16} /> Create Agreement from Estimate
           </button>
           <button
             type="button"
@@ -786,49 +1004,64 @@ export default function ProposalWorkspacePage() {
         </aside>
 
         <main className="min-w-0 space-y-4">
-          <Section id="overview" active={active === "overview"} title="Overview">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(proposal.status)}`} data-testid="proposal-status">
-                {proposal.status_label}
-              </span>
-              <select
-                data-testid="proposal-status-select"
-                value={draft.status}
-                onChange={(event) => patchDraft("status", event.target.value)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
-              >
-                <option value="draft">Draft</option>
-                <option value="site_visit">Site Visit</option>
-                <option value="in_progress">Proposal In Progress</option>
-                <option value="ready">Proposal Ready</option>
-                <option value="sent">Proposal Sent</option>
-                <option value="viewed">Viewed</option>
-                <option value="accepted">Accepted</option>
-                <option value="declined">Declined</option>
-                <option value="revision_requested">Revision Requested</option>
-                <option value="expired">Expired</option>
-                <option value="converted">Converted</option>
-              </select>
-              <button
-                type="button"
-                data-testid="proposal-save-status"
-                onClick={() => saveProposal({ status: draft.status }, "Status updated.")}
-                disabled={saving}
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-60"
-              >
-                <Save size={16} /> Save
-              </button>
+          <Section id="overview" active={active === "overview"} title="Estimate Checklist">
+            <div className="rounded-2xl bg-slate-950 p-4 text-white" data-testid="estimate-checklist-progress">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.2em] text-blue-200/80">Checklist completion</div>
+                  <div className="mt-1 text-3xl font-black">{estimateChecklist.percent}%</div>
+                  <div className="mt-1 text-sm font-semibold text-slate-300">
+                    {estimateChecklist.completedCount} of {estimateChecklist.items.length} sections complete
+                  </div>
+                </div>
+                <div className={`rounded-xl px-4 py-3 text-sm font-black ${estimateChecklist.readyMinimum ? "bg-emerald-400 text-emerald-950" : "bg-amber-300 text-amber-950"}`} data-testid="estimate-ready-status">
+                  {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Required items missing"}
+                </div>
+              </div>
+              <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-emerald-400" style={{ width: `${estimateChecklist.percent}%` }} />
+              </div>
             </div>
-            <div className="mt-4">
-              <InfoGrid
-                rows={[
-                  ["Opportunity", `${proposal.source_type} #${proposal.source_id}`],
-                  ["Customer", proposal.customer_name],
-                  ["Appointment", proposal.appointment ? formatDateTime(proposal.appointment.scheduled_start) : "No appointment linked"],
-                  ["Project summary", proposal.project_summary],
-                  ["Current next action", proposal.status === "draft" ? "Capture site visit details." : "Continue proposal preparation."],
-                ]}
-              />
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2" data-testid="estimate-checklist-sections">
+              {estimateChecklist.items.map((item) => (
+                <ChecklistCard key={item.key} item={item} onOpen={setActive} />
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+              <div className="flex flex-wrap items-center gap-3">
+                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(proposal.status)}`} data-testid="proposal-status">
+                  {proposal.status_label}
+                </span>
+                <select
+                  data-testid="proposal-status-select"
+                  value={draft.status}
+                  onChange={(event) => patchDraft("status", event.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                >
+                  <option value="draft">Draft</option>
+                  <option value="site_visit">Site Visit</option>
+                  <option value="in_progress">Estimate In Progress</option>
+                  <option value="ready">Estimate Ready</option>
+                  <option value="sent">Proposal Sent</option>
+                  <option value="viewed">Viewed</option>
+                  <option value="accepted">Accepted</option>
+                  <option value="declined">Declined</option>
+                  <option value="revision_requested">Revision Requested</option>
+                  <option value="expired">Expired</option>
+                  <option value="converted">Converted</option>
+                </select>
+                <button
+                  type="button"
+                  data-testid="proposal-save-status"
+                  onClick={() => saveProposal({ status: draft.status }, "Status updated.")}
+                  disabled={saving}
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-60"
+                >
+                  <Save size={16} /> Save
+                </button>
+              </div>
             </div>
           </Section>
 
@@ -851,7 +1084,7 @@ export default function ProposalWorkspacePage() {
             )}
           </Section>
 
-          <Section id="customer" active={active === "customer"} title="Customer">
+          <Section id="customer" active={active === "customer"} title="Customer & Contact">
             <InfoGrid
               rows={[
                 ["Customer", proposal.customer_name],
@@ -878,7 +1111,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="site" active={active === "site"} title="Site Visit">
+          <Section id="site" active={active === "site"} title="Site Access, Conditions, and Requests">
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="proposal-mobile-capture-actions">
               <button type="button" onClick={() => setActive("photos")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800"><Camera size={16} /> Take Photo</button>
               <button type="button" onClick={() => setActive("measurements")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"><Ruler size={16} /> Add Measurement</button>
@@ -981,9 +1214,9 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="estimate" active={active === "estimate"} title="Estimate Builder">
+          <Section id="estimate" active={active === "estimate"} title="Estimate Line Items">
             <div className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900 ring-1 ring-blue-100">
-              Proposal pricing stays here until a later conversion phase. No agreements, payments, assignments, PDFs, or customer sends are created from this builder.
+              Estimate pricing stays here until you open the Agreement Wizard. No agreements, payments, assignments, PDFs, or customer sends are created from this checklist.
             </div>
             <form onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-6" data-testid="proposal-line-item-form">
               <select
@@ -1084,7 +1317,24 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="scope" active={active === "scope"} title="Scope">
+          <Section id="incidentals" active={active === "incidentals"} title="Incidentals Reserve">
+            <div className="rounded-xl bg-slate-950 p-4 text-white">
+              <div className="text-xs font-black uppercase tracking-wide text-slate-400">Current reserve</div>
+              <div className="mt-1 text-3xl font-black">{money(totals.incidentals_reserve)}</div>
+              <p className="mt-2 text-sm font-semibold text-slate-300">
+                Incidentals Reserve is captured as an estimate line item and passed to the Agreement Wizard as the existing incidentals reserve input.
+              </p>
+              <button
+                type="button"
+                onClick={() => setActive("estimate")}
+                className="mt-4 rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950"
+              >
+                Edit Reserve Line Item
+              </button>
+            </div>
+          </Section>
+
+          <Section id="scope" active={active === "scope"} title="Scope Notes, Exclusions, and Assumptions">
             <div className="grid gap-4 md:grid-cols-2">
               <TextAreaField label="Included work" testId="proposal-included-work" value={draft.included_work} onChange={(value) => patchDraft("included_work", value)} />
               <TextAreaField label="Excluded work" value={draft.excluded_work} onChange={(value) => patchDraft("excluded_work", value)} />
@@ -1105,6 +1355,27 @@ export default function ProposalWorkspacePage() {
             >
               <Save size={16} /> Save Scope
             </button>
+          </Section>
+
+          <Section id="ready" active={active === "ready"} title="Ready for Agreement">
+            <div className={`rounded-xl p-4 ${estimateChecklist.readyMinimum ? "bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200" : "bg-amber-50 text-amber-950 ring-1 ring-amber-200"}`}>
+              <div className="text-lg font-black" data-testid="estimate-ready-review-status">
+                {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Finish required checklist items"}
+              </div>
+              <div className="mt-1 text-sm font-semibold">
+                {estimateChecklist.readyMinimum
+                  ? "The minimum estimate checklist is complete. The contractor still reviews and edits everything in the Agreement Wizard."
+                  : `Missing: ${estimateChecklist.requiredMissing.map((item) => item.title).join(", ")}`}
+              </div>
+              <button
+                type="button"
+                data-testid="estimate-ready-create-agreement"
+                onClick={createAgreementFromProposal}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-black text-white"
+              >
+                <FileSignature size={16} /> Create Agreement from Estimate
+              </button>
+            </div>
           </Section>
 
           <Section id="notes" active={active === "notes"} title="Internal Notes">
@@ -1133,12 +1404,24 @@ export default function ProposalWorkspacePage() {
         </main>
 
         <aside className="rounded-xl bg-slate-950 p-4 text-white shadow-sm lg:sticky lg:top-4 lg:self-start" data-testid="proposal-summary-rail">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Summary</div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Estimate Checklist</div>
           <div className="mt-2 text-lg font-bold">{proposal.customer_name || "Customer"}</div>
           <div className="mt-1 text-sm text-slate-300">{proposal.service_location || "No service location"}</div>
           <div className="mt-4 rounded-lg bg-white/10 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs font-semibold uppercase text-slate-400">Progress</span>
+              <span className="text-lg font-black" data-testid="estimate-summary-progress">{estimateChecklist.percent}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full bg-emerald-400" style={{ width: `${estimateChecklist.percent}%` }} />
+            </div>
+            <div className={`mt-2 text-xs font-black ${estimateChecklist.readyMinimum ? "text-emerald-200" : "text-amber-200"}`}>
+              {estimateChecklist.readyMinimum ? "Ready for Agreement" : `${estimateChecklist.requiredMissing.length} required section${estimateChecklist.requiredMissing.length === 1 ? "" : "s"} missing`}
+            </div>
+          </div>
+          <div className="mt-4 rounded-lg bg-white/10 p-3">
             <div className="text-xs font-semibold uppercase text-slate-400">Next action</div>
-            <div className="mt-1 text-sm font-bold">{proposal.status === "draft" ? "Capture site visit details" : "Continue proposal preparation"}</div>
+            <div className="mt-1 text-sm font-bold">{estimateChecklist.readyMinimum ? "Review in Agreement Wizard" : "Finish required checklist items"}</div>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{proposal.measurements?.length || 0}</div><div className="text-xs text-slate-300">Measures</div></div>
@@ -1146,7 +1429,7 @@ export default function ProposalWorkspacePage() {
             <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{documents.length}</div><div className="text-xs text-slate-300">Docs</div></div>
           </div>
           <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-totals">
-            <div className="text-xs font-semibold uppercase text-slate-400">Proposal Total</div>
+            <div className="text-xs font-semibold uppercase text-slate-400">Estimate Total</div>
             <div className="mt-1 text-2xl font-black">{money(totals.total)}</div>
             <div className="mt-3 space-y-1 text-sm text-slate-300">
               <div className="flex justify-between gap-3"><span>Subtotal</span><span className="font-bold text-white">{money(totals.subtotal)}</span></div>
@@ -1161,10 +1444,10 @@ export default function ProposalWorkspacePage() {
             onClick={createAgreementFromProposal}
             className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950 hover:bg-slate-100"
           >
-            <FileSignature size={16} /> Create Agreement
+            <FileSignature size={16} /> Create Agreement from Estimate
           </button>
           <div className="mt-2 text-xs leading-5 text-slate-400">
-            Opens the existing Agreement Wizard with this proposal as editable draft input.
+            Opens the existing Agreement Wizard with this estimate checklist as editable draft input.
           </div>
         </aside>
       </div>

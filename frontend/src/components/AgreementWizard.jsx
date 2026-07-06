@@ -1297,7 +1297,7 @@ export default function AgreementWizard() {
     setAssistantAppliedSummary(
       appliedLabels.length
         ? isProposalHandoff
-          ? `Proposal data prefilled ${appliedLabels.join(" and ")}. Review and edit before sending.`
+          ? `Estimate checklist data prefilled ${appliedLabels.join(" and ")}. Review and edit before sending.`
           : `AI prefilled some ${appliedLabels.join(" and ")} based on your request.`
         : ""
     );
@@ -1305,7 +1305,7 @@ export default function AgreementWizard() {
       ...prev,
       1: appliedLabels.length
         ? isProposalHandoff
-          ? `Updated ${appliedLabels.join(" and ")} from the proposal workspace.`
+          ? `Updated ${appliedLabels.join(" and ")} from the Estimate Workspace.`
           : `Updated ${appliedLabels.join(" and ")} from your AI request.`
         : prev[1] || "",
     }));
@@ -2265,14 +2265,14 @@ export default function AgreementWizard() {
         >
           <div className="md:col-span-4">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/80">
-              Proposal Workspace input
+              Estimate Workspace input
             </div>
             <div className="mt-1 font-semibold text-white">
-              Review and edit this proposal data in the Agreement Wizard before sending.
+              Review and edit this estimate checklist data in the Agreement Wizard before sending.
             </div>
           </div>
           <div>
-            <div className="text-xs font-semibold uppercase text-emerald-100/70">Proposal</div>
+            <div className="text-xs font-semibold uppercase text-emerald-100/70">Estimate</div>
             <div className="font-bold text-white">
               {proposalHandoffSummary.proposalId ? `#${proposalHandoffSummary.proposalId}` : "Proposal"}
             </div>

@@ -303,9 +303,16 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
 
   await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("proposal-nav-site")).toBeVisible();
+  await expect(page.getByTestId("estimate-checklist-progress")).toContainText("%");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Customer & Contact");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Estimate Line Items");
+  await expect(page.getByTestId("estimate-ready-status")).toContainText("Required items missing");
+  const initialProgress = Number((await page.getByTestId("estimate-summary-progress").innerText()).replace("%", ""));
 
   await page.getByTestId("enter-walkthrough-mode").click();
   await expect(page.getByTestId("proposal-walkthrough-mode")).toBeVisible();
+  await expect(page.getByTestId("walkthrough-checklist-progress")).toContainText("%");
+  await expect(page.getByTestId("walkthrough-estimate-checklist")).toContainText("Measurements");
   await expect(page.getByTestId("walkthrough-primary-actions")).toContainText("Take Photo");
   await expect(page.getByTestId("walkthrough-primary-actions")).toContainText("Add Measurement");
   await expect(page.getByTestId("walkthrough-primary-actions")).toContainText("Quick Note");
@@ -374,7 +381,7 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("proposal-document-list")).toContainText("upload.txt");
 
   await page.getByTestId("proposal-nav-estimate").click();
-  await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Builder");
+  await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Line Items");
   await page.getByTestId("proposal-line-category").selectOption("labor");
   await page.getByTestId("proposal-line-description").fill("Crew labor");
   await page.getByTestId("proposal-line-quantity").fill("10");
@@ -397,12 +404,17 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-included-work").fill("Demo, prep, and install.");
   await page.getByTestId("proposal-save-scope").click();
 
+  await page.getByTestId("proposal-nav-overview").click();
+  const completedProgress = Number((await page.getByTestId("estimate-summary-progress").innerText()).replace("%", ""));
+  expect(completedProgress).toBeGreaterThan(initialProgress);
+  await expect(page.getByTestId("estimate-ready-status")).toContainText("Ready for Agreement");
+
   await page.getByTestId("proposal-nav-history").click();
   await expect(page.getByTestId("proposal-history")).toContainText("Proposal created");
 
   await page.getByTestId("proposal-summary-create-agreement").click();
   await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
-  await expect(page.getByTestId("agreement-assistant-prefill-banner")).toContainText("Proposal data prefilled");
+  await expect(page.getByTestId("agreement-assistant-prefill-banner")).toContainText("Estimate checklist data prefilled");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$200.00");
   await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Demo, prep, and install.");
