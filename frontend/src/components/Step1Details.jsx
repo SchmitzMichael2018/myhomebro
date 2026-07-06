@@ -1758,6 +1758,7 @@ export default function Step1Details({
     aiHighlightKeys = {},
     isAiAssistantActive = false,
     aiSetupRequest = null,
+    forceProjectDetails = false,
     step1ResetToChooser = false,
     onStep1ResetToChooserChange = null,
     onResetWizardForNewAgreement = null,
@@ -2203,6 +2204,9 @@ export default function Step1Details({
   }, [agreement?.source_lead, agreement?.source_lead_id, assistantDraftPayload?.lead_id, assistantLeadContext?.lead_id]);
 
   const isNewAgreement = !agreementId;
+  const isProposalHandoff =
+    forceProjectDetails ||
+    assistantDraftPayload?.source === "proposal" || assistantLeadContext?.source === "proposal";
   const hasMeaningfulSavedProjectDetails = hasMeaningfulStep1DraftState({ agreement, dLocal });
   const canRestoreStartMode =
     !isNewAgreement ||
@@ -4425,6 +4429,13 @@ export default function Step1Details({
     (Boolean(step1NoTemplateBuilt) ||
       aiSetupResult?.kind === "description_only" ||
       Boolean(appliedTemplateId) ||
+      (isProposalHandoff &&
+        Boolean(
+          safeTrim(dLocal?.project_title) ||
+            safeTrim(dLocal?.project_type) ||
+            safeTrim(dLocal?.project_subtype) ||
+            safeTrim(dLocal?.description)
+        )) ||
       (startMode === "manual" &&
         aiSetupResult?.kind !== "no_template" &&
         aiSetupResult?.kind !== "fallback_recommendation" &&
@@ -4534,7 +4545,7 @@ export default function Step1Details({
       startMode !== "manual" ||
       hasResolvedStep1Content);
   const shouldShowProjectDetailsSection =
-    !shouldShowResetChooserOnly && effectiveStep1ViewState !== "no_template";
+    forceProjectDetails || (!shouldShowResetChooserOnly && effectiveStep1ViewState !== "no_template");
 
   async function handleUseAiRecommendedTemplate() {
     if (!aiRecommendedTemplate) return;
@@ -5849,7 +5860,7 @@ export default function Step1Details({
       : startMode === "template"
       ? "Confirm the recommended starting point here so the agreement matches this specific project."
       : "Review the agreement details below and keep editing.";
-  const shouldShowProjectDetails = effectiveStep1ViewState === "ai_built";
+  const shouldShowProjectDetails = forceProjectDetails || effectiveStep1ViewState === "ai_built";
   const showStep1Clarifications = false;
   const shouldShowTemplateBrowserSection =
     effectiveStep1ViewState !== "ai_built" &&
@@ -6037,7 +6048,7 @@ export default function Step1Details({
   return (
     <>
       <div className="space-y-6">
-        {effectiveStep1ViewState !== "ai_built" && effectiveStep1ViewState !== "loading" ? (
+        {!forceProjectDetails && effectiveStep1ViewState !== "ai_built" && effectiveStep1ViewState !== "loading" ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-sm text-gray-600">
               {isEdit ? <>Agreement #{agreementId}</> : <>New Agreement</>}

@@ -159,6 +159,35 @@ async function installBaseMocks(page) {
   });
 }
 
+async function installAgreementWizardMocks(page) {
+  await page.route("**/api/projects/contractor-activation-summary/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) });
+  });
+  await page.route("**/api/projects/project-types/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [{ id: 1, value: "Bathroom", label: "Bathroom", owner_type: "system" }] }),
+    });
+  });
+  await page.route("**/api/projects/project-subtypes/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [{ id: 2, value: "Refresh", label: "Refresh", owner_type: "system" }] }),
+    });
+  });
+  await page.route("**/api/projects/homeowners**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
+  });
+  await page.route("**/api/projects/templates/recommend/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ recommendations: [] }) });
+  });
+  await page.route("**/api/projects/templates/**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
+  });
+}
+
 function calculateTotals(items) {
   const totals = {
     subtotal: 0,
@@ -215,6 +244,7 @@ test("Create Proposal from Opportunity opens Proposal Workspace", async ({ page 
 
 test("Proposal Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {
   await installBaseMocks(page);
+  await installAgreementWizardMocks(page);
   let currentProposal = { ...proposal };
 
   await page.route("**/api/projects/proposals/42/", async (route) => {
@@ -311,7 +341,7 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
     buffer: Buffer.from("document"),
   });
 
-  await page.getByTestId("exit-walkthrough-mode").click();
+  await page.getByTestId("exit-walkthrough-mode").evaluate((button) => button.click());
   await expect(page.getByTestId("proposal-workspace")).toBeVisible();
 
   await page.getByTestId("proposal-nav-site").click();
@@ -369,4 +399,12 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
 
   await page.getByTestId("proposal-nav-history").click();
   await expect(page.getByTestId("proposal-history")).toContainText("Proposal created");
+
+  await page.getByTestId("proposal-summary-create-agreement").click();
+  await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
+  await expect(page.getByTestId("agreement-assistant-prefill-banner")).toContainText("Proposal data prefilled");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$200.00");
+  await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Demo, prep, and install.");
+  await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Crew labor");
 });

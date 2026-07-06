@@ -97,6 +97,12 @@ function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function moneyLabel(value) {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return "$0.00";
+  return number.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
 function normalizeWizardStep1Value(value) {
   const raw = safeStr(value);
   if (!raw) return "";
@@ -447,6 +453,13 @@ export default function AgreementWizard() {
   }, [location.state]);
   const assistantHandoffSignature = useMemo(
     () => buildAssistantHandoffSignature(assistantHandoff),
+    [assistantHandoff]
+  );
+  const isProposalAgreementHandoff = useMemo(
+    () =>
+      assistantHandoff.intent === "proposal_to_agreement" ||
+      assistantHandoff.context?.source === "proposal" ||
+      assistantHandoff.draftPayload?.source === "proposal",
     [assistantHandoff]
   );
   const activationJourney = Boolean(location.state?.activationJourney);
@@ -1194,8 +1207,27 @@ export default function AgreementWizard() {
       recurring_summary_label:
         draftPayload.recurring_summary_label || prefill.recurring_summary_label || "",
       payment_mode: draftPayload.payment_mode || prefill.payment_mode || "",
+      payment_structure: draftPayload.payment_structure || prefill.payment_structure || "",
+      pricing_strategy: draftPayload.pricing_strategy || prefill.pricing_strategy || "",
+      retainage_percent:
+        draftPayload.retainage_percent != null
+          ? String(draftPayload.retainage_percent)
+          : prefill.retainage_percent != null
+          ? String(prefill.retainage_percent)
+          : "",
+      incidentals_reserve_amount:
+        draftPayload.incidentals_reserve_amount != null
+          ? String(draftPayload.incidentals_reserve_amount)
+          : prefill.incidentals_reserve_amount != null
+          ? String(prefill.incidentals_reserve_amount)
+          : "",
       description:
-        draftPayload.description || draftPayload.project_summary || prefill.project_summary || "",
+        draftPayload.description ||
+        draftPayload.scope_of_work ||
+        draftPayload.project_summary ||
+        prefill.scope_of_work ||
+        prefill.project_summary ||
+        "",
       address_line1: draftPayload.address_line1 || prefill.address_line1 || "",
       address_line2: draftPayload.address_line2 || prefill.address_line2 || "",
       address_city: draftPayload.city || draftPayload.address_city || prefill.city || "",
@@ -1207,9 +1239,26 @@ export default function AgreementWizard() {
         "",
     };
 
+    const isProposalHandoff =
+      assistantHandoff.intent === "proposal_to_agreement" ||
+      assistantHandoff.context?.source === "proposal" ||
+      draftPayload.source === "proposal";
+
     let appliedDraftKeys = [];
     setDLocal((prev) => {
       const { next, appliedKeys } = mergeAssistantFields(prev, mappedDraft);
+      const incomingIncidentals = safeStr(mappedDraft.incidentals_reserve_amount);
+      const previousIncidentals = safeStr(prev?.incidentals_reserve_amount);
+      if (
+        incomingIncidentals &&
+        incomingIncidentals !== "0.00" &&
+        (isProposalHandoff || !previousIncidentals || previousIncidentals === "0.00")
+      ) {
+        next.incidentals_reserve_amount = incomingIncidentals;
+        if (!appliedKeys.includes("incidentals_reserve_amount")) {
+          appliedKeys.push("incidentals_reserve_amount");
+        }
+      }
       appliedDraftKeys = appliedKeys;
       return next;
     });
@@ -1247,13 +1296,17 @@ export default function AgreementWizard() {
     if (hasCustomerPrefill) appliedLabels.push("customer details");
     setAssistantAppliedSummary(
       appliedLabels.length
-        ? `AI prefilled some ${appliedLabels.join(" and ")} based on your request.`
+        ? isProposalHandoff
+          ? `Proposal data prefilled ${appliedLabels.join(" and ")}. Review and edit before sending.`
+          : `AI prefilled some ${appliedLabels.join(" and ")} based on your request.`
         : ""
     );
     setAiFeedbackByStep((prev) => ({
       ...prev,
       1: appliedLabels.length
-        ? `Updated ${appliedLabels.join(" and ")} from your AI request.`
+        ? isProposalHandoff
+          ? `Updated ${appliedLabels.join(" and ")} from the proposal workspace.`
+          : `Updated ${appliedLabels.join(" and ")} from your AI request.`
         : prev[1] || "",
     }));
     markStep1AiUpdated([
@@ -1856,6 +1909,32 @@ export default function AgreementWizard() {
       wizardSessionState,
     ]
   );
+  const proposalHandoffSummary = useMemo(() => {
+    if (!isProposalAgreementHandoff) return null;
+    const context = assistantHandoff.context || {};
+    const draft = assistantHandoff.draftPayload || {};
+    const estimate = assistantHandoff.estimatePreview || {};
+    return {
+      proposalId: context.proposal_id || draft.proposal_id || "",
+      projectTitle: draft.project_title || context.project_title || dLocal.project_title || "",
+      customerName: draft.customer_name || context.customer_name || "",
+      total:
+        draft.proposal_total ||
+        context.proposal_total ||
+        estimate.suggested_total_price ||
+        "",
+      incidentals:
+        draft.incidentals_reserve_amount ||
+        context.incidentals_reserve_amount ||
+        estimate.incidentals_reserve_amount ||
+        "",
+      scope: draft.description || draft.scope_of_work || context.project_summary || "",
+      lineItemCount:
+        context.line_item_count ||
+        (Array.isArray(draft.proposal_line_items) ? draft.proposal_line_items.length : 0) ||
+        (Array.isArray(estimate.line_items) ? estimate.line_items.length : 0),
+    };
+  }, [assistantHandoff, dLocal.project_title, isProposalAgreementHandoff]);
   const assistantDraftPayload = useMemo(
     () => ({
       ...(assistantHandoff.draftPayload || {}),
@@ -2179,6 +2258,48 @@ export default function AgreementWizard() {
         </div>
       ) : null}
 
+      {proposalHandoffSummary ? (
+        <div
+          data-testid="agreement-proposal-prefill-summary"
+          className="mt-4 grid gap-3 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50 md:grid-cols-4"
+        >
+          <div className="md:col-span-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/80">
+              Proposal Workspace input
+            </div>
+            <div className="mt-1 font-semibold text-white">
+              Review and edit this proposal data in the Agreement Wizard before sending.
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase text-emerald-100/70">Proposal</div>
+            <div className="font-bold text-white">
+              {proposalHandoffSummary.proposalId ? `#${proposalHandoffSummary.proposalId}` : "Proposal"}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase text-emerald-100/70">Total</div>
+            <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.total)}</div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals</div>
+            <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.incidentals)}</div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase text-emerald-100/70">Line Items</div>
+            <div className="font-bold text-white">{proposalHandoffSummary.lineItemCount || 0}</div>
+          </div>
+          {proposalHandoffSummary.scope ? (
+            <div className="md:col-span-4" data-testid="agreement-proposal-prefill-scope">
+              <div className="text-xs font-semibold uppercase text-emerald-100/70">Scope Input</div>
+              <div className="mt-1 line-clamp-4 whitespace-pre-wrap text-sm text-emerald-50/90">
+                {proposalHandoffSummary.scope}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {activationJourney && agreementId ? (
         <div
           data-testid="first-agreement-success-banner"
@@ -2271,6 +2392,7 @@ export default function AgreementWizard() {
               aiHighlightKeys={step1AiHighlights}
               isAiAssistantActive={isAssistantDockOpen}
               aiSetupRequest={step1AiSetupRequest}
+              forceProjectDetails={isProposalAgreementHandoff}
               onResetWizardForNewAgreement={resetWizardForNewAgreement}
               step1ResetToChooser={step1ResetToChooser}
               onStep1ResetToChooserChange={setStep1ResetToChooser}

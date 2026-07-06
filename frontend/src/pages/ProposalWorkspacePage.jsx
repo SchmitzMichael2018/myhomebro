@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Camera, Check, FileUp, Mail, Mic, Phone, Plus, Ruler, Save, StickyNote, Trash2, X } from "lucide-react";
+import { Camera, Check, FileSignature, FileUp, Mail, Mic, Phone, Plus, Ruler, Save, StickyNote, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 
 const NAV = [
   ["overview", "Overview"],
@@ -105,6 +106,81 @@ function safeHref(kind, value, subject = "", body = "") {
   return `tel:${text}`;
 }
 
+function compactText(value) {
+  return String(value || "").trim();
+}
+
+function sectionBlock(title, value) {
+  const text = compactText(value);
+  return text ? `${title}\n${text}` : "";
+}
+
+function proposalLineItemLabel(item) {
+  const qty = compactText(item.quantity);
+  const unit = compactText(item.unit);
+  const unitPrice = compactText(item.unit_price);
+  const total = compactText(item.total);
+  const quantityLabel = [qty, unit].filter(Boolean).join(" ");
+  const priceLabel = unitPrice ? ` @ ${money(unitPrice)}` : "";
+  const totalLabel = total ? ` = ${money(total)}` : "";
+  return [
+    compactText(item.category_label || item.category || "Line item"),
+    compactText(item.description),
+    quantityLabel || null,
+    `${priceLabel}${totalLabel}`.trim() || null,
+  ].filter(Boolean).join(" - ");
+}
+
+function buildProposalAgreementScope(proposal) {
+  const measurements = Array.isArray(proposal.measurements) ? proposal.measurements : [];
+  const attachments = Array.isArray(proposal.attachments) ? proposal.attachments : [];
+  const lineItems = Array.isArray(proposal.line_items) ? proposal.line_items : [];
+
+  const measurementLines = measurements
+    .map((item) => {
+      const quantity = [compactText(item.quantity), compactText(item.unit)].filter(Boolean).join(" ");
+      const location = compactText(item.location);
+      const notes = compactText(item.notes);
+      return [`- ${compactText(item.label) || "Measurement"}`, location ? `(${location})` : "", quantity, notes ? `- ${notes}` : ""]
+        .filter(Boolean)
+        .join(" ");
+    })
+    .join("\n");
+
+  const attachmentLines = attachments
+    .map((item) => `- ${compactText(item.original_name || item.caption || item.attachment_type || "Attachment")}`)
+    .join("\n");
+
+  const lineItemLines = lineItems.map((item) => `- ${proposalLineItemLabel(item)}`).join("\n");
+
+  return [
+    sectionBlock("Project Summary", proposal.project_summary),
+    sectionBlock("Site Visit Notes", proposal.site_visit_notes),
+    sectionBlock("Customer Requests", proposal.customer_requests),
+    sectionBlock("Site Conditions", proposal.site_conditions),
+    sectionBlock("Included Work", proposal.included_work),
+    sectionBlock("Excluded Work", proposal.excluded_work),
+    sectionBlock("Assumptions", proposal.assumptions),
+    sectionBlock("Allowances", proposal.allowances),
+    measurementLines ? `Measurements\n${measurementLines}` : "",
+    attachmentLines ? `Referenced Photos and Documents\n${attachmentLines}` : "",
+    lineItemLines ? `Estimate Line Items\n${lineItemLines}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function primeAgreementWizardForProposalDraft() {
+  try {
+    if (typeof window === "undefined" || !window.sessionStorage) return;
+    window.sessionStorage.setItem("mhb_step1_cache_new_start_mode", "manual");
+    window.sessionStorage.setItem("mhb_step1_cache_new_start_mode_committed", "1");
+    window.sessionStorage.setItem("mhb_step1_cache_new_start_mode_source", "session");
+  } catch {
+    // ignore storage failures
+  }
+}
+
 function Section({ id, active, title, children }) {
   if (!active) return null;
   return (
@@ -168,6 +244,99 @@ export default function ProposalWorkspacePage() {
     [proposal]
   );
   const totals = proposal?.totals || {};
+
+  function createAgreementFromProposal() {
+    if (!proposal) return;
+    const workspaceProposal = { ...proposal, ...draft };
+    const scopeText = buildProposalAgreementScope(workspaceProposal);
+    const proposalTotal = compactText(totals.total || "0.00");
+    const incidentalsReserve = compactText(totals.incidentals_reserve || "0.00");
+    const lineItems = Array.isArray(proposal.line_items) ? proposal.line_items : [];
+    const measurements = Array.isArray(proposal.measurements) ? proposal.measurements : [];
+    const attachments = Array.isArray(proposal.attachments) ? proposal.attachments : [];
+
+    const handoff = {
+      assistantPrefill: {
+        project_title: workspaceProposal.project_title || "",
+        project_summary: workspaceProposal.project_summary || "",
+        customer_name: workspaceProposal.customer_name || "",
+        email: workspaceProposal.customer_email || "",
+        address_line1: workspaceProposal.service_location || "",
+        incidentals_reserve_amount: incidentalsReserve,
+      },
+      assistantDraftPayload: {
+        source: "proposal",
+        proposal_id: proposal.id,
+        source_type: proposal.source_type || "",
+        source_id: proposal.source_id || null,
+        opportunity_id: proposal.contractor_opportunity_id || null,
+        estimate_appointment_id: proposal.estimate_appointment_id || null,
+        project_title: workspaceProposal.project_title || "",
+        title: workspaceProposal.project_title || "",
+        project_type: workspaceProposal.project_type || "",
+        project_subtype: workspaceProposal.project_subtype || "",
+        project_summary: workspaceProposal.project_summary || "",
+        description: scopeText || workspaceProposal.project_summary || "",
+        scope_of_work: scopeText || workspaceProposal.project_summary || "",
+        customer_name: workspaceProposal.customer_name || "",
+        homeowner_name: workspaceProposal.customer_name || "",
+        email: workspaceProposal.customer_email || "",
+        customer_email: workspaceProposal.customer_email || "",
+        customer_phone: workspaceProposal.customer_phone || "",
+        service_location: workspaceProposal.service_location || "",
+        address_line1: workspaceProposal.service_location || "",
+        payment_mode: Number(incidentalsReserve || 0) > 0 ? "escrow" : "",
+        incidentals_reserve_amount: incidentalsReserve,
+        proposal_total: proposalTotal,
+        proposal_totals: totals,
+        proposal_line_items: lineItems,
+        proposal_measurements: measurements,
+        proposal_attachments: attachments,
+        site_visit_notes: workspaceProposal.site_visit_notes || "",
+        included_work: workspaceProposal.included_work || "",
+        excluded_work: workspaceProposal.excluded_work || "",
+        assumptions: workspaceProposal.assumptions || "",
+        allowances: workspaceProposal.allowances || "",
+      },
+      assistantContext: {
+        source: "proposal",
+        source_label: "Proposal Workspace",
+        proposal_id: proposal.id,
+        source_type: proposal.source_type || "",
+        source_id: proposal.source_id || null,
+        customer_name: workspaceProposal.customer_name || "",
+        service_location: workspaceProposal.service_location || "",
+        proposal_total: proposalTotal,
+        incidentals_reserve_amount: incidentalsReserve,
+        line_item_count: lineItems.length,
+        measurement_count: measurements.length,
+        attachment_count: attachments.length,
+      },
+      assistantEstimatePreview: {
+        source: "proposal",
+        confidence_level: "contractor-entered",
+        suggested_total_price: proposalTotal,
+        incidentals_reserve_amount: incidentalsReserve,
+        line_items: lineItems.map((item) => ({
+          category: item.category,
+          label: item.category_label,
+          description: item.description,
+          quantity: item.quantity,
+          unit: item.unit,
+          unit_price: item.unit_price,
+          total: item.total,
+          notes: item.notes,
+        })),
+      },
+      assistantWizardStepTarget: 1,
+      assistantIntent: "proposal_to_agreement",
+    };
+
+    writeSessionAssistantHandoff(handoff);
+    primeAgreementWizardForProposalDraft();
+    toast.success("Proposal data loaded into the Agreement Wizard.");
+    navigate("/app/agreements/new/wizard?step=1", { state: handoff });
+  }
 
   async function loadProposal() {
     setLoading(true);
@@ -581,6 +750,14 @@ export default function ProposalWorkspacePage() {
           </button>
           <button
             type="button"
+            data-testid="proposal-create-agreement-action"
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-slate-800"
+            onClick={createAgreementFromProposal}
+          >
+            <FileSignature size={16} /> Create Agreement from Proposal
+          </button>
+          <button
+            type="button"
             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"
             onClick={() => navigate("/app/opportunities")}
           >
@@ -977,6 +1154,17 @@ export default function ProposalWorkspacePage() {
               <div className="flex justify-between gap-3"><span>Incidentals</span><span className="font-bold text-white">{money(totals.incidentals_reserve)}</span></div>
               <div className="flex justify-between gap-3"><span>Discounts</span><span className="font-bold text-white">-{money(totals.discounts)}</span></div>
             </div>
+          </div>
+          <button
+            type="button"
+            data-testid="proposal-summary-create-agreement"
+            onClick={createAgreementFromProposal}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950 hover:bg-slate-100"
+          >
+            <FileSignature size={16} /> Create Agreement
+          </button>
+          <div className="mt-2 text-xs leading-5 text-slate-400">
+            Opens the existing Agreement Wizard with this proposal as editable draft input.
           </div>
         </aside>
       </div>
