@@ -9,8 +9,11 @@ import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 
 const NAV = [
   ["overview", "Estimate Checklist"],
+  ["assistant", "Project Assistant"],
+  ["clarifications", "Clarifications"],
   ["appointment", "Appointment"],
   ["customer", "Customer & Contact"],
+  ["scheduling", "Scheduling"],
   ["site", "Site Access"],
   ["measurements", "Measurements"],
   ["photos", "Photos"],
@@ -52,6 +55,24 @@ const LINE_ITEM_CATEGORIES = [
   ["other", "Other"],
 ];
 
+const PROJECT_START_OPTIONS = [
+  ["asap", "ASAP"],
+  ["specific_date", "Specific Date"],
+  ["flexible", "Flexible"],
+];
+
+const PROJECT_COMPLETION_OPTIONS = [
+  ["no_deadline", "No Deadline"],
+  ["specific_date", "Specific Date"],
+  ["flexible", "Flexible"],
+];
+
+const SCHEDULING_PRIORITY_OPTIONS = [
+  ["flexible", "Flexible"],
+  ["preferred", "Preferred"],
+  ["required", "Required"],
+];
+
 const WALKTHROUGH_CHECKLIST = [
   "Exterior reviewed",
   "Interior reviewed",
@@ -61,8 +82,56 @@ const WALKTHROUGH_CHECKLIST = [
   "Existing damage documented",
 ];
 
+const FALLBACK_TEMPLATE_QUESTIONS = [
+  {
+    key: "square_footage",
+    label: "Square footage",
+    question: "What square footage or quantity should the estimate use?",
+    section: "measurements",
+    keywords: ["sq ft", "square", "footage", "area"],
+  },
+  {
+    key: "material_responsibility",
+    label: "Material responsibility",
+    question: "Who is responsible for supplying finish materials, fixtures, or specialty items?",
+    section: "site",
+    keywords: ["material", "fixture", "customer supplied", "contractor supplied", "preserve"],
+  },
+  {
+    key: "customer_scheduling",
+    label: "Customer scheduling",
+    question: "What start, completion, and priority expectations should planning use?",
+    section: "scheduling",
+    keywords: ["timeline", "schedule", "start", "completion", "priority", "urgent", "asap"],
+  },
+  {
+    key: "permit_responsibility",
+    label: "Permit responsibility",
+    question: "Are permits, HOA approvals, or inspections required, and who handles them?",
+    section: "scope",
+    keywords: ["permit", "hoa", "inspection", "approval"],
+  },
+  {
+    key: "existing_condition_photos",
+    label: "Existing condition photos",
+    question: "Are existing condition photos captured for the areas affected by the work?",
+    section: "photos",
+    keywords: ["photo", "damage", "existing condition", "before"],
+  },
+];
+
 function field(value, fallback = "-") {
   return value == null || value === "" ? fallback : String(value);
+}
+
+function customerAddress(customer) {
+  return [
+    customer?.street_address,
+    customer?.address_line_2,
+    customer?.city,
+    customer?.state,
+    customer?.zip_code,
+  ].filter(Boolean).join(", ");
 }
 
 function money(value) {
@@ -85,6 +154,36 @@ function formatDateTime(value) {
   } catch {
     return String(value);
   }
+}
+
+function optionLabel(options, value) {
+  return options.find(([key]) => key === value)?.[1] || field(value);
+}
+
+function formatDate(value) {
+  if (!value) return "";
+  try {
+    return new Date(`${value}T12:00:00`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  } catch {
+    return String(value);
+  }
+}
+
+function proposalScheduleSummary(source = {}) {
+  const startType = source.project_start_type || "flexible";
+  const completionType = source.project_completion_type || "no_deadline";
+  const priority = source.scheduling_priority || "flexible";
+  const start = startType === "specific_date" && source.project_start_date
+    ? `${optionLabel(PROJECT_START_OPTIONS, startType)}: ${formatDate(source.project_start_date)}`
+    : optionLabel(PROJECT_START_OPTIONS, startType);
+  const completion = completionType === "specific_date" && source.project_completion_date
+    ? `${optionLabel(PROJECT_COMPLETION_OPTIONS, completionType)}: ${formatDate(source.project_completion_date)}`
+    : optionLabel(PROJECT_COMPLETION_OPTIONS, completionType);
+  return `Start ${start}; completion ${completion}; priority ${optionLabel(SCHEDULING_PRIORITY_OPTIONS, priority)}`;
 }
 
 function statusTone(status) {
@@ -157,6 +256,7 @@ function buildProposalAgreementScope(proposal) {
 
   return [
     sectionBlock("Project Summary", proposal.project_summary),
+    sectionBlock("Scheduling Expectations", proposalScheduleSummary(proposal)),
     sectionBlock("Site Visit Notes", proposal.site_visit_notes),
     sectionBlock("Customer Requests", proposal.customer_requests),
     sectionBlock("Site Conditions", proposal.site_conditions),
@@ -178,7 +278,138 @@ function checklistPercent(items) {
   return Math.round((rows.filter((item) => item.complete).length / rows.length) * 100);
 }
 
-function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) {
+function readinessStatus({ complete, started }) {
+  if (complete) return "Complete";
+  if (started) return "In Progress";
+  return "Not Started";
+}
+
+function readinessTone(status) {
+  if (status === "Complete") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (status === "In Progress") return "border-amber-200 bg-amber-50 text-amber-900";
+  return "border-slate-200 bg-white text-slate-700";
+}
+
+function questionText(question) {
+  return compactText(question?.question || question?.label || question);
+}
+
+function normalizeQuestion(raw, index = 0) {
+  if (raw && typeof raw === "object") {
+    const text = questionText(raw);
+    return {
+      key: compactText(raw.key || raw.id || raw.label || text).toLowerCase().replace(/[^a-z0-9]+/g, "_") || `clarification_${index + 1}`,
+      label: compactText(raw.label || text) || `Question ${index + 1}`,
+      question: text,
+      section: compactText(raw.section || raw.target || "site") || "site",
+      keywords: Array.isArray(raw.keywords) ? raw.keywords : [],
+    };
+  }
+  const text = questionText(raw);
+  return {
+    key: `clarification_${index + 1}`,
+    label: text || `Question ${index + 1}`,
+    question: text,
+    section: "site",
+    keywords: [],
+  };
+}
+
+function templateQuestionRows(template) {
+  const raw =
+    template?.default_clarifications ||
+    template?.clarification_questions ||
+    template?.clarifications ||
+    template?.questions ||
+    [];
+  const rows = Array.isArray(raw) && raw.length ? raw.map(normalizeQuestion) : FALLBACK_TEMPLATE_QUESTIONS;
+  return rows.slice(0, 8);
+}
+
+function proposalEvidenceText(proposal, draft) {
+  return [
+    proposal?.project_summary,
+    proposal?.project_title,
+    proposal?.project_type,
+    proposal?.project_subtype,
+    proposal?.service_location,
+    proposalScheduleSummary({ ...proposal, ...draft }),
+    draft?.site_visit_notes,
+    draft?.access_notes,
+    draft?.risk_notes,
+    draft?.customer_requests,
+    draft?.site_conditions,
+    draft?.included_work,
+    draft?.excluded_work,
+    draft?.assumptions,
+    draft?.allowances,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function questionAnsweredByEvidence(question, { proposal, draft, photos }) {
+  const key = compactText(question.key).toLowerCase();
+  const evidence = proposalEvidenceText(proposal, draft);
+  const measurements = Array.isArray(proposal?.measurements) ? proposal.measurements : [];
+  if (key.includes("photo")) return (photos || []).length > 0;
+  if (key.includes("square") || key.includes("measurement") || key.includes("footage")) {
+    return measurements.some((item) => {
+      const text = `${item.label || ""} ${item.location || ""} ${item.unit || ""} ${item.notes || ""}`.toLowerCase();
+      return text.includes("sq") || text.includes("square") || text.includes("area") || Number(item.quantity || 0) > 0;
+    });
+  }
+  const keywords = Array.isArray(question.keywords) ? question.keywords : [];
+  if (keywords.some((keyword) => evidence.includes(String(keyword).toLowerCase()))) return true;
+  return false;
+}
+
+function buildClarificationRows({ selectedTemplate, proposal, draft, photos }) {
+  const checklist = Array.isArray(draft?.quick_checklist) ? draft.quick_checklist : [];
+  return templateQuestionRows(selectedTemplate).map((question) => {
+    const completeKey = `clarification:${question.key}:complete`;
+    const ignoredKey = `clarification:${question.key}:ignored`;
+    const autoComplete = questionAnsweredByEvidence(question, { proposal, draft, photos });
+    const manuallyComplete = checklist.includes(completeKey);
+    const ignored = checklist.includes(ignoredKey);
+    return {
+      ...question,
+      completeKey,
+      ignoredKey,
+      autoComplete,
+      manuallyComplete,
+      ignored,
+      complete: ignored || manuallyComplete || autoComplete,
+      status: ignored ? "Ignored" : manuallyComplete ? "Complete" : autoComplete ? "Auto-complete" : "Needs Answer",
+      target: question.section || "site",
+    };
+  });
+}
+
+function fallbackTemplateForProposal(proposal) {
+  const type = compactText(proposal?.project_type || proposal?.project_title || "Project");
+  return {
+    id: "generated",
+    name: `${type} Draft Agreement Template`,
+    match_label: "Generated Draft",
+    match_reason: "No library template was selected, so Project Assistant prepared a blank draft template structure for review.",
+    default_clarifications: FALLBACK_TEMPLATE_QUESTIONS,
+    generated: true,
+  };
+}
+
+function normalizeTemplateRecommendation(data, proposal) {
+  const recs = data?.recommendations || data?.results || data?.templates || [];
+  const first = Array.isArray(recs) ? recs[0] : data?.recommendation || data?.template || null;
+  if (!first) return null;
+  return {
+    ...first,
+    name: first.name || first.title || first.template_name || `${proposal?.project_type || "Project"} Template`,
+    match_label: first.match_label || first.confidence_label || "Template Match",
+    match_reason: first.match_reason || first.reason || first.description || "Project Assistant found a possible template match from your library.",
+    default_clarifications: first.default_clarifications || first.clarification_questions || first.questions || FALLBACK_TEMPLATE_QUESTIONS,
+  };
+}
+
+function buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows = [] }) {
   const contactReady = Boolean(compactText(proposal?.customer_name) && (compactText(proposal?.customer_email) || compactText(proposal?.customer_phone)));
   const locationReady = Boolean(compactText(proposal?.service_location));
   const hasAccessNotes = Boolean(compactText(draft?.access_notes) || locationReady);
@@ -186,17 +417,21 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) 
   const hasMeasurements = (proposal?.measurements || []).length > 0;
   const hasFiles = (photos || []).length > 0 || (documents || []).length > 0;
   const hasRequests = Boolean(compactText(draft?.customer_requests));
+  const hasSchedule =
+    Boolean(draft?.project_start_type && draft?.project_completion_type && draft?.scheduling_priority) &&
+    (draft.project_start_type !== "specific_date" || Boolean(draft.project_start_date)) &&
+    (draft.project_completion_type !== "specific_date" || Boolean(draft.project_completion_date));
   const hasScope = Boolean(compactText(draft?.included_work) || compactText(draft?.site_visit_notes) || compactText(proposal?.project_summary));
-  const hasExclusions = Boolean(compactText(draft?.excluded_work) || compactText(draft?.assumptions));
   const hasLineItems = (proposal?.line_items || []).length > 0;
-  const incidentalsValue = Number(totals?.incidentals_reserve || 0);
-  const readyMinimum = contactReady && locationReady && hasScope && hasLineItems;
+  const clarificationsReady = clarificationRows.length ? clarificationRows.every((row) => row.complete) : false;
+  const readyMinimum = contactReady && locationReady && hasScope && hasLineItems && clarificationsReady;
 
   const items = [
     {
       key: "customer",
-      title: "Customer & Contact",
+      title: "Customer",
       complete: contactReady,
+      status: readinessStatus({ complete: contactReady, started: Boolean(compactText(proposal?.customer_name)) }),
       required: true,
       missing: contactReady ? [] : ["Customer name and at least one email or phone"],
       target: "customer",
@@ -204,29 +439,43 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) 
       summary: `${field(proposal?.customer_name, "No customer")} - ${field(proposal?.customer_email || proposal?.customer_phone, "No contact method")}`,
     },
     {
-      key: "site-access",
-      title: "Site Access",
-      complete: hasAccessNotes,
+      key: "project-address",
+      title: "Project Address",
+      complete: locationReady,
+      status: readinessStatus({ complete: locationReady, started: Boolean(compactText(proposal?.service_location)) }),
       required: true,
-      missing: hasAccessNotes ? [] : ["Service location or access notes"],
-      target: "site",
-      action: "Add access notes",
-      summary: compactText(draft?.access_notes) || compactText(proposal?.service_location) || "No access details captured",
+      missing: locationReady ? [] : ["Project address"],
+      target: "customer",
+      action: "Add address",
+      summary: compactText(proposal?.service_location) || "No project address selected",
     },
     {
-      key: "conditions",
-      title: "Existing Conditions",
-      complete: hasConditions,
+      key: "scheduling",
+      title: "Scheduling",
+      complete: hasSchedule,
+      status: readinessStatus({ complete: hasSchedule, started: Boolean(draft?.project_start_type || draft?.project_completion_type || draft?.scheduling_priority) }),
       required: false,
-      missing: hasConditions ? [] : ["Existing conditions or risk notes"],
+      missing: hasSchedule ? [] : ["Start, completion, and priority"],
+      target: "scheduling",
+      action: "Set schedule",
+      summary: proposalScheduleSummary({ ...proposal, ...draft }),
+    },
+    {
+      key: "site-visit",
+      title: "Site Visit",
+      complete: hasAccessNotes && hasConditions,
+      status: readinessStatus({ complete: hasAccessNotes && hasConditions, started: hasAccessNotes || hasConditions || hasRequests }),
+      required: false,
+      missing: hasAccessNotes && hasConditions ? [] : ["Access notes and existing conditions"],
       target: "site",
-      action: "Capture conditions",
-      summary: compactText(draft?.site_conditions) || compactText(draft?.risk_notes) || "No existing conditions documented",
+      action: "Capture site",
+      summary: compactText(draft?.site_conditions) || compactText(draft?.risk_notes) || compactText(draft?.access_notes) || "No site visit details captured",
     },
     {
       key: "measurements",
       title: "Measurements",
       complete: hasMeasurements,
+      status: readinessStatus({ complete: hasMeasurements, started: hasMeasurements }),
       required: false,
       missing: hasMeasurements ? [] : ["At least one measurement"],
       target: "measurements",
@@ -237,6 +486,7 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) 
       key: "files",
       title: "Photos / Documents",
       complete: hasFiles,
+      status: readinessStatus({ complete: hasFiles, started: hasFiles }),
       required: false,
       missing: hasFiles ? [] : ["Photo or document"],
       target: photos?.length ? "photos" : "documents",
@@ -244,19 +494,23 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) 
       summary: `${(photos || []).length} photo${(photos || []).length === 1 ? "" : "s"}, ${(documents || []).length} document${(documents || []).length === 1 ? "" : "s"}`,
     },
     {
-      key: "requests",
-      title: "Customer Requests",
-      complete: hasRequests,
-      required: false,
-      missing: hasRequests ? [] : ["Customer preferences or requests"],
-      target: "site",
-      action: "Add requests",
-      summary: compactText(draft?.customer_requests) || "No customer requests documented",
+      key: "clarifications",
+      title: "Clarifications",
+      complete: clarificationsReady,
+      status: readinessStatus({ complete: clarificationsReady, started: clarificationRows.some((row) => row.complete) }),
+      required: true,
+      missing: clarificationsReady ? [] : ["Clarification questions"],
+      target: "clarifications",
+      action: "Review questions",
+      summary: clarificationRows.length
+        ? `${clarificationRows.filter((row) => row.complete).length} of ${clarificationRows.length} clarification${clarificationRows.length === 1 ? "" : "s"} complete`
+        : "Template questions not loaded yet",
     },
     {
       key: "scope",
       title: "Scope Notes",
       complete: hasScope,
+      status: readinessStatus({ complete: hasScope, started: Boolean(compactText(draft?.included_work) || compactText(draft?.site_visit_notes) || compactText(proposal?.project_summary)) }),
       required: true,
       missing: hasScope ? [] : ["Scope notes or included work"],
       target: "scope",
@@ -264,19 +518,10 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) 
       summary: compactText(draft?.included_work) || compactText(draft?.site_visit_notes) || compactText(proposal?.project_summary) || "No scope notes yet",
     },
     {
-      key: "exclusions",
-      title: "Exclusions / Assumptions",
-      complete: hasExclusions,
-      required: false,
-      missing: hasExclusions ? [] : ["Exclusions or assumptions"],
-      target: "scope",
-      action: "Add exclusions",
-      summary: compactText(draft?.excluded_work) || compactText(draft?.assumptions) || "No exclusions or assumptions captured",
-    },
-    {
-      key: "line-items",
-      title: "Estimate Line Items",
+      key: "pricing",
+      title: "Pricing",
       complete: hasLineItems,
+      status: readinessStatus({ complete: hasLineItems, started: hasLineItems }),
       required: true,
       missing: hasLineItems ? [] : ["At least one estimate line item"],
       target: "estimate",
@@ -284,23 +529,15 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents }) 
       summary: hasLineItems ? `${proposal.line_items.length} line item${proposal.line_items.length === 1 ? "" : "s"} - ${money(totals?.total)}` : "No estimate pricing yet",
     },
     {
-      key: "incidentals",
-      title: "Incidentals Reserve",
-      complete: incidentalsValue > 0,
-      required: false,
-      missing: incidentalsValue > 0 ? [] : ["Optional reserve not configured"],
-      target: "incidentals",
-      action: "Review reserve",
-      summary: incidentalsValue > 0 ? `${money(incidentalsValue)} reserve configured` : "No incidentals reserve configured",
-    },
-    {
       key: "ready",
-      title: "Ready for Agreement",
+      title: "Agreement Ready",
       complete: readyMinimum,
+      status: readinessStatus({ complete: readyMinimum, started: contactReady || locationReady || hasScope || hasLineItems }),
       required: true,
-      missing: readyMinimum ? [] : ["Customer/contact", "site location", "scope notes", "estimate line items"].filter((label) => {
+      missing: readyMinimum ? [] : ["Customer/contact", "project address", "clarifications", "scope notes", "estimate line items"].filter((label) => {
         if (label === "Customer/contact") return !contactReady;
-        if (label === "site location") return !locationReady;
+        if (label === "project address") return !locationReady;
+        if (label === "clarifications") return !clarificationsReady;
         if (label === "scope notes") return !hasScope;
         if (label === "estimate line items") return !hasLineItems;
         return false;
@@ -345,9 +582,7 @@ function ChecklistCard({ item, onOpen }) {
   return (
     <article
       data-testid={`estimate-checklist-${item.key}`}
-      className={`rounded-xl border p-4 shadow-sm ${
-        item.complete ? "border-emerald-200 bg-emerald-50" : item.required ? "border-amber-200 bg-amber-50" : "border-slate-200 bg-white"
-      }`}
+      className={`rounded-xl border p-4 shadow-sm ${readinessTone(item.status)}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -357,6 +592,9 @@ function ChecklistCard({ item, onOpen }) {
             </span>
             <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
             {item.required ? <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black uppercase text-white">Required</span> : null}
+            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black uppercase text-slate-700 ring-1 ring-black/5" data-testid={`estimate-readiness-status-${item.key}`}>
+              {item.status}
+            </span>
           </div>
           <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-700">{item.summary}</p>
           {!item.complete && item.missing?.length ? (
@@ -405,6 +643,42 @@ function TextAreaField({ label, value, onChange, rows = 4, testId }) {
   );
 }
 
+function SelectField({ label, value, onChange, options, testId }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <select
+        data-testid={testId}
+        value={value || ""}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+      >
+        {options.map(([optionValue, labelText]) => (
+          <option key={optionValue} value={optionValue}>
+            {labelText}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DateField({ label, value, onChange, disabled = false, testId }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <input
+        type="date"
+        data-testid={testId}
+        value={value || ""}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
+      />
+    </label>
+  );
+}
+
 export default function ProposalWorkspacePage() {
   const { proposalId } = useParams();
   const navigate = useNavigate();
@@ -420,6 +694,13 @@ export default function ProposalWorkspacePage() {
   const [walkthroughMode, setWalkthroughMode] = useState(false);
   const [walkthroughMeasurementOpen, setWalkthroughMeasurementOpen] = useState(false);
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateRecommendation, setTemplateRecommendation] = useState(null);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [templateChoice, setTemplateChoice] = useState("pending");
+  const [customerMatches, setCustomerMatches] = useState([]);
+  const [saveAddressToCustomer, setSaveAddressToCustomer] = useState(false);
+  const [savingAddress, setSavingAddress] = useState(false);
 
   const photos = useMemo(
     () => (proposal?.attachments || []).filter((item) => item.attachment_type === "photo"),
@@ -430,13 +711,42 @@ export default function ProposalWorkspacePage() {
     [proposal]
   );
   const totals = proposal?.totals || {};
+  const clarificationRows = useMemo(
+    () => buildClarificationRows({ selectedTemplate, proposal, draft, photos }),
+    [selectedTemplate, proposal, draft, photos]
+  );
+  const matchedCustomer = useMemo(() => {
+    if (!customerMatches.length) return null;
+    const email = compactText(proposal?.customer_email).toLowerCase();
+    const phone = compactText(proposal?.customer_phone).replace(/\D/g, "");
+    return customerMatches.find((customer) => {
+      const cEmail = compactText(customer.email).toLowerCase();
+      const cPhone = compactText(customer.phone_number).replace(/\D/g, "");
+      return (email && cEmail === email) || (phone && cPhone && cPhone === phone);
+    }) || customerMatches[0] || null;
+  }, [customerMatches, proposal]);
+  const propertyOptions = useMemo(() => {
+    const options = [];
+    for (const customer of customerMatches) {
+      const address = customerAddress(customer);
+      if (address && !options.some((item) => item.value === address)) {
+        options.push({ label: `${customer.full_name || "Customer"} property`, value: address });
+      }
+    }
+    return options;
+  }, [customerMatches]);
   const estimateChecklist = useMemo(
-    () => buildEstimateChecklist({ proposal, draft, totals, photos, documents }),
-    [proposal, draft, totals, photos, documents]
+    () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
+    [proposal, draft, totals, photos, documents, clarificationRows]
   );
 
   function createAgreementFromProposal() {
     if (!proposal) return;
+    if (!estimateChecklist.readyMinimum) {
+      toast.error("Finish required estimate readiness items before creating an agreement.");
+      setActive("overview");
+      return;
+    }
     const workspaceProposal = { ...proposal, ...draft };
     const scopeText = buildProposalAgreementScope(workspaceProposal);
     const proposalTotal = compactText(totals.total || "0.00");
@@ -444,6 +754,14 @@ export default function ProposalWorkspacePage() {
     const lineItems = Array.isArray(proposal.line_items) ? proposal.line_items : [];
     const measurements = Array.isArray(proposal.measurements) ? proposal.measurements : [];
     const attachments = Array.isArray(proposal.attachments) ? proposal.attachments : [];
+    const scheduling = {
+      project_start_type: workspaceProposal.project_start_type || "flexible",
+      project_start_date: workspaceProposal.project_start_date || "",
+      project_completion_type: workspaceProposal.project_completion_type || "no_deadline",
+      project_completion_date: workspaceProposal.project_completion_date || "",
+      scheduling_priority: workspaceProposal.scheduling_priority || "flexible",
+      summary: proposalScheduleSummary(workspaceProposal),
+    };
 
     const handoff = {
       assistantPrefill: {
@@ -482,6 +800,12 @@ export default function ProposalWorkspacePage() {
         proposal_line_items: lineItems,
         proposal_measurements: measurements,
         proposal_attachments: attachments,
+        proposal_scheduling: scheduling,
+        project_start_type: scheduling.project_start_type,
+        project_start_date: scheduling.project_start_date,
+        project_completion_type: scheduling.project_completion_type,
+        project_completion_date: scheduling.project_completion_date,
+        scheduling_priority: scheduling.scheduling_priority,
         site_visit_notes: workspaceProposal.site_visit_notes || "",
         included_work: workspaceProposal.included_work || "",
         excluded_work: workspaceProposal.excluded_work || "",
@@ -498,6 +822,7 @@ export default function ProposalWorkspacePage() {
         service_location: workspaceProposal.service_location || "",
         proposal_total: proposalTotal,
         incidentals_reserve_amount: incidentalsReserve,
+        proposal_scheduling: scheduling,
         line_item_count: lineItems.length,
         measurement_count: measurements.length,
         attachment_count: attachments.length,
@@ -547,7 +872,15 @@ export default function ProposalWorkspacePage() {
         assumptions: data.assumptions || "",
         allowances: data.allowances || "",
         internal_notes: data.internal_notes || "",
+        service_location: data.service_location || "",
+        project_start_type: data.project_start_type || "flexible",
+        project_start_date: data.project_start_date || "",
+        project_completion_type: data.project_completion_type || "no_deadline",
+        project_completion_date: data.project_completion_date || "",
+        scheduling_priority: data.scheduling_priority || "flexible",
       });
+      loadTemplateRecommendation(data);
+      loadCustomerMatches(data);
     } catch (error) {
       console.error(error);
       toast.error("Could not load proposal.");
@@ -560,6 +893,47 @@ export default function ProposalWorkspacePage() {
     loadProposal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalId]);
+
+  async function loadTemplateRecommendation(sourceProposal) {
+    setTemplateLoading(true);
+    try {
+      const { data } = await api.post("/projects/templates/recommend/", {
+        project_title: sourceProposal?.project_title || "",
+        project_type: sourceProposal?.project_type || "",
+        project_subtype: sourceProposal?.project_subtype || "",
+        project_summary: sourceProposal?.project_summary || "",
+        source: "estimate_workspace",
+      });
+      const match = normalizeTemplateRecommendation(data, sourceProposal);
+      setTemplateRecommendation(match);
+      if (match) {
+        setSelectedTemplate(match);
+        setTemplateChoice("recommended");
+      } else {
+        setSelectedTemplate(fallbackTemplateForProposal(sourceProposal));
+        setTemplateChoice("generated");
+      }
+    } catch (error) {
+      console.error(error);
+      setTemplateRecommendation(null);
+      setSelectedTemplate(fallbackTemplateForProposal(sourceProposal));
+      setTemplateChoice("generated");
+    } finally {
+      setTemplateLoading(false);
+    }
+  }
+
+  async function loadCustomerMatches(sourceProposal) {
+    const query = compactText(sourceProposal?.customer_email || sourceProposal?.customer_phone || sourceProposal?.customer_name);
+    if (!query) return;
+    try {
+      const { data } = await api.get("/projects/homeowners/", { params: { q: query, page_size: 10 } });
+      setCustomerMatches(Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error(error);
+      setCustomerMatches([]);
+    }
+  }
 
   function patchDraft(key, value) {
     setDraft((prev) => ({ ...prev, [key]: value }));
@@ -578,6 +952,45 @@ export default function ProposalWorkspacePage() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function saveProjectAddress() {
+    const address = compactText(draft.service_location);
+    if (!address) {
+      toast.error("Project Address is required.");
+      return;
+    }
+    setSavingAddress(true);
+    try {
+      const { data } = await api.patch(`/projects/proposals/${proposalId}/`, { service_location: address });
+      setProposal(data);
+      setDraft((prev) => ({ ...prev, service_location: data.service_location || address }));
+      if (saveAddressToCustomer && matchedCustomer?.id) {
+        await api.patch(`/projects/homeowners/${matchedCustomer.id}/`, {
+          street_address: address,
+        });
+        toast.success("Project address saved to estimate and customer profile.");
+      } else {
+        toast.success("Project address saved.");
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error(error?.response?.data?.detail || "Could not save project address.");
+    } finally {
+      setSavingAddress(false);
+    }
+  }
+
+  async function setClarificationState(row, state) {
+    const current = Array.isArray(draft.quick_checklist) ? draft.quick_checklist : [];
+    const withoutRow = current.filter((item) => item !== row.completeKey && item !== row.ignoredKey);
+    const next = state === "complete"
+      ? [...withoutRow, row.completeKey]
+      : state === "ignored"
+        ? [...withoutRow, row.ignoredKey]
+        : withoutRow;
+    patchDraft("quick_checklist", next);
+    await saveProposal({ quick_checklist: next }, "Clarification updated.");
   }
 
   async function addMeasurement(event) {
@@ -969,7 +1382,8 @@ export default function ProposalWorkspacePage() {
           <button
             type="button"
             data-testid="proposal-create-agreement-action"
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-slate-800"
+            disabled={!estimateChecklist.readyMinimum}
+            className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             onClick={createAgreementFromProposal}
           >
             <FileSignature size={16} /> Create Agreement from Estimate
@@ -1008,14 +1422,14 @@ export default function ProposalWorkspacePage() {
             <div className="rounded-2xl bg-slate-950 p-4 text-white" data-testid="estimate-checklist-progress">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase tracking-[0.2em] text-blue-200/80">Checklist completion</div>
+                  <div className="text-xs font-black uppercase tracking-[0.2em] text-blue-200/80">Estimate Readiness</div>
                   <div className="mt-1 text-3xl font-black">{estimateChecklist.percent}%</div>
                   <div className="mt-1 text-sm font-semibold text-slate-300">
-                    {estimateChecklist.completedCount} of {estimateChecklist.items.length} sections complete
+                    {estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness items complete
                   </div>
                 </div>
                 <div className={`rounded-xl px-4 py-3 text-sm font-black ${estimateChecklist.readyMinimum ? "bg-emerald-400 text-emerald-950" : "bg-amber-300 text-amber-950"}`} data-testid="estimate-ready-status">
-                  {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Required items missing"}
+                  {estimateChecklist.readyMinimum ? "Estimate Ready" : "Required items missing"}
                 </div>
               </div>
               <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
@@ -1065,6 +1479,167 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
+          <Section id="assistant" active={active === "assistant"} title="Project Assistant">
+            <div className="grid gap-4">
+              <div className="rounded-xl bg-slate-950 p-4 text-white" data-testid="proposal-template-recommendation">
+                <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-200/80">Template Workflow</div>
+                <h3 className="mt-2 text-xl font-black">
+                  {templateLoading
+                    ? "Searching Agreement Template Library..."
+                    : templateRecommendation
+                      ? "Recommended agreement template"
+                      : "Generated draft agreement template"}
+                </h3>
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-300">
+                  {selectedTemplate?.match_reason || "Project Assistant prepares a draft template structure for contractor review before the Agreement Wizard."}
+                </p>
+                <div className="mt-4 rounded-xl bg-white/10 p-3">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Selected</div>
+                  <div className="mt-1 text-lg font-black">{selectedTemplate?.name || "Template search pending"}</div>
+                  <div className="mt-1 text-sm font-semibold text-blue-100">{selectedTemplate?.match_label || templateChoice}</div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {templateRecommendation ? (
+                    <>
+                      <button
+                        type="button"
+                        data-testid="proposal-use-template"
+                        onClick={() => {
+                          setSelectedTemplate(templateRecommendation);
+                          setTemplateChoice("recommended");
+                          toast.success("Template selected for estimate checklist.");
+                        }}
+                        className="rounded-lg bg-emerald-400 px-3 py-2 text-sm font-black text-emerald-950"
+                      >
+                        Use Template
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="proposal-choose-template"
+                        onClick={() => navigate("/app/templates")}
+                        className="rounded-lg bg-white/10 px-3 py-2 text-sm font-black text-white ring-1 ring-white/20"
+                      >
+                        Choose Another
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      data-testid="proposal-generate-template"
+                      onClick={() => {
+                        setSelectedTemplate(fallbackTemplateForProposal(proposal));
+                        setTemplateChoice("generated");
+                        toast.success("Draft agreement template generated for review.");
+                      }}
+                      className="rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-slate-950"
+                    >
+                      Generate Draft Agreement Template
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    data-testid="proposal-start-blank-template"
+                    onClick={() => {
+                      setSelectedTemplate(fallbackTemplateForProposal({ project_type: "Blank" }));
+                      setTemplateChoice("blank");
+                      toast.success("Estimate checklist set to start blank.");
+                    }}
+                    className="rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950"
+                  >
+                    Start Blank
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200" data-testid="proposal-assistant-suggestions">
+                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Suggestions</div>
+                <div className="mt-3 space-y-2">
+                  {[
+                    ["Improve Scope", "scope", !compactText(draft.included_work)],
+                    ["Missing Information", "clarifications", !clarificationRows.every((row) => row.complete)],
+                    ["Risk Review", "site", !compactText(draft.risk_notes)],
+                    ["Suggested Questions", "clarifications", true],
+                    ["Template Match", "assistant", true],
+                    ["Generate Scope", "scope", !compactText(draft.included_work)],
+                    ["Estimate Readiness", "overview", true],
+                  ].map(([label, target, show]) => show ? (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={() => setActive(target)}
+                      className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-left text-sm font-black text-slate-800 ring-1 ring-slate-200 hover:bg-slate-100"
+                    >
+                      {label}
+                      <span className="text-xs text-blue-700">Jump</span>
+                    </button>
+                  ) : null)}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-xl bg-blue-50 p-4 ring-1 ring-blue-100" data-testid="proposal-readiness-missing">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-wide text-blue-700">Estimate Readiness</div>
+                  <div className="mt-1 text-2xl font-black text-blue-950">{estimateChecklist.percent}%</div>
+                </div>
+                <button type="button" onClick={() => setActive("overview")} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-black text-white">
+                  Jump to Readiness
+                </button>
+              </div>
+              {estimateChecklist.requiredMissing.length ? (
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {estimateChecklist.requiredMissing.map((item) => (
+                    <div key={item.key} className="rounded-lg bg-white p-3 ring-1 ring-blue-100">
+                      <div className="font-black text-slate-950">{item.title}</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-600">{item.missing.join(", ")}</div>
+                      <div className="mt-2 flex gap-2">
+                        <button type="button" onClick={() => setActive(item.target)} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-black text-white">Jump to Section</button>
+                        <button type="button" onClick={() => toast.success("Assumption noted for contractor review.")} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700">Mark Assumption</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 rounded-lg bg-white p-3 text-sm font-black text-emerald-700 ring-1 ring-emerald-100">
+                  Estimate Ready. Open the Agreement Wizard when you are ready to review the draft agreement.
+                </div>
+              )}
+            </div>
+          </Section>
+
+          <Section id="clarifications" active={active === "clarifications"} title="Clarification Questions">
+            <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200" data-testid="proposal-clarification-intro">
+              Questions come from the selected or generated agreement template. Project Assistant auto-completes questions when measurements, photos, notes, or scope already answer them.
+            </div>
+            <div className="mt-4 space-y-3" data-testid="proposal-clarification-questions">
+              {clarificationRows.map((row) => (
+                <article key={row.key} className={`rounded-xl border p-4 ${row.complete ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-black text-slate-950">{row.label}</h3>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.complete ? "bg-emerald-600 text-white" : "bg-amber-300 text-amber-950"}`} data-testid={`proposal-clarification-status-${row.key}`}>
+                          {row.status}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm font-semibold text-slate-700">{row.question}</p>
+                      {row.autoComplete ? (
+                        <p className="mt-2 text-xs font-bold text-emerald-800">Auto-completed from captured estimate details.</p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button type="button" onClick={() => setActive(row.target)} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200">Jump</button>
+                      <button type="button" data-testid={`proposal-clarification-complete-${row.key}`} onClick={() => setClarificationState(row, "complete")} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white">Mark Complete</button>
+                      <button type="button" onClick={() => setClarificationState(row, "ignored")} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white">Ignore</button>
+                      <button type="button" onClick={() => setClarificationState(row, "open")} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200">Reopen</button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </Section>
+
           <Section id="appointment" active={active === "appointment"} title="Estimate Appointment">
             {proposal.appointment ? (
               <InfoGrid
@@ -1090,10 +1665,76 @@ export default function ProposalWorkspacePage() {
                 ["Customer", proposal.customer_name],
                 ["Phone", proposal.customer_phone],
                 ["Email", proposal.customer_email],
-                ["Address", proposal.service_location],
+                ["Project Address", draft.service_location || proposal.service_location],
                 ["Preferred contact", draft.customer_preferred_contact || "Not set"],
               ]}
             />
+            <div className="mt-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200" data-testid="proposal-project-address-workflow">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-black text-slate-950">Project Address</h3>
+                  <p className="mt-1 text-sm font-semibold text-slate-600">
+                    Every estimate needs a project address before it can move to the Agreement Wizard.
+                  </p>
+                </div>
+                {matchedCustomer ? (
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-700 ring-1 ring-slate-200">
+                    Matched customer profile
+                  </span>
+                ) : null}
+              </div>
+              {propertyOptions.length ? (
+                <label className="mt-4 block">
+                  <span className="text-xs font-black uppercase tracking-wide text-slate-500">Select Existing Property</span>
+                  <select
+                    data-testid="proposal-existing-property-select"
+                    value=""
+                    onChange={(event) => {
+                      if (event.target.value) patchDraft("service_location", event.target.value);
+                    }}
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                  >
+                    <option value="">Choose saved property...</option>
+                    {propertyOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.value}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-600">
+                  No saved properties found for this customer. Enter a new project address below.
+                </div>
+              )}
+              <label className="mt-4 block">
+                <span className="text-xs font-black uppercase tracking-wide text-slate-500">New Project Address</span>
+                <input
+                  data-testid="proposal-project-address-input"
+                  value={draft.service_location || ""}
+                  onChange={(event) => patchDraft("service_location", event.target.value)}
+                  placeholder="Street, city, state, zip"
+                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                />
+              </label>
+              <label className={`mt-3 flex items-center gap-2 text-sm font-bold ${matchedCustomer ? "text-slate-700" : "text-slate-400"}`}>
+                <input
+                  type="checkbox"
+                  data-testid="proposal-save-address-to-customer"
+                  checked={saveAddressToCustomer}
+                  disabled={!matchedCustomer}
+                  onChange={(event) => setSaveAddressToCustomer(event.target.checked)}
+                />
+                Save new project address back to customer profile
+              </label>
+              <button
+                type="button"
+                data-testid="proposal-save-project-address"
+                onClick={saveProjectAddress}
+                disabled={savingAddress}
+                className="mt-3 rounded-lg bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:opacity-60"
+              >
+                {savingAddress ? "Saving..." : "Save Project Address"}
+              </button>
+            </div>
             <div className="mt-4 flex flex-wrap gap-2" data-testid="proposal-customer-actions">
               <a className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${telHref ? "bg-slate-900 text-white" : "pointer-events-none bg-slate-100 text-slate-400"}`} href={telHref || "#"}><Phone size={16} /> Call</a>
               <a className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${emailHref ? "bg-blue-600 text-white" : "pointer-events-none bg-slate-100 text-slate-400"}`} href={emailHref || "#"}><Mail size={16} /> Email</a>
@@ -1109,6 +1750,68 @@ export default function ProposalWorkspacePage() {
                 Copy
               </button>
             </div>
+          </Section>
+
+          <Section id="scheduling" active={active === "scheduling"} title="Project Scheduling">
+            <div className="rounded-xl bg-slate-950 p-4 text-white" data-testid="proposal-scheduling-summary">
+              <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-200/80">Structured scheduling inputs</div>
+              <div className="mt-2 text-lg font-black">{proposalScheduleSummary({ ...proposal, ...draft })}</div>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-300">
+                These fields stay separate from scope notes so future milestone planning and Project Assistant scheduling analysis can use them directly.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
+              <SelectField
+                label="Project Start"
+                value={draft.project_start_type || "flexible"}
+                onChange={(value) => patchDraft("project_start_type", value)}
+                options={PROJECT_START_OPTIONS}
+                testId="proposal-schedule-start-type"
+              />
+              <DateField
+                label="Start Date"
+                value={draft.project_start_date || ""}
+                onChange={(value) => patchDraft("project_start_date", value)}
+                disabled={draft.project_start_type !== "specific_date"}
+                testId="proposal-schedule-start-date"
+              />
+              <SelectField
+                label="Priority"
+                value={draft.scheduling_priority || "flexible"}
+                onChange={(value) => patchDraft("scheduling_priority", value)}
+                options={SCHEDULING_PRIORITY_OPTIONS}
+                testId="proposal-schedule-priority"
+              />
+              <SelectField
+                label="Project Completion"
+                value={draft.project_completion_type || "no_deadline"}
+                onChange={(value) => patchDraft("project_completion_type", value)}
+                options={PROJECT_COMPLETION_OPTIONS}
+                testId="proposal-schedule-completion-type"
+              />
+              <DateField
+                label="Completion Date"
+                value={draft.project_completion_date || ""}
+                onChange={(value) => patchDraft("project_completion_date", value)}
+                disabled={draft.project_completion_type !== "specific_date"}
+                testId="proposal-schedule-completion-date"
+              />
+            </div>
+            <button
+              type="button"
+              data-testid="proposal-save-scheduling"
+              onClick={() => saveProposal({
+                project_start_type: draft.project_start_type || "flexible",
+                project_start_date: draft.project_start_type === "specific_date" ? draft.project_start_date : "",
+                project_completion_type: draft.project_completion_type || "no_deadline",
+                project_completion_date: draft.project_completion_type === "specific_date" ? draft.project_completion_date : "",
+                scheduling_priority: draft.scheduling_priority || "flexible",
+              }, "Scheduling saved.")}
+              disabled={saving}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
+            >
+              <Save size={16} /> Save Scheduling
+            </button>
           </Section>
 
           <Section id="site" active={active === "site"} title="Site Access, Conditions, and Requests">
@@ -1371,7 +2074,8 @@ export default function ProposalWorkspacePage() {
                 type="button"
                 data-testid="estimate-ready-create-agreement"
                 onClick={createAgreementFromProposal}
-                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-black text-white"
+                disabled={!estimateChecklist.readyMinimum}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400"
               >
                 <FileSignature size={16} /> Create Agreement from Estimate
               </button>
@@ -1423,6 +2127,16 @@ export default function ProposalWorkspacePage() {
             <div className="text-xs font-semibold uppercase text-slate-400">Next action</div>
             <div className="mt-1 text-sm font-bold">{estimateChecklist.readyMinimum ? "Review in Agreement Wizard" : "Finish required checklist items"}</div>
           </div>
+          <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-scheduling">
+            <div className="text-xs font-semibold uppercase text-slate-400">Scheduling</div>
+            <div className="mt-1 text-sm font-bold">{proposalScheduleSummary({ ...proposal, ...draft })}</div>
+            <button type="button" onClick={() => setActive("scheduling")} className="mt-2 text-xs font-black text-blue-200">Edit scheduling</button>
+          </div>
+          <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-template">
+            <div className="text-xs font-semibold uppercase text-slate-400">Template</div>
+            <div className="mt-1 text-sm font-bold">{selectedTemplate?.name || "Searching templates"}</div>
+            <button type="button" onClick={() => setActive("assistant")} className="mt-2 text-xs font-black text-blue-200">Open Project Assistant</button>
+          </div>
           <div className="mt-4 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{proposal.measurements?.length || 0}</div><div className="text-xs text-slate-300">Measures</div></div>
             <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{photos.length}</div><div className="text-xs text-slate-300">Photos</div></div>
@@ -1442,7 +2156,8 @@ export default function ProposalWorkspacePage() {
             type="button"
             data-testid="proposal-summary-create-agreement"
             onClick={createAgreementFromProposal}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950 hover:bg-slate-100"
+            disabled={!estimateChecklist.readyMinimum}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
           >
             <FileSignature size={16} /> Create Agreement from Estimate
           </button>

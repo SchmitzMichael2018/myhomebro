@@ -90,6 +90,11 @@ const proposal = {
   customer_phone: "512-555-0100",
   customer_preferred_contact: "",
   service_location: "123 Main St, Austin, TX",
+  project_start_type: "flexible",
+  project_start_date: "",
+  project_completion_type: "no_deadline",
+  project_completion_date: "",
+  scheduling_priority: "flexible",
   site_visit_notes: "",
   access_notes: "",
   risk_notes: "",
@@ -116,6 +121,22 @@ const proposal = {
   activity: [{ id: 1, event_type: "created", message: "Proposal created", created_at: "2026-07-01T16:00:00Z" }],
   created_at: "2026-07-01T16:00:00Z",
   updated_at: "2026-07-01T16:00:00Z",
+};
+
+const customerPayload = {
+  results: [
+    {
+      id: 77,
+      full_name: "New Lead Customer",
+      email: "lead@example.com",
+      phone_number: "512-555-0100",
+      street_address: "123 Main St",
+      address_line_2: "",
+      city: "Austin",
+      state: "TX",
+      zip_code: "78701",
+    },
+  ],
 };
 
 async function installBaseMocks(page) {
@@ -178,13 +199,31 @@ async function installAgreementWizardMocks(page) {
     });
   });
   await page.route("**/api/projects/homeowners**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
-  });
-  await page.route("**/api/projects/templates/recommend/", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ recommendations: [] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(customerPayload) });
   });
   await page.route("**/api/projects/templates/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
+  });
+  await page.route("**/api/projects/templates/recommend/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        recommendations: [
+          {
+            id: 5,
+            name: "Bathroom Refresh Template",
+            match_label: "Strong Match",
+            match_reason: "Bathroom refresh project type matches an existing agreement template.",
+            default_clarifications: [
+              { key: "square_footage", label: "Square footage", question: "What square footage should the estimate use?", section: "measurements" },
+              { key: "material_responsibility", label: "Material responsibility", question: "Who supplies fixtures and finish materials?", section: "site" },
+              { key: "permit_responsibility", label: "Permit responsibility", question: "Are permits or HOA approvals required?", section: "scope" },
+            ],
+          },
+        ],
+      }),
+    });
   });
 }
 
@@ -304,10 +343,43 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
   await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("proposal-nav-site")).toBeVisible();
   await expect(page.getByTestId("estimate-checklist-progress")).toContainText("%");
-  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Customer & Contact");
-  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Estimate Line Items");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Customer");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Project Address");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Pricing");
+  await expect(page.getByTestId("estimate-readiness-status-customer")).toContainText("Complete");
   await expect(page.getByTestId("estimate-ready-status")).toContainText("Required items missing");
   const initialProgress = Number((await page.getByTestId("estimate-summary-progress").innerText()).replace("%", ""));
+
+  await page.getByTestId("proposal-nav-customer").click();
+  await expect(page.getByTestId("proposal-project-address-workflow")).toContainText("Select Existing Property");
+  await page.getByTestId("proposal-existing-property-select").selectOption("123 Main St, Austin, TX, 78701");
+  await page.getByTestId("proposal-project-address-input").fill("456 Project Lane, Austin, TX");
+  await page.getByTestId("proposal-save-address-to-customer").check();
+  await page.getByTestId("proposal-save-project-address").click();
+  await expect(page.getByTestId("proposal-project-address-workflow")).toContainText("Project Address");
+
+  await page.getByTestId("proposal-nav-scheduling").click();
+  await expect(page.getByTestId("proposal-scheduling-summary")).toContainText("priority Flexible");
+  await page.getByTestId("proposal-schedule-start-type").selectOption("specific_date");
+  await page.getByTestId("proposal-schedule-start-date").fill("2026-08-15");
+  await page.getByTestId("proposal-schedule-completion-type").selectOption("specific_date");
+  await page.getByTestId("proposal-schedule-completion-date").fill("2026-09-01");
+  await page.getByTestId("proposal-schedule-priority").selectOption("required");
+  await page.getByTestId("proposal-save-scheduling").click();
+  await expect(page.getByTestId("proposal-scheduling-summary")).toContainText("priority Required");
+  await expect(page.getByTestId("proposal-summary-scheduling")).toContainText("Required");
+
+  await page.getByTestId("proposal-nav-assistant").click();
+  await expect(page.getByTestId("proposal-template-recommendation")).toContainText("Recommended agreement template");
+  await expect(page.getByTestId("proposal-template-recommendation")).toContainText("Bathroom Refresh Template");
+  await page.getByTestId("proposal-use-template").click();
+
+  await page.getByTestId("proposal-nav-clarifications").click();
+  await expect(page.getByTestId("proposal-clarification-questions")).toContainText("Square footage");
+  await expect(page.getByTestId("proposal-clarification-questions")).toContainText("Material responsibility");
+  await page.getByTestId("proposal-clarification-complete-square_footage").click();
+  await page.getByTestId("proposal-clarification-complete-material_responsibility").click();
+  await page.getByTestId("proposal-clarification-complete-permit_responsibility").click();
 
   await page.getByTestId("enter-walkthrough-mode").click();
   await expect(page.getByTestId("proposal-walkthrough-mode")).toBeVisible();
@@ -407,7 +479,7 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-nav-overview").click();
   const completedProgress = Number((await page.getByTestId("estimate-summary-progress").innerText()).replace("%", ""));
   expect(completedProgress).toBeGreaterThan(initialProgress);
-  await expect(page.getByTestId("estimate-ready-status")).toContainText("Ready for Agreement");
+  await expect(page.getByTestId("estimate-ready-status")).toContainText("Estimate Ready");
 
   await page.getByTestId("proposal-nav-history").click();
   await expect(page.getByTestId("proposal-history")).toContainText("Proposal created");

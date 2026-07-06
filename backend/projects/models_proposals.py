@@ -43,6 +43,33 @@ class Proposal(models.Model):
         (SOURCE_DASHBOARD, "Dashboard Estimate"),
     ]
 
+    PROJECT_START_ASAP = "asap"
+    PROJECT_START_SPECIFIC_DATE = "specific_date"
+    PROJECT_START_FLEXIBLE = "flexible"
+    PROJECT_START_CHOICES = [
+        (PROJECT_START_ASAP, "ASAP"),
+        (PROJECT_START_SPECIFIC_DATE, "Specific Date"),
+        (PROJECT_START_FLEXIBLE, "Flexible"),
+    ]
+
+    PROJECT_COMPLETION_NO_DEADLINE = "no_deadline"
+    PROJECT_COMPLETION_SPECIFIC_DATE = "specific_date"
+    PROJECT_COMPLETION_FLEXIBLE = "flexible"
+    PROJECT_COMPLETION_CHOICES = [
+        (PROJECT_COMPLETION_NO_DEADLINE, "No Deadline"),
+        (PROJECT_COMPLETION_SPECIFIC_DATE, "Specific Date"),
+        (PROJECT_COMPLETION_FLEXIBLE, "Flexible"),
+    ]
+
+    SCHEDULING_PRIORITY_FLEXIBLE = "flexible"
+    SCHEDULING_PRIORITY_PREFERRED = "preferred"
+    SCHEDULING_PRIORITY_REQUIRED = "required"
+    SCHEDULING_PRIORITY_CHOICES = [
+        (SCHEDULING_PRIORITY_FLEXIBLE, "Flexible"),
+        (SCHEDULING_PRIORITY_PREFERRED, "Preferred"),
+        (SCHEDULING_PRIORITY_REQUIRED, "Required"),
+    ]
+
     contractor = models.ForeignKey(
         "projects.Contractor",
         on_delete=models.CASCADE,
@@ -76,6 +103,26 @@ class Proposal(models.Model):
     customer_phone = models.CharField(max_length=50, blank=True, default="")
     customer_preferred_contact = models.CharField(max_length=40, blank=True, default="")
     service_location = models.CharField(max_length=500, blank=True, default="")
+    project_start_type = models.CharField(
+        max_length=24,
+        choices=PROJECT_START_CHOICES,
+        default=PROJECT_START_FLEXIBLE,
+        db_index=True,
+    )
+    project_start_date = models.DateField(null=True, blank=True)
+    project_completion_type = models.CharField(
+        max_length=24,
+        choices=PROJECT_COMPLETION_CHOICES,
+        default=PROJECT_COMPLETION_NO_DEADLINE,
+        db_index=True,
+    )
+    project_completion_date = models.DateField(null=True, blank=True)
+    scheduling_priority = models.CharField(
+        max_length=24,
+        choices=SCHEDULING_PRIORITY_CHOICES,
+        default=SCHEDULING_PRIORITY_FLEXIBLE,
+        db_index=True,
+    )
 
     site_visit_notes = models.TextField(blank=True, default="")
     access_notes = models.TextField(blank=True, default="")

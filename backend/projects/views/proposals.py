@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
+from django.utils.dateparse import parse_date
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -173,6 +174,11 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "customer_phone": proposal.customer_phone,
         "customer_preferred_contact": proposal.customer_preferred_contact,
         "service_location": proposal.service_location,
+        "project_start_type": proposal.project_start_type,
+        "project_start_date": proposal.project_start_date.isoformat() if proposal.project_start_date else "",
+        "project_completion_type": proposal.project_completion_type,
+        "project_completion_date": proposal.project_completion_date.isoformat() if proposal.project_completion_date else "",
+        "scheduling_priority": proposal.scheduling_priority,
         "site_visit_notes": proposal.site_visit_notes,
         "access_notes": proposal.access_notes,
         "risk_notes": proposal.risk_notes,
@@ -222,6 +228,11 @@ def _snapshot_from_row(row: dict) -> dict:
         "customer_email": _safe_text(row.get("customer_email") or snapshot.get("customer_email")),
         "customer_phone": _safe_text(row.get("customer_phone") or snapshot.get("customer_phone")),
         "service_location": _safe_text(row.get("location") or snapshot.get("location") or snapshot.get("service_location") or row.get("service_location")),
+        "project_start_type": _safe_text(snapshot.get("project_start_type")) or Proposal.PROJECT_START_FLEXIBLE,
+        "project_start_date": snapshot.get("project_start_date") or None,
+        "project_completion_type": _safe_text(snapshot.get("project_completion_type")) or Proposal.PROJECT_COMPLETION_NO_DEADLINE,
+        "project_completion_date": snapshot.get("project_completion_date") or None,
+        "scheduling_priority": _safe_text(snapshot.get("scheduling_priority")) or Proposal.SCHEDULING_PRIORITY_FLEXIBLE,
     }
 
 
@@ -246,6 +257,45 @@ def _dashboard_source_id(contractor) -> int:
         ).exists():
             return candidate
     return int(timezone.now().timestamp())
+
+
+def _structured_schedule_from_payload(data):
+    start_type = _safe_text(data.get("project_start_type")) or Proposal.PROJECT_START_FLEXIBLE
+    completion_type = _safe_text(data.get("project_completion_type")) or Proposal.PROJECT_COMPLETION_NO_DEADLINE
+    priority = _safe_text(data.get("scheduling_priority")) or Proposal.SCHEDULING_PRIORITY_FLEXIBLE
+
+    if start_type not in dict(Proposal.PROJECT_START_CHOICES):
+        return None, {"project_start_type": ["Choose a valid project start option."]}
+    if completion_type not in dict(Proposal.PROJECT_COMPLETION_CHOICES):
+        return None, {"project_completion_type": ["Choose a valid project completion option."]}
+    if priority not in dict(Proposal.SCHEDULING_PRIORITY_CHOICES):
+        return None, {"scheduling_priority": ["Choose a valid scheduling priority."]}
+
+    start_date_raw = _safe_text(data.get("project_start_date"))
+    completion_date_raw = _safe_text(data.get("project_completion_date"))
+    start_date = parse_date(start_date_raw) if start_date_raw else None
+    completion_date = parse_date(completion_date_raw) if completion_date_raw else None
+
+    if start_date_raw and start_date is None:
+        return None, {"project_start_date": ["Choose a valid project start date."]}
+    if completion_date_raw and completion_date is None:
+        return None, {"project_completion_date": ["Choose a valid project completion date."]}
+    if start_type == Proposal.PROJECT_START_SPECIFIC_DATE and start_date is None:
+        return None, {"project_start_date": ["Project start date is required when Project Start is Specific Date."]}
+    if completion_type == Proposal.PROJECT_COMPLETION_SPECIFIC_DATE and completion_date is None:
+        return None, {"project_completion_date": ["Project completion date is required when Project Completion is Specific Date."]}
+    if start_type != Proposal.PROJECT_START_SPECIFIC_DATE:
+        start_date = None
+    if completion_type != Proposal.PROJECT_COMPLETION_SPECIFIC_DATE:
+        completion_date = None
+
+    return {
+        "project_start_type": start_type,
+        "project_start_date": start_date,
+        "project_completion_type": completion_type,
+        "project_completion_date": completion_date,
+        "scheduling_priority": priority,
+    }, None
 
 
 def _dashboard_snapshot(contractor, request):
@@ -277,10 +327,11 @@ def _dashboard_snapshot(contractor, request):
     if not customer_name:
         return None, {"customer_name": ["Customer name is required."]}
 
-    desired_timeline = _safe_text(request.data.get("desired_timeline") or request.data.get("timeline"))
     project_summary = _safe_text(request.data.get("project_summary") or request.data.get("project_description") or request.data.get("description"))
-    if desired_timeline:
-        project_summary = f"{project_summary}\n\nDesired timeline: {desired_timeline}".strip()
+
+    schedule, schedule_errors = _structured_schedule_from_payload(request.data)
+    if schedule_errors:
+        return None, schedule_errors
 
     return {
         "project_title": project_title,
@@ -291,6 +342,7 @@ def _dashboard_snapshot(contractor, request):
         "customer_email": customer_email,
         "customer_phone": customer_phone,
         "service_location": service_location,
+        **schedule,
     }, None
 
 
@@ -398,6 +450,12 @@ class ProposalDetailView(APIView):
 
     EDITABLE_FIELDS = {
         "status",
+        "service_location",
+        "project_start_type",
+        "project_start_date",
+        "project_completion_type",
+        "project_completion_date",
+        "scheduling_priority",
         "site_visit_notes",
         "access_notes",
         "risk_notes",
@@ -431,6 +489,29 @@ class ProposalDetailView(APIView):
 
         update_fields = []
         previous_status = proposal.status
+        schedule_fields = {
+            "project_start_type",
+            "project_start_date",
+            "project_completion_type",
+            "project_completion_date",
+            "scheduling_priority",
+        }
+        schedule_values = {}
+        if any(field in request.data for field in schedule_fields):
+            schedule_payload = {
+                "project_start_type": proposal.project_start_type,
+                "project_start_date": proposal.project_start_date.isoformat() if proposal.project_start_date else "",
+                "project_completion_type": proposal.project_completion_type,
+                "project_completion_date": proposal.project_completion_date.isoformat() if proposal.project_completion_date else "",
+                "scheduling_priority": proposal.scheduling_priority,
+            }
+            for field in schedule_fields:
+                if field in request.data:
+                    schedule_payload[field] = request.data.get(field)
+            schedule_values, schedule_errors = _structured_schedule_from_payload(schedule_payload)
+            if schedule_errors:
+                return Response(schedule_errors, status=400)
+
         for field in self.EDITABLE_FIELDS:
             if field not in request.data:
                 continue
@@ -442,6 +523,8 @@ class ProposalDetailView(APIView):
                 value = request.data.get(field)
                 if not isinstance(value, list):
                     return Response({"quick_checklist": ["Checklist must be a list."]}, status=400)
+            elif field in schedule_values:
+                value = schedule_values[field]
             else:
                 value = _safe_text(request.data.get(field))
             setattr(proposal, field, value)

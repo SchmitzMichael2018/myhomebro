@@ -98,6 +98,11 @@ async function mockDashboard(page, { proposalId = 501, onProposalCreate = null }
             customer_email: payload.customer_email || "taylor@example.com",
             customer_phone: payload.customer_phone || "555-0101",
             service_location: payload.property_address || "",
+            project_start_type: payload.project_start_type || "flexible",
+            project_start_date: payload.project_start_date || "",
+            project_completion_type: payload.project_completion_type || "no_deadline",
+            project_completion_date: payload.project_completion_date || "",
+            scheduling_priority: payload.scheduling_priority || "flexible",
             quick_checklist: [],
             measurements: [],
             attachments: [],
@@ -125,6 +130,11 @@ async function mockDashboard(page, { proposalId = 501, onProposalCreate = null }
           customer_email: "taylor@example.com",
           customer_phone: "555-0101",
           service_location: "120 Oak Street, Austin, TX 78701",
+          project_start_type: "flexible",
+          project_start_date: "",
+          project_completion_type: "no_deadline",
+          project_completion_date: "",
+          scheduling_priority: "flexible",
           quick_checklist: [],
           measurements: [],
           attachments: [],
@@ -192,6 +202,8 @@ test("Create Estimate launches workspace from an existing customer", async ({ pa
   await page.getByTestId("dashboard-estimate-customer-101").click();
   await page.getByTestId("dashboard-estimate-existing-title").fill("Kitchen Estimate");
   await page.getByTestId("dashboard-estimate-existing-description").fill("Cabinet and backsplash refresh.");
+  await page.getByTestId("dashboard-estimate-existing-start-type").selectOption("asap");
+  await page.getByTestId("dashboard-estimate-existing-priority").selectOption("required");
   await page.getByTestId("dashboard-estimate-launch").click();
 
   await expect(page).toHaveURL(/\/app\/proposals\/601$/);
@@ -199,6 +211,11 @@ test("Create Estimate launches workspace from an existing customer", async ({ pa
     source_type: "dashboard",
     customer_id: 101,
     project_title: "Kitchen Estimate",
+    project_start_type: "asap",
+    project_start_date: "",
+    project_completion_type: "no_deadline",
+    project_completion_date: "",
+    scheduling_priority: "required",
   });
 });
 
@@ -220,7 +237,11 @@ test("Create Estimate launches workspace from a new customer capture", async ({ 
   await page.getByTestId("dashboard-estimate-new-property").fill("44 Cedar Lane, Austin, TX");
   await page.getByTestId("dashboard-estimate-new-title").fill("Bathroom Estimate");
   await page.getByTestId("dashboard-estimate-new-description").fill("Update tile, vanity, and fixtures.");
-  await page.getByTestId("dashboard-estimate-new-timeline").fill("Next month");
+  await page.getByTestId("dashboard-estimate-new-start-type").selectOption("specific_date");
+  await page.getByTestId("dashboard-estimate-new-start-date").fill("2026-08-15");
+  await page.getByTestId("dashboard-estimate-new-completion-type").selectOption("specific_date");
+  await page.getByTestId("dashboard-estimate-new-completion-date").fill("2026-09-01");
+  await page.getByTestId("dashboard-estimate-new-priority").selectOption("preferred");
   await page.getByTestId("dashboard-estimate-launch").click();
 
   await expect(page).toHaveURL(/\/app\/proposals\/602$/);
@@ -231,6 +252,11 @@ test("Create Estimate launches workspace from a new customer capture", async ({ 
     customer_phone: "555-0199",
     property_address: "44 Cedar Lane, Austin, TX",
     project_title: "Bathroom Estimate",
+    project_start_type: "specific_date",
+    project_start_date: "2026-08-15",
+    project_completion_type: "specific_date",
+    project_completion_date: "2026-09-01",
+    scheduling_priority: "preferred",
   });
 });
 

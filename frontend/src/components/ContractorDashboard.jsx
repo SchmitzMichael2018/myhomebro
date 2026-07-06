@@ -607,8 +607,40 @@ const emptyDashboardEstimateForm = {
   property_address: "",
   project_title: "",
   project_description: "",
-  desired_timeline: "",
+  project_start_type: "flexible",
+  project_start_date: "",
+  project_completion_type: "no_deadline",
+  project_completion_date: "",
+  scheduling_priority: "flexible",
 };
+
+const PROJECT_START_OPTIONS = [
+  ["asap", "ASAP"],
+  ["specific_date", "Specific Date"],
+  ["flexible", "Flexible"],
+];
+
+const PROJECT_COMPLETION_OPTIONS = [
+  ["no_deadline", "No Deadline"],
+  ["specific_date", "Specific Date"],
+  ["flexible", "Flexible"],
+];
+
+const SCHEDULING_PRIORITY_OPTIONS = [
+  ["flexible", "Flexible"],
+  ["preferred", "Preferred"],
+  ["required", "Required"],
+];
+
+function emptyEstimateSchedule() {
+  return {
+    project_start_type: "flexible",
+    project_start_date: "",
+    project_completion_type: "no_deadline",
+    project_completion_date: "",
+    scheduling_priority: "flexible",
+  };
+}
 
 function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   const [mode, setMode] = useState("existing");
@@ -620,7 +652,7 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     property_address: "",
     project_title: "",
     project_description: "",
-    desired_timeline: "",
+    ...emptyEstimateSchedule(),
   });
   const [newForm, setNewForm] = useState(emptyDashboardEstimateForm);
   const [saving, setSaving] = useState(false);
@@ -634,7 +666,7 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
       property_address: "",
       project_title: "",
       project_description: "",
-      desired_timeline: "",
+      ...emptyEstimateSchedule(),
     });
     setNewForm(emptyDashboardEstimateForm);
   }, [isOpen]);
@@ -715,6 +747,14 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
       toast.error("Customer name is required.");
       return;
     }
+    if (form.project_start_type === "specific_date" && !form.project_start_date) {
+      toast.error("Choose a project start date.");
+      return;
+    }
+    if (form.project_completion_type === "specific_date" && !form.project_completion_date) {
+      toast.error("Choose a project completion date.");
+      return;
+    }
 
     const payload = {
       source_type: "dashboard",
@@ -725,7 +765,11 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
       property_address: form.property_address,
       project_title: form.project_title,
       project_description: form.project_description,
-      desired_timeline: form.desired_timeline,
+      project_start_type: form.project_start_type,
+      project_start_date: form.project_start_type === "specific_date" ? form.project_start_date : "",
+      project_completion_type: form.project_completion_type,
+      project_completion_date: form.project_completion_type === "specific_date" ? form.project_completion_date : "",
+      scheduling_priority: form.scheduling_priority,
     };
 
     try {
@@ -852,7 +896,7 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
               <div className="grid gap-4">
                 <FieldInput label="Property Address" name="property_address" value={existingForm.property_address} onChange={updateExisting} testId="dashboard-estimate-existing-property" />
                 <FieldInput label="Project Title" name="project_title" value={existingForm.project_title} onChange={updateExisting} required testId="dashboard-estimate-existing-title" />
-                <FieldInput label="Desired Timeline" name="desired_timeline" value={existingForm.desired_timeline} onChange={updateExisting} testId="dashboard-estimate-existing-timeline" />
+                <SchedulingFields form={existingForm} onChange={updateExisting} prefix="existing" />
                 <FieldTextarea label="Project Description" name="project_description" value={existingForm.project_description} onChange={updateExisting} testId="dashboard-estimate-existing-description" />
               </div>
             </div>
@@ -865,7 +909,7 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
               <FieldInput label="Email" name="customer_email" type="email" value={newForm.customer_email} onChange={updateNew} testId="dashboard-estimate-new-email" />
               <FieldInput label="Property Address" name="property_address" value={newForm.property_address} onChange={updateNew} testId="dashboard-estimate-new-property" />
               <FieldInput label="Project Title" name="project_title" value={newForm.project_title} onChange={updateNew} required testId="dashboard-estimate-new-title" />
-              <FieldInput label="Desired Timeline" name="desired_timeline" value={newForm.desired_timeline} onChange={updateNew} testId="dashboard-estimate-new-timeline" />
+              <SchedulingFields form={newForm} onChange={updateNew} prefix="new" />
               <div className="md:col-span-2">
                 <FieldTextarea label="Project Description" name="project_description" value={newForm.project_description} onChange={updateNew} testId="dashboard-estimate-new-description" />
               </div>
@@ -892,6 +936,79 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
         </div>
       </form>
     </Modal>
+  );
+}
+
+function SchedulingFields({ form, onChange, prefix }) {
+  return (
+    <div className="grid gap-4 rounded-xl border border-white/10 bg-slate-950/20 p-3 md:col-span-2 md:grid-cols-3">
+      <FieldSelect
+        label="Project Start"
+        name="project_start_type"
+        value={form.project_start_type}
+        onChange={onChange}
+        options={PROJECT_START_OPTIONS}
+        testId={`dashboard-estimate-${prefix}-start-type`}
+      />
+      <FieldInput
+        label="Start Date"
+        name="project_start_date"
+        type="date"
+        value={form.project_start_date}
+        onChange={onChange}
+        disabled={form.project_start_type !== "specific_date"}
+        testId={`dashboard-estimate-${prefix}-start-date`}
+      />
+      <FieldSelect
+        label="Priority"
+        name="scheduling_priority"
+        value={form.scheduling_priority}
+        onChange={onChange}
+        options={SCHEDULING_PRIORITY_OPTIONS}
+        testId={`dashboard-estimate-${prefix}-priority`}
+      />
+      <FieldSelect
+        label="Project Completion"
+        name="project_completion_type"
+        value={form.project_completion_type}
+        onChange={onChange}
+        options={PROJECT_COMPLETION_OPTIONS}
+        testId={`dashboard-estimate-${prefix}-completion-type`}
+      />
+      <FieldInput
+        label="Completion Date"
+        name="project_completion_date"
+        type="date"
+        value={form.project_completion_date}
+        onChange={onChange}
+        disabled={form.project_completion_type !== "specific_date"}
+        testId={`dashboard-estimate-${prefix}-completion-date`}
+      />
+      <div className="flex items-end text-xs font-semibold leading-5 text-sky-100/68">
+        Structured scheduling feeds later milestone planning and Project Assistant analysis.
+      </div>
+    </div>
+  );
+}
+
+function FieldSelect({ label, testId, options, ...props }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/72">
+        {label}
+      </span>
+      <select
+        {...props}
+        data-testid={testId}
+        className="mt-2 w-full rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none"
+      >
+        {options.map(([value, labelText]) => (
+          <option key={value} value={value}>
+            {labelText}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
