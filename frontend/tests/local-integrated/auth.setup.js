@@ -2,9 +2,9 @@ import { test as setup, expect } from '@playwright/test';
 
 const authFile = 'playwright/.auth/contractor.json';
 const email =
-  process.env.PLAYWRIGHT_CONTRACTOR_EMAIL || 'playwright.contractor@myhomebro.local';
+  process.env.PLAYWRIGHT_CONTRACTOR_EMAIL || 'info+contractor@myhomebro.com';
 const password =
-  process.env.PLAYWRIGHT_CONTRACTOR_PASSWORD || 'Playwright123!';
+  process.env.PLAYWRIGHT_CONTRACTOR_PASSWORD || 'MyHomeBroQA!2026';
 
 setup('authenticate local contractor for integrated QA', async ({ page }) => {
   await page.goto('/login', { waitUntil: 'domcontentloaded' });
