@@ -388,6 +388,7 @@ function normalizeAdminTab(tab) {
 
 const WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'activation', label: 'Activation' },
   { id: 'milestones', label: 'Milestones' },
   { id: 'amendments', label: 'Amendments' },
   { id: 'funding', label: 'Funding & Payments' },
@@ -1691,6 +1692,10 @@ export default function AgreementDetail({
   const [fundingPreview, setFundingPreview] = useState(null);
   const [fundingLoading, setFundingLoading] = useState(false);
   const [fundingError, setFundingError] = useState('');
+  const [activationPreview, setActivationPreview] = useState(null);
+  const [activationPreviewLoading, setActivationPreviewLoading] =
+    useState(false);
+  const [activationPreviewError, setActivationPreviewError] = useState('');
 
   // PDF preview state
   const [pdfUrl, setPdfUrl] = useState(null);
@@ -2216,6 +2221,37 @@ export default function AgreementDetail({
     fetchFundingPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, norm.isDirectPay, ready, isAuthed]);
+
+  useEffect(() => {
+    const fetchActivationPreview = async () => {
+      if (!id || workspaceTab !== 'activation') return;
+      if (!ready || !isAuthed) {
+        setActivationPreview(null);
+        setActivationPreviewError('');
+        setActivationPreviewLoading(false);
+        return;
+      }
+
+      setActivationPreviewLoading(true);
+      setActivationPreviewError('');
+      try {
+        const { data } = await api.get(
+          `/projects/agreements/${id}/activation-preview/`
+        );
+        setActivationPreview(data);
+      } catch (err) {
+        setActivationPreview(null);
+        setActivationPreviewError(
+          err?.response?.data?.detail ||
+            'Unable to load activation preview.'
+        );
+      } finally {
+        setActivationPreviewLoading(false);
+      }
+    };
+
+    fetchActivationPreview();
+  }, [id, workspaceTab, ready, isAuthed]);
 
   const handleSigned = async () => {
     await fetchAgreement();
@@ -3549,6 +3585,16 @@ export default function AgreementDetail({
               Records
             </a>
           ) : null}
+          {!isAdminMode && norm.isSigned && (norm.isDirectPay || norm.escrowFunded) ? (
+            <button
+              type="button"
+              data-testid="agreement-workspace-nav-activation"
+              onClick={() => setWorkspaceTab('activation')}
+              className="rounded-xl border border-emerald-200/30 bg-emerald-400/15 px-3 py-2 text-sm font-semibold text-emerald-50 shadow-sm hover:bg-emerald-400/20"
+            >
+              Preview Activation
+            </button>
+          ) : null}
           {hasPaymentNavigation ? (
             <a
               data-testid="agreement-workspace-nav-payments"
@@ -3725,6 +3771,212 @@ export default function AgreementDetail({
           </div>
         </section>
       ) : null}
+
+      <div
+        data-testid="agreement-workspace-panel-activation"
+        className={workspaceTab === 'activation' ? 'space-y-4' : 'hidden'}
+      >
+        <section className="rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
+                Project Activation
+              </div>
+              <h3 className="mt-1 text-xl font-bold text-white">
+                Activation Preview
+              </h3>
+              <p className="mt-1 max-w-3xl text-sm text-sky-100/75">
+                Preview only. No assignments or schedules are created.
+              </p>
+            </div>
+            <span className="inline-flex w-fit rounded-full border border-blue-200/30 bg-blue-400/15 px-3 py-1 text-xs font-bold text-blue-50">
+              Read-only
+            </span>
+          </div>
+
+          {activationPreviewLoading ? (
+            <div
+              data-testid="activation-preview-loading"
+              className="mt-4 rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-semibold text-sky-100"
+            >
+              Loading activation preview...
+            </div>
+          ) : null}
+
+          {activationPreviewError ? (
+            <div
+              data-testid="activation-preview-error"
+              className="mt-4 rounded-xl border border-rose-300/30 bg-rose-400/15 px-4 py-3 text-sm font-semibold text-rose-50"
+            >
+              {activationPreviewError}
+            </div>
+          ) : null}
+
+          {!activationPreviewLoading && !activationPreviewError && activationPreview ? (
+            <div data-testid="activation-preview-content" className="mt-5 space-y-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <SummaryCard
+                  label="Suggested Start"
+                  value={formatPlanningDate(activationPreview.suggested_schedule?.start_date)}
+                  className="border-white/10 bg-white/10 text-white"
+                />
+                <SummaryCard
+                  label="Suggested Finish"
+                  value={formatPlanningDate(activationPreview.suggested_schedule?.finish_date)}
+                  className="border-white/10 bg-white/10 text-white"
+                />
+                <SummaryCard
+                  label="Planning Confidence"
+                  value={
+                    activationPreview.suggested_schedule?.confidence != null
+                      ? `${activationPreview.suggested_schedule.confidence}%`
+                      : 'Not set'
+                  }
+                  className="border-white/10 bg-white/10 text-white"
+                />
+                <SummaryCard
+                  label="Milestones"
+                  value={`${activationPreview.milestone_timeline_summary?.length || 0} planned`}
+                  className="border-white/10 bg-white/10 text-white"
+                />
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+                <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h4 className="text-base font-bold text-white">
+                      Readiness Checklist
+                    </h4>
+                    <span className="text-xs font-semibold text-sky-100/65">
+                      {activationPreview.blockers?.length || 0} blockers / {activationPreview.warnings?.length || 0} warnings
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-2" data-testid="activation-readiness-checklist">
+                    {(activationPreview.readiness_checklist || []).map((item) => (
+                      <div
+                        key={item.label}
+                        className="rounded-xl border border-white/10 bg-[#061d42]/70 px-3 py-2"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                              item.status === 'ready'
+                                ? 'bg-emerald-400/20 text-emerald-50'
+                                : item.status === 'blocked'
+                                  ? 'bg-rose-400/20 text-rose-50'
+                                  : 'bg-amber-400/20 text-amber-50'
+                            }`}
+                          >
+                            {titleCase(item.status)}
+                          </span>
+                          <span className="font-semibold text-white">{item.label}</span>
+                        </div>
+                        <div className="mt-1 text-sm text-sky-100/70">{item.detail}</div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <h4 className="text-base font-bold text-white">Customer Launch Preview</h4>
+                  <div
+                    data-testid="activation-customer-launch-preview"
+                    className="mt-3 rounded-xl border border-white/10 bg-[#061d42]/70 px-3 py-3 text-sm text-sky-100/75"
+                  >
+                    <div className="font-semibold text-white">
+                      {activationPreview.customer_visible_launch_summary_preview?.headline}
+                    </div>
+                    <div className="mt-2">
+                      {activationPreview.customer_visible_launch_summary_preview?.message}
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-sky-100/65">
+                      <div>Start: {formatPlanningDate(activationPreview.customer_visible_launch_summary_preview?.start_date)}</div>
+                      <div>Finish: {formatPlanningDate(activationPreview.customer_visible_launch_summary_preview?.finish_date)}</div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="grid gap-4 xl:grid-cols-3">
+                <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <h4 className="text-base font-bold text-white">Crew & Capability Needs</h4>
+                  <div className="mt-3 space-y-2" data-testid="activation-crew-needs">
+                    {(activationPreview.crew_capability_needs || []).length ? (
+                      activationPreview.crew_capability_needs.map((need) => (
+                        <div key={need.capability} className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm">
+                          <div className="font-semibold text-white">{need.capability}</div>
+                          <div className="text-sky-100/70">
+                            Need {need.needed}; {need.available} active match{Number(need.available) === 1 ? '' : 'es'}
+                            {need.gap ? `; gap ${need.gap}` : ''}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm text-sky-100/70">
+                        No capability mix was saved with planning assumptions.
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <h4 className="text-base font-bold text-white">Milestone Timeline</h4>
+                  <div className="mt-3 space-y-2" data-testid="activation-milestone-timeline">
+                    {(activationPreview.milestone_timeline_summary || []).map((row) => (
+                      <div key={row.id} className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm">
+                        <div className="font-semibold text-white">{row.order ? `${row.order}. ` : ''}{row.title}</div>
+                        <div className="text-sky-100/70">
+                          {formatPlanningDate(row.start_date)} to {formatPlanningDate(row.completion_date)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
+                  <h4 className="text-base font-bold text-white">Materials & Documents</h4>
+                  <div className="mt-3 space-y-2" data-testid="activation-material-notes">
+                    {(activationPreview.material_readiness_notes || []).map((row, index) => (
+                      <div key={`${row.milestone_id || 'note'}-${index}`} className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm text-sky-100/75">
+                        {row.milestone_title ? <div className="font-semibold text-white">{row.milestone_title}</div> : null}
+                        <div>{row.note}</div>
+                      </div>
+                    ))}
+                    <div className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm text-sky-100/75">
+                      Attachments: {activationPreview.document_summary?.attachment_count || 0}
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              {activationPreview.blockers?.length || activationPreview.warnings?.length ? (
+                <section className="grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-rose-300/25 bg-rose-400/10 p-4">
+                    <h4 className="font-bold text-rose-50">Blockers</h4>
+                    <ul className="mt-2 space-y-1 text-sm text-rose-50/85" data-testid="activation-blockers">
+                      {(activationPreview.blockers || []).length ? (
+                        activationPreview.blockers.map((row, index) => <li key={`${row.type}-${index}`}>- {row.message}</li>)
+                      ) : (
+                        <li>No blockers detected.</li>
+                      )}
+                    </ul>
+                  </div>
+                  <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4">
+                    <h4 className="font-bold text-amber-50">Warnings</h4>
+                    <ul className="mt-2 space-y-1 text-sm text-amber-50/85" data-testid="activation-warnings">
+                      {(activationPreview.warnings || []).length ? (
+                        activationPreview.warnings.map((row, index) => <li key={`${row.type}-${index}`}>- {row.message}</li>)
+                      ) : (
+                        <li>No warnings detected.</li>
+                      )}
+                    </ul>
+                  </div>
+                </section>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      </div>
 
       <div
         data-testid="agreement-workspace-panel-overview"

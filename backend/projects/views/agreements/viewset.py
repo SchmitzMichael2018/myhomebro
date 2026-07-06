@@ -54,6 +54,7 @@ from projects.services.agreements.pdf_actions import (
 )
 from projects.services.assisted_diy import build_assisted_diy_snapshot
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.project_activation import build_activation_preview
 
 from projects.services.agreement_completion import (
     check_agreement_completion,
@@ -643,6 +644,11 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         serializer.save()
+
+    @action(detail=True, methods=["get"], url_path="activation-preview")
+    def activation_preview(self, request, pk=None):
+        agreement = self.get_object()
+        return Response(build_activation_preview(agreement), status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="mark_complete")
     def mark_complete(self, request, pk=None):
