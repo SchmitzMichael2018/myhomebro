@@ -343,6 +343,13 @@ function formatMilestoneStartDate(m) {
   return d.toLocaleDateString();
 }
 
+function formatPlanningDate(value) {
+  if (!value) return "—";
+  const d = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
 function safeMilestoneStr(v) {
   return (v == null ? "" : String(v)).trim();
 }
@@ -765,6 +772,7 @@ export default function Step4Finalize({
   defaultWarrantyText,
   customWarranty,
   useDefaultWarranty,
+  milestonePlanningAssumptions = null,
   goBack,
   isEdit,
   unsignContractor,
@@ -1837,6 +1845,60 @@ export default function Step4Finalize({
             </div>
           </div>
         </section>
+
+        {milestonePlanningAssumptions ? (
+          <section
+            data-testid="step4-planning-assumptions"
+            className="mt-4 rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-4 shadow-sm"
+          >
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+                  Milestone planning assumptions
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  Planning only. Employees are not assigned until project activation.
+                </div>
+              </div>
+              <SummaryBadge tone="blue">Advisory</SummaryBadge>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
+              <SummaryCard label="Planned Start" value={formatPlanningDate(milestonePlanningAssumptions.planned_start_date)} />
+              <SummaryCard label="Planned Finish" value={formatPlanningDate(milestonePlanningAssumptions.planned_finish_date)} />
+              <SummaryCard label="Duration" value={`${milestonePlanningAssumptions.planned_duration_days || 0} working days`} />
+              <SummaryCard label="Crew" value={`${milestonePlanningAssumptions.planned_crew_size || 0} people`} />
+              <SummaryCard label="Labor Hours" value={`${milestonePlanningAssumptions.planned_labor_hours || 0} hours`} />
+              <SummaryCard label="Confidence" value={`${milestonePlanningAssumptions.planning_confidence || 0}%`} />
+              <SummaryCard
+                label="Labor Cost"
+                value={
+                  milestonePlanningAssumptions.labor_cost_configured
+                    ? formatMoney(milestonePlanningAssumptions.estimated_labor_cost)
+                    : "Not configured"
+                }
+              />
+              <SummaryCard label="Deadline" value={milestonePlanningAssumptions.deadline_feasibility || "Not assessed"} />
+            </div>
+            {Array.isArray(milestonePlanningAssumptions.planning_capability_mix) &&
+            milestonePlanningAssumptions.planning_capability_mix.length ? (
+              <div className="mt-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Capability mix</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {milestonePlanningAssumptions.planning_capability_mix.map((item) => (
+                    <span key={item.capability} className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-blue-100">
+                      {item.count} {item.capability}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {milestonePlanningAssumptions.planning_notes ? (
+              <div className="mt-3 rounded-xl border border-blue-100 bg-white px-3 py-2 text-sm font-medium text-slate-700">
+                {milestonePlanningAssumptions.planning_notes}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">

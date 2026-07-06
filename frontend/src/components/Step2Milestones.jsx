@@ -254,6 +254,166 @@ function formatDurationDays(days) {
   return `${n} day${n === 1 ? "" : "s"}`;
 }
 
+function todayDateOnly() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addPlanningDays(startValue, days, includeWeekends = false) {
+  const start = toDateOnly(startValue) || todayDateOnly();
+  const [y, m, d] = start.split("-").map(Number);
+  const current = new Date(y, m - 1, d);
+  const total = Math.max(1, Number(days || 1));
+  let added = 1;
+  while (added < total) {
+    current.setDate(current.getDate() + 1);
+    const weekday = current.getDay();
+    if (includeWeekends || (weekday !== 0 && weekday !== 6)) added += 1;
+  }
+  const mm = String(current.getMonth() + 1).padStart(2, "0");
+  const dd = String(current.getDate()).padStart(2, "0");
+  return `${current.getFullYear()}-${mm}-${dd}`;
+}
+
+function diffCalendarDays(startValue, endValue) {
+  const start = toDateOnly(startValue);
+  const end = toDateOnly(endValue);
+  if (!start || !end) return 0;
+  const [sy, sm, sd] = start.split("-").map(Number);
+  const [ey, em, ed] = end.split("-").map(Number);
+  const startDate = new Date(sy, sm - 1, sd);
+  const endDate = new Date(ey, em - 1, ed);
+  const diff = Math.round((endDate - startDate) / 86400000) + 1;
+  return Number.isFinite(diff) && diff > 0 ? diff : 0;
+}
+
+function durationDaysForPlanning(row) {
+  const explicit = Number(row?.recommended_duration_days || row?.duration_days || row?.duration || 0);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const fromDates = diffCalendarDays(row?.start_date || row?.start, row?.completion_date || row?.end_date || row?.end);
+  if (fromDates > 0) return fromDates;
+  return 3;
+}
+
+function planningCapabilityMix({ agreementMeta, assistantDraftPayload, milestones, crewSize }) {
+  const sourceText = [
+    agreementMeta?.project_type,
+    agreementMeta?.project_subtype,
+    agreementMeta?.description,
+    agreementMeta?.scope_of_work,
+    assistantDraftPayload?.description,
+    ...(Array.isArray(assistantDraftPayload?.proposal_line_items)
+      ? assistantDraftPayload.proposal_line_items.map((item) => `${item?.category || ""} ${item?.description || ""}`)
+      : []),
+    ...(Array.isArray(milestones) ? milestones.map((item) => `${item?.title || ""} ${item?.description || ""}`) : []),
+  ].join(" ").toLowerCase();
+
+  const capabilities = ["General Labor"];
+  const add = (name) => {
+    if (!capabilities.includes(name)) capabilities.push(name);
+  };
+  if (/\b(tile|bath|shower|backsplash)\b/.test(sourceText)) add("Tile");
+  if (/\b(plumb|toilet|sink|vanity|fixture)\b/.test(sourceText)) add("Plumbing");
+  if (/\b(electric|lighting|outlet|switch)\b/.test(sourceText)) add("Electrical");
+  if (/\b(paint|finish)\b/.test(sourceText)) add("Painting");
+  if (/\b(drywall|sheetrock|wall repair)\b/.test(sourceText)) add("Drywall");
+  if (/\b(floor|flooring|vinyl|hardwood)\b/.test(sourceText)) add("Flooring");
+  if (/\b(cabinet|carpentry|trim|door|window)\b/.test(sourceText)) add("Carpentry");
+  if (/\b(roof|gutter)\b/.test(sourceText)) add("Roofing");
+  if (/\b(concrete|masonry|brick|stone)\b/.test(sourceText)) add("Concrete");
+  if (/\b(demo|demolition|remove)\b/.test(sourceText)) add("Demolition");
+  if (/\b(clean|cleanup|haul)\b/.test(sourceText)) add("Cleanup");
+
+  const specialtyCount = Math.max(1, Math.min(capabilities.length, Number(crewSize || 1)));
+  return capabilities.slice(0, specialtyCount).map((capability, index) => ({
+    capability,
+    count: index === 0 ? Math.max(1, Number(crewSize || 1) - specialtyCount + 1) : 1,
+  }));
+}
+
+function calculateMilestonePlanning({
+  scenario,
+  agreementMeta,
+  assistantDraftPayload,
+  milestones,
+  workforceMembers,
+}) {
+  const rows = Array.isArray(milestones) ? milestones : [];
+  const baseDuration = Math.max(1, rows.reduce((sum, row) => sum + durationDaysForPlanning(row), 0) || 5);
+  const crewSize = Math.max(1, Number(scenario?.crewSize || 1));
+  const priority = safeStr(scenario?.priority || "balanced");
+  const speedFactor = priority === "fastest" ? 0.72 : priority === "lowest_labor" ? 1.18 : 1;
+  const crewFactor = Math.max(0.55, 1 - Math.min(crewSize - 1, 5) * 0.12);
+  const plannedDuration = Math.max(1, Math.ceil(baseDuration * speedFactor * crewFactor));
+  const plannedStart = toDateOnly(scenario?.desiredStartDate) || toDateOnly(agreementMeta?.project_start_date) || todayDateOnly();
+  const plannedFinish = toDateOnly(scenario?.desiredCompletionDate) || addPlanningDays(plannedStart, plannedDuration, !!scenario?.includeWeekends);
+  const laborHours = Math.max(1, Math.round(plannedDuration * crewSize * 8));
+  const activeMembers = (Array.isArray(workforceMembers) ? workforceMembers : []).filter((member) => member?.is_active !== false);
+  const capabilityMix = planningCapabilityMix({ agreementMeta, assistantDraftPayload, milestones: rows, crewSize });
+  const availableByCapability = new Map();
+  activeMembers.forEach((member) => {
+    (Array.isArray(member?.capabilities) ? member.capabilities : []).forEach((capability) => {
+      const name = safeStr(capability?.skill_name || capability?.skill_slug || "Capability");
+      if (!name) return;
+      availableByCapability.set(name.toLowerCase(), (availableByCapability.get(name.toLowerCase()) || 0) + 1);
+    });
+  });
+
+  const enrichedMix = capabilityMix.map((item) => ({
+    ...item,
+    available: availableByCapability.get(item.capability.toLowerCase()) || 0,
+  }));
+  const gaps = enrichedMix.filter((item) => item.available < item.count);
+  const loadedMembers = activeMembers.filter((member) => Number(member?.active_assignment_count || 0) > 0);
+  const deadlineDays = diffCalendarDays(plannedStart, scenario?.desiredCompletionDate);
+  const deadlineFeasible = !scenario?.desiredCompletionDate || plannedDuration <= Math.max(1, deadlineDays);
+  const laborRates = activeMembers
+    .map((member) => Number(member?.calculated_effective_hourly_cost || member?.hourly_cost || 0))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const avgLaborRate = laborRates.length
+    ? laborRates.reduce((sum, value) => sum + value, 0) / laborRates.length
+    : null;
+  const estimatedLaborCost = avgLaborRate ? Math.round(avgLaborRate * laborHours * 100) / 100 : null;
+  const confidence = Math.max(
+    35,
+    Math.min(
+      92,
+      74 + (rows.length ? 8 : -8) + (activeMembers.length ? 6 : -10) - gaps.length * 8 - (deadlineFeasible ? 0 : 14)
+    )
+  );
+
+  const risks = [];
+  if (!activeMembers.length) risks.push("No active employees were available from the team API.");
+  if (gaps.length) risks.push(`Capability gap: ${gaps.map((item) => item.capability).join(", ")}.`);
+  if (loadedMembers.length) risks.push(`${loadedMembers.length} active employee${loadedMembers.length === 1 ? "" : "s"} already show assigned work.`);
+  if (!deadlineFeasible) risks.push("Desired completion date is tight for the current scenario.");
+  if (!rows.length) risks.push("Add milestones to improve timing confidence.");
+  if (!risks.length) risks.push("No major planning risks detected from available data.");
+
+  return {
+    planned_start_date: plannedStart,
+    planned_finish_date: plannedFinish,
+    planned_duration_days: plannedDuration,
+    planned_crew_size: crewSize,
+    planned_labor_hours: laborHours,
+    planning_confidence: confidence,
+    planning_notes: risks.join(" "),
+    planning_capability_mix: enrichedMix,
+    estimated_labor_cost: estimatedLaborCost,
+    labor_cost_configured: !!avgLaborRate,
+    recommended_start_date: plannedStart,
+    recommended_finish_date: plannedFinish,
+    estimated_total_working_days: plannedDuration,
+    recommended_crew_size: crewSize,
+    recommended_capability_mix: enrichedMix,
+    bottlenecks: risks,
+    deadline_feasibility: deadlineFeasible ? "Feasible" : "At risk",
+  };
+}
+
 function InsightCard({
   title,
   body,
@@ -1158,6 +1318,9 @@ export default function Step2Milestones({
   assistantProactiveRecommendations = [],
   assistantPredictiveInsights = [],
   assistantGuidedFlow = {},
+  assistantDraftPayload = {},
+  planningAssumptions = null,
+  onPlanningAssumptionsChange = () => {},
   projectFamilyContext = {},
   onAiUpdateFeedback = () => {},
 }) {
@@ -1187,6 +1350,21 @@ export default function Step2Milestones({
   const [spreadEnabled, setSpreadEnabled] = useState(true);
   const [spreadTotal, setSpreadTotal] = useState("");
   const [autoSchedule, setAutoSchedule] = useState(false);
+  const [planningScenario, setPlanningScenario] = useState(() => ({
+    crewSize: String(planningAssumptions?.planned_crew_size || 2),
+    desiredStartDate:
+      planningAssumptions?.planned_start_date ||
+      assistantDraftPayload?.project_start_date ||
+      "",
+    desiredCompletionDate:
+      planningAssumptions?.planned_finish_date ||
+      assistantDraftPayload?.project_completion_date ||
+      "",
+    includeWeekends: false,
+    priority: "balanced",
+  }));
+  const [workforceMembers, setWorkforceMembers] = useState([]);
+  const [workforceLoading, setWorkforceLoading] = useState(false);
 
   const [milestonesLocked, setMilestonesLocked] = useState(false);
   const [milestonesLockReason, setMilestonesLockReason] = useState("");
@@ -2952,6 +3130,43 @@ export default function Step2Milestones({
       .slice(-1)[0];
     return e || "";
   }, [effectiveMilestones]);
+
+  useEffect(() => {
+    let active = true;
+    setWorkforceLoading(true);
+    api
+      .get("/projects/subaccounts/", { params: { page_size: 100 } })
+      .then(({ data }) => {
+        if (!active) return;
+        setWorkforceMembers(Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : []);
+      })
+      .catch(() => {
+        if (!active) return;
+        setWorkforceMembers([]);
+      })
+      .finally(() => {
+        if (active) setWorkforceLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const planningSimulation = useMemo(
+    () =>
+      calculateMilestonePlanning({
+        scenario: planningScenario,
+        agreementMeta: agreementMeta || {},
+        assistantDraftPayload: assistantDraftPayload || {},
+        milestones: effectiveMilestones,
+        workforceMembers,
+      }),
+    [agreementMeta, assistantDraftPayload, effectiveMilestones, planningScenario, workforceMembers]
+  );
+
+  useEffect(() => {
+    onPlanningAssumptionsChange(planningSimulation);
+  }, [onPlanningAssumptionsChange, planningSimulation]);
 
   const clarificationsAgreementMeta = useMemo(() => {
     const base = agreementMeta || {};
@@ -5103,6 +5318,144 @@ export default function Step2Milestones({
         effectiveMilestones={effectiveMilestones}
         paymentStructure={paymentStructure}
       />
+
+      <section
+        data-testid="milestone-planning-panel"
+        className="rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-4 shadow-sm"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-blue-700">Milestone Planning Simulation</div>
+            <h3 className="mt-1 text-lg font-black text-slate-950">Plan timing and crew assumptions before sending</h3>
+            <p className="mt-1 text-sm font-semibold leading-6 text-slate-700">
+              Planning only. Employees are not assigned until project activation.
+            </p>
+          </div>
+          <span className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-black text-blue-700">
+            No assignments created
+          </span>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-5" data-testid="milestone-planning-controls">
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-600">Crew size</span>
+            <input
+              type="number"
+              min="1"
+              max="12"
+              value={planningScenario.crewSize}
+              onChange={(event) => setPlanningScenario((prev) => ({ ...prev, crewSize: event.target.value }))}
+              data-testid="planning-crew-size"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-600">Desired start</span>
+            <input
+              type="date"
+              value={planningScenario.desiredStartDate}
+              onChange={(event) => setPlanningScenario((prev) => ({ ...prev, desiredStartDate: event.target.value }))}
+              data-testid="planning-start-date"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-600">Desired completion</span>
+            <input
+              type="date"
+              value={planningScenario.desiredCompletionDate}
+              onChange={(event) => setPlanningScenario((prev) => ({ ...prev, desiredCompletionDate: event.target.value }))}
+              data-testid="planning-completion-date"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs font-bold uppercase tracking-wide text-slate-600">Priority</span>
+            <select
+              value={planningScenario.priority}
+              onChange={(event) => setPlanningScenario((prev) => ({ ...prev, priority: event.target.value }))}
+              data-testid="planning-priority"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950"
+            >
+              <option value="fastest">Fastest</option>
+              <option value="balanced">Balanced</option>
+              <option value="lowest_labor">Lowest labor</option>
+            </select>
+          </label>
+          <label className="flex items-end gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={planningScenario.includeWeekends}
+              onChange={(event) => setPlanningScenario((prev) => ({ ...prev, includeWeekends: event.target.checked }))}
+              data-testid="planning-include-weekends"
+            />
+            Include weekends
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4" data-testid="milestone-planning-output">
+          <div className="rounded-xl border border-blue-100 bg-white px-3 py-3">
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">Recommended start</div>
+            <div className="mt-1 text-sm font-black text-slate-950" data-testid="planning-recommended-start">
+              {friendly(planningSimulation.recommended_start_date)}
+            </div>
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-white px-3 py-3">
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">Recommended finish</div>
+            <div className="mt-1 text-sm font-black text-slate-950" data-testid="planning-recommended-finish">
+              {friendly(planningSimulation.recommended_finish_date)}
+            </div>
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-white px-3 py-3">
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">Working days</div>
+            <div className="mt-1 text-sm font-black text-slate-950" data-testid="planning-working-days">
+              {planningSimulation.estimated_total_working_days}
+            </div>
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-white px-3 py-3">
+            <div className="text-[10px] font-black uppercase tracking-wide text-slate-500">Confidence</div>
+            <div className="mt-1 text-sm font-black text-slate-950" data-testid="planning-confidence">
+              {planningSimulation.planning_confidence}%
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_1fr]">
+          <div className="rounded-xl border border-blue-100 bg-white px-3 py-3">
+            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Crew assumption</div>
+            <div className="mt-2 text-sm font-semibold text-slate-800" data-testid="planning-crew-summary">
+              {planningSimulation.recommended_crew_size} people · {planningSimulation.planned_labor_hours} labor hours
+            </div>
+            <div className="mt-1 text-xs font-semibold text-slate-600">
+              Labor cost: {planningSimulation.labor_cost_configured ? formatCurrency(planningSimulation.estimated_labor_cost) : "Not configured"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-white px-3 py-3">
+            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Capability mix</div>
+            <div className="mt-2 flex flex-wrap gap-2" data-testid="planning-capability-mix">
+              {planningSimulation.recommended_capability_mix.map((item) => (
+                <span key={item.capability} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">
+                  {item.count} {item.capability} · {item.available} available
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-xl border border-blue-100 bg-white px-3 py-3">
+            <div className="text-xs font-black uppercase tracking-wide text-slate-500">Risks</div>
+            <ul className="mt-2 space-y-1 text-xs font-semibold text-slate-700" data-testid="planning-risks">
+              {planningSimulation.bottlenecks.map((risk) => (
+                <li key={risk}>- {risk}</li>
+              ))}
+            </ul>
+            <div className="mt-2 text-xs font-black text-slate-800">
+              Deadline: {planningSimulation.deadline_feasibility}
+            </div>
+          </div>
+        </div>
+        {workforceLoading ? (
+          <div className="mt-3 text-xs font-semibold text-blue-700">Loading workforce context...</div>
+        ) : null}
+      </section>
 
       <section
         data-testid="step2-subcontractor-plan-panel"

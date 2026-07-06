@@ -534,6 +534,7 @@ export default function AgreementWizard() {
   const [milestones, setMilestones] = useState([]);
   const [mLocal, setMLocal] = useState(EMPTY_MLOCAL);
   const [editMilestone, setEditMilestone] = useState(null);
+  const [milestonePlanningAssumptions, setMilestonePlanningAssumptions] = useState(null);
 
   const [projectTypes, setProjectTypes] = useState([]);
   const [projectSubtypes, setProjectSubtypes] = useState([]);
@@ -2454,6 +2455,9 @@ export default function AgreementWizard() {
             assistantProactiveRecommendations={assistantHandoff.proactiveRecommendations}
             assistantPredictiveInsights={assistantHandoff.predictiveInsights}
             assistantGuidedFlow={assistantHandoff.guidedFlow}
+            assistantDraftPayload={assistantDraftPayload}
+            planningAssumptions={milestonePlanningAssumptions}
+            onPlanningAssumptionsChange={setMilestonePlanningAssumptions}
             onAiUpdateFeedback={(message) =>
               setAiFeedbackByStep((prev) => ({ ...prev, 2: message || "" }))
             }
@@ -2507,6 +2511,7 @@ export default function AgreementWizard() {
             defaultWarrantyText={DEFAULT_WARRANTY}
             customWarranty={customWarranty}
             useDefaultWarranty={useDefaultWarranty}
+            milestonePlanningAssumptions={milestonePlanningAssumptions}
             goBack={() => goStep(3)}
             isEdit={!!agreementId}
             unsignContractor={unsignContractor}
