@@ -18,7 +18,7 @@ function emptyResults() {
   return { results: [] };
 }
 
-async function mockDashboard(page, { proposalId = 501, onProposalCreate = null } = {}) {
+async function mockDashboard(page, { proposalId = 501, onProposalCreate = null, agreementRows = [] } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
     window.localStorage.setItem("mhb_last_login_ts", String(Date.now()));
@@ -75,6 +75,14 @@ async function mockDashboard(page, { proposalId = 501, onProposalCreate = null }
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ results: customers }),
+      });
+    }
+
+    if (path.endsWith("/api/projects/agreements/")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ results: agreementRows }),
       });
     }
 
@@ -278,4 +286,30 @@ test("dashboard quick action navigation stays wired", async ({ page }) => {
   await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
   await page.getByTestId("dashboard-quick-action-payment").click();
   await expect(page).toHaveURL(/\/app\/payments$/);
+});
+
+test("dashboard surfaces internal agreement planning alerts", async ({ page }) => {
+  await mockDashboard(page, {
+    agreementRows: [
+      {
+        id: 882,
+        project_title: "Kitchen Remodel",
+        status: "draft",
+        planning_validation_status: "needs_review",
+        planning_validation_checked_at: "2026-07-06T12:00:00Z",
+        planning_validation_summary: {
+          status: "needs_review",
+          reason: "Timeline overlaps committed work or lacks complete planning context.",
+        },
+      },
+    ],
+  });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("dashboard-next-action-item-planning-validation:882:needs_review")).toContainText(
+    "Kitchen Remodel timeline needs review"
+  );
+  await expect(page.getByTestId("dashboard-next-action-button-planning-validation:882:needs_review")).toContainText(
+    "Review timeline"
+  );
 });

@@ -32,6 +32,7 @@ import stripe
 from projects.models import Agreement, AgreementFundingLink, Milestone
 from projects.services.contractor_onboarding import build_stripe_requirement_payload
 from projects.services.mailer import email_escrow_funding_request
+from projects.services.planning_validation import revalidate_unsigned_pipeline_for_committed_agreement
 from payments.fees import (
     compute_fee_summary,
     INTRO_DAYS,
@@ -122,6 +123,11 @@ def _sync_funding_flags(agreement: Agreement, *, heal_total: bool = True, persis
             try:
                 agreement.escrow_funded = is_funded
                 agreement.save(update_fields=["escrow_funded"])
+                if is_funded:
+                    try:
+                        revalidate_unsigned_pipeline_for_committed_agreement(agreement)
+                    except Exception:
+                        logger.exception("Planning pipeline revalidation failed for Agreement %s", agreement.id)
             except Exception as e:
                 logger.warning("Could not self-heal escrow_funded for Agreement %s: %s", agreement.id, e)
 

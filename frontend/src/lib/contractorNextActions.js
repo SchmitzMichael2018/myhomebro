@@ -288,6 +288,55 @@ export function getContractorNextActions({
     actions.push(mappedNextBestAction);
   }
 
+  const planningAlerts = [...(Array.isArray(agreements) ? agreements : [])].filter((agreement) => {
+    const status = normalizeStatus(agreement?.planning_validation_status || agreement?.planning_validation_summary?.status);
+    const agreementStatus = normalizeStatus(agreement?.status || agreement?.agreement_status || agreement?.state);
+    if (!["needs_review", "hard_conflict"].includes(status)) return false;
+    return !["completed", "cancelled"].includes(agreementStatus);
+  });
+  for (const agreement of planningAlerts.slice(0, 3)) {
+    const validationStatus = normalizeStatus(agreement?.planning_validation_status || agreement?.planning_validation_summary?.status);
+    const title = pickFirst(
+      agreement?.project_title,
+      agreement?.title,
+      agreement?.project?.title,
+      agreement?.project_title_snapshot,
+      `Agreement #${agreement?.id || ""}`
+    );
+    const hardConflict = validationStatus === "hard_conflict";
+    actions.push(
+      buildAction({
+        key: `planning-validation:${agreement?.id || title}:${validationStatus}`,
+        dedupeKey: `planning-validation:${agreement?.id || title}`,
+        title: hardConflict
+          ? `${title} has a hard labor conflict`
+          : `${title} timeline needs review`,
+        description:
+          agreement?.planning_validation_summary?.reason ||
+          "The saved planning assumptions should be reviewed before this agreement is sent or activated.",
+        buttonLabel: "Review timeline",
+        navigationTarget: agreement?.id
+          ? `/app/agreements/${agreement.id}/wizard?step=2`
+          : "/app/agreements?focus=needs_attention",
+        priorityScore: hardConflict ? 96 : 82,
+        category: "attention",
+        source: "planning_validation",
+        actionType: "review_agreement_timeline",
+        summary: hardConflict
+          ? `${title} has a hard labor conflict.`
+          : `${title} timeline needs review.`,
+        reason:
+          agreement?.planning_validation_summary?.reason ||
+          "Signed and funded work changed the pipeline assumptions for this draft.",
+        estimatedEffort: "4 minutes",
+        urgency: hardConflict ? "Critical" : "Today",
+        project: title,
+        updatedAt: agreement?.planning_validation_checked_at || agreement?.updated_at,
+        blocking: hardConflict,
+      })
+    );
+  }
+
   const latestWebsiteLead = latestByDate(
     (Array.isArray(publicLeads) ? publicLeads : []).filter((row) => isWebsiteLeadRow(row) && isUnhandledLeadStatus(row)),
     (row) => row?.submitted_at || row?.created_at || row?.updated_at

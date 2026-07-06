@@ -1510,6 +1510,23 @@ class Agreement(models.Model):
         blank=True,
         help_text="Advisory milestone planning snapshot captured from the Agreement Wizard. No assignments or schedules are created from this field.",
     )
+    planning_validation_status = models.CharField(
+        max_length=24,
+        blank=True,
+        default="",
+        db_index=True,
+        help_text="Internal advisory timeline validation status. Customer-facing portals must not expose this field.",
+    )
+    planning_validation_checked_at = models.DateTimeField(null=True, blank=True)
+    planning_validation_summary = models.JSONField(default=dict, blank=True)
+    planning_validation_acknowledged_at = models.DateTimeField(null=True, blank=True)
+    planning_validation_acknowledged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="acknowledged_agreement_planning_validations",
+    )
 
     standardized_category = models.CharField(
         max_length=100, blank=True, db_index=True

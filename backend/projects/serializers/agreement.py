@@ -612,6 +612,11 @@ class AgreementSerializer(serializers.ModelSerializer):
     recurring_summary_label = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     step_status = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     planning_assumptions = serializers.JSONField(required=False, allow_null=True)
+    planning_validation_status = serializers.CharField(read_only=True)
+    planning_validation_checked_at = serializers.DateTimeField(read_only=True)
+    planning_validation_summary = serializers.JSONField(read_only=True)
+    planning_validation_acknowledged_at = serializers.DateTimeField(read_only=True)
+    planning_validation_acknowledged_by = serializers.PrimaryKeyRelatedField(read_only=True)
 
     project_address_line1 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     project_address_line2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)

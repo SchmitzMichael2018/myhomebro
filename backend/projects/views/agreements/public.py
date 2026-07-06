@@ -20,6 +20,7 @@ from projects.services.subcontractor_quotes import assert_pricing_ready_for_agre
 from projects.services.notification_center import create_notification
 from projects.services.agreements.pdf_stream import serve_public_pdf
 from projects.services.agreements.pdf_loader import load_pdf_services
+from projects.services.planning_validation import revalidate_unsigned_pipeline_for_committed_agreement
 from projects.views.funding import send_funding_link_for_agreement
 from projects.views.customer_portal import _portal_token
 
@@ -318,6 +319,10 @@ def agreement_public_sign(request):
 
     # Auto-send final copy (guarded)
     maybe_send_final_copy_after_homeowner_sign(ag, was_homeowner_signed=was_homeowner_signed)
+    try:
+        revalidate_unsigned_pipeline_for_committed_agreement(ag)
+    except Exception:
+        pass
     try:
         create_notification(
             contractor=getattr(ag, "contractor", None),

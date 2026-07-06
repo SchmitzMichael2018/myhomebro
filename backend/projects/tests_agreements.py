@@ -15,6 +15,12 @@ from projects.models import (
     Project,
     Skill,
 )
+from projects.services.planning_validation import (
+    STATUS_HARD_CONFLICT,
+    STATUS_NEEDS_REVIEW,
+    STATUS_VALIDATED,
+    revalidate_unsigned_pipeline_for_committed_agreement,
+)
 
 
 def _use_secure_requests(client):
@@ -252,3 +258,136 @@ class AgreementActivationPreviewTests(TestCase):
         self.assertTrue(response.data["source_summary"]["funding_ready"])
         self.assertEqual(response.data["source_summary"]["payment_mode"], "direct")
         self.assertEqual(response.data["blockers"], [])
+
+
+class AgreementPlanningValidationTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(
+            email="validation-owner@example.com",
+            password="test-pass-123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Validation Co",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Riley Customer",
+            email="riley-validation@example.com",
+        )
+        self.client = _use_secure_requests(APIClient())
+        self.client.force_authenticate(user=self.user)
+        self.skill, _ = Skill.objects.get_or_create(slug="painting", defaults={"name": "Painting"})
+        employee_user = User.objects.create_user(
+            email="validation-employee@example.com",
+            password="test-pass-123",
+        )
+        self.employee = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=employee_user,
+            display_name="Parker Painter",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+            is_active=True,
+        )
+        EmployeeCapability.objects.create(
+            subaccount=self.employee,
+            skill=self.skill,
+            skill_level="skilled",
+        )
+
+    def _agreement(self, *, title, start="2026-09-01", finish="2026-09-05", committed=False):
+        project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title=title,
+        )
+        agreement = Agreement.objects.create(
+            project=project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            payment_mode="direct",
+            status="draft",
+            description=f"{title} scope.",
+            total_cost="1000.00",
+            signed_by_contractor=committed,
+            signed_by_homeowner=committed,
+            start=start,
+            end=finish,
+            planning_assumptions={
+                "planned_start_date": start,
+                "planned_finish_date": finish,
+                "planned_duration_days": 5,
+                "planned_crew_size": 1,
+                "planned_labor_hours": 40,
+                "planning_confidence": 75,
+                "planning_capability_mix": [
+                    {"capability": "Painting", "count": 1, "available": 1},
+                ],
+                "planning_priority": "balanced",
+                "include_weekends": False,
+            },
+        )
+        Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title=f"{title} milestone",
+            amount="1000.00",
+            start_date=start,
+            completion_date=finish,
+            recommended_duration_days=5,
+        )
+        return agreement
+
+    def test_planning_validation_endpoint_returns_validated_without_mutations(self):
+        agreement = self._agreement(title="Standalone Draft")
+
+        response = self.client.post(f"/api/projects/agreements/{agreement.id}/planning-validation/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        agreement.refresh_from_db()
+        self.assertEqual(agreement.planning_validation_status, STATUS_VALIDATED)
+        self.assertEqual(response.data["summary"]["status"], STATUS_VALIDATED)
+        self.assertEqual(AgreementAssignment.objects.count(), 0)
+        self.assertEqual(MilestoneAssignment.objects.count(), 0)
+        self.assertEqual(EmployeeWorkSchedule.objects.count(), 0)
+
+    def test_hard_conflict_requires_acknowledgement_and_dates_do_not_change(self):
+        committed = self._agreement(title="Signed Kitchen", committed=True)
+        AgreementAssignment.objects.create(agreement=committed, subaccount=self.employee)
+        draft = self._agreement(title="Unsigned Bathroom")
+        original_start = draft.start
+        original_end = draft.end
+
+        response = self.client.post(f"/api/projects/agreements/{draft.id}/planning-validation/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        draft.refresh_from_db()
+        self.assertEqual(draft.planning_validation_status, STATUS_HARD_CONFLICT)
+        self.assertIsNone(draft.planning_validation_acknowledged_at)
+        self.assertEqual(str(draft.start), str(original_start))
+        self.assertEqual(str(draft.end), str(original_end))
+
+        ack = self.client.post(f"/api/projects/agreements/{draft.id}/acknowledge-planning-validation/")
+        self.assertEqual(ack.status_code, 200, ack.data)
+        draft.refresh_from_db()
+        self.assertEqual(draft.planning_validation_status, STATUS_HARD_CONFLICT)
+        self.assertIsNotNone(draft.planning_validation_acknowledged_at)
+        self.assertEqual(draft.planning_validation_acknowledged_by, self.user)
+        self.assertEqual(MilestoneAssignment.objects.count(), 0)
+        self.assertEqual(EmployeeWorkSchedule.objects.count(), 0)
+
+    def test_committed_agreement_revalidates_overlapping_unsigned_pipeline(self):
+        draft = self._agreement(title="Pipeline Bathroom")
+        committed = self._agreement(title="Funded Kitchen", committed=True)
+        AgreementAssignment.objects.create(agreement=committed, subaccount=self.employee)
+
+        results = revalidate_unsigned_pipeline_for_committed_agreement(committed)
+
+        draft.refresh_from_db()
+        self.assertTrue(results)
+        self.assertIn(draft.planning_validation_status, [STATUS_HARD_CONFLICT, STATUS_NEEDS_REVIEW])
+        self.assertEqual(draft.planning_assumptions["planned_start_date"], "2026-09-01")
+        self.assertEqual(AgreementAssignment.objects.count(), 1)
+        self.assertEqual(MilestoneAssignment.objects.count(), 0)
+        self.assertEqual(EmployeeWorkSchedule.objects.count(), 0)

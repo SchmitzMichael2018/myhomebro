@@ -3529,6 +3529,29 @@ export default function AgreementDetail({
     : [];
   const hasPlanningAssumptions =
     !!planningAssumptions && Object.keys(planningAssumptions).length > 0;
+  const planningValidationStatus = String(
+    agreement?.planning_validation_status ||
+      agreement?.planning_validation_summary?.status ||
+      ''
+  ).toLowerCase();
+  const planningValidationSummary =
+    agreement?.planning_validation_summary &&
+    typeof agreement.planning_validation_summary === 'object'
+      ? agreement.planning_validation_summary
+      : null;
+  const showPlanningValidationBanner =
+    !isAdminMode &&
+    ['validated', 'needs_review', 'hard_conflict'].includes(
+      planningValidationStatus
+    );
+  const planningValidationLabel =
+    planningValidationStatus === 'validated'
+      ? 'Validated'
+      : planningValidationStatus === 'hard_conflict'
+        ? 'Hard Conflict'
+        : planningValidationStatus === 'needs_review'
+          ? 'Needs Review'
+          : 'Not checked';
   const pageEyebrow = isAdminMode ? 'Admin' : 'Core';
   const pageTitle = isAdminMode
     ? 'Admin Agreement Detail'
@@ -3722,6 +3745,53 @@ export default function AgreementDetail({
           </div>
         </div>
       </section>
+
+      {showPlanningValidationBanner ? (
+        <section
+          data-testid="agreement-planning-validation-banner"
+          className={`rounded-2xl border px-4 py-3 shadow-sm ${
+            planningValidationStatus === 'validated'
+              ? 'border-emerald-300/30 bg-emerald-400/12 text-emerald-50'
+              : planningValidationStatus === 'hard_conflict'
+                ? 'border-rose-300/30 bg-rose-400/14 text-rose-50'
+                : 'border-amber-300/30 bg-amber-400/14 text-amber-50'
+          }`}
+        >
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full border border-white/20 bg-white/12 px-2.5 py-1 text-xs font-black uppercase">
+                  Planning {planningValidationLabel}
+                </span>
+                {agreement?.planning_validation_acknowledged_at ? (
+                  <span className="rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-bold">
+                    Acknowledged
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-2 text-sm font-semibold leading-6">
+                {planningValidationSummary?.reason ||
+                  'Internal planning validation is available for this agreement timeline.'}
+              </div>
+              {planningValidationSummary?.recommended_timeline?.start_date ? (
+                <div className="mt-1 text-xs font-semibold opacity-90">
+                  Recommended adjustment:{' '}
+                  {formatPlanningDate(planningValidationSummary.recommended_timeline.start_date)} to{' '}
+                  {formatPlanningDate(planningValidationSummary.recommended_timeline.finish_date)}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              data-testid="agreement-planning-validation-review"
+              onClick={() => navigate(`/app/agreements/${id}/wizard?step=2`)}
+              className="self-start rounded-xl border border-white/20 bg-white/12 px-3 py-2 text-sm font-bold text-white hover:bg-white/18 lg:self-center"
+            >
+              Review Timeline
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <nav
         data-testid="agreement-workspace-tabs"

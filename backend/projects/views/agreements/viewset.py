@@ -55,6 +55,10 @@ from projects.services.agreements.pdf_actions import (
 from projects.services.assisted_diy import build_assisted_diy_snapshot
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
 from projects.services.project_activation import build_activation_preview
+from projects.services.planning_validation import (
+    revalidate_unsigned_pipeline_for_committed_agreement,
+    validate_agreement_planning,
+)
 
 from projects.services.agreement_completion import (
     check_agreement_completion,
@@ -464,6 +468,16 @@ class AgreementViewSet(viewsets.ModelViewSet):
         except Exception:
             return False
 
+    def _revalidate_pipeline_if_committed(self, ag: Agreement) -> None:
+        try:
+            revalidate_unsigned_pipeline_for_committed_agreement(ag)
+        except Exception as exc:
+            print(
+                "Planning pipeline revalidation skipped:",
+                repr(exc),
+                file=sys.stderr,
+            )
+
     def _auto_finalize_if_signature_satisfied_transition(
         self, *, before: bool, ag: Agreement
     ) -> None:
@@ -613,6 +627,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         self._auto_finalize_if_signature_satisfied_transition(
             before=satisfied_before, ag=serializer.instance
         )
+        self._revalidate_pipeline_if_committed(serializer.instance)
         return Response(serializer.data)
 
     def partial_update(self, request, *args, **kwargs):
@@ -640,6 +655,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         self._auto_finalize_if_signature_satisfied_transition(
             before=satisfied_before, ag=serializer.instance
         )
+        self._revalidate_pipeline_if_committed(serializer.instance)
         return Response(serializer.data)
 
     def perform_update(self, serializer):
@@ -649,6 +665,42 @@ class AgreementViewSet(viewsets.ModelViewSet):
     def activation_preview(self, request, pk=None):
         agreement = self.get_object()
         return Response(build_activation_preview(agreement), status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="planning-validation")
+    def planning_validation(self, request, pk=None):
+        agreement = self.get_object()
+        summary = validate_agreement_planning(agreement, persist=True)
+        agreement.refresh_from_db()
+        return Response(
+            {
+                "agreement_id": agreement.id,
+                "status": agreement.planning_validation_status,
+                "checked_at": agreement.planning_validation_checked_at,
+                "acknowledged_at": agreement.planning_validation_acknowledged_at,
+                "summary": summary,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    @action(detail=True, methods=["post"], url_path="acknowledge-planning-validation")
+    def acknowledge_planning_validation(self, request, pk=None):
+        agreement = self.get_object()
+        summary = validate_agreement_planning(
+            agreement,
+            persist=True,
+            acknowledged_by=request.user,
+        )
+        agreement.refresh_from_db()
+        return Response(
+            {
+                "agreement_id": agreement.id,
+                "status": agreement.planning_validation_status,
+                "checked_at": agreement.planning_validation_checked_at,
+                "acknowledged_at": agreement.planning_validation_acknowledged_at,
+                "summary": summary,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     @action(detail=True, methods=["post"], url_path="mark_complete")
     def mark_complete(self, request, pk=None):
@@ -1062,6 +1114,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
             before=satisfied_before,
             ag=ag,
         )
+        self._revalidate_pipeline_if_committed(ag)
 
         ser = self.get_serializer(ag)
         return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)

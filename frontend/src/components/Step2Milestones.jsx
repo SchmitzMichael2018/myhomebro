@@ -1418,6 +1418,9 @@ export default function Step2Milestones({
   }, [newMilestoneOpen]);
 
   const [agreementMeta, setAgreementMeta] = useState(null);
+  const [planningValidation, setPlanningValidation] = useState(null);
+  const [planningValidationLoading, setPlanningValidationLoading] = useState(false);
+  const [planningValidationError, setPlanningValidationError] = useState("");
   const [acceptedSubcontractors, setAcceptedSubcontractors] = useState([]);
   const [subcontractorsLoading, setSubcontractorsLoading] = useState(false);
   const [subcontractorAssignTarget, setSubcontractorAssignTarget] = useState(null);
@@ -3173,6 +3176,63 @@ export default function Step2Milestones({
     onPlanningAssumptionsChange(planningSimulation);
   }, [onPlanningAssumptionsChange, planningSimulation]);
 
+  const currentPlanningValidation = useMemo(() => {
+    if (planningValidation) return planningValidation;
+    if (agreementMeta?.planning_validation_summary && typeof agreementMeta.planning_validation_summary === "object") {
+      return {
+        status: agreementMeta.planning_validation_status || agreementMeta.planning_validation_summary.status || "",
+        summary: agreementMeta.planning_validation_summary,
+        checked_at: agreementMeta.planning_validation_checked_at || "",
+        acknowledged_at: agreementMeta.planning_validation_acknowledged_at || "",
+      };
+    }
+    return null;
+  }, [agreementMeta, planningValidation]);
+
+  const planningValidationStatus = String(currentPlanningValidation?.status || currentPlanningValidation?.summary?.status || "").toLowerCase();
+  const planningValidationAcknowledged = Boolean(
+    currentPlanningValidation?.acknowledged_at ||
+      agreementMeta?.planning_validation_acknowledged_at
+  );
+  const planningValidationRequiresAcknowledgement =
+    planningValidationStatus === "needs_review" || planningValidationStatus === "hard_conflict";
+
+  async function validatePlanningTimeline({ acknowledge = false } = {}) {
+    if (!agreementId) return null;
+    setPlanningValidationLoading(true);
+    setPlanningValidationError("");
+    try {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      await persistAnswersToAgreement(null, { source: "user" });
+      const endpoint = acknowledge
+        ? `/projects/agreements/${agreementId}/acknowledge-planning-validation/`
+        : `/projects/agreements/${agreementId}/planning-validation/`;
+      const { data } = await api.post(endpoint, {});
+      const next = {
+        status: data?.status || data?.summary?.status || "",
+        summary: data?.summary || {},
+        checked_at: data?.checked_at || data?.summary?.checked_at || "",
+        acknowledged_at: data?.acknowledged_at || data?.summary?.acknowledged_at || "",
+      };
+      setPlanningValidation(next);
+      setAgreementMeta((prev) => ({
+        ...(prev || {}),
+        planning_validation_status: next.status,
+        planning_validation_checked_at: next.checked_at,
+        planning_validation_summary: next.summary,
+        planning_validation_acknowledged_at: next.acknowledged_at || prev?.planning_validation_acknowledged_at || "",
+      }));
+      return next;
+    } catch (err) {
+      const message = err?.response?.data?.detail || "Could not validate this planning timeline.";
+      setPlanningValidationError(message);
+      toast.error(message);
+      return null;
+    } finally {
+      setPlanningValidationLoading(false);
+    }
+  }
+
   const clarificationsAgreementMeta = useMemo(() => {
     const base = agreementMeta || {};
     const aiScope = base?.ai_scope || {};
@@ -4769,6 +4829,19 @@ export default function Step2Milestones({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     await persistAnswersToAgreement(null, { source: "user" });
 
+    if (agreementId) {
+      const validation = await validatePlanningTimeline();
+      const status = String(validation?.status || validation?.summary?.status || "").toLowerCase();
+      const acknowledged = Boolean(
+        validation?.acknowledged_at ||
+          agreementMeta?.planning_validation_acknowledged_at
+      );
+      if ((status === "needs_review" || status === "hard_conflict") && !acknowledged) {
+        toast.error("Acknowledge the planning validation warning before continuing.");
+        return;
+      }
+    }
+
     if (!clarReviewed) {
       pendingNextRef.current = true;
       setClarOpen(true);
@@ -5460,6 +5533,93 @@ export default function Step2Milestones({
         {workforceLoading ? (
           <div className="mt-3 text-xs font-semibold text-blue-700">Loading workforce context...</div>
         ) : null}
+
+        <div
+          data-testid="planning-validation-panel"
+          className="mt-4 rounded-xl border border-slate-200 bg-white px-3 py-3"
+        >
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-xs font-black uppercase tracking-wide text-slate-500">
+                Planning validation
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span
+                  data-testid="planning-validation-status"
+                  className={`rounded-full border px-2.5 py-1 text-xs font-black ${
+                    planningValidationStatus === "validated"
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : planningValidationStatus === "hard_conflict"
+                      ? "border-rose-200 bg-rose-50 text-rose-800"
+                      : planningValidationStatus === "needs_review"
+                      ? "border-amber-200 bg-amber-50 text-amber-800"
+                      : "border-slate-200 bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  {planningValidationStatus === "validated"
+                    ? "Validated"
+                    : planningValidationStatus === "hard_conflict"
+                    ? "Hard Conflict"
+                    : planningValidationStatus === "needs_review"
+                    ? "Needs Review"
+                    : "Not checked"}
+                </span>
+                <span className="text-sm font-semibold text-slate-700">
+                  {currentPlanningValidation?.summary?.reason ||
+                    "Validate the draft timeline against current signed/funded work before sending."}
+                </span>
+              </div>
+              {currentPlanningValidation?.summary?.recommended_timeline?.start_date ? (
+                <div
+                  data-testid="planning-validation-recommended-timeline"
+                  className="mt-2 text-xs font-semibold text-slate-600"
+                >
+                  Recommended adjustment: {friendly(currentPlanningValidation.summary.recommended_timeline.start_date)} to{" "}
+                  {friendly(currentPlanningValidation.summary.recommended_timeline.finish_date)}
+                </div>
+              ) : null}
+              {currentPlanningValidation?.summary?.blockers?.length ? (
+                <ul className="mt-2 space-y-1 text-xs font-semibold text-rose-700">
+                  {currentPlanningValidation.summary.blockers.map((item, index) => (
+                    <li key={`${item.type || "blocker"}-${index}`}>- {item.message}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {currentPlanningValidation?.summary?.warnings?.length ? (
+                <ul className="mt-2 space-y-1 text-xs font-semibold text-amber-700">
+                  {currentPlanningValidation.summary.warnings.map((item, index) => (
+                    <li key={`${item.type || "warning"}-${index}`}>- {item.message}</li>
+                  ))}
+                </ul>
+              ) : null}
+              {planningValidationError ? (
+                <div className="mt-2 text-xs font-semibold text-rose-700">{planningValidationError}</div>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-testid="planning-validation-check"
+                onClick={() => validatePlanningTimeline()}
+                disabled={!agreementId || planningValidationLoading}
+                className="rounded-lg border border-slate-300 bg-slate-900 px-3 py-2 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {planningValidationLoading ? "Checking..." : "Validate timeline"}
+              </button>
+              {planningValidationRequiresAcknowledgement ? (
+                <button
+                  type="button"
+                  data-testid="planning-validation-acknowledge"
+                  onClick={() => validatePlanningTimeline({ acknowledge: true })}
+                  disabled={planningValidationLoading || planningValidationAcknowledged}
+                  className="rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-xs font-black text-amber-900 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {planningValidationAcknowledged ? "Acknowledged" : "Acknowledge risk"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </section>
 
       <section

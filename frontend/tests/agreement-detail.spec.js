@@ -33,6 +33,20 @@ function agreementPayload(overrides = {}) {
       planning_notes: 'Saved planning assumptions are available.',
       planning_capability_mix: [{ capability: 'Carpentry', count: 2, available: 3 }],
     },
+    planning_validation_status: 'needs_review',
+    planning_validation_checked_at: '2026-07-06T12:00:00Z',
+    planning_validation_summary: {
+      status: 'needs_review',
+      label: 'Needs Review',
+      reason: 'Timeline overlaps committed work or lacks complete planning context.',
+      recommended_timeline: {
+        start_date: '2026-08-17',
+        finish_date: '2026-08-28',
+        duration_days: 10,
+      },
+      warnings: [{ type: 'timeline_overlap', message: '1 signed/funded agreement overlaps this planned timeline.' }],
+      blockers: [],
+    },
     milestones: [
       {
         id: 1,
@@ -172,6 +186,8 @@ test('Agreement Workspace renders read-only activation preview', async ({ page }
 
   await expect(page.getByTestId('agreement-workspace-panel-activation')).toContainText('Activation Preview');
   await expect(page.getByTestId('agreement-workspace-panel-activation')).toContainText('Preview only. No assignments or schedules are created.');
+  await expect(page.getByTestId('agreement-planning-validation-banner')).toContainText('Planning Needs Review');
+  await expect(page.getByTestId('agreement-planning-validation-banner')).toContainText('Review Timeline');
   await expect(page.getByTestId('activation-readiness-checklist')).toContainText('Agreement signed');
   await expect(page.getByTestId('activation-readiness-checklist')).toContainText('Funding ready');
   await expect(page.getByTestId('activation-crew-needs')).toContainText('Carpentry');

@@ -122,6 +122,36 @@ async function installWizardMocks(page) {
       }),
     });
   });
+  await page.route(/\/api\/projects\/agreements\/\d+\/planning-validation\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        agreement_id: 100,
+        status: "validated",
+        summary: {
+          status: "validated",
+          label: "Validated",
+          reason: "No blocking timeline or workforce conflicts were detected.",
+          warnings: [],
+          blockers: [],
+          recommended_timeline: {},
+        },
+      }),
+    });
+  });
+  await page.route(/\/api\/projects\/agreements\/\d+\/acknowledge-planning-validation\/?.*$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        agreement_id: 100,
+        status: "needs_review",
+        acknowledged_at: "2026-07-06T12:00:00Z",
+        summary: { status: "needs_review", label: "Needs Review", reason: "Acknowledged in test." },
+      }),
+    });
+  });
   await page.route(/\/api\/payments\/onboarding\/status\/?.*$/, async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({}) });
   });
@@ -158,6 +188,7 @@ test("Agreement Wizard milestone planning simulation updates and appears in fina
 
   await expect(page.getByTestId("milestone-planning-panel")).toContainText("Milestone Planning Simulation");
   await expect(page.getByTestId("milestone-planning-panel")).toContainText("Planning only. Employees are not assigned until project activation.");
+  await expect(page.getByTestId("planning-validation-panel")).toContainText("Planning validation");
   const initialDays = await page.getByTestId("planning-working-days").innerText();
 
   await page.getByTestId("planning-crew-size").fill("4");
