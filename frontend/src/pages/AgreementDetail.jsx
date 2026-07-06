@@ -80,6 +80,17 @@ const formatMoney = (v) =>
     maximumFractionDigits: 2,
   })}`;
 
+const formatPlanningDate = (value) => {
+  if (!value) return 'Not set';
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+};
+
 const formatBytes = (value) => {
   const bytes = Number(value || 0);
   if (!Number.isFinite(bytes) || bytes <= 0) return '';
@@ -3470,6 +3481,18 @@ export default function AgreementDetail({
       agreement.recent_sms_automation_decisions.length > 0);
   const showDrawRequestsPanel =
     isProgressPayments && (isExecuted || drawLoading || drawRows.length > 0);
+  const planningAssumptions =
+    agreement?.planning_assumptions &&
+    typeof agreement.planning_assumptions === 'object'
+      ? agreement.planning_assumptions
+      : null;
+  const planningCapabilityMix = Array.isArray(
+    planningAssumptions?.planning_capability_mix
+  )
+    ? planningAssumptions.planning_capability_mix
+    : [];
+  const hasPlanningAssumptions =
+    !!planningAssumptions && Object.keys(planningAssumptions).length > 0;
   const pageEyebrow = isAdminMode ? 'Admin' : 'Core';
   const pageTitle = isAdminMode
     ? 'Admin Agreement Detail'
@@ -3821,6 +3844,98 @@ export default function AgreementDetail({
                 />
               </div>
             </section>
+
+            {hasPlanningAssumptions ? (
+              <section
+                data-testid="agreement-planning-assumptions"
+                className="rounded-2xl border border-blue-300/20 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-100">
+                      Milestone Planning
+                    </div>
+                    <h3 className="mt-1 text-lg font-semibold text-white">
+                      Saved Planning Assumptions
+                    </h3>
+                    <p className="mt-1 text-sm text-sky-100/70">
+                      Planning only. Employees are not assigned and schedules are not created from this snapshot.
+                    </p>
+                  </div>
+                  <span className="inline-flex w-fit items-center rounded-full border border-blue-200/30 bg-blue-400/15 px-3 py-1 text-xs font-bold text-blue-50">
+                    Advisory
+                  </span>
+                </div>
+
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SummaryCard
+                    label="Planned Start"
+                    value={formatPlanningDate(planningAssumptions.planned_start_date)}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                  <SummaryCard
+                    label="Planned Finish"
+                    value={formatPlanningDate(planningAssumptions.planned_finish_date)}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                  <SummaryCard
+                    label="Duration"
+                    value={`${planningAssumptions.planned_duration_days || 0} working days`}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                  <SummaryCard
+                    label="Crew Size"
+                    value={`${planningAssumptions.planned_crew_size || 0} people`}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                  <SummaryCard
+                    label="Labor Hours"
+                    value={`${planningAssumptions.planned_labor_hours || 0} hours`}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                  <SummaryCard
+                    label="Confidence"
+                    value={`${planningAssumptions.planning_confidence || 0}%`}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                  <SummaryCard
+                    label="Priority"
+                    value={titleCase(planningAssumptions.planning_priority || 'balanced')}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                  <SummaryCard
+                    label="Weekends"
+                    value={planningAssumptions.include_weekends ? 'Included' : 'Excluded'}
+                    className="border-white/10 bg-white/10 text-white"
+                  />
+                </div>
+
+                {planningCapabilityMix.length ? (
+                  <div className="mt-4">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/60">
+                      Capability Mix
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {planningCapabilityMix.map((item, index) => (
+                        <span
+                          key={`${item.capability || 'capability'}-${index}`}
+                          className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white"
+                        >
+                          {item.count || 0} {item.capability || 'Capability'}
+                          {item.available != null ? ` / ${item.available} available` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {planningAssumptions.planning_notes ? (
+                  <div className="mt-4 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-sky-100/80">
+                    {planningAssumptions.planning_notes}
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
             <section
               data-testid="agreement-overview-milestone-preview"

@@ -402,6 +402,8 @@ function calculateMilestonePlanning({
     planning_confidence: confidence,
     planning_notes: risks.join(" "),
     planning_capability_mix: enrichedMix,
+    planning_priority: priority,
+    include_weekends: !!scenario?.includeWeekends,
     estimated_labor_cost: estimatedLaborCost,
     labor_cost_configured: !!avgLaborRate,
     recommended_start_date: plannedStart,
@@ -1360,8 +1362,8 @@ export default function Step2Milestones({
       planningAssumptions?.planned_finish_date ||
       assistantDraftPayload?.project_completion_date ||
       "",
-    includeWeekends: false,
-    priority: "balanced",
+    includeWeekends: !!planningAssumptions?.include_weekends,
+    priority: planningAssumptions?.planning_priority || "balanced",
   }));
   const [workforceMembers, setWorkforceMembers] = useState([]);
   const [workforceLoading, setWorkforceLoading] = useState(false);
@@ -2830,7 +2832,10 @@ export default function Step2Milestones({
       if (source === "autosave") setAutosaveInProgress(true);
       else setUserSaveInProgress(true);
 
-      const patchPayload = { ai_scope: { ...ai_scope, answers: mergedAnswers } };
+      const patchPayload = {
+        ai_scope: { ...ai_scope, answers: mergedAnswers },
+        planning_assumptions: planningSimulation,
+      };
 
       if (Object.prototype.hasOwnProperty.call(data, "scope_clarifications")) {
         const sc = data.scope_clarifications || {};

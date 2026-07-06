@@ -1505,6 +1505,11 @@ class Agreement(models.Model):
     contractor_responsibilities = models.TextField(blank=True, default="")
     excluded_work = models.TextField(blank=True, default="")
     collaboration_summary_snapshot = models.JSONField(default=dict, blank=True)
+    planning_assumptions = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Advisory milestone planning snapshot captured from the Agreement Wizard. No assignments or schedules are created from this field.",
+    )
 
     standardized_category = models.CharField(
         max_length=100, blank=True, db_index=True

@@ -611,6 +611,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     service_window_notes = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     recurring_summary_label = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
     step_status = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    planning_assumptions = serializers.JSONField(required=False, allow_null=True)
 
     project_address_line1 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     project_address_line2 = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -1356,6 +1357,77 @@ class AgreementSerializer(serializers.ModelSerializer):
         for key in non_model_fields:
             data.pop(key, None)
         return data
+
+    def _normalize_planning_assumptions(self, value):
+        if value in (None, ""):
+            return {}
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("Planning assumptions must be an object.")
+
+        allowed_keys = {
+            "planned_start_date",
+            "planned_finish_date",
+            "planned_duration_days",
+            "planned_crew_size",
+            "planned_labor_hours",
+            "planning_confidence",
+            "planning_notes",
+            "planning_capability_mix",
+            "planning_priority",
+            "include_weekends",
+            "estimated_labor_cost",
+            "labor_cost_configured",
+            "recommended_start_date",
+            "recommended_finish_date",
+            "estimated_total_working_days",
+            "recommended_crew_size",
+            "recommended_capability_mix",
+            "bottlenecks",
+            "deadline_feasibility",
+        }
+        normalized = {key: value.get(key) for key in allowed_keys if key in value}
+
+        for key in ("planned_start_date", "planned_finish_date", "recommended_start_date", "recommended_finish_date"):
+            raw = normalized.get(key)
+            if raw in (None, ""):
+                normalized.pop(key, None)
+                continue
+            normalized[key] = str(raw)[:10]
+
+        integer_fields = {
+            "planned_duration_days",
+            "planned_crew_size",
+            "planned_labor_hours",
+            "planning_confidence",
+            "estimated_total_working_days",
+            "recommended_crew_size",
+        }
+        for key in integer_fields:
+            if key not in normalized:
+                continue
+            try:
+                normalized[key] = max(0, int(float(normalized.get(key) or 0)))
+            except (TypeError, ValueError):
+                normalized.pop(key, None)
+
+        if "planning_confidence" in normalized:
+            normalized["planning_confidence"] = min(100, normalized["planning_confidence"])
+
+        for key in ("planning_notes", "planning_priority", "deadline_feasibility"):
+            if key in normalized:
+                normalized[key] = str(normalized.get(key) or "").strip()
+
+        normalized["include_weekends"] = bool(normalized.get("include_weekends", False))
+        normalized["labor_cost_configured"] = bool(normalized.get("labor_cost_configured", False))
+
+        for key in ("planning_capability_mix", "recommended_capability_mix", "bottlenecks"):
+            if key in normalized and not isinstance(normalized[key], list):
+                normalized.pop(key, None)
+
+        return normalized
+
+    def validate_planning_assumptions(self, value):
+        return self._normalize_planning_assumptions(value)
 
     def _sync_project_title_from_input(self, instance: Agreement) -> None:
         """

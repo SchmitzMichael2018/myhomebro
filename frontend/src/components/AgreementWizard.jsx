@@ -969,6 +969,9 @@ export default function AgreementWizard() {
         });
 
         setAgreement(data);
+        if (data?.planning_assumptions && typeof data.planning_assumptions === "object") {
+          setMilestonePlanningAssumptions(data.planning_assumptions);
+        }
 
         setDLocal((prev) => ({
           ...prev,
