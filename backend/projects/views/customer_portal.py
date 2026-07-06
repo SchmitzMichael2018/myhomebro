@@ -188,6 +188,15 @@ def _safe_text(value) -> str:
     return ("" if value is None else str(value)).strip()
 
 
+def _safe_file_url(file_value) -> str:
+    if not file_value:
+        return ""
+    try:
+        return _safe_text(getattr(file_value, "url", ""))
+    except (OSError, ValueError):
+        return ""
+
+
 def _safe_dt(value):
     if not value:
         return None
@@ -3407,7 +3416,7 @@ def _payments(email: str, request=None) -> list[dict]:
                 "invoice_number": _safe_text(getattr(invoice, "invoice_number", "")),
                 "agreement_id": getattr(agreement, "id", None),
                 "action_target": f"/invoice/{invoice.public_token}",
-                "receipt_url": _safe_text(getattr(getattr(receipt, "pdf_file", None), "url", "")),
+                "receipt_url": _safe_file_url(getattr(receipt, "pdf_file", None)),
                 "notes": "No payment required" if invoice_amount <= Decimal("0.00") else "Escrow release" if getattr(invoice, "escrow_released", False) else "Direct pay" if getattr(invoice, "direct_pay_paid_at", None) else "",
             }
         )
@@ -3452,7 +3461,7 @@ def _payments(email: str, request=None) -> list[dict]:
                 "reference": _safe_text(getattr(draw, "stripe_transfer_id", "")) or _safe_text(getattr(external_payment, "reference_number", "")),
                 "agreement_id": getattr(agreement, "id", None),
                 "action_target": f"/draws/magic/{draw.public_token}",
-                "receipt_url": _safe_text(getattr(getattr(external_payment, "proof_file", None), "url", "")),
+                "receipt_url": _safe_file_url(getattr(external_payment, "proof_file", None)),
                 "notes": "Released draw" if getattr(draw, "released_at", None) else "",
             }
         )
@@ -3464,14 +3473,14 @@ def _payments(email: str, request=None) -> list[dict]:
             ledger_payload = serialize_ledger(escrow_ledger(agreement, exclude_reimbursement_id=reimbursement.id)) if agreement else None
         except Exception:
             ledger_payload = None
-        receipt_url = _safe_text(getattr(getattr(reimbursement, "receipt", None), "url", ""))
+        receipt_url = _safe_file_url(getattr(reimbursement, "receipt", None))
         if not receipt_url:
             first_attachment = None
             try:
                 first_attachment = reimbursement.attachments.first()
             except Exception:
                 first_attachment = None
-            receipt_url = _safe_text(getattr(getattr(first_attachment, "file", None), "url", ""))
+            receipt_url = _safe_file_url(getattr(first_attachment, "file", None))
         rows.append(
             {
                 "id": f"reimbursement-{reimbursement.id}",

@@ -25083,6 +25083,30 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(all(row["project_title"] == "Kitchen Remodel" for row in response.data["agreements"]))
         self.assertEqual(response.data["customer"]["phone_number"], self.customer_homeowner.phone_number)
 
+    def test_customer_portal_account_login_handles_reimbursement_without_receipt(self):
+        ExpenseRequest.objects.create(
+            agreement=self.agreement,
+            description="Receipt omitted from seed data",
+            amount=Decimal("45.00"),
+            request_kind=ExpenseRequest.RequestKind.ESCROW_REIMBURSEMENT,
+            status=ExpenseRequest.Status.APPROVED,
+            funding_source=ExpenseRequest.FundingSource.REIMBURSEMENT,
+            category=ExpenseRequest.Category.MATERIALS,
+            created_by=self.contractor_user,
+            approved_at=timezone.now(),
+        )
+        User = get_user_model()
+        user = User.objects.create_user(email=self.customer_email, password="CustomerPass123!")
+        client = _use_secure_requests(APIClient())
+        client.force_authenticate(user=user)
+
+        response = client.get("/api/projects/customer-portal/account/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        reimbursement_rows = [row for row in response.data["payments"] if row["record_type"] == "reimbursement"]
+        self.assertTrue(reimbursement_rows)
+        self.assertEqual(reimbursement_rows[0]["receipt_url"], "")
+
     def test_customer_portal_profile_update_is_token_scoped(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
         other_token = signing.dumps({"email": self.other_homeowner.email}, salt=PORTAL_TOKEN_SALT)

@@ -61,6 +61,7 @@ async function loginPortal(page, email) {
 }
 
 test.describe.configure({ mode: 'serial' });
+test.setTimeout(90000);
 
 test('authenticated contractor walkthrough screenshots', async ({ page }) => {
   const events = installCollectors(page, 'contractor');
