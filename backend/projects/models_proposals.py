@@ -132,6 +132,53 @@ class ProposalMeasurement(models.Model):
         return f"{self.label}: {self.quantity} {self.unit}".strip()
 
 
+class ProposalLineItem(models.Model):
+    CATEGORY_LABOR = "labor"
+    CATEGORY_MATERIALS = "materials"
+    CATEGORY_EQUIPMENT = "equipment"
+    CATEGORY_SUBCONTRACTOR = "subcontractor"
+    CATEGORY_INCIDENTALS_RESERVE = "incidentals_reserve"
+    CATEGORY_TAX = "tax"
+    CATEGORY_DISCOUNT = "discount"
+    CATEGORY_ALLOWANCE = "allowance"
+    CATEGORY_OTHER = "other"
+    CATEGORY_CHOICES = [
+        (CATEGORY_LABOR, "Labor"),
+        (CATEGORY_MATERIALS, "Materials"),
+        (CATEGORY_EQUIPMENT, "Equipment"),
+        (CATEGORY_SUBCONTRACTOR, "Subcontractor"),
+        (CATEGORY_INCIDENTALS_RESERVE, "Incidentals Reserve"),
+        (CATEGORY_TAX, "Tax"),
+        (CATEGORY_DISCOUNT, "Discount"),
+        (CATEGORY_ALLOWANCE, "Allowance"),
+        (CATEGORY_OTHER, "Other"),
+    ]
+
+    proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name="line_items")
+    category = models.CharField(max_length=32, choices=CATEGORY_CHOICES, default=CATEGORY_LABOR, db_index=True)
+    description = models.CharField(max_length=255)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    unit = models.CharField(max_length=40, blank=True, default="")
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["proposal", "category"], name="projects_prop_line_cat_idx"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.total = (self.quantity or 0) * (self.unit_price or 0)
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.get_category_display()}: {self.description}"
+
+
 def proposal_attachment_upload_to(instance, filename: str) -> str:
     return f"proposal_attachments/{instance.proposal_id}/{filename}"
 
@@ -199,6 +246,9 @@ class ProposalActivity(models.Model):
     EVENT_ATTACHMENT_REMOVED = "attachment_removed"
     EVENT_SCOPE_EDITED = "scope_edited"
     EVENT_NOTES_EDITED = "notes_edited"
+    EVENT_LINE_ITEM_ADDED = "line_item_added"
+    EVENT_LINE_ITEM_UPDATED = "line_item_updated"
+    EVENT_LINE_ITEM_REMOVED = "line_item_removed"
     EVENT_CHOICES = [
         (EVENT_CREATED, "Proposal Created"),
         (EVENT_APPOINTMENT_LINKED, "Appointment Linked"),
@@ -212,6 +262,9 @@ class ProposalActivity(models.Model):
         (EVENT_ATTACHMENT_REMOVED, "Attachment Removed"),
         (EVENT_SCOPE_EDITED, "Scope Edited"),
         (EVENT_NOTES_EDITED, "Notes Edited"),
+        (EVENT_LINE_ITEM_ADDED, "Line Item Added"),
+        (EVENT_LINE_ITEM_UPDATED, "Line Item Updated"),
+        (EVENT_LINE_ITEM_REMOVED, "Line Item Removed"),
     ]
 
     proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name="activity")

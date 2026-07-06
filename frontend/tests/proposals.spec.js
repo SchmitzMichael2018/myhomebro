@@ -103,7 +103,16 @@ const proposal = {
   internal_notes: "",
   appointment: opportunityPayload.results[0].latest_estimate_appointment,
   measurements: [],
+  line_items: [],
   attachments: [],
+  totals: {
+    subtotal: "0.00",
+    tax: "0.00",
+    discounts: "0.00",
+    incidentals_reserve: "0.00",
+    total: "0.00",
+    line_item_count: 0,
+  },
   activity: [{ id: 1, event_type: "created", message: "Proposal created", created_at: "2026-07-01T16:00:00Z" }],
   created_at: "2026-07-01T16:00:00Z",
   updated_at: "2026-07-01T16:00:00Z",
@@ -148,6 +157,30 @@ async function installBaseMocks(page) {
       }),
     });
   });
+}
+
+function calculateTotals(items) {
+  const totals = {
+    subtotal: 0,
+    tax: 0,
+    discounts: 0,
+    incidentals_reserve: 0,
+  };
+  for (const item of items) {
+    const amount = Number(item.total || 0);
+    if (item.category === "tax") totals.tax += amount;
+    else if (item.category === "discount") totals.discounts += Math.abs(amount);
+    else if (item.category === "incidentals_reserve") totals.incidentals_reserve += amount;
+    else totals.subtotal += amount;
+  }
+  return {
+    subtotal: totals.subtotal.toFixed(2),
+    tax: totals.tax.toFixed(2),
+    discounts: totals.discounts.toFixed(2),
+    incidentals_reserve: totals.incidentals_reserve.toFixed(2),
+    total: (totals.subtotal + totals.tax + totals.incidentals_reserve - totals.discounts).toFixed(2),
+    line_item_count: items.length,
+  };
 }
 
 test("Create Proposal from Opportunity opens Proposal Workspace", async ({ page }) => {
@@ -199,6 +232,30 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
     const measurement = { id: 9, label: "Fence length", location: "Back yard", quantity: "42.00", unit: "ft", notes: "Along rear line" };
     currentProposal = { ...currentProposal, measurements: [measurement] };
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(measurement) });
+  });
+  await page.route("**/api/projects/proposals/42/line-items/", async (route) => {
+    const payload = route.request().postDataJSON();
+    const lineItem = {
+      id: currentProposal.line_items.length + 20,
+      category: payload.category,
+      category_label: payload.category === "incidentals_reserve" ? "Incidentals Reserve" : payload.category === "labor" ? "Labor" : "Other",
+      description: payload.description,
+      quantity: Number(payload.quantity || 0).toFixed(2),
+      unit: payload.unit || "",
+      unit_price: Number(payload.unit_price || 0).toFixed(2),
+      total: (Number(payload.quantity || 0) * Number(payload.unit_price || 0)).toFixed(2),
+      notes: payload.notes || "",
+      created_at: "2026-07-01T16:12:00Z",
+      updated_at: "2026-07-01T16:12:00Z",
+    };
+    const lineItems = [...currentProposal.line_items, lineItem];
+    const totals = calculateTotals(lineItems);
+    currentProposal = { ...currentProposal, line_items: lineItems, totals };
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({ line_item: lineItem, totals }),
+    });
   });
   await page.route("**/api/projects/proposals/42/attachments/", async (route) => {
     const attachment = {
@@ -285,6 +342,26 @@ test("Proposal Workspace supports navigation, measurements, uploads, scope, and 
     buffer: Buffer.from("document"),
   });
   await expect(page.getByTestId("proposal-document-list")).toContainText("upload.txt");
+
+  await page.getByTestId("proposal-nav-estimate").click();
+  await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Builder");
+  await page.getByTestId("proposal-line-category").selectOption("labor");
+  await page.getByTestId("proposal-line-description").fill("Crew labor");
+  await page.getByTestId("proposal-line-quantity").fill("10");
+  await page.getByTestId("proposal-line-unit").fill("hours");
+  await page.getByTestId("proposal-line-unit-price").fill("75");
+  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /add/i }).click();
+  await expect(page.getByTestId("proposal-line-item-list")).toContainText("Crew labor");
+  await expect(page.getByTestId("proposal-estimate-totals")).toContainText("$750.00");
+
+  await page.getByTestId("proposal-line-category").selectOption("incidentals_reserve");
+  await page.getByTestId("proposal-line-description").fill("Incidentals reserve");
+  await page.getByTestId("proposal-line-quantity").fill("1");
+  await page.getByTestId("proposal-line-unit").fill("reserve");
+  await page.getByTestId("proposal-line-unit-price").fill("200");
+  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /add/i }).click();
+  await expect(page.getByTestId("proposal-estimate-totals")).toContainText("$950.00");
+  await expect(page.getByTestId("proposal-summary-totals")).toContainText("$950.00");
 
   await page.getByTestId("proposal-nav-scope").click();
   await page.getByTestId("proposal-included-work").fill("Demo, prep, and install.");

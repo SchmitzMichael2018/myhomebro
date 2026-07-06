@@ -12,7 +12,7 @@ from projects.models_contractor_discovery import (
     ContractorOpportunity,
     OpportunityEstimateAppointment,
 )
-from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalMeasurement
+from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
 from projects.services.contractor_directory import normalize_business_name
 
 
@@ -190,6 +190,105 @@ class ProposalWorkspaceFoundationTests(TestCase):
         deleted = self.client.delete(f"/api/projects/proposals/{proposal.id}/attachments/{attachment_id}/")
         self.assertEqual(deleted.status_code, 204)
         self.assertEqual(ProposalAttachment.objects.count(), 0)
+
+    def test_line_item_crud_and_totals(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            project_title="Kitchen Refresh",
+        )
+
+        labor = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/line-items/",
+            {
+                "category": ProposalLineItem.CATEGORY_LABOR,
+                "description": "Crew labor",
+                "quantity": "10",
+                "unit": "hours",
+                "unit_price": "75",
+                "notes": "Two-person crew",
+            },
+            format="json",
+        )
+        self.assertEqual(labor.status_code, 201)
+        self.assertEqual(labor.data["line_item"]["total"], "750.00")
+        self.assertEqual(labor.data["totals"]["subtotal"], "750.00")
+
+        tax = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/line-items/",
+            {
+                "category": ProposalLineItem.CATEGORY_TAX,
+                "description": "Sales tax",
+                "quantity": "1",
+                "unit_price": "50",
+            },
+            format="json",
+        )
+        self.assertEqual(tax.status_code, 201)
+
+        discount = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/line-items/",
+            {
+                "category": ProposalLineItem.CATEGORY_DISCOUNT,
+                "description": "Preferred customer discount",
+                "quantity": "1",
+                "unit_price": "25",
+            },
+            format="json",
+        )
+        self.assertEqual(discount.status_code, 201)
+        self.assertEqual(discount.data["totals"]["total"], "775.00")
+
+        line_item_id = labor.data["line_item"]["id"]
+        updated = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/line-items/{line_item_id}/",
+            {"quantity": "12", "unit_price": "80"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(updated.data["line_item"]["total"], "960.00")
+        self.assertEqual(updated.data["totals"]["total"], "985.00")
+
+        deleted = self.client.delete(f"/api/projects/proposals/{proposal.id}/line-items/{line_item_id}/")
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(deleted.data["totals"]["subtotal"], "0.00")
+        self.assertTrue(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_LINE_ITEM_REMOVED).exists())
+
+    def test_incidentals_reserve_line_affects_proposal_total(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            project_title="Kitchen Refresh",
+        )
+
+        base = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/line-items/",
+            {
+                "category": ProposalLineItem.CATEGORY_MATERIALS,
+                "description": "Cabinet hardware",
+                "quantity": "1",
+                "unit_price": "500",
+            },
+            format="json",
+        )
+        self.assertEqual(base.status_code, 201)
+        reserve = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/line-items/",
+            {
+                "category": ProposalLineItem.CATEGORY_INCIDENTALS_RESERVE,
+                "description": "Incidentals reserve",
+                "quantity": "1",
+                "unit_price": "200",
+            },
+            format="json",
+        )
+
+        self.assertEqual(reserve.status_code, 201)
+        self.assertEqual(reserve.data["totals"]["subtotal"], "500.00")
+        self.assertEqual(reserve.data["totals"]["incidentals_reserve"], "200.00")
+        self.assertEqual(reserve.data["totals"]["total"], "700.00")
 
     def test_other_contractor_cannot_access_proposal(self):
         proposal = Proposal.objects.create(

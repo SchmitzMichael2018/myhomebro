@@ -14,6 +14,7 @@ const NAV = [
   ["measurements", "Measurements"],
   ["photos", "Photos"],
   ["documents", "Documents"],
+  ["estimate", "Estimate Builder"],
   ["scope", "Scope"],
   ["notes", "Notes"],
   ["history", "History"],
@@ -27,6 +28,27 @@ const EMPTY_MEASUREMENT = {
   notes: "",
 };
 
+const EMPTY_LINE_ITEM = {
+  category: "labor",
+  description: "",
+  quantity: "1",
+  unit: "",
+  unit_price: "",
+  notes: "",
+};
+
+const LINE_ITEM_CATEGORIES = [
+  ["labor", "Labor"],
+  ["materials", "Materials"],
+  ["equipment", "Equipment"],
+  ["subcontractor", "Subcontractor"],
+  ["incidentals_reserve", "Incidentals Reserve"],
+  ["tax", "Tax"],
+  ["discount", "Discount"],
+  ["allowance", "Allowance"],
+  ["other", "Other"],
+];
+
 const WALKTHROUGH_CHECKLIST = [
   "Exterior reviewed",
   "Interior reviewed",
@@ -38,6 +60,13 @@ const WALKTHROUGH_CHECKLIST = [
 
 function field(value, fallback = "-") {
   return value == null || value === "" ? fallback : String(value);
+}
+
+function money(value) {
+  const num = Number(value || 0);
+  return Number.isFinite(num)
+    ? num.toLocaleString("en-US", { style: "currency", currency: "USD" })
+    : "$0.00";
 }
 
 function formatDateTime(value) {
@@ -123,6 +152,8 @@ export default function ProposalWorkspacePage() {
   const [active, setActive] = useState("overview");
   const [draft, setDraft] = useState({});
   const [measurementForm, setMeasurementForm] = useState(EMPTY_MEASUREMENT);
+  const [lineItemForm, setLineItemForm] = useState(EMPTY_LINE_ITEM);
+  const [editingLineItemId, setEditingLineItemId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [walkthroughMode, setWalkthroughMode] = useState(false);
   const [walkthroughMeasurementOpen, setWalkthroughMeasurementOpen] = useState(false);
@@ -136,6 +167,7 @@ export default function ProposalWorkspacePage() {
     () => (proposal?.attachments || []).filter((item) => item.attachment_type !== "photo"),
     [proposal]
   );
+  const totals = proposal?.totals || {};
 
   async function loadProposal() {
     setLoading(true);
@@ -210,6 +242,70 @@ export default function ProposalWorkspacePage() {
       measurements: (prev?.measurements || []).filter((item) => item.id !== id),
     }));
     toast.success("Measurement removed.");
+  }
+
+  function resetLineItemForm() {
+    setLineItemForm(EMPTY_LINE_ITEM);
+    setEditingLineItemId(null);
+  }
+
+  function patchLineItemForm(key, value) {
+    setLineItemForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function submitLineItem(event) {
+    event.preventDefault();
+    try {
+      if (editingLineItemId) {
+        const { data } = await api.patch(`/projects/proposals/${proposalId}/line-items/${editingLineItemId}/`, lineItemForm);
+        setProposal((prev) => ({
+          ...prev,
+          totals: data.totals || prev?.totals,
+          line_items: (prev?.line_items || []).map((item) => (item.id === editingLineItemId ? data.line_item : item)),
+        }));
+        toast.success("Line item updated.");
+      } else {
+        const { data } = await api.post(`/projects/proposals/${proposalId}/line-items/`, lineItemForm);
+        setProposal((prev) => ({
+          ...prev,
+          totals: data.totals || prev?.totals,
+          line_items: [...(prev?.line_items || []), data.line_item],
+        }));
+        toast.success("Line item added.");
+      }
+      resetLineItemForm();
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not save line item.");
+    }
+  }
+
+  function editLineItem(item) {
+    setEditingLineItemId(item.id);
+    setLineItemForm({
+      category: item.category || "labor",
+      description: item.description || "",
+      quantity: item.quantity || "1",
+      unit: item.unit || "",
+      unit_price: item.unit_price || "",
+      notes: item.notes || "",
+    });
+  }
+
+  async function deleteLineItem(id) {
+    try {
+      const { data } = await api.delete(`/projects/proposals/${proposalId}/line-items/${id}/`);
+      setProposal((prev) => ({
+        ...prev,
+        totals: data?.totals || prev?.totals,
+        line_items: (prev?.line_items || []).filter((item) => item.id !== id),
+      }));
+      if (editingLineItemId === id) resetLineItemForm();
+      toast.success("Line item removed.");
+    } catch (error) {
+      console.error(error);
+      toast.error("Could not remove line item.");
+    }
   }
 
   async function uploadAttachment(event, type) {
@@ -708,6 +804,109 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
+          <Section id="estimate" active={active === "estimate"} title="Estimate Builder">
+            <div className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900 ring-1 ring-blue-100">
+              Proposal pricing stays here until a later conversion phase. No agreements, payments, assignments, PDFs, or customer sends are created from this builder.
+            </div>
+            <form onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-6" data-testid="proposal-line-item-form">
+              <select
+                data-testid="proposal-line-category"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold md:col-span-2"
+                value={lineItemForm.category}
+                onChange={(event) => patchLineItemForm("category", event.target.value)}
+              >
+                {LINE_ITEM_CATEGORIES.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+              <input
+                data-testid="proposal-line-description"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-4"
+                placeholder="Description"
+                value={lineItemForm.description}
+                onChange={(event) => patchLineItemForm("description", event.target.value)}
+              />
+              <input
+                data-testid="proposal-line-quantity"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Qty"
+                value={lineItemForm.quantity}
+                onChange={(event) => patchLineItemForm("quantity", event.target.value)}
+              />
+              <input
+                data-testid="proposal-line-unit"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Unit"
+                value={lineItemForm.unit}
+                onChange={(event) => patchLineItemForm("unit", event.target.value)}
+              />
+              <input
+                data-testid="proposal-line-unit-price"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                placeholder="Unit price"
+                value={lineItemForm.unit_price}
+                onChange={(event) => patchLineItemForm("unit_price", event.target.value)}
+              />
+              <input
+                data-testid="proposal-line-notes"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                placeholder="Notes"
+                value={lineItemForm.notes}
+                onChange={(event) => patchLineItemForm("notes", event.target.value)}
+              />
+              <div className="flex gap-2">
+                <button type="submit" className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">
+                  <Plus size={16} /> {editingLineItemId ? "Update" : "Add"}
+                </button>
+                {editingLineItemId ? (
+                  <button type="button" onClick={resetLineItemForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            </form>
+
+            <div className="mt-4 overflow-hidden rounded-lg ring-1 ring-slate-200" data-testid="proposal-line-item-list">
+              {(proposal.line_items || []).length ? (
+                <div className="divide-y divide-slate-200">
+                  {(proposal.line_items || []).map((item) => (
+                    <div key={item.id} className="grid gap-3 bg-white p-3 md:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto] md:items-center">
+                      <div className="min-w-0">
+                        <div className="text-xs font-black uppercase tracking-wide text-slate-500">{item.category_label}</div>
+                        <div className="font-bold text-slate-950">{item.description}</div>
+                        {item.notes ? <div className="text-sm text-slate-500">{item.notes}</div> : null}
+                      </div>
+                      <div className="text-sm font-semibold text-slate-700">{item.quantity} {item.unit}</div>
+                      <div className="text-sm font-semibold text-slate-700">{money(item.unit_price)}</div>
+                      <div className="text-base font-black text-slate-950">{money(item.total)}</div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => editLineItem(item)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">Edit</button>
+                        <button type="button" onClick={() => deleteLineItem(item.id)} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700">Remove</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-slate-50 p-4 text-sm font-semibold text-slate-600">No estimate line items yet.</div>
+              )}
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5" data-testid="proposal-estimate-totals">
+              {[
+                ["Subtotal", totals.subtotal],
+                ["Tax", totals.tax],
+                ["Discounts", totals.discounts],
+                ["Incidentals Reserve", totals.incidentals_reserve],
+                ["Total", totals.total],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg bg-slate-950 px-3 py-3 text-white">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</div>
+                  <div className="mt-1 text-lg font-black">{money(value)}</div>
+                </div>
+              ))}
+            </div>
+          </Section>
+
           <Section id="scope" active={active === "scope"} title="Scope">
             <div className="grid gap-4 md:grid-cols-2">
               <TextAreaField label="Included work" testId="proposal-included-work" value={draft.included_work} onChange={(value) => patchDraft("included_work", value)} />
@@ -768,6 +967,16 @@ export default function ProposalWorkspacePage() {
             <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{proposal.measurements?.length || 0}</div><div className="text-xs text-slate-300">Measures</div></div>
             <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{photos.length}</div><div className="text-xs text-slate-300">Photos</div></div>
             <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{documents.length}</div><div className="text-xs text-slate-300">Docs</div></div>
+          </div>
+          <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-totals">
+            <div className="text-xs font-semibold uppercase text-slate-400">Proposal Total</div>
+            <div className="mt-1 text-2xl font-black">{money(totals.total)}</div>
+            <div className="mt-3 space-y-1 text-sm text-slate-300">
+              <div className="flex justify-between gap-3"><span>Subtotal</span><span className="font-bold text-white">{money(totals.subtotal)}</span></div>
+              <div className="flex justify-between gap-3"><span>Tax</span><span className="font-bold text-white">{money(totals.tax)}</span></div>
+              <div className="flex justify-between gap-3"><span>Incidentals</span><span className="font-bold text-white">{money(totals.incidentals_reserve)}</span></div>
+              <div className="flex justify-between gap-3"><span>Discounts</span><span className="font-bold text-white">-{money(totals.discounts)}</span></div>
+            </div>
           </div>
         </aside>
       </div>

@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
-from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalMeasurement
+from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
 from projects.views.contractor_bids import (
     _appointment_key,
     _resolve_contractor,
@@ -63,6 +63,62 @@ def _serialize_measurement(measurement: ProposalMeasurement) -> dict:
         "notes": measurement.notes,
         "created_at": _format_datetime(measurement.created_at),
         "updated_at": _format_datetime(measurement.updated_at),
+    }
+
+
+def _money(value) -> str:
+    return f"{Decimal(value or 0):.2f}"
+
+
+def _to_decimal(value, field_name: str):
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        raise ValueError(field_name)
+
+
+def _serialize_line_item(item: ProposalLineItem) -> dict:
+    return {
+        "id": item.id,
+        "category": item.category,
+        "category_label": item.get_category_display(),
+        "description": item.description,
+        "quantity": _money(item.quantity),
+        "unit": item.unit,
+        "unit_price": _money(item.unit_price),
+        "total": _money(item.total),
+        "notes": item.notes,
+        "created_at": _format_datetime(item.created_at),
+        "updated_at": _format_datetime(item.updated_at),
+    }
+
+
+def _proposal_totals(proposal: Proposal) -> dict:
+    subtotal = Decimal("0.00")
+    tax = Decimal("0.00")
+    discounts = Decimal("0.00")
+    incidentals = Decimal("0.00")
+    line_count = 0
+    items = list(getattr(proposal, "_prefetched_objects_cache", {}).get("line_items", [])) or list(proposal.line_items.all())
+    for item in items:
+        line_count += 1
+        amount = Decimal(item.total or 0)
+        if item.category == ProposalLineItem.CATEGORY_TAX:
+            tax += amount
+        elif item.category == ProposalLineItem.CATEGORY_DISCOUNT:
+            discounts += abs(amount)
+        elif item.category == ProposalLineItem.CATEGORY_INCIDENTALS_RESERVE:
+            incidentals += amount
+        else:
+            subtotal += amount
+    total = subtotal + tax + incidentals - discounts
+    return {
+        "subtotal": _money(subtotal),
+        "tax": _money(tax),
+        "discounts": _money(discounts),
+        "incidentals_reserve": _money(incidentals),
+        "total": _money(total),
+        "line_item_count": line_count,
     }
 
 
@@ -127,11 +183,13 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "allowances": proposal.allowances,
         "internal_notes": proposal.internal_notes,
         "appointment": _serialize_estimate_appointment(appointment) if appointment else None,
+        "totals": _proposal_totals(proposal),
         "created_at": _format_datetime(proposal.created_at),
         "updated_at": _format_datetime(proposal.updated_at),
     }
     if include_related:
         data["measurements"] = [_serialize_measurement(item) for item in proposal.measurements.all()]
+        data["line_items"] = [_serialize_line_item(item) for item in proposal.line_items.all()]
         data["attachments"] = [_serialize_attachment(item, request=request) for item in proposal.attachments.all()]
         data["activity"] = [_serialize_activity(item) for item in proposal.activity.all()[:50]]
     return data
@@ -141,7 +199,7 @@ def _proposal_queryset(contractor):
     return (
         Proposal.objects.filter(contractor=contractor)
         .select_related("contractor_opportunity", "estimate_appointment")
-        .prefetch_related("measurements", "attachments", "activity")
+        .prefetch_related("measurements", "line_items", "attachments", "activity")
     )
 
 
@@ -405,6 +463,151 @@ class ProposalMeasurementDetailView(APIView):
         measurement.delete()
         _activity(proposal, ProposalActivity.EVENT_MEASUREMENT_REMOVED, f"Measurement removed: {label}", actor=request.user)
         return Response(status=204)
+
+
+class ProposalLineItemListCreateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _proposal(self, request, proposal_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return None, Response({"detail": "Contractor profile not found."}, status=404)
+        return get_object_or_404(Proposal.objects.filter(contractor=contractor), pk=proposal_id), None
+
+    def get(self, request, proposal_id):
+        proposal, error = self._proposal(request, proposal_id)
+        if error:
+            return error
+        return Response(
+            {
+                "results": [_serialize_line_item(item) for item in proposal.line_items.all()],
+                "totals": _proposal_totals(proposal),
+            }
+        )
+
+    def post(self, request, proposal_id):
+        proposal, error = self._proposal(request, proposal_id)
+        if error:
+            return error
+        category = _safe_text(request.data.get("category")) or ProposalLineItem.CATEGORY_LABOR
+        description = _safe_text(request.data.get("description"))
+        errors = {}
+        if category not in dict(ProposalLineItem.CATEGORY_CHOICES):
+            errors["category"] = ["Choose a valid line item category."]
+        if not description:
+            errors["description"] = ["Description is required."]
+        try:
+            quantity = _to_decimal(request.data.get("quantity", "1"), "quantity")
+        except ValueError:
+            errors["quantity"] = ["Enter a valid quantity."]
+            quantity = Decimal("0")
+        try:
+            unit_price = _to_decimal(request.data.get("unit_price", "0"), "unit_price")
+        except ValueError:
+            errors["unit_price"] = ["Enter a valid unit price."]
+            unit_price = Decimal("0")
+        if errors:
+            return Response(errors, status=400)
+
+        item = ProposalLineItem.objects.create(
+            proposal=proposal,
+            category=category,
+            description=description,
+            quantity=quantity,
+            unit=_safe_text(request.data.get("unit")),
+            unit_price=unit_price,
+            notes=_safe_text(request.data.get("notes")),
+        )
+        _activity(
+            proposal,
+            ProposalActivity.EVENT_LINE_ITEM_ADDED,
+            f"Line item added: {item.description}",
+            actor=request.user,
+            metadata={"line_item_id": item.id, "category": item.category},
+        )
+        proposal = _proposal_queryset(proposal.contractor).get(pk=proposal.pk)
+        return Response(
+            {
+                "line_item": _serialize_line_item(item),
+                "totals": _proposal_totals(proposal),
+            },
+            status=201,
+        )
+
+
+class ProposalLineItemDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _line_item(self, request, proposal_id, line_item_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return None, Response({"detail": "Contractor profile not found."}, status=404)
+        item = get_object_or_404(
+            ProposalLineItem.objects.select_related("proposal").filter(proposal__contractor=contractor, proposal_id=proposal_id),
+            pk=line_item_id,
+        )
+        return item, None
+
+    def patch(self, request, proposal_id, line_item_id):
+        item, error = self._line_item(request, proposal_id, line_item_id)
+        if error:
+            return error
+        errors = {}
+        if "category" in request.data:
+            category = _safe_text(request.data.get("category"))
+            if category not in dict(ProposalLineItem.CATEGORY_CHOICES):
+                errors["category"] = ["Choose a valid line item category."]
+            else:
+                item.category = category
+        if "description" in request.data:
+            item.description = _safe_text(request.data.get("description"))
+            if not item.description:
+                errors["description"] = ["Description is required."]
+        if "quantity" in request.data:
+            try:
+                item.quantity = _to_decimal(request.data.get("quantity"), "quantity")
+            except ValueError:
+                errors["quantity"] = ["Enter a valid quantity."]
+        if "unit_price" in request.data:
+            try:
+                item.unit_price = _to_decimal(request.data.get("unit_price"), "unit_price")
+            except ValueError:
+                errors["unit_price"] = ["Enter a valid unit price."]
+        if "unit" in request.data:
+            item.unit = _safe_text(request.data.get("unit"))
+        if "notes" in request.data:
+            item.notes = _safe_text(request.data.get("notes"))
+        if errors:
+            return Response(errors, status=400)
+
+        item.save()
+        _activity(
+            item.proposal,
+            ProposalActivity.EVENT_LINE_ITEM_UPDATED,
+            f"Line item updated: {item.description}",
+            actor=request.user,
+            metadata={"line_item_id": item.id, "category": item.category},
+        )
+        proposal = _proposal_queryset(item.proposal.contractor).get(pk=item.proposal_id)
+        return Response({"line_item": _serialize_line_item(item), "totals": _proposal_totals(proposal)})
+
+    def delete(self, request, proposal_id, line_item_id):
+        item, error = self._line_item(request, proposal_id, line_item_id)
+        if error:
+            return error
+        proposal = item.proposal
+        description = item.description
+        metadata = {"line_item_id": item.id, "category": item.category}
+        item.delete()
+        _activity(
+            proposal,
+            ProposalActivity.EVENT_LINE_ITEM_REMOVED,
+            f"Line item removed: {description}",
+            actor=request.user,
+            metadata=metadata,
+        )
+        proposal = _proposal_queryset(proposal.contractor).get(pk=proposal.pk)
+        return Response({"totals": _proposal_totals(proposal)}, status=200)
 
 
 class ProposalAttachmentListCreateView(APIView):

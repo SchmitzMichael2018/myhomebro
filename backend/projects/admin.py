@@ -69,9 +69,9 @@ except Exception:  # pragma: no cover
     OpportunityEstimateAppointment = None  # type: ignore
 
 try:
-    from .models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalMeasurement  # type: ignore
+    from .models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement  # type: ignore
 except Exception:  # pragma: no cover
-    Proposal = ProposalActivity = ProposalAttachment = ProposalMeasurement = None  # type: ignore
+    Proposal = ProposalActivity = ProposalAttachment = ProposalLineItem = ProposalMeasurement = None  # type: ignore
 
 try:
     from .models_ai_artifacts import DisputeAIArtifact  # type: ignore
@@ -390,6 +390,15 @@ if ProposalMeasurement is not None:
         list_display = ("id", "proposal", "label", "location", "quantity", "unit", "updated_at")
         search_fields = ("label", "location", "notes", "proposal__project_title")
         readonly_fields = ("created_at", "updated_at")
+
+
+if ProposalLineItem is not None:
+    @admin.register(ProposalLineItem)
+    class ProposalLineItemAdmin(admin.ModelAdmin):
+        list_display = ("id", "proposal", "category", "description", "quantity", "unit_price", "total", "updated_at")
+        list_filter = ("category", "created_at", "updated_at")
+        search_fields = ("description", "notes", "proposal__project_title")
+        readonly_fields = ("total", "created_at", "updated_at")
 
 
 if ProposalAttachment is not None:
