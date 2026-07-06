@@ -2803,11 +2803,17 @@ class ContractorSubAccount(models.Model):
     ROLE_EMPLOYEE_READONLY = "employee_readonly"
     ROLE_EMPLOYEE_MILESTONES = "employee_milestones"
     ROLE_EMPLOYEE_SUPERVISOR = "employee_supervisor"
+    COST_BASIS_HOURLY = "hourly"
+    COST_BASIS_SALARY = "salary"
 
     ROLE_CHOICES = (
         (ROLE_EMPLOYEE_READONLY, "Read-only employee"),
         (ROLE_EMPLOYEE_MILESTONES, "Milestones employee"),
         (ROLE_EMPLOYEE_SUPERVISOR, "Supervisor / Foreman"),
+    )
+    COST_BASIS_CHOICES = (
+        (COST_BASIS_HOURLY, "Hourly"),
+        (COST_BASIS_SALARY, "Salary"),
     )
 
     parent_contractor = models.ForeignKey(
@@ -2833,6 +2839,16 @@ class ContractorSubAccount(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     notes = models.TextField(blank=True)
+    cost_basis = models.CharField(
+        max_length=16,
+        choices=COST_BASIS_CHOICES,
+        default=COST_BASIS_HOURLY,
+    )
+    hourly_cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    annual_salary = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    standard_hours_per_week = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    overtime_multiplier = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    labor_cost_notes = models.TextField(blank=True, default="")
 
     class Meta:
         verbose_name = "Contractor Sub-Account"
@@ -2841,6 +2857,17 @@ class ContractorSubAccount(models.Model):
 
     def __str__(self) -> str:
         return f"{self.display_name} ({self.get_role_display()}) for {self.parent_contractor}"
+
+    @property
+    def calculated_effective_hourly_cost(self):
+        if self.cost_basis == self.COST_BASIS_SALARY:
+            if not self.annual_salary or not self.standard_hours_per_week:
+                return None
+            annual_hours = self.standard_hours_per_week * 52
+            if annual_hours <= 0:
+                return None
+            return self.annual_salary / annual_hours
+        return self.hourly_cost
 
 
 def employee_profile_upload_to(instance, filename: str) -> str:

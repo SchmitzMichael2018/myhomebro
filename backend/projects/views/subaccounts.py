@@ -69,6 +69,14 @@ def _empty_attention_counts() -> dict:
 
 class ContractorSubAccountViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsContractorOrSubAccount]
+    LABOR_COST_FIELDS = {
+        "cost_basis",
+        "hourly_cost",
+        "annual_salary",
+        "standard_hours_per_week",
+        "overtime_multiplier",
+        "labor_cost_notes",
+    }
 
     def get_queryset(self):
         contractor = get_contractor_for_user(self.request.user)
@@ -85,6 +93,21 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
         if self.action in ("create", "update", "partial_update"):
             return ContractorSubAccountCreateSerializer
         return ContractorSubAccountSerializer
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["can_view_labor_cost"] = self._can_manage_labor_cost()
+        return context
+
+    def _can_manage_labor_cost(self) -> bool:
+        return (
+            get_contractor_for_user(self.request.user) is not None
+            and get_subaccount_for_user(self.request.user) is None
+        )
+
+    def _assert_labor_cost_write_allowed(self, request):
+        if any(field in request.data for field in self.LABOR_COST_FIELDS) and not self._can_manage_labor_cost():
+            raise PermissionDenied("Only contractor owners can manage labor cost assumptions.")
 
     def _require_contractor_owner(self):
         contractor = get_contractor_for_user(self.request.user)
@@ -124,8 +147,28 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
 
         subaccount = serializer.save(parent_contractor=contractor, user=user)
 
-        out = ContractorSubAccountSerializer(subaccount, context={"request": request})
+        out = ContractorSubAccountSerializer(subaccount, context=self.get_serializer_context())
         return Response(out.data, status=status.HTTP_201_CREATED)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        self._assert_labor_cost_write_allowed(request)
+        partial = kwargs.pop("partial", False)
+        subaccount = self.get_object()
+        serializer = self.get_serializer(subaccount, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+        refreshed = (
+            ContractorSubAccount.objects.filter(pk=subaccount.pk)
+            .select_related("user", "parent_contractor")
+            .prefetch_related("capabilities__skill")
+            .get()
+        )
+        return Response(ContractorSubAccountSerializer(refreshed, context=self.get_serializer_context()).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
         contractor = self._require_contractor_owner()
@@ -204,7 +247,7 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
             .prefetch_related("capabilities__skill")
             .get()
         )
-        return Response(ContractorSubAccountSerializer(refreshed, context={"request": request}).data)
+        return Response(ContractorSubAccountSerializer(refreshed, context=self.get_serializer_context()).data)
 
 
 class WhoAmIView(APIView):

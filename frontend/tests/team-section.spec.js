@@ -35,6 +35,13 @@ const subaccountsPayload = {
       overdue_milestone_count: 1,
       last_activity_at: "2026-04-19T10:00:00Z",
       last_login: "2026-04-18T18:30:00Z",
+      cost_basis: "hourly",
+      hourly_cost: "38.00",
+      annual_salary: null,
+      standard_hours_per_week: "40.00",
+      overtime_multiplier: "1.50",
+      labor_cost_notes: "Loaded labor cost for planning.",
+      calculated_effective_hourly_cost: "38.00",
       capabilities: [
         { skill_id: 10, skill_name: "Painting", skill_level: "skilled", skill_level_label: "Skilled" },
         { skill_id: 11, skill_name: "Drywall", skill_level: "expert", skill_level_label: "Expert" },
@@ -437,6 +444,18 @@ async function installTeamRoutes(page) {
     if (detailMatch) {
       const id = Number(detailMatch[1]);
       const row = subaccountRows.find((item) => Number(item.id) === id);
+      if (row && route.request().method() === "PATCH") {
+        const payload = route.request().postDataJSON();
+        Object.assign(row, payload);
+        if (row.cost_basis === "salary" && Number(row.annual_salary) > 0 && Number(row.standard_hours_per_week) > 0) {
+          row.calculated_effective_hourly_cost = (
+            Number(row.annual_salary) /
+            (Number(row.standard_hours_per_week) * 52)
+          ).toFixed(2);
+        } else {
+          row.calculated_effective_hourly_cost = row.hourly_cost || null;
+        }
+      }
       await route.fulfill({
         status: row ? 200 : 404,
         contentType: "application/json",
@@ -626,6 +645,15 @@ test("team members page separates permissions from capabilities and filters by t
   await expect(page.getByTestId("team-employee-permission-role")).toContainText("Supervisor");
   await expect(page.getByTestId("team-employee-capabilities-section")).toContainText("Trade Capabilities");
   await expect(page.getByTestId("team-employee-capability-list")).toContainText("Painting");
+  await expect(page.getByTestId("team-employee-compensation-section")).toContainText("Compensation");
+  await expect(page.getByTestId("team-employee-effective-hourly-cost")).toContainText("$38.00");
+  await page.getByTestId("team-employee-cost-basis").selectOption("salary");
+  await page.getByTestId("team-employee-annual-salary").fill("104000");
+  await page.getByTestId("team-employee-standard-hours").fill("40");
+  await page.getByTestId("team-employee-overtime-multiplier").fill("1.25");
+  await page.getByTestId("team-employee-labor-cost-notes").fill("Salary planning assumption.");
+  await page.getByTestId("team-employee-save-compensation").click();
+  await expect(page.getByTestId("team-employee-effective-hourly-cost")).toContainText("$50.00");
   await page.getByTestId("team-employee-add-skill").selectOption("30");
   await page.getByTestId("team-employee-add-level").selectOption("lead");
   await page.getByTestId("team-employee-add-capability").click();

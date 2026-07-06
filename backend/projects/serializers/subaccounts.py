@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
@@ -25,6 +27,23 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
     pending_review_count = serializers.SerializerMethodField()
     overdue_milestone_count = serializers.SerializerMethodField()
     capabilities = EmployeeCapabilitySerializer(many=True, read_only=True)
+    calculated_effective_hourly_cost = serializers.SerializerMethodField()
+
+    LABOR_COST_FIELDS = {
+        "cost_basis",
+        "hourly_cost",
+        "annual_salary",
+        "standard_hours_per_week",
+        "overtime_multiplier",
+        "labor_cost_notes",
+        "calculated_effective_hourly_cost",
+    }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if not self.context.get("can_view_labor_cost"):
+            for field in self.LABOR_COST_FIELDS:
+                self.fields.pop(field, None)
 
     class Meta:
         model = ContractorSubAccount
@@ -45,6 +64,13 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
             "pending_review_count",
             "overdue_milestone_count",
             "capabilities",
+            "cost_basis",
+            "hourly_cost",
+            "annual_salary",
+            "standard_hours_per_week",
+            "overtime_multiplier",
+            "labor_cost_notes",
+            "calculated_effective_hourly_cost",
         ]
         read_only_fields = fields
 
@@ -73,6 +99,12 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
     def get_overdue_milestone_count(self, obj: ContractorSubAccount) -> int:
         return int(self._summary(obj).get("overdue_milestone_count", 0) or 0)
 
+    def get_calculated_effective_hourly_cost(self, obj: ContractorSubAccount):
+        value = obj.calculated_effective_hourly_cost
+        if value is None:
+            return None
+        return f"{value.quantize(Decimal('0.01'))}"
+
 
 class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
     """
@@ -95,6 +127,15 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
         write_only=True, min_length=8, required=False, allow_blank=False
     )
 
+    LABOR_COST_FIELDS = [
+        "cost_basis",
+        "hourly_cost",
+        "annual_salary",
+        "standard_hours_per_week",
+        "overtime_multiplier",
+        "labor_cost_notes",
+    ]
+
     class Meta:
         model = ContractorSubAccount
         fields = [
@@ -106,6 +147,12 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
             "email",
             "password",
             "temporary_password",
+            "cost_basis",
+            "hourly_cost",
+            "annual_salary",
+            "standard_hours_per_week",
+            "overtime_multiplier",
+            "labor_cost_notes",
         ]
         read_only_fields = ["id"]
 
@@ -122,6 +169,7 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
             attrs.pop("password", None)
             attrs.pop("temporary_password", None)
             attrs.pop("email", None)
+            self._validate_labor_cost(attrs)
             return attrs
 
         # CREATE path
@@ -147,7 +195,21 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
             attrs.pop("temporary_password", None)
 
         attrs["email"] = email
+        self._validate_labor_cost(attrs)
         return attrs
+
+    def _validate_labor_cost(self, attrs):
+        cost_basis = attrs.get(
+            "cost_basis",
+            getattr(self.instance, "cost_basis", ContractorSubAccount.COST_BASIS_HOURLY),
+        )
+        if cost_basis not in dict(ContractorSubAccount.COST_BASIS_CHOICES):
+            raise serializers.ValidationError({"cost_basis": "Choose a valid cost basis."})
+
+        for field in ["hourly_cost", "annual_salary", "standard_hours_per_week", "overtime_multiplier"]:
+            value = attrs.get(field)
+            if value is not None and value <= 0:
+                raise serializers.ValidationError({field: "Enter a positive value."})
 
     def create(self, validated_data):
         """
@@ -171,13 +233,13 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         # Do not update email/password via this serializer
-        for field in ["display_name", "role", "is_active", "notes"]:
+        for field in ["display_name", "role", "is_active", "notes", *self.LABOR_COST_FIELDS]:
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
 
         # Be explicit and safe about update_fields
         update_fields = ["updated_at"]
-        for f in ["display_name", "role", "is_active", "notes"]:
+        for f in ["display_name", "role", "is_active", "notes", *self.LABOR_COST_FIELDS]:
             if f in validated_data:
                 update_fields.append(f)
 

@@ -121,6 +121,78 @@ class WorkforceCapabilityApiTests(TestCase):
         self.assertEqual(rows[0]["capabilities"][0]["skill_name"], "Painting")
         self.assertEqual(rows[0]["capabilities"][0]["skill_level"], "lead")
 
+    def test_owner_can_view_and_edit_employee_labor_cost_profile(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/",
+            {
+                "cost_basis": "hourly",
+                "hourly_cost": "42.50",
+                "standard_hours_per_week": "40.00",
+                "overtime_multiplier": "1.50",
+                "labor_cost_notes": "Loaded labor estimate only.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["cost_basis"], "hourly")
+        self.assertEqual(response.data["hourly_cost"], "42.50")
+        self.assertEqual(response.data["calculated_effective_hourly_cost"], "42.50")
+        self.subaccount.refresh_from_db()
+        self.assertEqual(str(self.subaccount.hourly_cost), "42.50")
+
+    def test_salary_labor_cost_calculates_effective_hourly_cost(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/",
+            {
+                "cost_basis": "salary",
+                "annual_salary": "104000.00",
+                "standard_hours_per_week": "40.00",
+                "overtime_multiplier": "1.25",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["calculated_effective_hourly_cost"], "50.00")
+
+    def test_labor_cost_profile_rejects_non_positive_values(self):
+        self.client.force_authenticate(user=self.owner_user)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/",
+            {"cost_basis": "hourly", "hourly_cost": "0"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("positive", str(response.data))
+
+    def test_employee_cannot_view_or_edit_other_employee_labor_cost(self):
+        self.subaccount.cost_basis = "salary"
+        self.subaccount.annual_salary = "104000.00"
+        self.subaccount.standard_hours_per_week = "40.00"
+        self.subaccount.save(update_fields=["cost_basis", "annual_salary", "standard_hours_per_week", "updated_at"])
+        self.client.force_authenticate(user=self.employee_user)
+
+        response = self.client.get(f"/api/projects/subaccounts/{self.subaccount.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("annual_salary", response.data)
+        self.assertNotIn("calculated_effective_hourly_cost", response.data)
+
+        response = self.client.patch(
+            f"/api/projects/subaccounts/{self.subaccount.id}/",
+            {"hourly_cost": "99.00"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
     def test_contractor_owner_can_replace_employee_capabilities(self):
         self.client.force_authenticate(user=self.owner_user)
 

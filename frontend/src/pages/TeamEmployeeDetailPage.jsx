@@ -18,6 +18,50 @@ function bySkillName(left, right) {
   return String(left?.name || "").localeCompare(String(right?.name || ""));
 }
 
+const EMPTY_COMPENSATION = {
+  cost_basis: "hourly",
+  hourly_cost: "",
+  annual_salary: "",
+  standard_hours_per_week: "",
+  overtime_multiplier: "",
+  labor_cost_notes: "",
+};
+
+function compensationFromEmployee(employee) {
+  return {
+    cost_basis: employee?.cost_basis || "hourly",
+    hourly_cost: employee?.hourly_cost || "",
+    annual_salary: employee?.annual_salary || "",
+    standard_hours_per_week: employee?.standard_hours_per_week || "",
+    overtime_multiplier: employee?.overtime_multiplier || "",
+    labor_cost_notes: employee?.labor_cost_notes || "",
+  };
+}
+
+function formatMoney(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "-";
+  return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function CompensationInput({ label, name, value, onChange, testId }) {
+  return (
+    <label className="block">
+      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <input
+        type="number"
+        min="0"
+        step="0.01"
+        name={name}
+        value={value || ""}
+        onChange={onChange}
+        data-testid={testId}
+        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+      />
+    </label>
+  );
+}
+
 export default function TeamEmployeeDetailPage() {
   const { subaccountId } = useParams();
   const navigate = useNavigate();
@@ -30,6 +74,7 @@ export default function TeamEmployeeDetailPage() {
   const [capabilities, setCapabilities] = useState([]);
   const [newSkillId, setNewSkillId] = useState("");
   const [newSkillLevel, setNewSkillLevel] = useState("working");
+  const [compensation, setCompensation] = useState(EMPTY_COMPENSATION);
 
   const load = async () => {
     setLoading(true);
@@ -42,6 +87,7 @@ export default function TeamEmployeeDetailPage() {
       ]);
       setEmployee(employeeRes.data || null);
       setCapabilities(Array.isArray(employeeRes.data?.capabilities) ? employeeRes.data.capabilities : []);
+      setCompensation(compensationFromEmployee(employeeRes.data));
       setCatalog(catalogRes.data || { skills: [], skill_levels: [] });
       setSchedule(scheduleRes.data || null);
     } catch (err) {
@@ -70,6 +116,7 @@ export default function TeamEmployeeDetailPage() {
   }, [capabilities, catalog.skills]);
 
   const levels = Array.isArray(catalog.skill_levels) ? catalog.skill_levels : [];
+  const canManageCompensation = employee && Object.prototype.hasOwnProperty.call(employee, "cost_basis");
 
   const saveCapabilities = async (nextCapabilities) => {
     setSaving(true);
@@ -87,6 +134,36 @@ export default function TeamEmployeeDetailPage() {
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.detail || err?.response?.data?.capabilities || "Could not update capabilities.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateCompensation = (event) => {
+    const { name, value } = event.target;
+    setCompensation((current) => ({ ...current, [name]: value }));
+  };
+
+  const saveCompensation = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        cost_basis: compensation.cost_basis || "hourly",
+        hourly_cost: compensation.hourly_cost || null,
+        annual_salary: compensation.annual_salary || null,
+        standard_hours_per_week: compensation.standard_hours_per_week || null,
+        overtime_multiplier: compensation.overtime_multiplier || null,
+        labor_cost_notes: compensation.labor_cost_notes || "",
+      };
+      const { data } = await api.patch(`/projects/subaccounts/${subaccountId}/`, payload);
+      setEmployee(data || null);
+      setCompensation(compensationFromEmployee(data));
+      toast.success("Labor cost profile updated.");
+    } catch (err) {
+      console.error(err);
+      const errors = err?.response?.data || {};
+      const firstError = Object.values(errors).flat?.()?.[0];
+      toast.error(err?.response?.data?.detail || firstError || "Could not update labor cost profile.");
     } finally {
       setSaving(false);
     }
@@ -187,6 +264,63 @@ export default function TeamEmployeeDetailPage() {
                 </div>
               </div>
             </section>
+
+            {canManageCompensation ? (
+              <section className="rounded-xl border border-slate-200 bg-white p-5" data-testid="team-employee-compensation-section">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-950">Compensation</h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Owner-only labor cost assumptions for future planning simulations. This does not change payroll, assignments, or payments.
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-slate-950 px-3 py-2 text-right text-white" data-testid="team-employee-effective-hourly-cost">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Effective hourly</div>
+                    <div className="text-base font-black">{formatMoney(employee?.calculated_effective_hourly_cost)}</div>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-4 md:grid-cols-3">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-700">Cost basis</span>
+                    <select
+                      name="cost_basis"
+                      data-testid="team-employee-cost-basis"
+                      value={compensation.cost_basis}
+                      onChange={updateCompensation}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                    >
+                      <option value="hourly">Hourly</option>
+                      <option value="salary">Salary</option>
+                    </select>
+                  </label>
+                  <CompensationInput label="Hourly cost" name="hourly_cost" value={compensation.hourly_cost} onChange={updateCompensation} testId="team-employee-hourly-cost" />
+                  <CompensationInput label="Annual salary" name="annual_salary" value={compensation.annual_salary} onChange={updateCompensation} testId="team-employee-annual-salary" />
+                  <CompensationInput label="Standard hours / week" name="standard_hours_per_week" value={compensation.standard_hours_per_week} onChange={updateCompensation} testId="team-employee-standard-hours" />
+                  <CompensationInput label="Overtime multiplier" name="overtime_multiplier" value={compensation.overtime_multiplier} onChange={updateCompensation} testId="team-employee-overtime-multiplier" />
+                  <label className="block md:col-span-3">
+                    <span className="text-sm font-semibold text-slate-700">Labor cost notes</span>
+                    <textarea
+                      name="labor_cost_notes"
+                      data-testid="team-employee-labor-cost-notes"
+                      value={compensation.labor_cost_notes}
+                      onChange={updateCompensation}
+                      rows={3}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      placeholder="Internal assumptions, burdened rate notes, or planning caveats"
+                    />
+                  </label>
+                </div>
+                <button
+                  type="button"
+                  data-testid="team-employee-save-compensation"
+                  onClick={saveCompensation}
+                  disabled={saving}
+                  className="mt-4 rounded-lg bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Save Compensation
+                </button>
+              </section>
+            ) : null}
 
             <section className="grid gap-5 lg:grid-cols-[1.3fr_0.7fr]">
               <div className="rounded-xl border border-slate-200 bg-white p-5" data-testid="team-employee-capabilities-section">
