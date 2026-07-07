@@ -12,7 +12,6 @@ import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
 import {
-  Bot,
   CalendarDays,
   ClipboardList,
   CreditCard,
@@ -355,7 +354,6 @@ export default function Sidebar({ variant = "desktop" }) {
     return (
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
-        <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
@@ -603,7 +601,6 @@ export default function Sidebar({ variant = "desktop" }) {
           <>
             <NavGroup label="Main">
               <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
-              <Item to={`${APP_BASE}/assistant`} label="AI Workspace" icon={Bot} />
             </NavGroup>
 
             <NavGroup label="Operations" className="pt-1">

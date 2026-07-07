@@ -2,86 +2,54 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowRight,
-  ClipboardList,
-  Compass,
-  FileSignature,
-  ListChecks,
+  Bot,
+  Clock3,
+  History,
+  Layers3,
+  MessageSquareText,
+  Settings,
+  ShieldCheck,
   Sparkles,
-  X,
 } from "lucide-react";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 
-const WORKSPACE_CONTEXT = {
+const ASSISTANT_CONTEXT = {
   current_route: "/app/assistant",
-  page: "dashboard",
+  page: "assistant_home",
   workspace_mode: "dashboard",
+  role: "contractor",
+  lifecycle_stage: "cross_workspace_review",
 };
 
-const QUICK_ACTIONS = [
-  {
-    key: "start_agreement",
-    title: "Create Agreement",
-    description: "Start a new agreement in the guided wizard.",
-    icon: FileSignature,
-    mode: "route",
-    route: "/app/agreements/new/wizard?step=1",
-  },
-  {
-    key: "apply_template",
-    title: "Use Template",
-    description: "Browse reusable templates and choose a starting structure.",
-    icon: ClipboardList,
-    mode: "route",
-    route: "/app/templates",
-  },
-  {
-    key: "suggest_milestones",
-    title: "Plan Milestones",
-    description: "Open milestone planning for phase, price, and timing review.",
-    icon: ListChecks,
-    mode: "route",
-    route: "/app/agreements/new/wizard?step=2",
-  },
-  {
-    key: "continue_project",
-    title: "Continue Existing Project",
-    description: "Find a recent draft or active project and jump back into the right workflow.",
-    icon: ArrowRight,
-    mode: "analyze",
-    analyzeMode: "continue_project",
-  },
-  {
-    key: "navigate_app",
-    title: "Find My Next Task",
-    description: "Analyze your active work and surface the best next action across agreements, milestones, and leads.",
-    icon: Compass,
-    mode: "analyze",
-    analyzeMode: "next_task",
-  },
+const ROLE_SKILLS = [
+  "Find my next task",
+  "Draft or review estimates",
+  "Create agreement from estimate",
+  "Review milestones and planning validation",
+  "Recommend labor",
+  "Draft customer reminders",
+  "Summarize projects and disputes",
+  "Analyze business performance",
 ];
 
-const CAPABILITY_ROWS = [
-  "Launch agreement, template, milestone, and task workflows from one place",
-  "Continue active projects without hunting through the sidebar",
-  "Find work that needs attention and route to the right next step",
-  "Use Project Assistant on each page to complete the current task step by step",
-];
-
-const OWNERSHIP_CARDS = [
+const HISTORY_ITEMS = [
   {
-    title: "Launch work",
-    body: "Start agreement, template, milestone, and task workflows from one place.",
+    key: "estimate-review",
+    title: "Estimate review",
+    detail: "Project Assistant can review scope, line items, incidentals, and readiness inside Estimate Workspace.",
   },
   {
-    title: "Continue work",
-    body: "Jump back into recent drafts, active agreements, and reusable templates.",
+    key: "agreement-handoff",
+    title: "Agreement handoff",
+    detail: "Estimate context carries into Agreement Wizard so customer, address, scope, pricing, and assumptions are not re-entered.",
   },
   {
-    title: "Find work",
-    body: "Surface the next useful action across agreements, milestones, and leads.",
+    key: "safe-actions",
+    title: "Confirmation required",
+    detail: "Assistant actions never sign, fund, assign, schedule, release payment, resolve disputes, or send customer messages without confirmation.",
   },
 ];
 
@@ -91,352 +59,126 @@ function listFromResponse(data) {
   return [];
 }
 
-async function fetchWorkspaceSignals() {
-  const [agreementsRes, milestonesRes, leadsRes] = await Promise.allSettled([
-    api.get("/projects/agreements/"),
-    api.get("/projects/milestones/"),
-    api.get("/projects/contractor/public-leads/"),
-  ]);
-  return {
-    agreements: agreementsRes.status === "fulfilled"
-      ? listFromResponse(agreementsRes.value?.data)
-      : [],
-    milestones: milestonesRes.status === "fulfilled"
-      ? listFromResponse(milestonesRes.value?.data)
-      : [],
-    leads: leadsRes.status === "fulfilled"
-      ? listFromResponse(leadsRes.value?.data)
-      : [],
-  };
-}
-
-async function fetchRecentWork() {
-  const [agreementsRes, templatesRes] = await Promise.allSettled([
+async function fetchAssistantHomeSignals() {
+  const [agreementsRes, milestonesRes, leadsRes, templatesRes] = await Promise.allSettled([
     api.get("/projects/agreements/", { params: { page_size: 8 } }),
+    api.get("/projects/milestones/", { params: { page_size: 8 } }),
+    api.get("/projects/contractor/public-leads/", { params: { page_size: 8 } }),
     api.get("/projects/templates/discover/", { params: { page_size: 6 } }),
   ]);
-  const agreements =
-    agreementsRes.status === "fulfilled" ? listFromResponse(agreementsRes.value?.data) : [];
-  const templates =
-    templatesRes.status === "fulfilled" ? listFromResponse(templatesRes.value?.data) : [];
 
-  const agreementItems = agreements
-    .filter((item) =>
-      ["draft", "sent", "signed", "active", "in_progress"].includes(String(item?.status || "").toLowerCase())
-    )
-    .slice(0, 5)
-    .map((item) => ({
-      key: `agreement-${item.id}`,
-      title: item.project_title || item.title || item.name || "Agreement",
-      eyebrow: String(item.status || "agreement").replaceAll("_", " "),
-      meta: [item.customer_name, item.homeowner_name, item.updated_at ? "Recently updated" : ""]
-        .filter(Boolean)
-        .join(" · "),
-      route: `/app/agreements/${item.id}`,
-      actionLabel: String(item.status || "").toLowerCase() === "draft" ? "Continue" : "Open",
-    }));
+  return {
+    agreements: agreementsRes.status === "fulfilled" ? listFromResponse(agreementsRes.value?.data) : [],
+    milestones: milestonesRes.status === "fulfilled" ? listFromResponse(milestonesRes.value?.data) : [],
+    leads: leadsRes.status === "fulfilled" ? listFromResponse(leadsRes.value?.data) : [],
+    templates: templatesRes.status === "fulfilled" ? listFromResponse(templatesRes.value?.data) : [],
+  };
+}
 
-  const templateItems = templates.slice(0, Math.max(0, 5 - agreementItems.length)).map((item) => ({
-    key: `template-${item.id}`,
-    title: item.name || "Template",
-    eyebrow: "template",
-    meta: [item.project_type, item.project_subtype].filter(Boolean).join(" · "),
-    route: "/app/templates",
-    actionLabel: "Open",
+function statusLabel(value) {
+  return String(value || "recent").replaceAll("_", " ");
+}
+
+function buildRecentContext({ agreements = [], leads = [], templates = [] }) {
+  const agreementItems = agreements.slice(0, 4).map((item) => ({
+    key: `agreement-${item.id}`,
+    type: "Agreement",
+    title: item.project_title || item.title || item.name || "Agreement",
+    meta: [statusLabel(item.status), item.customer_name || item.homeowner_name].filter(Boolean).join(" | "),
+    route: item.id ? `/app/agreements/${item.id}` : "/app/agreements",
   }));
 
-  return [...agreementItems, ...templateItems].slice(0, 5);
+  const leadItems = leads.slice(0, 3).map((item) => ({
+    key: `lead-${item.id || item.source_id}`,
+    type: "Opportunity",
+    title: item.project_title || item.project_type || item.customer_name || "Opportunity",
+    meta: [statusLabel(item.status), item.customer_name || item.full_name].filter(Boolean).join(" | "),
+    route: "/app/opportunities",
+  }));
+
+  const templateItems = templates.slice(0, 2).map((item) => ({
+    key: `template-${item.id}`,
+    type: "Template",
+    title: item.name || "Template",
+    meta: [item.project_type, item.project_subtype].filter(Boolean).join(" | "),
+    route: "/app/templates",
+  }));
+
+  return [...agreementItems, ...leadItems, ...templateItems].slice(0, 6);
 }
 
-function analyzeNextTask({ agreements = [], milestones = [], leads = [] }) {
-  const drafts = agreements.filter((a) => a.status === "draft");
-  if (drafts.length > 0) {
-    return {
-      title: "Review and send draft agreements",
-      reason: `You have ${drafts.length} draft agreement${drafts.length === 1 ? "" : "s"} waiting. Completing ${drafts.length === 1 ? "it" : "them"} can unlock signatures, funding, and active work.`,
-      context: `${drafts.length} draft agreement${drafts.length === 1 ? "" : "s"}`,
-      primaryLabel: "Open Agreements",
-      primaryRoute: "/app/agreements",
-      secondaryLabel: "Open Assistant",
-    };
+function buildPendingRecommendations({ agreements = [], milestones = [], leads = [] }) {
+  const rows = [];
+  const drafts = agreements.filter((item) => String(item.status || "").toLowerCase() === "draft");
+  if (drafts.length) {
+    rows.push({
+      key: "draft-agreements",
+      priority: "Today",
+      title: "Draft agreements need review",
+      project: drafts[0]?.project_title || drafts[0]?.title || "Agreement pipeline",
+      why: `${drafts.length} draft agreement${drafts.length === 1 ? "" : "s"} can move toward signature once reviewed.`,
+      action: "Open agreements",
+      route: "/app/agreements",
+    });
   }
 
-  const submitted = milestones.filter((m) => m.status === "submitted");
-  if (submitted.length > 0) {
-    return {
-      title: submitted.length === 1 ? "Review a submitted milestone" : `Review ${submitted.length} submitted milestones`,
-      reason: `${submitted.length} milestone${submitted.length > 1 ? "s are" : " is"} awaiting review. Approving them keeps active projects on schedule and unblocks payments.`,
-      context: null,
-      primaryLabel: "Open Milestones",
-      primaryRoute: "/app/milestones",
-      secondaryLabel: "Open Assistant",
-    };
-  }
-
-  const pendingLeads = leads.filter((l) => l.status === "ready_for_review" || l.status === "new");
-  if (pendingLeads.length > 0) {
-    return {
-      title: pendingLeads.length === 1 ? "Review a pending lead" : `Review ${pendingLeads.length} pending leads`,
-      reason: `You have ${pendingLeads.length} lead${pendingLeads.length > 1 ? "s" : ""} ready for review. Following up quickly improves conversion.`,
-      context: null,
-      primaryLabel: "Open Leads",
-      primaryRoute: "/app/marketing",
-      secondaryLabel: "Open Assistant",
-    };
-  }
-
-  const active = agreements.filter((a) => ["signed", "active", "in_progress"].includes(a.status));
-  if (active.length > 0) {
-    const first = active[0];
-    return {
-      title: "Continue an active project",
-      reason: `"${first.title || "Agreement"}" is signed and ready for active work. Check milestone status, funding, and next steps.`,
-      context: first.title || null,
-      primaryLabel: "Open Agreement",
-      primaryRoute: `/app/agreements/${first.id}`,
-      secondaryLabel: "Open Assistant",
-    };
-  }
-
-  return {
-    title: "Your queue looks clear",
-    reason: "No urgent tasks found. Start a new agreement, build a template, or plan milestones for upcoming projects.",
-    context: null,
-    primaryLabel: "Create Agreement",
-    primaryRoute: "/app/agreements/new/wizard?step=1",
-    secondaryLabel: "Use Template",
-    secondaryRoute: "/app/templates",
-  };
-}
-
-function analyzeContinueProject({ agreements = [] }) {
-  const inProgress = agreements.filter((a) =>
-    ["signed", "active", "in_progress", "draft"].includes(a.status)
+  const submittedMilestones = milestones.filter((item) =>
+    ["submitted", "pending_review", "review", "in_review"].includes(String(item.status || item.state || "").toLowerCase())
   );
-  if (inProgress.length === 0) {
-    return {
-      title: "No active projects found",
-      reason: "You don't have any in-progress or draft agreements yet. Start a new agreement to begin a project.",
-      context: null,
-      primaryLabel: "Create Agreement",
-      primaryRoute: "/app/agreements/new/wizard?step=1",
-      secondaryLabel: "Use Template",
-      secondaryRoute: "/app/templates",
-    };
+  if (submittedMilestones.length) {
+    rows.push({
+      key: "submitted-milestones",
+      priority: "Today",
+      title: "Milestones are awaiting review",
+      project: submittedMilestones[0]?.project_title || submittedMilestones[0]?.agreement_title || "Active projects",
+      why: "Reviewing submitted work keeps approvals, invoices, and customer communication moving.",
+      action: "Open review queue",
+      route: "/app/reviewer/queue",
+    });
   }
-  const first = inProgress[0];
-  const isDraft = first.status === "draft";
-  return {
-    title: isDraft ? "Complete your draft agreement" : "Continue your active project",
-    reason: isDraft
-      ? `"${first.title || "Agreement"}" is a draft ready to complete. Finishing it will unlock signatures and active work.`
-      : `"${first.title || "Agreement"}" is your most recent active project. Open it to check milestones, funding, and next steps.`,
-    context: first.title ? `${first.title}${first.customer_name ? ` · ${first.customer_name}` : ""}` : null,
-    primaryLabel: isDraft ? "Open Draft" : "Open Agreement",
-    primaryRoute: `/app/agreements/${first.id}`,
-    secondaryLabel: "Open Assistant",
-  };
+
+  const pendingLeads = leads.filter((item) =>
+    ["new", "submitted", "pending", "ready_for_review"].includes(String(item.status || "").toLowerCase())
+  );
+  if (pendingLeads.length) {
+    rows.push({
+      key: "pending-leads",
+      priority: "High",
+      title: "Customers are waiting for estimate follow-up",
+      project: pendingLeads[0]?.project_title || pendingLeads[0]?.project_type || "Opportunity pipeline",
+      why: "Fast lead review improves conversion and keeps the estimate-first workflow moving.",
+      action: "Open opportunities",
+      route: "/app/opportunities",
+    });
+  }
+
+  if (!rows.length) {
+    rows.push({
+      key: "caught-up",
+      priority: "Normal",
+      title: "No urgent assistant recommendations",
+      project: "All workspaces",
+      why: "Project Assistant will keep watching active work from the dashboard and each workspace.",
+      action: "Open dashboard",
+      route: "/app/dashboard",
+    });
+  }
+
+  return rows.slice(0, 4);
 }
 
-function WorkspaceResultPanel({ result, onDismiss, onOpenCopilot, onNavigate }) {
-  if (!result) return null;
+function AssistantHomeCard({ icon: Icon, eyebrow, title, children, testId }) {
   return (
-    <div
-      data-testid="ai-workspace-result-panel"
-      className="overflow-hidden rounded-[28px] border border-sky-200/20 bg-[linear-gradient(145deg,#020b1f_0%,#0e2d5b_54%,#155ea8_100%)] p-6 text-white shadow-[0_24px_70px_rgba(2,11,31,0.28)]"
+    <section
+      data-testid={testId}
+      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="inline-flex items-center gap-2 rounded-full border border-sky-100/25 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">
-          <Sparkles className="h-3.5 w-3.5" />
-          Recommended Next Action
-        </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="rounded-lg border border-white/15 p-1.5 text-sky-100 hover:bg-white/10"
-          aria-label="Dismiss recommendation"
-        >
-          <X className="h-4 w-4" />
-        </button>
+      <div className="flex items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+        <Icon className="h-4 w-4 text-[#18395f]" />
+        {eyebrow}
       </div>
-
-      <h3
-        data-testid="ai-workspace-result-title"
-        className="mt-4 text-xl font-bold tracking-tight text-white"
-      >
-        {result.title}
-      </h3>
-
-      <p
-        data-testid="ai-workspace-result-reason"
-        className="mt-2 text-sm leading-6 text-sky-50/90"
-      >
-        {result.reason}
-      </p>
-
-      {result.context ? (
-        <div className="mt-3 inline-block rounded-xl border border-sky-100/25 bg-white/10 px-3 py-1.5 text-xs font-semibold text-sky-50">
-          {result.context}
-        </div>
-      ) : null}
-
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button
-          type="button"
-          data-testid="ai-workspace-result-primary-cta"
-          onClick={() => onNavigate(result.primaryRoute)}
-          className="inline-flex items-center gap-2 rounded-2xl bg-white px-5 py-2.5 text-sm font-semibold text-[#12345c] shadow-sm hover:bg-sky-50"
-        >
-          {result.primaryLabel}
-          <ArrowRight className="h-4 w-4" />
-        </button>
-
-        {result.secondaryRoute ? (
-          <button
-            type="button"
-            data-testid="ai-workspace-result-secondary-cta"
-            onClick={() => onNavigate(result.secondaryRoute)}
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20"
-          >
-            {result.secondaryLabel}
-          </button>
-        ) : result.secondaryLabel ? (
-          <button
-            type="button"
-            data-testid="ai-workspace-result-secondary-cta"
-            onClick={onOpenCopilot}
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/25 bg-white/10 px-5 py-2.5 text-sm font-semibold text-white hover:bg-white/20"
-          >
-            {result.secondaryLabel}
-          </button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function QuickActionCard({ action, busyKey, onSelect }) {
-  const Icon = action.icon;
-  const isBusy = busyKey === action.key;
-
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(action)}
-      disabled={Boolean(busyKey)}
-      className="group flex h-full flex-col rounded-3xl border border-slate-200 bg-white p-6 text-left shadow-sm transition hover:-translate-y-1 hover:shadow-md disabled:cursor-wait disabled:opacity-70"
-      data-testid={`ai-workspace-quick-action-${action.key}`}
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white">
-          <Icon className="h-5 w-5" />
-        </div>
-        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-          {isBusy ? "Analyzing" : action.mode === "analyze" ? "Analyze" : "Launch"}
-        </span>
-      </div>
-      <div className="mt-5 text-lg font-semibold text-slate-900">{action.title}</div>
-      <div className="mt-2 text-sm leading-6 text-slate-600">{action.description}</div>
-      <div className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-[#18395f]">
-        {isBusy ? (action.mode === "analyze" ? "Analyzing..." : "Preparing...") : (action.mode === "analyze" ? "Find best next step" : "Open flow")}
-        <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
-      </div>
-    </button>
-  );
-}
-
-function WorkflowLauncherHero() {
-  return (
-    <div
-      data-testid="ai-workspace-hero"
-      className="rounded-[32px] border border-slate-900/10 bg-white p-6 shadow-sm md:p-8"
-    >
-      <div className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-800">
-        <Sparkles className="h-3.5 w-3.5" />
-        Command Center
-      </div>
-      <h2 className="mt-4 text-3xl font-bold tracking-tight text-[#18395f]">
-        Launch Work. Continue Work. Find Work.
-      </h2>
-      <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">
-        AI Workspace routes you to the right workflow and surfaces active work. Start here to
-        create an agreement, open a template, plan milestones, or find the next useful task.
-      </p>
-      <div className="mt-6 grid gap-3 md:grid-cols-3">
-        {OWNERSHIP_CARDS.map((card) => (
-          <div
-            key={card.title}
-            className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
-          >
-            <div className="text-sm font-semibold text-slate-950">{card.title}</div>
-            <div className="mt-1 text-xs leading-5 text-slate-600">{card.body}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function RecentWorkSection({ items, loading, onNavigate, onFindNext }) {
-  return (
-    <section data-testid="ai-workspace-recent-work">
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-            Continue Work
-          </div>
-          <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
-            Recent work
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Jump back into recent drafts, active agreements, or templates without starting over.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onFindNext}
-          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:border-slate-900"
-          data-testid="ai-workspace-find-next-secondary"
-        >
-          Find My Next Task
-          <ArrowRight className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        {loading ? (
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
-            Loading recent work...
-          </div>
-        ) : items.length ? (
-          items.map((item) => (
-            <div
-              key={item.key}
-              data-testid={`ai-workspace-recent-work-${item.key}`}
-              className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
-            >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                {item.eyebrow}
-              </div>
-              <div className="mt-2 text-base font-semibold text-slate-950">{item.title}</div>
-              {item.meta ? <div className="mt-1 text-sm text-slate-600">{item.meta}</div> : null}
-              <button
-                type="button"
-                onClick={() => onNavigate(item.route)}
-                className="mt-4 inline-flex items-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-              >
-                {item.actionLabel}
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          ))
-        ) : (
-          <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-6 text-sm leading-6 text-slate-600">
-            No recent work found yet. Create an agreement, open a template, or use Find My Next
-            Task to choose a starting point.
-          </div>
-        )}
-      </div>
+      <h3 className="mt-3 text-xl font-black tracking-tight text-[#18395f]">{title}</h3>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }
@@ -444,150 +186,217 @@ function RecentWorkSection({ items, loading, onNavigate, onFindNext }) {
 export default function AIAssistantPage() {
   const navigate = useNavigate();
   const { openAssistant } = useAssistantDock();
-  const [busyKey, setBusyKey] = useState("");
-  const [result, setResult] = useState(null);
-  const [recentWork, setRecentWork] = useState([]);
-  const [recentLoading, setRecentLoading] = useState(true);
+  const [signals, setSignals] = useState({ agreements: [], milestones: [], leads: [], templates: [] });
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    setRecentLoading(true);
-    fetchRecentWork()
-      .then((items) => {
-        if (!cancelled) setRecentWork(items);
+    setLoading(true);
+    fetchAssistantHomeSignals()
+      .then((data) => {
+        if (!cancelled) setSignals(data);
       })
       .catch(() => {
-        if (!cancelled) setRecentWork([]);
+        if (!cancelled) setSignals({ agreements: [], milestones: [], leads: [], templates: [] });
       })
       .finally(() => {
-        if (!cancelled) setRecentLoading(false);
+        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const quickActions = useMemo(() => QUICK_ACTIONS, []);
+  const recentContext = useMemo(() => buildRecentContext(signals), [signals]);
+  const pendingRecommendations = useMemo(() => buildPendingRecommendations(signals), [signals]);
 
-  async function runWorkspaceAnalysis(analyzeMode) {
-    setBusyKey(analyzeMode);
-    setResult(null);
-    try {
-      const signals = await fetchWorkspaceSignals();
-      const rec =
-        analyzeMode === "continue_project"
-          ? analyzeContinueProject(signals)
-          : analyzeNextTask(signals);
-      setResult(rec);
-    } catch {
-      setResult({
-        title: "Unable to load workspace data",
-        reason: "We couldn't fetch your current work. Check your connection and try again.",
-        context: null,
-        primaryLabel: "Open Dashboard",
-        primaryRoute: "/app/dashboard",
-        secondaryLabel: "Open Assistant",
-      });
-    } finally {
-      setBusyKey("");
-    }
-  }
-
-  function openCopilot() {
-    openAssistant({ context: WORKSPACE_CONTEXT });
-  }
-
-  function handleResultNavigate(route) {
-    if (route) navigate(route);
-  }
-
-  function handleQuickActionSelect(action) {
-    if (action.mode === "analyze") {
-      runWorkspaceAnalysis(action.analyzeMode);
-    } else {
-      navigate(action.route);
-    }
+  function openProjectAssistant() {
+    openAssistant({ context: ASSISTANT_CONTEXT });
   }
 
   return (
     <ContractorPageSurface
-      eyebrow="AI Workspace"
-      title="AI Workspace"
-      subtitle="Launch, continue, and organize work."
+      eyebrow="Project Assistant"
+      title="Assistant Home"
+      subtitle="A compatibility home for assistant history, context, recommendations, and settings."
       variant="operational"
-      className="mhb-ai-workspace"
+      className="mhb-assistant-home"
     >
-      <div className="mx-auto flex max-w-7xl flex-col gap-8">
-        <section className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
-          <WorkflowLauncherHero />
-
-          <div
-            className="rounded-[32px] border border-slate-900/10 bg-[linear-gradient(160deg,#0f172a_0%,#163B70_60%,#1f5fa8_100%)] p-6 text-white shadow-sm md:p-8"
-            data-testid="ai-workspace-summary"
-          >
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100">
-            <Sparkles className="h-3.5 w-3.5" />
-              How To Use It
+      <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <section
+          data-testid="assistant-home-hero"
+          className="rounded-2xl border border-slate-900/10 bg-[linear-gradient(160deg,#0f172a_0%,#163B70_62%,#1f5fa8_100%)] p-6 text-white shadow-sm md:p-8"
+        >
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-sky-100">
+                <Sparkles className="h-3.5 w-3.5" />
+                Single AI Identity
+              </div>
+              <h2 className="mt-4 text-3xl font-black tracking-tight">Project Assistant</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-sky-50/90">
+                Work in the correct workspace. Project Assistant inherits the current role,
+                workspace, project, customer, property, estimate, agreement, opportunity, and
+                lifecycle stage when opened in context.
+              </p>
             </div>
-            <h3 className="mt-4 text-2xl font-bold tracking-tight">
-              Choose the right next workflow.
-            </h3>
-            <p className="mt-3 text-sm leading-6 text-sky-50/90">
-              Start here when you know the kind of work you want to do. The workspace opens the
-              right tool, keeps recent work close, and helps you find tasks that need attention.
-            </p>
-            <div className="mt-6 space-y-3">
-              {CAPABILITY_ROWS.map((row) => (
-                <div
-                  key={row}
-                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/10 px-4 py-3"
-                >
-                  <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-sky-200" />
-                  <div className="text-sm leading-6 text-sky-50">{row}</div>
+            <button
+              type="button"
+              onClick={openProjectAssistant}
+              data-testid="assistant-home-open-assistant"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-black text-[#12345c] shadow-sm hover:bg-sky-50"
+            >
+              <Bot className="h-4 w-4" />
+              Open Project Assistant
+            </button>
+          </div>
+
+          <dl data-testid="assistant-home-context" className="mt-6 grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+            {[
+              ["Role", "Contractor"],
+              ["Workspace", "Assistant Home"],
+              ["Project", "Current workspace"],
+              ["Customer", "Inherited in context"],
+              ["Agreement", "Inherited in context"],
+              ["Lifecycle", "Cross-workspace"],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-xl border border-white/12 bg-white/10 px-3 py-3">
+                <dt className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-100/60">{label}</dt>
+                <dd className="mt-1 text-sm font-bold text-white">{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(340px,0.9fr)]">
+          <AssistantHomeCard
+            icon={ShieldCheck}
+            eyebrow="Pending Recommendations"
+            title="Review assistant recommendations"
+            testId="assistant-home-pending-recommendations"
+          >
+            <div className="space-y-3">
+              {loading ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  Loading recommendations...
+                </div>
+              ) : (
+                pendingRecommendations.map((item) => (
+                  <article key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-black uppercase text-slate-600">
+                        Priority: {item.priority}
+                      </span>
+                      <span className="text-xs font-bold text-slate-500">{item.project}</span>
+                    </div>
+                    <div className="mt-2 text-base font-black text-slate-950">{item.title}</div>
+                    <div className="mt-1 text-sm leading-6 text-slate-600">
+                      <strong className="text-slate-800">Why this matters:</strong> {item.why}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate(item.route)}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-xs font-black text-white hover:bg-slate-800"
+                    >
+                      {item.action}
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  </article>
+                ))
+              )}
+            </div>
+          </AssistantHomeCard>
+
+          <AssistantHomeCard
+            icon={Layers3}
+            eyebrow="Role-Based Skills"
+            title="Contractor skills"
+            testId="assistant-home-role-skills"
+          >
+            <div className="grid gap-2">
+              {ROLE_SKILLS.map((skill) => (
+                <div key={skill} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                  {skill}
                 </div>
               ))}
             </div>
-          </div>
-        </section>
+          </AssistantHomeCard>
+        </div>
 
-        <WorkspaceResultPanel
-          result={result}
-          onDismiss={() => setResult(null)}
-          onOpenCopilot={openCopilot}
-          onNavigate={handleResultNavigate}
-        />
-
-        <section data-testid="ai-workspace-quick-actions">
-          <div>
-            <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Launch Work
+        <div className="grid gap-5 lg:grid-cols-2">
+          <AssistantHomeCard
+            icon={Clock3}
+            eyebrow="Recent Context"
+            title="Recent work Project Assistant can inherit"
+            testId="assistant-home-recent-context"
+          >
+            <div className="space-y-3">
+              {loading ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                  Loading recent context...
+                </div>
+              ) : recentContext.length ? (
+                recentContext.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => navigate(item.route)}
+                    className="block w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-left hover:border-slate-400"
+                    data-testid={`assistant-home-context-${item.key}`}
+                  >
+                    <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">{item.type}</div>
+                    <div className="mt-1 text-sm font-black text-slate-950">{item.title}</div>
+                    {item.meta ? <div className="mt-1 text-xs font-semibold text-slate-500">{item.meta}</div> : null}
+                  </button>
+                ))
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                  No recent context yet. Project Assistant will inherit context from active workspaces as you use the platform.
+                </div>
+              )}
             </div>
-            <h3 className="mt-2 text-2xl font-bold tracking-tight text-[#18395f]">
-              Launch the right workflow without hunting for it.
-            </h3>
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Start from the most common AI-assisted paths for agreements, templates, milestones,
-              and task routing.
-            </p>
-          </div>
-          <div className="mt-5 grid gap-4 xl:grid-cols-4">
-            {quickActions.map((action) => (
-              <QuickActionCard
-                key={action.key}
-                action={action}
-                busyKey={busyKey}
-                onSelect={handleQuickActionSelect}
-              />
-            ))}
-          </div>
-        </section>
+          </AssistantHomeCard>
 
-        <RecentWorkSection
-          items={recentWork}
-          loading={recentLoading}
-          onNavigate={handleResultNavigate}
-          onFindNext={() => runWorkspaceAnalysis("next_task")}
-        />
+          <AssistantHomeCard
+            icon={History}
+            eyebrow="History"
+            title="Assistant history and recent drafts"
+            testId="assistant-home-history"
+          >
+            <div className="space-y-3">
+              {HISTORY_ITEMS.map((item) => (
+                <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-black text-slate-950">{item.title}</div>
+                  <div className="mt-1 text-sm leading-6 text-slate-600">{item.detail}</div>
+                </div>
+              ))}
+            </div>
+          </AssistantHomeCard>
+        </div>
+
+        <div className="grid gap-5 lg:grid-cols-2">
+          <AssistantHomeCard
+            icon={MessageSquareText}
+            eyebrow="Saved Conversations"
+            title="Saved conversations"
+            testId="assistant-home-saved-conversations"
+          >
+            <p className="text-sm leading-6 text-slate-600">
+              Saved assistant conversations will appear here as workspace-level assistant history is centralized.
+            </p>
+          </AssistantHomeCard>
+
+          <AssistantHomeCard
+            icon={Settings}
+            eyebrow="Settings"
+            title="Assistant settings"
+            testId="assistant-home-settings"
+          >
+            <p className="text-sm leading-6 text-slate-600">
+              Assistant preferences, governance, and future voice-ready action settings belong here. Irreversible actions still require explicit confirmation.
+            </p>
+          </AssistantHomeCard>
+        </div>
       </div>
     </ContractorPageSurface>
   );

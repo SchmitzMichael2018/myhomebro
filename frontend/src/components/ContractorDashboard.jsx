@@ -1957,7 +1957,7 @@ export default function ContractorDashboard() {
   const [who, setWho] = useState(null);
   const [contractorProfile, setContractorProfile] = useState(null);
 
-  // Onboarding detection — shown on Dashboard, never on AI Workspace
+  // Onboarding detection shown on Dashboard.
   const [loginExperience, setLoginExperience] = useState(null); // null = still loading
   const [onboardingProfile, setOnboardingProfile] = useState(null);
   const [onboardingStripe, setOnboardingStripe] = useState(null);
@@ -2951,7 +2951,7 @@ export default function ContractorDashboard() {
         title: "Complete your next agreement with AI",
         message: "Use AI to create your next agreement and project plan. It will guide you step by step.",
         rationale: "",
-        ctaLabel: "AI Workspace",
+        ctaLabel: "Project Assistant",
         navigationTarget: "/app/assistant",
         action: goStartFirstProjectWithAi,
       };
@@ -2961,7 +2961,7 @@ export default function ContractorDashboard() {
       title: "Start your next agreement",
       message: "Use AI to quickly create your next project agreement.",
       rationale: "",
-      ctaLabel: "AI Workspace",
+      ctaLabel: "Project Assistant",
       navigationTarget: "/app/assistant",
       action: goStartFirstProjectWithAi,
     };
@@ -3832,12 +3832,12 @@ export default function ContractorDashboard() {
                   const categoryClass = nextActionCategoryStyles[String(item.category || "operations").toLowerCase()] || nextActionCategoryStyles.operations;
                   const priorityClass = nextActionPriorityStyles[priorityTone] || nextActionPriorityStyles.growth;
                   const metadataRows = [
+                    ["Priority", nextActionUrgencyLabel(item)],
                     item.customer ? ["Customer", item.customer] : null,
                     item.project ? ["Project", item.project] : null,
                     formatActionTime(item.received_at) ? ["Received", formatActionTime(item.received_at)] : null,
                     !formatActionTime(item.received_at) && formatActionTime(item.updated_at) ? ["Updated", formatActionTime(item.updated_at)] : null,
                     formatActionValue(item.value) ? ["Value", formatActionValue(item.value)] : null,
-                    item.estimated_effort ? ["Effort", item.estimated_effort] : null,
                   ].filter(Boolean);
                   return (
                     <article
@@ -3876,7 +3876,12 @@ export default function ContractorDashboard() {
                           </dl>
                         ) : null}
                         <div className="mt-3 rounded-xl border border-white/10 bg-black/10 px-3 py-2 text-xs font-semibold leading-5 text-sky-100/72">
-                          {item.reason || "This keeps today's work moving."}
+                          <span className="block text-[10px] font-black uppercase tracking-[0.14em] text-sky-100/50">
+                            Why this matters
+                          </span>
+                          <span className="mt-1 block">
+                            {item.reason || "This keeps today's work moving."}
+                          </span>
                         </div>
                       </div>
                       <div className="mt-4 flex flex-wrap items-center gap-2">

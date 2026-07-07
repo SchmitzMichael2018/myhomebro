@@ -1487,7 +1487,7 @@ export default function StartWithAIAssistant({
     ? "Project Assistant"
     : isContextualMode
     ? "Project Assistant"
-    : "AI Workspace";
+    : "Project Assistant";
   const inputHelperText = isFieldAwareDescriptionMode
     ? "Generate a contractor-grade Scope of Work with sections, responsibilities, and exclusions."
     : isFieldAwareMilestonesMode

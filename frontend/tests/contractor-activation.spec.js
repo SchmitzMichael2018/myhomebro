@@ -475,7 +475,9 @@ test('AI operations manager prioritizes leads, dedupes actions, and deep-links',
   const actionItems = page.locator('[data-testid^="dashboard-next-action-item-"]');
   await expect(actionItems.first()).toContainText('New Website Lead');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('Avery Customer requested kitchen remodel.');
-  await expect(page.getByTestId('dashboard-next-actions')).toContainText('2 minutes');
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('2 minutes');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Why this matters');
+  await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-priority')).toContainText('Critical');
   await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-customer')).toContainText('Avery Customer');
   await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-project')).toContainText('kitchen remodel');
   await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-value')).toContainText('$8,750.00');

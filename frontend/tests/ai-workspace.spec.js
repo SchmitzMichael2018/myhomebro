@@ -271,117 +271,67 @@ async function installWorkspacePageMocks(page) {
   await installNavigationTargetMocks(page);
 }
 
-test.describe('AI Workspace page', () => {
+test.describe('Project Assistant home route', () => {
   test.beforeEach(async ({ page }) => {
     await installWorkspacePageMocks(page);
   });
 
-  test('renders the structured workspace layout sections', async ({ page }) => {
+  test('renders Assistant Home without the old workflow launcher', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByTestId('ai-workspace-hero')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-quick-actions')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-capabilities')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-suggested')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-recent-work')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-popular-templates')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-footer')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-open-copilot')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
+    await expect(page.getByTestId('assistant-home-hero')).toBeVisible();
+    await expect(page.getByTestId('assistant-home-hero').getByRole('heading', { name: 'Project Assistant' })).toBeVisible();
+    await expect(page.getByTestId('assistant-home-context')).toContainText('Role');
+    await expect(page.getByTestId('assistant-home-context')).toContainText('Workspace');
+    await expect(page.getByTestId('assistant-home-pending-recommendations')).toBeVisible();
+    await expect(page.getByTestId('assistant-home-role-skills')).toContainText('Create agreement from estimate');
+    await expect(page.getByTestId('assistant-home-recent-context')).toBeVisible();
+    await expect(page.getByTestId('assistant-home-history')).toBeVisible();
+    await expect(page.getByTestId('assistant-home-saved-conversations')).toBeVisible();
+    await expect(page.getByTestId('assistant-home-settings')).toContainText('explicit confirmation');
 
-    await expect(page.getByRole('heading', { name: 'Launch Work. Continue Work. Find Work.' })).toBeVisible();
-    await expect(page.getByText('AI Workspace routes you to the right workflow')).toBeVisible();
-    await expect(page.getByText('Choose the right next workflow.')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-quick-action-start_agreement')).toContainText('Create Agreement');
-    await expect(page.getByTestId('ai-workspace-quick-action-apply_template')).toContainText('Use Template');
-    await expect(page.getByTestId('ai-workspace-quick-action-suggest_milestones')).toContainText('Plan Milestones');
-    await expect(page.getByTestId('ai-workspace-quick-action-continue_project')).toContainText('Continue Existing Project');
-    await expect(page.getByTestId('ai-workspace-quick-action-navigate_app')).toContainText('Find My Next Task');
-    await expect(page.getByText('Launch the right workflow without hunting for it.')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'What AI can help with' })).not.toBeVisible();
-    await expect(page.getByText('A launcher, not a second drafting flow.')).not.toBeVisible();
-    await expect(page.getByText('Agreement Wizard owns project drafting')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-summary')).toBeVisible();
+    await expect(page.getByTestId('ai-workspace-quick-actions')).not.toBeVisible();
+    await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
+    await expect(page.getByText('Launch Work. Continue Work. Find Work.')).not.toBeVisible();
+    await expect(page.getByText('AI Workspace routes you to the right workflow')).not.toBeVisible();
+    await expect(page.getByText('Continue Existing Project')).not.toBeVisible();
   });
 
-  test('workspace no longer renders drafting intake and the global assistant dock opens', async ({ page }) => {
+  test('global Project Assistant dock opens from Assistant Home', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByText('Describe the work')).not.toBeVisible();
     await expect(page.locator('textarea:visible')).toHaveCount(0);
 
-    await page.getByTestId('assistant-dock-open-button').click();
+    await page.getByTestId('assistant-home-open-assistant').click();
     await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
     await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Project Assistant');
   });
 
-  test('quick action cards navigate to the expected flows', async ({ page }) => {
+  test('recent context and pending recommendations route to source workspaces', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
-    await page.getByTestId('ai-workspace-quick-action-start_agreement').click();
-    await page.waitForURL('**/app/agreements/new/wizard?step=1');
-
-    await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('ai-workspace-quick-action-apply_template').click();
-    await page.waitForURL('**/app/templates');
-
-    await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    await page.getByTestId('ai-workspace-quick-action-suggest_milestones').click();
-    await page.waitForURL('**/app/agreements/new/wizard?step=2');
-
-    await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    const continueAction = page.getByTestId('ai-workspace-quick-action-continue_project');
-    await expect(continueAction).toBeEnabled();
-    await continueAction.click();
-    await expect.poll(() => page.getByTestId('ai-workspace-result-panel').count()).toBe(1);
-    await expect(page.getByTestId('ai-workspace-result-panel')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-result-title')).toContainText('Complete your draft agreement');
-
-    await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
-    const nextTaskAction = page.getByTestId('ai-workspace-quick-action-navigate_app');
-    await expect(nextTaskAction).toBeEnabled();
-    await nextTaskAction.click();
-    await expect.poll(() => page.getByTestId('ai-workspace-result-panel').count()).toBe(1);
-    await expect(page.getByTestId('ai-workspace-result-panel')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-result-title')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-result-primary-cta')).toBeVisible();
+    await expect(page.getByTestId('assistant-home-pending-recommendations')).toContainText('Draft agreements need review');
+    await page.getByTestId('assistant-home-context-agreement-901').click();
+    await page.waitForURL('**/app/agreements/901');
   });
 
-  test('duplicate dashboard and template browser sections stay removed while recent work renders once', async ({ page }) => {
+  test('old duplicate dashboard and template browser sections stay removed', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('ai-workspace-suggested')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-recent-work')).toBeVisible();
+    await expect(page.getByTestId('ai-workspace-recent-work')).not.toBeVisible();
     await expect(page.getByTestId('ai-workspace-popular-templates')).not.toBeVisible();
-    await expect(page.getByTestId('ai-workspace-recent-work-agreement-901')).toBeVisible();
+    await expect(page.getByTestId('assistant-home-context-agreement-901')).toBeVisible();
     await expect(page.getByTestId('ai-workspace-template-301')).not.toBeVisible();
   });
 
-  test('Find my next task chip shows analysis result with no immediate routing', async ({ page }) => {
+  test('Assistant Home recommendations do not execute irreversible AI actions', async ({ page }) => {
     await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
 
-    await expect(page.getByTestId('ai-workspace-result-panel')).not.toBeVisible();
-
-    const nextTaskAction = page.getByTestId('ai-workspace-quick-action-navigate_app');
-    await expect(nextTaskAction).toBeEnabled();
-    await nextTaskAction.click();
-
-    await expect.poll(() => page.getByTestId('ai-workspace-result-panel').count()).toBe(1);
-    await expect(page.getByTestId('ai-workspace-result-panel')).toBeVisible();
-    await expect(page.getByTestId('ai-workspace-result-title')).toContainText('Review and send draft agreements');
-    await expect(page.getByTestId('ai-workspace-result-reason')).toContainText(
-      'You have 3 draft agreements waiting. Completing them can unlock signatures, funding, and active work.'
-    );
-    await expect(page.getByTestId('ai-workspace-result-primary-cta')).toContainText('Open Agreements');
-    await expect(page.getByTestId('ai-workspace-result-secondary-cta')).toContainText('Open Assistant');
-
-    await page.getByTestId('ai-workspace-result-secondary-cta').click();
-    await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
-    await page.getByTestId('assistant-desktop-dock-close').click();
-    await expect(page.getByTestId('assistant-desktop-dock')).not.toBeVisible();
-
-    await page.getByTestId('ai-workspace-result-primary-cta').click();
-    await page.waitForURL('**/app/agreements');
+    await expect(page.getByTestId('assistant-home-history')).toContainText('never sign, fund, assign, schedule, release payment, resolve disputes, or send customer messages without confirmation');
+    await expect(page.getByText('Sign now')).not.toBeVisible();
+    await expect(page.getByRole('button', { name: /release payment/i })).not.toBeVisible();
   });
 
   test('bottom assistant bridge stays removed', async ({ page }) => {

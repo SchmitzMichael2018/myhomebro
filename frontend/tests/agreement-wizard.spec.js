@@ -1,14 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-const PASSWORD = "MyHomeBroQA!2026";
 const CONTRACTOR_EMAIL = "info+contractor@myhomebro.com";
 
 async function loginContractor(page) {
-  await page.goto("/login", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("login-email-input").fill(CONTRACTOR_EMAIL);
-  await page.getByTestId("login-password-input").fill(PASSWORD);
-  await page.getByTestId("login-submit-button").click();
-  await expect.poll(async () => page.evaluate(() => window.localStorage.getItem("access") || "")).not.toBe("");
+  await page.addInitScript(
+    ({ email }) => {
+      window.localStorage.setItem("access", "playwright-access-token");
+      window.localStorage.setItem("refresh", "playwright-refresh-token");
+      window.localStorage.setItem("mhb_last_login_ts", String(Date.now()));
+      window.localStorage.setItem("mhb_last_login_email", email);
+    },
+    { email: CONTRACTOR_EMAIL }
+  );
 }
 
 async function installWizardMocks(page) {
