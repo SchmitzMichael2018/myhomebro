@@ -3268,6 +3268,42 @@ class ContractorPublicPresenceApiTests(TestCase):
         self.assertIn("/portal/", mail.outbox[0].body)
         self.assertNotIn("temporary password", mail.outbox[0].body.lower())
 
+    def test_public_intake_accepts_tentative_start_date_without_serialization_error(self):
+        start_response = self.client.post(
+            "/api/projects/public-intake/start/",
+            {
+                "source": "landing_page",
+                "customer_name": "Scheduled Landing Customer",
+                "customer_email": "scheduled-landing@example.com",
+                "customer_phone": "(555) 333-4040",
+            },
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, 201)
+        token = start_response.json()["token"]
+
+        response = self.client.patch(
+            f"/api/projects/public-intake/?token={token}",
+            {
+                "customer_name": "Scheduled Landing Customer",
+                "customer_email": "scheduled-landing@example.com",
+                "customer_phone": "(555) 333-4040",
+                "project_address_line1": "108 Schedule Way",
+                "project_city": "Austin",
+                "project_state": "TX",
+                "project_postal_code": "78701",
+                "accomplishment_text": "Need a scheduled landing request reviewed.",
+                "tentative_start_date": "2026-07-20",
+                "final_submit": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.json()["tentative_start_date"], "2026-07-20")
+        intake = ProjectIntake.objects.get(share_token=token)
+        self.assertEqual(intake.tentative_start_date, date(2026, 7, 20))
+
     def test_landing_page_public_intake_draft_save_does_not_create_customer_account(self):
         start_response = self.client.post(
             "/api/projects/public-intake/start/",

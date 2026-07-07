@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 import re
 
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework import status
 from rest_framework.response import Response
@@ -336,7 +337,17 @@ class PublicIntakeView(APIView):
                             optional_numeric_errors[field] = ["Enter a valid amount."]
                             continue
                 elif field == "tentative_start_date":
-                    setattr(intake, field, blank_to_none(raw_value))
+                    normalized_value = blank_to_none(raw_value)
+                    if normalized_value is None:
+                        setattr(intake, field, None)
+                    else:
+                        parsed_date = parse_date(str(normalized_value))
+                        if parsed_date is None:
+                            return Response(
+                                {"tentative_start_date": ["Enter a valid date."]},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        setattr(intake, field, parsed_date)
                 else:
                     setattr(intake, field, raw_value)
                 changed.append(field)

@@ -157,6 +157,8 @@ def _serialize_activity(event: ProposalActivity) -> dict:
 
 def _serialize_proposal(proposal: Proposal, request=None, include_related=True) -> dict:
     appointment = getattr(proposal, "estimate_appointment", None)
+    opportunity = getattr(proposal, "contractor_opportunity", None)
+    customer_id = getattr(opportunity, "converted_customer_id", None)
     data = {
         "id": proposal.id,
         "status": proposal.status,
@@ -164,6 +166,8 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "source_type": proposal.source_type,
         "source_id": proposal.source_id,
         "contractor_opportunity_id": proposal.contractor_opportunity_id,
+        "customer_id": customer_id,
+        "homeowner_id": customer_id,
         "estimate_appointment_id": proposal.estimate_appointment_id,
         "project_title": proposal.project_title,
         "project_summary": proposal.project_summary,

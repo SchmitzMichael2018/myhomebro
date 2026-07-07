@@ -765,6 +765,7 @@ export default function ProposalWorkspacePage() {
 
     const handoff = {
       assistantPrefill: {
+        homeowner_id: workspaceProposal.homeowner_id || workspaceProposal.customer_id || "",
         project_title: workspaceProposal.project_title || "",
         project_summary: workspaceProposal.project_summary || "",
         customer_name: workspaceProposal.customer_name || "",
@@ -781,6 +782,9 @@ export default function ProposalWorkspacePage() {
         estimate_appointment_id: proposal.estimate_appointment_id || null,
         project_title: workspaceProposal.project_title || "",
         title: workspaceProposal.project_title || "",
+        homeowner: workspaceProposal.homeowner_id || workspaceProposal.customer_id || "",
+        homeowner_id: workspaceProposal.homeowner_id || workspaceProposal.customer_id || "",
+        customer_id: workspaceProposal.customer_id || workspaceProposal.homeowner_id || "",
         project_type: workspaceProposal.project_type || "",
         project_subtype: workspaceProposal.project_subtype || "",
         project_summary: workspaceProposal.project_summary || "",
