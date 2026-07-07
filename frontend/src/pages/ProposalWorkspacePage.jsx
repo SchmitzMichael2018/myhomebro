@@ -772,9 +772,19 @@ export default function ProposalWorkspacePage() {
     () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
     [proposal, draft, totals, photos, documents, clarificationRows]
   );
+  const isReadOnlyHistory = Boolean(
+    proposal && (compactText(proposal.status).toLowerCase() === "converted" || proposal.linked_agreement_id)
+  );
+
+  function blockReadOnlyHistory() {
+    if (!isReadOnlyHistory) return false;
+    toast.error("Converted estimates are read-only history. Open the linked agreement for active work.");
+    return true;
+  }
 
   function createAgreementFromProposal() {
     if (!proposal) return;
+    if (blockReadOnlyHistory()) return;
     if (!estimateChecklist.readyMinimum) {
       toast.error("Finish required estimate readiness items before creating an agreement.");
       setActive("overview");
@@ -990,6 +1000,7 @@ export default function ProposalWorkspacePage() {
   }
 
   async function saveProposal(payload, success = "Estimate saved.") {
+    if (blockReadOnlyHistory()) return;
     setSaving(true);
     try {
       const { data } = await api.patch(`/projects/proposals/${proposalId}/`, payload);
@@ -1005,6 +1016,7 @@ export default function ProposalWorkspacePage() {
   }
 
   async function saveProjectAddress() {
+    if (blockReadOnlyHistory()) return;
     const address = compactText(draft.service_location);
     if (!address) {
       toast.error("Project Address is required.");
@@ -1032,6 +1044,7 @@ export default function ProposalWorkspacePage() {
   }
 
   async function setClarificationState(row, state) {
+    if (blockReadOnlyHistory()) return;
     const current = Array.isArray(draft.quick_checklist) ? draft.quick_checklist : [];
     const withoutRow = current.filter((item) => item !== row.completeKey && item !== row.ignoredKey);
     const next = state === "complete"
@@ -1045,6 +1058,7 @@ export default function ProposalWorkspacePage() {
 
   async function addMeasurement(event) {
     event?.preventDefault?.();
+    if (blockReadOnlyHistory()) return;
     try {
       const { data } = await api.post(`/projects/proposals/${proposalId}/measurements/`, measurementForm);
       setProposal((prev) => ({ ...prev, measurements: [...(prev?.measurements || []), data] }));
@@ -1058,6 +1072,7 @@ export default function ProposalWorkspacePage() {
   }
 
   async function deleteMeasurement(id) {
+    if (blockReadOnlyHistory()) return;
     await api.delete(`/projects/proposals/${proposalId}/measurements/${id}/`);
     setProposal((prev) => ({
       ...prev,
@@ -1077,6 +1092,7 @@ export default function ProposalWorkspacePage() {
 
   async function submitLineItem(event) {
     event.preventDefault();
+    if (blockReadOnlyHistory()) return;
     try {
       if (editingLineItemId) {
         const { data } = await api.patch(`/projects/proposals/${proposalId}/line-items/${editingLineItemId}/`, lineItemForm);
@@ -1115,6 +1131,7 @@ export default function ProposalWorkspacePage() {
   }
 
   async function deleteLineItem(id) {
+    if (blockReadOnlyHistory()) return;
     try {
       const { data } = await api.delete(`/projects/proposals/${proposalId}/line-items/${id}/`);
       setProposal((prev) => ({
@@ -1133,6 +1150,10 @@ export default function ProposalWorkspacePage() {
   async function uploadAttachment(event, type) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (blockReadOnlyHistory()) {
+      event.target.value = "";
+      return;
+    }
     setUploading(true);
     const body = new FormData();
     body.append("file", file);
@@ -1155,6 +1176,7 @@ export default function ProposalWorkspacePage() {
   }
 
   async function deleteAttachment(id) {
+    if (blockReadOnlyHistory()) return;
     await api.delete(`/projects/proposals/${proposalId}/attachments/${id}/`);
     setProposal((prev) => ({
       ...prev,
@@ -1164,6 +1186,7 @@ export default function ProposalWorkspacePage() {
   }
 
   async function toggleChecklistItem(label) {
+    if (blockReadOnlyHistory()) return;
     const current = Array.isArray(draft.quick_checklist) ? draft.quick_checklist : [];
     const next = current.includes(label) ? current.filter((item) => item !== label) : [...current, label];
     patchDraft("quick_checklist", next);
@@ -1432,7 +1455,7 @@ export default function ProposalWorkspacePage() {
           <button
             type="button"
             data-testid="proposal-create-agreement-action"
-            disabled={!estimateChecklist.readyMinimum}
+            disabled={!estimateChecklist.readyMinimum || isReadOnlyHistory}
             className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
             onClick={createAgreementFromProposal}
           >
@@ -1448,6 +1471,11 @@ export default function ProposalWorkspacePage() {
         </>
       }
     >
+      {isReadOnlyHistory ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900" data-testid="proposal-read-only-history">
+          This estimate has been converted and remains available as read-only history. The linked agreement is now the active operational record.
+        </div>
+      ) : null}
       <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_280px]" data-testid="proposal-workspace">
         <aside className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200 lg:sticky lg:top-4 lg:self-start" data-testid="proposal-nav">
           <nav className="grid grid-cols-2 gap-2 lg:grid-cols-1">

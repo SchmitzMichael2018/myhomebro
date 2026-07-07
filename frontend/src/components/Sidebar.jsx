@@ -39,6 +39,7 @@ const NAV_HINTS = {
   "/app/team": "See team activity, employees, subcontractors, assignments, and schedule",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
+  "/app/estimates": "Manage estimate workspaces between opportunities and agreements",
   "/app/templates": "Build reusable project templates and milestone structures",
   "/app/admin/marketplace": "Monitor contractor coverage, claim readiness, service gaps, and routing health",
   "/app/admin/maintenance": "Monitor maintenance contracts, work orders, renewals, and service attention",
@@ -358,8 +359,9 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
-        <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
         <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
+        <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />
+        <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
         <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
         <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
         <Item to={`${APP_BASE}/marketing`} label="Marketing" icon={Globe} />
@@ -605,11 +607,12 @@ export default function Sidebar({ variant = "desktop" }) {
             </NavGroup>
 
             <NavGroup label="Operations" className="pt-1">
+              <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
+              <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/agreements`} label="Agreements" icon={FileSignature} />
               <Item to={`${APP_BASE}/templates`} label="Templates" icon={ClipboardList} />
               <Item to={`${APP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
               <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
-              <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
             </NavGroup>
 
             <NavGroup label="Customers & Team" className="pt-1">

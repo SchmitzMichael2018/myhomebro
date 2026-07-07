@@ -70,6 +70,7 @@ import PayoutHistoryPage from "../pages/PayoutHistoryPage.jsx";
 import PayoutDetailPage from "../pages/PayoutDetailPage.jsx";
 import ContractorPayoutHistoryPage from "../pages/ContractorPayoutHistoryPage.jsx";
 import ContractorBidsPage from "../pages/ContractorBidsPage.jsx";
+import EstimatesPage from "../pages/EstimatesPage.jsx";
 import ProposalWorkspacePage from "../pages/ProposalWorkspacePage.jsx";
 import CustomerRecordsPage from "../pages/CustomerRecordsPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
@@ -187,6 +188,8 @@ export function protectedRoutes() {
           <Route path="public-presence" element={<Navigate to="/app/marketing" replace />} />
 
           <Route path="opportunities" element={<ContractorBidsPage />} />
+          <Route path="estimates" element={<EstimatesPage />} />
+          <Route path="estimates/:proposalId" element={<ProposalWorkspacePage />} />
           <Route path="bids" element={<Navigate to="/app/opportunities" replace />} />
           <Route path="proposals/:proposalId" element={<ProposalWorkspacePage />} />
 

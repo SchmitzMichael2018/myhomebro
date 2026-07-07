@@ -125,6 +125,16 @@ def _proposal_totals(proposal: Proposal) -> dict:
     }
 
 
+def _related_count(instance, related_name: str) -> int:
+    try:
+        cached = getattr(instance, "_prefetched_objects_cache", {}).get(related_name)
+        if cached is not None:
+            return len(cached)
+        return getattr(instance, related_name).count()
+    except Exception:
+        return 0
+
+
 def _serialize_attachment(attachment: ProposalAttachment, request=None) -> dict:
     url = attachment.file.url if attachment.file else ""
     if url and request is not None:
@@ -159,6 +169,12 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
     appointment = getattr(proposal, "estimate_appointment", None)
     opportunity = getattr(proposal, "contractor_opportunity", None)
     customer_id = getattr(opportunity, "converted_customer_id", None)
+    linked_agreement = getattr(opportunity, "converted_agreement", None) if opportunity else None
+    linked_opportunity_title = getattr(opportunity, "project_title", "") if opportunity else ""
+    linked_agreement_title = ""
+    if linked_agreement is not None:
+        linked_project = getattr(linked_agreement, "project", None)
+        linked_agreement_title = getattr(linked_project, "title", "") or getattr(linked_agreement, "title", "") or ""
     data = {
         "id": proposal.id,
         "status": proposal.status,
@@ -166,6 +182,12 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "source_type": proposal.source_type,
         "source_id": proposal.source_id,
         "contractor_opportunity_id": proposal.contractor_opportunity_id,
+        "linked_opportunity_id": proposal.contractor_opportunity_id,
+        "linked_opportunity_title": linked_opportunity_title,
+        "linked_opportunity_url": f"/app/opportunities?opportunity={proposal.contractor_opportunity_id}" if proposal.contractor_opportunity_id else "",
+        "linked_agreement_id": getattr(linked_agreement, "id", None),
+        "linked_agreement_title": linked_agreement_title,
+        "linked_agreement_url": f"/app/agreements/{linked_agreement.id}" if linked_agreement is not None else "",
         "customer_id": customer_id,
         "homeowner_id": customer_id,
         "estimate_appointment_id": proposal.estimate_appointment_id,
@@ -196,6 +218,9 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "internal_notes": proposal.internal_notes,
         "appointment": _serialize_estimate_appointment(appointment) if appointment else None,
         "totals": _proposal_totals(proposal),
+        "measurement_count": _related_count(proposal, "measurements"),
+        "line_item_count": _related_count(proposal, "line_items"),
+        "attachment_count": _related_count(proposal, "attachments"),
         "created_at": _format_datetime(proposal.created_at),
         "updated_at": _format_datetime(proposal.updated_at),
     }
@@ -210,7 +235,12 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
 def _proposal_queryset(contractor):
     return (
         Proposal.objects.filter(contractor=contractor)
-        .select_related("contractor_opportunity", "estimate_appointment")
+        .select_related(
+            "contractor_opportunity",
+            "contractor_opportunity__converted_agreement",
+            "contractor_opportunity__converted_agreement__project",
+            "estimate_appointment",
+        )
         .prefetch_related("measurements", "line_items", "attachments", "activity")
     )
 

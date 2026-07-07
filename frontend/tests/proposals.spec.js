@@ -139,6 +139,69 @@ const customerPayload = {
   ],
 };
 
+const estimateListPayload = {
+  results: [
+    {
+      ...proposal,
+      id: 42,
+      status: "draft",
+      status_label: "Draft",
+      measurement_count: 0,
+      line_item_count: 0,
+      attachment_count: 0,
+      linked_opportunity_id: 6,
+      linked_opportunity_title: "Bathroom Remodel",
+      linked_agreement_id: null,
+      linked_agreement_title: "",
+      linked_agreement_url: "",
+    },
+    {
+      ...proposal,
+      id: 43,
+      status: "in_progress",
+      status_label: "Proposal In Progress",
+      project_title: "Flooring Estimate",
+      project_type: "Flooring",
+      measurement_count: 1,
+      line_item_count: 1,
+      attachment_count: 0,
+      totals: { ...proposal.totals, line_item_count: 1, total: "2400.00" },
+    },
+    {
+      ...proposal,
+      id: 44,
+      status: "ready",
+      status_label: "Proposal Ready",
+      project_title: "Ready Deck Repair",
+      project_type: "Deck",
+      measurement_count: 1,
+      line_item_count: 3,
+      attachment_count: 2,
+      totals: { ...proposal.totals, line_item_count: 3, total: "5200.00", incidentals_reserve: "300.00" },
+    },
+    {
+      ...proposal,
+      id: 45,
+      status: "converted",
+      status_label: "Converted",
+      project_title: "Converted Kitchen",
+      linked_agreement_id: 450,
+      linked_agreement_title: "Converted Kitchen Agreement",
+      linked_agreement_url: "/app/agreements/450",
+      totals: { ...proposal.totals, total: "8800.00", line_item_count: 4 },
+      line_item_count: 4,
+    },
+    {
+      ...proposal,
+      id: 46,
+      status: "expired",
+      status_label: "Expired",
+      project_title: "Archived Paint Estimate",
+      project_type: "Painting",
+    },
+  ],
+};
+
 async function installBaseMocks(page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
@@ -250,6 +313,39 @@ function calculateTotals(items) {
     line_item_count: items.length,
   };
 }
+
+test("Estimates landing page lists lifecycle stages and opens existing records", async ({ page }) => {
+  await installBaseMocks(page);
+
+  await page.route(/\/api\/projects\/proposals\/?$/, async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(estimateListPayload) });
+  });
+  await page.route("**/api/projects/proposals/42/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(estimateListPayload.results[0]) });
+  });
+
+  await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByRole("link", { name: /Estimates/i })).toBeVisible();
+  await expect(page.getByTestId("estimates-tabs")).toContainText("Needs Estimate");
+  await expect(page.getByTestId("estimate-row-42")).toContainText("New Lead Customer");
+  await expect(page.getByTestId("estimate-row-42")).toContainText("Bathroom Remodel");
+
+  await page.getByTestId("estimates-tab-in_progress").click();
+  await expect(page.getByTestId("estimate-row-43")).toContainText("Flooring Estimate");
+
+  await page.getByTestId("estimates-tab-ready").click();
+  await expect(page.getByTestId("estimate-primary-action-44")).toContainText("Create Agreement");
+
+  await page.getByTestId("estimates-tab-converted").click();
+  await expect(page.getByTestId("estimate-row-45")).toContainText("Converted Kitchen Agreement");
+  await page.getByTestId("estimate-primary-action-45").click();
+  await expect(page).toHaveURL(/\/app\/agreements\/450/);
+
+  await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("estimate-primary-action-42").click();
+  await expect(page).toHaveURL(/\/app\/estimates\/42/);
+});
 
 test("Create Estimate from Opportunity opens Estimate Workspace", async ({ page }) => {
   await installBaseMocks(page);
