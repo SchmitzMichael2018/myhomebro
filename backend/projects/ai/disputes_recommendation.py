@@ -42,6 +42,36 @@ def _safe_json_load(s: str) -> Optional[dict]:
         return None
 
 
+LEGAL_CONCLUSION_REPLACEMENTS = {
+    "liable": "responsible under the agreement context",
+    "liability": "responsibility under the agreement context",
+    "negligent": "unsupported by the available evidence",
+    "negligence": "an unsupported legal conclusion",
+    "breached": "may not align with the agreement record",
+    "breach": "agreement alignment issue",
+    "entitled": "may request review",
+    "violation": "possible mismatch with the record",
+    "guilty": "not determined by this review",
+    "at fault": "associated with the disputed issue",
+    "you should": "a reviewer may consider",
+}
+
+
+def _neutralize_legal_language(value: Any) -> Any:
+    if isinstance(value, str):
+        text = value
+        for unsafe, replacement in LEGAL_CONCLUSION_REPLACEMENTS.items():
+            text = text.replace(unsafe, replacement)
+            text = text.replace(unsafe.title(), replacement)
+            text = text.replace(unsafe.upper(), replacement)
+        return text
+    if isinstance(value, list):
+        return [_neutralize_legal_language(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _neutralize_legal_language(item) for key, item in value.items()}
+    return value
+
+
 # ---------------------------------------------------------------------------
 # OpenAI client (SAFE + LAZY)
 # ---------------------------------------------------------------------------
@@ -88,7 +118,7 @@ def build_dispute_recommendation_prompt(
     )
 
     system = (
-        "You are an impartial dispute resolution assistant for a contractor/homeowner platform.\n"
+        "You are Project Assistant acting as a neutral Resolution Assistant for a contractor/homeowner platform.\n"
         "Your job is to prepare a neutral, practical, and auditable review aid for a human reviewer.\n"
         "Rules:\n"
         "- Advisory only. Humans decide all outcomes and all financial actions remain explicit separate steps.\n"
@@ -96,9 +126,10 @@ def build_dispute_recommendation_prompt(
         "- Never instruct the platform to release funds, refund funds, split funds, or create a binding outcome.\n"
         "- Base recommendations strictly on the provided evidence context.\n"
         "- If evidence is insufficient, say what is missing and ask for it.\n"
-        "- Use neutral headings such as Suggested Review Summary, Evidence Provided, Evidence Missing, Open Questions, and Possible Resolution Options.\n"
+        "- Use neutral headings such as Neutral Case Summary, Timeline, Evidence Used, Missing Evidence, Open Questions, and Courses of Action.\n"
         "- Avoid legal advice; provide procedural suggestions and neutral language.\n"
-        "- Use phrases like 'possible option', 'reviewer may consider', and 'additional evidence may be needed'.\n"
+        "- Use phrases like 'Based on the available evidence...', 'The agreement appears to state...', 'The evidence supports...', and 'Insufficient evidence to determine...'.\n"
+        "- Do not use these words or phrases: liable, negligent, breached, entitled, violation, guilty, at fault, you should.\n"
         "- Do not say 'customer is correct', 'contractor is liable', 'release payment', or 'refund homeowner'.\n"
         "- Produce output that can be shown to both parties.\n"
     )
@@ -131,14 +162,50 @@ def build_dispute_recommendation_prompt(
                     "additionalProperties": False,
                     "properties": {
                         "neutral_summary": {"type": "string"},
+                        "timeline": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "date": {"type": "string"},
+                                    "event": {"type": "string"},
+                                    "source": {"type": "string"},
+                                },
+                                "required": ["date", "event", "source"],
+                            },
+                        },
+                        "disputed_facts": {"type": "array", "items": {"type": "string"}},
+                        "undisputed_facts": {"type": "array", "items": {"type": "string"}},
+                        "relevant_agreement_sections": {"type": "array", "items": {"type": "string"}},
+                        "evidence_used": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "properties": {
+                                    "type": {"type": "string"},
+                                    "label": {"type": "string"},
+                                    "supports": {"type": "string"},
+                                },
+                                "required": ["type", "label", "supports"],
+                            },
+                        },
                         "main_issues": {"type": "array", "items": {"type": "string"}},
                         "missing_info": {"type": "array", "items": {"type": "string"}},
+                        "missing_evidence": {"type": "array", "items": {"type": "string"}},
                         "risk_flags": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": [
                         "neutral_summary",
+                        "timeline",
+                        "disputed_facts",
+                        "undisputed_facts",
+                        "relevant_agreement_sections",
+                        "evidence_used",
                         "main_issues",
                         "missing_info",
+                        "missing_evidence",
                         "risk_flags",
                     ],
                 },
@@ -149,6 +216,8 @@ def build_dispute_recommendation_prompt(
                         "recommended_option_id": {"type": "string"},
                         "why_this_option": {"type": "string"},
                         "confidence": {"type": "number"},
+                        "supporting_evidence": {"type": "array", "items": {"type": "string"}},
+                        "missing_evidence": {"type": "array", "items": {"type": "string"}},
                         "notes_for_parties": {"type": "string"},
                         "advisory_boundary": {"type": "string"},
                     },
@@ -156,16 +225,70 @@ def build_dispute_recommendation_prompt(
                         "recommended_option_id",
                         "why_this_option",
                         "confidence",
+                        "supporting_evidence",
+                        "missing_evidence",
                         "notes_for_parties",
                         "advisory_boundary",
                     ],
                 },
-                "options": {"type": "array"},
-                "draft_resolution_agreement": {"type": "object"},
+                "courses_of_action": {
+                    "type": "array",
+                    "minItems": 3,
+                    "maxItems": 3,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "option_id": {"type": "string"},
+                            "label": {"type": "string"},
+                            "description": {"type": "string"},
+                            "pros": {"type": "array", "items": {"type": "string"}},
+                            "cons": {"type": "array", "items": {"type": "string"}},
+                            "evidence_supporting": {"type": "array", "items": {"type": "string"}},
+                            "risks": {"type": "array", "items": {"type": "string"}},
+                            "estimated_impact": {"type": "string"},
+                        },
+                        "required": [
+                            "option_id",
+                            "label",
+                            "description",
+                            "pros",
+                            "cons",
+                            "evidence_supporting",
+                            "risks",
+                            "estimated_impact",
+                        ],
+                    },
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "option_id": {"type": "string"},
+                            "label": {"type": "string"},
+                            "outcome": {"type": "string"},
+                        },
+                        "required": ["option_id", "label", "outcome"],
+                    },
+                },
+                "draft_resolution_agreement": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "title": {"type": "string"},
+                        "terms": {"type": "array", "items": {"type": "string"}},
+                        "signature_block": {"type": "string"},
+                        "human_approval_required": {"type": "string"},
+                    },
+                    "required": ["title", "terms", "signature_block", "human_approval_required"],
+                },
             },
             "required": [
                 "overview",
                 "recommendation",
+                "courses_of_action",
                 "options",
                 "draft_resolution_agreement",
             ],
@@ -234,6 +357,7 @@ def generate_dispute_recommendation(
     if not isinstance(payload, dict):
         raise ValidationError("AI recommendation returned invalid JSON output.")
 
+    payload = _neutralize_legal_language(payload)
     payload["_artifact_type"] = "recommendation"
     payload["_model"] = model
 

@@ -225,6 +225,7 @@ export function parseTemplateFromScopeResponse(raw) {
 const _disputeFallback = {
   overview: null,
   options: [],
+  courses_of_action: [],
   recommendation: null,
   draft_resolution_agreement: null,
   confidence: 0,
@@ -236,7 +237,8 @@ export function parseDisputeRecommendationResponse(raw) {
     raw,
     (d) => ({
       overview: d.overview || null,
-      options: safeArr(d.options),
+      options: safeArr(d.courses_of_action).length ? safeArr(d.courses_of_action) : safeArr(d.options),
+      courses_of_action: safeArr(d.courses_of_action),
       recommendation: d.recommendation || null,
       draft_resolution_agreement: d.draft_resolution_agreement || null,
       confidence: safeNum(d.recommendation?.confidence, 0),

@@ -18,6 +18,7 @@ import {
 
 // ✅ NEW: AI Advisor (read-only, evidence-context-based)
 import DisputeAIAdvisor from "../components/ai/DisputeAIAdvisor.jsx";
+import DisputeAIRecommendationPanel from "../components/ai/DisputeAIRecommendationPanel.jsx";
 
 // ─────────────────────────────────────────────
 // Helpers
@@ -869,6 +870,7 @@ function DetailsModal({
 
       {/* ✅ AI Advisor panel (read-only, evidence-context only) */}
       <DisputeAIAdvisor disputeId={dispute.id} enabled={aiEnabled} />
+      {aiEnabled ? <DisputeAIRecommendationPanel disputeId={dispute.id} /> : null}
 
       {/* ✅ Rework milestone CTA */}
       <ReworkMilestoneCTA dispute={dispute} basePath={basePath} />

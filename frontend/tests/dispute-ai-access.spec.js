@@ -99,6 +99,97 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
     });
   });
 
+  await page.route(`**/api/projects/disputes/${DISPUTE_ID}/ai/artifacts/**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'No artifacts found.', items: [], count: 0 }),
+    });
+  });
+
+  await page.route(`**/api/projects/disputes/${DISPUTE_ID}/ai/recommendation/`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        artifact_type: 'recommendation',
+        cached: false,
+        stored: true,
+        model: 'playwright-neutral-resolution',
+        version: 1,
+        created_at: '2026-03-23T10:15:00Z',
+        payload: {
+          overview: {
+            neutral_summary: 'Based on the available evidence, the case centers on whether the documented scope covered the disputed finish work.',
+            timeline: [
+              { date: '2026-03-20', event: 'Agreement appears to have been created.', source: 'Agreement record' },
+              { date: '2026-03-23', event: 'Dispute opened with escrow hold active.', source: 'Dispute record' },
+            ],
+            disputed_facts: ['Whether the finish work was included in the original scope.'],
+            undisputed_facts: ['A dispute is open and the fee is paid.'],
+            relevant_agreement_sections: ['The agreement appears to state the project is Kitchen Remodel.'],
+            evidence_used: [
+              { type: 'agreement', label: 'Agreement #321', supports: 'The agreement appears to state the project title and total.' },
+              { type: 'statement', label: 'Customer complaint', supports: 'The evidence supports that a neutral review is needed.' },
+            ],
+            main_issues: ['Scope alignment', 'Evidence completeness'],
+            missing_info: ['Contractor statement', 'Completion photos'],
+            missing_evidence: ['Contractor statement', 'Photos of disputed finish work'],
+            risk_flags: ['Insufficient evidence to determine final financial impact.'],
+          },
+          courses_of_action: [
+            {
+              option_id: 'coa_1',
+              label: 'COA 1 - request missing evidence',
+              description: 'Pause final review until both parties add statements and photos.',
+              pros: ['Improves fairness', 'Reduces assumptions'],
+              cons: ['Adds time'],
+              evidence_supporting: ['Missing contractor statement'],
+              risks: ['Timeline remains open'],
+              estimated_impact: 'Payment impact cannot be estimated yet.',
+            },
+            {
+              option_id: 'coa_2',
+              label: 'COA 2 - propose limited rework review',
+              description: 'Review whether a limited punch-list visit would address the disputed item.',
+              pros: ['May preserve relationship'],
+              cons: ['Requires coordination'],
+              evidence_supporting: ['Open dispute status'],
+              risks: ['Scope may remain unclear'],
+              estimated_impact: 'Work impact depends on human-approved scope.',
+            },
+            {
+              option_id: 'coa_3',
+              label: 'COA 3 - escalate to admin review',
+              description: 'Move the record to human admin review with the current evidence gaps noted.',
+              pros: ['Keeps the process moving'],
+              cons: ['Decision-maker may still request more evidence'],
+              evidence_supporting: ['Fee paid and escrow hold active'],
+              risks: ['Insufficient evidence may limit review quality'],
+              estimated_impact: 'No automatic payment action.',
+            },
+          ],
+          options: [],
+          recommendation: {
+            recommended_option_id: 'coa_1',
+            why_this_option: 'The evidence supports collecting both party statements before selecting a final path.',
+            confidence: 0.64,
+            supporting_evidence: ['Agreement #321', 'Customer complaint'],
+            missing_evidence: ['Contractor statement', 'Completion photos'],
+            notes_for_parties: 'Based on the available evidence, this is a review recommendation only.',
+            advisory_boundary: 'Recommendation only. A human must accept, reject, counter, or escalate.',
+          },
+          draft_resolution_agreement: {
+            title: 'Human review notes',
+            terms: ['Collect missing evidence before any final resolution is recorded.'],
+            signature_block: '',
+            human_approval_required: 'No resolution, payment movement, or refund is executed by this recommendation.',
+          },
+        },
+      }),
+    });
+  });
+
   await page.goto('/app/disputes', { waitUntil: 'domcontentloaded' });
 
   const disputeRow = page.locator('tr', { hasText: `#${DISPUTE_ID}` });
@@ -108,8 +199,22 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(page.getByText(`Dispute #${DISPUTE_ID}`)).toBeVisible();
   await expect(page.getByTestId('dispute-ai-advisor')).toBeVisible();
   await expect(page.getByText('AI Advisor')).toBeVisible();
+  await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Neutral Resolution Assistant');
+  await page.getByRole('button', { name: 'Generate' }).click();
+  await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 1');
+  await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 2');
+  await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 3');
+  await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('coa_1');
+  await expect(page.getByTestId('dispute-ai-boundary')).toContainText('Recommendation only');
+  await expect(page.getByTestId('dispute-ai-missing-evidence')).toContainText('Contractor statement');
+  await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('liable');
+  await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('negligent');
+  await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('breached');
+  await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('you should');
   await expect(page.locator('text=/Upgrade to AI Pro|Payment required|Pay \\$/i')).toHaveCount(0);
   expect(requestedUrls.some((url) => url.includes('/api/projects/feature-flags/'))).toBeFalsy();
   expect(requestedUrls.some((url) => url.includes('/ai/checkout/'))).toBeFalsy();
   expect(requestedUrls.some((url) => url.includes('/ai/void-credit/'))).toBeFalsy();
+  expect(requestedUrls.some((url) => url.includes(`/api/projects/disputes/${DISPUTE_ID}/resolve/`))).toBeFalsy();
+  expect(requestedUrls.some((url) => /\/release\/|\/refund\/|\/refunds\/|release-payment|refund-payment/i.test(url))).toBeFalsy();
 });
