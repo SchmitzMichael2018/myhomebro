@@ -97,6 +97,30 @@ function safeStr(v) {
   return v == null ? "" : String(v).trim();
 }
 
+function extractApiValidationMessage(data, fallback = "") {
+  if (!data) return fallback;
+  if (typeof data === "string") return safeStr(data) || fallback;
+  if (typeof data !== "object") return fallback;
+  if (data.detail) return safeStr(data.detail) || fallback;
+  if (data.message) return safeStr(data.message) || fallback;
+
+  for (const [field, value] of Object.entries(data)) {
+    if (field === "status") continue;
+    if (Array.isArray(value) && value.length) {
+      return `${field}: ${safeStr(value[0])}`;
+    }
+    if (value && typeof value === "object") {
+      const nested = extractApiValidationMessage(value);
+      if (nested) return `${field}: ${nested}`;
+    }
+    if (safeStr(value)) {
+      return `${field}: ${safeStr(value)}`;
+    }
+  }
+
+  return fallback;
+}
+
 function moneyLabel(value) {
   const number = Number(value || 0);
   if (!Number.isFinite(number)) return "$0.00";
@@ -1558,7 +1582,7 @@ export default function AgreementWizard() {
           ? "Your session expired. Please sign in again."
           : status === 403
           ? "You don’t have permission to update this agreement."
-          : data?.detail || "Unable to save Step 1."
+          : extractApiValidationMessage(data, "Unable to save Step 1.")
       );
     }
   };

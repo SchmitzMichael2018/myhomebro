@@ -396,6 +396,39 @@ function fallbackTemplateForProposal(proposal) {
   };
 }
 
+function normalizeProposalClassificationForAgreement(projectType, projectSubtype) {
+  const rawType = compactText(projectType);
+  const rawSubtype = compactText(projectSubtype);
+  if (!rawType.includes("/")) {
+    return { projectType: rawType, projectSubtype: rawSubtype };
+  }
+
+  const parts = rawType.split("/").map((part) => compactText(part)).filter(Boolean);
+  return {
+    projectType: parts[0] || rawType,
+    projectSubtype: rawSubtype || parts.slice(1).join(" / "),
+  };
+}
+
+function parseServiceLocationForAgreement(serviceLocation) {
+  const raw = compactText(serviceLocation);
+  if (!raw) return { address_line1: "", city: "", state: "", postal_code: "" };
+
+  const parts = raw.split(",").map((part) => compactText(part)).filter(Boolean);
+  if (parts.length < 3) {
+    return { address_line1: raw, city: "", state: "", postal_code: "" };
+  }
+
+  const stateZip = parts[parts.length - 1] || "";
+  const stateZipMatch = stateZip.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
+  return {
+    address_line1: parts.slice(0, -2).join(", "),
+    city: parts[parts.length - 2] || "",
+    state: stateZipMatch ? stateZipMatch[1].toUpperCase() : stateZip,
+    postal_code: stateZipMatch ? stateZipMatch[2] : "",
+  };
+}
+
 function normalizeTemplateRecommendation(data, proposal) {
   const recs = data?.recommendations || data?.results || data?.templates || [];
   const first = Array.isArray(recs) ? recs[0] : data?.recommendation || data?.template || null;
@@ -754,6 +787,11 @@ export default function ProposalWorkspacePage() {
     const lineItems = Array.isArray(proposal.line_items) ? proposal.line_items : [];
     const measurements = Array.isArray(proposal.measurements) ? proposal.measurements : [];
     const attachments = Array.isArray(proposal.attachments) ? proposal.attachments : [];
+    const classification = normalizeProposalClassificationForAgreement(
+      workspaceProposal.project_type,
+      workspaceProposal.project_subtype
+    );
+    const address = parseServiceLocationForAgreement(workspaceProposal.service_location);
     const scheduling = {
       project_start_type: workspaceProposal.project_start_type || "flexible",
       project_start_date: workspaceProposal.project_start_date || "",
@@ -768,9 +806,14 @@ export default function ProposalWorkspacePage() {
         homeowner_id: workspaceProposal.homeowner_id || workspaceProposal.customer_id || "",
         project_title: workspaceProposal.project_title || "",
         project_summary: workspaceProposal.project_summary || "",
+        project_type: classification.projectType,
+        project_subtype: classification.projectSubtype,
         customer_name: workspaceProposal.customer_name || "",
         email: workspaceProposal.customer_email || "",
-        address_line1: workspaceProposal.service_location || "",
+        address_line1: address.address_line1 || workspaceProposal.service_location || "",
+        city: address.city,
+        state: address.state,
+        postal_code: address.postal_code,
         incidentals_reserve_amount: incidentalsReserve,
       },
       assistantDraftPayload: {
@@ -785,8 +828,8 @@ export default function ProposalWorkspacePage() {
         homeowner: workspaceProposal.homeowner_id || workspaceProposal.customer_id || "",
         homeowner_id: workspaceProposal.homeowner_id || workspaceProposal.customer_id || "",
         customer_id: workspaceProposal.customer_id || workspaceProposal.homeowner_id || "",
-        project_type: workspaceProposal.project_type || "",
-        project_subtype: workspaceProposal.project_subtype || "",
+        project_type: classification.projectType,
+        project_subtype: classification.projectSubtype,
         project_summary: workspaceProposal.project_summary || "",
         description: scopeText || workspaceProposal.project_summary || "",
         scope_of_work: scopeText || workspaceProposal.project_summary || "",
@@ -796,7 +839,10 @@ export default function ProposalWorkspacePage() {
         customer_email: workspaceProposal.customer_email || "",
         customer_phone: workspaceProposal.customer_phone || "",
         service_location: workspaceProposal.service_location || "",
-        address_line1: workspaceProposal.service_location || "",
+        address_line1: address.address_line1 || workspaceProposal.service_location || "",
+        city: address.city,
+        state: address.state,
+        postal_code: address.postal_code,
         payment_mode: Number(incidentalsReserve || 0) > 0 ? "escrow" : "",
         incidentals_reserve_amount: incidentalsReserve,
         proposal_total: proposalTotal,

@@ -1,8 +1,18 @@
 import { expect, test } from "@playwright/test";
 
+const PASSWORD = "MyHomeBroQA!2026";
+const CONTRACTOR_EMAIL = "info+contractor@myhomebro.com";
+
+async function loginContractor(page) {
+  await page.goto("/login", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("login-email-input").fill(CONTRACTOR_EMAIL);
+  await page.getByTestId("login-password-input").fill(PASSWORD);
+  await page.getByTestId("login-submit-button").click();
+  await expect.poll(async () => page.evaluate(() => window.localStorage.getItem("access") || "")).not.toBe("");
+}
+
 async function installWizardMocks(page) {
   await page.addInitScript(() => {
-    window.localStorage.setItem("access", "playwright-access-token");
     window.sessionStorage.setItem(
       "mhb_first_project_assist_handoff",
       JSON.stringify({
@@ -162,10 +172,12 @@ async function installWizardMocks(page) {
 
 test("Agreement Wizard prefills editable fields from Estimate Workspace handoff", async ({ page }) => {
   await installWizardMocks(page);
+  await loginContractor(page);
 
   await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByTestId("agreement-assistant-prefill-banner")).toContainText("Estimate checklist data prefilled");
+  await expect(page.getByTestId("estimate-prefill-applied")).toContainText("Estimate Prefill Applied");
+  await expect(page.getByTestId("step1-rerun-ai-setup-button")).toContainText("Re-run AI Setup");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Estimate Prefill");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Agreement becomes the source of truth");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
@@ -176,6 +188,7 @@ test("Agreement Wizard prefills editable fields from Estimate Workspace handoff"
 
 test("Agreement Wizard milestone planning simulation updates and appears in final review", async ({ page }) => {
   await installWizardMocks(page);
+  await loginContractor(page);
   const assignmentMutations = [];
   await page.route(/\/api\/projects\/.*assign.*/i, async (route) => {
     if (["POST", "PATCH", "PUT", "DELETE"].includes(route.request().method())) {

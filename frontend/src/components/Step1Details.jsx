@@ -4516,7 +4516,7 @@ export default function Step1Details({
       safeTrim(dLocal?.project_type) ||
       safeTrim(dLocal?.project_subtype)
   );
-  const shouldForceStartChooser = Boolean(step1ResetToChooser);
+  const shouldForceStartChooser = Boolean(step1ResetToChooser) && !isProposalHandoff;
   const shouldShowResetChooserOnly = shouldForceStartChooser;
   const step1ViewState = isLoadingState
     ? "loading"
@@ -4531,9 +4531,10 @@ export default function Step1Details({
     : "initial_input";
   const effectiveStep1ViewState = shouldForceStartChooser ? "initial_input" : step1ViewState;
   const shouldShowStartModePanel =
-    effectiveStep1ViewState === "initial_input" ||
-    effectiveStep1ViewState === "template_found" ||
-    effectiveStep1ViewState === "no_template";
+    !isProposalHandoff &&
+    (effectiveStep1ViewState === "initial_input" ||
+      effectiveStep1ViewState === "template_found" ||
+      effectiveStep1ViewState === "no_template");
   const shouldShowStartModeSummary =
     !shouldForceStartChooser &&
     shouldShowStartModePanel &&
@@ -4546,6 +4547,13 @@ export default function Step1Details({
       hasResolvedStep1Content);
   const shouldShowProjectDetailsSection =
     forceProjectDetails || (!shouldShowResetChooserOnly && effectiveStep1ViewState !== "no_template");
+  const estimatePrefillDescription = safeTrim(
+    dLocal?.description ||
+      dLocal?.scope_of_work ||
+      assistantDraftPayload?.description ||
+      assistantDraftPayload?.scope_of_work ||
+      ""
+  );
 
   async function handleUseAiRecommendedTemplate() {
     if (!aiRecommendedTemplate) return;
@@ -6048,6 +6056,39 @@ export default function Step1Details({
   return (
     <>
       <div className="space-y-6">
+        {isProposalHandoff ? (
+          <div
+            data-testid="estimate-prefill-applied"
+            className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950"
+          >
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-emerald-950">Estimate Prefill Applied</h3>
+                <p className="mt-1 text-sm text-emerald-900">
+                  Customer, address, scope, classification, line item, and reserve details were carried over from
+                  the Estimate Workspace for review.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  const prompt = estimatePrefillDescription || safeTrim(dLocal?.project_title);
+                  if (!prompt) return;
+                  setStep1JobDescriptionPrompt(prompt);
+                  setStep1ResetChooserPrompt(prompt);
+                  activateStartMode("ai", { committed: true, source: "user" });
+                  await Promise.resolve();
+                  requestStep1AiSetup(prompt);
+                }}
+                disabled={locked || aiSetupBusy || aiSetupLoadingVisible || !estimatePrefillDescription}
+                className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-60"
+                data-testid="step1-rerun-ai-setup-button"
+              >
+                {aiSetupBusy || aiSetupLoadingVisible ? "Re-running..." : "Re-run AI Setup"}
+              </button>
+            </div>
+          </div>
+        ) : null}
         {!forceProjectDetails && effectiveStep1ViewState !== "ai_built" && effectiveStep1ViewState !== "loading" ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-sm text-gray-600">

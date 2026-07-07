@@ -51,12 +51,35 @@ async function installMapMocks(page) {
 
     window.google = window.google || {};
     window.google.maps = window.google.maps || {};
+    window.google.maps.places = window.google.maps.places || {};
+    window.google.maps.places.PlacesServiceStatus = {
+      OK: "OK",
+      ZERO_RESULTS: "ZERO_RESULTS",
+    };
+    window.google.maps.places.AutocompleteService = class {
+      getPlacePredictions(_request, callback) {
+        if (typeof callback === "function") callback([], "ZERO_RESULTS");
+        return Promise.resolve({ predictions: [] });
+      }
+    };
+    window.google.maps.places.PlacesService = class {
+      getDetails(_request, callback) {
+        if (typeof callback === "function") callback({}, "OK");
+        return Promise.resolve({});
+      }
+    };
+    window.google.maps.places.AutocompleteSessionToken = class {};
     window.google.maps.importLibrary = async (name) => {
       if (name === "places") {
         if (!customElements.get("gmp-place-autocomplete")) {
           customElements.define("gmp-place-autocomplete", makeAutocomplete());
         }
-        return { PlaceAutocompleteElement: customElements.get("gmp-place-autocomplete") };
+        return {
+          PlaceAutocompleteElement: customElements.get("gmp-place-autocomplete"),
+          AutocompleteService: window.google.maps.places.AutocompleteService,
+          PlacesService: window.google.maps.places.PlacesService,
+          AutocompleteSessionToken: window.google.maps.places.AutocompleteSessionToken,
+        };
       }
       return {};
     };
@@ -350,30 +373,31 @@ async function reviewAgreementWizard(page) {
   await expect(page.getByTestId("agreement-wizard-heading")).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toBeVisible({ timeout: 20000 });
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Estimate Prefill");
+  await expect(page.getByTestId("estimate-prefill-applied")).toBeVisible({ timeout: 20000 });
+  await expect(page.getByTestId("step1-rerun-ai-setup-button")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Find Best Starting Point/i })).toHaveCount(0);
   await snap(page, "12-agreement-wizard-step1-prefill");
   const customerSelect = page.getByTestId("agreement-customer-select");
-  if (!(await customerSelect.count())) {
-    const setupButton = page.getByRole("button", { name: /Find Best Starting Point/i });
-    if (await setupButton.isVisible().catch(() => false)) {
-      await setupButton.click();
-    }
-  }
   await customerSelect.scrollIntoViewIfNeeded({ timeout: 20000 });
   await expect(customerSelect).toBeVisible();
   await expect
     .poll(() => customerSelect.evaluate((select) => select.selectedOptions?.[0]?.textContent?.trim() || ""), { timeout: 15000 })
     .toContain("Taylor QA Intake");
   await expect(page.locator('input[name="address_line1"]')).toHaveValue(/4400 QA Lead Street/);
+  await expect(page.locator('input[name="address_city"]')).toHaveValue(/Austin/i);
+  await expect(page.locator('input[name="address_state"]')).toHaveValue(/TX/i);
+  await expect(page.getByTestId("agreement-project-type-select")).toHaveValue("Flooring");
   await expect(page.getByText(/luxury vinyl plank|LVP/i).first()).toBeVisible();
   await snap(page, "13-agreement-wizard-step1-review-form");
 
   await page.getByRole("button", { name: /Save & Next/i }).click();
   await expect(page).toHaveURL(/step=2/);
-  await expect(page.getByTestId("step2-estimate-panel")).toBeVisible({ timeout: 20000 });
-  await expect(page.getByTestId("step2-estimate-total")).toContainText("$");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toBeVisible({ timeout: 20000 });
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Line Items");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$8,180.00");
   await expect(page.getByTestId("step2-plan-guidance-card")).toBeVisible();
   await expect(
-    page.getByTestId("step2-milestone-card-1").or(page.getByTestId("step2-milestone-empty-state")).first()
+    page.getByTestId("step2-milestone-card-list").or(page.getByTestId("step2-milestone-empty-state")).first()
   ).toBeVisible();
   await snap(page, "14-agreement-wizard-step2-planning");
 
