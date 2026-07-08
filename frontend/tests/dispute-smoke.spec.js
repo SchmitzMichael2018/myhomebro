@@ -107,7 +107,7 @@ test('contractor can open dispute flow and reach dispute fee state in a safe moc
   await page.getByTestId('start-dispute-button').click();
 
   await expect(page.getByTestId('dispute-create-title')).toContainText(
-    'Start a Dispute'
+    'Start a Resolution Case'
   );
 
   await page.getByTestId('dispute-agreement-select').selectOption(
@@ -116,7 +116,7 @@ test('contractor can open dispute flow and reach dispute fee state in a safe moc
   await page.getByRole('button', { name: 'Continue' }).click();
 
   await expect(page.getByTestId('dispute-create-title')).toContainText(
-    'Describe the Dispute'
+    'Describe the Resolution Case'
   );
 
   await page
@@ -125,10 +125,10 @@ test('contractor can open dispute flow and reach dispute fee state in a safe moc
   await page.getByTestId('dispute-submit-button').click();
 
   await expect(page.getByTestId('dispute-create-title')).toContainText(
-    'Dispute Fee'
+    'Resolution Case Fee'
   );
   await expect(page.getByTestId('dispute-fee-step')).toContainText(
-    `Dispute #${DISPUTE_ID} created`
+    `Resolution case #${DISPUTE_ID} created`
   );
   await expect(page.getByTestId('dispute-fee-step')).toContainText('$250.00');
 });

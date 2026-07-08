@@ -196,8 +196,16 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(disputeRow).toBeVisible();
   await disputeRow.getByRole('button', { name: 'View' }).click();
 
-  await expect(page.getByText(`Dispute #${DISPUTE_ID}`)).toBeVisible();
+  await expect(page.getByTestId('resolution-workspace-title')).toContainText(`Resolution Case #${DISPUTE_ID}`);
+  await expect(page.getByTestId('resolution-workspace-overview')).toContainText('Case origin');
+  await expect(page.getByTestId('resolution-workspace-timeline')).toContainText('Resolution case opened');
+  await expect(page.getByTestId('resolution-workspace-evidence')).toContainText('Photos, Documents, Receipts, Messages');
+  await expect(page.getByTestId('resolution-workspace-statements')).toContainText('Customer');
+  await expect(page.getByTestId('resolution-workspace-agreement-review')).toContainText('Agreement Review');
+  await expect(page.getByTestId('resolution-workspace-payment-impact')).toContainText('No payment changes occur automatically');
+  await expect(page.getByTestId('resolution-workspace-human-decision')).toContainText('Human Decision');
   await expect(page.getByTestId('dispute-ai-advisor')).toBeVisible();
+  await expect(page.getByTestId('resolution-workspace-ai-analysis')).toContainText('Project Assistant');
   await expect(page.getByText('AI Advisor')).toBeVisible();
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Neutral Resolution Assistant');
   await page.getByRole('button', { name: 'Generate' }).click();

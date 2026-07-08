@@ -809,6 +809,235 @@ function ReworkMilestoneCTA({ dispute, basePath = "/app" }) {
 // Details / Respond / Resolve Modals
 // ─────────────────────────────────────────────
 
+function WorkspaceSection({ title, eyebrow = "", children, testId, tone = "default" }) {
+  const toneClass =
+    tone === "warning"
+      ? "border-amber-200 bg-amber-50"
+      : tone === "success"
+        ? "border-emerald-200 bg-emerald-50"
+        : "border-slate-200 bg-white";
+  return (
+    <section data-testid={testId} className={`rounded-2xl border ${toneClass} p-4`}>
+      {eyebrow ? (
+        <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-slate-500">{eyebrow}</div>
+      ) : null}
+      <h3 className="mt-1 text-lg font-extrabold text-slate-950">{title}</h3>
+      <div className="mt-3">{children}</div>
+    </section>
+  );
+}
+
+function InfoTile({ label, value, tone = "default" }) {
+  const toneClass =
+    tone === "warning"
+      ? "border-amber-200 bg-amber-50 text-amber-950"
+      : tone === "success"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-950"
+        : "border-slate-200 bg-slate-50 text-slate-900";
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${toneClass}`}>
+      <div className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-slate-500">{label}</div>
+      <div className="mt-1 text-sm font-extrabold">{value || "Not linked"}</div>
+    </div>
+  );
+}
+
+function resolutionSourceLabel(dispute) {
+  if (dispute?.source_type) return labelFor(dispute.source_type, {});
+  if (dispute?.payment_request || dispute?.invoice || dispute?.invoice_id) return "Payment Request";
+  if (dispute?.expense || dispute?.expense_id) return "Expense";
+  if (dispute?.amendment || dispute?.amendment_id) return "Amendment";
+  if (dispute?.warranty_claim || dispute?.warranty_claim_id) return "Warranty";
+  if (dispute?.milestone || dispute?.milestone_title) return "Milestone";
+  if (dispute?.agreement || dispute?.agreement_number) return "Agreement";
+  return "General Project Issue";
+}
+
+function buildResolutionTimeline(dispute, proposal, attachments) {
+  const rows = [];
+  const add = (at, title, detail, source = "System") => {
+    if (!title) return;
+    rows.push({ at, title, detail, source });
+  };
+  add(dispute?.created_at, "Resolution case opened", dispute?.description || dispute?.reason, "Case record");
+  if (dispute?.fee_paid_at || dispute?.fee_paid) {
+    add(dispute?.fee_paid_at || dispute?.updated_at, "Dispute fee paid and hold reviewed", dispute?.escrow_frozen ? "Escrow hold active where applicable." : "No active escrow hold recorded.", "Payment hold");
+  }
+  if (dispute?.homeowner_response) add(dispute?.responded_at || dispute?.updated_at, "Customer statement submitted", dispute.homeowner_response, "Party statement");
+  if (dispute?.contractor_response && !proposal) add(dispute?.responded_at || dispute?.updated_at, "Contractor statement submitted", dispute.contractor_response, "Party statement");
+  if (proposal) add(proposal.proposed_at || dispute?.updated_at, "Resolution proposal submitted", proposal.notes || proposal.proposal_type, "Proposal");
+  for (const att of attachments) {
+    add(att?.created_at || att?.uploaded_at, `Evidence uploaded: ${att?.kind || "file"}`, att?.name || att?.filename || att?.file || `Attachment #${att?.id || ""}`, "Evidence");
+  }
+  if (dispute?.resolved_at) add(dispute.resolved_at, "Human resolution recorded", dispute.resolution_notes || dispute.admin_notes, "Admin decision");
+  return rows.sort((left, right) => {
+    const leftTime = left.at ? new Date(left.at).getTime() : 0;
+    const rightTime = right.at ? new Date(right.at).getTime() : 0;
+    return leftTime - rightTime;
+  });
+}
+
+function ResolutionOverview({ dispute, proposal, isAdmin }) {
+  const next = nextStepLabel(dispute, isAdmin);
+  return (
+    <WorkspaceSection title="Overview" eyebrow="Resolution Workspace" testId="resolution-workspace-overview">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone={toneFor(dispute.status)}>{String(dispute.status || "").replaceAll("_", " ") || "Open"}</Badge>
+        <Badge tone={pillToneForNext(next)}>{next}</Badge>
+        {dispute.escrow_frozen ? <Badge tone="info" className="bg-slate-900 text-white">Escrow Hold Active</Badge> : <Badge>No active hold</Badge>}
+        {proposal ? <Badge tone="good">Proposal on file</Badge> : null}
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <InfoTile label="Case origin" value={resolutionSourceLabel(dispute)} />
+        <InfoTile label="Agreement" value={dispute.agreement_number ? `#${dispute.agreement_number}` : dispute.agreement ? `#${dispute.agreement}` : ""} />
+        <InfoTile label="Milestone" value={dispute.milestone_title || (dispute.milestone ? `#${dispute.milestone}` : "")} />
+        <InfoTile label="Current recommendation" value={proposal ? labelFor(proposal.proposal_type, {}) : "Generate AI analysis or propose resolution"} />
+      </div>
+      <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-950">
+        <b>Project Assistant summary:</b> This case is organized as a guided resolution record. Review the evidence,
+        compare party statements, check payment impact, and use AI analysis as advisory decision-support only.
+      </div>
+    </WorkspaceSection>
+  );
+}
+
+function ResolutionTimeline({ dispute, proposal, attachments }) {
+  const rows = buildResolutionTimeline(dispute, proposal, attachments);
+  return (
+    <WorkspaceSection title="Timeline" eyebrow="Chronological Case History" testId="resolution-workspace-timeline">
+      {rows.length ? (
+        <div className="grid gap-2">
+          {rows.map((row, idx) => (
+            <div key={`${row.title}-${idx}`} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-extrabold text-slate-950">{row.title}</div>
+                <div className="text-xs font-bold text-slate-500">{row.at ? new Date(row.at).toLocaleString() : "Date not recorded"}</div>
+              </div>
+              <div className="mt-1 text-xs font-bold uppercase tracking-wide text-slate-500">{row.source}</div>
+              {row.detail ? <div className="mt-1 whitespace-pre-wrap text-sm text-slate-700">{String(row.detail).slice(0, 320)}</div> : null}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-sm text-slate-600">Timeline entries appear as evidence, statements, proposals, and decisions are recorded.</div>
+      )}
+      <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
+        Manual timeline entries are not yet persisted in this release. Use party statements or evidence uploads for now.
+      </div>
+    </WorkspaceSection>
+  );
+}
+
+function ResolutionEvidence({ attachments, attachmentUrl }) {
+  const categories = ["agreement", "milestone", "photo", "receipt", "document", "other"];
+  return (
+    <WorkspaceSection title={`Evidence (${attachments.length})`} eyebrow="Photos, Documents, Receipts, Messages" testId="resolution-workspace-evidence">
+      <div className="mb-3 flex flex-wrap gap-2">
+        {categories.map((category) => (
+          <span key={category} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold capitalize text-slate-700">{category}</span>
+        ))}
+      </div>
+      {attachments.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+          No uploaded evidence yet. Add photos, documents, receipts, invoices, messages, inspection reports, or warranty documents.
+        </div>
+      ) : (
+        <div className="grid gap-2 md:grid-cols-2">
+          {attachments.map((a) => {
+            const name = a?.name || a?.filename || `Attachment #${a?.id || ""}`;
+            const url = attachmentUrl(a);
+            return (
+              <div key={a?.id || name} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{a?.kind || "other"}</div>
+                    <div className="truncate text-sm font-extrabold text-slate-950">{name}</div>
+                    <div className="text-xs text-slate-500">{a?.created_at || a?.uploaded_at ? new Date(a.created_at || a.uploaded_at).toLocaleString() : ""}</div>
+                  </div>
+                  {url ? <a className="mhb-btn" href={url} target="_blank" rel="noreferrer" style={{ padding: "6px 10px", fontSize: 12 }}>Open</a> : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </WorkspaceSection>
+  );
+}
+
+function PartyStatements({ dispute }) {
+  return (
+    <WorkspaceSection title="Party Statements" eyebrow="Separate Records" testId="resolution-workspace-statements">
+      <div className="grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="text-sm font-extrabold text-slate-950">Customer</div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(dispute.homeowner_response || "").trim() || "No customer statement submitted yet."}</div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="text-sm font-extrabold text-slate-950">Contractor</div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(dispute.contractor_response || "").trim() || "No contractor statement submitted yet."}</div>
+        </div>
+      </div>
+      <div className="mt-3 text-sm text-slate-600">Statement revision history is not separated yet; current responses remain stored on the existing dispute record.</div>
+    </WorkspaceSection>
+  );
+}
+
+function AgreementReview({ dispute }) {
+  return (
+    <WorkspaceSection title="Agreement Review" eyebrow="Contract Context" testId="resolution-workspace-agreement-review">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <InfoTile label="Agreement" value={dispute.agreement_number ? `#${dispute.agreement_number}` : dispute.agreement ? `#${dispute.agreement}` : ""} />
+        <InfoTile label="Milestone scope" value={dispute.milestone_title || "General project issue"} />
+        <InfoTile label="Change orders" value={dispute.amendment || dispute.amendment_id ? "Linked" : "Not linked yet"} />
+        <InfoTile label="Warranty" value={dispute.warranty_claim || dispute.warranty_claim_id ? "Linked" : "Not linked yet"} />
+        <InfoTile label="Payment schedule" value={dispute.invoice || dispute.invoice_id ? "Payment request linked" : "Use payment impact below"} />
+      </div>
+      <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        Project Assistant should reference applicable agreement sections neutrally. Full clause extraction is a future enhancement; this workspace currently uses existing agreement and milestone references.
+      </div>
+    </WorkspaceSection>
+  );
+}
+
+function PaymentImpact({ dispute }) {
+  return (
+    <WorkspaceSection title="Payment Impact" eyebrow="No Automatic Money Movement" testId="resolution-workspace-payment-impact">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <InfoTile label="Escrow/payment status" value={dispute.escrow_frozen ? "Held or frozen where applicable" : "No active hold"} tone={dispute.escrow_frozen ? "warning" : "default"} />
+        <InfoTile label="Fee" value={dispute.fee_paid ? "Paid" : money(dispute.fee_amount || 0)} />
+        <InfoTile label="Approved amount" value={dispute.approved_amount != null ? money(dispute.approved_amount) : "Not decided"} />
+        <InfoTile label="Disputed remainder" value={dispute.disputed_remainder != null ? money(dispute.disputed_remainder) : "Not decided"} />
+        <InfoTile label="Financial outcome" value={dispute.financial_disposition ? labelFor(dispute.financial_disposition, FINANCIAL_LABELS) : "Manual review pending"} />
+      </div>
+      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
+        No payment changes occur automatically. Release, refund, split, reimbursement, or transfer actions require separate authorized human steps.
+      </div>
+    </WorkspaceSection>
+  );
+}
+
+function HumanDecisionPanel({ dispute, isAdmin, isContractor, isClosedCase, onOpenProposal, onOpenRespond, onOpenResolve, onClose }) {
+  return (
+    <WorkspaceSection title="Human Decision" eyebrow="Approval Required" testId="resolution-workspace-human-decision" tone="warning">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <InfoTile label="Accept / approve" value={isAdmin ? "Available through admin resolve" : "Use proposal or response workflow"} />
+        <InfoTile label="Reject / counter" value="Submit a party statement or proposal" />
+        <InfoTile label="Request evidence" value="Upload evidence and document the request in response notes" />
+        <InfoTile label="Request inspection" value="Record in proposal or admin notes" />
+        <InfoTile label="Request mediation" value="Escalate to admin review" />
+        <InfoTile label="Modify resolution" value="Human users edit proposal/admin resolution before saving" />
+      </div>
+      <div className="mt-4 flex flex-wrap justify-end gap-2">
+        {isContractor && !isClosedCase ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">Propose Resolution</button> : null}
+        {!isClosedCase ? <button className="mhb-btn" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">Add Statement</button> : null}
+        {isAdmin && !isClosedCase ? <button className="mhb-btn primary" onClick={onOpenResolve} disabled={!canResolveAdmin(dispute)} type="button">Record Human Resolution</button> : null}
+        <button className="mhb-btn primary" onClick={onClose} type="button">Close Workspace</button>
+      </div>
+    </WorkspaceSection>
+  );
+}
+
 function DetailsModal({
   open,
   dispute,
@@ -834,7 +1063,20 @@ function DetailsModal({
   const proposal = extractProposalFromResponse(dispute.contractor_response);
 
   return (
-    <ModalShell title={`Dispute #${dispute.id} — Details`} onClose={onClose}>
+    <ModalShell title={`Resolution Case #${dispute.id} - Workspace`} onClose={onClose} width="min(1120px, 96vw)">
+      <div data-testid="resolution-workspace-title" className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-slate-500">Resolution Workspace</div>
+        <h2 className="mt-1 text-2xl font-extrabold text-slate-950">Resolution Case #{dispute.id}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          A guided investigation and settlement workspace. Project Assistant is neutral and advisory; human users make the final decision.
+        </p>
+      </div>
+      <ResolutionOverview dispute={dispute} proposal={proposal} isAdmin={isAdmin} />
+      <ResolutionTimeline dispute={dispute} proposal={proposal} attachments={attachments} />
+      <ResolutionEvidence attachments={attachments} attachmentUrl={attachmentUrl} />
+      <PartyStatements dispute={dispute} />
+      <AgreementReview dispute={dispute} />
+      <PaymentImpact dispute={dispute} />
       <div className="mhb-glass" style={{ padding: 12 }}>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={toneFor(dispute.status)}>{statusText || "—"}</Badge>
@@ -869,8 +1111,14 @@ function DetailsModal({
       </div>
 
       {/* ✅ AI Advisor panel (read-only, evidence-context only) */}
-      <DisputeAIAdvisor disputeId={dispute.id} enabled={aiEnabled} />
-      {aiEnabled ? <DisputeAIRecommendationPanel disputeId={dispute.id} /> : null}
+      <WorkspaceSection title="AI Resolution Analysis" eyebrow="Project Assistant - Advisory Only" testId="resolution-workspace-ai-analysis">
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
+          Project Assistant may summarize evidence, identify disputed facts, list missing evidence,
+          compare courses of action, and recommend a COA. It cannot close the case or move money.
+        </div>
+        <DisputeAIAdvisor disputeId={dispute.id} enabled={aiEnabled} />
+        {aiEnabled ? <DisputeAIRecommendationPanel disputeId={dispute.id} /> : null}
+      </WorkspaceSection>
 
       {/* ✅ Rework milestone CTA */}
       <ReworkMilestoneCTA dispute={dispute} basePath={basePath} />
@@ -949,39 +1197,16 @@ function DetailsModal({
         )}
       </div>
 
-      <div className="flex flex-wrap justify-end gap-2">
-        {isContractor && !isClosed(dispute) && (
-          <button
-            className="mhb-btn"
-            onClick={onOpenProposal}
-            disabled={!dispute.fee_paid || isClosed(dispute)}
-            type="button"
-          >
-            Propose Solution
-          </button>
-        )}
-
-        {!isClosed(dispute) ? (
-          <button className="mhb-btn" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">
-            Respond
-          </button>
-        ) : null}
-
-        {isAdmin && !isClosed(dispute) && (
-          <button
-            className="mhb-btn primary"
-            onClick={onOpenResolve}
-            disabled={!canResolveAdmin(dispute)}
-            type="button"
-          >
-            Resolve
-          </button>
-        )}
-
-        <button className="mhb-btn primary" onClick={onClose} type="button">
-          Close
-        </button>
-      </div>
+      <HumanDecisionPanel
+        dispute={dispute}
+        isAdmin={isAdmin}
+        isContractor={isContractor}
+        isClosedCase={isClosed(dispute)}
+        onOpenProposal={onOpenProposal}
+        onOpenRespond={onOpenRespond}
+        onOpenResolve={onOpenResolve}
+        onClose={onClose}
+      />
     </ModalShell>
   );
 }
@@ -1690,10 +1915,10 @@ export default function DisputesPages() {
     </section>
   );
 
-  const pageTitle = isAdmin ? "Admin Dispute Center" : "Dispute Center";
+  const pageTitle = isAdmin ? "Admin Resolution Workspace" : "Resolution Workspace";
   const pageSubtitle = isAdmin
-    ? "Overdue disputes are prioritized automatically."
-    : "Initiate disputes, pay the required fee when applicable, submit resolution proposals, and manage evidence.";
+    ? "Review resolution cases, evidence, payment holds, and human decisions."
+    : "Create resolution cases, organize evidence, compare party statements, and document human-approved outcomes.";
 
   const showNewButton = supportsDisputesApi && !isAdmin;
   const ShellComponent = isAdmin ? PageShell : ContractorPageSurface;
@@ -1748,7 +1973,7 @@ export default function DisputesPages() {
                 disabled={!supportsDisputesApi}
                 type="button"
               >
-                Start Dispute
+                Start Resolution Case
               </button>
             )}
           </div>

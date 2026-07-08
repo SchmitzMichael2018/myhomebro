@@ -75,7 +75,7 @@ export default function DisputesCreateModal({ open, onClose }) {
       };
       const { data } = await api.post("/projects/disputes/", payload);
       setCreated(data);
-      toast.success("Dispute created.");
+      toast.success("Resolution case created.");
       setStep(3);
     } catch (e) {
       toast.error(e?.response?.data?.detail || "Could not create dispute.");
@@ -120,9 +120,9 @@ export default function DisputesCreateModal({ open, onClose }) {
       <div className="mhb-modal-card" style={{ width: "min(900px, 96vw)" }}>
         <div className="mhb-modal-header">
           <h2 data-testid="dispute-create-title">
-            {step === 1 && "Start a Dispute — Select Agreement"}
-            {step === 2 && "Describe the Dispute"}
-            {step === 3 && "Dispute Fee"}
+            {step === 1 && "Start a Resolution Case - Select Agreement"}
+            {step === 2 && "Describe the Resolution Case"}
+            {step === 3 && "Resolution Case Fee"}
             {step === 4 && "Upload Evidence"}
           </h2>
           <button className="mhb-modal-close" onClick={onClose}>
@@ -210,7 +210,7 @@ export default function DisputesCreateModal({ open, onClose }) {
                   disabled={!reason.trim() || busy}
                   onClick={createDispute}
                 >
-                  {busy ? "Submitting…" : "Submit Dispute"}
+                  {busy ? "Submitting…" : "Submit Resolution Case"}
                 </button>
               </div>
             </>
@@ -219,7 +219,7 @@ export default function DisputesCreateModal({ open, onClose }) {
           {step === 3 && created && (
             <>
               <div data-testid="dispute-fee-step" className="text-slate-700">
-                Dispute <strong>#{created.id}</strong> created. A fee of{" "}
+                Resolution case <strong>#{created.id}</strong> created. A fee of{" "}
                 <strong>{money(created.fee_amount || 0)}</strong> is required to continue the review process and place an escrow hold where applicable.
               </div>
               <div className="flex justify-end">
