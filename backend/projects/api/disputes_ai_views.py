@@ -16,7 +16,9 @@ from rest_framework.status import (
 
 from projects.ai.disputes_recommendation import generate_dispute_recommendation
 from projects.models_ai_artifacts import DisputeAIArtifact
+from projects.models_dispute import ResolutionCaseTimelineEvent
 from projects.services.ai.evidence_context import build_dispute_evidence_context
+from projects.services.resolution_workspace import record_timeline_event
 
 
 def _get_dispute_model():
@@ -175,6 +177,20 @@ def dispute_ai_recommendation(request, dispute_id: int):
                 paid=False,
                 price_cents=None,
                 stripe_payment_intent_id="",
+            )
+            record_timeline_event(
+                dispute,
+                ResolutionCaseTimelineEvent.EVENT_AI_ANALYSIS_UPDATED,
+                "AI resolution analysis generated",
+                actor=request.user,
+                description="Project Assistant generated advisory analysis. It did not close the case or move funds.",
+                related_object=stored,
+                metadata={
+                    "artifact_id": stored.id,
+                    "artifact_type": stored.artifact_type,
+                    "version": stored.version,
+                    "input_digest": stored.input_digest,
+                },
             )
 
     except Exception as e:

@@ -14177,6 +14177,78 @@ class ProgressPaymentWorkflowTests(TestCase):
         draw.refresh_from_db()
         self.assertEqual(draw.status, DrawRequestStatus.AWAITING_RELEASE)
 
+    def test_magic_invoice_approves_zero_dollar_completion_without_payment_movement(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.status = "funded"
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("0.00")
+        self.agreement.save(update_fields=["payment_mode", "status", "escrow_funded", "escrow_funded_amount"])
+        zero_milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=3,
+            title="Warranty walkthrough",
+            amount=Decimal("0.00"),
+            completed=True,
+            completed_at=timezone.now(),
+        )
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("0.00"),
+            status=InvoiceStatus.PENDING,
+            milestone_id_snapshot=zero_milestone.id,
+            milestone_title_snapshot=zero_milestone.title,
+        )
+        zero_milestone.is_invoiced = True
+        zero_milestone.invoice = invoice
+        zero_milestone.save(update_fields=["is_invoiced", "invoice"])
+
+        with patch("stripe.Transfer.create") as transfer_create:
+            with patch("stripe.PaymentIntent.create") as payment_intent_create:
+                response = self.client.patch(f"/api/projects/invoices/magic/{invoice.public_token}/approve/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["mode"], "zero_dollar_completion")
+        self.assertFalse(response.data["payment_movement"])
+        transfer_create.assert_not_called()
+        payment_intent_create.assert_not_called()
+        invoice.refresh_from_db()
+        zero_milestone.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.APPROVED)
+        self.assertIsNotNone(invoice.approved_at)
+        self.assertFalse(invoice.escrow_released)
+        self.assertIsNone(invoice.escrow_released_at)
+        self.assertFalse(invoice.stripe_transfer_id)
+        self.assertFalse(invoice.stripe_payment_intent_id)
+        self.assertEqual(invoice.platform_fee_cents, 0)
+        self.assertEqual(invoice.payout_cents, 0)
+        self.assertTrue(zero_milestone.completed)
+        self.assertTrue(zero_milestone.is_invoiced)
+
+    def test_magic_invoice_zero_dollar_completion_bypasses_stripe_account_requirement(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.status = "funded"
+        self.agreement.escrow_funded = True
+        self.contractor.stripe_account_id = ""
+        self.contractor.charges_enabled = False
+        self.contractor.payouts_enabled = False
+        self.contractor.details_submitted = False
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
+        self.agreement.save(update_fields=["payment_mode", "status", "escrow_funded"])
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("0.00"),
+            status=InvoiceStatus.PENDING,
+        )
+
+        response = self.client.patch(f"/api/projects/invoices/magic/{invoice.public_token}/approve/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["mode"], "zero_dollar_completion")
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.APPROVED)
+        self.assertFalse(invoice.escrow_released)
+        self.assertFalse(invoice.stripe_transfer_id)
+
     def test_magic_invoice_approval_blocks_insufficient_escrow_without_transfer(self):
         self.agreement.payment_mode = "escrow"
         self.agreement.status = "funded"
@@ -29113,6 +29185,183 @@ class DisputeMutationSafetyTests(TestCase):
         self.assertIn("Never instruct the platform to release funds", system)
         recommendation_required = prompt["json_schema"]["schema"]["properties"]["recommendation"]["required"]
         self.assertIn("advisory_boundary", recommendation_required)
+
+
+class ResolutionWorkspacePhase2Tests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.contractor_user = user_model.objects.create_user(
+            email="resolution-contractor@example.com",
+            password="testpass123",
+        )
+        self.customer_user = user_model.objects.create_user(
+            email="resolution-customer@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.contractor_user,
+            business_name="Resolution Contractor",
+            city="Austin",
+            state="TX",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Resolution Customer",
+            email=self.customer_user.email,
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Resolution Workspace Project",
+        )
+        self.agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Resolution workspace agreement",
+        )
+        self.milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Flooring installation",
+            description="Install LVP in hallway.",
+            amount=Decimal("1200.00"),
+        )
+        self.client = _use_secure_requests(APIClient())
+        self.client.force_authenticate(user=self.contractor_user)
+        self.customer_client = _use_secure_requests(APIClient())
+        self.customer_client.force_authenticate(user=self.customer_user)
+
+    def test_source_linked_resolution_case_creates_timeline(self):
+        response = self.client.post(
+            "/api/projects/disputes/",
+            {
+                "agreement": self.agreement.id,
+                "milestone": self.milestone.id,
+                "source_type": "milestone",
+                "initiator": "contractor",
+                "reason": "Milestone quality concern",
+                "description": "Customer reported flooring gaps near the hallway transition.",
+                "fee_amount": "25.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        payload = response.json()
+        self.assertEqual(payload["source_type"], "milestone")
+        self.assertEqual(payload["source_object_id"], self.milestone.id)
+        self.assertEqual(payload["project"], self.project.id)
+        self.assertEqual(len(payload["timeline_events"]), 1)
+        self.assertEqual(payload["timeline_events"][0]["event_type"], "case_created")
+
+    def test_general_project_issue_case_is_backward_compatible(self):
+        response = self.client.post(
+            "/api/projects/disputes/",
+            {
+                "agreement": self.agreement.id,
+                "source_type": "general_project_issue",
+                "initiator": "contractor",
+                "reason": "General coordination issue",
+                "description": "Need a documented path for access coordination.",
+                "fee_amount": "0.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.json()["source_type"], "general_project_issue")
+
+    def test_statement_evidence_proposal_signature_and_pdf_package_flow(self):
+        dispute = Dispute.objects.create(
+            agreement=self.agreement,
+            milestone=self.milestone,
+            source_type="milestone",
+            initiator="contractor",
+            reason="Need resolution",
+            description="Flooring transition needs review.",
+            fee_paid=True,
+            escrow_frozen=True,
+            created_by=self.contractor_user,
+        )
+
+        statement = self.client.post(
+            f"/api/projects/disputes/{dispute.id}/party-statements/",
+            {"party_role": "contractor", "text": "The transition can be corrected with a reducer strip."},
+            format="json",
+        )
+        self.assertEqual(statement.status_code, 201, statement.data)
+        self.assertEqual(statement.json()["version"], 1)
+
+        upload = self.client.post(
+            f"/api/projects/disputes/{dispute.id}/attachments/",
+            {
+                "file": SimpleUploadedFile("transition.txt", b"photo placeholder"),
+                "kind": "photo",
+                "description": "Transition photo placeholder.",
+            },
+            format="multipart",
+        )
+        self.assertEqual(upload.status_code, 201, upload.data)
+
+        proposal = self.client.post(
+            f"/api/projects/disputes/{dispute.id}/resolution-proposals/",
+            {
+                "problem_statement": "Flooring transition requires correction.",
+                "proposed_solution": "Install matching reducer strip and document completion photos.",
+                "required_actions": [{"owner": "contractor", "action": "Install reducer strip"}],
+                "payment_impact": {"release": "after completion approval"},
+                "warranty_impact": "Correction remains under workmanship warranty.",
+            },
+            format="json",
+        )
+        self.assertEqual(proposal.status_code, 201, proposal.data)
+        proposal_id = proposal.json()["id"]
+
+        resolution_agreement = self.client.post(
+            f"/api/projects/disputes/{dispute.id}/resolution-proposals/{proposal_id}/agreement/",
+            {"human_decision_summary": "Both parties will review and sign before closure."},
+            format="json",
+        )
+        self.assertEqual(resolution_agreement.status_code, 201, resolution_agreement.data)
+        agreement_id = resolution_agreement.json()["id"]
+
+        unsigned_pdf = self.client.post(
+            f"/api/projects/disputes/{dispute.id}/resolution-agreements/{agreement_id}/pdf-package/",
+            {},
+            format="json",
+        )
+        self.assertEqual(unsigned_pdf.status_code, 400, unsigned_pdf.data)
+
+        contractor_sig = self.client.post(
+            f"/api/projects/disputes/{dispute.id}/resolution-agreements/{agreement_id}/sign/",
+            {"signer_role": "contractor", "signer_name": "Resolution Contractor"},
+            format="json",
+        )
+        self.assertEqual(contractor_sig.status_code, 201, contractor_sig.data)
+
+        customer_sig = self.customer_client.post(
+            f"/api/projects/disputes/{dispute.id}/resolution-agreements/{agreement_id}/sign/",
+            {"signer_role": "customer", "signer_name": "Resolution Customer"},
+            format="json",
+        )
+        self.assertEqual(customer_sig.status_code, 201, customer_sig.data)
+
+        pdf = self.client.post(
+            f"/api/projects/disputes/{dispute.id}/resolution-agreements/{agreement_id}/pdf-package/",
+            {},
+            format="json",
+        )
+        self.assertEqual(pdf.status_code, 201, pdf.data)
+        self.assertEqual(pdf.json()["document_type"], "pdf_package")
+
+        workspace = self.client.get(f"/api/projects/disputes/{dispute.id}/workspace/")
+        self.assertEqual(workspace.status_code, 200, workspace.data)
+        workspace_payload = workspace.json()
+        self.assertTrue(workspace_payload["party_statements"])
+        self.assertTrue(workspace_payload["evidence_index"])
+        self.assertTrue(workspace_payload["resolution_proposals"])
+        self.assertTrue(workspace_payload["resolution_agreements"])
+        self.assertTrue(workspace_payload["resolution_documents"])
+        self.assertTrue(any(row["event_type"] == "pdf_generated" for row in workspace_payload["timeline_events"]))
 
 
 class TemplateRecommendationRelevanceTests(TestCase):

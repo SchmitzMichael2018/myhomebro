@@ -301,6 +301,103 @@ class MagicInvoiceApproveView(APIView):
         if invoice.status not in (InvoiceStatus.PENDING, InvoiceStatus.APPROVED):
             return Response({"detail": "This invoice cannot be approved in its current status."}, status=400)
 
+        amount_cents = _to_cents(getattr(invoice, "amount", None))
+        if amount_cents <= 0:
+            approved_at = timezone.now()
+            with transaction.atomic():
+                invoice = Invoice.objects.select_for_update().get(pk=invoice.pk)
+                invoice.status = InvoiceStatus.APPROVED
+                invoice.approved_at = invoice.approved_at or approved_at
+                invoice.escrow_released = False
+                invoice.stripe_transfer_id = ""
+                if hasattr(invoice, "platform_fee_cents"):
+                    invoice.platform_fee_cents = 0
+                if hasattr(invoice, "payout_cents"):
+                    invoice.payout_cents = 0
+                update_fields = [
+                    "status",
+                    "approved_at",
+                    "escrow_released",
+                    "stripe_transfer_id",
+                    "platform_fee_cents",
+                    "payout_cents",
+                ]
+                invoice.save(update_fields=update_fields)
+
+                milestone = getattr(invoice, "source_milestone", None)
+                if milestone is None and getattr(invoice, "milestone_id_snapshot", None):
+                    try:
+                        milestone = invoice.agreement.milestones.select_for_update().filter(pk=invoice.milestone_id_snapshot).first()
+                    except Exception:
+                        milestone = None
+                if milestone is not None:
+                    milestone.completed = True
+                    milestone.completed_at = getattr(milestone, "completed_at", None) or approved_at
+                    milestone.is_invoiced = True
+                    if getattr(milestone, "invoice_id", None) is None:
+                        milestone.invoice = invoice
+                    milestone.save(update_fields=["completed", "completed_at", "is_invoiced", "invoice"])
+
+            try:
+                sync_payout_for_invoice(invoice)
+            except Exception:
+                pass
+            try:
+                recompute_and_apply_agreement_completion(getattr(invoice, "agreement_id", None))
+            except Exception as exc:
+                logger.warning("Agreement completion recompute failed (zero-dollar approval): %s", exc)
+            try:
+                capture_project_outcome_snapshot(getattr(invoice, "agreement_id", None), trigger="zero_dollar_completion_approved")
+            except Exception:
+                pass
+            try:
+                create_activity_event(
+                    contractor=getattr(invoice.agreement, "contractor", None),
+                    actor_user=request.user,
+                    agreement=invoice.agreement,
+                    milestone=getattr(invoice, "source_milestone", None),
+                    event_type="invoice_approved",
+                    title="Zero-dollar milestone completion approved",
+                    summary="Zero-dollar milestone completion approved. No payment release or Stripe action was created.",
+                    severity="success",
+                    related_label=getattr(invoice, "milestone_title_snapshot", "") or "Milestone completion",
+                    icon_hint="check",
+                    navigation_target=f"/app/invoices/{invoice.id}",
+                    metadata={
+                        "invoice_id": invoice.id,
+                        "agreement_id": invoice.agreement_id,
+                        "amount_cents": 0,
+                        "zero_dollar_completion": True,
+                    },
+                    dedupe_key=f"zero_dollar_completion_approved:{invoice.id}",
+                )
+            except Exception:
+                pass
+            try:
+                create_notification(
+                    contractor=getattr(invoice.agreement, "contractor", None),
+                    user=getattr(getattr(invoice.agreement, "contractor", None), "user", None),
+                    category="invoice_approved",
+                    title="Zero-dollar milestone completion approved",
+                    body=f"Completion was approved for invoice {getattr(invoice, 'invoice_number', invoice.id)}. No payment was released.",
+                    link=f"/app/invoices/{invoice.id}",
+                    agreement=invoice.agreement,
+                    invoice=invoice,
+                )
+            except Exception:
+                pass
+
+            return Response(
+                {
+                    "invoice": InvoiceSerializer(invoice, context={"request": request}).data,
+                    "mode": "zero_dollar_completion",
+                    "detail": "Zero-dollar milestone completion approved.",
+                    "amount_cents": 0,
+                    "payment_movement": False,
+                },
+                status=200,
+            )
+
         contractor = getattr(agreement, "contractor", None)
         stripe_blocker = _contractor_stripe_release_blocker(contractor)
         if stripe_blocker:
@@ -329,10 +426,6 @@ class MagicInvoiceApproveView(APIView):
         except Exception as exc:
             logger.exception("Stripe init failed: %s", exc)
             return Response({"detail": "Payment system unavailable."}, status=500)
-
-        amount_cents = _to_cents(getattr(invoice, "amount", None))
-        if amount_cents <= 0:
-            return Response({"detail": "Invoice amount is invalid."}, status=400)
 
         try:
             from payments.fees import calculate_platform_fee_cents_for_invoice  # type: ignore

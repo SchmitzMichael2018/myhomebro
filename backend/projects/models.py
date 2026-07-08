@@ -13,7 +13,18 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from .models_ai_scope import AgreementAIScope  # noqa: E402,F401
-from .models_dispute import Dispute, DisputeAttachment
+from .models_dispute import (
+    Dispute,
+    DisputeAttachment,
+    ResolutionAgreement,
+    ResolutionAgreementSignature,
+    ResolutionCaseAuditEvent,
+    ResolutionCaseTimelineEvent,
+    ResolutionDocument,
+    ResolutionEvidenceIndex,
+    ResolutionPartyStatement,
+    ResolutionProposal,
+)
 from .models_invite import ContractorInvite  # noqa: F401
 from .models_contractor_discovery import (  # noqa: F401
     ContractorDirectoryDiscovery,

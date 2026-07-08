@@ -72,6 +72,23 @@ def compute_deadline_hours_from_agreement_total(agreement) -> tuple[int, str]:
 
 
 class Dispute(models.Model):
+    SOURCE_AGREEMENT = "agreement"
+    SOURCE_MILESTONE = "milestone"
+    SOURCE_PAYMENT_REQUEST = "payment_request"
+    SOURCE_EXPENSE = "expense"
+    SOURCE_AMENDMENT = "amendment"
+    SOURCE_WARRANTY_REQUEST = "warranty_request"
+    SOURCE_GENERAL_PROJECT_ISSUE = "general_project_issue"
+    SOURCE_CHOICES = (
+        (SOURCE_AGREEMENT, "Agreement"),
+        (SOURCE_MILESTONE, "Milestone"),
+        (SOURCE_PAYMENT_REQUEST, "Payment Request"),
+        (SOURCE_EXPENSE, "Expense"),
+        (SOURCE_AMENDMENT, "Amendment"),
+        (SOURCE_WARRANTY_REQUEST, "Warranty Request"),
+        (SOURCE_GENERAL_PROJECT_ISSUE, "General Project Issue"),
+    )
+
     STATUS_CHOICES = (
         ("initiated", "Initiated"),
         ("open", "Open"),
@@ -120,12 +137,62 @@ class Dispute(models.Model):
         on_delete=models.CASCADE,
         related_name="disputes",
     )
+    project = models.ForeignKey(
+        "projects.Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolution_cases",
+    )
     milestone = models.ForeignKey(
         "projects.Milestone",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="disputes",
+    )
+    source_type = models.CharField(
+        max_length=40,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_AGREEMENT,
+        db_index=True,
+    )
+    source_object_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    source_locked = models.BooleanField(default=True)
+    payment_request = models.ForeignKey(
+        "projects.Invoice",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolution_cases",
+    )
+    draw_request = models.ForeignKey(
+        "projects.DrawRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolution_cases",
+    )
+    expense = models.ForeignKey(
+        "projects.Expense",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolution_cases",
+    )
+    amendment = models.ForeignKey(
+        "projects.AgreementAmendment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolution_cases",
+    )
+    warranty_request = models.ForeignKey(
+        "projects.AgreementWarranty",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolution_cases",
     )
 
     initiator = models.CharField(max_length=20, choices=INITIATOR_CHOICES)
@@ -642,6 +709,27 @@ class Dispute(models.Model):
         wo.save(update_fields=["rework_milestone_id"])
 
     def save(self, *args, **kwargs):
+        if self.agreement_id and not self.project_id:
+            try:
+                self.project_id = getattr(self.agreement, "project_id", None)
+            except Exception:
+                pass
+        if not self.source_type:
+            if self.milestone_id:
+                self.source_type = self.SOURCE_MILESTONE
+            else:
+                self.source_type = self.SOURCE_AGREEMENT
+        if not self.source_object_id:
+            source_map = {
+                self.SOURCE_MILESTONE: self.milestone_id,
+                self.SOURCE_PAYMENT_REQUEST: self.payment_request_id or self.draw_request_id,
+                self.SOURCE_EXPENSE: self.expense_id,
+                self.SOURCE_AMENDMENT: self.amendment_id,
+                self.SOURCE_WARRANTY_REQUEST: self.warranty_request_id,
+                self.SOURCE_AGREEMENT: self.agreement_id,
+            }
+            self.source_object_id = source_map.get(self.source_type)
+
         # Determine prior status to detect transitions
         prior_status = None
         if self.pk:
@@ -668,6 +756,347 @@ class Dispute(models.Model):
 
     def __str__(self) -> str:
         return f"Dispute #{self.pk} ({self.status})"
+
+
+class ResolutionCaseTimelineEvent(models.Model):
+    EVENT_CASE_CREATED = "case_created"
+    EVENT_EVIDENCE_UPLOADED = "evidence_uploaded"
+    EVENT_STATEMENT_SUBMITTED = "statement_submitted"
+    EVENT_RESOLUTION_PROPOSED = "resolution_proposed"
+    EVENT_EVIDENCE_REQUESTED = "evidence_requested"
+    EVENT_PAYMENT_HOLD_APPLIED = "payment_hold_applied"
+    EVENT_PAYMENT_HOLD_RELEASED = "payment_hold_released"
+    EVENT_HUMAN_DECISION_RECORDED = "human_decision_recorded"
+    EVENT_AGREEMENT_SIGNED = "agreement_signed"
+    EVENT_PDF_GENERATED = "pdf_generated"
+    EVENT_CASE_CLOSED = "case_closed"
+    EVENT_CASE_REOPENED = "case_reopened"
+    EVENT_AI_ANALYSIS_UPDATED = "ai_analysis_updated"
+    EVENT_MANUAL = "manual"
+    EVENT_CHOICES = (
+        (EVENT_CASE_CREATED, "Case Created"),
+        (EVENT_EVIDENCE_UPLOADED, "Evidence Uploaded"),
+        (EVENT_STATEMENT_SUBMITTED, "Statement Submitted"),
+        (EVENT_RESOLUTION_PROPOSED, "Resolution Proposed"),
+        (EVENT_EVIDENCE_REQUESTED, "Evidence Requested"),
+        (EVENT_PAYMENT_HOLD_APPLIED, "Payment Hold Applied"),
+        (EVENT_PAYMENT_HOLD_RELEASED, "Payment Hold Released"),
+        (EVENT_HUMAN_DECISION_RECORDED, "Human Decision Recorded"),
+        (EVENT_AGREEMENT_SIGNED, "Agreement Signed"),
+        (EVENT_PDF_GENERATED, "PDF Generated"),
+        (EVENT_CASE_CLOSED, "Case Closed"),
+        (EVENT_CASE_REOPENED, "Case Reopened"),
+        (EVENT_AI_ANALYSIS_UPDATED, "AI Analysis Updated"),
+        (EVENT_MANUAL, "Manual Entry"),
+    )
+
+    VISIBILITY_ALL = "all_parties"
+    VISIBILITY_ADMIN = "admin_only"
+    VISIBILITY_CHOICES = (
+        (VISIBILITY_ALL, "All Parties"),
+        (VISIBILITY_ADMIN, "Admin Only"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="timeline_events")
+    event_type = models.CharField(max_length=48, choices=EVENT_CHOICES, db_index=True)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_timeline_events")
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+    related_object_type = models.CharField(max_length=80, blank=True, default="")
+    related_object_id = models.PositiveIntegerField(null=True, blank=True)
+    visibility = models.CharField(max_length=24, choices=VISIBILITY_CHOICES, default=VISIBILITY_ALL, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["occurred_at", "id"]
+        indexes = [
+            models.Index(fields=["dispute", "event_type"]),
+            models.Index(fields=["dispute", "occurred_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"TimelineEvent(dispute={self.dispute_id}, type={self.event_type})"
+
+
+class ResolutionCaseAuditEvent(models.Model):
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="audit_events")
+    action = models.CharField(max_length=80, db_index=True)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_audit_events")
+    occurred_at = models.DateTimeField(default=timezone.now, db_index=True)
+    summary = models.CharField(max_length=255, blank=True, default="")
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["occurred_at", "id"]
+        indexes = [
+            models.Index(fields=["dispute", "action"]),
+            models.Index(fields=["dispute", "occurred_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"AuditEvent(dispute={self.dispute_id}, action={self.action})"
+
+
+class ResolutionPartyStatement(models.Model):
+    TYPE_CUSTOMER = "customer_statement"
+    TYPE_CONTRACTOR = "contractor_statement"
+    TYPE_ADMIN = "admin_internal_note"
+    TYPE_CHOICES = (
+        (TYPE_CUSTOMER, "Customer Statement"),
+        (TYPE_CONTRACTOR, "Contractor Statement"),
+        (TYPE_ADMIN, "Admin Internal Note"),
+    )
+
+    ROLE_CUSTOMER = "customer"
+    ROLE_CONTRACTOR = "contractor"
+    ROLE_ADMIN = "admin"
+    ROLE_CHOICES = (
+        (ROLE_CUSTOMER, "Customer"),
+        (ROLE_CONTRACTOR, "Contractor"),
+        (ROLE_ADMIN, "Admin"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="party_statements")
+    statement_type = models.CharField(max_length=32, choices=TYPE_CHOICES, db_index=True)
+    party_role = models.CharField(max_length=24, choices=ROLE_CHOICES, db_index=True)
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_statements")
+    text = models.TextField()
+    version = models.PositiveIntegerField(default=1)
+    supersedes = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="revisions")
+    is_current = models.BooleanField(default=True, db_index=True)
+    visibility = models.CharField(
+        max_length=24,
+        choices=ResolutionCaseTimelineEvent.VISIBILITY_CHOICES,
+        default=ResolutionCaseTimelineEvent.VISIBILITY_ALL,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
+        indexes = [
+            models.Index(fields=["dispute", "party_role", "is_current"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Statement(dispute={self.dispute_id}, role={self.party_role}, v{self.version})"
+
+
+class ResolutionEvidenceIndex(models.Model):
+    CATEGORY_PHOTO = "photo"
+    CATEGORY_VIDEO = "video"
+    CATEGORY_DOCUMENT = "document"
+    CATEGORY_RECEIPT = "receipt"
+    CATEGORY_INVOICE = "invoice"
+    CATEGORY_MESSAGE = "message"
+    CATEGORY_AGREEMENT = "agreement"
+    CATEGORY_AMENDMENT = "amendment"
+    CATEGORY_INSPECTION_REPORT = "inspection_report"
+    CATEGORY_WARRANTY_DOCUMENT = "warranty_document"
+    CATEGORY_OTHER = "other"
+    CATEGORY_CHOICES = (
+        (CATEGORY_PHOTO, "Photo"),
+        (CATEGORY_VIDEO, "Video"),
+        (CATEGORY_DOCUMENT, "Document"),
+        (CATEGORY_RECEIPT, "Receipt"),
+        (CATEGORY_INVOICE, "Invoice"),
+        (CATEGORY_MESSAGE, "Message"),
+        (CATEGORY_AGREEMENT, "Agreement"),
+        (CATEGORY_AMENDMENT, "Amendment"),
+        (CATEGORY_INSPECTION_REPORT, "Inspection Report"),
+        (CATEGORY_WARRANTY_DOCUMENT, "Warranty Document"),
+        (CATEGORY_OTHER, "Other"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="evidence_index")
+    attachment = models.OneToOneField("projects.DisputeAttachment", on_delete=models.CASCADE, null=True, blank=True, related_name="evidence_record")
+    category = models.CharField(max_length=32, choices=CATEGORY_CHOICES, default=CATEGORY_OTHER, db_index=True)
+    description = models.TextField(blank=True, default="")
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_evidence")
+    uploaded_at = models.DateTimeField(default=timezone.now, db_index=True)
+    related_party = models.CharField(max_length=24, blank=True, default="", db_index=True)
+    related_source_type = models.CharField(max_length=80, blank=True, default="")
+    related_source_object_id = models.PositiveIntegerField(null=True, blank=True)
+    ai_summary = models.TextField(blank=True, default="")
+    visibility = models.CharField(
+        max_length=24,
+        choices=ResolutionCaseTimelineEvent.VISIBILITY_CHOICES,
+        default=ResolutionCaseTimelineEvent.VISIBILITY_ALL,
+        db_index=True,
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["uploaded_at", "id"]
+        indexes = [
+            models.Index(fields=["dispute", "category"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"Evidence(dispute={self.dispute_id}, category={self.category})"
+
+
+class ResolutionProposal(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_PROPOSED = "proposed"
+    STATUS_ACCEPTED_CUSTOMER = "accepted_by_customer"
+    STATUS_ACCEPTED_CONTRACTOR = "accepted_by_contractor"
+    STATUS_REJECTED = "rejected"
+    STATUS_COUNTERED = "countered"
+    STATUS_READY_FOR_SIGNATURE = "ready_for_signature"
+    STATUS_SIGNED = "signed"
+    STATUS_WITHDRAWN = "withdrawn"
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_PROPOSED, "Proposed"),
+        (STATUS_ACCEPTED_CUSTOMER, "Accepted by Customer"),
+        (STATUS_ACCEPTED_CONTRACTOR, "Accepted by Contractor"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_COUNTERED, "Countered"),
+        (STATUS_READY_FOR_SIGNATURE, "Ready for Signature"),
+        (STATUS_SIGNED, "Signed"),
+        (STATUS_WITHDRAWN, "Withdrawn"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="resolution_proposals")
+    proposed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_proposals")
+    problem_statement = models.TextField(blank=True, default="")
+    proposed_solution = models.TextField()
+    required_actions = models.JSONField(default=list, blank=True)
+    deadlines = models.JSONField(default=list, blank=True)
+    payment_impact = models.JSONField(default=dict, blank=True)
+    warranty_impact = models.TextField(blank=True, default="")
+    evidence_relied_upon = models.JSONField(default=list, blank=True)
+    status = models.CharField(max_length=40, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["dispute", "status"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.updated_at = timezone.now()
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"ResolutionProposal(dispute={self.dispute_id}, status={self.status})"
+
+
+class ResolutionAgreement(models.Model):
+    STATUS_DRAFT = "draft"
+    STATUS_READY_FOR_SIGNATURE = "ready_for_signature"
+    STATUS_PARTIALLY_SIGNED = "partially_signed"
+    STATUS_SIGNED = "signed"
+    STATUS_VOID = "void"
+    STATUS_CHOICES = (
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_READY_FOR_SIGNATURE, "Ready for Signature"),
+        (STATUS_PARTIALLY_SIGNED, "Partially Signed"),
+        (STATUS_SIGNED, "Signed"),
+        (STATUS_VOID, "Void"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="resolution_agreements")
+    proposal = models.ForeignKey(ResolutionProposal, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_agreements")
+    project = models.ForeignKey("projects.Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_agreements")
+    agreement = models.ForeignKey("projects.Agreement", on_delete=models.CASCADE, related_name="resolution_agreements")
+    source_type = models.CharField(max_length=40, blank=True, default="")
+    source_object_id = models.PositiveIntegerField(null=True, blank=True)
+    problem_statement = models.TextField(blank=True, default="")
+    disputed_facts = models.JSONField(default=list, blank=True)
+    undisputed_facts = models.JSONField(default=list, blank=True)
+    agreed_solution = models.TextField()
+    required_actions = models.JSONField(default=list, blank=True)
+    deadlines = models.JSONField(default=list, blank=True)
+    payment_changes = models.JSONField(default=dict, blank=True)
+    warranty_impact = models.TextField(blank=True, default="")
+    future_obligations = models.TextField(blank=True, default="")
+    evidence_reviewed = models.JSONField(default=list, blank=True)
+    human_decision_summary = models.TextField(blank=True, default="")
+    audit_summary = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    locked_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_resolution_agreements")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["dispute", "status"]),
+        ]
+
+    @property
+    def is_locked(self) -> bool:
+        return bool(self.locked_at) or self.status == self.STATUS_SIGNED
+
+    def save(self, *args, **kwargs):
+        self.updated_at = timezone.now()
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"ResolutionAgreement(dispute={self.dispute_id}, status={self.status})"
+
+
+class ResolutionAgreementSignature(models.Model):
+    ROLE_CUSTOMER = "customer"
+    ROLE_CONTRACTOR = "contractor"
+    ROLE_ADMIN = "admin"
+    ROLE_CHOICES = (
+        (ROLE_CUSTOMER, "Customer"),
+        (ROLE_CONTRACTOR, "Contractor"),
+        (ROLE_ADMIN, "Admin"),
+    )
+
+    resolution_agreement = models.ForeignKey(ResolutionAgreement, on_delete=models.CASCADE, related_name="signatures")
+    signer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="resolution_agreement_signatures")
+    signer_role = models.CharField(max_length=24, choices=ROLE_CHOICES, db_index=True)
+    signer_name = models.CharField(max_length=255)
+    signed_at = models.DateTimeField(default=timezone.now, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.TextField(blank=True, default="")
+    signature_text = models.CharField(max_length=255, blank=True, default="")
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["signed_at", "id"]
+        unique_together = (("resolution_agreement", "signer_role"),)
+
+    def __str__(self) -> str:
+        return f"ResolutionSignature(agreement={self.resolution_agreement_id}, role={self.signer_role})"
+
+
+class ResolutionDocument(models.Model):
+    TYPE_PDF_PACKAGE = "pdf_package"
+    TYPE_OTHER = "other"
+    TYPE_CHOICES = (
+        (TYPE_PDF_PACKAGE, "PDF Package"),
+        (TYPE_OTHER, "Other"),
+    )
+
+    dispute = models.ForeignKey(Dispute, on_delete=models.CASCADE, related_name="resolution_documents")
+    resolution_agreement = models.ForeignKey(ResolutionAgreement, on_delete=models.SET_NULL, null=True, blank=True, related_name="documents")
+    document_type = models.CharField(max_length=32, choices=TYPE_CHOICES, default=TYPE_OTHER, db_index=True)
+    title = models.CharField(max_length=255)
+    file = models.FileField(upload_to="resolution_cases/%Y/%m/", null=True, blank=True)
+    generated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="generated_resolution_documents")
+    generated_at = models.DateTimeField(default=timezone.now, db_index=True)
+    sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-generated_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"ResolutionDocument(dispute={self.dispute_id}, type={self.document_type})"
 
 
 class DisputeAttachment(models.Model):

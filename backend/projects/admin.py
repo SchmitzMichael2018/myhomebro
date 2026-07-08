@@ -52,10 +52,23 @@ except Exception:  # pragma: no cover
 
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
-    from .models_dispute import Dispute, DisputeAttachment  # type: ignore
+    from .models_dispute import (  # type: ignore
+        Dispute,
+        DisputeAttachment,
+        ResolutionAgreement,
+        ResolutionAgreementSignature,
+        ResolutionCaseAuditEvent,
+        ResolutionCaseTimelineEvent,
+        ResolutionDocument,
+        ResolutionEvidenceIndex,
+        ResolutionPartyStatement,
+        ResolutionProposal,
+    )
 except Exception:  # pragma: no cover
     Dispute = None
     DisputeAttachment = None
+    ResolutionAgreement = ResolutionAgreementSignature = ResolutionCaseAuditEvent = ResolutionCaseTimelineEvent = None
+    ResolutionDocument = ResolutionEvidenceIndex = ResolutionPartyStatement = ResolutionProposal = None
 
 try:
     from .models_attachments import AgreementAttachment  # type: ignore
@@ -1704,6 +1717,78 @@ if DisputeAttachment is not None:
     class DisputeAttachmentAdmin(admin.ModelAdmin):
         list_display = ("id", "dispute", "file") if hasattr(DisputeAttachment, "file") else ("id", "dispute")
         search_fields = ("dispute__id",)
+
+
+if ResolutionCaseTimelineEvent is not None:
+    @admin.register(ResolutionCaseTimelineEvent)  # type: ignore[misc]
+    class ResolutionCaseTimelineEventAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "event_type", "title", "actor", "occurred_at")
+        list_filter = ("event_type", "visibility", "occurred_at")
+        search_fields = ("dispute__id", "title", "description", "actor__email")
+        readonly_fields = ("occurred_at",)
+
+
+if ResolutionCaseAuditEvent is not None:
+    @admin.register(ResolutionCaseAuditEvent)  # type: ignore[misc]
+    class ResolutionCaseAuditEventAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "action", "summary", "actor", "occurred_at")
+        list_filter = ("action", "occurred_at")
+        search_fields = ("dispute__id", "summary", "actor__email")
+        readonly_fields = ("occurred_at",)
+
+
+if ResolutionPartyStatement is not None:
+    @admin.register(ResolutionPartyStatement)  # type: ignore[misc]
+    class ResolutionPartyStatementAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "party_role", "statement_type", "version", "is_current", "author", "created_at")
+        list_filter = ("party_role", "statement_type", "is_current", "visibility", "created_at")
+        search_fields = ("dispute__id", "text", "author__email")
+        readonly_fields = ("created_at",)
+
+
+if ResolutionEvidenceIndex is not None:
+    @admin.register(ResolutionEvidenceIndex)  # type: ignore[misc]
+    class ResolutionEvidenceIndexAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "category", "attachment", "uploaded_by", "uploaded_at")
+        list_filter = ("category", "visibility", "uploaded_at")
+        search_fields = ("dispute__id", "description", "uploaded_by__email")
+        readonly_fields = ("uploaded_at",)
+
+
+if ResolutionProposal is not None:
+    @admin.register(ResolutionProposal)  # type: ignore[misc]
+    class ResolutionProposalAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "status", "proposed_by", "created_at", "updated_at")
+        list_filter = ("status", "created_at")
+        search_fields = ("dispute__id", "problem_statement", "proposed_solution", "proposed_by__email")
+        readonly_fields = ("created_at", "updated_at")
+
+
+if ResolutionAgreement is not None:
+    @admin.register(ResolutionAgreement)  # type: ignore[misc]
+    class ResolutionAgreementAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "status", "agreement", "created_by", "created_at", "locked_at")
+        list_filter = ("status", "created_at", "locked_at")
+        search_fields = ("dispute__id", "problem_statement", "agreed_solution", "created_by__email")
+        readonly_fields = ("created_at", "updated_at", "locked_at")
+
+
+if ResolutionAgreementSignature is not None:
+    @admin.register(ResolutionAgreementSignature)  # type: ignore[misc]
+    class ResolutionAgreementSignatureAdmin(admin.ModelAdmin):
+        list_display = ("id", "resolution_agreement", "signer_role", "signer_name", "signer", "signed_at")
+        list_filter = ("signer_role", "signed_at")
+        search_fields = ("resolution_agreement__dispute__id", "signer_name", "signer__email")
+        readonly_fields = ("signed_at",)
+
+
+if ResolutionDocument is not None:
+    @admin.register(ResolutionDocument)  # type: ignore[misc]
+    class ResolutionDocumentAdmin(admin.ModelAdmin):
+        list_display = ("id", "dispute", "document_type", "title", "generated_by", "generated_at", "sha256")
+        list_filter = ("document_type", "generated_at")
+        search_fields = ("dispute__id", "title", "sha256", "generated_by__email")
+        readonly_fields = ("generated_at", "sha256")
 
 
 # ─────────────────────────────────────────────────────────────

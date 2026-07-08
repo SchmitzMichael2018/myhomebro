@@ -854,6 +854,14 @@ function resolutionSourceLabel(dispute) {
 }
 
 function buildResolutionTimeline(dispute, proposal, attachments) {
+  if (Array.isArray(dispute?.timeline_events) && dispute.timeline_events.length) {
+    return dispute.timeline_events.map((event) => ({
+      at: event.occurred_at,
+      title: event.title || labelFor(event.event_type, {}),
+      detail: event.description,
+      source: event.event_type ? labelFor(event.event_type, {}) : "Timeline",
+    }));
+  }
   const rows = [];
   const add = (at, title, detail, source = "System") => {
     if (!title) return;
@@ -879,6 +887,8 @@ function buildResolutionTimeline(dispute, proposal, attachments) {
 
 function ResolutionOverview({ dispute, proposal, isAdmin }) {
   const next = nextStepLabel(dispute, isAdmin);
+  const agreement = Array.isArray(dispute.resolution_agreements) ? dispute.resolution_agreements[0] : null;
+  const documentCount = Array.isArray(dispute.resolution_documents) ? dispute.resolution_documents.length : 0;
   return (
     <WorkspaceSection title="Overview" eyebrow="Resolution Workspace" testId="resolution-workspace-overview">
       <div className="flex flex-wrap items-center gap-2">
@@ -886,12 +896,14 @@ function ResolutionOverview({ dispute, proposal, isAdmin }) {
         <Badge tone={pillToneForNext(next)}>{next}</Badge>
         {dispute.escrow_frozen ? <Badge tone="info" className="bg-slate-900 text-white">Escrow Hold Active</Badge> : <Badge>No active hold</Badge>}
         {proposal ? <Badge tone="good">Proposal on file</Badge> : null}
+        {agreement ? <Badge tone="good">Resolution agreement {String(agreement.status || "").replaceAll("_", " ")}</Badge> : null}
+        {documentCount ? <Badge tone="info">{documentCount} document package{documentCount === 1 ? "" : "s"}</Badge> : null}
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <InfoTile label="Case origin" value={resolutionSourceLabel(dispute)} />
         <InfoTile label="Agreement" value={dispute.agreement_number ? `#${dispute.agreement_number}` : dispute.agreement ? `#${dispute.agreement}` : ""} />
         <InfoTile label="Milestone" value={dispute.milestone_title || (dispute.milestone ? `#${dispute.milestone}` : "")} />
-        <InfoTile label="Current recommendation" value={proposal ? labelFor(proposal.proposal_type, {}) : "Generate AI analysis or propose resolution"} />
+        <InfoTile label="Current recommendation" value={proposal ? (proposal.proposed_solution || proposal.notes || labelFor(proposal.proposal_type, {})) : "Generate AI analysis or propose resolution"} />
       </div>
       <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm leading-6 text-blue-950">
         <b>Project Assistant summary:</b> This case is organized as a guided resolution record. Review the evidence,
@@ -922,37 +934,50 @@ function ResolutionTimeline({ dispute, proposal, attachments }) {
         <div className="text-sm text-slate-600">Timeline entries appear as evidence, statements, proposals, and decisions are recorded.</div>
       )}
       <div className="mt-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3 text-sm text-slate-600">
-        Manual timeline entries are not yet persisted in this release. Use party statements or evidence uploads for now.
+        Timeline entries are persisted for case creation, statements, evidence, proposals, human decisions, signatures, and PDF package generation.
       </div>
     </WorkspaceSection>
   );
 }
 
-function ResolutionEvidence({ attachments, attachmentUrl }) {
-  const categories = ["agreement", "milestone", "photo", "receipt", "document", "other"];
+function ResolutionEvidence({ dispute, attachments, attachmentUrl }) {
+  const durableEvidence = Array.isArray(dispute?.evidence_index) ? dispute.evidence_index : [];
+  const evidenceRows = durableEvidence.length
+    ? durableEvidence
+    : attachments.map((attachment) => ({
+        id: attachment?.id,
+        attachment,
+        category: attachment?.kind || "other",
+        description: attachment?.name || attachment?.filename || attachment?.file,
+        uploaded_at: attachment?.created_at || attachment?.uploaded_at,
+        attachment_file_url: attachmentUrl(attachment),
+      }));
+  const categories = ["photo", "video", "document", "receipt", "invoice", "message", "agreement", "amendment", "inspection_report", "warranty_document", "other"];
   return (
-    <WorkspaceSection title={`Evidence (${attachments.length})`} eyebrow="Photos, Documents, Receipts, Messages" testId="resolution-workspace-evidence">
+    <WorkspaceSection title={`Evidence (${evidenceRows.length})`} eyebrow="Photos, Documents, Receipts, Messages" testId="resolution-workspace-evidence">
       <div className="mb-3 flex flex-wrap gap-2">
         {categories.map((category) => (
-          <span key={category} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold capitalize text-slate-700">{category}</span>
+          <span key={category} className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold capitalize text-slate-700">{category.replaceAll("_", " ")}</span>
         ))}
       </div>
-      {attachments.length === 0 ? (
+      {evidenceRows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
           No uploaded evidence yet. Add photos, documents, receipts, invoices, messages, inspection reports, or warranty documents.
         </div>
       ) : (
         <div className="grid gap-2 md:grid-cols-2">
-          {attachments.map((a) => {
-            const name = a?.name || a?.filename || `Attachment #${a?.id || ""}`;
-            const url = attachmentUrl(a);
+          {evidenceRows.map((evidence) => {
+            const a = evidence?.attachment || evidence;
+            const name = evidence?.description || a?.name || a?.filename || `Evidence #${evidence?.id || a?.id || ""}`;
+            const url = evidence?.attachment_file_url || attachmentUrl(a);
             return (
-              <div key={a?.id || name} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div key={evidence?.id || a?.id || name} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{a?.kind || "other"}</div>
+                    <div className="text-[11px] font-extrabold uppercase tracking-wide text-slate-500">{String(evidence?.category || a?.kind || "other").replaceAll("_", " ")}</div>
                     <div className="truncate text-sm font-extrabold text-slate-950">{name}</div>
-                    <div className="text-xs text-slate-500">{a?.created_at || a?.uploaded_at ? new Date(a.created_at || a.uploaded_at).toLocaleString() : ""}</div>
+                    <div className="text-xs text-slate-500">{evidence?.uploaded_at ? new Date(evidence.uploaded_at).toLocaleString() : ""}</div>
+                    {evidence?.ai_summary ? <div className="mt-1 text-xs text-slate-600">{evidence.ai_summary}</div> : null}
                   </div>
                   {url ? <a className="mhb-btn" href={url} target="_blank" rel="noreferrer" style={{ padding: "6px 10px", fontSize: 12 }}>Open</a> : null}
                 </div>
@@ -966,19 +991,31 @@ function ResolutionEvidence({ attachments, attachmentUrl }) {
 }
 
 function PartyStatements({ dispute }) {
+  const statements = Array.isArray(dispute.party_statements) ? dispute.party_statements : [];
+  const current = (role) => statements.find((statement) => statement.party_role === role && statement.is_current) || statements.find((statement) => statement.party_role === role);
+  const customer = current("customer");
+  const contractor = current("contractor");
+  const admin = current("admin");
   return (
     <WorkspaceSection title="Party Statements" eyebrow="Separate Records" testId="resolution-workspace-statements">
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div className="text-sm font-extrabold text-slate-950">Customer</div>
-          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(dispute.homeowner_response || "").trim() || "No customer statement submitted yet."}</div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(customer?.text || dispute.homeowner_response || "").trim() || "No customer statement submitted yet."}</div>
+          {customer ? <div className="mt-2 text-xs font-bold text-slate-500">Version {customer.version} - {customer.created_at ? new Date(customer.created_at).toLocaleString() : ""}</div> : null}
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div className="text-sm font-extrabold text-slate-950">Contractor</div>
-          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(dispute.contractor_response || "").trim() || "No contractor statement submitted yet."}</div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(contractor?.text || dispute.contractor_response || "").trim() || "No contractor statement submitted yet."}</div>
+          {contractor ? <div className="mt-2 text-xs font-bold text-slate-500">Version {contractor.version} - {contractor.created_at ? new Date(contractor.created_at).toLocaleString() : ""}</div> : null}
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div className="text-sm font-extrabold text-slate-950">Administrator</div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(admin?.text || "").trim() || "No admin/internal statement submitted yet."}</div>
+          {admin ? <div className="mt-2 text-xs font-bold text-slate-500">Version {admin.version} - {admin.created_at ? new Date(admin.created_at).toLocaleString() : ""}</div> : null}
         </div>
       </div>
-      <div className="mt-3 text-sm text-slate-600">Statement revision history is not separated yet; current responses remain stored on the existing dispute record.</div>
+      <div className="mt-3 text-sm text-slate-600">New statements are stored as immutable versions; legacy response fields remain visible for older cases.</div>
     </WorkspaceSection>
   );
 }
@@ -1018,6 +1055,9 @@ function PaymentImpact({ dispute }) {
 }
 
 function HumanDecisionPanel({ dispute, isAdmin, isContractor, isClosedCase, onOpenProposal, onOpenRespond, onOpenResolve, onClose }) {
+  const proposals = Array.isArray(dispute.resolution_proposals) ? dispute.resolution_proposals : [];
+  const agreements = Array.isArray(dispute.resolution_agreements) ? dispute.resolution_agreements : [];
+  const documents = Array.isArray(dispute.resolution_documents) ? dispute.resolution_documents : [];
   return (
     <WorkspaceSection title="Human Decision" eyebrow="Approval Required" testId="resolution-workspace-human-decision" tone="warning">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1028,6 +1068,26 @@ function HumanDecisionPanel({ dispute, isAdmin, isContractor, isClosedCase, onOp
         <InfoTile label="Request mediation" value="Escalate to admin review" />
         <InfoTile label="Modify resolution" value="Human users edit proposal/admin resolution before saving" />
       </div>
+      {(proposals.length || agreements.length || documents.length) ? (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-amber-200 bg-white p-3">
+            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Proposals</div>
+            <div className="mt-1 text-sm text-slate-700">{proposals.length ? proposals.map((p) => String(p.status || "draft").replaceAll("_", " ")).join(", ") : "None yet"}</div>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-white p-3">
+            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Resolution Agreements</div>
+            <div className="mt-1 text-sm text-slate-700">{agreements.length ? agreements.map((a) => String(a.status || "draft").replaceAll("_", " ")).join(", ") : "None yet"}</div>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-white p-3">
+            <div className="text-xs font-extrabold uppercase tracking-wide text-slate-500">PDF Packages</div>
+            <div className="mt-1 grid gap-1 text-sm text-slate-700">
+              {documents.length ? documents.map((doc) => (
+                doc.file_url ? <a key={doc.id} className="font-bold text-blue-700" href={doc.file_url} target="_blank" rel="noreferrer">{doc.title || "Resolution package"}</a> : <span key={doc.id}>{doc.title || "Resolution package"}</span>
+              )) : "None yet"}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         {isContractor && !isClosedCase ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">Propose Resolution</button> : null}
         {!isClosedCase ? <button className="mhb-btn" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">Add Statement</button> : null}
@@ -1060,7 +1120,8 @@ function DetailsModal({
   const attachments = Array.isArray(dispute.attachments) ? dispute.attachments : [];
   const attachmentUrl = (a) => a?.url || a?.file_url || a?.file || a?.download_url || "";
 
-  const proposal = extractProposalFromResponse(dispute.contractor_response);
+  const structuredProposals = Array.isArray(dispute.resolution_proposals) ? dispute.resolution_proposals : [];
+  const proposal = structuredProposals[0] || extractProposalFromResponse(dispute.contractor_response);
 
   return (
     <ModalShell title={`Resolution Case #${dispute.id} - Workspace`} onClose={onClose} width="min(1120px, 96vw)">
@@ -1073,7 +1134,7 @@ function DetailsModal({
       </div>
       <ResolutionOverview dispute={dispute} proposal={proposal} isAdmin={isAdmin} />
       <ResolutionTimeline dispute={dispute} proposal={proposal} attachments={attachments} />
-      <ResolutionEvidence attachments={attachments} attachmentUrl={attachmentUrl} />
+      <ResolutionEvidence dispute={dispute} attachments={attachments} attachmentUrl={attachmentUrl} />
       <PartyStatements dispute={dispute} />
       <AgreementReview dispute={dispute} />
       <PaymentImpact dispute={dispute} />

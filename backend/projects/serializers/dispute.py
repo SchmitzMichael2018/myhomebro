@@ -2,7 +2,19 @@
 from rest_framework import serializers
 
 from ..models import Agreement, Milestone
-from ..models_dispute import Dispute, DisputeAttachment, DisputeWorkOrder
+from ..models_dispute import (
+    Dispute,
+    DisputeAttachment,
+    DisputeWorkOrder,
+    ResolutionAgreement,
+    ResolutionAgreementSignature,
+    ResolutionCaseAuditEvent,
+    ResolutionCaseTimelineEvent,
+    ResolutionDocument,
+    ResolutionEvidenceIndex,
+    ResolutionPartyStatement,
+    ResolutionProposal,
+)
 
 
 class DisputeAttachmentSerializer(serializers.ModelSerializer):
@@ -75,10 +87,254 @@ class DisputeWorkOrderSerializer(serializers.ModelSerializer):
         return getattr(m, "title", "") if m else ""
 
 
+class ResolutionCaseTimelineEventSerializer(serializers.ModelSerializer):
+    actor_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResolutionCaseTimelineEvent
+        fields = [
+            "id",
+            "event_type",
+            "title",
+            "description",
+            "actor",
+            "actor_email",
+            "occurred_at",
+            "related_object_type",
+            "related_object_id",
+            "visibility",
+            "metadata",
+        ]
+        read_only_fields = ["id", "actor", "actor_email", "occurred_at"]
+
+    def get_actor_email(self, obj):
+        return getattr(getattr(obj, "actor", None), "email", "") or ""
+
+
+class ResolutionCaseAuditEventSerializer(serializers.ModelSerializer):
+    actor_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResolutionCaseAuditEvent
+        fields = [
+            "id",
+            "action",
+            "actor",
+            "actor_email",
+            "occurred_at",
+            "summary",
+            "before",
+            "after",
+            "metadata",
+        ]
+        read_only_fields = fields
+
+    def get_actor_email(self, obj):
+        return getattr(getattr(obj, "actor", None), "email", "") or ""
+
+
+class ResolutionPartyStatementSerializer(serializers.ModelSerializer):
+    author_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResolutionPartyStatement
+        fields = [
+            "id",
+            "statement_type",
+            "party_role",
+            "author",
+            "author_email",
+            "text",
+            "version",
+            "supersedes",
+            "is_current",
+            "visibility",
+            "created_at",
+            "metadata",
+        ]
+        read_only_fields = ["id", "author", "author_email", "version", "supersedes", "is_current", "created_at"]
+
+    def get_author_email(self, obj):
+        return getattr(getattr(obj, "author", None), "email", "") or ""
+
+
+class ResolutionEvidenceIndexSerializer(serializers.ModelSerializer):
+    uploaded_by_email = serializers.SerializerMethodField()
+    attachment_file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResolutionEvidenceIndex
+        fields = [
+            "id",
+            "attachment",
+            "attachment_file_url",
+            "category",
+            "description",
+            "uploaded_by",
+            "uploaded_by_email",
+            "uploaded_at",
+            "related_party",
+            "related_source_type",
+            "related_source_object_id",
+            "ai_summary",
+            "visibility",
+            "metadata",
+        ]
+        read_only_fields = ["id", "attachment_file_url", "uploaded_by", "uploaded_by_email", "uploaded_at"]
+
+    def get_uploaded_by_email(self, obj):
+        return getattr(getattr(obj, "uploaded_by", None), "email", "") or ""
+
+    def get_attachment_file_url(self, obj):
+        attachment = getattr(obj, "attachment", None)
+        if not attachment:
+            return ""
+        return DisputeAttachmentSerializer(context=self.context).get_file_url(attachment)
+
+
+class ResolutionProposalSerializer(serializers.ModelSerializer):
+    proposed_by_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResolutionProposal
+        fields = [
+            "id",
+            "proposed_by",
+            "proposed_by_email",
+            "problem_statement",
+            "proposed_solution",
+            "required_actions",
+            "deadlines",
+            "payment_impact",
+            "warranty_impact",
+            "evidence_relied_upon",
+            "status",
+            "created_at",
+            "updated_at",
+            "metadata",
+        ]
+        read_only_fields = ["id", "proposed_by", "proposed_by_email", "created_at", "updated_at"]
+
+    def get_proposed_by_email(self, obj):
+        return getattr(getattr(obj, "proposed_by", None), "email", "") or ""
+
+
+class ResolutionAgreementSignatureSerializer(serializers.ModelSerializer):
+    signer_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResolutionAgreementSignature
+        fields = [
+            "id",
+            "signer",
+            "signer_email",
+            "signer_role",
+            "signer_name",
+            "signed_at",
+            "ip_address",
+            "user_agent",
+            "signature_text",
+            "metadata",
+        ]
+        read_only_fields = ["id", "signer", "signer_email", "signed_at", "ip_address", "user_agent"]
+
+    def get_signer_email(self, obj):
+        return getattr(getattr(obj, "signer", None), "email", "") or ""
+
+
+class ResolutionAgreementSerializer(serializers.ModelSerializer):
+    signatures = ResolutionAgreementSignatureSerializer(many=True, read_only=True)
+    is_locked = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = ResolutionAgreement
+        fields = [
+            "id",
+            "proposal",
+            "project",
+            "agreement",
+            "source_type",
+            "source_object_id",
+            "problem_statement",
+            "disputed_facts",
+            "undisputed_facts",
+            "agreed_solution",
+            "required_actions",
+            "deadlines",
+            "payment_changes",
+            "warranty_impact",
+            "future_obligations",
+            "evidence_reviewed",
+            "human_decision_summary",
+            "audit_summary",
+            "status",
+            "locked_at",
+            "is_locked",
+            "created_by",
+            "created_at",
+            "updated_at",
+            "signatures",
+        ]
+        read_only_fields = [
+            "id",
+            "project",
+            "agreement",
+            "source_type",
+            "source_object_id",
+            "status",
+            "locked_at",
+            "is_locked",
+            "created_by",
+            "created_at",
+            "updated_at",
+            "signatures",
+        ]
+
+
+class ResolutionDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+    generated_by_email = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ResolutionDocument
+        fields = [
+            "id",
+            "resolution_agreement",
+            "document_type",
+            "title",
+            "file",
+            "file_url",
+            "generated_by",
+            "generated_by_email",
+            "generated_at",
+            "sha256",
+            "metadata",
+        ]
+        read_only_fields = fields
+
+    def get_file_url(self, obj):
+        request = self.context.get("request")
+        try:
+            url = obj.file.url
+        except Exception:
+            url = ""
+        return request.build_absolute_uri(url) if (request and url) else url
+
+    def get_generated_by_email(self, obj):
+        return getattr(getattr(obj, "generated_by", None), "email", "") or ""
+
+
 class DisputeSerializer(serializers.ModelSerializer):
     agreement_number = serializers.SerializerMethodField()
     milestone_title = serializers.SerializerMethodField()
     attachments = DisputeAttachmentSerializer(many=True, read_only=True)
+    timeline_events = ResolutionCaseTimelineEventSerializer(many=True, read_only=True)
+    audit_events = ResolutionCaseAuditEventSerializer(many=True, read_only=True)
+    party_statements = ResolutionPartyStatementSerializer(many=True, read_only=True)
+    evidence_index = ResolutionEvidenceIndexSerializer(many=True, read_only=True)
+    resolution_proposals = ResolutionProposalSerializer(many=True, read_only=True)
+    resolution_agreements = ResolutionAgreementSerializer(many=True, read_only=True)
+    resolution_documents = ResolutionDocumentSerializer(many=True, read_only=True)
 
     # ✅ Work orders (now includes rework_milestone_id + original milestone info)
     work_orders = DisputeWorkOrderSerializer(many=True, read_only=True)
@@ -89,8 +345,17 @@ class DisputeSerializer(serializers.ModelSerializer):
             "id",
             "agreement",
             "agreement_number",
+            "project",
             "milestone",
             "milestone_title",
+            "source_type",
+            "source_object_id",
+            "source_locked",
+            "payment_request",
+            "draw_request",
+            "expense",
+            "amendment",
+            "warranty_request",
             "initiator",
             "reason",
             "description",
@@ -129,11 +394,20 @@ class DisputeSerializer(serializers.ModelSerializer):
             "deadline_missed_by",
 
             "work_orders",
+            "timeline_events",
+            "audit_events",
+            "party_statements",
+            "evidence_index",
+            "resolution_proposals",
+            "resolution_agreements",
+            "resolution_documents",
         ]
         read_only_fields = [
             "id",
             "agreement_number",
+            "project",
             "milestone_title",
+            "source_object_id",
             "status",
             "is_archived",
             "fee_paid",
@@ -166,6 +440,13 @@ class DisputeSerializer(serializers.ModelSerializer):
             "deadline_missed_by",
 
             "work_orders",
+            "timeline_events",
+            "audit_events",
+            "party_statements",
+            "evidence_index",
+            "resolution_proposals",
+            "resolution_agreements",
+            "resolution_documents",
         ]
 
     def get_agreement_number(self, obj):
@@ -187,6 +468,14 @@ class DisputeCreateSerializer(serializers.ModelSerializer):
         fields = [
             "agreement",
             "milestone",
+            "source_type",
+            "source_object_id",
+            "source_locked",
+            "payment_request",
+            "draw_request",
+            "expense",
+            "amendment",
+            "warranty_request",
             "initiator",
             "reason",
             "description",
@@ -196,10 +485,21 @@ class DisputeCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         ag = attrs.get("agreement")
         ms = attrs.get("milestone")
-        if ms and ms.agreement_id != ag.id:
+        source_type = attrs.get("source_type") or (Dispute.SOURCE_MILESTONE if ms else Dispute.SOURCE_AGREEMENT)
+        if source_type != Dispute.SOURCE_GENERAL_PROJECT_ISSUE and not ag:
+            raise serializers.ValidationError("Agreement is required unless this is a general project issue.")
+        if ms and ag and ms.agreement_id != ag.id:
             raise serializers.ValidationError(
                 "Milestone does not belong to the selected agreement."
             )
+        payment_request = attrs.get("payment_request")
+        draw_request = attrs.get("draw_request")
+        expense = attrs.get("expense")
+        amendment = attrs.get("amendment")
+        warranty_request = attrs.get("warranty_request")
+        for obj in [payment_request, draw_request, expense, amendment, warranty_request]:
+            if obj is not None and ag is not None and getattr(obj, "agreement_id", ag.id) != ag.id:
+                raise serializers.ValidationError("Source object does not belong to the selected agreement.")
         return attrs
 
     def create(self, validated_data):

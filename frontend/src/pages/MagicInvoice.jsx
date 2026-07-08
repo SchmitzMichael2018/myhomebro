@@ -230,6 +230,46 @@ function EscrowReleasePanel({ token, invoice, actionLoading, setActionLoading, o
   );
 }
 
+function ZeroDollarCompletionPanel({ token, actionLoading, setActionLoading, onApproved }) {
+  const approveCompletion = async () => {
+    if (!window.confirm("Approve completion for this zero-dollar milestone?")) return;
+
+    setActionLoading(true);
+    try {
+      const { data } = await api.patch(`/projects/invoices/magic/${encodeURIComponent(token)}/approve/`, {});
+      if (data?.mode && String(data.mode).toLowerCase() === "zero_dollar_completion") {
+        toast.success("Completion approved. No payment was released.");
+      } else {
+        toast.success("Completion approved.");
+      }
+      await onApproved?.();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Failed to approve completion.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <div className="text-sm font-extrabold text-blue-900">Completion Approval</div>
+      <div className="mt-2 text-sm text-blue-800">
+        This request has a $0.00 amount. Approving it records milestone completion only; no escrow, card payment, Stripe transfer, or funds release will occur.
+      </div>
+
+      <button
+        onClick={approveCompletion}
+        disabled={actionLoading}
+        className={`mt-4 w-full rounded-xl px-5 py-3 font-extrabold text-white hover:bg-blue-700 disabled:opacity-60 ${
+          actionLoading ? "bg-blue-700" : "bg-blue-600"
+        }`}
+      >
+        {actionLoading ? "Processing..." : "Approve Completion"}
+      </button>
+    </div>
+  );
+}
+
 /* ─────────────────────────────────────────────
    Stripe Payment Panel (escrow/card pay path)
    ───────────────────────────────────────────── */
@@ -456,7 +496,9 @@ function InnerMagicInvoice() {
   };
 
   const status = String(invoice?.status || "").toLowerCase();
-  const amount = money(invoice?.amount_due ?? invoice?.amount ?? 0);
+  const rawAmount = Number(invoice?.amount_due ?? invoice?.amount ?? 0);
+  const isZeroDollar = Number.isFinite(rawAmount) && rawAmount <= 0;
+  const amount = money(rawAmount);
 
   const milestoneId = invoice?.milestone_id ?? invoice?.milestone_id_snapshot ?? null;
   const milestoneTitle = invoice?.milestone_title || invoice?.milestone_title_snapshot || "—";
@@ -486,9 +528,10 @@ function InnerMagicInvoice() {
   const showPaymentArea = useMemo(() => {
     if (!invoice) return false;
     if (isPaidLike) return false;
+    if (isZeroDollar) return isPendingish(status);
     if (isDirectPay) return true;
     return isPendingish(status);
-  }, [invoice, isPaidLike, isDirectPay, status]);
+  }, [invoice, isPaidLike, isZeroDollar, isDirectPay, status]);
 
   // Dispute should be possible while invoice is unresolved.
   const canDispute = useMemo(() => {
@@ -628,7 +671,14 @@ function InnerMagicInvoice() {
 
         {/* ✅ Payment area */}
         {showPaymentArea ? (
-          isDirectPay ? (
+          isZeroDollar ? (
+            <ZeroDollarCompletionPanel
+              token={token}
+              actionLoading={actionLoading}
+              setActionLoading={setActionLoading}
+              onApproved={fetchInvoice}
+            />
+          ) : isDirectPay ? (
             <DirectPayPanel invoice={invoice} />
           ) : escrowFundedFlag ? (
             <EscrowReleasePanel

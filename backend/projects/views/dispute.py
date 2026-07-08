@@ -15,6 +15,12 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from rest_framework.response import Response
 
 from ..models_dispute import Dispute, DisputeAttachment, DisputeWorkOrder
+from ..models_dispute import (
+    ResolutionAgreement,
+    ResolutionAgreementSignature,
+    ResolutionCaseTimelineEvent,
+    ResolutionProposal,
+)
 from ..services.dispute_status import is_terminal_dispute_status
 from ..serializers.dispute import (
     DisputeSerializer,
@@ -23,6 +29,22 @@ from ..serializers.dispute import (
     DisputeResolveSerializer,
     DisputeAttachmentSerializer,
     DisputePublicSerializer,
+    ResolutionAgreementSerializer,
+    ResolutionAgreementSignatureSerializer,
+    ResolutionCaseTimelineEventSerializer,
+    ResolutionPartyStatementSerializer,
+    ResolutionProposalSerializer,
+    ResolutionDocumentSerializer,
+)
+from ..services.resolution_workspace import (
+    create_party_statement,
+    create_resolution_agreement_from_proposal,
+    create_resolution_proposal,
+    ensure_case_created_event,
+    generate_resolution_pdf_package,
+    index_evidence,
+    record_timeline_event,
+    sign_resolution_agreement,
 )
 
 # ✅ Import your Milestone model (lives in projects.models)
@@ -363,7 +385,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         dispute = self.get_object()
+        ensure_case_created_event(dispute, actor=getattr(dispute, "created_by", None))
         return Response(DisputeSerializer(dispute, context={"request": request}).data)
+
+    @action(detail=True, methods=["get"], url_path="workspace")
+    def workspace(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        ensure_case_created_event(dispute, actor=getattr(dispute, "created_by", None))
+        return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
 
     # ─────────────────────────────────────────────
     # Phase 1: Evidence Context (read-only)
@@ -402,6 +431,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
         dispute.ensure_public_token()
         dispute.last_activity_at = timezone.now()
         dispute.save(update_fields=["public_token", "last_activity_at", "updated_at"])
+        ensure_case_created_event(dispute, actor=request.user)
 
         if email_admin_dispute_update:
             from django.conf import settings as dj_settings
@@ -464,6 +494,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
             "response_due_at", "deadline_hours", "deadline_tier", "last_activity_at",
             "updated_at"
         ])
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_PAYMENT_HOLD_APPLIED,
+            "Dispute fee paid and payment hold applied",
+            actor=request.user,
+            description="No funds were released. Hold state was recorded for human review.",
+            related_object=dispute,
+        )
 
         if email_admin_dispute_update:
             from django.conf import settings as dj_settings
@@ -537,9 +575,30 @@ class DisputeViewSet(viewsets.ModelViewSet):
             "proposal_due_at", "deadline_hours", "deadline_tier",
             "status", "updated_at"
         ])
+        create_party_statement(
+            dispute,
+            author=request.user,
+            text=response_text,
+            party_role="contractor" if actor_is_contractor else "customer",
+            metadata={"legacy_field": "contractor_response" if actor_is_contractor else "homeowner_response"},
+        )
 
         if proposal_sent and email_homeowner_proposal_sent:
             email_homeowner_proposal_sent(dispute)
+        if proposal_sent:
+            create_resolution_proposal(
+                dispute,
+                proposed_by=request.user,
+                problem_statement=proposal_obj.get("problem_statement") or dispute.description or dispute.reason,
+                proposed_solution=proposal_obj.get("notes") or proposal_obj.get("solution") or response_text,
+                required_actions=proposal_obj.get("required_actions") or [],
+                deadlines=proposal_obj.get("deadlines") or [],
+                payment_impact=proposal_obj.get("payment_impact") or {},
+                warranty_impact=proposal_obj.get("warranty_impact") or "",
+                evidence_relied_upon=proposal_obj.get("evidence_relied_upon") or [],
+                status=ResolutionProposal.STATUS_PROPOSED,
+                metadata={"legacy_proposal": proposal_obj},
+            )
         try:
             notify_dispute_event(
                 dispute=dispute,
@@ -569,6 +628,14 @@ class DisputeViewSet(viewsets.ModelViewSet):
         dispute.resolved_at = now
         dispute.last_activity_at = now
         dispute.save(update_fields=["status", "escrow_frozen", "resolved_at", "last_activity_at", "updated_at"])
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_CASE_CLOSED,
+            "Resolution case canceled",
+            actor=request.user,
+            description="Case was canceled by a human user. Any payment actions remain separate.",
+            related_object=dispute,
+        )
         try:
             notify_dispute_event(
                 dispute=dispute,
@@ -603,6 +670,13 @@ class DisputeViewSet(viewsets.ModelViewSet):
             kind=kind,
             file=file,
             uploaded_by=request.user,
+        )
+        index_evidence(
+            dispute,
+            att,
+            actor=request.user,
+            description=(request.data.get("description") or "").strip(),
+            category=(request.data.get("category") or "").strip(),
         )
 
         dispute.last_activity_at = timezone.now()
@@ -671,6 +745,25 @@ class DisputeViewSet(viewsets.ModelViewSet):
             "linked_rework_milestone_id", "status", "escrow_frozen", "resolved_at",
             "last_activity_at", "updated_at"
         ])
+        event_type = (
+            ResolutionCaseTimelineEvent.EVENT_PAYMENT_HOLD_RELEASED
+            if not dispute.escrow_frozen
+            else ResolutionCaseTimelineEvent.EVENT_HUMAN_DECISION_RECORDED
+        )
+        record_timeline_event(
+            dispute,
+            event_type,
+            "Human decision recorded",
+            actor=request.user,
+            description=resolution_notes or admin_notes,
+            related_object=dispute,
+            metadata={
+                "resolution_type": resolution_type,
+                "financial_disposition": financial_disposition,
+                "approved_amount": str(dispute.approved_amount or ""),
+                "disputed_remainder": str(dispute.disputed_remainder or ""),
+            },
+        )
         try:
             notify_dispute_event(
                 dispute=dispute,
@@ -681,6 +774,162 @@ class DisputeViewSet(viewsets.ModelViewSet):
             pass
 
         return Response(DisputeSerializer(dispute, context={"request": request}).data, status=200)
+
+    @action(detail=True, methods=["get", "post"], url_path="timeline")
+    def timeline(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        ensure_case_created_event(dispute, actor=getattr(dispute, "created_by", None))
+        if request.method.lower() == "get":
+            qs = dispute.timeline_events.all()
+            return Response(ResolutionCaseTimelineEventSerializer(qs, many=True, context={"request": request}).data, status=200)
+        title = (request.data.get("title") or "").strip()
+        if not title:
+            return Response({"detail": "Title is required."}, status=400)
+        event = record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_MANUAL,
+            title,
+            actor=request.user,
+            description=(request.data.get("description") or "").strip(),
+            related_object=dispute,
+            visibility=(request.data.get("visibility") or ResolutionCaseTimelineEvent.VISIBILITY_ALL).strip(),
+            metadata={"manual": True},
+        )
+        return Response(ResolutionCaseTimelineEventSerializer(event, context={"request": request}).data, status=201)
+
+    @action(detail=True, methods=["get", "post"], url_path="party-statements")
+    def party_statements(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        if request.method.lower() == "get":
+            qs = dispute.party_statements.all()
+            return Response(ResolutionPartyStatementSerializer(qs, many=True, context={"request": request}).data, status=200)
+        blocked = _block_if_terminal(dispute)
+        if blocked is not None:
+            return blocked
+        text = (request.data.get("text") or request.data.get("response") or "").strip()
+        if not text:
+            return Response({"detail": "Statement text is required."}, status=400)
+        statement = create_party_statement(
+            dispute,
+            author=request.user,
+            text=text,
+            party_role=(request.data.get("party_role") or "").strip() or None,
+            statement_type=(request.data.get("statement_type") or "").strip() or None,
+            visibility=(request.data.get("visibility") or ResolutionCaseTimelineEvent.VISIBILITY_ALL).strip(),
+        )
+        return Response(ResolutionPartyStatementSerializer(statement, context={"request": request}).data, status=201)
+
+    @action(detail=True, methods=["get", "post"], url_path="resolution-proposals")
+    def resolution_proposals(self, request, pk=None):
+        dispute: Dispute = self.get_object()
+        if request.method.lower() == "get":
+            qs = dispute.resolution_proposals.all()
+            return Response(ResolutionProposalSerializer(qs, many=True, context={"request": request}).data, status=200)
+        blocked = _block_if_terminal(dispute)
+        if blocked is not None:
+            return blocked
+        proposed_solution = (request.data.get("proposed_solution") or request.data.get("solution") or "").strip()
+        if not proposed_solution:
+            return Response({"detail": "Proposed solution is required."}, status=400)
+        proposal = create_resolution_proposal(
+            dispute,
+            proposed_by=request.user,
+            problem_statement=(request.data.get("problem_statement") or "").strip(),
+            proposed_solution=proposed_solution,
+            required_actions=request.data.get("required_actions") or [],
+            deadlines=request.data.get("deadlines") or [],
+            payment_impact=request.data.get("payment_impact") or {},
+            warranty_impact=(request.data.get("warranty_impact") or "").strip(),
+            evidence_relied_upon=request.data.get("evidence_relied_upon") or [],
+            status=request.data.get("status") or ResolutionProposal.STATUS_PROPOSED,
+        )
+        return Response(ResolutionProposalSerializer(proposal, context={"request": request}).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="resolution-proposals/(?P<proposal_id>[^/.]+)/status")
+    def resolution_proposal_status(self, request, pk=None, proposal_id=None):
+        dispute: Dispute = self.get_object()
+        blocked = _block_if_terminal(dispute)
+        if blocked is not None:
+            return blocked
+        try:
+            proposal = dispute.resolution_proposals.get(id=proposal_id)
+        except ResolutionProposal.DoesNotExist:
+            return Response({"detail": "Resolution proposal not found."}, status=404)
+        status_value = (request.data.get("status") or "").strip()
+        allowed = {choice[0] for choice in ResolutionProposal.STATUS_CHOICES}
+        if status_value not in allowed:
+            return Response({"detail": "Invalid proposal status."}, status=400)
+        before = proposal.status
+        proposal.status = status_value
+        proposal.save(update_fields=["status", "updated_at"])
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_HUMAN_DECISION_RECORDED,
+            f"Resolution proposal marked {status_value.replace('_', ' ')}",
+            actor=request.user,
+            description=(request.data.get("note") or "").strip(),
+            related_object=proposal,
+            metadata={"proposal_id": proposal.id, "before": before, "after": status_value},
+        )
+        return Response(ResolutionProposalSerializer(proposal, context={"request": request}).data, status=200)
+
+    @action(detail=True, methods=["post"], url_path="resolution-proposals/(?P<proposal_id>[^/.]+)/agreement")
+    def create_resolution_agreement(self, request, pk=None, proposal_id=None):
+        dispute: Dispute = self.get_object()
+        blocked = _block_if_terminal(dispute)
+        if blocked is not None:
+            return blocked
+        try:
+            proposal = dispute.resolution_proposals.get(id=proposal_id)
+        except ResolutionProposal.DoesNotExist:
+            return Response({"detail": "Resolution proposal not found."}, status=404)
+        agreement = create_resolution_agreement_from_proposal(
+            proposal,
+            created_by=request.user,
+            human_decision_summary=(request.data.get("human_decision_summary") or "").strip(),
+        )
+        return Response(ResolutionAgreementSerializer(agreement, context={"request": request}).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="resolution-agreements/(?P<resolution_agreement_id>[^/.]+)/sign")
+    def sign_resolution(self, request, pk=None, resolution_agreement_id=None):
+        dispute: Dispute = self.get_object()
+        try:
+            resolution_agreement = dispute.resolution_agreements.get(id=resolution_agreement_id)
+        except ResolutionAgreement.DoesNotExist:
+            return Response({"detail": "Resolution agreement not found."}, status=404)
+        signer_role = (request.data.get("signer_role") or "").strip()
+        allowed_roles = {choice[0] for choice in ResolutionAgreementSignature.ROLE_CHOICES}
+        if signer_role not in allowed_roles:
+            return Response({"detail": "Valid signer_role is required."}, status=400)
+        signer_name = (request.data.get("signer_name") or getattr(request.user, "get_full_name", lambda: "")() or getattr(request.user, "email", "") or "").strip()
+        if not signer_name:
+            return Response({"detail": "Signer name is required."}, status=400)
+        try:
+            signature = sign_resolution_agreement(
+                resolution_agreement,
+                signer=request.user,
+                signer_role=signer_role,
+                signer_name=signer_name,
+                ip_address=request.META.get("REMOTE_ADDR") or "",
+                user_agent=request.META.get("HTTP_USER_AGENT") or "",
+                signature_text=(request.data.get("signature_text") or "").strip(),
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(ResolutionAgreementSignatureSerializer(signature, context={"request": request}).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="resolution-agreements/(?P<resolution_agreement_id>[^/.]+)/pdf-package")
+    def generate_resolution_pdf(self, request, pk=None, resolution_agreement_id=None):
+        dispute: Dispute = self.get_object()
+        try:
+            resolution_agreement = dispute.resolution_agreements.get(id=resolution_agreement_id)
+        except ResolutionAgreement.DoesNotExist:
+            return Response({"detail": "Resolution agreement not found."}, status=404)
+        try:
+            document = generate_resolution_pdf_package(resolution_agreement, generated_by=request.user)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(ResolutionDocumentSerializer(document, context={"request": request}).data, status=201)
 
 
 # ─────────────────────────────────────────────
@@ -758,11 +1007,27 @@ def public_dispute_message(request, dispute_id: int):
     dispute.save(update_fields=["homeowner_response", "status", "last_activity_at", "updated_at"])
 
     for file_obj in files:
-        DisputeAttachment.objects.create(
+        att = DisputeAttachment.objects.create(
             dispute=dispute,
             kind=(request.data.get("kind") or "other").strip(),
             file=file_obj,
             uploaded_by=None,
+        )
+        index_evidence(
+            dispute,
+            att,
+            actor=None,
+            description=(request.data.get("description") or "").strip(),
+            related_party="customer",
+        )
+
+    if body:
+        create_party_statement(
+            dispute,
+            author=None,
+            text=body,
+            party_role="customer",
+            metadata={"public_token_message": True},
         )
 
     try:
@@ -813,6 +1078,22 @@ def public_dispute_accept(request, dispute_id: int):
         "homeowner_response", "status", "escrow_frozen", "resolved_at",
         "last_activity_at", "updated_at"
     ])
+    create_party_statement(
+        dispute,
+        author=None,
+        text=tag,
+        party_role="customer",
+        metadata={"public_token_accept": True},
+    )
+    record_timeline_event(
+        dispute,
+        ResolutionCaseTimelineEvent.EVENT_HUMAN_DECISION_RECORDED,
+        "Customer accepted resolution proposal",
+        actor=None,
+        description=note,
+        related_object=dispute,
+        metadata={"public_token_accept": True},
+    )
 
     # Attempt to resolve rework milestone linkage now (best-effort).
     # NOTE: the actual milestone creation is scheduled via transaction.on_commit in Dispute.save().
@@ -879,6 +1160,22 @@ def public_dispute_reject(request, dispute_id: int):
     dispute.escrow_frozen = True
     dispute.last_activity_at = now
     dispute.save(update_fields=["homeowner_response", "status", "escrow_frozen", "last_activity_at", "updated_at"])
+    create_party_statement(
+        dispute,
+        author=None,
+        text=tag,
+        party_role="customer",
+        metadata={"public_token_reject": True},
+    )
+    record_timeline_event(
+        dispute,
+        ResolutionCaseTimelineEvent.EVENT_HUMAN_DECISION_RECORDED,
+        "Customer rejected resolution proposal",
+        actor=None,
+        description=note,
+        related_object=dispute,
+        metadata={"public_token_reject": True},
+    )
 
     if email_contractor_status_update:
         contractor_email = ""
