@@ -6968,6 +6968,180 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(other_contractor.user_id, other_user.id)
         self.assertEqual(response.status_code, 404)
 
+    def test_warranty_work_order_appears_in_team_schedule_calendar(self):
+        employee_user = get_user_model().objects.create_user(email="warranty-tech@example.com", password="testpass123")
+        subaccount = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=employee_user,
+            display_name="Warranty Tech",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+        )
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="12-Month Workmanship",
+            coverage_details="Covers workmanship defects.",
+            status="active",
+            applies_to="workmanship",
+        )
+        request_row = WarrantyRequest.objects.create(
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Repair loose transition",
+            description="Transition strip needs warranty repair.",
+        )
+        work_order = WarrantyWorkOrder.objects.create(
+            warranty_request=request_row,
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            title="Repair loose transition",
+            scope="Secure transition strip.",
+            assigned_user=employee_user,
+            scheduled_for=timezone.now() + timedelta(days=1),
+            estimated_duration_minutes=90,
+            status=WarrantyWorkOrder.STATUS_SCHEDULED,
+        )
+
+        response = self.client.get(f"/api/projects/assignments/calendar/?subaccount_id={subaccount.id}")
+
+        self.assertEqual(response.status_code, 200)
+        events = response.json()["events"]
+        warranty_event = next(row for row in events if row["id"] == f"WW-{work_order.id}")
+        self.assertEqual(warranty_event["extendedProps"]["type"], "warranty_work")
+        self.assertEqual(warranty_event["extendedProps"]["label"], "Warranty Work")
+        self.assertEqual(warranty_event["extendedProps"]["warranty_request_id"], request_row.id)
+        self.assertEqual(warranty_event["extendedProps"]["estimated_duration_minutes"], 90)
+
+    def test_warranty_status_notifications_and_acknowledgment_paths(self):
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="12-Month Workmanship",
+            coverage_details="Covers workmanship defects.",
+            status="active",
+            applies_to="workmanship",
+        )
+        request_row = WarrantyRequest.objects.create(
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            submitted_by_email=self.homeowner.email,
+            title="Warranty repair",
+            description="Needs repair.",
+        )
+        from projects.services.warranty_management import create_initial_status, create_warranty_work_order, complete_warranty_work_order
+
+        create_initial_status(request_row)
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                recipient_email__iexact=self.homeowner.email,
+                event_type=SmartNotificationEvent.WARRANTY_REQUEST_RECEIVED,
+            ).exists()
+        )
+
+        work_order = create_warranty_work_order(
+            request_row,
+            actor=self.user,
+            payload={
+                "scheduled_for": timezone.now() + timedelta(days=1),
+                "estimated_duration_minutes": 60,
+            },
+        )
+        complete_warranty_work_order(work_order, actor=self.user, notes="Repair complete.")
+        request_row.refresh_from_db()
+        self.assertEqual(request_row.status, WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED)
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                recipient_email__iexact=self.homeowner.email,
+                event_type=SmartNotificationEvent.WARRANTY_ACKNOWLEDGMENT_REQUESTED,
+            ).exists()
+        )
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{self.agreement.homeowner_access_token}/warranty-requests/{request_row.id}/acknowledge/",
+            {"action": "issue_still_exists", "note": "The transition is still loose."},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        request_row.refresh_from_db()
+        self.assertEqual(request_row.status, WarrantyRequest.STATUS_FOLLOW_UP_NEEDED)
+        self.assertEqual(request_row.customer_acknowledgment_response, "issue_still_exists")
+        self.assertIn("still loose", request_row.unresolved_reason)
+
+        response = self.client.post(
+            f"/api/projects/customer-portal/{self.agreement.homeowner_access_token}/warranty-requests/{request_row.id}/acknowledge/",
+            {"action": "accept_completion"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        request_row.refresh_from_db()
+        self.assertEqual(request_row.status, WarrantyRequest.STATUS_CLOSED)
+        self.assertEqual(request_row.customer_acknowledgment_response, "accepted")
+        self.assertIsNotNone(request_row.customer_acknowledged_at)
+
+    def test_escalation_carries_phase_two_warranty_context(self):
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="12-Month Workmanship",
+            coverage_details="Covers workmanship defects.",
+            end_date=timezone.localdate() + timedelta(days=300),
+            status="active",
+            applies_to="workmanship",
+        )
+        request_row = WarrantyRequest.objects.create(
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            submitted_by_email=self.homeowner.email,
+            title="Denied warranty request",
+            description="Customer disputes denial.",
+            coverage_decision="Denied - third party modification.",
+            ai_review={"advisory_only": True, "summary": "Evidence is mixed."},
+        )
+        WarrantyRequestEvidence.objects.create(
+            warranty_request=request_row,
+            file=SimpleUploadedFile("evidence.txt", b"details", content_type="text/plain"),
+            evidence_type="document",
+            original_filename="evidence.txt",
+        )
+        WarrantyWorkOrder.objects.create(
+            warranty_request=request_row,
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            title="Inspection",
+            scope="Inspect disputed repair.",
+            status=WarrantyWorkOrder.STATUS_COMPLETED,
+        )
+
+        response = self.client.post(
+            f"/api/projects/warranty-requests/{request_row.id}/escalate/",
+            {"note": "Customer requested Resolution review."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        request_row.refresh_from_db()
+        dispute = Dispute.objects.get(pk=request_row.escalated_dispute_id)
+        self.assertEqual(dispute.warranty_service_request_id, request_row.id)
+        self.assertIn("Source: Warranty Request", dispute.description)
+        self.assertIn("Coverage Decision", dispute.description)
+        history = request_row.status_history.filter(to_status=WarrantyRequest.STATUS_ESCALATED_TO_RESOLUTION).latest("id")
+        self.assertEqual(history.metadata["warranty_request_id"], request_row.id)
+        self.assertEqual(history.metadata["coverage_decision"], "Denied - third party modification.")
+        self.assertEqual(history.metadata["ai_review"]["advisory_only"], True)
+
 
 class AIFreeAccessRegressionTests(TestCase):
     def setUp(self):

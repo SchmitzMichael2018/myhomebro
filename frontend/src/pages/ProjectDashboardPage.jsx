@@ -134,6 +134,7 @@ export default function ProjectDashboardPage() {
     preferred_scheduling: "",
   });
   const [warrantyFiles, setWarrantyFiles] = useState([]);
+  const [warrantyActionBusy, setWarrantyActionBusy] = useState("");
   const fileInputRef = useRef(null);
 
   const loadDashboard = useCallback(async () => {
@@ -236,6 +237,7 @@ export default function ProjectDashboardPage() {
   const secondaryHref = askQuestionHref;
 
   const activeWarranty = warrantyRows[0] || null;
+  const activeWarrantyRequests = Array.isArray(activeWarranty?.requests) ? activeWarranty.requests : [];
 
   const updateWarrantyField = (field, value) => {
     setWarrantyForm((prev) => ({ ...prev, [field]: value }));
@@ -280,6 +282,36 @@ export default function ProjectDashboardPage() {
       toast.error(detail);
     } finally {
       setWarrantySubmitting(false);
+    }
+  };
+
+  const uploadWarrantyEvidence = async (requestId, files) => {
+    if (!agreement.agreement_token || !requestId || !files?.length) return;
+    setWarrantyActionBusy(`evidence-${requestId}`);
+    try {
+      const body = new FormData();
+      Array.from(files).forEach((file) => body.append("files", file));
+      await api.post(`/projects/customer-portal/${agreement.agreement_token}/warranty-requests/${requestId}/evidence/`, body);
+      toast.success("Evidence uploaded.");
+      await loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Unable to upload warranty evidence.");
+    } finally {
+      setWarrantyActionBusy("");
+    }
+  };
+
+  const acknowledgeWarranty = async (requestId, action, note = "") => {
+    if (!agreement.agreement_token || !requestId) return;
+    setWarrantyActionBusy(`${action}-${requestId}`);
+    try {
+      await api.post(`/projects/customer-portal/${agreement.agreement_token}/warranty-requests/${requestId}/acknowledge/`, { action, note });
+      toast.success(action === "accept_completion" ? "Completion acknowledged." : "Follow-up sent to contractor.");
+      await loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Unable to update warranty request.");
+    } finally {
+      setWarrantyActionBusy("");
     }
   };
 
@@ -685,12 +717,85 @@ export default function ProjectDashboardPage() {
                       <p className="leading-6 text-slate-600">
                         {activeWarranty.coverage_details || "Your contractor can review covered workmanship issues from this completed project."}
                       </p>
+                      {activeWarranty.exclusions ? (
+                        <div className="rounded-2xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                          <span className="font-bold text-slate-800">Exclusions:</span> {activeWarranty.exclusions}
+                        </div>
+                      ) : null}
                       <div className="flex flex-wrap gap-2">
                         <ActionLink onClick={() => setWarrantyModalOpen(true)} tone="emerald">
                           Request Warranty Work
                         </ActionLink>
                         <Badge tone="slate">{activeWarranty.open_request_count || 0} open request(s)</Badge>
                       </div>
+                      {activeWarrantyRequests.length ? (
+                        <div className="space-y-3 pt-2">
+                          {activeWarrantyRequests.map((requestRow) => (
+                            <div key={requestRow.id} className="rounded-2xl border border-slate-200 bg-white p-3" data-testid={`customer-warranty-request-${requestRow.id}`}>
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <div className="font-semibold text-slate-900">{requestRow.title}</div>
+                                  <div className="mt-1 text-xs text-slate-500">{requestRow.status_label || requestRow.status}</div>
+                                </div>
+                                <Badge tone={requestRow.status === "closed" ? "emerald" : requestRow.status === "denied" ? "rose" : "amber"}>
+                                  {requestRow.severity || "normal"}
+                                </Badge>
+                              </div>
+                              <p className="mt-2 text-sm leading-6 text-slate-600">{requestRow.next_expected_action || "Your contractor will review this warranty request."}</p>
+                              {requestRow.contractor_response ? (
+                                <div className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700">
+                                  <span className="font-semibold">Contractor response:</span> {requestRow.contractor_response}
+                                </div>
+                              ) : null}
+                              {requestRow.work_order?.scheduled_for ? (
+                                <div className="mt-2 rounded-xl bg-sky-50 p-3 text-sm text-sky-900">
+                                  Scheduled visit: {formatDate(requestRow.work_order.scheduled_for)}
+                                </div>
+                              ) : null}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {requestRow.allow_more_evidence ? (
+                                  <label className="inline-flex cursor-pointer items-center rounded-full border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                                    Upload More Evidence
+                                    <input
+                                      type="file"
+                                      multiple
+                                      accept="image/*,video/*,.pdf,.doc,.docx"
+                                      className="hidden"
+                                      disabled={warrantyActionBusy === `evidence-${requestRow.id}`}
+                                      onChange={(event) => uploadWarrantyEvidence(requestRow.id, event.target.files)}
+                                    />
+                                  </label>
+                                ) : null}
+                                {requestRow.allow_acknowledgment ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => acknowledgeWarranty(requestRow.id, "accept_completion")}
+                                      className="rounded-full bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-500"
+                                      disabled={warrantyActionBusy === `accept_completion-${requestRow.id}`}
+                                    >
+                                      Acknowledge Completion
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => acknowledgeWarranty(requestRow.id, "issue_still_exists", "Customer reports the warranty issue still exists.")}
+                                      className="rounded-full border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-100"
+                                      disabled={warrantyActionBusy === `issue_still_exists-${requestRow.id}`}
+                                    >
+                                      Report Issue Still Exists
+                                    </button>
+                                  </>
+                                ) : null}
+                                {requestRow.allow_resolution ? (
+                                  <span className="rounded-full border border-slate-300 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700">
+                                    Open Resolution Case
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   ) : (
                     <div className="space-y-3">

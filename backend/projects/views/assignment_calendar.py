@@ -17,6 +17,7 @@ from projects.models import (
     AgreementAssignment,
     MilestoneAssignment,
 )
+from projects.models_warranty import WarrantyWorkOrder
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 
 
@@ -203,6 +204,67 @@ class AssignmentCalendarView(APIView):
                         "employee_name": emp_name,
                         "employee_email": emp_email,
                         "employee_role": sub.role,
+                    },
+                )
+            )
+
+        # 3) Scheduled warranty work orders
+        user_ids = [
+            getattr(s.user, "id", None)
+            for s in subaccounts
+            if getattr(s, "user", None) is not None
+        ]
+        warranty_qs = (
+            WarrantyWorkOrder.objects.filter(contractor=contractor, scheduled_for__isnull=False)
+            .select_related(
+                "warranty_request",
+                "agreement",
+                "agreement__project",
+                "agreement__homeowner",
+                "project",
+                "assigned_user",
+            )
+            .order_by("scheduled_for", "id")
+        )
+        if target_sub_id is not None:
+            target_user_id = getattr(getattr(subaccounts[0], "user", None), "id", None) if subaccounts else None
+            warranty_qs = warranty_qs.filter(assigned_user_id=target_user_id) if target_user_id else warranty_qs.none()
+        elif user_ids:
+            warranty_qs = warranty_qs.filter(assigned_user_id__in=user_ids)
+        else:
+            warranty_qs = warranty_qs.none()
+
+        for work_order in warranty_qs:
+            scheduled = work_order.scheduled_for
+            assigned_user = getattr(work_order, "assigned_user", None)
+            sub = next((item for item in subaccounts if getattr(getattr(item, "user", None), "id", None) == getattr(assigned_user, "id", None)), None)
+            project = getattr(work_order, "project", None) or getattr(work_order.agreement, "project", None)
+            warranty_request = work_order.warranty_request
+            emp_name = getattr(sub, "display_name", "") or getattr(assigned_user, "email", "") or "Assigned technician"
+            start_date = scheduled.date() if scheduled else None
+            events.append(
+                _event(
+                    title=f"Warranty Work — {work_order.title}",
+                    start=start_date,
+                    end=start_date,
+                    event_id=f"WW-{work_order.id}",
+                    props={
+                        "type": "warranty_work",
+                        "label": "Warranty Work",
+                        "work_order_id": work_order.id,
+                        "warranty_request_id": warranty_request.id,
+                        "agreement_id": work_order.agreement_id,
+                        "agreement_number": getattr(work_order.agreement, "agreement_number", None) or work_order.agreement_id,
+                        "project_title": getattr(project, "title", "") or f"Agreement #{work_order.agreement_id}",
+                        "property_address": getattr(project, "project_street_address", "") if project else "",
+                        "customer_name": getattr(getattr(work_order.agreement, "homeowner", None), "full_name", ""),
+                        "subaccount_id": getattr(sub, "id", None),
+                        "employee_name": emp_name,
+                        "employee_email": getattr(assigned_user, "email", "") or "",
+                        "employee_role": getattr(sub, "role", "warranty_technician"),
+                        "status": work_order.status,
+                        "scheduled_for": scheduled.isoformat() if scheduled else "",
+                        "estimated_duration_minutes": work_order.estimated_duration_minutes,
                     },
                 )
             )

@@ -80,20 +80,36 @@ function categoryForDocument(item) {
 }
 
 function warrantyRows(agreements, documents, homeSystems = []) {
-  const agreementRows = (agreements || [])
-    .filter((agreement) => String(agreement.warranty_text || "").trim())
-    .map((agreement) => ({
-      id: `warranty-${agreement.id}`,
-      project: agreement.project_title || "Project",
+  const agreementRows = (agreements || []).flatMap((agreement) => {
+    const docs = (documents || []).filter((document) => {
+      const haystack = `${document.title || ""} ${document.type_label || ""} ${document.project_title || ""}`.toLowerCase();
+      return haystack.includes("warranty") && (!document.project_title || document.project_title === agreement.project_title);
+    });
+    const structured = Array.isArray(agreement.warranties) ? agreement.warranties : [];
+    const rows = structured.map((warranty) => ({
+      id: `warranty-${agreement.id}-${warranty.id}`,
+      project: agreement.project_title || warranty.agreement_title || "Project",
       contractor: agreement.contractor_name || "Your contractor",
-      warrantyType: agreement.warranty_type || "Warranty",
-      text: agreement.warranty_text,
-      date: agreement.completed_at || agreement.updated_at,
-      documents: (documents || []).filter((document) => {
-        const haystack = `${document.title || ""} ${document.type_label || ""} ${document.project_title || ""}`.toLowerCase();
-        return haystack.includes("warranty") && (!document.project_title || document.project_title === agreement.project_title);
-      }),
+      warrantyType: warranty.title || warranty.applies_to || "Warranty",
+      text: warranty.coverage_details || warranty.covered_work || agreement.warranty_text || "",
+      date: warranty.completion_date || warranty.start_date || agreement.completed_at || agreement.updated_at,
+      documents: docs,
+      requests: Array.isArray(warranty.requests) ? warranty.requests : [],
     }));
+    if (!rows.length && String(agreement.warranty_text || "").trim()) {
+      rows.push({
+        id: `warranty-${agreement.id}`,
+        project: agreement.project_title || "Project",
+        contractor: agreement.contractor_name || "Your contractor",
+        warrantyType: agreement.warranty_type || "Warranty",
+        text: agreement.warranty_text,
+        date: agreement.completed_at || agreement.updated_at,
+        documents: docs,
+        requests: [],
+      });
+    }
+    return rows;
+  });
   const systemRows = (homeSystems || [])
     .filter((system) => system.warrantyExpiration)
     .map((system) => ({
@@ -2383,6 +2399,17 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
       url: agreement.documents[0]?.url || "",
       actionLabel: agreement.documents[0]?.url ? "View warranty" : "",
     });
+    for (const requestRow of agreement.requests || []) {
+      rows.push({
+        id: `warranty-request-timeline-${agreement.id}-${requestRow.id}`,
+        date: requestRow.closed_at || requestRow.work_order?.completed_at || requestRow.work_order?.scheduled_for || requestRow.submitted_at || agreement.date,
+        title: requestRow.title || "Warranty request",
+        type: "Warranty Request",
+        detail: `${agreement.project} - ${requestRow.status_label || requestRow.status || "Submitted"}`,
+        url: "",
+        actionLabel: "",
+      });
+    }
   }
   for (const payment of payments || []) {
     const type = String(payment.record_type || payment.record_type_label || "").toLowerCase();

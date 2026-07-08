@@ -108,6 +108,42 @@ DEFAULT_TEMPLATES = {
         title="Maintenance contract cancelled",
         message="{project_title} maintenance service was cancelled.",
     ),
+    SmartNotificationEvent.WARRANTY_REQUEST_RECEIVED: SmartNotificationTemplate(
+        title="Warranty request received",
+        message="{request_title} was submitted and is ready for contractor review.",
+    ),
+    SmartNotificationEvent.WARRANTY_INFORMATION_REQUESTED: SmartNotificationTemplate(
+        title="More warranty information requested",
+        message="{contractor_name} requested more information for {request_title}.",
+    ),
+    SmartNotificationEvent.WARRANTY_INSPECTION_SCHEDULED: SmartNotificationTemplate(
+        title="Warranty inspection scheduled",
+        message="{request_title} is scheduled for {scheduled_for}.",
+    ),
+    SmartNotificationEvent.WARRANTY_COVERAGE_DECISION: SmartNotificationTemplate(
+        title="Warranty coverage update",
+        message="{request_title}: {coverage_decision}.",
+    ),
+    SmartNotificationEvent.WARRANTY_REPAIR_SCHEDULED: SmartNotificationTemplate(
+        title="Warranty repair scheduled",
+        message="{request_title} is scheduled for repair on {scheduled_for}.",
+    ),
+    SmartNotificationEvent.WARRANTY_REPAIR_COMPLETED: SmartNotificationTemplate(
+        title="Warranty repair completed",
+        message="{request_title} was marked complete.",
+    ),
+    SmartNotificationEvent.WARRANTY_ACKNOWLEDGMENT_REQUESTED: SmartNotificationTemplate(
+        title="Warranty completion needs review",
+        message="Please review and acknowledge completion for {request_title}.",
+    ),
+    SmartNotificationEvent.WARRANTY_CLOSED: SmartNotificationTemplate(
+        title="Warranty request closed",
+        message="{request_title} was closed.",
+    ),
+    SmartNotificationEvent.WARRANTY_ESCALATED: SmartNotificationTemplate(
+        title="Warranty moved to Resolution",
+        message="{request_title} was escalated to the Resolution Workspace.",
+    ),
     SmartNotificationEvent.HOME_SYSTEM_MAINTENANCE_REMINDER: SmartNotificationTemplate(
         title="{system_name} needs attention",
         message="{reminder_reason} {recommended_action}",

@@ -4777,6 +4777,44 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
                 "open_request_count": row.requests.exclude(
                     status__in=["completed", "denied", "closed", "escalated_to_resolution"]
                 ).count(),
+                "requests": [
+                    {
+                        "id": request_row.id,
+                        "title": _safe_text(request_row.title),
+                        "description": _safe_text(request_row.description),
+                        "status": _safe_text(request_row.status),
+                        "status_label": _safe_text(request_row.status).replace("_", " ").title(),
+                        "severity": _safe_text(request_row.severity),
+                        "area_affected": _safe_text(request_row.area_affected),
+                        "contractor_response": _safe_text(request_row.contractor_response),
+                        "coverage_decision": _safe_text(request_row.coverage_decision),
+                        "next_expected_action": _safe_text(request_row.next_expected_action),
+                        "submitted_at": _safe_dt(request_row.created_at),
+                        "closed_at": _safe_dt(request_row.closed_at),
+                        "customer_acknowledged_at": _safe_dt(request_row.customer_acknowledged_at),
+                        "customer_acknowledgment_response": _safe_text(request_row.customer_acknowledgment_response),
+                        "allow_more_evidence": request_row.status
+                        not in ["closed", "completed", "escalated_to_resolution"],
+                        "allow_acknowledgment": request_row.status == "acknowledgment_requested",
+                        "allow_resolution": request_row.status
+                        in ["denied", "not_covered", "follow_up_needed", "escalated_to_resolution"],
+                        "work_order": (
+                            {
+                                "id": request_row.work_order.id,
+                                "status": _safe_text(request_row.work_order.status),
+                                "scheduled_for": _safe_dt(request_row.work_order.scheduled_for),
+                                "assigned_user": getattr(request_row.work_order.assigned_user, "email", ""),
+                                "completion_notes": _safe_text(request_row.work_order.completion_notes),
+                                "repair_outcome": _safe_text(request_row.work_order.repair_outcome),
+                                "completed_at": _safe_dt(request_row.work_order.completed_at),
+                            }
+                            if hasattr(request_row, "work_order")
+                            else None
+                        ),
+                        "evidence_count": request_row.evidence.count(),
+                    }
+                    for request_row in row.requests.select_related("work_order", "work_order__assigned_user").prefetch_related("evidence").order_by("-created_at", "-id")[:10]
+                ],
             }
             for row in AgreementWarranty.objects.filter(agreement=agreement, status="active").order_by("-end_date", "-id")
         ]

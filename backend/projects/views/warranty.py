@@ -25,7 +25,9 @@ from projects.serializers.warranty import (
 )
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.warranty_management import (
+    acknowledge_warranty_completion,
     build_warranty_ai_review,
+    complete_warranty_work_order,
     create_initial_status,
     create_warranty_work_order,
     ensure_warranties_for_completed_agreement,
@@ -221,7 +223,17 @@ class WarrantyRequestViewSet(viewsets.ModelViewSet):
         allowed = {choice[0] for choice in WarrantyRequest.STATUS_CHOICES}
         if next_status not in allowed:
             return Response({"detail": "Valid status is required."}, status=status.HTTP_400_BAD_REQUEST)
-        event = record_warranty_status(row, next_status, actor=request.user, note=(request.data.get("note") or "").strip())
+        changed = []
+        for field in ("coverage_decision", "contractor_response", "next_expected_action"):
+            if field in request.data:
+                setattr(row, field, (request.data.get(field) or "").strip())
+                changed.append(field)
+        if "response_due_at" in request.data:
+            row.response_due_at = request.data.get("response_due_at") or None
+            changed.append("response_due_at")
+        if changed:
+            row.save(update_fields=list(dict.fromkeys(changed + ["updated_at"])))
+        event = record_warranty_status(row, next_status, actor=request.user, note=(request.data.get("note") or "").strip(), metadata={"coverage_decision": row.coverage_decision})
         return Response(WarrantyRequestStatusHistorySerializer(event, context={"request": request}).data, status=200)
 
     @action(detail=True, methods=["post"], parser_classes=[MultiPartParser, FormParser], url_path="evidence")
@@ -257,6 +269,15 @@ class WarrantyRequestViewSet(viewsets.ModelViewSet):
         row = self.get_object()
         work_order = create_warranty_work_order(row, actor=request.user, payload=request.data)
         return Response(WarrantyWorkOrderSerializer(work_order, context={"request": request}).data, status=201)
+
+    @action(detail=True, methods=["post"], url_path="work-order/complete")
+    def complete_work_order_action(self, request, pk=None):
+        row = self.get_object()
+        work_order = getattr(row, "work_order", None)
+        if work_order is None:
+            return Response({"detail": "Warranty work order not found."}, status=status.HTTP_404_NOT_FOUND)
+        updated = complete_warranty_work_order(work_order, actor=request.user, notes=(request.data.get("notes") or "").strip())
+        return Response(WarrantyWorkOrderSerializer(updated, context={"request": request}).data, status=200)
 
     @action(detail=True, methods=["post"], url_path="escalate")
     def escalate(self, request, pk=None):
@@ -349,7 +370,72 @@ class CustomerWarrantyRequestView(APIView):
         return Response(WarrantyRequestSerializer(row, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
 
+class CustomerWarrantyEvidenceView(APIView):
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, token, request_id):
+        row = _customer_warranty_request_or_404(token, request_id)
+        files = list(request.FILES.getlist("files")) + list(request.FILES.getlist("files[]"))
+        if request.FILES.get("file"):
+            files.append(request.FILES["file"])
+        if not files:
+            return Response({"detail": "Please attach at least one file."}, status=status.HTTP_400_BAD_REQUEST)
+        created = []
+        for file_obj in files:
+            created.append(
+                WarrantyRequestEvidence.objects.create(
+                    warranty_request=row,
+                    file=file_obj,
+                    evidence_type=(request.data.get("evidence_type") or "other").strip(),
+                    description=(request.data.get("description") or "").strip(),
+                    original_filename=getattr(file_obj, "name", "") or "",
+                    content_type=getattr(file_obj, "content_type", "") or "",
+                    size_bytes=getattr(file_obj, "size", 0) or 0,
+                    uploaded_by_email=row.submitted_by_email,
+                )
+            )
+        record_warranty_status(
+            row,
+            row.status,
+            note="Customer uploaded additional warranty evidence.",
+            metadata={"evidence_count": len(created), "evidence_ids": [item.id for item in created]},
+        )
+        return Response(WarrantyRequestEvidenceSerializer(created, many=True, context={"request": request}).data, status=201)
+
+
+class CustomerWarrantyAcknowledgmentView(APIView):
+    permission_classes = [permissions.AllowAny]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
+
+    def post(self, request, token, request_id):
+        row = _customer_warranty_request_or_404(token, request_id)
+        action_value = (request.data.get("action") or request.data.get("response") or "").strip().lower()
+        accepted = action_value in {"accept", "accepted", "accept_completion"}
+        if not accepted and action_value not in {"issue_still_exists", "report_issue", "unresolved", "request_resolution_review"}:
+            return Response({"detail": "Use action=accept_completion or action=issue_still_exists."}, status=status.HTTP_400_BAD_REQUEST)
+        updated = acknowledge_warranty_completion(
+            row,
+            accepted=accepted,
+            actor_email=row.submitted_by_email,
+            note=(request.data.get("note") or request.data.get("unresolved_reason") or "").strip(),
+        )
+        return Response(WarrantyRequestSerializer(updated, context={"request": request}).data, status=200)
+
+
 def _truthy(value) -> bool:
     if isinstance(value, bool):
         return value
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _customer_warranty_request_or_404(token, request_id):
+    agreement = get_object_or_404(
+        Agreement.objects.select_related("contractor", "homeowner", "project"),
+        homeowner_access_token=token,
+    )
+    return get_object_or_404(
+        WarrantyRequest.objects.select_related("warranty", "agreement", "project", "contractor", "homeowner"),
+        pk=request_id,
+        agreement=agreement,
+    )

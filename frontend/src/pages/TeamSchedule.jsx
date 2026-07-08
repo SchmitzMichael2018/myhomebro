@@ -110,12 +110,19 @@ function formatRangeDateTime(value) {
 
 function eventStatusLabel(event) {
   const type = String(event?.extendedProps?.type || "").toLowerCase();
+  if (type.includes("warranty")) return "Warranty Work";
   if (type.includes("milestone")) return "Milestone";
   if (type.includes("assignment")) return "Agreement";
   return "Scheduled";
 }
 
 function eventDurationLabel(event) {
+  const estimated = Number(event?.extendedProps?.estimated_duration_minutes || 0);
+  if (estimated > 0) {
+    const hours = Math.floor(estimated / 60);
+    const minutes = estimated % 60;
+    return [hours ? `${hours}h` : "", minutes ? `${minutes}m` : ""].filter(Boolean).join(" ") || `${estimated}m`;
+  }
   const start = event?._start || (event?.start ? new Date(event.start) : null);
   const end = event?._end || (event?.end ? new Date(event.end) : null);
   if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "Date only";
@@ -256,8 +263,11 @@ export default function TeamSchedule() {
     const milestoneCount = assignmentEvents.filter((event) =>
       String(event?.extendedProps?.type || "").includes("milestone")
     ).length;
+    const warrantyCount = assignmentEvents.filter((event) =>
+      String(event?.extendedProps?.type || "").includes("warranty")
+    ).length;
     const workingDays = DAY_FIELDS.filter((field) => !!schedule?.[field]).length;
-    return { assignmentCount, milestoneCount, workingDays };
+    return { assignmentCount, milestoneCount, warrantyCount, workingDays };
   }, [assignmentEvents, schedule]);
 
   const capabilityOptions = useMemo(() => {
@@ -441,7 +451,7 @@ export default function TeamSchedule() {
             <BoardMetric label="Available Employees" value={availableCount} tone="good" />
             <BoardMetric label="Scheduled Assignments" value={scheduleSummary.assignmentCount} />
             <BoardMetric label="Conflicts" value={conflictCount} tone={conflictCount ? "danger" : "neutral"} />
-            <BoardMetric label="Upcoming Assignments" value={operationalEvents.length} tone="warn" />
+            <BoardMetric label="Warranty Work" value={scheduleSummary.warrantyCount} tone="warn" />
           </div>
         </section>
 
@@ -806,7 +816,7 @@ export default function TeamSchedule() {
                       <div>
                         <div className="text-sm font-semibold text-white">{event.title}</div>
                         <div className="mt-1 text-sm text-sky-100/70">
-                          {event.extendedProps?.project_title || "Project"} · {event.extendedProps?.type === "milestone_override" ? "Milestone override" : "Agreement assignment"}
+                          {event.extendedProps?.project_title || "Project"} - {eventStatusLabel(event)}
                         </div>
                       </div>
                       <span className="inline-flex rounded-full border border-white/12 bg-slate-950/55 px-2.5 py-1 text-xs font-semibold text-sky-100/80">
@@ -829,8 +839,14 @@ export default function TeamSchedule() {
                           <div className="mt-1">{event.extendedProps?.employee_name || selectedEmployee?.display_name || "Team member"}</div>
                         </div>
                         <div>
-                          <div className="font-semibold uppercase tracking-[0.12em] text-sky-100/45">Milestones</div>
-                          <div className="mt-1">{event.extendedProps?.milestone_count || event.extendedProps?.milestone_id ? "1 linked" : "Agreement-level"}</div>
+                          <div className="font-semibold uppercase tracking-[0.12em] text-sky-100/45">Linked record</div>
+                          <div className="mt-1">
+                            {event.extendedProps?.warranty_request_id
+                              ? `Warranty #${event.extendedProps.warranty_request_id}`
+                              : event.extendedProps?.milestone_count || event.extendedProps?.milestone_id
+                              ? "1 linked"
+                              : "Agreement-level"}
+                          </div>
                         </div>
                       </div>
                       {formatRangeDateTime(event.start)} {event.end ? `→ ${formatRangeDateTime(event.end)}` : ""}

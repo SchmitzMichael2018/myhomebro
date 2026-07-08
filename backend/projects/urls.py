@@ -400,6 +400,8 @@ from .views_template_recommend import TemplateRecommendView
 from .views.project_taxonomy import ProjectTypeViewSet, ProjectSubtypeViewSet
 from .views.warranty import (
     AgreementWarrantyViewSet,
+    CustomerWarrantyAcknowledgmentView,
+    CustomerWarrantyEvidenceView,
     CustomerWarrantyRequestView,
     WarrantyDashboardView,
     WarrantyRequestViewSet,
@@ -449,6 +451,8 @@ urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
     path("warranty/dashboard/", WarrantyDashboardView.as_view(), name="warranty-dashboard"),
     path("customer-portal/<str:token>/warranty-requests/", CustomerWarrantyRequestView.as_view(), name="customer-portal-warranty-requests"),
+    path("customer-portal/<str:token>/warranty-requests/<int:request_id>/evidence/", CustomerWarrantyEvidenceView.as_view(), name="customer-portal-warranty-request-evidence"),
+    path("customer-portal/<str:token>/warranty-requests/<int:request_id>/acknowledge/", CustomerWarrantyAcknowledgmentView.as_view(), name="customer-portal-warranty-request-acknowledge"),
     path("customers/records/", customer_records, name="customer-records"),
     path("contractor/website/", ContractorWebsiteView.as_view(), name="contractor-website"),
     path("contractor/website/ai-assist/", ContractorWebsiteAiAssistView.as_view(), name="contractor-website-ai-assist"),

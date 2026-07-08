@@ -27,6 +27,8 @@ class WarrantyRequest(models.Model):
     STATUS_REPAIR_IN_PROGRESS = "repair_in_progress"
     STATUS_WAITING_ON_CUSTOMER = "waiting_on_customer"
     STATUS_WAITING_ON_MATERIALS = "waiting_on_materials"
+    STATUS_ACKNOWLEDGMENT_REQUESTED = "acknowledgment_requested"
+    STATUS_FOLLOW_UP_NEEDED = "follow_up_needed"
     STATUS_COMPLETED = "completed"
     STATUS_DENIED = "denied"
     STATUS_ESCALATED_TO_RESOLUTION = "escalated_to_resolution"
@@ -44,6 +46,8 @@ class WarrantyRequest(models.Model):
         (STATUS_REPAIR_IN_PROGRESS, "Repair In Progress"),
         (STATUS_WAITING_ON_CUSTOMER, "Waiting On Customer"),
         (STATUS_WAITING_ON_MATERIALS, "Waiting On Materials"),
+        (STATUS_ACKNOWLEDGMENT_REQUESTED, "Acknowledgment Requested"),
+        (STATUS_FOLLOW_UP_NEEDED, "Follow-Up Needed"),
         (STATUS_COMPLETED, "Completed"),
         (STATUS_DENIED, "Denied"),
         (STATUS_ESCALATED_TO_RESOLUTION, "Escalated To Resolution"),
@@ -80,6 +84,11 @@ class WarrantyRequest(models.Model):
     contractor_response = models.TextField(blank=True, default="")
     customer_notes = models.TextField(blank=True, default="")
     ai_review = models.JSONField(default=dict, blank=True)
+    response_due_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    next_expected_action = models.CharField(max_length=255, blank=True, default="")
+    customer_acknowledged_at = models.DateTimeField(null=True, blank=True)
+    customer_acknowledgment_response = models.CharField(max_length=40, blank=True, default="")
+    unresolved_reason = models.TextField(blank=True, default="")
     submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="submitted_warranty_requests")
     submitted_by_email = models.EmailField(blank=True, default="")
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
@@ -182,6 +191,7 @@ class WarrantyWorkOrder(models.Model):
     materials = models.TextField(blank=True, default="")
     scheduled_for = models.DateTimeField(null=True, blank=True, db_index=True)
     labor_estimate_hours = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    estimated_duration_minutes = models.PositiveIntegerField(null=True, blank=True)
     customer_notes = models.TextField(blank=True, default="")
     completion_checklist = models.JSONField(default=list, blank=True)
     completion_notes = models.TextField(blank=True, default="")

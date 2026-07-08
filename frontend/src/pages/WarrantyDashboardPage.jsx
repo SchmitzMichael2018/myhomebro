@@ -8,6 +8,18 @@ const statusLabel = (value) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
+function daysBetween(start, end) {
+  if (!start || !end) return 0;
+  try {
+    const left = start instanceof Date ? start : new Date(start);
+    const right = end instanceof Date ? end : new Date(end);
+    if (Number.isNaN(left.getTime()) || Number.isNaN(right.getTime())) return 0;
+    return Math.max(Math.floor((right.getTime() - left.getTime()) / 86400000), 0);
+  } catch {
+    return 0;
+  }
+}
+
 const metricTone = {
   active_warranties: "border-emerald-200 bg-emerald-50 text-emerald-900",
   open_warranty_requests: "border-sky-200 bg-sky-50 text-sky-900",
@@ -32,6 +44,14 @@ export default function WarrantyDashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [filters, setFilters] = useState({
+    status: "",
+    warrantyType: "",
+    expiringSoon: false,
+    overdue: false,
+    assigned: "",
+    search: "",
+  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,10 +74,60 @@ export default function WarrantyDashboardPage() {
   const requests = Array.isArray(data?.requests) ? data.requests : [];
   const warranties = Array.isArray(data?.warranties) ? data.warranties : [];
 
+  const warrantyById = useMemo(() => {
+    const map = new Map();
+    warranties.forEach((row) => map.set(String(row.id), row));
+    return map;
+  }, [warranties]);
+
   const openRequests = useMemo(
     () => requests.filter((row) => !["completed", "denied", "closed", "escalated_to_resolution"].includes(row.status)),
     [requests]
   );
+
+  const filteredRequests = useMemo(() => {
+    const today = new Date();
+    return openRequests.filter((row) => {
+      const warranty = warrantyById.get(String(row.warranty)) || {};
+      const workOrder = row.work_order || {};
+      const text = `${row.title || ""} ${row.customer_name || ""} ${row.agreement_title || ""} ${row.area_affected || ""}`.toLowerCase();
+      const daysSince = daysBetween(row.created_at, today);
+      const expirationDays = warranty.end_date ? daysBetween(today, warranty.end_date) : null;
+      if (filters.status && row.status !== filters.status) return false;
+      if (filters.warrantyType && warranty.applies_to !== filters.warrantyType) return false;
+      if (filters.expiringSoon && !(expirationDays !== null && expirationDays >= 0 && expirationDays <= 30)) return false;
+      if (filters.overdue && !(row.response_due_at && new Date(row.response_due_at) < today) && !(daysSince > 2 && ["submitted", "under_review"].includes(row.status))) return false;
+      if (filters.assigned && String(workOrder.assigned_user || "") !== String(filters.assigned)) return false;
+      if (filters.search && !text.includes(filters.search.toLowerCase())) return false;
+      return true;
+    });
+  }, [filters, openRequests, warrantyById]);
+
+  const buckets = useMemo(() => {
+    const today = new Date();
+    const isOverdue = (row) => {
+      const daysSince = daysBetween(row.created_at, today);
+      return (row.response_due_at && new Date(row.response_due_at) < today) || (daysSince > 2 && ["submitted", "under_review"].includes(row.status));
+    };
+    return [
+      { key: "needs_response", title: "Needs Response", rows: filteredRequests.filter((row) => ["submitted", "under_review", "follow_up_needed"].includes(row.status)) },
+      { key: "scheduled_repairs", title: "Scheduled Repairs", rows: filteredRequests.filter((row) => ["inspection_scheduled", "repair_scheduled", "repair_in_progress"].includes(row.status)) },
+      { key: "waiting_customer", title: "Waiting on Customer", rows: filteredRequests.filter((row) => ["more_information_requested", "waiting_on_customer", "acknowledgment_requested"].includes(row.status)) },
+      { key: "overdue", title: "Overdue", rows: filteredRequests.filter(isOverdue) },
+      { key: "recent_completed", title: "Recently Completed", rows: requests.filter((row) => ["completed", "closed"].includes(row.status)).slice(0, 8) },
+    ];
+  }, [filteredRequests, requests]);
+
+  const statusOptions = useMemo(() => Array.from(new Set(requests.map((row) => row.status).filter(Boolean))).sort(), [requests]);
+  const warrantyTypes = useMemo(() => Array.from(new Set(warranties.map((row) => row.applies_to).filter(Boolean))).sort(), [warranties]);
+  const assignedOptions = useMemo(() => {
+    const map = new Map();
+    requests.forEach((row) => {
+      const userId = row.work_order?.assigned_user;
+      if (userId) map.set(String(userId), row.work_order?.assigned_team_notes || `User #${userId}`);
+    });
+    return Array.from(map.entries()).map(([id, label]) => ({ id, label }));
+  }, [requests]);
 
   async function runAction(row, action, payload = {}) {
     setBusyId(`${row.id}:${action}`);
@@ -127,18 +197,58 @@ export default function WarrantyDashboardPage() {
               </div>
             </section>
 
+            <section className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-testid="warranty-dashboard-filters">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                <input
+                  value={filters.search}
+                  onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+                  placeholder="Search customer, project, issue"
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                />
+                <select value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">All statuses</option>
+                  {statusOptions.map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}
+                </select>
+                <select value={filters.warrantyType} onChange={(event) => setFilters((prev) => ({ ...prev, warrantyType: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">All warranty types</option>
+                  {warrantyTypes.map((value) => <option key={value} value={value}>{statusLabel(value)}</option>)}
+                </select>
+                <select value={filters.assigned} onChange={(event) => setFilters((prev) => ({ ...prev, assigned: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  <option value="">All technicians</option>
+                  {assignedOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+                </select>
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold">
+                  <input type="checkbox" checked={filters.expiringSoon} onChange={(event) => setFilters((prev) => ({ ...prev, expiringSoon: event.target.checked }))} />
+                  Expiring soon
+                </label>
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold">
+                  <input type="checkbox" checked={filters.overdue} onChange={(event) => setFilters((prev) => ({ ...prev, overdue: event.target.checked }))} />
+                  Overdue
+                </label>
+              </div>
+            </section>
+
             <section className="mt-6">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="text-xl font-extrabold">Open Warranty Requests</h2>
-                <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">{openRequests.length}</span>
+                <h2 className="text-xl font-extrabold">Warranty Workload</h2>
+                <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">{filteredRequests.length}</span>
               </div>
-              <div className="mt-3 grid gap-3">
-                {openRequests.length === 0 ? (
+              <div className="mt-3 grid gap-4 xl:grid-cols-2">
+                {filteredRequests.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">No open warranty requests.</div>
                 ) : (
-                  openRequests.map((row) => (
-                    <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" data-testid={`warranty-request-${row.id}`}>
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  buckets.map((bucket) => (
+                    <div key={bucket.key} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-testid={`warranty-bucket-${bucket.key}`}>
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="font-extrabold">{bucket.title}</h3>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">{bucket.rows.length}</span>
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        {bucket.rows.length === 0 ? (
+                          <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nothing here right now.</div>
+                        ) : bucket.rows.map((row) => (
+                    <article key={`${bucket.key}-${row.id}`} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-testid={`warranty-request-${row.id}`}>
+                      <div className="flex flex-col gap-4 lg:items-start lg:justify-between">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-lg font-bold">{row.title}</h3>
@@ -148,9 +258,15 @@ export default function WarrantyDashboardPage() {
                           <p className="mt-2 text-sm leading-6 text-slate-600">{row.description}</p>
                           <div className="mt-3 flex flex-wrap gap-3 text-xs font-semibold text-slate-500">
                             <span>Customer: {row.customer_name || "Customer"}</span>
+                            <span>Project: {row.agreement_title || "Project"}</span>
                             <span>Area: {row.area_affected || "Not specified"}</span>
+                            <span>Submitted: {daysBetween(row.created_at, new Date())} day(s) ago</span>
                             <span>Noticed: {row.date_noticed || "Not provided"}</span>
                             <span>Evidence: {row.evidence?.length || 0}</span>
+                          </div>
+                          <div className="mt-2 text-xs font-semibold text-slate-500">
+                            Next action: {row.next_expected_action || "Review warranty request."}
+                            {row.work_order?.scheduled_for ? ` Scheduled: ${new Date(row.work_order.scheduled_for).toLocaleString()}` : ""}
                           </div>
                           {row.ai_review?.summary ? (
                             <div className="mt-3 rounded-lg border border-sky-100 bg-sky-50 p-3 text-sm text-sky-900">
@@ -173,6 +289,9 @@ export default function WarrantyDashboardPage() {
                         </div>
                       </div>
                     </article>
+                        ))}
+                      </div>
+                    </div>
                   ))
                 )}
               </div>
