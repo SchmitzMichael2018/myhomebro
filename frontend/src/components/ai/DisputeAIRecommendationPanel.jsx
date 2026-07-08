@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import api from "../../api";
 import { buildAiContext, serializeAiContext } from "../../lib/aiContext.js";
 import { parseDisputeRecommendationResponse } from "../../lib/aiResponseParser.js";
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../ProjectAssistantExperience.jsx";
 
 const FORBIDDEN_LEGAL_LANGUAGE = [
   "liable",
@@ -36,19 +42,12 @@ function hasForbiddenLanguage(value) {
 }
 
 function confidenceLabel(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "Not provided";
-  if (n >= 0.75) return `${Math.round(n * 100)}% confidence`;
-  if (n >= 0.45) return `${Math.round(n * 100)}% confidence, review missing evidence`;
-  return `${Math.round(n * 100)}% confidence, insufficient evidence may remain`;
+  return <ProjectAssistantConfidenceBadge value={value} explanation="Resolution confidence depends on evidence completeness and consistency." />;
 }
 
 function Section({ title, children, testId }) {
   return (
-    <section data-testid={testId} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 }}>
-      <div style={{ fontWeight: 900, marginBottom: 8 }}>{title}</div>
-      {children}
-    </section>
+    <ProjectAssistantSection title={title} testId={testId}>{children}</ProjectAssistantSection>
   );
 }
 
@@ -148,27 +147,25 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
   }, [disputeId]);
 
   return (
-    <div data-testid="dispute-ai-recommendation-panel" style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginTop: 16 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 16, fontWeight: 800 }}>Neutral Resolution Assistant</div>
-          <div style={{ fontSize: 12, opacity: 0.7 }}>
-            Based on the available evidence, this creates review guidance only. Humans decide every outcome.
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+    <ProjectAssistantPanel
+      subtitle="Resolution Assistant"
+      summary="Based on the available evidence, this creates review guidance only. Humans decide every outcome."
+      testId="dispute-ai-recommendation-panel"
+      className="mt-4"
+      actions={
+        <>
           <button onClick={loadLatest} disabled={loadingLatest} style={btnStyle}>
             {loadingLatest ? "Loading..." : "Load Latest"}
           </button>
           <button onClick={() => generate(false)} disabled={loading} style={btnStyle}>
-            {loading ? "Generating..." : "Generate"}
+            {loading ? "Generating..." : "Generate recommendation"}
           </button>
           <button onClick={() => generate(true)} disabled={loading} style={btnStyle} title="Force new version">
-            Refresh
+            Generate new version
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
 
       {err ? <div style={{ marginTop: 12, color: "#b91c1c", fontWeight: 700 }}>{err}</div> : null}
 
@@ -180,14 +177,11 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
       ) : null}
 
       {hasPayload ? (
-        <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
-          <div
-            data-testid="dispute-ai-boundary"
-            style={{ border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 12, padding: 12, fontSize: 13, color: "#78350f", fontWeight: 700 }}
-          >
+        <div style={{ display: "grid", gap: 14 }}>
+          <ProjectAssistantApprovalNotice>
             Recommendation only. This does not resolve the dispute, release payment, refund money,
             assign blame, or make a legal conclusion. A human must accept, reject, counter, or escalate.
-          </div>
+          </ProjectAssistantApprovalNotice>
 
           {unsafeLanguageDetected ? (
             <div
@@ -265,7 +259,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
 
           {recommendation ? (
             <Section title="Recommended COA" testId="dispute-ai-recommended-coa">
-              <div style={{ fontSize: 13 }}>
+                <div style={{ fontSize: 13 }}>
                 <div style={{ marginBottom: 6 }}><b>Recommended option:</b> {recommendation.recommended_option_id}</div>
                 <div style={{ marginBottom: 6 }}><b>Confidence:</b> {confidenceLabel(recommendation.confidence)}</div>
                 <div style={{ marginBottom: 8 }}><b>Why:</b> {recommendation.why_this_option}</div>
@@ -327,7 +321,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
           ) : null}
         </div>
       ) : null}
-    </div>
+    </ProjectAssistantPanel>
   );
 }
 

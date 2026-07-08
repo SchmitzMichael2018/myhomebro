@@ -8,6 +8,11 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
 import ConvertToAgreementPanel from "../components/ConvertToAgreementPanel.jsx";
 import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../components/ProjectAssistantExperience.jsx";
+import {
   buildProjectIntelligenceGuidance,
   buildProjectSetupRecommendation,
   normalizeProjectSetupRecommendation,
@@ -911,22 +916,12 @@ function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDra
   const canCreateDraft = Boolean(preview && !loading && !error);
 
   return (
-    <div
-      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
-      data-testid="recommended-crew-panel"
-    >
-      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            Advisory
-          </div>
-          <div className="mt-1 text-base font-bold text-slate-900">Recommended Crew</div>
-          <div className="mt-1 text-sm text-slate-700">
-            {preview?.advisory_notice ||
-              "Recommended Crew is advisory only. Review before assigning work."}
-          </div>
-        </div>
-        {canCreateDraft ? (
+    <ProjectAssistantPanel
+      subtitle="Team Assistant"
+      summary={preview?.advisory_notice || "Recommended crew is advisory only. Review availability, scope, licensing, and customer commitments before assigning work."}
+      testId="recommended-crew-panel"
+      className="bg-slate-50"
+      actions={canCreateDraft ? (
           <button
             type="button"
             data-testid="assignment-draft-create"
@@ -935,10 +930,10 @@ function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDra
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <ClipboardList size={16} />
-            {creatingDraft ? "Creating draft..." : "Create assignment draft"}
+            {creatingDraft ? "Preparing draft..." : "Review assignment draft"}
           </button>
         ) : null}
-      </div>
+    >
 
       {draftError ? (
         <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
@@ -947,7 +942,7 @@ function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDra
       ) : null}
 
       {loading ? (
-        <div className="mt-4 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-700">Loading crew preview...</div>
+        <div className="mt-4 rounded-lg bg-white px-3 py-2 text-sm font-semibold text-slate-700">Loading team recommendation...</div>
       ) : error ? (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {error}
@@ -955,7 +950,10 @@ function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDra
       ) : (
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <ProjectAssistantSection title="Evidence reviewed">
+              Project scope, current capabilities, employee matches, skill gaps, and schedule warnings.
+            </ProjectAssistantSection>
+            <div className="mt-4 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
               Needed Capabilities
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -1030,7 +1028,10 @@ function AdvisoryCrewPanel({ preview, loading, error, onCreateDraft, creatingDra
           </div>
         </div>
       )}
-    </div>
+      <ProjectAssistantApprovalNotice compact>
+        Human approval required before assigning work, replacing assignments, scheduling team members, or sending customer/team messages.
+      </ProjectAssistantApprovalNotice>
+    </ProjectAssistantPanel>
   );
 }
 

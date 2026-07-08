@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, ClipboardCopy, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
 
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
+import { saferAssistantActionLabel } from "./ProjectAssistantExperience.jsx";
 import { buildAiContext } from "../lib/aiContext.js";
 import { checkJobHealth } from "../lib/jobHealthMonitor.js";
 import { draftCheckIn, draftSignatureFollowUp, draftMilestoneUpdate } from "../lib/actionDrafter.js";
@@ -23,15 +24,23 @@ function workspaceModeForRoute(route = "") {
   const path = String(route || "").toLowerCase();
   if (path.includes("/admin")) return "admin";
   if (path.includes("/disputes")) return "disputes";
+  if (path.includes("/warrant")) return "warranty";
+  if (path.includes("/team") || path.includes("/assignments") || path.includes("/schedule")) return "team";
+  if (path.includes("/estimates") || path.includes("/proposals")) return "estimates";
+  if (path.includes("/customers") || path.includes("/customer-portal")) return "customer_portal";
+  if (path.includes("/properties") || path.includes("/property") || path.includes("/maintenance")) return "property_management";
+  if (path.includes("/marketing") || path.includes("/public-presence")) return "marketing";
+  if (path.includes("/insights") || path.includes("/business")) return "insights";
+  if (path.includes("/documents") || path.includes("/photos")) return "documents";
   if (path.includes("/templates")) return "templates";
   if (path.includes("/agreements") && path.includes("/wizard")) return "agreement_wizard";
   if (path.includes("/agreements")) return "agreements";
   if (path.includes("/milestones")) return "milestones";
-  if (path.includes("/invoices") || path.includes("/payments") || path.includes("/business")) {
+  if (path.includes("/invoices") || path.includes("/payments")) {
     return "invoices";
   }
   if (path.includes("/dashboard")) return "dashboard";
-  if (path.includes("/opportunities") || path.includes("/bids") || path.includes("/marketing") || path.includes("/public-presence")) return "leads";
+  if (path.includes("/opportunities") || path.includes("/bids")) return "leads";
   return "general";
 }
 
@@ -143,6 +152,126 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
     };
   }
 
+  if (workspaceMode === "estimates") {
+    return {
+      headline: "Review this estimate",
+      helperText:
+        "Get help checking scope, line items, pricing confidence, missing details, and agreement handoff readiness.",
+      statusText: "Estimate context loaded",
+      promptPlaceholder:
+        'Examples: "Review estimate readiness" or "What is missing before agreement handoff?"',
+      nextActionText: "Next: Review estimate readiness and handoff blockers.",
+      nextGuidanceTitle: "Estimate guidance",
+      nextGuidance:
+        "Project Assistant is checking estimate scope, line items, incidentals, schedule assumptions, and agreement handoff readiness.",
+    };
+  }
+
+  if (workspaceMode === "warranty") {
+    return {
+      headline: "Review warranty records",
+      helperText:
+        "Get help reviewing warranty evidence, missing information, possible coverage issues, and next review steps.",
+      statusText: "Warranty context loaded",
+      promptPlaceholder:
+        'Examples: "Review warranty evidence" or "What information is missing?"',
+      nextActionText: "Next: Review warranty evidence and human decision points.",
+      nextGuidanceTitle: "Warranty guidance",
+      nextGuidance:
+        "Project Assistant can summarize warranty records and prepare review guidance, but humans decide coverage and repairs.",
+    };
+  }
+
+  if (workspaceMode === "team") {
+    return {
+      headline: "Review team planning",
+      helperText:
+        "Get help checking crew fit, capability gaps, schedule conflicts, and assignment readiness.",
+      statusText: "Team context loaded",
+      promptPlaceholder:
+        'Examples: "Review crew fit" or "What assignment risks exist?"',
+      nextActionText: "Next: Review team recommendations before assigning work.",
+      nextGuidanceTitle: "Team guidance",
+      nextGuidance:
+        "Project Assistant can recommend crew options, but humans approve all assignments and messages.",
+    };
+  }
+
+  if (workspaceMode === "customer_portal") {
+    return {
+      headline: "Explain customer next steps",
+      helperText:
+        "Get plain-language guidance for approvals, payments, documents, requests, and project status.",
+      statusText: "Customer context loaded",
+      promptPlaceholder:
+        'Examples: "What does this approval mean?" or "What happens next?"',
+      nextActionText: "Next: Review the customer-facing status and options.",
+      nextGuidanceTitle: "Customer guide",
+      nextGuidance:
+        "Project Assistant explains options without pressuring approvals, payments, signatures, or disputes.",
+    };
+  }
+
+  if (workspaceMode === "property_management") {
+    return {
+      headline: "Review property operations",
+      helperText:
+        "Get help summarizing properties, units, tenant requests, work orders, documents, and maintenance next steps.",
+      statusText: "Property management context loaded",
+      promptPlaceholder:
+        'Examples: "Review open tenant requests" or "What property records are missing?"',
+      nextActionText: "Next: Review property records, requests, and work order routing.",
+      nextGuidanceTitle: "Property guidance",
+      nextGuidance:
+        "Project Assistant can prepare routing guidance and messages, but humans approve scheduling, assignments, and customer/tenant messages.",
+    };
+  }
+
+  if (workspaceMode === "marketing") {
+    return {
+      headline: "Review marketing presence",
+      helperText:
+        "Get help improving website copy, SEO, reviews, portfolio, QR campaigns, and lead generation.",
+      statusText: "Marketing context loaded",
+      promptPlaceholder:
+        'Examples: "Improve this headline" or "What should I fix before publishing?"',
+      nextActionText: "Next: Review marketing content, evidence, and publishing readiness.",
+      nextGuidanceTitle: "Marketing guidance",
+      nextGuidance:
+        "Project Assistant can prepare marketing suggestions, but publishing and customer messages require approval.",
+    };
+  }
+
+  if (workspaceMode === "insights") {
+    return {
+      headline: "Review business performance",
+      helperText:
+        "Get help interpreting metrics, patterns, risks, and operational next steps.",
+      statusText: "Insights context loaded",
+      promptPlaceholder:
+        'Examples: "What changed this month?" or "Where is performance slipping?"',
+      nextActionText: "Next: Review metrics, evidence, and recommended investigations.",
+      nextGuidanceTitle: "Operations analysis",
+      nextGuidance:
+        "Project Assistant explains patterns and recommends investigations, while humans decide business actions.",
+    };
+  }
+
+  if (workspaceMode === "documents") {
+    return {
+      headline: "Review documents",
+      helperText:
+        "Get help summarizing documents, photos, versions, missing records, and source context.",
+      statusText: "Document context loaded",
+      promptPlaceholder:
+        'Examples: "Summarize these documents" or "What is missing?"',
+      nextActionText: "Next: Review document sources and missing records.",
+      nextGuidanceTitle: "Document guidance",
+      nextGuidance:
+        "Project Assistant can summarize records, but humans approve sending, signing, replacing, or archiving documents.",
+    };
+  }
+
   if (workspaceMode === "admin") {
     return {
       headline: "Review admin workspace",
@@ -187,10 +316,18 @@ function copilotLabelForRoute(route = "") {
   const workspaceMode = workspaceModeForRoute(route);
   if (workspaceMode === "agreement_wizard") return "Project Assistant for Agreement Creation";
   if (workspaceMode === "agreements") return "Project Assistant for Agreements";
+  if (workspaceMode === "estimates") return "Project Assistant for Estimates";
   if (workspaceMode === "milestones") return "Project Assistant for Milestones";
   if (workspaceMode === "invoices") return "Project Assistant for Payments";
   if (workspaceMode === "templates") return "Project Assistant for Templates";
   if (workspaceMode === "disputes") return "Project Assistant for Dispute Resolution";
+  if (workspaceMode === "warranty") return "Project Assistant for Warranty";
+  if (workspaceMode === "team") return "Project Assistant for Team";
+  if (workspaceMode === "customer_portal") return "Project Assistant for Customer Portal";
+  if (workspaceMode === "property_management") return "Project Assistant for Property Management";
+  if (workspaceMode === "marketing") return "Project Assistant for Marketing";
+  if (workspaceMode === "insights") return "Project Assistant for Insights";
+  if (workspaceMode === "documents") return "Project Assistant for Documents";
   if (workspaceMode === "admin") return "Project Assistant for Admin";
   if (workspaceMode === "leads") return "Project Assistant for Leads";
   if (workspaceMode === "dashboard") return "Project Assistant for Dashboard";
@@ -259,14 +396,14 @@ export function GlobalCopilotTrigger() {
 
 function getBriefingCta(item) {
   const key = String(item?.key || "");
-  if (key === "agreements-awaiting-signature") return "Send reminder";
+  if (key === "agreements-awaiting-signature") return "Prepare reminder";
   if (key.startsWith("agreement-draft:")) return "Open draft";
-  if (key === "invoices-pending-approval") return "Review payment";
-  if (key.startsWith("invoice-approved:")) return "Release payment";
+  if (key === "invoices-pending-approval") return "Review invoice";
+  if (key.startsWith("invoice-approved:")) return "Review payment release";
   if (key === "invoices-disputed") return "Review dispute";
   if (key === "milestone-submitted-review") return "Review work";
   if (key === "agreements-awaiting-funding") return "Open agreements";
-  return item?.buttonLabel || "Open";
+  return saferAssistantActionLabel(item?.buttonLabel || "Open");
 }
 
 function BriefingPanel({ items, onNavigate }) {

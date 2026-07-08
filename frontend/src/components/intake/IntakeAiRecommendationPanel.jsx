@@ -1,6 +1,14 @@
 // frontend/src/components/intake/IntakeAiRecommendationPanel.jsx
 
 import React from "react";
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantEvidenceList,
+  ProjectAssistantMissingInfoList,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../ProjectAssistantExperience.jsx";
 
 export default function IntakeAiRecommendationPanel({
   result,
@@ -28,13 +36,6 @@ export default function IntakeAiRecommendationPanel({
   const paymentProtection = result?.payment_protection || null;
   const contractorMatch = result?.contractor_match || null;
 
-  function confidenceLabel(value) {
-    const normalized = String(value || "").trim().toLowerCase();
-    if (normalized === "recommended") return "Recommended";
-    if (normalized === "possible") return "Possible";
-    return "No strong match";
-  }
-
   function recommendationLead() {
     if (hasStrongMatch && result?.template_name) {
       return "Best match based on project type, scope, and milestones.";
@@ -60,23 +61,18 @@ export default function IntakeAiRecommendationPanel({
   }
 
   return (
-    <div className="rounded-xl border bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">AI Project Analysis</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Review the project analysis, choose the best template path, and continue into the agreement workflow.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
+    <ProjectAssistantPanel
+      subtitle="Opportunity Assistant"
+      summary="Review the intake analysis, source evidence, template path, and next draft step before moving this opportunity forward."
+      actions={
+        <>
           <button
             type="button"
             onClick={onAnalyze}
             disabled={!canAnalyze || analyzing}
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
           >
-            {analyzing ? "Analyzing..." : "Analyze Project"}
+            {analyzing ? "Reviewing intake..." : "Generate recommendation"}
           </button>
 
           <button
@@ -85,17 +81,18 @@ export default function IntakeAiRecommendationPanel({
             disabled={!canConvert || converting}
             className="rounded border border-indigo-200 bg-white px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
           >
-            {converting ? "Creating..." : "Create Agreement"}
+            {converting ? "Preparing..." : "Prepare agreement draft"}
           </button>
-        </div>
-      </div>
+        </>
+      }
+    >
 
       {!result ? (
-        <div className="mt-4 rounded-md border border-dashed border-gray-300 bg-gray-50 px-4 py-4 text-sm text-gray-600">
-          No analysis yet. Fill out the intake form and click <b>Analyze Project</b>.
-        </div>
+        <ProjectAssistantSection title="No recommendation yet">
+          Fill out the intake form and select <b>Generate recommendation</b>. Project Assistant will prepare guidance for human review.
+        </ProjectAssistantSection>
       ) : (
-        <div className="mt-4 space-y-4">
+        <div className="space-y-4">
           <div className="rounded-lg border bg-indigo-50/40 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
               Intake Summary
@@ -117,9 +114,7 @@ export default function IntakeAiRecommendationPanel({
               )}
 
               {result.confidence ? (
-                <span className="rounded-full bg-amber-100 px-2 py-1 font-semibold text-amber-800">
-                  {confidenceLabel(result.confidence)}
-                </span>
+                <ProjectAssistantConfidenceBadge value={result.confidence} explanation={result.reason || "Based on intake details and template match quality."} />
               ) : null}
 
               {matchQuality ? (
@@ -147,6 +142,27 @@ export default function IntakeAiRecommendationPanel({
                 <div className="mt-1 text-xs text-gray-600">{result.reason}</div>
               ) : null}
               <div className="mt-2 text-xs font-medium text-indigo-800">{nextStepText()}</div>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <ProjectAssistantSection title="Evidence reviewed">
+                <ProjectAssistantEvidenceList
+                  items={[
+                    result.project_title ? { type: "Customer request", label: result.project_title } : null,
+                    result.project_type ? { type: "Project type", label: result.project_type, status: result.project_subtype || "" } : null,
+                    result.template_name ? { type: "Template", label: result.template_name, status: matchQuality || "" } : null,
+                  ].filter(Boolean)}
+                />
+              </ProjectAssistantSection>
+              <ProjectAssistantSection title="Missing information">
+                <ProjectAssistantMissingInfoList
+                  items={[
+                    !result.description ? "Missing project description" : null,
+                    !milestones.length ? "Missing suggested milestones" : null,
+                    !result.project_type ? "Missing project type" : null,
+                  ].filter(Boolean)}
+                  empty="No obvious missing intake details from this recommendation."
+                />
+              </ProjectAssistantSection>
             </div>
             {safetyWarnings.length ? (
               <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3" data-testid="intake-safety-warning">
@@ -337,6 +353,10 @@ export default function IntakeAiRecommendationPanel({
             </div>
           </div>
 
+          <ProjectAssistantApprovalNotice compact>
+            Project Assistant can prepare an agreement draft from this opportunity, but the contractor must review and approve all agreement details before anything is sent or signed.
+          </ProjectAssistantApprovalNotice>
+
           <div className="rounded-lg border bg-white p-4">
             <div className="text-sm font-semibold text-gray-900">Suggested Description</div>
             <div className="mt-2 whitespace-pre-wrap text-sm text-gray-700">
@@ -393,6 +413,6 @@ export default function IntakeAiRecommendationPanel({
           </div>
         </div>
       )}
-    </div>
+    </ProjectAssistantPanel>
   );
 }

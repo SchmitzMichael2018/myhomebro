@@ -2,6 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import api from '../../api';
 import PublicWebsiteRenderer from './PublicWebsiteRenderer.jsx';
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantPanel,
+} from '../ProjectAssistantExperience.jsx';
 
 const STEPS = [
   { key: 'brand', label: 'Brand' },
@@ -99,7 +104,7 @@ function AiAssistButton({ action, currentValue, fieldLabel, onAssist, disabled }
       className="mt-3 inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-800 transition hover:bg-blue-100 disabled:opacity-50"
       data-testid={`website-ai-${action}`}
     >
-      Improve with AI
+      Improve with Project Assistant
     </button>
   );
 }
@@ -109,9 +114,14 @@ function AiSuggestionReview({ suggestion, onAccept, onCancel, busy }) {
   const suggested = suggestion.suggested_value || suggestion.suggestion || '';
   return (
     <div className="fixed inset-0 z-[1600] flex items-center justify-center bg-slate-950/45 p-4" data-testid="website-ai-suggestion-review">
-      <div className="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
-        <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">AI suggestion</div>
-        <h3 className="mt-2 text-2xl font-black text-slate-950">{suggestion.fieldLabel || 'Website copy'}</h3>
+      <ProjectAssistantPanel
+        subtitle="Marketing Advisor"
+        summary={suggestion.fieldLabel || 'Website copy'}
+        className="w-full max-w-2xl"
+      >
+        <div className="flex flex-wrap gap-2">
+          <ProjectAssistantConfidenceBadge value={suggestion.error ? 'needs more information' : 'medium'} explanation={suggestion.explanation || 'Website copy suggestions should be reviewed before applying.'} />
+        </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Before</div>
@@ -124,6 +134,9 @@ function AiSuggestionReview({ suggestion, onAccept, onCancel, busy }) {
         </div>
         {suggestion.explanation ? <p className="mt-4 text-sm leading-6 text-slate-600">{suggestion.explanation}</p> : null}
         {suggestion.error ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{suggestion.error}</div> : null}
+        <ProjectAssistantApprovalNotice compact>
+          Publishing still requires your approval. Project Assistant can prepare copy, but it will not publish website changes.
+        </ProjectAssistantApprovalNotice>
         <div className="mt-6 flex flex-wrap justify-end gap-3">
           <button type="button" onClick={onCancel} className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-700 hover:bg-slate-50">Cancel</button>
           <button
@@ -133,10 +146,10 @@ function AiSuggestionReview({ suggestion, onAccept, onCancel, busy }) {
             className="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-blue-100 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600 disabled:shadow-none"
             data-testid="website-ai-accept-suggestion"
           >
-            Accept suggestion
+            Apply suggestion
           </button>
         </div>
-      </div>
+      </ProjectAssistantPanel>
     </div>
   );
 }

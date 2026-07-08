@@ -15,6 +15,12 @@ import {
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
+import {
+  ProjectAssistantCard,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../components/ProjectAssistantExperience.jsx";
 
 const ASSISTANT_CONTEXT = {
   current_route: "/app/assistant",
@@ -218,7 +224,7 @@ export default function AIAssistantPage() {
     <ContractorPageSurface
       eyebrow="Project Assistant"
       title="Assistant Home"
-      subtitle="A compatibility home for assistant history, context, recommendations, and settings."
+      subtitle="A single assistant home for cross-workspace priorities, recent context, history, and settings."
       variant="operational"
       className="mhb-assistant-home"
     >
@@ -277,22 +283,28 @@ export default function AIAssistantPage() {
           >
             <div className="space-y-3">
               {loading ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                  Loading recommendations...
-                </div>
+                <ProjectAssistantCard title="Loading recommendations" tone="info">
+                  <p className="text-sm leading-6">Reviewing agreements, milestones, leads, and templates.</p>
+                </ProjectAssistantCard>
               ) : (
                 pendingRecommendations.map((item) => (
-                  <article key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <ProjectAssistantPanel
+                    key={item.key}
+                    subtitle="Operations Review"
+                    summary={item.title}
+                    testId="assistant-home-recommendation-card"
+                    className="bg-slate-50"
+                  >
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-black uppercase text-slate-600">
                         Priority: {item.priority}
                       </span>
+                      <ProjectAssistantConfidenceBadge value={item.confidence || "medium"} explanation="Assistant Home recommendations are based on current workspace records." />
                       <span className="text-xs font-bold text-slate-500">{item.project}</span>
                     </div>
-                    <div className="mt-2 text-base font-black text-slate-950">{item.title}</div>
-                    <div className="mt-1 text-sm leading-6 text-slate-600">
-                      <strong className="text-slate-800">Why this matters:</strong> {item.why}
-                    </div>
+                    <ProjectAssistantSection title="Why this matters">
+                      {item.why}
+                    </ProjectAssistantSection>
                     <button
                       type="button"
                       onClick={() => navigate(item.route)}
@@ -301,7 +313,7 @@ export default function AIAssistantPage() {
                       {item.action}
                       <ArrowRight className="h-4 w-4" />
                     </button>
-                  </article>
+                  </ProjectAssistantPanel>
                 ))
               )}
             </div>

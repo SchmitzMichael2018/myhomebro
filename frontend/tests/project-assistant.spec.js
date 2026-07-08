@@ -6,6 +6,110 @@ function listResponse(results) {
   return JSON.stringify({ results });
 }
 
+async function installAssistantHomeMocks(page) {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ onboarding_status: 'complete', connected: true }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 77, ai: { access: 'included', enabled: true, unlimited: true } }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor-activation-summary/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/agreements\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: listResponse([
+        {
+          id: 31,
+          status: 'draft',
+          project_title: 'Kitchen Flooring Agreement',
+          customer_name: 'Taylor QA',
+        },
+      ]),
+    });
+  });
+
+  await page.route(/\/api\/projects\/milestones\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: listResponse([]),
+    });
+  });
+
+  await page.route('**/api/projects/contractor/public-leads/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: listResponse([
+        {
+          id: 42,
+          status: 'new',
+          project_title: 'LVP hallway install',
+          customer_name: 'Taylor QA Intake',
+        },
+      ]),
+    });
+  });
+
+  await page.route('**/api/projects/templates/discover/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: listResponse([
+        {
+          id: 8,
+          name: 'Flooring Remodel Template',
+          project_type: 'Flooring',
+          project_subtype: 'Luxury Vinyl Plank',
+        },
+      ]),
+    });
+  });
+
+  await page.route('**/api/projects/recommendations/me/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ recommendations: [] }),
+    });
+  });
+}
+
 async function installAgreementWizardStep2Mocks(page) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
@@ -199,6 +303,32 @@ async function installAgreementWizardStep2Mocks(page) {
     });
   });
 }
+
+test('Assistant Home renders the standardized Project Assistant experience system', async ({ page }) => {
+  await installAssistantHomeMocks(page);
+
+  await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('assistant-home-hero')).toBeVisible();
+  await expect(page.getByTestId('assistant-home-hero')).toContainText('Project Assistant');
+  await expect(page.getByTestId('assistant-home-pending-recommendations')).toContainText(
+    'Review assistant recommendations'
+  );
+  await expect(page.getByTestId('assistant-home-recommendation-card').first()).toContainText(
+    'Medium confidence'
+  );
+  await expect(page.getByTestId('assistant-home-recent-context')).toContainText(
+    'Kitchen Flooring Agreement'
+  );
+  await expect(page.getByTestId('assistant-home-role-skills')).toContainText(
+    'Draft or review estimates'
+  );
+  await expect(page.getByTestId('assistant-home-history')).toContainText('Confirmation required');
+
+  await page.getByTestId('assistant-home-open-assistant').click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Project Assistant');
+});
 
 test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat controls', async ({ page }) => {
   await installAgreementWizardStep2Mocks(page);

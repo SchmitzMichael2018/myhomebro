@@ -173,8 +173,8 @@ export function buildProjectAssistantActions(context = {}) {
       recommended.push(
         action(
           "step2_review_generated_plan",
-          "Review / Replace Generated Plan",
-          "Open the regenerated milestone plan preview."
+          "Review generated plan",
+          "Open the generated milestone plan preview before applying changes."
         )
       );
     }
@@ -193,8 +193,8 @@ export function buildProjectAssistantActions(context = {}) {
       recommended.push(
         action(
           "step2_apply_timeline",
-          "Apply Suggested Timeline",
-          "Apply the available milestone timeline suggestion."
+          "Review suggested timeline",
+          "Review the available milestone timeline suggestion before applying changes."
         )
       );
     }
@@ -236,7 +236,7 @@ export function buildProjectAssistantActions(context = {}) {
         action(
           "step3_apply_standard_warranty",
           "Apply Standard Warranty",
-          "Save the default workmanship warranty to the agreement."
+          "Review and save the default workmanship warranty to the agreement."
         ),
       ],
       additional: [],

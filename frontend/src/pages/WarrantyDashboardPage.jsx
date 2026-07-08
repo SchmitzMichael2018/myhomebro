@@ -2,6 +2,14 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CalendarClock, ClipboardCheck, FileText, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../api";
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantEvidenceList,
+  ProjectAssistantMissingInfoList,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../components/ProjectAssistantExperience.jsx";
 
 const statusLabel = (value) =>
   String(value || "submitted")
@@ -185,17 +193,11 @@ export default function WarrantyDashboardPage() {
               <MetricCard id="expiring_soon" label="Expiring Soon" value={metrics.expiring_soon} icon={ClipboardCheck} />
             </section>
 
-            <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="mt-1 h-5 w-5 text-emerald-600" />
-                <div>
-                  <h2 className="text-base font-bold">Warranty Assistant Summary</h2>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">
-                    {data?.assistant_summary || "No warranty activity needs attention right now."}
-                  </p>
-                </div>
-              </div>
-            </section>
+            <ProjectAssistantPanel
+              subtitle="Warranty Assistant"
+              summary={data?.assistant_summary || "No warranty activity needs attention right now."}
+              className="mt-6"
+            />
 
             <section className="mt-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-testid="warranty-dashboard-filters">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
@@ -269,16 +271,54 @@ export default function WarrantyDashboardPage() {
                             {row.work_order?.scheduled_for ? ` Scheduled: ${new Date(row.work_order.scheduled_for).toLocaleString()}` : ""}
                           </div>
                           {row.ai_review?.summary ? (
-                            <div className="mt-3 rounded-lg border border-sky-100 bg-sky-50 p-3 text-sm text-sky-900">
-                              <div className="font-bold">Advisory review</div>
-                              <p className="mt-1">{row.ai_review.summary}</p>
-                              <p className="mt-1 text-xs font-semibold">Recommendation only: {row.ai_review.recommended_next_step}</p>
-                            </div>
+                            <ProjectAssistantPanel
+                              subtitle="Warranty Assistant"
+                              summary={row.ai_review.summary}
+                              className="mt-3 bg-sky-50/40"
+                              testId={`warranty-assistant-review-${row.id}`}
+                            >
+                              <div className="flex flex-wrap gap-2">
+                                <span className="rounded-full border border-sky-200 bg-white px-2.5 py-1 text-xs font-black text-sky-800">
+                                  Coverage review signal: {statusLabel(row.ai_review.likely_coverage || "needs_review")}
+                                </span>
+                                <ProjectAssistantConfidenceBadge
+                                  value={row.ai_review.confidence_level}
+                                  explanation="Warranty confidence is based on coverage dates, request details, evidence count, and status history."
+                                />
+                              </div>
+                              {row.ai_review.possible_exclusions ? (
+                                <ProjectAssistantSection title="Possible exclusion to review">
+                                  {row.ai_review.possible_exclusions}
+                                </ProjectAssistantSection>
+                              ) : null}
+                              <ProjectAssistantSection title="Evidence reviewed">
+                                <ProjectAssistantEvidenceList
+                                  items={[
+                                    row.ai_review.evidence_considered?.agreement_id ? { type: "Agreement", label: `Agreement #${row.ai_review.evidence_considered.agreement_id}` } : null,
+                                    row.ai_review.evidence_considered?.warranty_id ? { type: "Warranty request", label: `Warranty #${row.ai_review.evidence_considered.warranty_id}` } : null,
+                                    { type: "Evidence", label: `${row.ai_review.evidence_considered?.evidence_count || 0} uploaded item(s)` },
+                                    row.ai_review.evidence_considered?.work_order_id ? { type: "Work order", label: `Work order #${row.ai_review.evidence_considered.work_order_id}` } : null,
+                                  ].filter(Boolean)}
+                                />
+                              </ProjectAssistantSection>
+                              <ProjectAssistantSection title="Missing information">
+                                <ProjectAssistantMissingInfoList
+                                  items={row.ai_review.missing_information || []}
+                                  empty="No missing information listed for this warranty review."
+                                />
+                              </ProjectAssistantSection>
+                              <ProjectAssistantSection title="Recommended next review step">
+                                {row.ai_review.recommended_next_step || "Review request and evidence."}
+                              </ProjectAssistantSection>
+                              <ProjectAssistantApprovalNotice compact>
+                                Human decision required before approving coverage, denying coverage, scheduling repair work, assigning team members, or creating payment obligations.
+                              </ProjectAssistantApprovalNotice>
+                            </ProjectAssistantPanel>
                           ) : null}
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2">
                           <button className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50" onClick={() => runAction(row, "ai")} disabled={busyId === `${row.id}:ai`}>
-                            Review
+                            Generate recommendation
                           </button>
                           <button className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800" onClick={() => runAction(row, "work-order")} disabled={busyId === `${row.id}:work-order`}>
                             Create Work Order
