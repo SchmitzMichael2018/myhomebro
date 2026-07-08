@@ -78,6 +78,7 @@ import ContractorWebsitePreviewPage from "../pages/ContractorWebsitePreviewPage.
 import AIAssistantPage from "../pages/AIAssistantPage.jsx";
 import SupportTicketsPage from "../pages/SupportTicketsPage.jsx";
 import NotificationsPage from "../pages/NotificationsPage.jsx";
+import WarrantyDashboardPage from "../pages/WarrantyDashboardPage.jsx";
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 
@@ -231,6 +232,7 @@ export function protectedRoutes() {
           <Route path="calendar" element={<Calendar />} />
           <Route path="expenses" element={<Expenses />} />
           <Route path="disputes" element={<Disputes />} />
+          <Route path="warranties" element={<WarrantyDashboardPage />} />
 
           <Route path="profile" element={<ProfilePage />} />
           <Route path="onboarding" element={<ContractorOnboardingForm />} />

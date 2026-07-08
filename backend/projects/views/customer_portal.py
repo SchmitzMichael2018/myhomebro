@@ -31,6 +31,7 @@ from receipts.models import Receipt
 from projects.models import (
     Agreement,
     AgreementFundingLink,
+    AgreementWarranty,
     Contractor,
     ContractorReview,
     DrawRequest,
@@ -4759,6 +4760,28 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
             funding_link = f"/public-fund/{funding.token}"
     except Exception:
         funding_link = ""
+    warranty_rows = []
+    try:
+        warranty_rows = [
+            {
+                "id": row.id,
+                "title": _safe_text(row.title),
+                "coverage_details": _safe_text(row.coverage_details or row.covered_work),
+                "exclusions": _safe_text(row.exclusions or row.excluded_work),
+                "status": _safe_text(row.status),
+                "applies_to": _safe_text(row.applies_to),
+                "completion_date": _safe_dt(row.completion_date),
+                "start_date": _safe_dt(row.start_date),
+                "end_date": _safe_dt(row.end_date),
+                "days_remaining": (row.end_date - timezone.localdate()).days if row.end_date else None,
+                "open_request_count": row.requests.exclude(
+                    status__in=["completed", "denied", "closed", "escalated_to_resolution"]
+                ).count(),
+            }
+            for row in AgreementWarranty.objects.filter(agreement=agreement, status="active").order_by("-end_date", "-id")
+        ]
+    except Exception:
+        warranty_rows = []
 
     return {
         "project": {
@@ -4822,7 +4845,10 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
             "agreement_url": agreement_url,
             "pdf_url": _agreement_pdf_url(agreement),
             "funding_url": funding_link,
+            "agreement_token": agreement_token,
+            "warranties": warranty_rows,
         },
+        "warranties": warranty_rows,
         "notifications": activity_rows,
         "review": _portal_review_state(agreement, _safe_text(getattr(getattr(agreement, "homeowner", None), "email", ""))),
     }

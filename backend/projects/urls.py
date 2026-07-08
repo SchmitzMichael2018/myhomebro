@@ -398,7 +398,12 @@ from projects.api.ai_agreement_views import (
 
 from .views_template_recommend import TemplateRecommendView
 from .views.project_taxonomy import ProjectTypeViewSet, ProjectSubtypeViewSet
-from .views.warranty import AgreementWarrantyViewSet
+from .views.warranty import (
+    AgreementWarrantyViewSet,
+    CustomerWarrantyRequestView,
+    WarrantyDashboardView,
+    WarrantyRequestViewSet,
+)
 from .views.maintenance_work_orders import MaintenanceWorkOrderViewSet
 
 app_name = "projects_api"
@@ -418,6 +423,7 @@ router.register(r"dispute-workorders", DisputeWorkOrderViewSet, basename="disput
 router.register(r"project-types", ProjectTypeViewSet, basename="project-types")
 router.register(r"project-subtypes", ProjectSubtypeViewSet, basename="project-subtypes")
 router.register(r"warranties", AgreementWarrantyViewSet, basename="warranties")
+router.register(r"warranty-requests", WarrantyRequestViewSet, basename="warranty-requests")
 router.register(r"intakes", ProjectIntakeViewSet, basename="project-intakes")
 router.register(r"support-tickets", SupportTicketViewSet, basename="support-tickets")
 router.register(r"subcontractor-quotes", SubcontractorQuoteRequestViewSet, basename="subcontractor-quotes")
@@ -441,6 +447,8 @@ agreements_router.register(
 
 urlpatterns = [
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
+    path("warranty/dashboard/", WarrantyDashboardView.as_view(), name="warranty-dashboard"),
+    path("customer-portal/<str:token>/warranty-requests/", CustomerWarrantyRequestView.as_view(), name="customer-portal-warranty-requests"),
     path("customers/records/", customer_records, name="customer-records"),
     path("contractor/website/", ContractorWebsiteView.as_view(), name="contractor-website"),
     path("contractor/website/ai-assist/", ContractorWebsiteAiAssistView.as_view(), name="contractor-website-ai-assist"),

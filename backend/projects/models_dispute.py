@@ -194,6 +194,13 @@ class Dispute(models.Model):
         blank=True,
         related_name="resolution_cases",
     )
+    warranty_service_request = models.ForeignKey(
+        "projects.WarrantyRequest",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolution_cases",
+    )
 
     initiator = models.CharField(max_length=20, choices=INITIATOR_CHOICES)
     reason = models.CharField(max_length=255)
@@ -725,7 +732,7 @@ class Dispute(models.Model):
                 self.SOURCE_PAYMENT_REQUEST: self.payment_request_id or self.draw_request_id,
                 self.SOURCE_EXPENSE: self.expense_id,
                 self.SOURCE_AMENDMENT: self.amendment_id,
-                self.SOURCE_WARRANTY_REQUEST: self.warranty_request_id,
+                self.SOURCE_WARRANTY_REQUEST: self.warranty_service_request_id or self.warranty_request_id,
                 self.SOURCE_AGREEMENT: self.agreement_id,
             }
             self.source_object_id = source_map.get(self.source_type)

@@ -233,6 +233,12 @@ def recompute_and_apply_agreement_completion(agreement_id: int) -> Tuple[bool, C
         if hasattr(ag, "completed_at"):
             fields.append("completed_at")
         ag.save(update_fields=fields)
+        try:
+            from projects.services.warranty_management import ensure_warranties_for_completed_agreement
+
+            ensure_warranties_for_completed_agreement(ag)
+        except Exception:
+            pass
         transaction.on_commit(lambda: _refresh_learning_snapshot(int(ag.id)))
 
         return (True, check)

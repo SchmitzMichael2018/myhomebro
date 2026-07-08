@@ -122,6 +122,7 @@ from projects.models import (
     SubcontractorCompletionStatus,
 )
 from projects.models import AgreementWarranty
+from projects.models_warranty import WarrantyRequest, WarrantyRequestEvidence, WarrantyWorkOrder
 from projects.models_attachments import AgreementAttachment
 from projects.models_customer_portal import CustomerNotificationCleanupPreference, CustomerNotificationPreference
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
@@ -6790,6 +6791,7 @@ class AgreementWarrantyApiTests(TestCase):
             contractor=self.contractor,
             homeowner=self.homeowner,
             description="Warranty agreement",
+            warranty_text_snapshot="Standard 12-month workmanship warranty for installed flooring.",
         )
         self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
@@ -6826,6 +6828,145 @@ class AgreementWarrantyApiTests(TestCase):
 
         warranty = AgreementWarranty.objects.get(pk=payload["id"])
         self.assertEqual(warranty.contractor_id, self.contractor.id)
+
+    def test_completed_agreement_generates_active_warranty_record(self):
+        from projects.services.warranty_management import ensure_warranties_for_completed_agreement
+
+        self.agreement.status = "completed"
+        self.agreement.end = date(2026, 4, 1)
+        self.agreement.save(update_fields=["status", "end"])
+
+        warranties = ensure_warranties_for_completed_agreement(self.agreement)
+
+        self.assertEqual(len(warranties), 1)
+        warranty = warranties[0]
+        self.assertEqual(warranty.status, "active")
+        self.assertTrue(warranty.generated_from_agreement_completion)
+        self.assertEqual(warranty.completion_date, date(2026, 4, 1))
+        self.assertIn("workmanship", warranty.coverage_details.lower())
+
+        again = ensure_warranties_for_completed_agreement(self.agreement)
+        self.assertEqual(again[0].id, warranty.id)
+        self.assertEqual(AgreementWarranty.objects.filter(agreement=self.agreement, generated_from_agreement_completion=True).count(), 1)
+
+    def test_customer_can_submit_warranty_request_with_evidence(self):
+        self.agreement.status = "completed"
+        self.agreement.end = date(2026, 4, 1)
+        self.agreement.save(update_fields=["status", "end"])
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="12-Month Workmanship",
+            coverage_details="Covers workmanship defects.",
+            start_date=date(2026, 4, 1),
+            end_date=date(2027, 4, 1),
+            status="active",
+            applies_to="workmanship",
+        )
+        client = _use_secure_requests(APIClient())
+
+        response = client.post(
+            f"/api/projects/customer-portal/{self.agreement.homeowner_access_token}/warranty-requests/",
+            {
+                "warranty_id": warranty.id,
+                "title": "LVP transition strip lifting",
+                "description": "The hallway transition strip is loose after completion.",
+                "date_noticed": "2026-05-02",
+                "area_affected": "Hallway",
+                "severity": "normal",
+                "urgency": "This week",
+                "email": "homeowner-warranty@example.com",
+                "file": SimpleUploadedFile("warranty-photo.jpg", b"photo-bytes", content_type="image/jpeg"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        payload = response.json()
+        self.assertEqual(payload["title"], "LVP transition strip lifting")
+        self.assertEqual(payload["status"], WarrantyRequest.STATUS_SUBMITTED)
+        request_row = WarrantyRequest.objects.get(pk=payload["id"])
+        self.assertEqual(request_row.agreement_id, self.agreement.id)
+        self.assertEqual(request_row.contractor_id, self.contractor.id)
+        self.assertEqual(request_row.homeowner_id, self.homeowner.id)
+        self.assertEqual(request_row.status_history.count(), 2)
+        self.assertEqual(WarrantyRequestEvidence.objects.filter(warranty_request=request_row).count(), 1)
+
+    def test_contractor_can_review_create_work_order_and_escalate(self):
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="12-Month Workmanship",
+            coverage_details="Covers workmanship defects.",
+            start_date=timezone.localdate() - timedelta(days=1),
+            end_date=timezone.localdate() + timedelta(days=365),
+            status="active",
+            applies_to="workmanship",
+        )
+        request_row = WarrantyRequest.objects.create(
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Cabinet door out of alignment",
+            description="Door rubs the face frame after installation.",
+            severity=WarrantyRequest.SEVERITY_HIGH,
+        )
+
+        review = self.client.post(f"/api/projects/warranty-requests/{request_row.id}/ai-review/", {}, format="json")
+        self.assertEqual(review.status_code, 200)
+        self.assertTrue(review.json()["ai_review"]["advisory_only"])
+        self.assertIn("does not approve", review.json()["ai_review"]["boundary"])
+
+        work = self.client.post(
+            f"/api/projects/warranty-requests/{request_row.id}/work-order/",
+            {"scope": "Inspect hinge alignment and adjust cabinet door."},
+            format="json",
+        )
+        self.assertEqual(work.status_code, 201)
+        self.assertTrue(WarrantyWorkOrder.objects.filter(warranty_request=request_row).exists())
+
+        escalation = self.client.post(
+            f"/api/projects/warranty-requests/{request_row.id}/escalate/",
+            {"note": "Customer disputes coverage decision."},
+            format="json",
+        )
+        self.assertEqual(escalation.status_code, 201)
+        request_row.refresh_from_db()
+        dispute = Dispute.objects.get(pk=request_row.escalated_dispute_id)
+        self.assertEqual(dispute.source_type, Dispute.SOURCE_WARRANTY_REQUEST)
+        self.assertEqual(dispute.warranty_service_request_id, request_row.id)
+        self.assertFalse(dispute.escrow_frozen)
+
+    def test_other_contractor_cannot_access_warranty_request(self):
+        user_model = get_user_model()
+        other_user = user_model.objects.create_user(email="other-warranty@example.com", password="testpass123")
+        other_contractor = Contractor.objects.create(user=other_user, business_name="Other Warranty Contractor")
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="12-Month Workmanship",
+            coverage_details="Covers workmanship defects.",
+            status="active",
+            applies_to="workmanship",
+        )
+        request_row = WarrantyRequest.objects.create(
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Loose trim",
+            description="Trim needs review.",
+        )
+        other_client = _use_secure_requests(APIClient())
+        other_client.force_authenticate(user=other_user)
+
+        response = other_client.get(f"/api/projects/warranty-requests/{request_row.id}/")
+
+        self.assertEqual(other_contractor.user_id, other_user.id)
+        self.assertEqual(response.status_code, 404)
 
 
 class AIFreeAccessRegressionTests(TestCase):

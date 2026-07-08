@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-import { getCustomerProjectDashboard, uploadCustomerProjectPhotos } from "../api";
+import api, { getCustomerProjectDashboard, uploadCustomerProjectPhotos } from "../api";
 import Modal from "../components/Modal.jsx";
 
 function money(value) {
@@ -121,6 +121,19 @@ export default function ProjectDashboardPage() {
   const [dashboard, setDashboard] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [warrantyModalOpen, setWarrantyModalOpen] = useState(false);
+  const [warrantySubmitting, setWarrantySubmitting] = useState(false);
+  const [warrantyForm, setWarrantyForm] = useState({
+    title: "",
+    description: "",
+    date_noticed: "",
+    area_affected: "",
+    severity: "normal",
+    urgency: "",
+    other_contractor_worked: false,
+    preferred_scheduling: "",
+  });
+  const [warrantyFiles, setWarrantyFiles] = useState([]);
   const fileInputRef = useRef(null);
 
   const loadDashboard = useCallback(async () => {
@@ -164,6 +177,11 @@ export default function ProjectDashboardPage() {
   const allMessages = Array.isArray(dashboard?.messages?.items) ? dashboard.messages.items : [];
   const photos = Array.isArray(dashboard?.photos) ? dashboard.photos : [];
   const agreement = dashboard?.agreement || {};
+  const warrantyRows = Array.isArray(dashboard?.warranties)
+    ? dashboard.warranties
+    : Array.isArray(agreement?.warranties)
+    ? agreement.warranties
+    : [];
   const activity = Array.isArray(dashboard?.notifications) ? dashboard.notifications : [];
   const review = dashboard?.review || {};
 
@@ -216,6 +234,54 @@ export default function ProjectDashboardPage() {
 
   const primaryHref = nextAction.url || agreement.agreement_url || "";
   const secondaryHref = askQuestionHref;
+
+  const activeWarranty = warrantyRows[0] || null;
+
+  const updateWarrantyField = (field, value) => {
+    setWarrantyForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const submitWarrantyRequest = async (event) => {
+    event.preventDefault();
+    if (!agreement.agreement_token) {
+      toast.error("This project link is missing warranty access.");
+      return;
+    }
+    if (!warrantyForm.title.trim() || !warrantyForm.description.trim()) {
+      toast.error("Please add an issue title and description.");
+      return;
+    }
+    setWarrantySubmitting(true);
+    try {
+      const body = new FormData();
+      if (activeWarranty?.id) body.append("warranty_id", activeWarranty.id);
+      Object.entries(warrantyForm).forEach(([key, value]) => {
+        body.append(key, typeof value === "boolean" ? String(value) : value || "");
+      });
+      warrantyFiles.forEach((file) => body.append("files", file));
+      await api.post(`/projects/customer-portal/${agreement.agreement_token}/warranty-requests/`, body);
+      toast.success("Warranty request submitted.");
+      setWarrantyModalOpen(false);
+      setWarrantyFiles([]);
+      setWarrantyForm({
+        title: "",
+        description: "",
+        date_noticed: "",
+        area_affected: "",
+        severity: "normal",
+        urgency: "",
+        other_contractor_worked: false,
+        preferred_scheduling: "",
+      });
+      await loadDashboard();
+    } catch (err) {
+      const data = err?.response?.data || {};
+      const detail = data.detail || data.title?.[0] || data.description?.[0] || err?.message || "Unable to submit warranty request.";
+      toast.error(detail);
+    } finally {
+      setWarrantySubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-28">
@@ -604,6 +670,37 @@ export default function ProjectDashboardPage() {
                   </div>
                 </SectionCard>
 
+                <SectionCard title="Warranty" eyebrow="Post-completion support" testId="project-warranty">
+                  {activeWarranty ? (
+                    <div className="space-y-3 text-sm text-slate-700">
+                      <div className="rounded-2xl bg-emerald-50 p-3 text-emerald-900">
+                        <div className="font-semibold">{activeWarranty.title || "Active warranty"}</div>
+                        <div className="mt-1 text-xs font-medium text-emerald-800">
+                          Active through {formatDate(activeWarranty.end_date)}
+                          {activeWarranty.days_remaining !== null && activeWarranty.days_remaining !== undefined
+                            ? ` (${activeWarranty.days_remaining} days remaining)`
+                            : ""}
+                        </div>
+                      </div>
+                      <p className="leading-6 text-slate-600">
+                        {activeWarranty.coverage_details || "Your contractor can review covered workmanship issues from this completed project."}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <ActionLink onClick={() => setWarrantyModalOpen(true)} tone="emerald">
+                          Request Warranty Work
+                        </ActionLink>
+                        <Badge tone="slate">{activeWarranty.open_request_count || 0} open request(s)</Badge>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-600">
+                        Warranty coverage will appear here after this project is completed and the contractor records active coverage.
+                      </div>
+                    </div>
+                  )}
+                </SectionCard>
+
                 <SectionCard
                   title="Notifications"
                   eyebrow="Recent activity"
@@ -707,6 +804,128 @@ export default function ProjectDashboardPage() {
           </ActionLink>
         </div>
       </div>
+
+      <Modal
+        visible={warrantyModalOpen}
+        title="Request Warranty Work"
+        onClose={() => setWarrantyModalOpen(false)}
+        testId="warranty-request-modal"
+        containerClassName="max-w-2xl"
+      >
+        <form onSubmit={submitWarrantyRequest} className="space-y-4">
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-900">
+            {activeWarranty?.title || "Active warranty"} is linked to this project and agreement.
+          </div>
+          <label className="block text-sm font-semibold text-slate-800">
+            Issue title
+            <input
+              value={warrantyForm.title}
+              onChange={(event) => updateWarrantyField("title", event.target.value)}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              placeholder="e.g., Transition strip lifting"
+              data-testid="warranty-request-title"
+            />
+          </label>
+          <label className="block text-sm font-semibold text-slate-800">
+            Issue description
+            <textarea
+              value={warrantyForm.description}
+              onChange={(event) => updateWarrantyField("description", event.target.value)}
+              className="mt-1 min-h-28 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              placeholder="Describe what changed, when it started, and anything you have already tried."
+              data-testid="warranty-request-description"
+            />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm font-semibold text-slate-800">
+              Date noticed
+              <input
+                type="date"
+                value={warrantyForm.date_noticed}
+                onChange={(event) => updateWarrantyField("date_noticed", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-800">
+              Area affected
+              <input
+                value={warrantyForm.area_affected}
+                onChange={(event) => updateWarrantyField("area_affected", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                placeholder="e.g., Hallway"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-800">
+              Severity
+              <select
+                value={warrantyForm.severity}
+                onChange={(event) => updateWarrantyField("severity", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              >
+                <option value="low">Low</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </label>
+            <label className="block text-sm font-semibold text-slate-800">
+              Urgency
+              <input
+                value={warrantyForm.urgency}
+                onChange={(event) => updateWarrantyField("urgency", event.target.value)}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                placeholder="e.g., This week"
+              />
+            </label>
+          </div>
+          <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm font-semibold text-slate-800">
+            <input
+              type="checkbox"
+              checked={warrantyForm.other_contractor_worked}
+              onChange={(event) => updateWarrantyField("other_contractor_worked", event.target.checked)}
+              className="mt-1"
+            />
+            <span>Another contractor has worked on this area since completion.</span>
+          </label>
+          <label className="block text-sm font-semibold text-slate-800">
+            Preferred scheduling
+            <textarea
+              value={warrantyForm.preferred_scheduling}
+              onChange={(event) => updateWarrantyField("preferred_scheduling", event.target.value)}
+              className="mt-1 min-h-20 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+              placeholder="Share good days/times or access notes."
+            />
+          </label>
+          <label className="block text-sm font-semibold text-slate-800">
+            Photos, videos, or documents
+            <input
+              type="file"
+              multiple
+              accept="image/*,video/*,.pdf,.doc,.docx"
+              onChange={(event) => setWarrantyFiles(Array.from(event.target.files || []))}
+              className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              data-testid="warranty-request-files"
+            />
+          </label>
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setWarrantyModalOpen(false)}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={warrantySubmitting}
+              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500 disabled:bg-emerald-300"
+              data-testid="warranty-request-submit"
+            >
+              {warrantySubmitting ? "Submitting..." : "Submit Request"}
+            </button>
+          </div>
+        </form>
+      </Modal>
 
       <Modal
         visible={Boolean(selectedPhoto)}

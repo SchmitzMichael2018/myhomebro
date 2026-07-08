@@ -1818,6 +1818,17 @@ class AgreementWarranty(models.Model):
     title = models.CharField(max_length=255)
     coverage_details = models.TextField(blank=True, default="")
     exclusions = models.TextField(blank=True, default="")
+    workmanship_duration_months = models.PositiveIntegerField(default=12)
+    labor_duration_months = models.PositiveIntegerField(default=12)
+    materials_duration_months = models.PositiveIntegerField(default=0)
+    manufacturer_notes = models.TextField(blank=True, default="")
+    covered_work = models.TextField(blank=True, default="")
+    excluded_work = models.TextField(blank=True, default="")
+    customer_responsibilities = models.TextField(blank=True, default="")
+    contractor_responsibilities = models.TextField(blank=True, default="")
+    response_time_expectations = models.TextField(blank=True, default="")
+    generated_from_agreement_completion = models.BooleanField(default=False, db_index=True)
+    completion_date = models.DateField(null=True, blank=True, db_index=True)
     start_date = models.DateField(null=True, blank=True, db_index=True)
     end_date = models.DateField(null=True, blank=True, db_index=True)
     status = models.CharField(
@@ -1847,6 +1858,14 @@ class AgreementWarranty(models.Model):
     def save(self, *args, **kwargs):
         if not self.contractor_id and self.agreement_id and self.agreement.contractor_id:
             self.contractor = self.agreement.contractor
+        if not self.covered_work and self.coverage_details:
+            self.covered_work = self.coverage_details
+        if not self.excluded_work and self.exclusions:
+            self.excluded_work = self.exclusions
+        if not self.coverage_details and self.covered_work:
+            self.coverage_details = self.covered_work
+        if not self.exclusions and self.excluded_work:
+            self.exclusions = self.excluded_work
 
         if (
             self.status == WarrantyStatus.ACTIVE
@@ -3094,6 +3113,7 @@ class MilestoneAssignment(models.Model):
 from .models_attachments import AgreementAttachment, ExpenseRequestAttachment  # noqa: E402,F401
 from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401
 from .models_ai_artifacts import DisputeAIArtifact  # noqa: E402,F401
+from .models_warranty import WarrantyRequest, WarrantyRequestEvidence, WarrantyRequestStatusHistory, WarrantyWorkOrder  # noqa: E402,F401
 from .models_expense_request import ExpenseRequest  # noqa: E402,F401
 from .models_templates import ProjectTemplate, ProjectTemplateMilestone, SeedBenchmarkProfile  # noqa: E402,F401
 from .models_customer_portal import (  # noqa: E402,F401

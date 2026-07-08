@@ -50,6 +50,16 @@ except Exception:  # pragma: no cover
     ContractorEditEvent = MilestonePerformanceSnapshot = SignedAgreementSnapshot = ProjectOutcomeSnapshot = ContractorBenchmarkAggregate = AgreementOutcomeSnapshot = AgreementOutcomeMilestoneSnapshot = MilestoneBenchmarkAggregate = ProjectBenchmarkAggregate = RegionalBenchmarkAggregate = None
     SupportTicket = None
 
+try:
+    from .models_warranty import (
+        WarrantyRequest,
+        WarrantyRequestEvidence,
+        WarrantyRequestStatusHistory,
+        WarrantyWorkOrder,
+    )
+except Exception:  # pragma: no cover
+    WarrantyRequest = WarrantyRequestEvidence = WarrantyRequestStatusHistory = WarrantyWorkOrder = None
+
 # Optional/independent models (guarded with try so admin doesn’t break)
 try:
     from .models_dispute import (  # type: ignore
@@ -830,6 +840,41 @@ if AgreementWarranty is not None:
         )
         list_filter = ("status", "applies_to", "start_date", "end_date")
         readonly_fields = ("created_at", "updated_at")
+
+
+if WarrantyRequest is not None:
+    @admin.register(WarrantyRequest)
+    class WarrantyRequestAdmin(admin.ModelAdmin):
+        list_display = ("id", "title", "contractor", "homeowner", "status", "severity", "created_at", "updated_at")
+        search_fields = ("title", "description", "agreement__project__title", "homeowner__full_name", "homeowner__email")
+        list_filter = ("status", "severity", "created_at")
+        readonly_fields = ("created_at", "updated_at", "closed_at", "source_context", "ai_review")
+
+
+if WarrantyRequestEvidence is not None:
+    @admin.register(WarrantyRequestEvidence)
+    class WarrantyRequestEvidenceAdmin(admin.ModelAdmin):
+        list_display = ("id", "warranty_request", "evidence_type", "original_filename", "uploaded_by_email", "uploaded_at")
+        search_fields = ("original_filename", "description", "warranty_request__title")
+        list_filter = ("evidence_type", "uploaded_at")
+
+
+if WarrantyRequestStatusHistory is not None:
+    @admin.register(WarrantyRequestStatusHistory)
+    class WarrantyRequestStatusHistoryAdmin(admin.ModelAdmin):
+        list_display = ("id", "warranty_request", "from_status", "to_status", "actor_email", "created_at")
+        search_fields = ("warranty_request__title", "note", "actor_email")
+        list_filter = ("to_status", "created_at")
+        readonly_fields = ("created_at",)
+
+
+if WarrantyWorkOrder is not None:
+    @admin.register(WarrantyWorkOrder)
+    class WarrantyWorkOrderAdmin(admin.ModelAdmin):
+        list_display = ("id", "title", "warranty_request", "contractor", "status", "scheduled_for", "updated_at")
+        search_fields = ("title", "scope", "warranty_request__title")
+        list_filter = ("status", "scheduled_for", "created_at")
+        readonly_fields = ("created_at", "updated_at", "completed_at")
 
 
 # ─────────────────────────────────────────────────────────────
