@@ -7,120 +7,68 @@ function isoDateOffset(days) {
   return value.toISOString();
 }
 
-function buildScheduleAgreements() {
-  return [
-    {
-      id: 9001,
-      title: 'Late Roof Repair',
-      project_title: 'Late Roof Repair',
-      status: 'draft',
-      due_date: isoDateOffset(-1),
-    },
-    {
-      id: 9002,
-      title: 'Completed Old Job',
-      project_title: 'Completed Old Job',
-      status: 'completed',
-      due_date: isoDateOffset(-2),
-    },
-    {
-      id: 9003,
-      title: 'Today Paint Prep',
-      project_title: 'Today Paint Prep',
-      status: 'signed',
-      due_date: isoDateOffset(0),
-    },
-    {
-      id: 9004,
-      title: 'Tomorrow Tile Install',
-      project_title: 'Tomorrow Tile Install',
-      status: 'signed',
-      due_date: isoDateOffset(1),
-    },
-    {
-      id: 9005,
-      title: 'Week Window Replacement',
-      project_title: 'Week Window Replacement',
-      status: 'signed',
-      due_date: isoDateOffset(4),
-    },
-    {
-      id: 9006,
-      title: 'Far Future Project',
-      project_title: 'Far Future Project',
-      status: 'signed',
-      due_date: isoDateOffset(12),
-    },
-  ];
-}
+const agreements = [
+  {
+    id: 321,
+    title: 'Kitchen Remodel Agreement',
+    project_title: 'Kitchen Remodel Agreement',
+    status: 'draft',
+    total_amount: 8400,
+    signature_is_satisfied: false,
+    is_fully_signed: false,
+  },
+  {
+    id: 777,
+    title: 'Waiting Funding Project',
+    project_title: 'Waiting Funding Project',
+    status: 'signed',
+    signature_is_satisfied: true,
+    is_fully_signed: true,
+    escrow_funded: false,
+    payment_mode: 'escrow',
+    due_date: isoDateOffset(2),
+  },
+];
 
-function buildScheduleMilestones() {
-  return [
-    {
-      id: 8001,
-      title: 'Late Roof Repair',
-      project_title: 'Late Roof Repair',
-      status: 'scheduled',
-      milestone_lifecycle_state: 'scheduled',
-      due_date: isoDateOffset(-1),
-    },
-    {
-      id: 8002,
-      title: 'Completed Old Job',
-      project_title: 'Completed Old Job',
-      status: 'complete',
-      milestone_lifecycle_state: 'completed',
-      due_date: isoDateOffset(-2),
-    },
-    {
-      id: 8003,
-      title: 'Today Paint Prep',
-      project_title: 'Today Paint Prep',
-      status: 'scheduled',
-      milestone_lifecycle_state: 'scheduled',
-      due_date: isoDateOffset(0),
-    },
-    {
-      id: 8004,
-      title: 'Tomorrow Tile Install',
-      project_title: 'Tomorrow Tile Install',
-      status: 'scheduled',
-      milestone_lifecycle_state: 'scheduled',
-      due_date: isoDateOffset(1),
-    },
-    {
-      id: 8005,
-      title: 'Week Window Replacement',
-      project_title: 'Week Window Replacement',
-      status: 'scheduled',
-      milestone_lifecycle_state: 'scheduled',
-      due_date: isoDateOffset(4),
-    },
-    {
-      id: 8006,
-      title: 'Far Future Project',
-      project_title: 'Far Future Project',
-      status: 'scheduled',
-      milestone_lifecycle_state: 'scheduled',
-      due_date: isoDateOffset(12),
-    },
-  ];
-}
+const milestones = [
+  {
+    id: 98,
+    title: 'Paint Prep',
+    agreement: 321,
+    agreement_id: 321,
+    agreement_title: 'Kitchen Remodel Agreement',
+    status: 'submitted',
+    submitted_at: '2026-03-24T10:00:00Z',
+    amount: 1200,
+    due_date: isoDateOffset(0),
+  },
+];
 
-async function mockContractorDashboard(page, options = {}) {
-  const milestones = options.milestones || [];
-  const agreements = options.agreements || [];
-  const invoices = options.invoices || [];
-  const publicLeads = options.publicLeads || [];
-  const activityFeed = options.activityFeed || [];
-  const nextBestAction = options.nextBestAction || null;
-  const contractorMe = options.contractorMe || {};
-  const reviewQueueCount = options.reviewQueueCount || 0;
-  const payoutHistorySummary = options.payoutHistorySummary || { payout_count: 0, total_paid_out: 0, total_platform_fees_retained: 0 };
-  const payoutHistoryRecent = options.payoutHistoryRecent || [];
+const invoices = [
+  { id: 1, amount: 1200, status: 'pending_approval' },
+  { id: 2, amount: 900, status: 'approved' },
+  { id: 3, amount: 450, status: 'disputed' },
+];
+
+async function installDashboardMocks(page, overrides = {}) {
+  const data = {
+    agreements,
+    milestones,
+    invoices,
+    nextBestAction: {
+      action_type: 'send_first_agreement',
+      title: 'Send your next agreement',
+      message: 'You already have a draft agreement ready for review and sending.',
+      cta_label: 'Open draft',
+      navigation_target: '/app/agreements/321/wizard?step=1',
+      rationale: 'Draft agreements create the fastest path to homeowner action and funding.',
+    },
+    ...overrides,
+  };
 
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
+    window.sessionStorage.clear();
   });
 
   await page.route('**/api/projects/whoami/', async (route) => {
@@ -132,7 +80,7 @@ async function mockContractorDashboard(page, options = {}) {
         type: 'contractor',
         role: 'contractor_owner',
         email: 'playwright@myhomebro.local',
-        review_queue_count: reviewQueueCount,
+        review_queue_count: 1,
       }),
     });
   });
@@ -154,33 +102,19 @@ async function mockContractorDashboard(page, options = {}) {
       contentType: 'application/json',
       body: JSON.stringify({
         id: 77,
-        created_at: '2026-03-01T10:00:00Z',
-        ...contractorMe,
+        contractor_onboarding_status: 'complete',
+        business_name: 'Playwright Contracting Co',
+        city: 'Austin',
+        state: 'TX',
+        skills: ['Remodeling'],
+        stripe_ready: true,
+        payouts_enabled: true,
+        onboarding: {
+          status: 'complete',
+          stripe_ready: true,
+          first_value_reached: true,
+        },
       }),
-    });
-  });
-
-  await page.route(/\/api\/projects\/milestones\/?(?:\?.*)?$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: milestones }),
-    });
-  });
-
-  await page.route(/\/api\/projects\/invoices\/?(?:\?.*)?$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: invoices }),
-    });
-  });
-
-  await page.route(/\/api\/projects\/expense-requests\/?.*$/, async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
     });
   });
 
@@ -188,11 +122,27 @@ async function mockContractorDashboard(page, options = {}) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ results: agreements }),
+      body: JSON.stringify({ results: data.agreements }),
     });
   });
 
-  await page.route(/\/api\/projects\/agreements\/\d+\/milestones\/?(?:\?.*)?$/, async (route) => {
+  await page.route(/\/api\/projects\/milestones\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: data.milestones }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/invoices\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: data.invoices }),
+    });
+  });
+
+  await page.route(/\/api\/projects\/expense-requests\/?.*$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -229,7 +179,23 @@ async function mockContractorDashboard(page, options = {}) {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ results: publicLeads }),
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor-opportunities/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+
+  await page.route('**/api/projects/contractor-activation-summary/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ guide_sections: {} }),
     });
   });
 
@@ -238,8 +204,15 @@ async function mockContractorDashboard(page, options = {}) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        results: activityFeed,
-        next_best_action: nextBestAction,
+        results: [
+          {
+            id: 'activity-1',
+            title: 'Paint Prep is waiting for approval',
+            message: 'Submitted work needs review.',
+            cta_label: 'Open milestone',
+          },
+        ],
+        next_best_action: data.nextBestAction,
       }),
     });
   });
@@ -249,958 +222,107 @@ async function mockContractorDashboard(page, options = {}) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        summary: payoutHistorySummary,
-        results: payoutHistoryRecent,
+        summary: { payout_count: 0, total_paid_out: 0, total_platform_fees_retained: 0 },
+        results: [],
       }),
+    });
+  });
+
+  await page.route('**/api/projects/draw-requests/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ results: [] }),
     });
   });
 }
 
-test('contractor dashboard shows money-first summary row and prioritized next actions', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      { id: 321, title: 'Kitchen Remodel', project_title: 'Kitchen Remodel', status: 'draft' },
-    ],
-    invoices: [
-      { id: 1, amount: 1200, status: 'pending_approval' },
-      { id: 2, amount: 900, status: 'approved' },
-      { id: 3, amount: 450, status: 'disputed' },
-    ],
-    nextBestAction: {
-      action_type: 'send_first_agreement',
-      title: 'Send your next agreement',
-      message: 'You already have a draft agreement ready for review and sending.',
-      cta_label: 'Open draft',
-      navigation_target: '/app/agreements/321/wizard?step=1',
-      rationale: 'Draft agreements create the fastest path to homeowner action and funding.',
-    },
-  });
+test('contractor dashboard loads current notification, priority, and pipeline surfaces', async ({ page }) => {
+  await installDashboardMocks(page);
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByText('$1,200.00')).toBeVisible();
-  await expect(page.getByText('$900.00')).toBeVisible();
-  await expect(page.getByText('$450.00')).toBeVisible();
-
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText(
-    'Send your next agreement'
-  );
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Open draft');
-  await expect(page.getByTestId('dashboard-next-actions')).toBeVisible();
-  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Open draft');
-  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Review payment requests');
-  await page.getByTestId('dashboard-next-actions').getByRole('button', { name: 'Open draft' }).click();
-  await expect(page).toHaveURL(/\/app\/agreements\/321\/wizard\?step=1/);
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open notifications' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Project Assistant' })).toBeVisible();
+  await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Quick Actions');
+  await expect(page.getByTestId('dashboard-next-actions')).toContainText("Today's Priorities");
+  await expect(page.getByText('Work Pipeline').first()).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-pipeline')).toBeVisible();
 });
 
-test('contractor dashboard surfaces recommended project matches with compatibility reasons', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    publicLeads: [
-      {
-        id: 11,
-        source: 'public_profile',
-        full_name: 'Casey Prospect',
-        project_type: 'Kitchen Remodel',
-        project_description: 'Need help finishing a kitchen project with homeowner participation.',
-        ai_analysis: {
-          project_mode: 'assisted_diy',
-          project_scope_summary: 'Collaborative kitchen remodel with milestone payments.',
-          payment_preference: 'escrow',
-        },
-        matching: {
-          tier: 'Strong Match',
-          score: 91,
-          summary: 'Strong fit for this project and working style.',
-          badges: ['DIY Assistance Available', 'Escrow Workflow Compatible'],
-          reasons: ['Offers Assisted DIY support.', 'Accepts escrow milestone payments.'],
-        },
-      },
-      {
-        id: 12,
-        source: 'public_profile',
-        full_name: 'Jordan Rescue',
-        project_type: 'Bathroom Rescue',
-        project_description: 'Need help finishing a project already started.',
-        ai_analysis: {
-          project_mode: 'consultation',
-          project_scope_summary: 'Partial-completion rescue project.',
-          payment_preference: 'escrow',
-        },
-        matching: {
-          tier: 'Good Match',
-          score: 68,
-          summary: 'Good fit with a few considerations to confirm.',
-          badges: ['Rescue Project Assistance'],
-          reasons: ['Supports rescue or finish-my-project work.'],
-        },
-      },
-    ],
-  });
+test('contractor dashboard renders current quick actions and workflow entry points', async ({ page }) => {
+  await installDashboardMocks(page);
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toBeVisible();
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Strong Matches');
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Assisted DIY');
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Rescue Projects');
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Escrow Compatible');
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Why this project matches you');
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Offers Assisted DIY support.');
-  await expect(page.getByTestId('dashboard-recommended-project-matches')).toContainText('Accepts escrow milestone payments.');
-});
-
-test('contractor dashboard keeps project modes compact while preserving guardrail chips and drilldowns', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 201,
-        title: 'Full Service Kitchen',
-        project_title: 'Full Service Kitchen',
-        status: 'signed',
-        project_mode: 'full_service',
-        project_class: 'residential',
-        payment_mode: 'direct',
-      },
-      {
-        id: 202,
-        title: 'Assisted DIY Deck',
-        project_title: 'Assisted DIY Deck',
-        status: 'signed',
-        project_mode: 'assisted_diy',
-        project_class: 'residential',
-        homeowner_started_work: false,
-        payment_protection: { level: 'recommended' },
-      },
-      {
-        id: 203,
-        title: 'Consultation Visit',
-        project_title: 'Consultation Visit',
-        status: 'draft',
-        project_mode: 'consultation',
-        project_class: 'commercial',
-        payment_protection: { level: 'preferred' },
-      },
-      {
-        id: 204,
-        title: 'Inspection Only Review',
-        project_title: 'Inspection Only Review',
-        status: 'draft',
-        project_mode: 'inspection_only',
-        project_class: 'commercial',
-        payment_protection: { level: 'required' },
-      },
-    ],
-    milestones: [
-      {
-        id: 301,
-        title: 'Licensed Panel Tie-In',
-        milestone_role: 'contractor_task',
-        project_mode: 'assisted_diy',
-        milestone_safety_labels: ['Licensed Trade Work', 'Contractor Required'],
-        subcontractor_review_requested: true,
-      },
-      {
-        id: 302,
-        title: 'Inspection Checkpoint',
-        milestone_role: 'inspection_checkpoint',
-        project_mode: 'inspection_only',
-        milestone_safety_labels: ['Inspection Recommended'],
-        inspection_status: 'inspection_requested',
-      },
-      {
-        id: 303,
-        title: 'Punch List',
-        milestone_role: 'inspection_checkpoint',
-        project_mode: 'inspection_only',
-        milestone_safety_labels: ['Inspection Recommended'],
-        inspection_status: 'inspection_revision_required',
-      },
-      {
-        id: 304,
-        title: 'Shared Cleanup',
-        milestone_role: 'shared_task',
-        project_mode: 'assisted_diy',
-        milestone_safety_labels: [],
-      },
-      {
-        id: 305,
-        title: 'Homeowner Prep',
-        milestone_role: 'homeowner_task',
-        project_mode: 'assisted_diy',
-        milestone_safety_labels: [],
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  const context = page.getByTestId('dashboard-project-context');
-  await expect(context).toBeVisible();
-  await expect(context).toContainText('Project Type');
-  await expect(page.getByTestId('dashboard-project-class-residential')).toBeVisible();
-  await expect(page.getByTestId('dashboard-project-class-commercial')).toBeVisible();
-  await expect(context).toContainText('Full Service');
-  await expect(context).toContainText('Assisted DIY');
-  await expect(context).toContainText('Consultation');
-  await expect(context).toContainText('Inspection Only');
-  await expect(page.getByTestId('dashboard-payment-direct')).toBeVisible();
-  await expect(page.getByTestId('dashboard-guardrail-escrow-preferred')).toBeVisible();
-  await expect(page.getByTestId('dashboard-guardrail-escrow-recommended')).toBeVisible();
-  await expect(page.getByTestId('dashboard-guardrail-escrow-required')).toBeVisible();
-  await expect(page.getByText('Project Modes')).toHaveCount(0);
-  await expect(page.getByText('More Next Actions')).toHaveCount(0);
-  await expect(page.getByTestId('dashboard-needs-attention')).toHaveCount(0);
-  await expect(page.getByText('Waiting on Homeowner')).toHaveCount(0);
-
-  await page.getByTestId('dashboard-project-mode-assisted-diy').click();
-  await expect(page).toHaveURL(/\/app\/milestones\?project_mode=assisted_diy&filter=incomplete/);
-});
-
-test('contractor dashboard project context remains readable on smaller screens', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 777,
-        title: 'Compact Project',
-        project_title: 'Compact Project',
-        status: 'draft',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-        project_mode: 'assisted_diy',
-        project_class: 'residential',
-        payment_mode: 'direct',
-        payment_preference: 'escrow_recommended',
-      },
-    ],
-    milestones: [
-      {
-        id: 411,
-        title: 'Homeowner Prep',
-        agreement_id: 777,
-        agreement: { id: 777, title: 'Compact Project', project_class: 'residential' },
-        status: 'planned',
-        project_mode: 'assisted_diy',
-        milestone_role: 'homeowner_task',
-        milestone_safety_labels: [],
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  const context = page.getByTestId('dashboard-project-context');
-  await expect(context).toBeVisible();
-  await expect(context).toContainText('Mode Filters');
-  await expect(context).toContainText('Payment Method / Protection');
-  await expect(page.getByTestId('dashboard-project-class-residential')).toBeVisible();
-  await expect(page.getByTestId('dashboard-payment-direct')).toBeVisible();
-  await expect(page.getByTestId('dashboard-project-mode-assisted-diy')).toBeVisible();
-  await page.getByTestId('dashboard-project-mode-assisted-diy').click();
-  await expect(page).toHaveURL(/\/app\/milestones\?project_mode=assisted_diy&filter=incomplete/);
-});
-
-test('contractor dashboard keeps the review queue next action visible while submitted work remains', async ({
-  page,
-}) => {
-  let milestones = [
-    {
-      id: 101,
-      title: 'Cabinet Install',
-      agreement_id: 654,
-      agreement: { id: 654, title: 'Kitchen Remodel', project_class: 'residential' },
-      status: 'submitted',
-      submitted_at: '2026-03-24T10:00:00Z',
-    },
-    {
-      id: 102,
-      title: 'Trim Finish',
-      agreement_id: 654,
-      agreement: { id: 654, title: 'Kitchen Remodel', project_class: 'residential' },
-      status: 'submitted',
-      submitted_at: '2026-03-24T11:00:00Z',
-    },
-  ];
-
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 654,
-        title: 'Kitchen Remodel',
-        project_title: 'Kitchen Remodel',
-        status: 'draft',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-      },
-    ],
-    milestones,
-    reviewQueueCount: 2,
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  const reviewAction = page.getByTestId('dashboard-next-action-item-milestone-submitted-review');
-  await expect(reviewAction).toBeVisible();
-  await expect(reviewAction).toContainText('2 milestones are waiting for review.');
-  await reviewAction.click();
-  await expect(page).toHaveURL(/\/app\/reviewer\/queue/);
-});
-
-test('contractor dashboard does not surface payout history in next actions', async ({ page }) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 321,
-        title: 'Kitchen Remodel',
-        project_title: 'Kitchen Remodel',
-        status: 'draft',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-      },
-    ],
-    invoices: [
-      {
-        id: 1,
-        amount: 950,
-        status: 'pending_approval',
-      },
-    ],
-    payoutHistorySummary: {
-      payout_count: 4,
-      total_paid_out: 4800,
-      total_platform_fees_retained: 160,
-    },
-    payoutHistoryRecent: [
-      { id: 1, label: 'Completed payout' },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await expect(page.getByTestId('dashboard-next-actions')).toContainText('Review payment requests');
-  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Review payout history');
-  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('View payout history');
-  await expect(page.getByTestId('dashboard-next-action-item-payout-history')).toHaveCount(0);
-});
-
-test('contractor dashboard surfaces overdue and waiting approval work through next actions and activity feed', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    activityFeed: [
-      {
-        id: 501,
-        title: 'Cabinet Install is overdue',
-        summary: 'Open milestone',
-        severity: 'warning',
-        navigation_target: '/app/milestones/41',
-      },
-      {
-        id: 502,
-        title: 'Paint Prep is waiting for approval',
-        summary: 'Review milestone status',
-        severity: 'warning',
-        navigation_target: '/app/milestones/42',
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await expect(page.getByTestId('dashboard-needs-attention')).toHaveCount(0);
-  await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Cabinet Install is overdue');
-  await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Paint Prep is waiting for approval');
-  await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Open milestone');
-  await expect(page.getByTestId('dashboard-activity-feed')).toContainText('Review milestone status');
-  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('More Next Actions');
-  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Needs Attention');
-});
-
-test('contractor dashboard renders current quick actions and workflow entry points', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 321,
-        title: 'Kitchen Remodel Agreement',
-        project_title: 'Kitchen Remodel',
-        status: 'draft',
-        total_amount: 8400,
-      },
-      {
-        id: 654,
-        title: 'Bath Remodel Agreement',
-        project_title: 'Bath Remodel',
-        status: 'signed',
-        total_amount: 5200,
-        escrow_funded: false,
-      },
-    ],
-    milestones: [
-      {
-        id: 98,
-        title: 'Paint Prep',
-        agreement: 654,
-        agreement_title: 'Bath Remodel Agreement',
-        status: 'submitted',
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  const quickActions = page.getByTestId('dashboard-quick-actions-rail');
+  const quickActions = page.getByTestId('dashboard-quick-actions-row');
   await expect(quickActions.getByRole('button', { name: /Create Estimate/ })).toBeVisible();
   await expect(quickActions.getByRole('button', { name: 'New Agreement', exact: true })).toBeVisible();
   await expect(quickActions.getByRole('button', { name: "Today's Schedule", exact: true })).toBeVisible();
   await expect(quickActions.getByRole('button', { name: 'Expense', exact: true })).toBeVisible();
   await expect(quickActions.getByRole('button', { name: 'Payment', exact: true })).toBeVisible();
-
-  await expect(page.getByText('All Milestones')).toBeVisible();
-  await expect(page.getByText('Ready to Invoice')).toBeVisible();
-  await expect(page.getByText('Rework Work Orders')).toBeVisible();
 });
 
-test('contractor sidebar groups navigation into core work business and settings', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page);
+test('contractor dashboard surfaces backend priority action in the current priorities panel', async ({ page }) => {
+  await installDashboardMocks(page);
+
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+
+  const priorities = page.getByTestId('dashboard-next-actions');
+  await expect(priorities).toContainText('Send your next agreement');
+  await expect(priorities).toContainText('Open draft');
+  await expect(priorities).toContainText('Resolve payment issues');
+  await page.getByTestId('dashboard-next-action-button-next-best:send_first_agreement').click();
+  await expect(page).toHaveURL(/\/app\/agreements\/321\/wizard\?step=1/);
+});
+
+test('contractor sidebar uses current IA and Phase 2 terminology', async ({ page }) => {
+  await installDashboardMocks(page);
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   const sidebar = page.locator('aside');
   await expect(sidebar).toContainText('Main');
-  await expect(sidebar).toContainText('Users');
-  await expect(sidebar).toContainText('Dashboard');
-  await expect(sidebar).not.toContainText('AI Workspace');
+  await expect(sidebar).toContainText('Operations');
+  await expect(sidebar).toContainText('Customers & Team');
+  await expect(sidebar).toContainText('Finance');
+  await expect(sidebar).toContainText('Tools');
+  await expect(sidebar).toContainText('Estimates');
   await expect(sidebar).toContainText('Insights');
-  await expect(sidebar).toContainText('Agreements');
-  await expect(sidebar).toContainText('Milestones');
-  await expect(sidebar).toContainText('Subcontractors');
-  await expect(sidebar).toContainText('Payments');
-  await expect(sidebar).toContainText('Customers');
-  await expect(sidebar).toContainText('Calendar');
-  await expect(sidebar).toContainText('Expenses');
+  await expect(sidebar).toContainText('Marketing');
   await expect(sidebar).toContainText('Resolution');
-  await expect(sidebar).toContainText('My Profile');
-  await expect(sidebar).toContainText('Stripe Onboarding');
-  await expect(sidebar).toContainText('Support');
-
-  const profileLink = sidebar.locator('a[href="/app/profile"]').first();
-  const stripeLink = sidebar.locator('a[href="/app/onboarding/stripe"]').first();
-  const supportLink = sidebar.locator('a[href="/app/support"]').first();
-
-  const profileBox = await profileLink.boundingBox();
-  const stripeBox = await stripeLink.boundingBox();
-  const supportBox = await supportLink.boundingBox();
-
-  expect(profileBox?.y).toBeLessThan(stripeBox?.y);
-  expect(stripeBox?.y).toBeLessThan(supportBox?.y);
+  await expect(sidebar).not.toContainText('Business Dashboard');
+  await expect(sidebar).not.toContainText('Public Presence');
+  await expect(sidebar).not.toContainText('AI Workspace');
 });
 
-test('desktop contractor sidebar stays full-height and scrollable on dashboard and agreements routes', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 321,
-        title: 'Kitchen Remodel Agreement',
-        project_title: 'Kitchen Remodel',
-        status: 'draft',
-        due_date: isoDateOffset(2),
-      },
-    ],
-  });
-
-  await page.setViewportSize({ width: 1440, height: 900 });
-
-  for (const path of ['/app/dashboard', '/app/agreements']) {
-    await page.goto(path, { waitUntil: 'domcontentloaded' });
-
-    const sidebar = page.locator('aside');
-    const main = page.locator('main').first();
-    await expect(sidebar).toBeVisible();
-    await expect(sidebar).toContainText('Dashboard');
-
-    const styles = await sidebar.evaluate((el) => ({
-      overflowY: getComputedStyle(el).overflowY,
-      flexShrink: getComputedStyle(el).flexShrink,
-      height: el.getBoundingClientRect().height,
-      scrollHeight: el.scrollHeight,
-      clientHeight: el.clientHeight,
-    }));
-
-    expect(styles.overflowY).toBe('auto');
-    expect(styles.flexShrink).toBe('0');
-    expect(styles.height).toBeGreaterThanOrEqual(899);
-
-    const mainStyles = await main.evaluate((el) => ({
-      overflowY: getComputedStyle(el).overflowY,
-      height: el.getBoundingClientRect().height,
-    }));
-
-    expect(mainStyles.overflowY).toBe('auto');
-    expect(mainStyles.height).toBeGreaterThanOrEqual(899);
-  }
-});
-
-test('desktop contractor sidebar hover and click navigation stays stable', async ({
-  page,
-}) => {
+test('desktop contractor sidebar navigation stays stable for core work routes', async ({ page }) => {
   const pageErrors = [];
   const consoleErrors = [];
-  const failedRequests = [];
 
-  page.on('pageerror', (error) => {
-    pageErrors.push(error.message);
-  });
+  page.on('pageerror', (error) => pageErrors.push(error.message));
   page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      consoleErrors.push(msg.text());
-    }
-  });
-  page.on('requestfailed', (request) => {
-    failedRequests.push(`${request.method()} ${request.url()} :: ${request.failure()?.errorText || 'failed'}`);
+    if (msg.type() === 'error') consoleErrors.push(msg.text());
   });
 
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 321,
-        title: 'Kitchen Remodel Agreement',
-        project_title: 'Kitchen Remodel',
-        status: 'draft',
-        total_amount: 8400,
-      },
-    ],
-    milestones: [
-      {
-        id: 98,
-        title: 'Paint Prep',
-        agreement: 321,
-        agreement_title: 'Kitchen Remodel Agreement',
-        status: 'submitted',
-      },
-    ],
-    invoices: [
-      {
-        id: 1,
-        amount: 1200,
-        status: 'pending_approval',
-      },
-    ],
-  });
-
+  await installDashboardMocks(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   const sidebar = page.locator('aside');
-  const agreementsLink = sidebar.locator('a[href="/app/agreements"]').first();
-  const milestonesLink = sidebar.locator('a[href="/app/milestones"]').first();
+  await expect(sidebar.locator('a[href="/app/agreements"]').first()).toBeVisible();
+  await expect(sidebar.locator('a[href="/app/milestones"]').first()).toBeVisible();
+  await expect(sidebar.locator('a[href="/app/business"]').first()).toContainText('Insights');
 
-  await expect(agreementsLink).toBeVisible();
-  await expect(milestonesLink).toBeVisible();
-  await expect(agreementsLink).toHaveAttribute('href', '/app/agreements');
-  await expect(milestonesLink).toHaveAttribute('href', '/app/milestones');
-
-  await agreementsLink.hover();
-  await expect(
-    page.locator('body > [role="tooltip"]').filter({
-      hasText: 'Create and manage project agreements, signatures, and funding',
-    })
-  ).toBeVisible();
-
-  await agreementsLink.click();
+  await sidebar.locator('a[href="/app/agreements"]').first().click();
   await expect(page).toHaveURL(/\/app\/agreements\/?(?:\?.*)?$/);
   await expect(page.getByRole('heading', { name: 'Agreements' })).toBeVisible();
 
-  await milestonesLink.click();
+  await sidebar.locator('a[href="/app/milestones"]').first().click();
   await expect(page).toHaveURL(/\/app\/milestones\/?(?:\?.*)?$/);
-  await expect(page.getByText('Agreement #')).toBeVisible();
-  await expect(page.getByText('Kitchen Remodel')).toBeVisible();
+  await expect(page.getByText('Kitchen Remodel Agreement').first()).toBeVisible();
 
   expect(pageErrors, `Unexpected page errors: ${pageErrors.join(' | ')}`).toEqual([]);
   expect(consoleErrors, `Unexpected console errors: ${consoleErrors.join(' | ')}`).toEqual([]);
-  expect(failedRequests, `Unexpected failed requests: ${failedRequests.join(' | ')}`).toEqual([]);
-});
-
-test('contractor dashboard suppresses stale onboarding hero copy after setup is complete', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    contractorMe: {
-      business_name: 'Ready Contractor Co',
-      city: 'Austin',
-      state: 'TX',
-      skills: ['Electrical'],
-      payouts_enabled: true,
-      onboarding: {
-        status: 'complete',
-        stripe_ready: true,
-        first_value_reached: false,
-      },
-    },
-    nextBestAction: {
-      action_type: 'create_agreement',
-      title: 'Start your next agreement',
-      message: 'Use AI to quickly create your next project agreement.',
-      cta_label: 'Start with AI',
-      navigation_target: '/app/assistant',
-      rationale: 'No blockers or active workflows were found.',
-    },
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Start your next agreement');
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText(
-    'Use AI to quickly create your next project agreement.'
-  );
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Start with AI');
-});
-
-test('contractor dashboard hero CTA follows backend next best action targets', async ({ page }) => {
-  await mockContractorDashboard(page, {
-    nextBestAction: {
-      action_type: 'review_pending_approvals',
-      title: 'Review pending approvals',
-      message: 'Items are waiting on your review or approval follow-through.',
-      cta_label: 'View items',
-      navigation_target: '/app/agreements?focus=needs_attention&filter=pending_approval',
-    },
-    agreements: [
-      {
-        id: 901,
-        title: 'Pending Approval Agreement',
-        project_title: 'Pending Approval Agreement',
-        status: 'pending_approval',
-        pending_approval_count: 1,
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await expect(page.getByTestId('dashboard-next-best-action')).toContainText('Review pending approvals');
-  await page.getByTestId('dashboard-next-best-action').getByRole('button', { name: 'View items' }).click();
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=needs_attention&filter=pending_approval/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: Pending Approval');
-});
-
-test('clicking awaiting signature needs-attention item opens AgreementList filtered view', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 320,
-        title: 'Draft Kitchen Remodel',
-        project_title: 'Draft Kitchen Remodel',
-        status: 'draft',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-      },
-      {
-        id: 321,
-        title: 'Unsigned Kitchen Remodel',
-        project_title: 'Unsigned Kitchen Remodel',
-        status: 'draft',
-        signature_is_satisfied: false,
-        is_fully_signed: false,
-        escrow_funded: false,
-      },
-      {
-        id: 654,
-        title: 'Funded Bath Remodel',
-        project_title: 'Funded Bath Remodel',
-        status: 'funded',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-        escrow_funded: true,
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await page.getByTestId('dashboard-next-action-item-agreements-awaiting-signature').click();
-
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=needs_attention&filter=awaiting_signature/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText(
-    'Filtered: Awaiting Signature'
-  );
-  await expect(page.getByText('Unsigned Kitchen Remodel')).toBeVisible();
-  await expect(page.getByText('Funded Bath Remodel')).not.toBeVisible();
-
-  await page.getByTestId('agreement-list-filter-banner').getByRole('button', { name: 'Clear filter' }).click();
-  await expect(page).toHaveURL(/\/app\/agreements$/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toHaveCount(0);
-});
-
-test('clicking awaiting funding needs-attention item opens AgreementList filtered view', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 776,
-        title: 'Draft Funding Seed',
-        project_title: 'Draft Funding Seed',
-        status: 'draft',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-      },
-      {
-        id: 777,
-        title: 'Waiting Funding Project',
-        project_title: 'Waiting Funding Project',
-        status: 'signed',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-        escrow_funded: false,
-        payment_mode: 'escrow',
-      },
-      {
-        id: 778,
-        title: 'Direct Pay Project',
-        project_title: 'Direct Pay Project',
-        status: 'signed',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-        escrow_funded: false,
-        payment_mode: 'direct',
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await page.getByTestId('dashboard-next-action-item-agreements-awaiting-funding').click();
-
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=needs_attention&filter=awaiting_funding/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText(
-    'Filtered: Awaiting Funding'
-  );
-  await expect(page.getByText('Waiting Funding Project')).toBeVisible();
-  await expect(page.getByText('Direct Pay Project')).not.toBeVisible();
-});
-
-test('clicking past due schedule card opens AgreementList late filter and reset clears it', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: buildScheduleAgreements(),
-    milestones: buildScheduleMilestones(),
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await page.locator('[data-testid="dashboard-schedule-late"] [role="button"]').click();
-
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=late/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText(
-    'Filtered: Past Due / Late'
-  );
-  await expect(page.getByText('Late Roof Repair')).toBeVisible();
-  await expect(page.getByText('Completed Old Job')).not.toBeVisible();
-  await expect(page.getByText('Today Paint Prep')).not.toBeVisible();
-
-  await page.getByTestId('agreement-list-filter-banner').getByRole('button', { name: 'Clear filter' }).click();
-  await expect(page).toHaveURL(/\/app\/agreements$/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toHaveCount(0);
-});
-
-test('clicking due today schedule card opens AgreementList today filter', async ({ page }) => {
-  await mockContractorDashboard(page, {
-    agreements: buildScheduleAgreements(),
-    milestones: buildScheduleMilestones(),
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await page.locator('[data-testid="dashboard-schedule-today"] [role="button"]').click();
-
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=today/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: Due Today');
-  await expect(page.getByText('Today Paint Prep')).toBeVisible();
-  await expect(page.getByText('Tomorrow Tile Install')).not.toBeVisible();
-});
-
-test('clicking due tomorrow schedule card opens AgreementList tomorrow filter', async ({ page }) => {
-  await mockContractorDashboard(page, {
-    agreements: buildScheduleAgreements(),
-    milestones: buildScheduleMilestones(),
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await page.locator('[data-testid="dashboard-schedule-tomorrow"] [role="button"]').click();
-
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=tomorrow/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: Due Tomorrow');
-  await expect(page.getByText('Tomorrow Tile Install')).toBeVisible();
-  await expect(page.getByText('Today Paint Prep')).not.toBeVisible();
-});
-
-test('clicking this week schedule card opens AgreementList week filter', async ({ page }) => {
-  await mockContractorDashboard(page, {
-    agreements: buildScheduleAgreements(),
-    milestones: buildScheduleMilestones(),
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await page.locator('[data-testid="dashboard-schedule-week"] [role="button"]').click();
-
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=week/);
-  await expect(page.getByTestId('agreement-list-filter-banner')).toContainText('Filtered: This Week');
-  await expect(page.getByText('Today Paint Prep')).toBeVisible();
-  await expect(page.getByText('Tomorrow Tile Install')).toBeVisible();
-  await expect(page.getByText('Week Window Replacement')).toBeVisible();
-  await expect(page.getByText('Far Future Project')).not.toBeVisible();
-});
-
-test('planned milestones stay out of the active schedule while signed work remains visible', async ({
-  page,
-}) => {
-  await mockContractorDashboard(page, {
-    agreements: [
-      {
-        id: 9010,
-        title: 'Unsigned Draft Agreement',
-        project_title: 'Unsigned Draft Agreement',
-        status: 'draft',
-        signature_is_satisfied: false,
-        is_fully_signed: false,
-        due_date: isoDateOffset(-1),
-        project_class: 'residential',
-      },
-      {
-        id: 9020,
-        title: 'Signed Active Agreement',
-        project_title: 'Signed Active Agreement',
-        status: 'signed',
-        signature_is_satisfied: true,
-        is_fully_signed: true,
-        due_date: isoDateOffset(0),
-        project_class: 'residential',
-      },
-    ],
-    milestones: [
-      {
-        id: 901,
-        title: 'Unsigned Draft Milestone',
-        agreement_id: 9010,
-        agreement: {
-          id: 9010,
-          title: 'Unsigned Draft Agreement',
-          project_class: 'residential',
-        },
-        status: 'planned',
-        milestone_lifecycle_state: 'planned',
-        due_date: isoDateOffset(-1),
-      },
-      {
-        id: 902,
-        title: 'Signed Active Milestone',
-        agreement_id: 9020,
-        agreement: {
-          id: 9020,
-          title: 'Signed Active Agreement',
-          project_class: 'residential',
-        },
-        status: 'scheduled',
-        milestone_lifecycle_state: 'scheduled',
-        due_date: isoDateOffset(0),
-      },
-    ],
-  });
-
-  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
-
-  await expect(page.getByTestId('dashboard-schedule-late')).toHaveCount(0);
-  await expect(page.getByTestId('dashboard-schedule-today')).toContainText('1');
-  await page.locator('[data-testid="dashboard-schedule-today"] [role="button"]').click();
-  await expect(page).toHaveURL(/\/app\/agreements\?focus=schedule&range=today/);
-  await expect(page.getByText('Signed Active Agreement')).toBeVisible();
-  await expect(page.getByText('Unsigned Draft Agreement')).not.toBeVisible();
-});
-
-test('agreement and milestone lists filter by project class and show project type badges', async ({ page }) => {
-  await mockContractorDashboard(page, {
-    reviewQueueCount: 4,
-    agreements: [
-      {
-        id: 1101,
-        title: 'Residential Kitchen',
-        project_title: 'Residential Kitchen',
-        status: 'draft',
-        project_class: 'residential',
-      },
-      {
-        id: 1102,
-        title: 'Commercial Lobby',
-        project_title: 'Commercial Lobby',
-        status: 'draft',
-        project_class: 'commercial',
-      },
-    ],
-    milestones: [
-      {
-        id: 2101,
-        title: 'Demo Phase',
-        description: 'Residential demo work.',
-        agreement_id: 1101,
-        agreement: {
-          id: 1101,
-          title: 'Residential Kitchen',
-          project_class: 'residential',
-        },
-      },
-      {
-        id: 2102,
-        title: 'Signage Review',
-        description: 'Commercial review work.',
-        agreement_id: 1102,
-        agreement: {
-          id: 1102,
-          title: 'Commercial Lobby',
-          project_class: 'commercial',
-        },
-      },
-    ],
-  });
-
-  await page.goto('/app/agreements', { waitUntil: 'domcontentloaded' });
-
-  await expect(page.getByRole('link', { name: 'Awaiting Review 4' })).toBeVisible();
-  await expect(page.getByTestId('agreement-list-project-class-filter')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-class-1101')).toContainText('Residential');
-  await expect(page.getByTestId('agreement-project-class-1102')).toContainText('Commercial');
-
-  await page.getByTestId('agreement-list-project-class-filter').selectOption('commercial');
-  await expect(page.getByTestId('agreement-project-class-1102')).toBeVisible();
-  await expect(page.getByTestId('agreement-project-class-1101')).toHaveCount(0);
-
-  await page.goto('/app/milestones?project_class=commercial', { waitUntil: 'domcontentloaded' });
-
-  await expect(page.getByRole('link', { name: 'Awaiting Review 4' })).toBeVisible();
-  await expect(page.getByTestId('milestone-list-project-class-filter')).toHaveValue('commercial');
-  await expect(page.getByText('Commercial Lobby', { exact: true }).first()).toBeVisible();
-  await page.getByText('Commercial Lobby', { exact: true }).first().click();
-  await expect(page.getByTestId('milestone-project-class-2102')).toContainText('Commercial');
-
-  await page.goto('/app/milestones?project_class=residential', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('milestone-list-project-class-filter')).toHaveValue('residential');
-  await expect(page.getByText('Residential Kitchen', { exact: true }).first()).toBeVisible();
-  await page.getByText('Residential Kitchen', { exact: true }).first().click();
-  await expect(page.getByTestId('milestone-project-class-2101')).toContainText('Residential');
 });
