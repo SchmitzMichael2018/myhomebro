@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getAiPanelConfigForStep } from "./agreementWizardAiPanel.js";
 
 describe("getAiPanelConfigForStep", () => {
-  it("uses real Step 2 action keys for Copilot milestone planning controls", () => {
+  it("uses real Step 2 action keys for Project Assistant milestone planning controls", () => {
     const config = getAiPanelConfigForStep(2, {
       agreement: {
         id: 39,

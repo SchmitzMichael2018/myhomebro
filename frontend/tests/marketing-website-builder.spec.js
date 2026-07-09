@@ -636,7 +636,7 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await expect(page.getByTestId('online-presence-final-review-tab').getByTestId('public-website-renderer')).toHaveCount(0);
   await expect(page.getByTestId('final-preview-desktop')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=desktop$/);
   await expect(page.getByTestId('final-preview-mobile')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=mobile$/);
-  await expect(page.getByTestId('ai-website-audit-card')).toContainText('AI Website Audit');
+  await expect(page.getByTestId('ai-website-audit-card')).toContainText('Project Assistant Website Audit');
   await page.getByTestId('ai-final-review-suggestions').click();
   await expect(page.getByTestId('ai-suggestion-final-website-audit')).toContainText('ready to publish');
 });

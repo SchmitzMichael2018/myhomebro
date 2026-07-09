@@ -1776,7 +1776,7 @@ export default function ContractorPublicPresencePage() {
                 : activeTab === 'website'
                 ? 'Optimize your website so customers can find you online.'
                 : activeTab === 'seo'
-                ? 'Review your online presence and launch when everything looks right.'
+                ? 'Review your marketing presence and launch when everything looks right.'
                 : activeTab === 'final'
                 ? 'Publish your website snapshot.'
                 : 'Share your live profile, promote your business, and watch leads come in.'}
@@ -2521,7 +2521,7 @@ export default function ContractorPublicPresencePage() {
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="text-xs font-bold text-slate-500">Step 6 of 7</div>
                 <h2 className="mt-2 text-2xl font-black text-slate-950">Final Review</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Review your online presence before publishing.</p>
+                <p className="mt-2 text-sm leading-6 text-slate-600">Review your marketing presence before publishing.</p>
                 <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm" data-testid="website-preview-summary-card">
                   <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
                     <div className="min-h-[220px] bg-slate-100">
@@ -2570,7 +2570,7 @@ export default function ContractorPublicPresencePage() {
               </div>
               <aside className="space-y-4">
                 <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="ai-website-audit-card">
-                  <div className="text-sm font-black text-slate-950">AI Website Audit</div>
+                  <div className="text-sm font-black text-slate-950">Project Assistant Website Audit</div>
                   <div className="mt-2 rounded-full bg-blue-50 px-3 py-1.5 text-sm font-black text-blue-700">Website score {websiteReadinessData.score || 0}%</div>
                   <div className="mt-3 space-y-2 text-sm text-slate-700">
                     {[
@@ -2598,7 +2598,7 @@ export default function ContractorPublicPresencePage() {
               <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                 {websiteData.status === 'published' ? <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-4xl font-black text-white">✓</div> : <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-3xl font-black text-blue-700">7</div>}
                 <h2 className="mt-5 text-3xl font-black text-slate-950">{websiteData.status === 'published' ? "You're Live!" : 'Ready to Publish'}</h2>
-                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">{websiteData.status === 'published' ? 'Your online presence has been published successfully.' : 'Publish your website snapshot when you are ready to make it live.'}</p>
+                <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">{websiteData.status === 'published' ? 'Your marketing website has been published successfully.' : 'Publish your website snapshot when you are ready to make it live.'}</p>
                 <div className={`mx-auto mt-4 max-w-xl rounded-xl border px-4 py-3 text-sm ${staleContentRisk ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-700'}`} data-testid="website-stale-content-readiness">
                   {websiteFreshnessMessage}
                 </div>

@@ -100,7 +100,7 @@ export function moneyStatusLabel(status) {
   if (status === "awaiting_customer_approval") return "Awaiting Customer Approval";
   if (status === "payment_pending") return "Payment Pending";
   if (status === "paid") return "Paid";
-  if (status === "issues") return "Issues / Disputes";
+  if (status === "issues") return "Resolution / Holds";
   return "Other";
 }
 

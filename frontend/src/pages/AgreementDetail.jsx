@@ -670,8 +670,8 @@ function AdminAgreementCommandCenter({
     ['financials', 'Financials'],
     ['milestones', 'Milestones'],
     ['communication', 'Communication'],
-    ['disputes', 'Disputes'],
-    ['ai', 'AI Context'],
+    ['disputes', 'Resolution Cases'],
+    ['ai', 'Project Assistant Context'],
     ['audit', 'Audit Log'],
   ];
   const milestones = Array.isArray(norm?.milestones) ? norm.milestones : [];
@@ -1019,12 +1019,12 @@ function AdminAgreementCommandCenter({
       {activeDisputes ? (
         <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="text-sm font-extrabold text-slate-900">
-            Related Disputes
+            Related Resolution Cases
           </div>
           <div className="mt-2 text-sm text-slate-600">
             {disputeRows.length
-              ? `${disputeRows.length} related dispute(s) available.`
-              : 'No dispute rows included in this agreement payload.'}
+              ? `${disputeRows.length} related resolution case(s) available.`
+              : 'No resolution case rows are linked to this agreement yet.'}
           </div>
           <div className="mt-3 space-y-2">
             {disputeRows.slice(0, 4).map((d) => (
@@ -1034,7 +1034,7 @@ function AdminAgreementCommandCenter({
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="font-semibold text-slate-900">
-                    Dispute #{d.id}
+                    Resolution Case #{d.id}
                   </div>
                   <div className="text-xs font-extrabold text-slate-700">
                     {isDisputeTerminal(d.status)
@@ -2608,9 +2608,24 @@ export default function AgreementDetail({
     navigate(`/app/agreements/${id}/wizard?step=1`, { replace: true });
   }, [agreement, id, isAdminMode, loading, navigate]);
 
-  if (loading) return <div className="p-6">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm">
+        Loading agreement workspace...
+      </div>
+    );
+  }
 
-  if (!norm.id) return <div className="p-6">Agreement not found.</div>;
+  if (!norm.id) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 shadow-sm">
+        <div className="font-extrabold">Agreement unavailable</div>
+        <p className="mt-1 leading-6">
+          The agreement could not be loaded. Return to Agreements and reopen the record, or retry after checking your connection.
+        </p>
+      </div>
+    );
+  }
 
   if (isAdminMode) {
     return (

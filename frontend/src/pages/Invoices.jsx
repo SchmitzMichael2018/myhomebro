@@ -445,7 +445,7 @@ export default function Invoices() {
         <SummaryCard title="Awaiting Customer Approval" summary={summary.awaiting_customer_approval} />
         <SummaryCard title="Payment Pending" summary={summary.payment_pending} />
         <SummaryCard title="Paid" summary={summary.paid} />
-        <SummaryCard title="Issues / Disputes" summary={summary.issues} />
+        <SummaryCard title="Resolution / Holds" summary={summary.issues} />
       </div>
 
       <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[1.5fr_1fr_1fr_1fr_auto]">
@@ -485,7 +485,7 @@ export default function Invoices() {
           <option value="awaiting_customer_approval">Awaiting Customer Approval</option>
           <option value="payment_pending">Payment Pending</option>
           <option value="paid">Paid</option>
-          <option value="issues">Issues / Disputes</option>
+          <option value="issues">Resolution / Holds</option>
         </select>
         <button
           type="button"
@@ -508,7 +508,14 @@ export default function Invoices() {
         </div>
       ) : filteredRecords.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
-          No payment records match the current filters.
+          <div className="font-extrabold text-slate-900">No payment records match these filters.</div>
+          <p className="mt-1 leading-6">
+            Try clearing search, status, project type, or record-type filters. New invoices and draw requests appear here after they are created from milestones or payment workflows.
+          </p>
+          <p className="mt-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-blue-950">
+            <span className="font-extrabold">Project Assistant tip: </span>
+            Ask which payment records need review, approval, or resolution follow-up.
+          </p>
         </div>
       ) : (
         <div className="space-y-5">

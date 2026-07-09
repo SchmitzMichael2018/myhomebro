@@ -1899,7 +1899,7 @@ export default function BusinessDashboard() {
           tone={pendingExposure > 0 ? "warn" : "default"}
         />
         <Stat
-          label="Disputes / Risk"
+          label="Resolution / Risk"
           value={int(snapshot.disputes_open)}
           sub={
             latestWorkflowRisk > 0
@@ -1937,9 +1937,9 @@ export default function BusinessDashboard() {
         />
 
         <Stat
-          label="Disputes / Risk"
+          label="Resolution / Risk"
           value={int(snapshot.disputes_open)}
-          sub="Total revenue ÷ completed jobs"
+          sub="Active resolution cases and workflow risk"
         />
 
         <Stat
@@ -1950,9 +1950,9 @@ export default function BusinessDashboard() {
         />
 
         <Stat
-          label="Disputes Open"
+          label="Open Resolution Cases"
           value={int(snapshot.disputes_open)}
-          sub="Active disputes"
+          sub="Cases needing review"
           tone={Number(snapshot.disputes_open || 0) > 0 ? "bad" : "default"}
         />
       </DashboardGrid>

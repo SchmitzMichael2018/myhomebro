@@ -22,14 +22,30 @@ class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
-      // You can render any custom fallback UI.
       return (
-        <div className="p-8 text-center text-red-500 bg-red-50 min-h-screen flex flex-col justify-center items-center">
-          <h1 className="text-2xl font-bold mb-4">Something went wrong.</h1>
-          <p>We're sorry, an unexpected error occurred. Please try refreshing the page.</p>
-          <pre className="mt-4 text-xs text-left bg-white p-2 rounded border border-red-200">
-            {this.state.error && this.state.error.toString()}
-          </pre>
+        <div className="flex min-h-[60vh] items-center justify-center p-6">
+          <section className="w-full max-w-xl rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center shadow-sm">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-rose-700">Workspace error</div>
+            <h1 className="mt-2 text-2xl font-black text-rose-950">This workspace could not finish loading.</h1>
+            <p className="mt-3 text-sm leading-6 text-rose-900">
+              Refresh the page and try again. If the problem continues, open Support and include what you were trying to review or prepare.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="rounded-xl bg-rose-700 px-4 py-2 text-sm font-black text-white hover:bg-rose-800"
+              >
+                Retry
+              </button>
+              <a
+                href="/app/support"
+                className="rounded-xl border border-rose-200 bg-white px-4 py-2 text-sm font-black text-rose-800 hover:bg-rose-100"
+              >
+                Open Support
+              </a>
+            </div>
+          </section>
         </div>
       );
     }

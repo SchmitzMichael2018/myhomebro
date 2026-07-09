@@ -112,7 +112,7 @@ test("unified payments page filters invoices and draw requests by project class,
   await expect(page.locator("text=Awaiting Customer Approval").first()).toBeVisible();
   await expect(page.locator("text=Payment Pending").first()).toBeVisible();
   await expect(page.locator("text=Paid").first()).toBeVisible();
-  await expect(page.locator("text=Issues / Disputes").first()).toBeVisible();
+  await expect(page.locator("text=Resolution / Holds").first()).toBeVisible();
 
   await expect(page.getByTestId("payments-section-invoice-residential")).toBeVisible();
   await expect(page.getByTestId("payments-section-invoice-commercial")).toBeVisible();
