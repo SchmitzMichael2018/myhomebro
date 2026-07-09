@@ -98,7 +98,7 @@ export default function DisputeAIAdvisor({ disputeId, enabled }) {
           e?.response?.data?.error ||
           "Unable to load evidence context.";
         setError(msg);
-        toast.error("AI Advisor: failed to load evidence context.");
+        toast.error("Project Assistant failed to load evidence context.");
       } finally {
         setLoading(false);
       }
@@ -116,7 +116,7 @@ export default function DisputeAIAdvisor({ disputeId, enabled }) {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <div className="text-sm font-extrabold text-indigo-900">🤖 AI Advisor</div>
+          <div className="text-sm font-extrabold text-indigo-900">Project Assistant</div>
           <Badge tone="indigo" title="This panel is read-only and advisory.">
             Evidence Snapshot
           </Badge>

@@ -5829,7 +5829,7 @@ export default function Step1Details({
     startMode === "ai" && aiSetupResult?.kind === "description_only"
       ? "AI-built starting point"
       : startMode === "ai"
-      ? "AI-assisted start"
+      ? "Project Assistant-assisted start"
       : startMode === "template"
       ? "Recommended starting point"
       : "Agreement draft in progress";

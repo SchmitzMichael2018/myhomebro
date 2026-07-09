@@ -330,6 +330,23 @@ test('Assistant Home renders the standardized Project Assistant experience syste
   await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Project Assistant');
 });
 
+test('Workspace navigation uses standardized Phase 2 terminology', async ({ page }) => {
+  await installAssistantHomeMocks(page);
+
+  await page.goto('/app/assistant', { waitUntil: 'domcontentloaded' });
+
+  const sidebar = page.locator('aside');
+  await expect(sidebar).toContainText('Insights');
+  await expect(sidebar).toContainText('Marketing');
+  await expect(sidebar).toContainText('Resolution');
+  await expect(page.getByRole('button', { name: /Project Assistant/ }).first()).toBeVisible();
+  await expect(sidebar).not.toContainText('Business Dashboard');
+  await expect(sidebar).not.toContainText('Public Presence');
+
+  await page.goto('/app/insights', { waitUntil: 'domcontentloaded' });
+  await expect(page).toHaveURL(/\/app\/business/);
+});
+
 test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat controls', async ({ page }) => {
   await installAgreementWizardStep2Mocks(page);
 

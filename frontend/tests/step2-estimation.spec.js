@@ -1069,7 +1069,7 @@ test('step 2 generates shed-specific milestone previews and applies or cancels s
   const previewCard = page.getByTestId('step2-ai-milestone-preview-card');
   await expect(previewCard).toBeVisible({ timeout: 15000 });
   await expect(previewCard).toContainText('Suggested milestones');
-  await expect(previewCard).toContainText('AI suggestions are advisory');
+  await expect(previewCard).toContainText('Project Assistant suggestions are advisory');
   await expect(previewCard).toContainText('Final Inspection and Cleanup');
   await expect(page.getByTestId('step2-target-project-total')).toHaveValue('5000');
 

@@ -166,6 +166,7 @@ export function protectedRoutes() {
           <Route path="payout-history" element={<ContractorPayoutHistoryPage />} />
 
           <Route path="business" element={<BusinessDashboard />} />
+          <Route path="insights" element={<Navigate to="/app/business" replace />} />
           <Route
             path="business-analysis"
             element={<Navigate to="/app/business" replace />}

@@ -557,7 +557,7 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
-test('Online Presence AI hooks show review-before-apply suggestions', async ({ page }) => {
+test('Marketing Project Assistant hooks show review-before-apply suggestions', async ({ page }) => {
   await mockMarketingPage(page, { pro: false, developmentOverride: true });
 
   await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });

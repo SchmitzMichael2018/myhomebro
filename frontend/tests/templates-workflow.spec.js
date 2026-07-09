@@ -1031,7 +1031,7 @@ test('templates route and sidebar access support creating and editing reusable t
   await expect(page.getByTestId('templates-generate-ai-button')).toBeVisible();
   await expect(page.getByTestId('templates-ai-prompt-input')).toBeVisible();
   await expect(page.getByRole('button', { name: 'New Template Draft' })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Generate Draft with AI' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Generate Draft with Project Assistant' })).toHaveCount(1);
 
   await page.getByTestId('templates-new-draft-button').click();
   await page.getByTestId('templates-name-input').fill('Cabinet Install Standard');
@@ -1381,7 +1381,7 @@ test('template AI top action generates a draft from a prompt and template contex
   await expect(page.getByText('Start a new template')).toBeVisible();
   await expect(page.getByTestId('templates-draft-editor')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'New Template Draft' })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Generate Draft with AI' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Generate Draft with Project Assistant' })).toHaveCount(1);
 
   await page.getByTestId('templates-ai-prompt-input').fill('Deck build with framing, decking, railings, and closeout.');
   await page.getByTestId('templates-generate-ai-button').click();

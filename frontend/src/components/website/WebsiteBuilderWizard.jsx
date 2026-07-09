@@ -347,7 +347,7 @@ export function WebsiteBuilderBrandingStep({
       <div className="rounded-3xl border border-blue-200 bg-gradient-to-br from-blue-50 via-white to-slate-50 p-5 shadow-inner" data-testid="website-builder-ai-branding-disabled">
         <div className="flex flex-wrap items-center gap-2">
           <div className="text-base font-black text-slate-950">Need help branding your page?</div>
-          <span className="rounded-full bg-blue-600 px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-white">AI Assist</span>
+          <span className="rounded-full bg-blue-600 px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-white">Project Assistant</span>
         </div>
         <p className="mt-2 text-sm leading-6 text-slate-600">
           Contextual AI actions now appear next to copy fields. Palette and template recommendations are wired through the AI assist endpoint and remain gated by trial or plan access.
@@ -720,7 +720,7 @@ export default function WebsiteBuilderWizard({
         currentValue,
         fieldLabel,
         onAccept,
-        error: error?.response?.data?.detail || 'AI assistance is not available right now.',
+        error: error?.response?.data?.detail || 'Project Assistant is not available right now.',
       });
     } finally {
       setAiBusy(false);
@@ -740,7 +740,7 @@ export default function WebsiteBuilderWizard({
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
           <div>
             <div className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-blue-800">
-              AI-assisted website design
+              Project Assistant website design
             </div>
             {developmentOverrideActive ? (
               <div

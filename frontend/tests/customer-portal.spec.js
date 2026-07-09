@@ -5076,7 +5076,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByLabel("Timeline").selectOption("As soon as possible");
   await page.getByLabel("Describe what you need help with").fill("Please inspect the system before summer.");
   await page.getByTestId("customer-request-improve-button").click();
-  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Review AI suggestion before submitting");
+  await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Review Project Assistant suggestion before submitting");
   await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Original homeowner description");
   await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Project Type");
   await expect(page.getByTestId("customer-request-ai-suggestion")).toContainText("Project Subtype");

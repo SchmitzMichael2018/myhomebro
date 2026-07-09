@@ -735,7 +735,7 @@ export default function useAgreementMilestoneAI({
 
         return nextPreview;
       } catch (e) {
-        const msg = friendlyAiMilestoneError(e) || "AI suggestion failed.";
+        const msg = friendlyAiMilestoneError(e) || "Project Assistant suggestion failed.";
         setAiError(msg);
         throw e;
       } finally {

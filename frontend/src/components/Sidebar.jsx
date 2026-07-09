@@ -33,7 +33,7 @@ import {
 
 const NAV_HINTS = {
   "/app/dashboard": "See what needs attention and what to do next",
-  "/app/assistant": "Start new work with AI guidance across agreements, templates, leads, and setup",
+  "/app/assistant": "Start new work with Project Assistant guidance across agreements, templates, leads, and setup",
   "/app/business": "View revenue, activity, and business performance",
   "/app/team": "See team activity, employees, subcontractors, assignments, and schedule",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
@@ -51,7 +51,7 @@ const NAV_HINTS = {
   "/app/customers": "View and manage your clients and project history",
   "/app/calendar": "View upcoming work, deadlines, and project timelines",
   "/app/expenses": "Track project expenses and job costs",
-  "/app/disputes": "Manage issues, disagreements, and resolutions",
+  "/app/disputes": "Manage resolution cases, evidence, payment holds, and human decisions",
   "/app/support": "Submit a support request and review your ticket history",
   "/app/profile": "Manage your account, preferences, and payment setup",
   "/app/onboarding": "Manage your account, preferences, and payment setup",
@@ -320,7 +320,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <SubItem to="/app/admin?view=contractors" label="Contractors" />
               <SubItem to="/app/admin?view=homeowners" label="Customers" />
               <SubItem to="/app/admin?view=agreements" label="Agreements" />
-              <SubItem to="/app/admin/disputes" label="Disputes" />
+              <SubItem to="/app/admin/disputes" label="Resolution Cases" />
               <SubItem to="/app/admin?view=geo" label="Geo / Map" />
               <SubItem to="/app/admin?view=fee_audit" label="Fee Audit" />
               <SubItem to="/app/admin?view=support" label="User Tools" />
@@ -355,7 +355,7 @@ export default function Sidebar({ variant = "desktop" }) {
     return (
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
-        <Item to={`${APP_BASE}/business`} label="Business Dashboard" icon={Gauge} />
+        <Item to={`${APP_BASE}/business`} label="Insights" icon={Gauge} />
         <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
@@ -369,7 +369,7 @@ export default function Sidebar({ variant = "desktop" }) {
         <Item to={`${APP_BASE}/customers`} label="Customers" icon={Users} />
         <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
         <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
-        <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />
+        <Item to={`${APP_BASE}/disputes`} label="Resolution" icon={MessageSquareWarning} />
       </>
     );
   }, [canAccessReviewerQueue, isEmployee, isAdmin, isOnAdminRoute, isSubcontractor]);
@@ -633,7 +633,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <Item to={`${APP_BASE}/payments`} label="Payments" icon={CreditCard} />
               <Item to={`${APP_BASE}/payouts/history`} label="Payout History" icon={HandCoins} />
               <Item to={`${APP_BASE}/expenses`} label="Expenses" icon={HandCoins} />
-              <Item to={`${APP_BASE}/disputes`} label="Disputes" icon={MessageSquareWarning} />
+              <Item to={`${APP_BASE}/disputes`} label="Resolution" icon={MessageSquareWarning} />
             </NavGroup>
 
             <NavGroup label="Tools" className="pt-1">

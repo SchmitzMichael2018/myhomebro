@@ -166,7 +166,7 @@ test('Marketing remains setup-only and hands public leads to Opportunities', asy
 
   await page.goto('/app/marketing?tab=leads', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('public-presence-title')).toContainText('Online Presence Setup');
+  await expect(page.getByTestId('public-presence-title')).toContainText('Marketing Workspace');
   await expect(page.getByTestId('online-presence-leads-handoff')).toContainText(
     'Leads from your profile, QR code, and website appear in Opportunities.'
   );

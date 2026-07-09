@@ -658,14 +658,11 @@ test('contractor dashboard renders current quick actions and workflow entry poin
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   const quickActions = page.getByTestId('dashboard-quick-actions-rail');
-  await expect(quickActions.getByRole('button', { name: 'Start with AI', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: /Create Estimate/ })).toBeVisible();
   await expect(quickActions.getByRole('button', { name: 'New Agreement', exact: true })).toBeVisible();
-  await expect(quickActions.getByRole('button', { name: 'New Intake', exact: true })).toBeVisible();
-  await expect(quickActions.getByRole('button', { name: 'New Milestone', exact: true })).toBeVisible();
-  await expect(quickActions.getByRole('button', { name: 'Expenses', exact: true })).toBeVisible();
-  await expect(quickActions.getByRole('button', { name: 'Invoices', exact: true })).toBeVisible();
-  await expect(quickActions.getByRole('button', { name: 'Disputes', exact: true })).toBeVisible();
-  await expect(quickActions.getByRole('button', { name: 'Calendar', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: "Today's Schedule", exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'Expense', exact: true })).toBeVisible();
+  await expect(quickActions.getByRole('button', { name: 'Payment', exact: true })).toBeVisible();
 
   await expect(page.getByText('All Milestones')).toBeVisible();
   await expect(page.getByText('Ready to Invoice')).toBeVisible();
@@ -684,15 +681,15 @@ test('contractor sidebar groups navigation into core work business and settings'
   await expect(sidebar).toContainText('Users');
   await expect(sidebar).toContainText('Dashboard');
   await expect(sidebar).not.toContainText('AI Workspace');
-  await expect(sidebar).toContainText('Business Dashboard');
+  await expect(sidebar).toContainText('Insights');
   await expect(sidebar).toContainText('Agreements');
   await expect(sidebar).toContainText('Milestones');
   await expect(sidebar).toContainText('Subcontractors');
-  await expect(sidebar).toContainText('Invoices');
+  await expect(sidebar).toContainText('Payments');
   await expect(sidebar).toContainText('Customers');
   await expect(sidebar).toContainText('Calendar');
   await expect(sidebar).toContainText('Expenses');
-  await expect(sidebar).toContainText('Disputes');
+  await expect(sidebar).toContainText('Resolution');
   await expect(sidebar).toContainText('My Profile');
   await expect(sidebar).toContainText('Stripe Onboarding');
   await expect(sidebar).toContainText('Support');

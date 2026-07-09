@@ -83,7 +83,7 @@ export default function AdminSidebar({
           />
           <Item
             active={activeTab === "disputes"}
-            label="Disputes"
+            label="Resolution"
             onClick={() => setActiveTab("disputes")}
             badge={isLoading ? "…" : (counts.disputes ?? 0)}
           />

@@ -1,5 +1,5 @@
 // frontend/src/components/BusinessDashboard.jsx
-// Contractor Business Dashboard (aggregated endpoint)
+// Contractor Insights workspace (aggregated endpoint)
 // Uses backend route: /api/projects/business/contractor/summary/?range=...
 // AI is included in the base experience.
 
@@ -1269,8 +1269,8 @@ export default function BusinessDashboard() {
   }
   return (
     <ContractorPageSurface
-      eyebrow="Business"
-      title="Business Dashboard"
+      eyebrow="Insights"
+      title="Insights"
       subtitle="Track revenue, payouts, project health, and risks."
       variant="operational"
       className="mhb-business-dashboard"

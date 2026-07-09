@@ -1130,7 +1130,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       ai_panel: {
         headline: "Review this template workflow",
         helperText:
-          "Get template-aware guidance for reusable scope, workflow profile, milestones, pricing, timing, and materials. Copilot will not edit fields automatically.",
+          "Get template-aware guidance for reusable scope, workflow profile, milestones, pricing, timing, and materials. Project Assistant will not edit fields automatically.",
         statusText: creatingNew
           ? "Unsaved template draft in progress"
           : selectedDetail
@@ -1142,8 +1142,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           missingTemplateSections.length ? "Workflow gaps to review" : "Workflow intelligence",
         nextGuidance:
           missingTemplateSections.length
-            ? `Copilot sees missing template sections: ${missingTemplateSections.join(", ")}.`
-            : "Copilot is checking reusable workflow structure, not agreement signature or funding readiness.",
+            ? `Project Assistant sees missing template sections: ${missingTemplateSections.join(", ")}.`
+            : "Project Assistant is checking reusable workflow structure, not agreement signature or funding readiness.",
       },
     };
   }, [
@@ -2620,7 +2620,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       disabled={aiBusy}
                       className="inline-flex w-fit rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-60"
                     >
-                      {aiBusy ? `Working… ${getAiGenerationStepLabel(aiGenerationStageIndex)}` : "✨ Generate Draft with AI"}
+                      {aiBusy ? `Working… ${getAiGenerationStepLabel(aiGenerationStageIndex)}` : "Generate Draft with Project Assistant"}
                     </button>
                   </div>
                 </div>

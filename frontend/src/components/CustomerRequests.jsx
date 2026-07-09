@@ -2659,7 +2659,7 @@ I need help installing shelves and patching drywall.`}
                 {improveError ? <div className="mt-3 text-sm text-red-200">{improveError}</div> : null}
                 {requestSuggestion ? (
                   <div className="mt-4 rounded-xl border border-sky-200/35 bg-slate-950/70 p-3" data-testid="customer-request-ai-suggestion">
-                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200">Review AI suggestion before submitting</div>
+                    <div className="text-xs font-bold uppercase tracking-[0.18em] text-sky-200">Review Project Assistant suggestion before submitting</div>
                     <div className="mt-3 grid gap-3">
                       <TextBlock label="Original homeowner description" value={requestSuggestion.original_description} empty="" />
                       <label className="block text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -2739,7 +2739,7 @@ I need help installing shelves and patching drywall.`}
                         onClick={applyRequestSuggestion}
                         className="rounded-lg bg-sky-300 px-3 py-2 text-xs font-extrabold text-slate-950 hover:bg-sky-200"
                       >
-                        Apply AI suggestions
+                        Apply Project Assistant suggestions
                       </button>
                       <button
                         type="button"
@@ -3327,7 +3327,7 @@ I need help installing shelves and patching drywall.`}
                     <TextBlock
                       label="AI-Enhanced Scope"
                       value={selectedRequest.ai_enhanced_description}
-                      empty="No AI-enhanced description is saved for this request yet."
+                      empty="No Project Assistant-enhanced description is saved for this request yet."
                     />
                   </div>
                   <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

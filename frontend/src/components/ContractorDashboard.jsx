@@ -3289,7 +3289,7 @@ export default function ContractorDashboard() {
     },
     {
       key: "issues",
-      title: "Disputes / Issues",
+      title: "Resolution / Issues",
       icon: Flag,
       count: paymentSummary.issues.count,
       amount: paymentSummary.issues.amount,

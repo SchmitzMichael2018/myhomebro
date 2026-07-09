@@ -445,11 +445,11 @@ const pageConfigs = [
     },
   },
   {
-    label: 'Business Dashboard',
+    label: 'Insights',
     slug: 'business-dashboard.png',
     url: '/app/business',
     waitFor: async (page) => {
-      await page.getByRole('heading', { name: 'Business Dashboard' }).waitFor({ state: 'visible' });
+      await page.getByRole('heading', { name: 'Insights' }).waitFor({ state: 'visible' });
     },
   },
   {

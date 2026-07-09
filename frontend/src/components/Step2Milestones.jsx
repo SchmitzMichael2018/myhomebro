@@ -1,7 +1,7 @@
 ﻿// frontend/src/components/Step2Milestones.jsx
 // v2026-03-18-step2-template-aware-full
 // Changes:
-// - preserves existing Step 2 milestone workflow, AI suggestions, clarifications, save-as-template, edit modal
+// - preserves existing Step 2 milestone workflow, Project Assistant suggestions, clarifications, save-as-template, edit modal
 // - keeps Estimate Assist display in milestone rows
 // - makes Step 2 template-aware after Step 1 template apply flow
 // - refreshes agreement meta safely so selected template + ai_scope stay in sync
@@ -3612,7 +3612,7 @@ export default function Step2Milestones({
     const nextRows = materializeAiSuggestedMilestones(mode);
 
     if (milestoneRowsEqual(effectiveMilestones, nextRows)) {
-      toast("AI suggestions matched your current milestones.");
+      toast("Project Assistant suggestions matched your current milestones.");
       clearAiMilestonePreview({ clearSuggestedIds: false });
       return;
     }
@@ -3684,9 +3684,9 @@ export default function Step2Milestones({
           setAiPreview(null);
           setAiMilestonePlanAnalysis(analysis);
           setAiMilestoneGenerationError(
-            "AI suggestions matched your existing milestones. Try replace plan or add milestones manually."
+            "Project Assistant suggestions matched your existing milestones. Try replace plan or add milestones manually."
           );
-          toast("AI suggestions matched your existing milestones.");
+          toast("Project Assistant suggestions matched your existing milestones.");
           return;
         }
 
@@ -3717,8 +3717,8 @@ export default function Step2Milestones({
                 )
               : sortFallbackMilestones(adjustedRows.map((row, idx) => ({ ...row, order: idx + 1 })));
           if (milestoneRowsEqual(effectiveMilestones, nextRows)) {
-            setAiMilestoneGenerationError("AI suggestions matched your current milestones.");
-            toast("AI suggestions matched your current milestones.");
+            setAiMilestoneGenerationError("Project Assistant suggestions matched your current milestones.");
+            toast("Project Assistant suggestions matched your current milestones.");
             return;
           }
           const nextIds = nextRows.map((row) => row?.id).filter(Boolean);
@@ -5287,7 +5287,7 @@ export default function Step2Milestones({
       setAssistantApplyingMilestones(true);
       const filteredSuggestions = dedupeMilestoneRows(assistantSuggestionRows, { existingRows: effectiveMilestones });
       if (!filteredSuggestions.length) {
-        toast("AI suggestions matched your existing milestones, so nothing new was added.");
+        toast("Project Assistant suggestions matched your existing milestones, so nothing new was added.");
         setDismissedAssistantSuggestionSignature(assistantSuggestionSignature);
         return;
       }
@@ -6062,7 +6062,7 @@ export default function Step2Milestones({
                 <span>Rebalance Milestones: Redistribute your current total across milestones.</span>
               </div>
               <div className="mt-2 text-xs text-slate-500">
-                AI suggestions are advisory. Review before applying. MyHomeBro will avoid adding duplicate phases.
+                Project Assistant suggestions are advisory. Review before applying. MyHomeBro will avoid adding duplicate phases.
               </div>
               {milestoneTemplatePromptVisible && templateApplied ? (
                 <TemplateImprovementPrompt
@@ -6083,7 +6083,7 @@ export default function Step2Milestones({
                   data-testid="step2-ai-generation-progress-card"
                   aria-live="polite"
                 >
-                  AI is turning the project scope into work phases.
+                  Project Assistant is turning the project scope into work phases.
                 </div>
               ) : null}
             </div>
@@ -6200,10 +6200,10 @@ export default function Step2Milestones({
             )}
           </div>
           <div className="mt-1 text-sm text-amber-950/80">
-            AI is turning the project scope into work phases. Review the draft before applying it.
+            Project Assistant is turning the project scope into work phases. Review the draft before applying it.
           </div>
           <div className="mt-1 text-xs font-medium text-amber-900">
-            AI suggestions are advisory. Review before applying. MyHomeBro will avoid adding duplicate phases.
+            Project Assistant suggestions are advisory. Review before applying. MyHomeBro will avoid adding duplicate phases.
           </div>
           {aiMilestonePlanAnalysis?.issues?.length ? (
             <div className="mt-3 rounded-xl border border-amber-300 bg-white px-3 py-3">
@@ -7068,12 +7068,12 @@ export default function Step2Milestones({
 
       {false && aiPreview ? (
         <div className="mb-6 rounded-lg border bg-indigo-50 p-4">
-          <h4 className="mb-2 font-semibold">AI Suggested Scope</h4>
+          <h4 className="mb-2 font-semibold">Project Assistant Suggested Scope</h4>
           <p className="mb-3 whitespace-pre-wrap text-sm">{aiPreview.scope_text}</p>
 
           <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
-              <h4 className="mb-2 font-semibold">AI Suggested Milestones</h4>
+              <h4 className="mb-2 font-semibold">Project Assistant Suggested Milestones</h4>
               <p className="text-xs text-gray-600">Tip: Use auto-spread if AI amounts are $0.00.</p>
             </div>
 
@@ -7129,7 +7129,7 @@ export default function Step2Milestones({
           {Array.isArray(aiPreview.questions) && aiPreview.questions.length ? (
             <div className="mb-4 rounded border bg-white p-3">
               <div className="mb-2 text-sm font-semibold text-gray-900">
-                AI Suggested Clarifications
+                Project Assistant Suggested Clarifications
               </div>
               <div className="mb-2 text-xs text-gray-600">
                 These same clarification questions will appear in the popup review below.
@@ -8006,7 +8006,7 @@ export default function Step2Milestones({
           className="mr-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
           data-testid="step2-improve-with-ai"
         >
-          Improve with AI
+          Improve with Project Assistant
         </button>
         <button
           type="button"
@@ -8354,7 +8354,7 @@ export default function Step2Milestones({
           className="mr-2 rounded-xl border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-800 hover:bg-sky-100 disabled:opacity-60"
           data-testid="step2-improve-with-ai"
         >
-          Improve with AI
+          Improve with Project Assistant
         </button>
         <button
           type="button"

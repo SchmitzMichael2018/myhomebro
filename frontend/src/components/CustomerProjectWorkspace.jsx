@@ -2253,7 +2253,7 @@ The price should be adjusted because we removed part of the work.`}
                       className="mt-4 rounded-2xl border border-slate-700 bg-slate-950/75 p-4 text-sm text-slate-200"
                     >
                       <div className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200/80">
-                        Review AI suggestion before submitting
+                        Review Project Assistant suggestion before submitting
                       </div>
                       <div className="mt-3 grid gap-3">
                         <div>
@@ -2292,7 +2292,7 @@ The price should be adjusted because we removed part of the work.`}
                           onClick={applyAmendmentSuggestion}
                           className="rounded-xl bg-amber-300 px-3 py-2 text-xs font-bold text-slate-950 hover:bg-amber-200"
                         >
-                          Apply AI suggestion
+                          Apply Project Assistant suggestion
                         </button>
                         <button
                           type="button"

@@ -63,7 +63,7 @@ export default function DescriptionAiSection({
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <div className="text-xs text-gray-600">
-          AI Assist can turn a rough idea into a clearer, stronger, more dispute-resistant scope.
+          Project Assistant can turn a rough idea into a clearer, stronger, more dispute-resistant scope.
         </div>
 
         <div className="flex flex-wrap items-center gap-2">

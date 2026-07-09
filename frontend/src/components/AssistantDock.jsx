@@ -353,7 +353,7 @@ function buildNavigationAssistContext(workspaceMode = "general") {
         "Escalation guidance",
       ],
       actions: [
-        { label: "Open Disputes", target: "/app/disputes", intent: "open_disputes" },
+        { label: "Open Resolution Cases", target: "/app/disputes", intent: "open_disputes" },
         ...commonActions,
       ],
     };

@@ -364,7 +364,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Awaiting Customer Approval');
   await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Payment Pending');
   await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Paid');
-  await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Disputes / Issues');
+  await expect(page.getByTestId('dashboard-money-pipeline')).toContainText('Resolution / Issues');
 
   const bidsClass = await page.getByTestId('dashboard-bids-summary').getAttribute('class');
   expect(bidsClass).toContain('bg-[#061d42]/95');

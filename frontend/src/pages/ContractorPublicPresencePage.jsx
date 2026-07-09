@@ -239,7 +239,7 @@ function getLeadPrimaryAction(lead) {
     return { kind: 'accept', label: 'Accept Lead' };
   }
   if (leadCanRunAiActions(lead)) {
-    return { kind: 'create_agreement', label: 'Create AI-Assisted Agreement' };
+    return { kind: 'create_agreement', label: 'Prepare Agreement Draft' };
   }
   return null;
 }
@@ -259,8 +259,8 @@ function AiSuggestionCard({ suggestion, onAccept, onRegenerate, onDismiss }) {
   const hasValue = Boolean(String(suggestion.suggested_value || '').trim());
   return (
     <div className={`mt-3 rounded-xl border p-4 text-sm ${configured ? 'border-blue-200 bg-blue-50 text-blue-950' : 'border-amber-200 bg-amber-50 text-amber-950'}`} data-testid={`ai-suggestion-${suggestion.target}`}>
-      <div className="font-black">{configured ? 'AI suggestion ready' : 'AI assistance is not configured yet'}</div>
-      {hasValue ? <p className="mt-2 leading-6">{suggestion.suggested_value}</p> : <p className="mt-2 leading-6">{suggestion.detail || 'AI assistance is not configured yet.'}</p>}
+      <div className="font-black">{configured ? 'Project Assistant suggestion ready' : 'Project Assistant is not configured yet'}</div>
+      {hasValue ? <p className="mt-2 leading-6">{suggestion.suggested_value}</p> : <p className="mt-2 leading-6">{suggestion.detail || 'Project Assistant is not configured yet.'}</p>}
       {Array.isArray(suggestion.suggestions) && suggestion.suggestions.length ? (
         <ul className="mt-2 list-disc space-y-1 pl-5">
           {suggestion.suggestions.slice(0, 5).map((item) => <li key={String(item)}>{String(item)}</li>)}
@@ -736,7 +736,7 @@ export default function ContractorPublicPresencePage() {
         },
       }));
     } catch (err) {
-      const detail = err?.response?.data?.detail || 'AI assistance is not configured yet.';
+      const detail = err?.response?.data?.detail || 'Project Assistant is not configured yet.';
       setAiSuggestions((prev) => ({
         ...prev,
         [target]: {
@@ -1618,7 +1618,7 @@ export default function ContractorPublicPresencePage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 data-testid="public-presence-title" className="text-xl font-black text-slate-950">
-                Online Presence Setup
+                Marketing Workspace
               </h1>
               <p className="mt-1 text-sm text-slate-600">
                 Build your public profile, gallery, reviews, website design, visibility, and publish checklist in one guided flow.
@@ -1662,7 +1662,7 @@ export default function ContractorPublicPresencePage() {
 
         <div className="px-5 py-5 lg:px-6" data-testid="online-presence-setup-nav">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-black text-slate-950">Online Presence Setup</div>
+            <div className="text-sm font-black text-slate-950">Marketing Setup</div>
             <div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm" data-testid="online-presence-readiness-score">
               Readiness {websiteReadinessData.score || 0}%
             </div>
@@ -1853,7 +1853,7 @@ export default function ContractorPublicPresencePage() {
                     <span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-800">
                       <span>Business description</span>
                       <button type="button" onClick={() => requestAiSuggestion('business_description', 'business-description', profile.bio)} disabled={aiBusyTarget === 'business-description'} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 disabled:opacity-60" data-testid="ai-generate-business-description">
-                        {aiBusyTarget === 'business-description' ? 'Generating...' : profile.bio ? 'Improve with AI' : 'Generate Description with AI'}
+                        {aiBusyTarget === 'business-description' ? 'Generating...' : profile.bio ? 'Improve with Project Assistant' : 'Generate Description with Project Assistant'}
                       </button>
                     </span>
                     <textarea value={profile.bio || ''} onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))} rows={4} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="What you do, who you serve, and why customers trust you." data-testid="business-description-input" />
@@ -2000,17 +2000,17 @@ export default function ContractorPublicPresencePage() {
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <div>
                     <input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Photo title" data-testid="gallery-title-input" />
-                    <button type="button" onClick={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-title">AI-enhance title</button>
+                    <button type="button" onClick={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-title">Improve title with Project Assistant</button>
                     <AiSuggestionCard suggestion={aiSuggestions['photo-title']} onAccept={() => acceptAiSuggestion('photo-title', (value) => setGalleryForm((prev) => ({ ...prev, title: value })))} onRegenerate={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} onDismiss={() => dismissAiSuggestion('photo-title')} />
                   </div>
                   <div>
                     <input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Category" data-testid="gallery-category-input" />
-                    <button type="button" onClick={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-category">AI-detect category</button>
+                    <button type="button" onClick={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-category">Suggest category with Project Assistant</button>
                     <AiSuggestionCard suggestion={aiSuggestions['photo-category']} onAccept={() => acceptAiSuggestion('photo-category', (value) => setGalleryForm((prev) => ({ ...prev, category: value })))} onRegenerate={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} onDismiss={() => dismissAiSuggestion('photo-category')} />
                   </div>
                   <div className="md:col-span-2">
                     <textarea value={galleryForm.description} onChange={(e) => setGalleryForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Caption" data-testid="gallery-caption-input" />
-                    <button type="button" onClick={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-caption">AI-enhance caption</button>
+                    <button type="button" onClick={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-caption">Improve caption with Project Assistant</button>
                     <AiSuggestionCard suggestion={aiSuggestions['photo-caption']} onAccept={() => acceptAiSuggestion('photo-caption', (value) => setGalleryForm((prev) => ({ ...prev, description: value })))} onRegenerate={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} onDismiss={() => dismissAiSuggestion('photo-caption')} />
                   </div>
                 </div>
@@ -2050,7 +2050,7 @@ export default function ContractorPublicPresencePage() {
                     className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 disabled:opacity-50"
                     data-testid="ai-review-summary"
                   >
-                    Generate Trust Summary with AI
+                    Generate Trust Summary with Project Assistant
                   </button>
                 </div>
                 {!reviewsRows.length ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="ai-review-summary-empty">Add or request reviews first to generate a trust summary.</div> : null}
@@ -2135,8 +2135,8 @@ export default function ContractorPublicPresencePage() {
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="text-sm font-black text-slate-900">Website Content</div>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <label className="space-y-1 md:col-span-2"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-700"><span>Headline</span><button type="button" onClick={() => requestAiSuggestion('hero_headline', 'hero-headline', heroContent.headline || '')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-hero-headline">Improve with AI</button></span><input disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.headline || ''} onChange={(e) => updateHomePageHero({ headline: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-hero-headline" /><AiSuggestionCard suggestion={aiSuggestions['hero-headline']} onAccept={() => acceptAiSuggestion('hero-headline', (value) => updateHomePageHero({ headline: value }))} onRegenerate={() => requestAiSuggestion('hero_headline', 'hero-headline', heroContent.headline || '')} onDismiss={() => dismissAiSuggestion('hero-headline')} /></label>
-                      <label className="space-y-1 md:col-span-2"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-700"><span>Subheadline</span><button type="button" onClick={() => requestAiSuggestion('hero_subheadline', 'hero-subheadline', heroContent.subheadline || '')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-hero-subheadline">Improve with AI</button></span><textarea disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.subheadline || ''} onChange={(e) => updateHomePageHero({ subheadline: e.target.value })} rows={3} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-hero-subheadline" /><AiSuggestionCard suggestion={aiSuggestions['hero-subheadline']} onAccept={() => acceptAiSuggestion('hero-subheadline', (value) => updateHomePageHero({ subheadline: value }))} onRegenerate={() => requestAiSuggestion('hero_subheadline', 'hero-subheadline', heroContent.subheadline || '')} onDismiss={() => dismissAiSuggestion('hero-subheadline')} /></label>
+                      <label className="space-y-1 md:col-span-2"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-700"><span>Headline</span><button type="button" onClick={() => requestAiSuggestion('hero_headline', 'hero-headline', heroContent.headline || '')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-hero-headline">Improve with Project Assistant</button></span><input disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.headline || ''} onChange={(e) => updateHomePageHero({ headline: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-hero-headline" /><AiSuggestionCard suggestion={aiSuggestions['hero-headline']} onAccept={() => acceptAiSuggestion('hero-headline', (value) => updateHomePageHero({ headline: value }))} onRegenerate={() => requestAiSuggestion('hero_headline', 'hero-headline', heroContent.headline || '')} onDismiss={() => dismissAiSuggestion('hero-headline')} /></label>
+                      <label className="space-y-1 md:col-span-2"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-700"><span>Subheadline</span><button type="button" onClick={() => requestAiSuggestion('hero_subheadline', 'hero-subheadline', heroContent.subheadline || '')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-hero-subheadline">Improve with Project Assistant</button></span><textarea disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.subheadline || ''} onChange={(e) => updateHomePageHero({ subheadline: e.target.value })} rows={3} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-hero-subheadline" /><AiSuggestionCard suggestion={aiSuggestions['hero-subheadline']} onAccept={() => acceptAiSuggestion('hero-subheadline', (value) => updateHomePageHero({ subheadline: value }))} onRegenerate={() => requestAiSuggestion('hero_subheadline', 'hero-subheadline', heroContent.subheadline || '')} onDismiss={() => dismissAiSuggestion('hero-subheadline')} /></label>
                       <label className="space-y-1"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-700"><span>CTA text</span><button type="button" onClick={() => requestAiSuggestion('cta_text', 'cta-text', heroContent.cta_text || '')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-cta-text">AI</button></span><input disabled={!canCustomizeWebsite || websiteBusy} value={heroContent.cta_text || ''} onChange={(e) => updateHomePageHero({ cta_text: e.target.value })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-cta-text" /><AiSuggestionCard suggestion={aiSuggestions['cta-text']} onAccept={() => acceptAiSuggestion('cta-text', (value) => updateHomePageHero({ cta_text: value }))} onRegenerate={() => requestAiSuggestion('cta_text', 'cta-text', heroContent.cta_text || '')} onDismiss={() => dismissAiSuggestion('cta-text')} /></label>
                       <label className="space-y-1"><span className="text-sm font-bold text-slate-700">Font theme</span><select disabled={!canCustomizeWebsite || websiteBusy} value={websiteLayout.branding?.font_theme || websiteProfile?.branding?.font_theme || 'modern'} onChange={(event) => updateWebsiteLayout({ branding: { font_theme: event.target.value } })} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="website-builder-font-theme">{FONT_THEME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                     </div>

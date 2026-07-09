@@ -624,7 +624,7 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
   };
 
   return (
-    <ModalShell title={`Propose a Resolution — Dispute #${dispute.id}`} onClose={onClose}>
+    <ModalShell title={`Propose a Resolution - Case #${dispute.id}`} onClose={onClose}>
       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
         This creates a <b>structured proposal</b> and stores it using the existing response system.
       </div>
@@ -1172,7 +1172,7 @@ function DetailsModal({
       </div>
 
       {/* ✅ AI Advisor panel (read-only, evidence-context only) */}
-      <WorkspaceSection title="AI Resolution Analysis" eyebrow="Project Assistant - Advisory Only" testId="resolution-workspace-ai-analysis">
+      <WorkspaceSection title="Project Assistant Resolution Analysis" eyebrow="Advisory Only" testId="resolution-workspace-ai-analysis">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
           Project Assistant may summarize evidence, identify disputed facts, list missing evidence,
           compare courses of action, and recommend a COA. It cannot close the case or move money.
@@ -1303,7 +1303,7 @@ function RespondModal({ open, dispute, onClose, onSubmitted }) {
   };
 
   return (
-    <ModalShell title={`Respond to Dispute #${dispute.id}`} onClose={onClose}>
+    <ModalShell title={`Respond to Resolution Case #${dispute.id}`} onClose={onClose}>
       <textarea
         className="w-full border rounded px-3 py-2"
         rows={6}
@@ -1369,7 +1369,7 @@ function ResolveModal({ open, dispute, onClose, onResolved }) {
   };
 
   return (
-    <ModalShell title={`Admin Resolve — Dispute #${dispute.id}`} onClose={onClose}>
+    <ModalShell title={`Record Human Resolution - Case #${dispute.id}`} onClose={onClose}>
       <div>
         <label className="block text-sm text-slate-600 mb-1">Resolution Option</label>
         <select
@@ -1841,9 +1841,9 @@ export default function DisputesPages() {
               : "text-slate-500 text-sm"
           }
         >
-          <div className={operationalDisputes ? "font-semibold text-sky-50" : "font-semibold text-slate-700"}>No disputes found.</div>
+          <div className={operationalDisputes ? "font-semibold text-sky-50" : "font-semibold text-slate-700"}>No resolution cases found.</div>
           <div className="mt-1">
-            Disputes will appear here when escrow or project issues are opened.
+            Resolution cases will appear here when escrow or project issues are opened.
           </div>
         </div>
       ) : (
@@ -2049,9 +2049,9 @@ export default function DisputesPages() {
 
       {supportsDisputesApi ? (
         <div className="grid gap-12">
-          {!isAdmin && <Section title="Disputes I Started" items={mineFiltered} />}
-          {!isAdmin && <Section title="Disputes Started by Customers" items={customerFiltered} />}
-          {isAdmin && <Section title="All Disputes" items={allFiltered} />}
+          {!isAdmin && <Section title="Resolution Cases I Started" items={mineFiltered} />}
+          {!isAdmin && <Section title="Resolution Cases Started by Customers" items={customerFiltered} />}
+          {isAdmin && <Section title="All Resolution Cases" items={allFiltered} />}
         </div>
       ) : (
         <Fallback rows={fallbackRows} />

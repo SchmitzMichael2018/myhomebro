@@ -222,10 +222,10 @@ export default function ConvertToAgreementPanel({ open, row, onClose }) {
       const { data } = await api.post(endpoint, {});
       const analysis = data?.ai_analysis || data?.result || data?.intake?.ai_analysis_payload || {};
       applyAnalysis(analysis);
-      toast.success("AI suggestions updated.");
+      toast.success("Project Assistant suggestions updated.");
     } catch (err) {
       console.error(err);
-      toast.error(err?.response?.data?.detail || "Could not generate AI suggestions.");
+      toast.error(err?.response?.data?.detail || "Could not generate Project Assistant suggestions.");
     } finally {
       setBusyAction("");
     }
@@ -356,7 +356,7 @@ export default function ConvertToAgreementPanel({ open, row, onClose }) {
                     className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                   >
                     {busyAction === "ai" ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                    Improve with AI
+                    Improve with Project Assistant
                   </button>
                 </div>
 

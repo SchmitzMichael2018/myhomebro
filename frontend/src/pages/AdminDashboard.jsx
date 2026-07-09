@@ -831,7 +831,7 @@ export default function AdminDashboard() {
                   >
                     <div className="text-xs font-extrabold uppercase tracking-wide text-sky-100/65">Quick Actions</div>
                     <div className="mt-3 grid grid-cols-1 gap-2">
-                      <ActionItem icon="⚠️" title="View Disputes" desc="Open the dispute queue." tone="bad" onClick={() => goToDisputes("active")} />
+                      <ActionItem icon="⚠️" title="View Resolution Cases" desc="Open the resolution queue." tone="bad" onClick={() => goToDisputes("active")} />
                       <ActionItem icon="🛟" title="User Tools" desc="Send password reset emails for user accounts." onClick={() => goTo("support")} />
                       <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
                       <ActionItem icon="💸" title="Escrow Reimbursements" desc="Review approved reimbursement release requests." onClick={() => navigate("/app/admin/reimbursements")} />
@@ -857,7 +857,7 @@ export default function AdminDashboard() {
                   <StatCard testId="admin-stat-contractors" label="Contractors" value={fmtNumber(counts.contractors || 0)} sub={`${fmtNumber(summary.new_contractors_this_month || 0)} new this month`} onClick={() => goTo("contractors")} />
                   <StatCard testId="admin-stat-customers" label="Customers" value={fmtNumber(counts.homeowners || 0)} sub="Captured homeowners" onClick={() => goTo("homeowners")} />
                   <StatCard testId="admin-stat-active-agreements" label="Active Agreements" value={fmtNumber(summary.active_agreements || 0)} sub={`${fmtNumber(summary.agreements_this_month || 0)} created this month`} onClick={() => goTo("agreements")} />
-                    <StatCard testId="admin-stat-open-disputes" label="Open Disputes" value={fmtNumber(summary.open_disputes || 0)} sub="Operator queue" tone={Number(summary.open_disputes || 0) > 0 ? "warn" : "good"} onClick={() => goToDisputes("active")} />
+                    <StatCard testId="admin-stat-open-disputes" label="Open Resolution Cases" value={fmtNumber(summary.open_disputes || 0)} sub="Operator queue" tone={Number(summary.open_disputes || 0) > 0 ? "warn" : "good"} onClick={() => goToDisputes("active")} />
                   <StatCard testId="admin-stat-month-fees" label="Fees This Month" value={fmtMoney(moneyBlock.platform_fee_this_month || 0)} sub="Platform revenue" onClick={() => goTo("fee_audit")} />
                 </div>
               </BorderedSection>
