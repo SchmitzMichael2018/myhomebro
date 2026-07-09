@@ -446,8 +446,10 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
 
   await expect(page.getByTestId('public-presence-title')).toBeVisible();
   await expect(page.getByTestId('online-presence-setup-shell')).toHaveClass(/mhb-online-presence-light-theme/);
-  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Marketing Setup');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Business Growth Center');
   await expect(page.getByTestId('online-presence-readiness-score')).toContainText('67%');
+  await expect(page.getByTestId('marketing-overview-tab')).toBeVisible();
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Website Decision/ }).click();
   await expect(page.getByTestId('website-decision-step')).toContainText(
     "Let's start with your website."
   );
@@ -483,8 +485,8 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   expect(state.profile.existing_website_url).toBe('https://bright.example.com');
 
   await expect(page.getByRole('heading', { name: 'Business Information' })).toBeVisible();
-  await expect(page.getByText('We imported this from your MyHomeBro profile.')).toBeVisible();
-  await expect(page.getByText('Company / business name')).toBeVisible();
+  await expect(page.getByText('Inherited facts come from Company Profile.')).toBeVisible();
+  await expect(page.getByText('Public display name override')).toBeVisible();
   await expect(page.getByText('Owner / contact name')).toBeVisible();
   await expect(page.getByText('Primary trade')).toBeVisible();
   await expect(page.getByText('Additional trades/services')).toBeVisible();
@@ -497,7 +499,7 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByTestId('brand-font-theme-select')).toHaveCount(0);
   await expect(page.getByText('Theme preset')).toHaveCount(0);
   await expect(page.getByTestId('public-presence-qr-image')).toBeVisible();
-  await page.getByLabel('Company / business name').fill('Bright Build Renovations');
+  await page.getByLabel('Public display name override').fill('Bright Build Renovations');
   await page.getByLabel('Years in business').fill('14');
   await page.getByTestId('business-primary-trade-custom').fill('Kitchen remodeling');
   await page.getByLabel('Additional trades/services').fill('Electrical repair, generator installation');
@@ -513,24 +515,24 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await expect(page.getByRole('heading', { name: 'Business Information' })).toBeVisible();
   await expect(state.profile.has_existing_website).toBeFalsy();
 
-  await page.getByRole('button', { name: 'Photo Gallery' }).click();
-  await page.getByPlaceholder('Title').fill('Kitchen Remodel');
+  await page.getByRole('button', { name: 'Portfolio' }).click();
+  await page.getByPlaceholder('Portfolio title').fill('Kitchen Remodel');
   await page.getByTestId('gallery-image-input').setInputFiles({
     name: 'kitchen.jpg',
     mimeType: 'image/jpeg',
     buffer: Buffer.from('fake-image'),
   });
-  await page.getByRole('button', { name: 'Add Gallery Item' }).click();
+  await page.getByRole('button', { name: 'Add Portfolio Item' }).click();
   await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Kitchen Remodel');
 
   await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Bright Build Renovations');
 
-  await page.getByRole('button', { name: 'Reviews & Testimonials' }).click();
-  await expect(page.getByRole('heading', { name: 'Reviews & Testimonials' })).toBeVisible();
+  await page.getByRole('button', { name: 'Reviews' }).click();
+  await expect(page.getByRole('heading', { name: 'Reviews' })).toBeVisible();
   await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Taylor Homeowner');
-  await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Pending moderation');
+  await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Submitted');
   await page.getByRole('button', { name: 'Publish Review' }).click();
-  await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Public');
+  await expect(page.getByTestId('public-presence-reviews-tab')).toContainText('Published');
 
   await page.getByRole('button', { name: 'Design & Content' }).click();
   await expect(page.getByRole('heading', { name: 'Design & Content' })).toBeVisible();

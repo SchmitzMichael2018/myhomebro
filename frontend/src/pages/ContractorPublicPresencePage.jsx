@@ -6,6 +6,13 @@ import api from '../api';
 import Modal from '../components/Modal.jsx';
 import ContractorPageSurface from '../components/dashboard/ContractorPageSurface.jsx';
 import QuickAddLeadModal from '../components/QuickAddLeadModal.jsx';
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantEvidenceList,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from '../components/ProjectAssistantExperience.jsx';
 import { StartWithAIEntry } from '../components/StartWithAIAssistant.jsx';
 import { WorkflowHint } from '../components/WorkflowHint.jsx';
 import {
@@ -24,10 +31,12 @@ import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contr
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
 
 const ONLINE_PRESENCE_STEPS = [
+  { key: 'overview', label: 'Overview', eyebrow: 'Growth Center' },
   { key: 'decision', label: 'Website Decision', eyebrow: 'Step 0' },
   { key: 'profile', label: 'Business Information', eyebrow: 'Step 1' },
-  { key: 'gallery', label: 'Photo Gallery', eyebrow: 'Step 2' },
-  { key: 'reviews', label: 'Reviews & Testimonials', eyebrow: 'Step 3' },
+  { key: 'brand', label: 'Brand Kit', eyebrow: 'Step 2' },
+  { key: 'gallery', label: 'Portfolio', eyebrow: 'Step 3' },
+  { key: 'reviews', label: 'Reviews', eyebrow: 'Step 4' },
   { key: 'website', label: 'Design & Content', eyebrow: 'Step 4' },
   { key: 'seo', label: 'SEO & Visibility', eyebrow: 'Step 5' },
   { key: 'final', label: 'Final Review', eyebrow: 'Step 6' },
@@ -518,7 +527,7 @@ export default function ContractorPublicPresencePage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('decision');
+  const [activeTab, setActiveTab] = useState('overview');
   const [profile, setProfile] = useState(defaultProfile);
   const [profileBusy, setProfileBusy] = useState(false);
   const [websiteDecisionError, setWebsiteDecisionError] = useState('');
@@ -606,7 +615,6 @@ export default function ContractorPublicPresencePage() {
     'Your business';
   const selectedDesignLabel =
     DESIGN_STYLE_OPTIONS.find((option) => option.key === (websiteData.template_key || 'starter'))?.label || 'Modern';
-
   const specialtiesText = useMemo(
     () => (Array.isArray(profile.specialties) ? profile.specialties.join(', ') : ''),
     [profile.specialties]
@@ -670,6 +678,58 @@ export default function ContractorPublicPresencePage() {
   );
   const homePage = websitePages.find((page) => page.page_type === 'home') || selectedWebsitePage;
   const heroContent = homePage?.content_blocks?.hero || {};
+  const publicReviewCount = reviewsRows.filter((review) => review.is_public).length;
+  const publicPortfolioCount = galleryRows.filter((item) => item.is_public !== false).length;
+  const leadCount = leadsRows.length;
+  const activeLeadCount = leadsRows.filter((lead) => !['closed', 'archived', 'declined', 'expired'].includes(String(lead.status || '').toLowerCase())).length;
+  const websitePublished = String(websiteData.status || '').toLowerCase() === 'published';
+  const publicProfileReady = Boolean(profile.is_public);
+  const marketingReadinessScore = Number(websiteReadinessData.score || 0);
+  const companyFactRows = [
+    ['Business name', websiteProfile?.identity?.business_name || profile.business_name_public || profile.business_name],
+    ['Phone', websiteProfile?.contact?.phone_public || profile.phone_public],
+    ['Email', websiteProfile?.contact?.email_public || profile.email_public],
+    ['City / State', [websiteProfile?.service_area?.city || profile.city, websiteProfile?.service_area?.state || profile.state].filter(Boolean).join(', ')],
+    ['Service area', websiteProfile?.service_area?.service_area_text || profile.service_area_text || serviceCitiesText || serviceCountiesText],
+    ['Trade / specialties', [profile.primary_trade, specialtiesText || workTypesText].filter(Boolean).join(' | ')],
+    ['Licenses', profile.show_license_public || credentials.licensed ? 'Shown publicly when available' : 'Not shown publicly'],
+    ['Insurance', credentials.insured ? 'Insurance badge enabled' : 'Not shown publicly'],
+    ['Certifications', credentials.bonded || credentials.emergency_service || customerTrustBadges.length ? [...customerTrustBadges, credentials.bonded ? 'Bonded' : '', credentials.emergency_service ? 'Emergency service' : ''].filter(Boolean).join(', ') : 'Not listed yet'],
+    ['Business hours', profile.business_hours || websiteProfile?.business_hours || 'Not available yet'],
+  ];
+  const overrideRows = [
+    ['Public display name override', profile.business_name_public],
+    ['Public phone override', profile.phone_public],
+    ['Public email override', profile.email_public],
+    ['Public service area description', profile.service_area_text],
+    ['Marketing tagline', profile.tagline],
+    ['Website headline', heroContent.headline],
+    ['SEO title', profile.seo_title],
+    ['SEO description', profile.seo_description],
+  ];
+  const hasReliableStaleTimestamps = Boolean(
+    (websiteData.published_at || websiteData.last_published_at || websiteReadiness?.published_at) &&
+    (profile.updated_at || websiteProfile?.updated_at || websiteData.updated_at)
+  );
+  const staleContentRisk = hasReliableStaleTimestamps
+    ? new Date(profile.updated_at || websiteProfile?.updated_at || websiteData.updated_at) >
+      new Date(websiteData.published_at || websiteData.last_published_at || websiteReadiness?.published_at)
+    : false;
+  const websiteFreshnessMessage = staleContentRisk
+    ? 'Your business information changed after this website was published. Review and republish to keep your website current.'
+    : hasReliableStaleTimestamps
+    ? 'Website content appears current against available timestamps.'
+    : websitePublished
+    ? 'Published website freshness cannot be verified from available timestamps. Review before republishing.'
+    : 'Website is not published yet; publish when your public facts and content are ready.';
+  const marketingAdvisorRecommendations = [
+    !websitePublished ? 'Publish the website when the public facts and content are ready.' : '',
+    !publicProfileReady ? 'Turn on the public profile so customers can find you.' : '',
+    publicPortfolioCount < 3 ? 'Add more portfolio examples to build trust.' : '',
+    publicReviewCount < 1 ? 'Ask recent happy customers for reviews.' : '',
+    !profile.seo_description ? 'Add an SEO description for local search basics.' : '',
+    staleContentRisk ? 'Review and republish because company/profile facts changed after publish.' : '',
+  ].filter(Boolean);
   const serviceKeywords = [
     ...new Set(
       [
@@ -1621,7 +1681,7 @@ export default function ContractorPublicPresencePage() {
                 Marketing Workspace
               </h1>
               <p className="mt-1 text-sm text-slate-600">
-                Build your public profile, gallery, reviews, website design, visibility, and publish checklist in one guided flow.
+                Manage your website, public profile, portfolio, reviews, QR sharing, lead capture, and growth recommendations in one guided workspace.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1662,7 +1722,7 @@ export default function ContractorPublicPresencePage() {
 
         <div className="px-5 py-5 lg:px-6" data-testid="online-presence-setup-nav">
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div className="text-sm font-black text-slate-950">Marketing Setup</div>
+            <div className="text-sm font-black text-slate-950">Business Growth Center</div>
             <div className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm" data-testid="online-presence-readiness-score">
               Readiness {websiteReadinessData.score || 0}%
             </div>
@@ -1701,13 +1761,17 @@ export default function ContractorPublicPresencePage() {
             <span className="font-black">NEXT STEP</span>
             <span className="ml-2">
               {activeTab === 'decision'
-                ? 'Turn on public visibility to start receiving leads from your profile page.'
+                ? 'Decide whether MyHomeBro should help build and publish your website.'
+                : activeTab === 'overview'
+                ? 'Review your growth center readiness and choose the highest-impact improvement.'
                 : activeTab === 'profile'
-                ? 'Add business facts that showcase your work and build customer trust.'
+                ? 'Review inherited Company facts and public-only overrides.'
+                : activeTab === 'brand'
+                ? 'Set the logo, colors, imagery, font, and public tagline used by your website and profile.'
                 : activeTab === 'gallery'
-                ? 'Collect and display reviews and testimonials from your happy customers.'
+                ? 'Add portfolio proof from completed work.'
                 : activeTab === 'reviews'
-                ? 'Choose your website style, colors, and content structure.'
+                ? 'Collect and display reviews and testimonials from happy customers.'
                 : activeTab === 'website'
                 ? 'Optimize your website so customers can find you online.'
                 : activeTab === 'seo'
@@ -1720,6 +1784,146 @@ export default function ContractorPublicPresencePage() {
         </div>
 
         <main className="px-5 pb-6 lg:px-6" data-testid="online-presence-step-content">
+          {activeTab === 'overview' ? (
+            <section className="space-y-5" data-testid="marketing-overview-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Business Growth Center</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Marketing Overview</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                  Marketing captures leads through your website, public profile, QR links, reviews, and portfolio. Opportunities is where you manage follow-up and the sales workflow.
+                </p>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['Marketing Readiness', `${marketingReadinessScore}%`, websiteReadinessData.missing_required_fields?.length ? 'Missing setup items' : 'Core setup looks ready', 'overview-readiness'],
+                    ['Website Status', websitePublished ? 'Published' : statusLabel(websiteData.status || 'draft'), websitePublished ? 'Live website snapshot exists' : 'Review and publish when ready', 'overview-website-status'],
+                    ['Public Profile Status', publicProfileReady ? 'Public' : 'Preview', publicProfileReady ? 'Customers can view your profile' : 'Turn on visibility when ready', 'overview-profile-status'],
+                    ['Portfolio', `${publicPortfolioCount}`, publicPortfolioCount ? 'Public portfolio items' : 'Add project photos', 'overview-portfolio'],
+                    ['Reviews', `${publicReviewCount}`, publicReviewCount ? 'Public reviews visible' : 'Request or publish reviews', 'overview-reviews'],
+                    ['Leads', `${leadCount}`, activeLeadCount ? `${activeLeadCount} active lead(s)` : 'No active leads yet', 'overview-leads'],
+                    ['SEO Basics', profile.seo_description ? 'Ready' : 'Needs copy', profile.seo_title || profile.seo_description ? 'Title or description exists' : 'Add local search basics', 'overview-seo'],
+                    ['Project Assistant Recommendation', marketingAdvisorRecommendations[0] || 'Keep content current', 'Advisory only', 'overview-advisor-card'],
+                  ].map(([label, value, hint, testId]) => (
+                    <button
+                      key={label}
+                      type="button"
+                      data-testid={testId}
+                      onClick={() => {
+                        if (label === 'Portfolio') goToStep('gallery');
+                        else if (label === 'Reviews') goToStep('reviews');
+                        else if (label === 'Website Status') goToStep('publish');
+                        else if (label === 'SEO Basics') goToStep('seo');
+                        else if (label === 'Public Profile Status') goToStep('profile');
+                      }}
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-200 hover:bg-white"
+                    >
+                      <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
+                      <div className="mt-2 text-xl font-black text-slate-950">{value}</div>
+                      <div className="mt-1 text-xs leading-5 text-slate-600">{hint}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-inherited-company-facts">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Inherited from Company Profile</div>
+                      <h3 className="mt-2 text-lg font-black text-slate-950">Company facts used by Marketing</h3>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">
+                        Company owns official facts. Marketing uses them for public presentation and labels public-only overrides separately.
+                      </p>
+                    </div>
+                    <button type="button" onClick={() => navigate('/app/profile')} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                      Edit this in Company Profile
+                    </button>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {companyFactRows.map(([label, value]) => (
+                      <div key={label} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">{label}</div>
+                        <div className="mt-1 text-sm font-bold text-slate-900">{value || 'Not available yet'}</div>
+                        <div className="mt-1 text-[11px] font-bold text-slate-500">Read-only here</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <ProjectAssistantPanel
+                  testId="marketing-advisor-panel"
+                  subtitle="Marketing Advisor"
+                  summary="Project Assistant reviews your public presence, portfolio, reviews, website readiness, lead sources, and stale-content risk. It prepares suggestions for review; it does not publish or send messages."
+                  actions={<ProjectAssistantConfidenceBadge value={marketingAdvisorRecommendations.length ? 'medium' : 'needs_more_information'} />}
+                >
+                  <ProjectAssistantSection title="Recommended next improvement">
+                    {marketingAdvisorRecommendations.length ? (
+                      <ul className="space-y-2">
+                        {marketingAdvisorRecommendations.slice(0, 4).map((item) => (
+                          <li key={item} className="rounded-lg border border-slate-200 bg-white px-3 py-2">{item}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span>Your marketing foundation looks steady. Keep facts current and add fresh portfolio/review proof as projects finish.</span>
+                    )}
+                  </ProjectAssistantSection>
+                  <ProjectAssistantEvidenceList
+                    items={[
+                      { label: 'Website readiness', type: 'Marketing', status: `${marketingReadinessScore}%` },
+                      { label: 'Portfolio items', type: 'Marketing', status: `${publicPortfolioCount} public` },
+                      { label: 'Reviews', type: 'Marketing', status: `${publicReviewCount} public` },
+                      { label: 'Leads', type: 'Marketing', status: `${leadCount} total` },
+                    ]}
+                  />
+                  <ProjectAssistantApprovalNotice compact>
+                    Human approval is required before publishing, sending review requests or campaigns, changing public content, applying website copy, or featuring reviews publicly.
+                  </ProjectAssistantApprovalNotice>
+                </ProjectAssistantPanel>
+              </div>
+
+              <div className="grid gap-5 lg:grid-cols-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-public-overrides">
+                  <div className="text-sm font-black text-slate-950">Public Overrides</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Overrides change how your business appears publicly. They do not change your official Company Profile.
+                  </p>
+                  <div className="mt-4 space-y-2">
+                    {overrideRows.map(([label, value]) => (
+                      <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                        <div className="text-xs font-black text-slate-600">{label}</div>
+                        <div className="mt-1 truncate text-sm font-semibold text-slate-900">{value || 'Not set'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-lead-lifecycle">
+                  <div className="text-sm font-black text-slate-950">Lead Lifecycle</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">Marketing captures leads. Opportunities is where you manage follow-up and sales workflow.</p>
+                  <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm font-black text-blue-900">
+                    Website / Public Profile / QR {'->'} Lead {'->'} Opportunity {'->'} Estimate {'->'} Agreement {'->'} Project
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {leadsRows.slice(0, 3).map((lead) => (
+                      <button key={lead.id} type="button" onClick={() => navigate('/app/opportunities')} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left">
+                        <div className="text-sm font-black text-slate-900">{lead.name || lead.customer_name || lead.email || `Lead #${lead.id}`}</div>
+                        <div className="mt-1 text-xs text-slate-600">{sourceLabel(lead.source)} | {fmtDateTime(lead.created_at || lead.submitted_at)} | {statusLabel(lead.status)}</div>
+                      </button>
+                    ))}
+                    {!leadsRows.length ? <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">No public leads yet.</div> : null}
+                  </div>
+                </div>
+
+                <div className={`rounded-2xl border p-5 shadow-sm ${staleContentRisk ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`} data-testid="marketing-stale-website-warning">
+                  <div className="text-sm font-black text-slate-950">Website Content Freshness</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">{websiteFreshnessMessage}</p>
+                  <button type="button" onClick={() => goToStep('final')} className="mt-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                    Review website content
+                  </button>
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           {activeTab === 'decision' ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="website-decision-step">
               <div className="text-xs font-bold text-slate-500">Step 0 of 7</div>
@@ -1810,11 +2014,11 @@ export default function ContractorPublicPresencePage() {
                 <h2 className="mt-2 text-2xl font-black text-slate-950">Business Information</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">Add your business details and the services you provide.</p>
                 <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                  We imported this from your MyHomeBro profile. Review and update anything that has changed.
+                  Inherited facts come from Company Profile. Fields below are public presentation overrides and visibility settings for Marketing.
                 </div>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Company / business name</span>
+                    <span className="text-sm font-bold text-slate-800">Public display name override</span>
                     <input value={profile.business_name_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="C.S.W. Power Solutions" />
                   </label>
                   <label className="space-y-1">
@@ -1834,11 +2038,11 @@ export default function ContractorPublicPresencePage() {
                     <input value={workTypesText} onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Lighting, generator installation" />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Business phone</span>
+                    <span className="text-sm font-bold text-slate-800">Public phone override</span>
                     <input value={profile.phone_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="(210) 504-9796" />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Business email</span>
+                    <span className="text-sm font-bold text-slate-800">Public email override</span>
                     <input value={profile.email_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="hello@example.com" />
                   </label>
                   <label className="space-y-1">
@@ -1922,12 +2126,102 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
+          {activeTab === 'brand' ? (
+            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]" data-testid="marketing-brand-kit-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-bold text-slate-500">Step 2 of 8</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Brand Kit</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Brand Kit controls the public presentation of your business. It is used on your website and public profile. Proposal/document usage is future-ready unless enabled elsewhere.
+                </p>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="text-sm font-black text-slate-900">Logo</div>
+                    <div className="mt-4 flex min-h-36 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+                      {profile.logo_url ? (
+                        <img src={profile.logo_url} alt="Logo" className="max-h-28 object-contain" />
+                      ) : (
+                        <div>
+                          <div className="text-lg font-black uppercase tracking-wide text-slate-950">{profile.business_name_public || 'Your Company Name'}</div>
+                          <div className="mt-1 text-xs font-bold text-slate-500">{profile.primary_trade || 'Contractor'}</div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
+                        Upload Logo
+                        <input type="file" className="hidden" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
+                      </label>
+                      <button type="button" onClick={() => requestAiSuggestion('logo_generation', 'logo-generation', profile.business_name_public)} disabled={aiBusyTarget === 'logo-generation'} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-60" data-testid="ai-generate-logo">
+                        Generate logo idea
+                      </button>
+                    </div>
+                    <div className="mt-3 text-xs text-slate-500">Used on website and public profile. Proposal/document usage is future-ready.</div>
+                    <AiSuggestionCard suggestion={aiSuggestions['logo-generation']} onAccept={() => dismissAiSuggestion('logo-generation')} onRegenerate={() => requestAiSuggestion('logo_generation', 'logo-generation', profile.business_name_public)} onDismiss={() => dismissAiSuggestion('logo-generation')} />
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="text-sm font-black text-slate-900">Hero / Cover Image</div>
+                    <div className="mt-4 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                      {profile.hero_image_url || profile.cover_image_url ? (
+                        <img src={profile.hero_image_url || profile.cover_image_url} alt="Hero" className="h-full w-full object-cover" />
+                      ) : (
+                        <span className="text-sm font-bold text-slate-400">Add a strong project photo</span>
+                      )}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
+                        Upload Hero Image
+                        <input type="file" className="hidden" onChange={(e) => setHeroFile(e.target.files?.[0] || null)} />
+                      </label>
+                      <button type="button" onClick={() => requestAiSuggestion('hero_image_generation', 'hero-image-generation', profile.primary_trade)} disabled={aiBusyTarget === 'hero-image-generation'} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-60" data-testid="ai-generate-hero-image">
+                        Hero image idea
+                      </button>
+                    </div>
+                    <div className="mt-3 text-xs text-slate-500">Used on website hero and public profile cover areas.</div>
+                    <AiSuggestionCard suggestion={aiSuggestions['hero-image-generation']} onAccept={() => dismissAiSuggestion('hero-image-generation')} onRegenerate={() => requestAiSuggestion('hero_image_generation', 'hero-image-generation', profile.primary_trade)} onDismiss={() => dismissAiSuggestion('hero-image-generation')} />
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Colors</div>
+                    <label className="mt-4 block text-xs font-bold text-slate-700">Primary color<input type="color" value={profile.brand_primary_color || '#2563eb'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_primary_color: event.target.value }))} className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="brand-kit-primary-color" /></label>
+                    <label className="mt-4 block text-xs font-bold text-slate-700">Accent color<input type="color" value={profile.brand_accent_color || '#14b8a6'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_accent_color: event.target.value }))} className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="brand-kit-accent-color" /></label>
+                    <div className="mt-3 text-xs text-slate-500">Used on website, public profile, buttons, and visual accents.</div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Voice, Font, and Tagline</div>
+                    <label className="mt-4 block text-xs font-bold text-slate-700">Font theme<select value={profile.brand_font_theme || 'clean_sans'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_font_theme: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="brand-kit-font-theme">{FONT_THEME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+                    <label className="mt-4 block text-xs font-bold text-slate-700">Public tagline<input value={profile.tagline || ''} onChange={(event) => setProfile((prev) => ({ ...prev, tagline: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Clear work. Clean finish. Reliable schedule." data-testid="brand-kit-tagline" /></label>
+                    <label className="mt-4 block text-xs font-bold text-slate-700">Brand voice / tone<select value={profile.proposal_tone || ''} onChange={(event) => setProfile((prev) => ({ ...prev, proposal_tone: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="brand-kit-voice">{PROPOSAL_TONE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  </div>
+                </div>
+                <button type="button" data-testid="brand-kit-save" onClick={saveProfile} disabled={profileBusy} className="mt-5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
+                  {profileBusy ? 'Saving...' : 'Save Brand Kit'}
+                </button>
+              </div>
+              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-sm font-black text-slate-950">Where Brand Kit appears</div>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  {['Used on website', 'Used on public profile', 'Future-ready for proposals/documents if supported', 'Social preview image support is future-ready'].map((item) => (
+                    <div key={item} className="flex gap-2"><span className="text-blue-600">-</span>{item}</div>
+                  ))}
+                </div>
+              </aside>
+            </section>
+          ) : null}
+
           {activeTab === 'gallery' ? (
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-gallery-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold text-slate-500">Step 2 of 7</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Photo Gallery</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Add photos that showcase your work and build trust with potential customers.</p>
+                <div className="text-xs font-bold text-slate-500">Step 3 of 8</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Portfolio</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Portfolio uses your existing gallery items to showcase real work. Future project-linked portfolio entries will appear here.
+                </p>
+                <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                  Add project type, before/after context, featured visibility, and customer permission notes when available. Keep private work hidden unless the customer approved public use.
+                </div>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-white p-4">
                     <div className="text-sm font-black text-slate-900">Logo</div>
@@ -1977,7 +2271,7 @@ export default function ContractorPublicPresencePage() {
                 </div>
                 <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm font-black text-slate-900">Project / Portfolio Photos</div>
+                    <div className="text-sm font-black text-slate-900">Portfolio Photos</div>
                     <div className="flex gap-2">
                       <label className="cursor-pointer rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">
                         Upload Photos
@@ -1990,32 +2284,39 @@ export default function ContractorPublicPresencePage() {
                     {galleryRows.length ? galleryRows.map((item) => (
                       <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                         {item.image_url ? <img src={item.image_url} alt={item.title || 'Gallery item'} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center bg-slate-100 text-xs font-bold text-slate-400">{item.title || 'Project photo'}</div>}
-                        <div className="p-2 text-xs font-bold text-slate-700">{item.title || 'Untitled project'}</div>
+                        <div className="p-2">
+                          <div className="text-xs font-bold text-slate-700">{item.title || 'Untitled project'}</div>
+                          <div className="mt-1 flex flex-wrap gap-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+                            <span>{item.category || 'Project type'}</span>
+                            <span>{item.is_featured ? 'Featured' : 'Standard'}</span>
+                            <span>{item.is_public === false ? 'Private' : 'Public'}</span>
+                          </div>
+                        </div>
                       </div>
                     )) : (
-                      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500 sm:col-span-2 lg:col-span-5">Upload your best project photos to start the gallery.</div>
+                      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500 sm:col-span-2 lg:col-span-5">Upload your best project photos to start the portfolio.</div>
                     )}
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   <div>
-                    <input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Photo title" data-testid="gallery-title-input" />
+                    <input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Portfolio title" data-testid="gallery-title-input" />
                     <button type="button" onClick={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-title">Improve title with Project Assistant</button>
                     <AiSuggestionCard suggestion={aiSuggestions['photo-title']} onAccept={() => acceptAiSuggestion('photo-title', (value) => setGalleryForm((prev) => ({ ...prev, title: value })))} onRegenerate={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} onDismiss={() => dismissAiSuggestion('photo-title')} />
                   </div>
                   <div>
-                    <input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Category" data-testid="gallery-category-input" />
+                    <input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Project type" data-testid="gallery-category-input" />
                     <button type="button" onClick={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-category">Suggest category with Project Assistant</button>
                     <AiSuggestionCard suggestion={aiSuggestions['photo-category']} onAccept={() => acceptAiSuggestion('photo-category', (value) => setGalleryForm((prev) => ({ ...prev, category: value })))} onRegenerate={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} onDismiss={() => dismissAiSuggestion('photo-category')} />
                   </div>
                   <div className="md:col-span-2">
-                    <textarea value={galleryForm.description} onChange={(e) => setGalleryForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Caption" data-testid="gallery-caption-input" />
+                    <textarea value={galleryForm.description} onChange={(e) => setGalleryForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Portfolio caption, before/after note, or customer permission note" data-testid="gallery-caption-input" />
                     <button type="button" onClick={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-caption">Improve caption with Project Assistant</button>
                     <AiSuggestionCard suggestion={aiSuggestions['photo-caption']} onAccept={() => acceptAiSuggestion('photo-caption', (value) => setGalleryForm((prev) => ({ ...prev, description: value })))} onRegenerate={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} onDismiss={() => dismissAiSuggestion('photo-caption')} />
                   </div>
                 </div>
                 <button type="button" onClick={addGalleryItem} disabled={galleryBusy} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
-                  {galleryBusy ? 'Saving...' : 'Add Gallery Item'}
+                  {galleryBusy ? 'Saving...' : 'Add Portfolio Item'}
                 </button>
               </div>
               <aside className="space-y-4">
@@ -2037,9 +2338,11 @@ export default function ContractorPublicPresencePage() {
           {activeTab === 'reviews' ? (
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-reviews-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold text-slate-500">Step 3 of 7</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Reviews &amp; Testimonials</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Collect and display reviews from happy customers and choose which content to include.</p>
+                <div className="text-xs font-bold text-slate-500">Step 4 of 8</div>
+                <h2 className="mt-2 text-2xl font-black text-slate-950">Reviews</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Collect customer proof, decide what is published, and feature testimonials where supported. Review request campaigns are future-ready unless enabled in your account.
+                </p>
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button type="button" onClick={copyUrl} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Share Review Request Link</button>
                   <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Add Testimonial Manually</button>
@@ -2070,10 +2373,19 @@ export default function ContractorPublicPresencePage() {
                           <div className="font-black text-slate-950">{review.customer_name || review.reviewer_name || 'Customer'}</div>
                           <div className="mt-1 text-sm text-amber-500">{'★'.repeat(Number(review.rating || 5))}</div>
                         </div>
-                        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${review.is_public ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>{review.is_public ? 'Public' : 'Pending moderation'}</span>
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${review.is_public ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                            {review.is_public ? 'Published' : (review.moderation_status || review.status || 'Submitted')}
+                          </span>
+                          {review.is_featured ? <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Featured</span> : null}
+                        </div>
                       </div>
                       <p className="mt-3 text-sm leading-6 text-slate-700">{review.review_text || review.public_comment}</p>
-                      <button type="button" onClick={() => toggleReviewVisibility(review)} disabled={reviewBusy} className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-60">{review.is_public ? 'Hide Review' : 'Publish Review'}</button>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => toggleReviewVisibility(review)} disabled={reviewBusy} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-60">{review.is_public ? 'Hide Review' : 'Publish Review'}</button>
+                        <button type="button" disabled className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-400">Feature testimonial future-ready</button>
+                        <button type="button" disabled className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-400">Respond future-ready</button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -2229,7 +2541,7 @@ export default function ContractorPublicPresencePage() {
                 </div>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Business Information</div><p className="mt-2 text-sm text-slate-600">{profile.business_name_public || 'Business name missing'} - {profile.primary_trade || 'Primary trade missing'}</p></div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Photos</div><p className="mt-2 text-sm text-slate-600">{galleryRows.length} gallery item{galleryRows.length === 1 ? '' : 's'} ready.</p></div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Portfolio</div><p className="mt-2 text-sm text-slate-600">{galleryRows.length} portfolio item{galleryRows.length === 1 ? '' : 's'} ready.</p></div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">Reviews</div><p className="mt-2 text-sm text-slate-600">{reviewsRows.filter((review) => review.is_public).length} public review{reviewsRows.filter((review) => review.is_public).length === 1 ? '' : 's'}.</p></div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-black text-slate-900">SEO & Visibility</div><p className="mt-2 text-sm text-slate-600">{profile.seo_title || profile.business_name_public || 'SEO title will use your business name.'}</p></div>
                 </div>
@@ -2241,7 +2553,7 @@ export default function ContractorPublicPresencePage() {
                   <div className="mt-3 space-y-2 text-sm text-slate-700">
                     {[
                       'Improve hero',
-                      galleryRows.length < 3 ? 'Add more photos' : 'Photos look strong',
+                      galleryRows.length < 3 ? 'Add more portfolio work' : 'Portfolio looks strong',
                       profile.seo_description ? 'SEO basics ready' : 'Improve SEO',
                       reviewsRows.filter((review) => review.is_public).length ? 'Reviews added' : 'Add reviews',
                       heroContent.cta_text ? 'CTA ready' : 'Strengthen CTA',
@@ -2265,6 +2577,9 @@ export default function ContractorPublicPresencePage() {
                 {websiteData.status === 'published' ? <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-4xl font-black text-white">✓</div> : <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-3xl font-black text-blue-700">7</div>}
                 <h2 className="mt-5 text-3xl font-black text-slate-950">{websiteData.status === 'published' ? "You're Live!" : 'Ready to Publish'}</h2>
                 <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-600">{websiteData.status === 'published' ? 'Your online presence has been published successfully.' : 'Publish your website snapshot when you are ready to make it live.'}</p>
+                <div className={`mx-auto mt-4 max-w-xl rounded-xl border px-4 py-3 text-sm ${staleContentRisk ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-slate-200 bg-slate-50 text-slate-700'}`} data-testid="website-stale-content-readiness">
+                  {websiteFreshnessMessage}
+                </div>
                 <div className="mx-auto mt-5 max-w-xl rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 break-all">{websiteData.public_url || profile.public_url || '/websites/your-slug'}</div>
                 {websitePublishMessage ? <div className="mx-auto mt-4 max-w-xl rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">{websitePublishMessage}</div> : null}
                 <div className="mt-6 flex flex-wrap justify-center gap-3">

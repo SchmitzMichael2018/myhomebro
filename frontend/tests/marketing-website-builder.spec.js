@@ -557,6 +557,36 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
+test('Marketing Overview renders Business Growth Center foundations', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
+
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('marketing-overview-tab')).toBeVisible();
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Overview');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Brand Kit');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Portfolio');
+  await expect(page.getByTestId('overview-readiness')).toContainText('Marketing Readiness');
+  await expect(page.getByTestId('overview-website-status')).toContainText('Website Status');
+  await expect(page.getByTestId('overview-profile-status')).toContainText('Public Profile Status');
+  await expect(page.getByTestId('marketing-inherited-company-facts')).toContainText('Inherited from Company Profile');
+  await expect(page.getByTestId('marketing-inherited-company-facts')).toContainText('Edit this in Company Profile');
+  await expect(page.getByTestId('marketing-public-overrides')).toContainText('Public display name override');
+  await expect(page.getByTestId('marketing-public-overrides')).toContainText('Overrides change how your business appears publicly');
+  await expect(page.getByTestId('marketing-lead-lifecycle')).toContainText('Website / Public Profile / QR -> Lead -> Opportunity -> Estimate -> Agreement -> Project');
+  await expect(page.getByTestId('marketing-stale-website-warning')).toContainText('freshness');
+  await expect(page.getByTestId('marketing-advisor-panel')).toContainText('Marketing Advisor');
+  await expect(page.getByTestId('marketing-advisor-panel')).toContainText('Human approval is required');
+
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Brand Kit/ }).click();
+  await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('Used on website');
+  await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('future-ready');
+
+  await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Portfolio/ }).click();
+  await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Portfolio');
+  await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Future project-linked portfolio entries will appear here');
+});
+
 test('Marketing Project Assistant hooks show review-before-apply suggestions', async ({ page }) => {
   await mockMarketingPage(page, { pro: false, developmentOverride: true });
 
@@ -570,7 +600,7 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await page.getByTestId('ai-accept-business-description').click();
   await expect(page.getByTestId('business-description-input')).toHaveValue(/Bright Build Co delivers clean Austin remodels/);
 
-  await setupNav.getByRole('button', { name: /Photo Gallery/ }).click();
+  await setupNav.getByRole('button', { name: /Portfolio/ }).click();
   await page.getByTestId('ai-photo-title').click();
   await page.getByTestId('ai-accept-photo-title').click();
   await expect(page.getByTestId('gallery-title-input')).toHaveValue('Finished kitchen remodel');
