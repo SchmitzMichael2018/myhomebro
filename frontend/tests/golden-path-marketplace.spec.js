@@ -310,6 +310,8 @@ test("golden path marketplace request converts awarded bid into an agreement dra
 
   await page.getByTestId(`customer-bid-comparison-open-${winningBidId}`).click();
   await expect(page).toHaveURL(new RegExp(`/agreements/magic/${agreementToken}$`));
-  await expect(page.getByTestId("agreement-detail-draft-notice")).toContainText("still being drafted");
+  await expect(page.getByText("Agreement Workspace").first()).toBeVisible();
+  await expect(page.getByText("Continue Draft").first()).toBeVisible();
+  await expect(page.getByText("This agreement is still being drafted.")).toBeVisible();
   await expect(page.getByText("Luxury Vinyl Plank Flooring").first()).toBeVisible();
 });

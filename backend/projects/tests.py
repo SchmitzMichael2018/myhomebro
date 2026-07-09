@@ -16043,6 +16043,7 @@ class ProjectLearningFoundationTests(TestCase):
             status="open",
             created_by=self.contractor_user,
         )
+        self.assertEqual(dispute.project_id, agreement.project_id)
         opened_snapshot = MilestonePerformanceSnapshot.objects.filter(milestone=milestone).latest("created_at")
         self.assertEqual(opened_snapshot.dispute_opened_at, dispute.created_at)
         self.assertEqual(opened_snapshot.metadata["dispute_count"], 1)

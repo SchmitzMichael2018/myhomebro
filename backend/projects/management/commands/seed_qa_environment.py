@@ -7,8 +7,10 @@ from unittest.mock import patch
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
+from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 
 from payments.models import ConnectedAccount, Payment
@@ -92,6 +94,8 @@ class Command(BaseCommand):
                 "Use DEBUG=True, a repo-local SQLite database, or --force only for disposable QA databases."
             )
 
+        self._ensure_local_schema_current()
+
         with (
             patch("projects.signals.task_generate_full_agreement_pdf.delay", return_value=None),
             patch("projects.signals.task_send_invoice_notification.delay", return_value=None),
@@ -131,6 +135,16 @@ class Command(BaseCommand):
             )
         except Exception:
             return False
+
+    def _ensure_local_schema_current(self) -> None:
+        executor = MigrationExecutor(connection)
+        targets = executor.loader.graph.leaf_nodes()
+        plan = executor.migration_plan(targets)
+        if not plan:
+            return
+
+        self.stdout.write("Applying pending local migrations before QA seed...")
+        call_command("migrate", interactive=False, verbosity=0)
 
     def _seed(self) -> dict[str, int]:
         User = get_user_model()

@@ -537,19 +537,21 @@ test("contractor agreement golden path reaches homeowner review and portal next 
 
   await page.goto(`/agreements/magic/${AGREEMENT_TOKEN}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Kitchen & Hall LVP Installation" })).toBeVisible();
-  await expect(page.getByText("Payment Mode")).toBeVisible();
-  await expect(page.getByText("Escrow (Milestone Hold)")).toBeVisible();
+  await expect(page.getByText("Payment Protection")).toBeVisible();
+  await expect(page.getByText("Escrow Preferred").first()).toBeVisible();
+  await expect(page.getByText("Funding waits for signatures").first()).toBeVisible();
   await expect(page.getByText("Protected", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Sign", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open signatures" })).toBeVisible();
 
   await page.goto(`/portal/${PORTAL_TOKEN}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
   await page.getByTestId("customer-dashboard-tab-projects").click();
-  await expect(page.getByTestId("customer-projects-navigation")).toContainText("Kitchen & Hall LVP Installation");
-  await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Awaiting Signature");
-  await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Agreement ready for review");
-  await expect(page.getByRole("link", { name: /Open Agreement/i }).first()).toHaveAttribute(
+  await expect(page.getByText("Showing 1-1 of 1 projects")).toBeVisible();
+  await expect(page.getByRole("button", { name: /Kitchen & Hall LVP Installation/ })).toBeVisible();
+  await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Sent for Signature");
+  await expect(page.getByTestId("customer-rich-project-workspace")).toContainText("Review agreement");
+  await expect(page.getByRole("link", { name: /View Agreement/i }).first()).toHaveAttribute(
     "href",
     `/agreements/magic/${AGREEMENT_TOKEN}`
   );

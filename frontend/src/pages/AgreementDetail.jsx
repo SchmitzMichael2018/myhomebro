@@ -2604,9 +2604,9 @@ export default function AgreementDetail({
       .toLowerCase();
     const isDraftRoute =
       routeWorkspaceStatus === 'draft' || (!routeWorkspaceStatus && agreement);
-    if (isAdminMode || loading || !agreement || !isDraftRoute) return;
+    if (isAdminMode || isMagicLink || loading || !agreement || !isDraftRoute) return;
     navigate(`/app/agreements/${id}/wizard?step=1`, { replace: true });
-  }, [agreement, id, isAdminMode, loading, navigate]);
+  }, [agreement, id, isAdminMode, isMagicLink, loading, navigate]);
 
   if (loading) {
     return (
