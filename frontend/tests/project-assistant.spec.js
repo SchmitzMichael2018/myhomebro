@@ -344,7 +344,7 @@ test('Workspace navigation uses standardized Phase 2 terminology', async ({ page
   await expect(sidebar).not.toContainText('Public Presence');
 
   await page.goto('/app/insights', { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(/\/app\/business/);
+  await expect(page).toHaveURL(/\/app\/insights/);
 });
 
 test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat controls', async ({ page }) => {

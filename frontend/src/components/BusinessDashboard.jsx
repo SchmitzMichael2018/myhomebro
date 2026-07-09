@@ -11,6 +11,14 @@ import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
 import { useWorkspaceProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantCard,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantEvidenceList,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "./ProjectAssistantExperience.jsx";
+import {
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -89,6 +97,36 @@ function KpiCard({ label, value, sub, tone = "default", testId }) {
       <div className="mt-2 text-3xl font-bold leading-none text-white">{value}</div>
       {sub ? <div className="mt-2 text-sm leading-5 text-sky-100/70">{sub}</div> : null}
     </div>
+  );
+}
+
+function commandStateTone(status) {
+  if (status === "At Risk") return "border-rose-300/35 bg-rose-400/15 text-rose-100";
+  if (status === "Needs Attention") return "border-amber-300/35 bg-amber-400/15 text-amber-100";
+  return "border-emerald-300/35 bg-emerald-400/15 text-emerald-100";
+}
+
+function severityTone(severity) {
+  if (severity === "high") return "border-rose-300/35 bg-rose-400/15 text-rose-100";
+  if (severity === "medium") return "border-amber-300/35 bg-amber-400/15 text-amber-100";
+  return "border-sky-300/35 bg-sky-400/15 text-sky-100";
+}
+
+function CanonicalMetricCard({ metric }) {
+  if (!metric) return null;
+  const value = metric.kind === "money" ? money(metric.value) : int(metric.value);
+  const Wrapper = metric.href ? "a" : "div";
+  return (
+    <Wrapper
+      href={metric.href || undefined}
+      data-testid={`insights-canonical-metric-${metric.key}`}
+      className="group rounded-2xl border border-white/12 bg-slate-950/40 p-4 shadow-sm transition hover:border-sky-300/35 hover:bg-sky-500/10"
+    >
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{metric.label}</div>
+      <div className="mt-2 text-2xl font-black text-white">{value}</div>
+      <div className="mt-2 text-sm leading-5 text-sky-100/70">{metric.detail}</div>
+      {metric.href ? <div className="mt-3 text-xs font-bold text-sky-100">Open source records</div> : null}
+    </Wrapper>
   );
 }
 
@@ -712,6 +750,15 @@ export default function BusinessDashboard() {
   const feeSummary = payload?.fee_summary || {};
   const workflowSummary = payload?.workflow_summary || {};
   const progressSummary = payload?.progress_summary || {};
+  const commandCenter = payload?.command_center || {};
+  const businessHealth = commandCenter?.business_health || {};
+  const healthDimensions = Array.isArray(businessHealth?.dimensions) ? businessHealth.dimensions : [];
+  const needsAttention = Array.isArray(commandCenter?.needs_attention) ? commandCenter.needs_attention : [];
+  const morningBrief = commandCenter?.morning_brief || {};
+  const canonicalMetrics = commandCenter?.metrics || {};
+  const opportunityForecast = commandCenter?.opportunity_forecast || {};
+  const forecastSections = Array.isArray(opportunityForecast?.sections) ? opportunityForecast.sections : [];
+  const operationsAnalyst = commandCenter?.operations_analyst || {};
   const businessPerformance = payload?.business_performance || {};
   const funnel = businessPerformance?.funnel || {};
   const conversionRates = businessPerformance?.conversion_rates || {};
@@ -875,14 +922,14 @@ export default function BusinessDashboard() {
       },
       {
         key: "pending-release-total",
-        label: "Pending Release",
+        label: "Money Waiting On Customer Approval",
         value: money(financialSummary.pending_release_total),
-        sub: "Approved but not yet released",
+        sub: "Approved or ready but not yet released",
         tone: Number(financialSummary.pending_release_total || 0) > 0 ? "warn" : "default",
       },
       {
         key: "on-hold-total",
-        label: "On Hold / At Risk",
+        label: "Money On Hold",
         value: money(financialSummary.on_hold_total),
         sub: "Disputed or paused for review",
         tone: Number(financialSummary.on_hold_total || 0) > 0 ? "bad" : "default",
@@ -1315,6 +1362,191 @@ export default function BusinessDashboard() {
         ))}
       </section>
 
+      <section data-testid="insights-business-health" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="max-w-3xl">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Business Health</div>
+            <h2 className="mt-2 text-3xl font-black text-white">{businessHealth.summary || "Business health loading"}</h2>
+            <p className="mt-2 text-sm leading-6 text-sky-100/70">
+              Insights explains what changed and why. Use the source workspace links below to take action.
+            </p>
+          </div>
+          <div className={`rounded-full border px-4 py-2 text-sm font-black ${commandStateTone(businessHealth.overall)}`}>
+            {businessHealth.overall || "Healthy"}
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {healthDimensions.map((dimension) => (
+            <div key={dimension.key} className={`rounded-xl border p-4 ${commandStateTone(dimension.status)}`}>
+              <div className="text-sm font-black">{dimension.label}</div>
+              <div className="mt-1 text-lg font-black">{dimension.status}</div>
+              <div className="mt-2 text-xs leading-5 opacity-80">{dimension.detail}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 grid gap-3 lg:grid-cols-3">
+          <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">Biggest Win</div>
+            <div className="mt-2 text-sm leading-6 text-sky-100">{businessHealth.biggest_win || "No business win detected yet."}</div>
+          </div>
+          <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">Biggest Concern</div>
+            <div className="mt-2 text-sm leading-6 text-sky-100">{businessHealth.biggest_concern || "No urgent concern found."}</div>
+          </div>
+          <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
+            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">Recommended Focus</div>
+            <div className="mt-2 text-sm leading-6 text-sky-100">{businessHealth.recommended_focus || "Review reports and keep current work moving."}</div>
+          </div>
+        </div>
+      </section>
+
+      <section data-testid="insights-needs-attention" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Needs Attention</div>
+            <h2 className="mt-2 text-2xl font-black text-white">Prioritized action queue</h2>
+            <p className="mt-1 text-sm leading-6 text-sky-100/70">Each item explains why it matters and opens the source workspace.</p>
+          </div>
+          <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
+            {needsAttention.length} active
+          </div>
+        </div>
+        {needsAttention.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-5 text-sm text-sky-100/70">
+            No urgent attention items right now.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {needsAttention.map((item) => (
+              <div key={item.key} data-testid={`insights-attention-${item.key}`} className={`rounded-xl border p-4 shadow-sm ${severityTone(item.severity)}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black">{item.title}</div>
+                    <div className="mt-1 text-xs font-bold uppercase tracking-[0.12em] opacity-75">
+                      {item.source_workspace} | {item.severity}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-black">{int(item.count)}</div>
+                    {item.amount ? <div className="text-xs font-bold opacity-80">{money(item.amount)}</div> : null}
+                  </div>
+                </div>
+                <div className="mt-3 text-sm leading-6 opacity-90">{item.why}</div>
+                <a
+                  href={item.open_url}
+                  className="mt-3 inline-flex rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/15"
+                >
+                  {item.action_label || "Open"}
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <div className="mb-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <section data-testid="insights-morning-brief" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Morning Brief</div>
+          <h2 className="mt-2 text-2xl font-black text-white">Operations Analyst brief</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {[
+              ["Yesterday", morningBrief.yesterday],
+              ["Today", morningBrief.today],
+              ["Upcoming", morningBrief.upcoming],
+              ["Risks", morningBrief.risks],
+            ].map(([label, rows]) => (
+              <div key={label} className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{label}</div>
+                <ul className="mt-2 space-y-1 text-sm leading-6 text-sky-100">
+                  {(Array.isArray(rows) && rows.length ? rows : ["No activity."]).map((row) => (
+                    <li key={row}>{row}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 rounded-xl border border-sky-300/25 bg-sky-400/10 p-4 text-sm leading-6 text-sky-100">
+            <span className="font-black">Recommended action: </span>
+            {morningBrief.recommended_action || "Review reports and keep current work moving."}
+          </div>
+        </section>
+
+        <ProjectAssistantPanel
+          testId="insights-operations-analyst"
+          subtitle="Operations Analyst"
+          summary={operationsAnalyst.summary || "Project Assistant reviews business health, attention items, and source records before recommending next steps."}
+          actions={<ProjectAssistantConfidenceBadge value={operationsAnalyst.confidence || "medium"} />}
+        >
+          <ProjectAssistantSection title="Why this matters">
+            {operationsAnalyst.why_this_matters || "Insights highlights business bottlenecks, but operational work stays in source workspaces."}
+          </ProjectAssistantSection>
+          <ProjectAssistantCard title="Recommendations" tone="advisory">
+            <ul className="space-y-2 text-sm leading-6">
+              {(operationsAnalyst.recommendations || ["Review the highest priority attention item first."]).map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </ProjectAssistantCard>
+          <ProjectAssistantEvidenceList items={operationsAnalyst.evidence || []} />
+          <ProjectAssistantApprovalNotice compact>
+            Operations Analyst can prepare reviews and links, but it cannot release money, change pricing, notify customers, or modify records.
+          </ProjectAssistantApprovalNotice>
+        </ProjectAssistantPanel>
+      </div>
+
+      <section data-testid="insights-canonical-metrics" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Canonical Metrics</div>
+            <h2 className="mt-2 text-2xl font-black text-white">Plain-English KPIs</h2>
+            <p className="mt-1 text-sm leading-6 text-sky-100/70">One shared definition set for the numbers used throughout Insights.</p>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            "revenue",
+            "net_paid",
+            "pending_release",
+            "held_funds",
+            "outstanding_receivables",
+            "open_projects",
+            "open_opportunities",
+            "estimate_pipeline",
+            "warranty_requests",
+            "resolution_cases",
+            "team_capacity",
+            "customer_requests",
+          ].map((key) => (
+            <CanonicalMetricCard key={key} metric={canonicalMetrics[key]} />
+          ))}
+        </div>
+      </section>
+
+      <section data-testid="insights-opportunity-forecast" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Opportunity Forecast</div>
+          <h2 className="mt-2 text-2xl font-black text-white">Pipeline by workflow state</h2>
+          <p className="mt-1 text-sm leading-6 text-sky-100/70">
+            {opportunityForecast.source_note || "Deterministic workflow state from opportunities, estimates, agreements, and collected payments."}
+          </p>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {forecastSections.map((section) => (
+            <a
+              key={section.label}
+              href={section.href}
+              className="rounded-2xl border border-white/12 bg-slate-950/40 p-4 shadow-sm transition hover:border-sky-300/35 hover:bg-sky-500/10"
+            >
+              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{section.label}</div>
+              <div className="mt-2 text-2xl font-black text-white">{money(section.value)}</div>
+              <div className="mt-3 text-xs font-black text-sky-100">Open source records</div>
+            </a>
+          ))}
+        </div>
+      </section>
+
       {activeBusinessView === "at-a-glance" ? (
         <div data-testid="dashboard-view-at-a-glance">
           <DashboardSection
@@ -1603,6 +1835,13 @@ export default function BusinessDashboard() {
               ))}
             </div>
           </DashboardSection>
+
+          <ContractorInsightsSection
+            insights={contractorInsights}
+            availableFamilies={availableInsightFamilies}
+            selectedFamilyKey={insightFamilyKey}
+            onFamilyChange={handleFamilyChange}
+          />
         </div>
       ) : null}
 

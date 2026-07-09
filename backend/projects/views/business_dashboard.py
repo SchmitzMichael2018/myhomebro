@@ -34,6 +34,7 @@ from projects.models import (
 from projects.models_project_intake import ProjectIntake
 from projects.services.business_insights import build_business_insights
 from projects.services.business_dashboard_insights import build_business_dashboard_contractor_insights
+from projects.services.insights_command_center import build_insights_command_center
 from projects.services.milestone_lifecycle import milestone_is_overdue
 from payments.fees import MAX_PLATFORM_FEE, get_collected_platform_fees_for_agreement
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
@@ -1284,6 +1285,21 @@ class BusinessDashboardSummaryAPIView(APIView):
                 }
             )
 
+        business_performance = _build_business_performance_summary(
+            contractor, start_dt, end_dt
+        )
+        contractor_insights = build_business_dashboard_contractor_insights(
+            contractor,
+            start_dt,
+            end_dt,
+            project_family_key=request.query_params.get("project_family_key", ""),
+        )
+        business_insights = build_business_insights(contractor, start_dt, end_dt)
+        progress_summary = _build_progress_summary(contractor, end_dt)
+        fee_projects = _build_fee_project_rows(contractor, start_dt, end_dt)
+        financial_summary = _build_financial_summary(contractor, start_dt, end_dt)
+        project_financials = _build_project_financial_rows(contractor)
+
         payload = {
             "snapshot": {
                 "jobs_completed": jobs_completed,
@@ -1295,22 +1311,13 @@ class BusinessDashboardSummaryAPIView(APIView):
                 "disputes_open": invoices.filter(disputed=True).count(),
                 "avg_completion_days": avg_completion_days,
             },
-            "business_performance": _build_business_performance_summary(
-                contractor, start_dt, end_dt
-            ),
-            "contractor_insights": build_business_dashboard_contractor_insights(
-                contractor,
-                start_dt,
-                end_dt,
-                project_family_key=request.query_params.get("project_family_key", ""),
-            ),
+            "business_performance": business_performance,
+            "contractor_insights": contractor_insights,
             "by_category": category_rows,
-            "insights": build_business_insights(contractor, start_dt, end_dt),
-            "progress_summary": _build_progress_summary(contractor, end_dt),
-            "fee_projects": _build_fee_project_rows(contractor, start_dt, end_dt),
+            "insights": business_insights,
+            "progress_summary": progress_summary,
+            "fee_projects": fee_projects,
         }
-        financial_summary = _build_financial_summary(contractor, start_dt, end_dt)
-        project_financials = _build_project_financial_rows(contractor)
         payload.update(
             {
                 "financial_summary": financial_summary,
@@ -1321,6 +1328,14 @@ class BusinessDashboardSummaryAPIView(APIView):
             }
         )
         payload.update(_build_chart_series(contractor, request, start_dt, end_dt))
+        payload["command_center"] = build_insights_command_center(
+            contractor,
+            start_dt,
+            end_dt,
+            financial_summary=financial_summary,
+            snapshot=payload["snapshot"],
+            business_performance=business_performance,
+        )
 
         return Response(payload)
 
