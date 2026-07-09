@@ -122,6 +122,7 @@ test('agreement detail renders warranty records for the linked agreement', async
     waitUntil: 'domcontentloaded',
   });
 
+  await page.getByTestId('agreement-workspace-tab-documents').click();
   await expect(page.getByTestId('agreement-warranties-heading')).toBeVisible();
   await expect(page.getByTestId(`warranty-card-${WARRANTY_ID}`)).toContainText(
     '12-Month Workmanship Warranty'
