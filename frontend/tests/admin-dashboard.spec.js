@@ -270,6 +270,168 @@ async function mockAdminDashboard(page) {
             },
           ],
         },
+        operations_center: {
+          label: 'Marketplace Operations Center',
+          generated_at: '2026-03-26T12:00:00Z',
+          attention_queue: [
+            {
+              key: 'saved-marketplace-routing',
+              category: 'Marketplace',
+              severity: 'high',
+              title: '5 saved marketplace request(s)',
+              why: 'Saved intake should be reviewed before routing to contractors.',
+              source: 'Saved marketplace request backlog',
+              route: '/app/admin/marketplace',
+              count: 5,
+              requires_human_approval: true,
+            },
+            {
+              key: 'failed-reimbursement-release',
+              category: 'Financial Operations',
+              severity: 'high',
+              title: '1 failed reimbursement release(s)',
+              why: 'Failed transfer records need investigation before any retry or manual release.',
+              source: 'Escrow reimbursement release queue',
+              route: '/app/admin/reimbursements',
+              count: 1,
+              requires_human_approval: true,
+            },
+            {
+              key: 'resolution-review',
+              category: 'Resolution',
+              severity: 'high',
+              title: '1 resolution case(s) need review',
+              why: 'Open cases can affect customer trust, contractor trust, and payment holds.',
+              source: 'Resolution case queue',
+              route: '/app/admin?view=disputes&status=active',
+              count: 1,
+              requires_human_approval: true,
+            },
+          ],
+          financial_operations: {
+            kpis: {
+              pending_reimbursements: 2,
+              failed_releases: 1,
+              held_funds: 1,
+              dispute_payment_holds: 1,
+              fee_mismatches: 0,
+              escrow_in_flight_total: '4850.00',
+            },
+            queues: {
+              pending_releases: [],
+              failed: [],
+              held: [],
+            },
+            links: [
+              { label: 'Reimbursements', route: '/app/admin/reimbursements' },
+              { label: 'Fee ledger', route: '/app/admin?view=fee_audit' },
+            ],
+          },
+          resolution_oversight: {
+            kpis: {
+              open_cases: 1,
+              awaiting_admin_review: 1,
+              payment_impact_cases: 1,
+              missing_evidence_cases: 0,
+              oldest_case_age_days: 3,
+            },
+            queues: {
+              awaiting_admin_review: [],
+              awaiting_response: [],
+              open: [],
+            },
+            guardrail: 'Resolution recommendations are advisory. Humans decide accept, reject, counter, or escalate.',
+          },
+          warranty_oversight: {
+            kpis: {
+              open_requests: 2,
+              overdue_requests: 1,
+              escalated_requests: 1,
+              repair_overdue: 0,
+              warranty_to_resolution: 1,
+              maintenance_overdue: 1,
+            },
+            queues: {
+              overdue: [],
+              escalated: [],
+              repair_overdue: [],
+            },
+            fallback: 'Maintenance overdue counts are shown as property-operations context when warranty request data is not available.',
+          },
+          platform_health: {
+            summary: 'No connected platform-health monitor is configured yet. Available records are shown without inventing monitoring data.',
+            categories: [
+              {
+                key: 'payments_stripe',
+                label: 'Payments / Stripe',
+                status: 'attention',
+                message: '1 failed reimbursement release(s) from available payment records',
+                source: 'Expense reimbursement release records',
+              },
+              {
+                key: 'webhooks',
+                label: 'Webhooks',
+                status: 'not_connected',
+                message: 'Not connected yet',
+                source: 'No dedicated monitoring source configured',
+              },
+              {
+                key: 'notifications',
+                label: 'Notifications',
+                status: 'not_connected',
+                message: 'Not connected yet',
+                source: 'No dedicated monitoring source configured',
+              },
+            ],
+          },
+          audit_activity: {
+            status: 'foundation',
+            summary: 'Unified admin action audit log is not connected yet. Showing recent advisory and operations signals only.',
+            items: [
+              {
+                label: 'Requests have zero bids',
+                source: 'marketplace_analytics',
+                generated_at: '2026-06-09T12:00:00Z',
+                route: '/app/admin/marketplace/analytics',
+              },
+            ],
+          },
+          advisor: {
+            role: 'Marketplace Operations Advisor',
+            summary: 'Marketplace is the highest-priority area from available admin records: 5 saved marketplace request(s).',
+            recommendations: [
+              {
+                title: '5 saved marketplace request(s)',
+                why: 'Saved intake should be reviewed before routing to contractors.',
+                route: '/app/admin/marketplace',
+                category: 'Marketplace',
+                severity: 'high',
+              },
+              {
+                title: '1 failed reimbursement release(s)',
+                why: 'Failed transfer records need investigation before any retry or manual release.',
+                route: '/app/admin/reimbursements',
+                category: 'Financial Operations',
+                severity: 'high',
+              },
+            ],
+            evidence: [
+              { label: 'Admin overview operations payload', type: 'source', status: 'available' },
+              { label: 'Dedicated platform monitoring', type: 'source', status: 'not connected yet' },
+            ],
+            confidence: 'medium',
+            missing_information: [
+              'Dedicated webhook, notification, PDF, background job, storage, and API error monitoring',
+              'Granular admin action audit log',
+            ],
+            human_only_actions: [
+              'Verify, reject, suspend, or unsuspend contractors',
+              'Route marketplace requests',
+              'Release reimbursements, refunds, payouts, or held funds',
+            ],
+            safe_prepared_actions: ['Prepare investigation checklist'],
+          },
+        },
       }),
     });
   });
@@ -625,8 +787,10 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
   await expect(page.getByText('Admin Home')).toHaveCount(0);
   await expect(page.getByText('Support Tools')).toHaveCount(0);
-  await expect(page.getByText('Admin Dashboard')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'User Tools', exact: true })).toBeVisible();
+  await expect(page.getByText('Marketplace Operations Center')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Support', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Financial Operations', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Platform Health', exact: true })).toBeVisible();
   const attentionClass = await page.getByTestId('admin-needs-attention').getAttribute('class');
   expect(attentionClass).toContain('bg-[#061d42]/95');
   await expect(page.getByTestId('admin-quick-actions')).toBeVisible();
@@ -646,6 +810,15 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-stat-open-disputes')).toContainText('1');
   await expect(page.getByTestId('admin-growth-insights')).toBeVisible();
   await expect(page.getByTestId('admin-revenue-summary')).toBeVisible();
+  await expect(page.getByTestId('admin-marketplace-operations-center')).toBeVisible();
+  await expect(page.getByTestId('admin-attention-queue')).toContainText('5 saved marketplace request(s)');
+  await expect(page.getByTestId('admin-financial-operations-summary')).toContainText('Failed Releases');
+  await expect(page.getByTestId('admin-resolution-oversight')).toContainText('Resolution Oversight');
+  await expect(page.getByTestId('admin-warranty-oversight')).toContainText('Warranty Oversight');
+  await expect(page.getByTestId('admin-platform-health')).toContainText('Payments / Stripe');
+  await expect(page.getByTestId('admin-audit-activity')).toContainText('Unified admin action audit log is not connected yet');
+  await expect(page.getByTestId('admin-marketplace-operations-advisor')).toContainText('Marketplace Operations Advisor');
+  await expect(page.getByTestId('admin-marketplace-operations-advisor')).toContainText('Human approval required');
   await expect(page.getByTestId('admin-operations-center')).toBeVisible();
   await expect(page.getByTestId('admin-ops-marketplace-backlog')).toContainText('5');
   await expect(page.getByTestId('admin-ops-reimbursements')).toContainText('2');
@@ -682,8 +855,8 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await page.goto('/app/admin?view=support', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'User Tools', exact: true })).toHaveClass(/bg-white/);
-  await expect(page.getByRole('heading', { name: 'User Tools' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Support', exact: true })).toHaveClass(/bg-white/);
+  await expect(page.getByRole('heading', { name: 'Support' })).toBeVisible();
   await expect(page.getByText('Password Reset', { exact: true })).toBeVisible();
   await expect(page.getByText("Send a password reset email using Django's standard reset flow.")).toBeVisible();
   await expect(page.getByPlaceholder('user@email.com')).toBeVisible();

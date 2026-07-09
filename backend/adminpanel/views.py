@@ -21,6 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from .permissions import IsAdminUserRole
 from .utils import safe_get
+from .marketplace_operations_center import build_marketplace_operations_center
 from projects.api.ai_agreement_views import _persist_pricing_estimates, suggest_pricing_refresh
 from projects.services.agreements.contractor_signing import send_signature_request_to_homeowner
 from projects.services.contractor_reviews import contractor_performance_summary, moderate_review
@@ -67,6 +68,9 @@ ContractorOpportunity = _get_first_model([("projects", "ContractorOpportunity")]
 MarketplaceLocation = _get_first_model([("projects", "MarketplaceLocation")])
 ExpenseRequest = _get_first_model([("projects", "ExpenseRequest")])
 MaintenanceWorkOrder = _get_first_model([("projects", "MaintenanceWorkOrder")])
+WarrantyRequest = _get_first_model([("projects", "WarrantyRequest")])
+WarrantyWorkOrder = _get_first_model([("projects", "WarrantyWorkOrder")])
+SupportTicket = _get_first_model([("projects", "SupportTicket")])
 
 # Dispute may be a model or derived from invoices
 Dispute = _get_first_model([("projects", "Dispute")])
@@ -784,6 +788,114 @@ def _admin_operations_payload(today, month_start) -> dict:
     return operations
 
 
+def _admin_warranty_payload(today) -> dict:
+    payload = {
+        "kpis": {
+            "open_requests": 0,
+            "overdue_requests": 0,
+            "escalated_requests": 0,
+            "repair_overdue": 0,
+            "warranty_to_resolution": 0,
+        },
+        "overdue": [],
+        "escalated": [],
+        "repair_overdue": [],
+        "status": "not_connected" if WarrantyRequest is None else "available",
+    }
+    if WarrantyRequest is None:
+        return payload
+
+    terminal_statuses = {"completed", "denied", "closed"}
+    open_qs = WarrantyRequest.objects.exclude(status__in=list(terminal_statuses)).select_related(
+        "agreement",
+        "agreement__project",
+        "contractor",
+        "homeowner",
+    )
+    overdue_qs = open_qs.filter(response_due_at__isnull=False, response_due_at__date__lt=today)
+    escalated_qs = open_qs.filter(Q(status="escalated_to_resolution") | Q(escalated_dispute_id__isnull=False))
+
+    payload["kpis"]["open_requests"] = open_qs.count()
+    payload["kpis"]["overdue_requests"] = overdue_qs.count()
+    payload["kpis"]["escalated_requests"] = escalated_qs.count()
+    payload["kpis"]["warranty_to_resolution"] = escalated_qs.count()
+
+    def warranty_row(row) -> dict:
+        created_at = getattr(row, "created_at", None)
+        agreement = getattr(row, "agreement", None)
+        return {
+            "id": row.id,
+            "title": getattr(row, "title", "") or f"Warranty request #{row.id}",
+            "project": _project_title_for_agreement(agreement) if agreement else "",
+            "contractor": _contractor_display(getattr(row, "contractor", None)),
+            "customer": _display_name(
+                getattr(getattr(row, "homeowner", None), "full_name", ""),
+                getattr(getattr(row, "homeowner", None), "email", ""),
+            ),
+            "status": getattr(row, "status", ""),
+            "severity": getattr(row, "severity", ""),
+            "response_due_at": _iso(getattr(row, "response_due_at", None)),
+            "age_days": (today - created_at.date()).days if created_at else 0,
+            "url": "/app/admin?view=overview#warranty-oversight",
+        }
+
+    payload["overdue"] = [warranty_row(row) for row in overdue_qs.order_by("response_due_at", "-id")[:8]]
+    payload["escalated"] = [warranty_row(row) for row in escalated_qs.order_by("-updated_at", "-id")[:8]]
+
+    if WarrantyWorkOrder is not None:
+        repair_qs = WarrantyWorkOrder.objects.filter(status__in=["open", "scheduled", "in_progress"])
+        if any(field.name == "scheduled_for" for field in WarrantyWorkOrder._meta.fields):
+            repair_qs = repair_qs.filter(scheduled_for__isnull=False, scheduled_for__date__lt=today)
+        payload["kpis"]["repair_overdue"] = repair_qs.count()
+        payload["repair_overdue"] = [
+            {
+                "id": row.id,
+                "title": getattr(row, "title", "") or f"Warranty work order #{row.id}",
+                "status": getattr(row, "status", ""),
+                "scheduled_for": _iso(getattr(row, "scheduled_for", None)),
+                "url": "/app/admin?view=overview#warranty-oversight",
+            }
+            for row in repair_qs.order_by("scheduled_for", "-id")[:8]
+        ]
+
+    return payload
+
+
+def _admin_support_payload() -> dict:
+    payload = {
+        "kpis": {
+            "open_tickets": 0,
+            "urgent_tickets": 0,
+            "payment_or_dispute_tickets": 0,
+        },
+        "open": [],
+        "status": "not_connected" if SupportTicket is None else "available",
+    }
+    if SupportTicket is None:
+        return payload
+
+    open_statuses = ["open", "in_review", "waiting_on_user"]
+    open_qs = SupportTicket.objects.filter(status__in=open_statuses).order_by("-updated_at", "-id")
+    payload["kpis"]["open_tickets"] = open_qs.count()
+    payload["kpis"]["urgent_tickets"] = open_qs.filter(priority="urgent").count()
+    payload["kpis"]["payment_or_dispute_tickets"] = open_qs.filter(
+        category__in=["payment_escrow", "invoice_issue", "dispute_review"]
+    ).count()
+    payload["open"] = [
+        {
+            "id": row.id,
+            "title": getattr(row, "subject", "") or f"Support ticket #{row.id}",
+            "status": getattr(row, "status", ""),
+            "priority": getattr(row, "priority", ""),
+            "category": getattr(row, "category", ""),
+            "updated_at": _iso(getattr(row, "updated_at", None)),
+            "url": "/app/support",
+        }
+        for row in open_qs[:8]
+    ]
+    return payload
+
+
 # -------------------------------------------------------------------
 # Views
 # -------------------------------------------------------------------
@@ -840,6 +952,7 @@ class AdminOverview(APIView):
             "top_regions": [],
             "insights": [],
             "operations": {},
+            "operations_center": {},
             "admin_views": {
                 "contractors": "contractors",
                 "subcontractors": "subcontractors",
@@ -1156,6 +1269,16 @@ class AdminOverview(APIView):
             })
         data["insights"] = insights[:6]
         data["operations"] = _admin_operations_payload(today, month_start)
+        data["warranty_operations"] = _admin_warranty_payload(today)
+        data["support_operations"] = _admin_support_payload()
+        data["operations_center"] = build_marketplace_operations_center(
+            operations=data["operations"],
+            summary=data["summary"],
+            money=data["money"],
+            warranty=data["warranty_operations"],
+            support=data["support_operations"],
+            generated_at=data["generated_at"],
+        )
 
         return Response(data, status=status.HTTP_200_OK)
 

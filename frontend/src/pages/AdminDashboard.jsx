@@ -3,6 +3,14 @@ import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import { isDisputeTerminal } from "../lib/disputeStatus.js";
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantEvidenceList,
+  ProjectAssistantMissingInfoList,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../components/ProjectAssistantExperience.jsx";
 
 const ADMIN_BASE = "/api/projects/admin";
 
@@ -563,6 +571,16 @@ export default function AdminDashboard() {
   const opsReviews = operations.reviews || {};
   const opsUsers = operations.users || {};
   const opsRecommendations = Array.isArray(operations.recommendations) ? operations.recommendations : [];
+  const opsCenter = overview?.operations_center || {};
+  const centerAttention = Array.isArray(opsCenter.attention_queue) ? opsCenter.attention_queue : [];
+  const centerFinancial = opsCenter.financial_operations || {};
+  const centerResolution = opsCenter.resolution_oversight || {};
+  const centerWarranty = opsCenter.warranty_oversight || {};
+  const centerPlatformHealth = opsCenter.platform_health || {};
+  const centerAudit = opsCenter.audit_activity || {};
+  const centerAdvisor = opsCenter.advisor || {};
+  const centerHealthCategories = Array.isArray(centerPlatformHealth.categories) ? centerPlatformHealth.categories : [];
+  const centerAdvisorRecommendations = Array.isArray(centerAdvisor.recommendations) ? centerAdvisor.recommendations : [];
 
   const tracker = goals?.salary_tracker || {};
   const goal = goals?.goal || {};
@@ -772,20 +790,21 @@ export default function AdminDashboard() {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {[
-          ["overview", "Overview"],
-          ["contractors", "Contractors"],
-          ["subcontractors", "Subcontractors"],
-          ["homeowners", "Customers"],
-          ["agreements", "Agreements"],
-          ["disputes", "Disputes"],
-          ["geo", "Geo"],
-          ["fee_audit", "Fee Audit"],
-          ["support", "User Tools"],
-        ].map(([key, label]) => (
+          { key: "overview", label: "Overview", action: () => goTo("overview") },
+          { key: "marketplace", label: "Marketplace", action: () => navigate("/app/admin/marketplace") },
+          { key: "contractors", label: "Contractors", action: () => goTo("contractors") },
+          { key: "homeowners", label: "Customers", action: () => goTo("homeowners") },
+          { key: "fee_audit", label: "Financial Operations", action: () => goTo("fee_audit") },
+          { key: "disputes", label: "Resolution", action: () => goToDisputes("active") },
+          { key: "warranty", label: "Warranty", action: () => navigate("/app/admin?view=overview#warranty-oversight") },
+          { key: "platform_health", label: "Platform Health", action: () => navigate("/app/admin?view=overview#platform-health") },
+          { key: "support", label: "Support", action: () => goTo("support") },
+          { key: "settings", label: "Settings", action: () => navigate("/app/admin/templates") },
+        ].map(({ key, label, action }) => (
           <button
             key={key}
             type="button"
-            onClick={() => goTo(key)}
+            onClick={action}
             className={[
               "rounded-full border px-3 py-1.5 text-xs font-extrabold transition",
               view === key
@@ -832,7 +851,7 @@ export default function AdminDashboard() {
                     <div className="text-xs font-extrabold uppercase tracking-wide text-sky-100/65">Quick Actions</div>
                     <div className="mt-3 grid grid-cols-1 gap-2">
                       <ActionItem icon="⚠️" title="View Resolution Cases" desc="Open the resolution queue." tone="bad" onClick={() => goToDisputes("active")} />
-                      <ActionItem icon="🛟" title="User Tools" desc="Send password reset emails for user accounts." onClick={() => goTo("support")} />
+                      <ActionItem icon="🛟" title="Support" desc="Send password reset emails for user accounts." onClick={() => goTo("support")} />
                       <ActionItem icon="🧾" title="View Fee Audit" desc="Inspect the ledger and mismatches." onClick={() => goTo("fee_audit")} />
                       <ActionItem icon="💸" title="Escrow Reimbursements" desc="Review approved reimbursement release requests." onClick={() => navigate("/app/admin/reimbursements")} />
                       <ActionItem icon="★" title="Review Moderation" desc="Approve, hide, or reject customer reviews." onClick={() => navigate("/app/admin/reviews")} />
@@ -845,6 +864,190 @@ export default function AdminDashboard() {
                       <ActionItem icon="📋" title="View Agreements" desc="Jump to agreement operations." onClick={() => goTo("agreements")} />
                     </div>
                   </div>
+                </div>
+              </SectionCard>
+
+              <SectionCard
+                title={opsCenter.label || "Marketplace Operations Center"}
+                subtitle="Unified admin attention queue for marketplace health, money risk, resolution pressure, warranty oversight, platform health, and human-approved next steps."
+                testId="admin-marketplace-operations-center"
+                tone={centerAttention.some((item) => item.severity === "high" || item.severity === "critical") ? "warn" : "neutral"}
+              >
+                <div className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.95fr)]">
+                  <div data-testid="admin-attention-queue" className="rounded-2xl border border-white/10 bg-[#0b2a58]/90 p-4">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/65">Attention Queue</div>
+                        <div className="mt-1 text-sm text-sky-100/75">What an admin should investigate first.</div>
+                      </div>
+                      <div className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black text-sky-50">
+                        {fmtNumber(centerAttention.length)} item(s)
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {centerAttention.length ? (
+                        centerAttention.slice(0, 6).map((item) => (
+                          <button
+                            key={item.key || item.title}
+                            type="button"
+                            onClick={() => item.route && navigate(item.route)}
+                            className="w-full rounded-xl border border-white/10 bg-white/8 p-3 text-left transition hover:border-amber-200/50 hover:bg-white/12"
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="rounded-full border border-amber-200/25 bg-amber-200/10 px-2 py-0.5 text-[11px] font-black uppercase tracking-[0.12em] text-amber-100">
+                                {item.severity || "info"}
+                              </span>
+                              <span className="text-sm font-black text-white">{item.title}</span>
+                            </div>
+                            <div className="mt-1 text-xs leading-5 text-sky-100/75">{item.why}</div>
+                            <div className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-sky-100/45">
+                              {item.category} | {item.source}
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-sm text-sky-100/70">
+                          No urgent marketplace operations issues were detected from available records.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <ProjectAssistantPanel
+                    testId="admin-marketplace-operations-advisor"
+                    subtitle="Marketplace Operations Advisor"
+                    summary={centerAdvisor.summary || "Project Assistant can summarize available admin signals and prepare investigation steps for human approval."}
+                    className="h-full"
+                  >
+                    <div className="flex flex-wrap gap-2">
+                      <ProjectAssistantConfidenceBadge value={centerAdvisor.confidence || "needs_more_information"} />
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-black text-slate-700">
+                        Advisory only
+                      </span>
+                    </div>
+                    <ProjectAssistantSection title="Recommended investigation steps">
+                      {centerAdvisorRecommendations.length ? (
+                        <div className="grid gap-2">
+                          {centerAdvisorRecommendations.slice(0, 4).map((item) => (
+                            <button
+                              key={`${item.category}-${item.title}`}
+                              type="button"
+                              onClick={() => item.route && navigate(item.route)}
+                              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50"
+                            >
+                              <div className="font-black text-slate-900">{item.title}</div>
+                              <div className="mt-1 text-xs text-slate-600">{item.why}</div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span>No high-priority investigation steps are available from current records.</span>
+                      )}
+                    </ProjectAssistantSection>
+                    <ProjectAssistantEvidenceList items={centerAdvisor.evidence || []} />
+                    <ProjectAssistantMissingInfoList items={centerAdvisor.missing_information || []} />
+                    <ProjectAssistantApprovalNotice compact>
+                      Project Assistant may prepare investigation notes, but admins must approve all verification, routing, payment, warranty, resolution, messaging, and settings actions.
+                    </ProjectAssistantApprovalNotice>
+                  </ProjectAssistantPanel>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
+                  <div data-testid="admin-financial-operations-summary" className="rounded-2xl border border-white/10 bg-white/8 p-4">
+                    <div className="text-sm font-black text-white">Financial Operations</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <ThinStat label="Pending Reimbursements" value={fmtNumber(centerFinancial.kpis?.pending_reimbursements || 0)} />
+                      <ThinStat label="Failed Releases" value={fmtNumber(centerFinancial.kpis?.failed_releases || 0)} />
+                      <ThinStat label="Held Funds" value={fmtNumber(centerFinancial.kpis?.held_funds || 0)} />
+                      <ThinStat label="Dispute Holds" value={fmtNumber(centerFinancial.kpis?.dispute_payment_holds || 0)} />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => navigate("/app/admin/reimbursements")}
+                      className="mt-3 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black text-sky-50 hover:bg-white/15"
+                    >
+                      Open Financial Operations
+                    </button>
+                  </div>
+
+                  <div data-testid="admin-resolution-oversight" className="rounded-2xl border border-white/10 bg-white/8 p-4">
+                    <div className="text-sm font-black text-white">Resolution Oversight</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <ThinStat label="Open Cases" value={fmtNumber(centerResolution.kpis?.open_cases || 0)} />
+                      <ThinStat label="Admin Review" value={fmtNumber(centerResolution.kpis?.awaiting_admin_review || 0)} />
+                      <ThinStat label="Payment Impact" value={fmtNumber(centerResolution.kpis?.payment_impact_cases || 0)} />
+                      <ThinStat label="Oldest Age" value={`${fmtNumber(centerResolution.kpis?.oldest_case_age_days || 0)}d`} />
+                    </div>
+                    <div className="mt-3 text-xs leading-5 text-sky-100/70">
+                      {centerResolution.guardrail || "Recommendations are advisory; humans decide resolution outcomes."}
+                    </div>
+                  </div>
+
+                  <div data-testid="admin-warranty-oversight" id="warranty-oversight" className="rounded-2xl border border-white/10 bg-white/8 p-4">
+                    <div className="text-sm font-black text-white">Warranty Oversight</div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <ThinStat label="Open" value={fmtNumber(centerWarranty.kpis?.open_requests || 0)} />
+                      <ThinStat label="Overdue" value={fmtNumber(centerWarranty.kpis?.overdue_requests || 0)} />
+                      <ThinStat label="Escalated" value={fmtNumber(centerWarranty.kpis?.escalated_requests || 0)} />
+                      <ThinStat label="Repair Overdue" value={fmtNumber(centerWarranty.kpis?.repair_overdue || 0)} />
+                    </div>
+                    <div className="mt-3 text-xs leading-5 text-sky-100/70">
+                      {centerWarranty.fallback || "Warranty signals are shown when available from warranty records."}
+                    </div>
+                  </div>
+
+                  <div data-testid="admin-platform-health" id="platform-health" className="rounded-2xl border border-white/10 bg-white/8 p-4">
+                    <div className="text-sm font-black text-white">Platform Health</div>
+                    <div className="mt-1 text-xs leading-5 text-sky-100/70">
+                      {centerPlatformHealth.summary || "No recent issues detected from available records."}
+                    </div>
+                    <div className="mt-3 max-h-56 space-y-2 overflow-auto pr-1">
+                      {centerHealthCategories.length ? (
+                        centerHealthCategories.map((item) => (
+                          <div key={item.key} className="rounded-lg border border-white/10 bg-white/8 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-black text-white">{item.label}</span>
+                              <span className="text-[10px] font-black uppercase tracking-[0.12em] text-sky-100/50">{item.status}</span>
+                            </div>
+                            <div className="mt-1 text-xs text-sky-100/65">{item.message}</div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-lg border border-white/10 bg-white/8 px-3 py-2 text-xs text-sky-100/65">
+                          No platform-health categories are connected yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div data-testid="admin-audit-activity" className="mt-4 rounded-2xl border border-white/10 bg-[#0b2a58]/70 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-black text-white">Admin Audit Visibility</div>
+                      <div className="mt-1 text-xs leading-5 text-sky-100/70">
+                        {centerAudit.summary || "Unified admin action audit log is not connected yet."}
+                      </div>
+                    </div>
+                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-sky-50">
+                      {centerAudit.status || "foundation"}
+                    </span>
+                  </div>
+                  {Array.isArray(centerAudit.items) && centerAudit.items.length ? (
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {centerAudit.items.slice(0, 4).map((item, index) => (
+                        <button
+                          key={`${item.label}-${index}`}
+                          type="button"
+                          onClick={() => item.route && navigate(item.route)}
+                          className="rounded-xl border border-white/10 bg-white/8 p-3 text-left hover:bg-white/12"
+                        >
+                          <div className="text-sm font-black text-white">{item.label}</div>
+                          <div className="mt-1 text-xs text-sky-100/65">{item.source || "admin_operations"}</div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </SectionCard>
 
@@ -1962,7 +2165,7 @@ export default function AdminDashboard() {
           {/* ===================== USER TOOLS ===================== */}
           {view === "support" && (
             <div className="mt-6 rounded-2xl border border-black/10 bg-white/70 p-5 shadow-sm">
-              <h2 className="text-lg font-extrabold text-slate-900">User Tools</h2>
+              <h2 className="text-lg font-extrabold text-slate-900">Support</h2>
               <div className="mt-4 text-sm font-extrabold text-slate-900">Password Reset</div>
               <div className="mt-1 text-sm text-slate-700">Send a password reset email using Django's standard reset flow.</div>
 

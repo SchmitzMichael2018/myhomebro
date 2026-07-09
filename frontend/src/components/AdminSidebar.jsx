@@ -45,7 +45,7 @@ export default function AdminSidebar({
           Admin
         </div>
         <div className="mt-1 text-lg font-extrabold text-slate-900">
-          Control Panel
+          Marketplace Operations Center
         </div>
 
         <div className="mt-4 flex flex-col gap-2">
@@ -92,16 +92,16 @@ export default function AdminSidebar({
 
           <Item
             active={activeTab === "support"}
-            label="User Tools"
+            label="Support"
             onClick={() => setActiveTab("support")}
           />
         </div>
 
         <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600 border border-black/5">
-          <div className="font-extrabold text-slate-900">Tip</div>
+          <div className="font-extrabold text-slate-900">Operations Center</div>
           <div className="mt-1">
-            Use <b>Goals</b> to track your $300k target using
-            <b> actual platform fees</b> (receipts).
+            Start with the attention queue, then drill into marketplace,
+            financial, resolution, warranty, and support records.
           </div>
         </div>
       </div>
