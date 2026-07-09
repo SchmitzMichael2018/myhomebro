@@ -6,6 +6,13 @@ import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
 import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantCard,
+  ProjectAssistantConfidenceBadge,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../components/ProjectAssistantExperience.jsx";
 
 function formatDateTime(value) {
   if (!value) return "—";
@@ -44,6 +51,35 @@ function normalizeListResponse(data) {
 
 function normalizeText(value) {
   return String(value || "").trim().toLowerCase();
+}
+
+function formatStatus(value) {
+  const text = String(value || "").replaceAll("_", " ").trim();
+  return text ? text.replace(/\b\w/g, (char) => char.toUpperCase()) : "Open";
+}
+
+function capacityTone(state) {
+  if (state === "overbooked") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (state === "near_capacity") return "border-amber-200 bg-amber-50 text-amber-800";
+  if (state === "available") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function SummaryPill({ label, value, tone = "slate" }) {
+  const toneClass =
+    tone === "warn"
+      ? "border-amber-200 bg-amber-50 text-amber-800"
+      : tone === "danger"
+        ? "border-rose-200 bg-rose-50 text-rose-800"
+        : tone === "good"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+          : "border-slate-200 bg-slate-50 text-slate-700";
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${toneClass}`}>
+      <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">{label}</div>
+      <div className="mt-1 text-xl font-black">{Number(value || 0).toLocaleString()}</div>
+    </div>
+  );
 }
 
 function isDraftOrPlanningItem(item) {
@@ -101,6 +137,7 @@ export default function TeamOverviewPage() {
 
   const [operations, setOperations] = useState(null);
   const [teamRows, setTeamRows] = useState([]);
+  const [workforce, setWorkforce] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -109,18 +146,21 @@ export default function TeamOverviewPage() {
     async function load() {
       try {
         setLoading(true);
-        const [operationsRes, teamRes] = await Promise.all([
+        const [operationsRes, teamRes, workforceRes] = await Promise.all([
           api.get("/projects/dashboard/operations/"),
           api.get("/projects/subaccounts/", { params: { page_size: 200 } }),
+          api.get("/projects/workforce/assignments/"),
         ]);
         if (!active) return;
         setOperations(operationsRes.data || null);
         setTeamRows(normalizeListResponse(teamRes.data));
+        setWorkforce(workforceRes.data || null);
       } catch (error) {
         console.error(error);
         if (!active) return;
         setOperations(null);
         setTeamRows([]);
+        setWorkforce(null);
       } finally {
         if (active) setLoading(false);
       }
@@ -177,6 +217,24 @@ export default function TeamOverviewPage() {
       upcomingSchedule: weekItems.length,
     };
   }, [attentionCounts, teamRows, weekItems.length]);
+
+  const workforceRows = useMemo(() => {
+    return Array.isArray(workforce?.results) ? workforce.results : [];
+  }, [workforce]);
+
+  const workforceSummary = workforce?.summary || {};
+  const capacityRows = useMemo(() => {
+    return Array.isArray(workforce?.capacity) ? workforce.capacity.slice(0, 6) : [];
+  }, [workforce]);
+  const skillRows = useMemo(() => {
+    return Array.isArray(workforce?.skills_matrix) ? workforce.skills_matrix.slice(0, 8) : [];
+  }, [workforce]);
+  const mixedWorkRows = useMemo(() => {
+    return workforceRows
+      .filter((row) => row.is_warranty_work || row.is_maintenance_work || row.is_estimate_work || row.source_type === "unassigned_milestone")
+      .slice(0, 8);
+  }, [workforceRows]);
+  const assistant = workforce?.assistant || {};
 
   const quickActionButton = (label, to, testId, tone = "primary") => (
     <button
@@ -261,6 +319,183 @@ export default function TeamOverviewPage() {
             onClick={() => navigate("/app/team/schedule")}
           />
         </section>
+
+        <section data-testid="team-workforce-command-center" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-base font-bold text-slate-900">Workforce Command Center</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Unified read layer for agreements, milestones, estimates, warranty, maintenance, and crew planning.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/app/team/assignments")}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              Open Workload
+            </button>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+            <SummaryPill label="Total" value={workforceSummary.total} />
+            <SummaryPill label="Today" value={workforceSummary.today_count} />
+            <SummaryPill label="This Week" value={workforceSummary.this_week_count} />
+            <SummaryPill label="Unassigned" value={workforceSummary.unassigned_count} tone="warn" />
+            <SummaryPill label="At Risk" value={workforceSummary.at_risk_count} tone="danger" />
+            <SummaryPill label="Warranty" value={workforceSummary.warranty_count} />
+            <SummaryPill label="Maintenance" value={workforceSummary.maintenance_count} />
+            <SummaryPill label="Estimates" value={workforceSummary.estimate_count} />
+          </div>
+        </section>
+
+        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+          <section data-testid="team-workload-mixed-types" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-base font-bold text-slate-900">Unified Workload</div>
+                <div className="mt-1 text-sm text-slate-600">
+                  Mixed work types stay visible without becoming separate assignment systems.
+                </div>
+              </div>
+            </div>
+            {loading ? (
+              <div className="mt-4 text-sm text-slate-500">Loading workload...</div>
+            ) : mixedWorkRows.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center text-sm text-slate-700">
+                No estimate, warranty, maintenance, or unassigned milestone work is currently active.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {mixedWorkRows.map((row) => (
+                  <div key={`${row.source_type}-${row.source_id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+                            {formatStatus(row.source_label || row.source_type)}
+                          </span>
+                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+                            {formatStatus(row.status)}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-sm font-bold text-slate-950">
+                          {row.milestone_label || row.project_label || row.agreement_label || row.source_label}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-600">
+                          {row.customer_label || "No customer"} {row.property_address ? `| ${row.property_address}` : ""}
+                        </div>
+                        <div className="mt-1 text-xs font-semibold text-slate-500">
+                          Assigned to {row.member_name || "Unassigned"} | {formatDateTime(row.scheduled_start)}
+                        </div>
+                      </div>
+                      {row.open_url ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(row.open_url)}
+                          className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                        >
+                          Open Source
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section data-testid="team-capacity-indicators" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div>
+              <div className="text-base font-bold text-slate-900">Capacity Indicators</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Launch thresholds based on current scheduled and assigned work.
+              </div>
+            </div>
+            {loading ? (
+              <div className="mt-4 text-sm text-slate-500">Loading capacity...</div>
+            ) : capacityRows.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center text-sm text-slate-700">
+                Add employees to see capacity indicators.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {capacityRows.map((row) => (
+                  <div key={row.member_id} className="rounded-xl border border-slate-200 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-bold text-slate-950">{row.member_name}</div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          Today {Number(row.assignment_count_today || 0)} | Week {Number(row.assignment_count_week || 0)} | Total{" "}
+                          {Number(row.assignment_count_total || 0)}
+                        </div>
+                      </div>
+                      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${capacityTone(row.state)}`}>
+                        {formatStatus(row.state)}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <section data-testid="team-skills-matrix" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div>
+              <div className="text-base font-bold text-slate-900">Skills Matrix</div>
+              <div className="mt-1 text-sm text-slate-600">
+                Foundation view for matching required work skills to employee capabilities.
+              </div>
+            </div>
+            {loading ? (
+              <div className="mt-4 text-sm text-slate-500">Loading skills...</div>
+            ) : skillRows.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center text-sm text-slate-700">
+                Add employee capabilities to build the skills matrix.
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {skillRows.map((row) => (
+                  <div key={row.skill} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-bold text-slate-900">{row.skill}</div>
+                      <span className={`rounded-full border px-2 py-0.5 text-xs font-black ${capacityTone(row.coverage === "missing" ? "overbooked" : row.coverage === "thin" ? "near_capacity" : "available")}`}>
+                        {formatStatus(row.coverage)}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-600">
+                      {Number(row.member_count || 0)} team member{Number(row.member_count || 0) === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <ProjectAssistantPanel
+            testId="team-assistant-panel"
+            subtitle="Team Assistant"
+            summary={assistant.summary || "Review workforce coverage, capacity, and missing assignment context before committing work."}
+            actions={<ProjectAssistantConfidenceBadge value={assistant.confidence || "medium"} />}
+          >
+            <div className="grid gap-3 md:grid-cols-2">
+              <ProjectAssistantCard title="Recommended Focus" tone="advisory">
+                <ul className="space-y-2 text-sm leading-6">
+                  {(assistant.recommendations || ["Review unassigned work and capacity before committing new dates."]).map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </ProjectAssistantCard>
+              <ProjectAssistantSection title="Safe Prepared Actions">
+                {(assistant.safe_actions || ["Prepare assignment review", "Open source records"]).join(", ")}
+              </ProjectAssistantSection>
+            </div>
+            <ProjectAssistantApprovalNotice compact>
+              Team Assistant may prepare assignment and capacity reviews, but authorized users must assign people or contact customers.
+            </ProjectAssistantApprovalNotice>
+          </ProjectAssistantPanel>
+        </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
           <section data-testid="team-overview-attention" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

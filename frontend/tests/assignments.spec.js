@@ -146,6 +146,121 @@ const subaccountsPayload = [
   },
 ];
 
+const workforcePayload = {
+  summary: {
+    total: 5,
+    today_count: 1,
+    this_week_count: 4,
+    unassigned_count: 1,
+    at_risk_count: 1,
+    warranty_count: 1,
+    maintenance_count: 1,
+    estimate_count: 1,
+    subcontractor_count: 0,
+  },
+  capacity: [
+    {
+      member_id: 1,
+      member_name: "Taylor Crew",
+      role: "employee_supervisor",
+      state: "near_capacity",
+      assignment_count_today: 1,
+      assignment_count_week: 3,
+      assignment_count_total: 4,
+      reasons: ["Workload is close to the launch capacity threshold."],
+    },
+    {
+      member_id: 2,
+      member_name: "Jordan Crew",
+      role: "employee_milestones",
+      state: "available",
+      assignment_count_today: 0,
+      assignment_count_week: 1,
+      assignment_count_total: 1,
+      reasons: ["Light workload based on scheduled and assigned records."],
+    },
+  ],
+  skills_matrix: [
+    { skill: "Flooring", member_count: 1, coverage: "thin", members: [{ member_id: 1, member_name: "Taylor Crew", skill_level: "lead" }] },
+  ],
+  assistant: {
+    summary: "5 workforce records normalized across assignments, estimates, warranty, maintenance, and crew planning.",
+    confidence: "medium",
+    recommendations: ["Review unassigned work before confirming new schedules."],
+    safe_actions: ["Prepare assignment review", "Open source records"],
+  },
+  results: [
+    {
+      source_type: "milestone_assignment",
+      source_id: 1,
+      source_label: "Milestone assignment",
+      member_type: "employee",
+      member_id: 1,
+      member_name: "Taylor Crew",
+      project_label: "Commercial Buildout",
+      agreement_id: 202,
+      agreement_label: "Commercial Buildout",
+      milestone_id: 2001,
+      milestone_label: "Cabinet Install",
+      customer_label: "Acme LLC",
+      property_address: "900 Market St",
+      scheduled_start: "2026-12-28T00:00:00",
+      status: "submitted_for_review",
+      priority: "high",
+      required_skills: ["Cabinetry"],
+      financial_sensitivity: "paid",
+      is_warranty_work: false,
+      is_maintenance_work: false,
+      is_estimate_work: false,
+      is_subcontractor_work: false,
+      open_url: "/app/agreements/202?milestone=2001",
+    },
+    {
+      source_type: "warranty_work_order",
+      source_id: 77,
+      source_label: "Warranty work order",
+      member_type: "employee",
+      member_id: 1,
+      member_name: "Taylor Crew",
+      project_label: "Residential Refresh",
+      milestone_label: "",
+      customer_label: "Jordan Customer",
+      property_address: "1200 QA Lane",
+      scheduled_start: "2026-12-30T10:00:00",
+      status: "scheduled",
+      priority: "high",
+      required_skills: ["Flooring"],
+      financial_sensitivity: "warranty",
+      is_warranty_work: true,
+      is_maintenance_work: false,
+      is_estimate_work: false,
+      is_subcontractor_work: false,
+      open_url: "/app/warranty/requests/77",
+    },
+    {
+      source_type: "estimate_appointment",
+      source_id: 88,
+      source_label: "Estimate workspace",
+      member_type: "unassigned",
+      member_id: null,
+      member_name: "Unassigned",
+      project_label: "LVP estimate",
+      customer_label: "Taylor Intake",
+      property_address: "4400 QA Lead Street",
+      scheduled_start: "2026-12-31T09:00:00",
+      status: "in_progress",
+      priority: "normal",
+      required_skills: ["Flooring"],
+      financial_sensitivity: "estimate",
+      is_warranty_work: false,
+      is_maintenance_work: false,
+      is_estimate_work: true,
+      is_subcontractor_work: false,
+      open_url: "/app/estimates/88",
+    },
+  ],
+};
+
 async function installAssignmentsRoutes(page, assignedActionCount = 4, subaccounts = subaccountsPayload) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
@@ -172,6 +287,14 @@ async function installAssignmentsRoutes(page, assignedActionCount = 4, subaccoun
       status: 200,
       contentType: "application/json",
       body: JSON.stringify(subaccounts),
+    });
+  });
+
+  await page.route("**/api/projects/workforce/assignments/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(workforcePayload),
     });
   });
 
@@ -228,13 +351,18 @@ test("assignments page shows all projects and work controls", async ({ page }) =
 
   await page.goto("/app/team/assignments", { waitUntil: "domcontentloaded" });
 
+  await expect(page.getByTestId("assignments-workforce-command-center")).toContainText("Unified Workload");
+  await expect(page.getByTestId("assignments-workforce-command-center")).toContainText("Warranty work order");
+  await expect(page.getByTestId("assignments-workforce-command-center")).toContainText("Estimate workspace");
+  await expect(page.getByTestId("assignments-capacity-strip")).toContainText("Taylor Crew");
+  await expect(page.getByTestId("assignments-capacity-strip")).toContainText("Near Capacity");
   await expect(page.getByTestId("assignments-operations-summary")).toContainText("Workforce Operations");
   await expect(page.getByTestId("assignments-operations-summary")).toContainText("Total Agreements");
   await expect(page.getByTestId("assignments-operations-summary")).toContainText("Assigned Work");
   await expect(page.getByTestId("assignments-operations-summary")).toContainText("Unassigned Work");
   await expect(page.getByTestId("assignments-filter-summary")).toContainText("Showing all 2 agreements");
-  await expect(page.getByText("Residential Refresh")).toBeVisible();
-  await expect(page.getByText("Commercial Buildout")).toBeVisible();
+  await expect(page.getByTestId("assignment-row-101")).toContainText("Residential Refresh");
+  await expect(page.getByTestId("assignment-row-202")).toContainText("Commercial Buildout");
   await expect(page.getByTestId("assignment-row-101")).toContainText("No project supervisor");
   await expect(page.getByTestId("assignment-row-101")).toContainText("Unassigned");
   await expect(page.getByTestId("assignment-row-202")).toContainText("Awaiting Review");

@@ -1,8 +1,25 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
+from datetime import timedelta
 from rest_framework.test import APIClient
 
-from projects.models import Contractor, ContractorSubAccount, EmployeeCapability, EmployeeProfile, Skill
+from projects.models import (
+    Agreement,
+    AgreementAssignment,
+    AgreementWarranty,
+    Contractor,
+    ContractorSubAccount,
+    EmployeeCapability,
+    EmployeeProfile,
+    Homeowner,
+    Milestone,
+    MilestoneAssignment,
+    Project,
+    Skill,
+)
+from projects.models_warranty import WarrantyRequest, WarrantyWorkOrder
+from projects.services.workforce_assignments import capacity_state_for_counts
 
 
 def _use_secure_requests(client):
@@ -253,3 +270,146 @@ class WorkforceCapabilityApiTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(EmployeeCapability.objects.filter(subaccount=self.subaccount).count(), 0)
+
+    def _create_agreement(self, *, contractor=None, title="Kitchen Refresh", homeowner_email="customer@example.com"):
+        contractor = contractor or self.contractor
+        homeowner = Homeowner.objects.create(
+            created_by=contractor,
+            full_name="Jordan Customer",
+            email=homeowner_email,
+        )
+        project = Project.objects.create(
+            contractor=contractor,
+            homeowner=homeowner,
+            title=title,
+            project_street_address="1200 QA Lane",
+            project_city="Austin",
+            project_state="TX",
+            project_zip_code="78704",
+        )
+        return Agreement.objects.create(
+            project=project,
+            contractor=contractor,
+            homeowner=homeowner,
+            project_type="Flooring",
+            description="Replace flooring and repair subfloor.",
+            total_cost="2500.00",
+            start=timezone.localdate(),
+            end=timezone.localdate() + timedelta(days=5),
+        )
+
+    def test_workforce_assignments_endpoint_normalizes_agreement_and_milestone_work(self):
+        EmployeeCapability.objects.create(
+            subaccount=self.subaccount,
+            skill=self.painting,
+            skill_level="lead",
+        )
+        agreement = self._create_agreement()
+        AgreementAssignment.objects.create(agreement=agreement, subaccount=self.subaccount)
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=1,
+            title="Demo and prep",
+            amount="500.00",
+            completion_date=timezone.localdate(),
+            normalized_milestone_type="Floor prep",
+        )
+        MilestoneAssignment.objects.create(milestone=milestone, subaccount=self.subaccount)
+        Milestone.objects.create(
+            agreement=agreement,
+            order=2,
+            title="Unassigned install",
+            amount="1000.00",
+            completion_date=timezone.localdate() + timedelta(days=2),
+            normalized_milestone_type="LVP install",
+        )
+
+        self.client.force_authenticate(user=self.owner_user)
+        response = self.client.get("/api/projects/workforce/assignments/")
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data["results"]
+        self.assertTrue(any(row["source_type"] == "agreement_assignment" for row in rows))
+        self.assertTrue(any(row["source_type"] == "milestone_assignment" and row["member_name"] == "Taylor Crew" for row in rows))
+        self.assertTrue(any(row["source_type"] == "unassigned_milestone" and row["member_name"] == "Unassigned" for row in rows))
+        self.assertGreaterEqual(response.data["summary"]["unassigned_count"], 1)
+        self.assertTrue(any(row["skill"] == "Painting" for row in response.data["skills_matrix"]))
+        self.assertTrue(any(row["member_name"] == "Taylor Crew" for row in response.data["capacity"]))
+
+    def test_workforce_assignments_include_warranty_work_orders(self):
+        agreement = self._create_agreement()
+        warranty = AgreementWarranty.objects.create(
+            agreement=agreement,
+            contractor=self.contractor,
+            title="12-month workmanship warranty",
+            start_date=timezone.localdate(),
+            end_date=timezone.localdate() + timedelta(days=365),
+        )
+        warranty_request = WarrantyRequest.objects.create(
+            warranty=warranty,
+            agreement=agreement,
+            contractor=self.contractor,
+            homeowner=agreement.homeowner,
+            title="Floor plank lifting",
+            description="A plank lifted near the hallway.",
+            severity=WarrantyRequest.SEVERITY_HIGH,
+        )
+        WarrantyWorkOrder.objects.create(
+            warranty_request=warranty_request,
+            warranty=warranty,
+            agreement=agreement,
+            contractor=self.contractor,
+            title="Repair raised plank",
+            scope="Inspect and reset raised plank.",
+            assigned_user=self.employee_user,
+            scheduled_for=timezone.now() + timedelta(hours=2),
+            status=WarrantyWorkOrder.STATUS_SCHEDULED,
+        )
+
+        self.client.force_authenticate(user=self.owner_user)
+        response = self.client.get("/api/projects/team/workload/")
+
+        self.assertEqual(response.status_code, 200)
+        warranty_rows = [row for row in response.data["results"] if row["source_type"] == "warranty_work_order"]
+        self.assertEqual(len(warranty_rows), 1)
+        self.assertEqual(warranty_rows[0]["member_name"], "Taylor Crew")
+        self.assertTrue(warranty_rows[0]["is_warranty_work"])
+        self.assertEqual(response.data["summary"]["warranty_count"], 1)
+
+    def test_workforce_assignments_are_scoped_to_current_contractor(self):
+        other_user = get_user_model().objects.create_user(email="other@example.com", password="test-pass-123")
+        other_contractor = Contractor.objects.create(user=other_user, business_name="Other Co")
+        other_agreement = self._create_agreement(
+            contractor=other_contractor,
+            title="Other contractor project",
+            homeowner_email="other-customer@example.com",
+        )
+        Milestone.objects.create(
+            agreement=other_agreement,
+            order=1,
+            title="Other private milestone",
+            amount="100.00",
+            completion_date=timezone.localdate(),
+        )
+        own_agreement = self._create_agreement()
+        Milestone.objects.create(
+            agreement=own_agreement,
+            order=1,
+            title="Own milestone",
+            amount="100.00",
+            completion_date=timezone.localdate(),
+        )
+
+        self.client.force_authenticate(user=self.owner_user)
+        response = self.client.get("/api/projects/workforce/assignments/")
+
+        self.assertEqual(response.status_code, 200)
+        labels = {row["milestone_label"] for row in response.data["results"]}
+        self.assertIn("Own milestone", labels)
+        self.assertNotIn("Other private milestone", labels)
+
+    def test_workforce_capacity_state_calculation(self):
+        self.assertEqual(capacity_state_for_counts(0, 1)[0], "available")
+        self.assertEqual(capacity_state_for_counts(1, 4)[0], "normal")
+        self.assertEqual(capacity_state_for_counts(3, 9)[0], "near_capacity")
+        self.assertEqual(capacity_state_for_counts(4, 12)[0], "overbooked")

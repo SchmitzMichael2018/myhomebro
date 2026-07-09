@@ -137,6 +137,22 @@ function formatAgreementStatus(status) {
   return normalized ? normalized.replace(/\b\w/g, (c) => c.toUpperCase()) : "Active";
 }
 
+function formatWorkforceStatus(status) {
+  const normalized = String(status || "").replaceAll("_", " ").trim();
+  return normalized ? normalized.replace(/\b\w/g, (c) => c.toUpperCase()) : "Open";
+}
+
+function workforceTypeLabel(row) {
+  return row?.source_label || formatWorkforceStatus(row?.source_type);
+}
+
+function capacityBadgeTone(state) {
+  if (state === "overbooked") return "danger";
+  if (state === "near_capacity") return "warn";
+  if (state === "available") return "good";
+  return "neutral";
+}
+
 function deriveAgreementProjectClass(agreement) {
   return normalizeProjectClass(agreement?.project_class || agreement?.project?.project_class);
 }
@@ -314,6 +330,7 @@ export default function AssignmentsPage() {
   // Agreements & milestones
   const [agreements, setAgreements] = useState([]);
   const [milestonesByAgreement, setMilestonesByAgreement] = useState({}); // agreementId -> milestones[]
+  const [workforce, setWorkforce] = useState(null);
 
   // Employees
   const [subs, setSubs] = useState([]);
@@ -358,14 +375,16 @@ export default function AssignmentsPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [aRes, sRes] = await Promise.all([
+      const [aRes, sRes, workforceRes] = await Promise.all([
         api.get("/api/projects/agreements/", { params: { page_size: 200, ordering: "-updated_at" } }),
         listSubaccounts(),
+        api.get("/projects/workforce/assignments/"),
       ]);
 
       const aItems = Array.isArray(aRes.data) ? aRes.data : aRes.data?.results || [];
       setAgreements(aItems);
       setSubs(Array.isArray(sRes) ? sRes : []);
+      setWorkforce(workforceRes.data || null);
 
       const sel = {};
       for (const a of aItems) sel[String(a.id)] = "";
@@ -375,6 +394,7 @@ export default function AssignmentsPage() {
     } catch (e) {
       console.error(e);
       toast.error("Failed to load Assignments.");
+      setWorkforce(null);
     } finally {
       setLoading(false);
     }
@@ -718,6 +738,35 @@ export default function AssignmentsPage() {
     return `Showing ${filteredAgreements.length} agreements filtered by ${parts.join(", ")}.`;
   }, [assignmentStatusFilter, filteredAgreements.length, onlyWithDates, projectClassFilter, search, subaccountFilter]);
 
+  const workforceRows = useMemo(() => {
+    const rows = Array.isArray(workforce?.results) ? workforce.results : [];
+    const q = search.trim().toLowerCase();
+    return rows
+      .filter((row) => {
+        if (subaccountFilter && Number(row.member_id || 0) !== Number(subaccountFilter)) return false;
+        if (assignmentStatusFilter === "unassigned" && row.member_id) return false;
+        if (assignmentStatusFilter === "assigned" && !row.member_id) return false;
+        if (assignmentStatusFilter === "awaiting_review" && !String(row.status || "").includes("review")) return false;
+        if (!q) return true;
+        return [
+          row.project_label,
+          row.agreement_label,
+          row.milestone_label,
+          row.customer_label,
+          row.member_name,
+          row.source_label,
+          row.property_address,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(q);
+      })
+      .slice(0, 12);
+  }, [assignmentStatusFilter, search, subaccountFilter, workforce]);
+
+  const workforceSummary = workforce?.summary || {};
+  const capacityRows = Array.isArray(workforce?.capacity) ? workforce.capacity : [];
+
   /* -----------------------------
      Render
   ----------------------------- */
@@ -752,6 +801,127 @@ export default function AssignmentsPage() {
           <OperationMetric label="Unassigned Work" value={statusCounts.unassigned} tone="bordered" />
           <OperationMetric label="Awaiting Review" value={statusCounts.awaiting_review} tone="warn" />
           <OperationMetric label="Overdue" value={statusCounts.overdue} tone="danger" />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="assignments-workforce-command-center">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-950">Unified Workload</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Normalized source links across agreements, milestones, estimates, warranty, maintenance, and crew planning.
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge>Total {Number(workforceSummary.total || 0).toLocaleString()}</Badge>
+            <Badge tone={Number(workforceSummary.unassigned_count || 0) ? "warn" : "good"}>
+              Unassigned {Number(workforceSummary.unassigned_count || 0).toLocaleString()}
+            </Badge>
+            <Badge tone={Number(workforceSummary.warranty_count || 0) ? "warn" : "neutral"}>
+              Warranty {Number(workforceSummary.warranty_count || 0).toLocaleString()}
+            </Badge>
+            <Badge>Estimates {Number(workforceSummary.estimate_count || 0).toLocaleString()}</Badge>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="mt-4 text-sm text-slate-500">Loading unified workload...</div>
+        ) : workforceRows.length === 0 ? (
+          <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
+            No normalized workload rows match this view.
+          </div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">Work</th>
+                  <th className="px-4 py-3 text-left">Source</th>
+                  <th className="px-4 py-3 text-left">Customer / Location</th>
+                  <th className="px-4 py-3 text-left">Assigned To</th>
+                  <th className="px-4 py-3 text-left">Timing</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {workforceRows.map((row) => (
+                  <tr key={`${row.source_type}-${row.source_id}-${row.milestone_id || "source"}`}>
+                    <td className="px-4 py-3">
+                      <div className="font-bold text-slate-950">
+                        {row.milestone_label || row.project_label || row.agreement_label || workforceTypeLabel(row)}
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {row.is_warranty_work ? <Badge tone="warn">Warranty</Badge> : null}
+                        {row.is_maintenance_work ? <Badge>Maintenance</Badge> : null}
+                        {row.is_estimate_work ? <Badge>Estimate</Badge> : null}
+                        {row.is_subcontractor_work ? <Badge>Subcontractor</Badge> : null}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <div className="font-semibold">{workforceTypeLabel(row)}</div>
+                      <div className="mt-1 text-xs text-slate-500">{formatWorkforceStatus(row.status)}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <div className="font-semibold">{row.customer_label || "No customer"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{row.property_address || row.location || "No location"}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">
+                      <div className="font-semibold">{row.member_name || "Unassigned"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{formatWorkforceStatus(row.member_type)}</div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700">{fmtDate(row.scheduled_start)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {row.open_url ? (
+                        <Btn tone="secondary" onClick={() => navigate(row.open_url)}>
+                          Open Source
+                        </Btn>
+                      ) : (
+                        <span className="text-xs text-slate-400">No source link</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="assignments-capacity-strip">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-950">Capacity Indicators</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Current launch thresholds derived from scheduled and assigned workload rows.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate("/app/team/schedule")}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            Open Schedule
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {capacityRows.slice(0, 8).map((row) => (
+            <div key={row.member_id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-950">{row.member_name}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    Today {Number(row.assignment_count_today || 0)} | Week {Number(row.assignment_count_week || 0)}
+                  </div>
+                </div>
+                <Badge tone={capacityBadgeTone(row.state)}>{formatWorkforceStatus(row.state)}</Badge>
+              </div>
+            </div>
+          ))}
+          {!loading && capacityRows.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+              Add employees to see capacity indicators.
+            </div>
+          ) : null}
         </div>
       </section>
 

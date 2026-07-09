@@ -190,7 +190,7 @@ from .views.employee_milestones import (
 )
 
 from .views.employee_profile import EmployeeMeProfileView
-from .views.workforce import WorkforceCatalogView
+from .views.workforce import WorkforceAssignmentsView, WorkforceCatalogView
 from .views.crew_recommendations import (
     CrewAssignmentDraftApplyView,
     CrewAssignmentDraftCreateView,
@@ -881,6 +881,8 @@ urlpatterns = [
     # Employee dashboard
     # -------------------------------------------------
     path("workforce/catalog/", WorkforceCatalogView.as_view()),
+    path("workforce/assignments/", WorkforceAssignmentsView.as_view()),
+    path("team/workload/", WorkforceAssignmentsView.as_view()),
     path("employee/profile/", EmployeeMeProfileView.as_view()),
     path("employee/milestones/", my_milestones),
     path("subcontractor/milestones/my-assigned/", my_assigned_subcontractor_work),
