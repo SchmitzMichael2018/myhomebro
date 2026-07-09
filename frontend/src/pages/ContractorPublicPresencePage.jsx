@@ -29,6 +29,7 @@ import { generateContractorPublicProfile } from '../api.js';
 import { ProjectModeBadge } from '../components/projectMode.jsx';
 import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
+import { SmartEmptyState, WorkspaceWalkthroughCards } from '../components/guidance/GuidedExperience.jsx';
 
 const ONLINE_PRESENCE_STEPS = [
   { key: 'overview', label: 'Overview', eyebrow: 'Growth Center' },
@@ -1909,7 +1910,14 @@ export default function ContractorPublicPresencePage() {
                         <div className="mt-1 text-xs text-slate-600">{sourceLabel(lead.source)} | {fmtDateTime(lead.created_at || lead.submitted_at)} | {statusLabel(lead.status)}</div>
                       </button>
                     ))}
-                    {!leadsRows.length ? <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-sm text-slate-500">No public leads yet.</div> : null}
+                    {!leadsRows.length ? (
+                      <SmartEmptyState
+                        testId="marketing-leads-smart-empty"
+                        title="No public leads yet"
+                        nextStep="Share your website, public profile, or QR link so new requests can flow into Opportunities."
+                        assistantTip="I can review your website readiness, portfolio proof, SEO basics, and lead capture path before you publish or promote it."
+                      />
+                    ) : null}
                   </div>
                 </div>
 
@@ -1921,6 +1929,20 @@ export default function ContractorPublicPresencePage() {
                   </button>
                 </div>
               </div>
+              <WorkspaceWalkthroughCards items={[
+                {
+                  key: 'marketing',
+                  title: 'Marketing',
+                  prompt: 'What happens here?',
+                  answer: 'Marketing manages public profile, website, SEO, reviews, QR codes, portfolio proof, and lead generation. Business facts should come from Company/Profile where possible.',
+                },
+                {
+                  key: 'lead-handoff',
+                  title: 'Lead handoff',
+                  prompt: 'Where do leads go next?',
+                  answer: 'Marketing captures demand. Opportunities handles review and routing, Estimates handles scope and pricing, and Agreements become the operational record.',
+                },
+              ]} />
             </section>
           ) : null}
 

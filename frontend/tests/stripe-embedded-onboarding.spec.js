@@ -125,7 +125,7 @@ test("embedded Stripe onboarding stays in-app and shows success after completion
   await expect(page.getByTestId("embedded-stripe-onboarding-page")).toBeVisible({
     timeout: 15000,
   });
-  await expect(page.getByText("Finish payment setup without leaving MyHomeBro")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Finish payment setup without leaving MyHomeBro" })).toBeVisible();
   await expect(page.getByTestId("embedded-stripe-connect-container")).toBeVisible();
   await expect(page.getByTestId("stripe-connect-complete")).toBeVisible();
 

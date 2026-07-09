@@ -13,6 +13,7 @@ import RefundEscrowModal from "./RefundEscrowModal";
 import StripeOnboardingStatus from "./StripeOnboardingStatus";
 import {
   CalendarDays,
+  BookOpen,
   ClipboardList,
   CreditCard,
   FileSignature,
@@ -55,6 +56,7 @@ const NAV_HINTS = {
   "/app/support": "Submit a support request and review your ticket history",
   "/app/profile": "Manage your account, preferences, and payment setup",
   "/app/onboarding": "Manage your account, preferences, and payment setup",
+  "/app/guided-onboarding": "Open role-based walkthroughs, workspace help, setup checklists, and Project Assistant tips",
   "/app/onboarding/stripe": "Complete Stripe Connect onboarding inside MyHomeBro",
   "/app/intake/new": "Capture new leads and start projects quickly",
 };
@@ -379,6 +381,7 @@ export default function Sidebar({ variant = "desktop" }) {
       return (
         <>
           <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
+          <Item to={`${APP_BASE}/guided-onboarding`} label="Guided Help" icon={BookOpen} />
         </>
       );
     }
@@ -388,18 +391,25 @@ export default function Sidebar({ variant = "desktop" }) {
         <>
           <Item to={`${EMP_BASE}/profile`} label="My Profile" icon={UserRound} />
           <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
+          <Item to={`${APP_BASE}/guided-onboarding`} label="Guided Help" icon={BookOpen} />
         </>
       );
     }
 
     if (isSubcontractor) {
-      return <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />;
+      return (
+        <>
+          <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
+          <Item to={`${APP_BASE}/guided-onboarding`} label="Guided Help" icon={BookOpen} />
+        </>
+      );
     }
 
     return (
       <>
         <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
         <Item to={`${APP_BASE}/support`} label="Support" icon={LifeBuoy} />
+        <Item to={`${APP_BASE}/guided-onboarding`} label="Guided Help" icon={BookOpen} />
         <Item
           to={`${APP_BASE}/onboarding/stripe`}
           icon={LinkIcon}
@@ -640,6 +650,7 @@ export default function Sidebar({ variant = "desktop" }) {
               <Item to={`${APP_BASE}/marketing`} label="Marketing" icon={Globe} />
               <Item to={`${APP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
               <Item to={`${APP_BASE}/profile`} label="My Profile" icon={UserRound} />
+              <Item to={`${APP_BASE}/guided-onboarding`} label="Guided Help" icon={BookOpen} />
               <Item
                 to={`${APP_BASE}/onboarding/stripe`}
                 icon={LinkIcon}

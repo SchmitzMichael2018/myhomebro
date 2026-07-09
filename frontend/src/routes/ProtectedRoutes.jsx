@@ -76,6 +76,7 @@ import CustomerRecordsPage from "../pages/CustomerRecordsPage.jsx";
 import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
 import ContractorWebsitePreviewPage from "../pages/ContractorWebsitePreviewPage.jsx";
 import AIAssistantPage from "../pages/AIAssistantPage.jsx";
+import GuidedOnboardingPage from "../pages/GuidedOnboardingPage.jsx";
 import SupportTicketsPage from "../pages/SupportTicketsPage.jsx";
 import NotificationsPage from "../pages/NotificationsPage.jsx";
 import WarrantyDashboardPage from "../pages/WarrantyDashboardPage.jsx";
@@ -130,6 +131,7 @@ export function protectedRoutes() {
       >
         <Route index element={<AppHomeRedirect />} />
         <Route path="notifications" element={<NotificationsPage />} />
+        <Route path="guided-onboarding" element={<GuidedOnboardingPage />} />
 
         {/* ---------------- ADMIN ---------------- */}
         <Route element={<RoleGate allow={["admin"]} />}>
