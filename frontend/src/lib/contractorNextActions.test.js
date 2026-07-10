@@ -24,13 +24,12 @@ describe("getContractorNextActions", () => {
 
     expect(actions[0]).toMatchObject({
       key: "website-lead:77",
-      title: "You got a new website lead from Taylor Lead.",
+      title: "New Website Lead",
       buttonLabel: "Review Lead",
       navigationTarget: "/app/opportunities?source=website",
-      category: "attention",
+      category: "lead",
       source: "website_leads",
     });
     expect(actions[0].description).toContain("Kitchen Remodel");
   });
 });
-

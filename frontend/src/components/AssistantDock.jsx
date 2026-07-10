@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, ClipboardCopy, Panel
 
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
 import { saferAssistantActionLabel } from "./ProjectAssistantExperience.jsx";
+import ProjectAssistantQuickCapture from "./ProjectAssistantQuickCapture.jsx";
 import { buildAiContext } from "../lib/aiContext.js";
 import { checkJobHealth } from "../lib/jobHealthMonitor.js";
 import { draftCheckIn, draftSignatureFollowUp, draftMilestoneUpdate } from "../lib/actionDrafter.js";
@@ -673,6 +674,15 @@ function DesktopAssistantDock({
   );
 }
 
+function MobileAssistantSheet({ open, onClose }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-white xl:hidden" data-testid="assistant-mobile-sheet">
+      <ProjectAssistantQuickCapture compact onClose={onClose} />
+    </div>
+  );
+}
+
 export function AssistantDockProvider({ children }) {
   const location = useLocation();
   const routeContext = useMemo(() => buildRouteContext(location), [location]);
@@ -841,6 +851,7 @@ export function AssistantDockProvider({ children }) {
         onClose={closeAssistant}
         onMinimize={minimizeAssistant}
       />
+      <MobileAssistantSheet open={open} onClose={closeAssistant} />
     </AssistantDockContext.Provider>
   );
 }

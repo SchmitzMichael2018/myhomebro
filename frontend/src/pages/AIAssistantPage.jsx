@@ -21,6 +21,7 @@ import {
   ProjectAssistantPanel,
   ProjectAssistantSection,
 } from "../components/ProjectAssistantExperience.jsx";
+import ProjectAssistantQuickCapture from "../components/ProjectAssistantQuickCapture.jsx";
 
 const ASSISTANT_CONTEXT = {
   current_route: "/app/assistant",
@@ -229,6 +230,8 @@ export default function AIAssistantPage() {
       className="mhb-assistant-home"
     >
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
+        <ProjectAssistantQuickCapture />
+
         <section
           data-testid="assistant-home-hero"
           className="rounded-2xl border border-slate-900/10 bg-[linear-gradient(160deg,#0f172a_0%,#163B70_62%,#1f5fa8_100%)] p-6 text-white shadow-sm md:p-8"

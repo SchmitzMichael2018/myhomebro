@@ -383,6 +383,12 @@ from .views.magic_draw_request import (
     MagicDrawRequestChangesView,
     MagicDrawRequestView,
 )
+from .views.project_assistant_quick_capture import (
+    ProjectAssistantQuickCaptureApproveView,
+    ProjectAssistantQuickCaptureCancelView,
+    ProjectAssistantQuickCaptureSessionDetailView,
+    ProjectAssistantQuickCaptureSessionListView,
+)
 
 from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
@@ -461,6 +467,10 @@ urlpatterns = [
     path("contractor/website/pause/", ContractorWebsitePauseView.as_view(), name="contractor-website-pause"),
     path("contractor/website/pages/", ContractorWebsitePagesView.as_view(), name="contractor-website-pages"),
     path("contractor/website/pages/<int:page_id>/", ContractorWebsitePageDetailView.as_view(), name="contractor-website-page-detail"),
+    path("project-assistant/quick-capture/sessions/", ProjectAssistantQuickCaptureSessionListView.as_view(), name="project-assistant-quick-capture-sessions"),
+    path("project-assistant/quick-capture/sessions/<uuid:session_id>/", ProjectAssistantQuickCaptureSessionDetailView.as_view(), name="project-assistant-quick-capture-session-detail"),
+    path("project-assistant/quick-capture/sessions/<uuid:session_id>/approve/", ProjectAssistantQuickCaptureApproveView.as_view(), name="project-assistant-quick-capture-approve"),
+    path("project-assistant/quick-capture/sessions/<uuid:session_id>/cancel/", ProjectAssistantQuickCaptureCancelView.as_view(), name="project-assistant-quick-capture-cancel"),
     path("recommendations/me/", RecommendationMeView.as_view(), name="recommendations-me"),
     path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),
