@@ -9,6 +9,7 @@ import {
   ProjectAssistantPanel,
   ProjectAssistantSection,
 } from "./ProjectAssistantExperience.jsx";
+import ProjectAssistantSmartCapture from "./ProjectAssistantSmartCapture.jsx";
 import {
   approvalActionForQuickCapture,
   draftRowsFromQuickCapture,
@@ -533,6 +534,8 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
           {error}
         </ProjectAssistantCard>
       ) : null}
+
+      <ProjectAssistantSmartCapture compact={compact} />
 
       <ProjectAssistantSection title="Voice Mode" testId="quick-capture-voice-mode">
         <div className="grid gap-3">

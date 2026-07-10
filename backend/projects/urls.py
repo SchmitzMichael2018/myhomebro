@@ -392,6 +392,13 @@ from .views.project_assistant_quick_capture import (
     ProjectAssistantQuickCaptureSessionDetailView,
     ProjectAssistantQuickCaptureSessionListView,
 )
+from .views.project_assistant_smart_capture import (
+    ProjectAssistantSmartCaptureApproveView,
+    ProjectAssistantSmartCaptureCancelView,
+    ProjectAssistantSmartCaptureDetailView,
+    ProjectAssistantSmartCaptureListView,
+    ProjectAssistantSmartCaptureRetryView,
+)
 
 from .views.invoice_direct_pay import invoice_create_direct_pay_link
 
@@ -477,6 +484,11 @@ urlpatterns = [
     path("project-assistant/quick-capture/sessions/<uuid:session_id>/actions/", ProjectAssistantQuickCaptureActionListView.as_view(), name="project-assistant-quick-capture-actions"),
     path("project-assistant/quick-capture/sessions/<uuid:session_id>/actions/<uuid:action_id>/", ProjectAssistantQuickCaptureActionDetailView.as_view(), name="project-assistant-quick-capture-action-detail"),
     path("project-assistant/quick-capture/sessions/<uuid:session_id>/actions/<uuid:action_id>/approve/", ProjectAssistantQuickCaptureActionApproveView.as_view(), name="project-assistant-quick-capture-action-approve"),
+    path("project-assistant/smart-capture/sessions/", ProjectAssistantSmartCaptureListView.as_view(), name="project-assistant-smart-capture-sessions"),
+    path("project-assistant/smart-capture/sessions/<uuid:session_id>/", ProjectAssistantSmartCaptureDetailView.as_view(), name="project-assistant-smart-capture-session-detail"),
+    path("project-assistant/smart-capture/sessions/<uuid:session_id>/retry/", ProjectAssistantSmartCaptureRetryView.as_view(), name="project-assistant-smart-capture-retry"),
+    path("project-assistant/smart-capture/sessions/<uuid:session_id>/approve/", ProjectAssistantSmartCaptureApproveView.as_view(), name="project-assistant-smart-capture-approve"),
+    path("project-assistant/smart-capture/sessions/<uuid:session_id>/cancel/", ProjectAssistantSmartCaptureCancelView.as_view(), name="project-assistant-smart-capture-cancel"),
     path("recommendations/me/", RecommendationMeView.as_view(), name="recommendations-me"),
     path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),
