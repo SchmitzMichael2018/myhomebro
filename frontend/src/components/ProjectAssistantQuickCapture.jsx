@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Mic, Send, ShieldCheck, X } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Mic, Send, ShieldCheck, Square, Volume2, X } from "lucide-react";
 
 import api from "../api.js";
 import {
@@ -14,6 +14,13 @@ import {
   draftRowsFromQuickCapture,
   quickCaptureIntentLabel,
 } from "../lib/projectAssistantQuickCapture.js";
+import {
+  createVoiceService,
+  loadVoiceSettings,
+  rateForSpeechSetting,
+  saveVoiceSettings,
+  VOICE_STATES,
+} from "../lib/voiceService.js";
 
 function valueOrDash(value) {
   const text = value == null ? "" : String(value).trim();
@@ -77,11 +84,17 @@ function DuplicateMatches({ matches = [], selectedId, onSelect }) {
 }
 
 export default function ProjectAssistantQuickCapture({ compact = false, onClose = null }) {
+  const voiceServiceRef = useRef(null);
   const [input, setInput] = useState("");
   const [session, setSession] = useState(null);
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [voiceState, setVoiceState] = useState(VOICE_STATES.IDLE);
+  const [voiceError, setVoiceError] = useState("");
+  const [voiceTranscript, setVoiceTranscript] = useState("");
+  const [voiceSettings, setVoiceSettings] = useState(() => loadVoiceSettings());
 
   const prepared = session?.prepared_payload || {};
   const missing = Array.isArray(prepared.missing_fields) ? prepared.missing_fields : [];
@@ -89,6 +102,36 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
   const safety = Array.isArray(prepared.safety_summary) ? prepared.safety_summary : [];
   const draftRows = useMemo(() => draftRowsFromQuickCapture(prepared), [prepared]);
   const approvalAction = approvalActionForQuickCapture(prepared);
+
+  const voiceService = useMemo(() => {
+    if (!voiceServiceRef.current) {
+      voiceServiceRef.current = createVoiceService();
+    }
+    return voiceServiceRef.current;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      voiceService.stopListening();
+      voiceService.stopSpeaking();
+    };
+  }, [voiceService]);
+
+  useEffect(() => {
+    if (!voiceMode || voiceSettings.voiceResponses !== "always") return;
+    const question = prepared.follow_up_question;
+    if (!question) return;
+    const shortPrompt = question.length > 180
+      ? "I've prepared the draft. Please review it on screen."
+      : question;
+    voiceService.speak(shortPrompt, {
+      rate: rateForSpeechSetting(voiceSettings.speechRate),
+      onStart: () => setVoiceState(VOICE_STATES.SPEAKING),
+      onEnd: () => setVoiceState(missing.length ? VOICE_STATES.WAITING : VOICE_STATES.APPROVAL_REQUIRED),
+      onError: () => setVoiceState(missing.length ? VOICE_STATES.WAITING : VOICE_STATES.REVIEW_READY),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.id, session?.updated_at, prepared.follow_up_question, voiceMode, voiceSettings.voiceResponses, voiceSettings.speechRate]);
 
   async function sendTurn(event) {
     event?.preventDefault?.();
@@ -107,6 +150,76 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
     } finally {
       setBusy(false);
     }
+  }
+
+  function updateVoiceSettings(patch) {
+    setVoiceSettings((current) => saveVoiceSettings({ ...current, ...patch }));
+  }
+
+  function startVoiceMode() {
+    setVoiceMode(true);
+    setVoiceError("");
+    if (!voiceService.isSupported()) {
+      setVoiceState(VOICE_STATES.ERROR);
+      setVoiceError("Voice mode is not available in this browser. You can keep typing instead.");
+      return;
+    }
+    if (voiceSettings.voiceResponses === "always") {
+      voiceService.speak("Voice Mode is ready. Tell me what you would like to capture.", {
+        rate: rateForSpeechSetting(voiceSettings.speechRate),
+        onStart: () => setVoiceState(VOICE_STATES.SPEAKING),
+        onEnd: () => setVoiceState(VOICE_STATES.WAITING),
+        onError: () => setVoiceState(VOICE_STATES.WAITING),
+      });
+    } else {
+      setVoiceState(VOICE_STATES.WAITING);
+    }
+  }
+
+  function startListening() {
+    setVoiceError("");
+    setVoiceTranscript("");
+    setVoiceState(VOICE_STATES.LISTENING);
+    voiceService.startListening({
+      onStart: () => setVoiceState(VOICE_STATES.LISTENING),
+      onResult: ({ transcript, isFinal }) => {
+        setVoiceTranscript(transcript);
+        if (isFinal) setVoiceState(VOICE_STATES.REVIEW_READY);
+      },
+      onError: (err) => {
+        setVoiceState(VOICE_STATES.ERROR);
+        const code = err?.code || "";
+        if (code === "not-allowed" || code === "permission-denied") {
+          setVoiceError("Microphone permission was denied. You can keep typing instead.");
+        } else if (code === "no-speech") {
+          setVoiceError("No speech was detected. Try again or type the note.");
+        } else {
+          setVoiceError(err?.message || "Voice recognition failed. You can keep typing instead.");
+        }
+      },
+      onEnd: () => {
+        setVoiceState((current) => current === VOICE_STATES.LISTENING ? VOICE_STATES.WAITING : current);
+      },
+    });
+  }
+
+  function stopListening() {
+    voiceService.stopListening();
+    setVoiceState(voiceTranscript ? VOICE_STATES.REVIEW_READY : VOICE_STATES.WAITING);
+  }
+
+  function useTranscript() {
+    if (!voiceTranscript.trim()) return;
+    setInput(voiceTranscript.trim());
+    setVoiceState(VOICE_STATES.PROCESSING);
+  }
+
+  function exitVoiceMode() {
+    voiceService.stopListening();
+    voiceService.stopSpeaking();
+    setVoiceMode(false);
+    setVoiceState(VOICE_STATES.IDLE);
+    setVoiceError("");
   }
 
   async function approve(action) {
@@ -193,13 +306,13 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
           </button>
           <button
             type="button"
-            disabled
-            title="Voice capture is planned for a later phase."
+            onClick={voiceMode ? startListening : startVoiceMode}
+            title="Open Voice Mode"
             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-black text-slate-500"
-            data-testid="quick-capture-mic-placeholder"
+            data-testid="quick-capture-mic-button"
           >
             <Mic className="h-4 w-4" />
-            Voice Coming Later
+            {voiceMode ? "Listen" : "Voice Mode"}
           </button>
         </div>
       </form>
@@ -209,6 +322,133 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
           {error}
         </ProjectAssistantCard>
       ) : null}
+
+      <ProjectAssistantSection title="Voice Mode" testId="quick-capture-voice-mode">
+        <div className="grid gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-sm font-black text-slate-900">Microphone and spoken prompts</div>
+              <p className="mt-1 text-sm text-slate-600">
+                Voice is optional. Review the transcript before it updates the structured draft.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={voiceMode ? exitVoiceMode : startVoiceMode}
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700"
+              data-testid="quick-capture-voice-toggle"
+            >
+              <Mic className="h-4 w-4" />
+              {voiceMode ? "Exit Voice Mode" : "Voice Mode"}
+            </button>
+          </div>
+
+          {voiceMode ? (
+            <div className="grid gap-3 rounded-xl border border-indigo-100 bg-indigo-50 p-3" data-testid="quick-capture-voice-panel">
+              <div className="flex flex-wrap gap-2 text-xs font-black text-indigo-950">
+                <span data-testid="quick-capture-voice-state" className="rounded-full border border-indigo-200 bg-white px-3 py-1">
+                  {voiceState.replaceAll("_", " ")}
+                </span>
+                {voiceService.isListening() ? <span className="rounded-full bg-rose-100 px-3 py-1 text-rose-800">Listening</span> : null}
+                {voiceService.isSpeaking() ? <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-800">Speaking</span> : null}
+              </div>
+
+              {voiceError ? (
+                <div className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-sm font-semibold text-rose-800" data-testid="quick-capture-voice-error">
+                  {voiceError}
+                </div>
+              ) : null}
+
+              <div className="grid gap-2 sm:grid-cols-2" data-testid="quick-capture-voice-settings">
+                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                  Voice Responses
+                  <select
+                    value={voiceSettings.voiceResponses}
+                    onChange={(event) => updateVoiceSettings({ voiceResponses: event.target.value })}
+                    className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3"
+                  >
+                    <option value="off">Off</option>
+                    <option value="tap_to_listen">Tap To Listen</option>
+                    <option value="always">Always Speak During Voice Sessions</option>
+                  </select>
+                </label>
+                <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                  Speech Rate
+                  <select
+                    value={voiceSettings.speechRate}
+                    onChange={(event) => updateVoiceSettings({ speechRate: event.target.value })}
+                    className="min-h-[44px] rounded-lg border border-slate-200 bg-white px-3"
+                  >
+                    <option value="slow">Slow</option>
+                    <option value="normal">Normal</option>
+                    <option value="fast">Fast</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={startListening}
+                  disabled={voiceState === VOICE_STATES.LISTENING}
+                  className="inline-flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 py-2 text-sm font-black text-white disabled:opacity-60"
+                  data-testid="quick-capture-voice-listen"
+                >
+                  <Mic className="h-4 w-4" />
+                  Start Listening
+                </button>
+                <button
+                  type="button"
+                  onClick={stopListening}
+                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700"
+                  data-testid="quick-capture-voice-stop"
+                >
+                  <Square className="h-4 w-4" />
+                  Stop
+                </button>
+                <button
+                  type="button"
+                  onClick={() => voiceService.speak(prepared.follow_up_question || "Please review the prepared draft on screen.", {
+                    rate: rateForSpeechSetting(voiceSettings.speechRate),
+                    onStart: () => setVoiceState(VOICE_STATES.SPEAKING),
+                    onEnd: () => setVoiceState(VOICE_STATES.WAITING),
+                  })}
+                  className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700"
+                  data-testid="quick-capture-voice-speak"
+                >
+                  <Volume2 className="h-4 w-4" />
+                  Speak Prompt
+                </button>
+              </div>
+
+              <label className="grid gap-1 text-sm font-semibold text-slate-700">
+                Editable transcript
+                <textarea
+                  value={voiceTranscript}
+                  onChange={(event) => setVoiceTranscript(event.target.value)}
+                  rows={3}
+                  className="min-h-[96px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                  data-testid="quick-capture-voice-transcript"
+                  placeholder="Recognized speech appears here. Edit it before using it."
+                />
+              </label>
+              <button
+                type="button"
+                onClick={useTranscript}
+                disabled={!voiceTranscript.trim()}
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-60"
+                data-testid="quick-capture-use-transcript"
+              >
+                Use Edited Transcript
+              </button>
+
+              <div className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-amber-950" data-testid="quick-capture-driving-mode-note">
+                Review and approve records on screen before continuing. Driving Mode is not active yet.
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </ProjectAssistantSection>
 
       {session ? (
         <>

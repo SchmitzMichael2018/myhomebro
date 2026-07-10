@@ -168,7 +168,7 @@ test('mobile Project Assistant opens a full-screen quick capture sheet without h
   await page.getByTestId('assistant-home-open-assistant').click();
 
   await expect(page.getByTestId('assistant-mobile-sheet')).toBeVisible();
-  await expect(page.getByTestId('assistant-mobile-sheet').getByTestId('quick-capture-mic-placeholder')).toContainText('Voice Coming Later');
+  await expect(page.getByTestId('assistant-mobile-sheet').getByTestId('quick-capture-mic-button')).toContainText('Voice Mode');
   await page.getByTestId('assistant-mobile-sheet').getByTestId('quick-capture-input').fill('Sarah Johnson needs a bathroom remodel at 123 Oak Street. Her email is sarah@example.com.');
   await page.getByTestId('assistant-mobile-sheet').getByTestId('quick-capture-send').click();
   await page.getByTestId('assistant-mobile-sheet').getByTestId('quick-capture-draft-customer-draft').getByRole('button').click();
