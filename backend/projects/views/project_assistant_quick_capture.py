@@ -7,14 +7,21 @@ from rest_framework.views import APIView
 
 from projects.models import ProjectAssistantCaptureSession
 from projects.services.project_assistant_quick_capture import (
+    action_payload,
     append_turn,
+    approve_prepared_action,
     approve_session,
+    prepare_action,
     prepare_capture_payload,
 )
 from projects.views.homeowner import _get_contractor_for_user
 
 
 def session_payload(session: ProjectAssistantCaptureSession) -> dict:
+    actions = [
+        action_payload(row)
+        for row in session.prepared_actions.all().order_by("-updated_at", "-created_at")
+    ]
     return {
         "id": str(session.id),
         "status": session.status,
@@ -28,6 +35,7 @@ def session_payload(session: ProjectAssistantCaptureSession) -> dict:
         "created_customer": session.created_customer_id,
         "created_opportunity": session.created_opportunity_id,
         "created_note": session.created_note_id,
+        "actions": actions,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     }
@@ -139,3 +147,72 @@ class ProjectAssistantQuickCaptureCancelView(ProjectAssistantQuickCaptureSession
         session.mark_cancelled()
         session.save()
         return Response(session_payload(session))
+
+
+class ProjectAssistantQuickCaptureActionListView(ProjectAssistantQuickCaptureSessionDetailView):
+    def get(self, request, session_id, *args, **kwargs):
+        session, error = self.get_session(request, session_id)
+        if error:
+            return error
+        return Response({"results": [action_payload(row) for row in session.prepared_actions.all()]})
+
+    def post(self, request, session_id, *args, **kwargs):
+        session, error = self.get_session(request, session_id)
+        if error:
+            return error
+        action_type = str(request.data.get("action_type") or request.data.get("type") or "").strip()
+        payload_updates = request.data.get("prepared_payload") or {}
+        try:
+            action = prepare_action(
+                session,
+                action_type=action_type,
+                actor=request.user,
+                payload_updates=payload_updates,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(action_payload(action), status=status.HTTP_201_CREATED)
+
+
+class ProjectAssistantQuickCaptureActionDetailView(ProjectAssistantQuickCaptureSessionDetailView):
+    def get_action(self, request, session_id, action_id):
+        session, error = self.get_session(request, session_id)
+        if error:
+            return None, error
+        action = session.prepared_actions.filter(pk=action_id, contractor=session.contractor).first()
+        if action is None:
+            return None, Response({"detail": "Project Assistant action not found."}, status=status.HTTP_404_NOT_FOUND)
+        return action, None
+
+    def patch(self, request, session_id, action_id, *args, **kwargs):
+        action, error = self.get_action(request, session_id, action_id)
+        if error:
+            return error
+        payload_updates = request.data.get("prepared_payload") or {}
+        try:
+            updated = prepare_action(
+                action.capture_session,
+                action_type=action.action_type,
+                actor=request.user,
+                payload_updates={**(action.prepared_payload or {}), **payload_updates},
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        action.status = "cancelled"
+        action.save(update_fields=["status", "updated_at"])
+        return Response(action_payload(updated))
+
+
+class ProjectAssistantQuickCaptureActionApproveView(ProjectAssistantQuickCaptureActionDetailView):
+    def post(self, request, session_id, action_id, *args, **kwargs):
+        action, error = self.get_action(request, session_id, action_id)
+        if error:
+            return error
+        payload_updates = request.data.get("prepared_payload") or {}
+        try:
+            action = approve_prepared_action(action, actor=request.user, payload_updates=payload_updates)
+        except ValueError as exc:
+            return Response({"detail": str(exc), "action": action_payload(action)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({"detail": str(exc), "action": action_payload(action)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(action_payload(action))

@@ -384,6 +384,9 @@ from .views.magic_draw_request import (
     MagicDrawRequestView,
 )
 from .views.project_assistant_quick_capture import (
+    ProjectAssistantQuickCaptureActionApproveView,
+    ProjectAssistantQuickCaptureActionDetailView,
+    ProjectAssistantQuickCaptureActionListView,
     ProjectAssistantQuickCaptureApproveView,
     ProjectAssistantQuickCaptureCancelView,
     ProjectAssistantQuickCaptureSessionDetailView,
@@ -471,6 +474,9 @@ urlpatterns = [
     path("project-assistant/quick-capture/sessions/<uuid:session_id>/", ProjectAssistantQuickCaptureSessionDetailView.as_view(), name="project-assistant-quick-capture-session-detail"),
     path("project-assistant/quick-capture/sessions/<uuid:session_id>/approve/", ProjectAssistantQuickCaptureApproveView.as_view(), name="project-assistant-quick-capture-approve"),
     path("project-assistant/quick-capture/sessions/<uuid:session_id>/cancel/", ProjectAssistantQuickCaptureCancelView.as_view(), name="project-assistant-quick-capture-cancel"),
+    path("project-assistant/quick-capture/sessions/<uuid:session_id>/actions/", ProjectAssistantQuickCaptureActionListView.as_view(), name="project-assistant-quick-capture-actions"),
+    path("project-assistant/quick-capture/sessions/<uuid:session_id>/actions/<uuid:action_id>/", ProjectAssistantQuickCaptureActionDetailView.as_view(), name="project-assistant-quick-capture-action-detail"),
+    path("project-assistant/quick-capture/sessions/<uuid:session_id>/actions/<uuid:action_id>/approve/", ProjectAssistantQuickCaptureActionApproveView.as_view(), name="project-assistant-quick-capture-action-approve"),
     path("recommendations/me/", RecommendationMeView.as_view(), name="recommendations-me"),
     path("twilio/inbound-sms/", twilio_inbound_sms, name="twilio-inbound-sms"),
     path("twilio/status/", twilio_sms_status, name="twilio-sms-status"),

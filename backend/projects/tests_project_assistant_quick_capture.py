@@ -1,5 +1,8 @@
 from django.contrib.auth import get_user_model
+from datetime import time
+from django.core import mail
 from django.test import TestCase, override_settings
+from unittest.mock import patch
 from rest_framework.test import APIClient
 
 from projects.models import (
@@ -7,8 +10,13 @@ from projects.models import (
     CustomerCommunicationLog,
     Homeowner,
     ProjectAssistantCaptureSession,
+    ProjectAssistantPreparedAction,
 )
-from projects.models_contractor_discovery import ContractorOpportunity
+from projects.models_contractor_discovery import (
+    ContractorEstimateAvailabilityWindow,
+    ContractorOpportunity,
+    OpportunityEstimateAppointment,
+)
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -161,3 +169,144 @@ class ProjectAssistantQuickCaptureApiTests(TestCase):
         self.assertIn("Sarah Johnson", cancel.data["source_text"])
         self.assertEqual(Homeowner.objects.count(), 0)
         self.assertEqual(ContractorOpportunity.objects.count(), 0)
+
+    def test_prepared_schedule_action_requires_approval_before_creating_appointment(self):
+        ContractorEstimateAvailabilityWindow.objects.create(
+            contractor=self.contractor,
+            weekday=ContractorEstimateAvailabilityWindow.WEEKDAY_MONDAY,
+            start_time=time(9, 0),
+            end_time=time(12, 0),
+            duration_minutes=60,
+        )
+        response = self.create_session()
+        approve = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/approve/",
+            {"action": "create_customer_and_opportunity"},
+            format="json",
+        )
+        self.assertEqual(approve.status_code, 200, approve.data)
+
+        prepare = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/",
+            {"action_type": "schedule_estimate"},
+            format="json",
+        )
+        self.assertEqual(prepare.status_code, 201, prepare.data)
+        self.assertEqual(prepare.data["action_type"], ProjectAssistantPreparedAction.ACTION_SCHEDULE_ESTIMATE)
+        self.assertTrue(prepare.data["requires_approval"])
+        self.assertEqual(OpportunityEstimateAppointment.objects.count(), 0)
+        self.assertIn("scheduled_start", [row["field"] for row in prepare.data["validation_errors"]])
+        self.assertEqual(len(prepare.data["prepared_payload"]["availability_options"]), 1)
+
+        execute = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/{prepare.data['action_id']}/approve/",
+            {
+                "prepared_payload": {
+                    "scheduled_start": "2026-08-01T15:00:00Z",
+                    "project_address": "123 Oak Street",
+                }
+            },
+            format="json",
+        )
+        self.assertEqual(execute.status_code, 200, execute.data)
+        self.assertEqual(execute.data["status"], ProjectAssistantPreparedAction.STATUS_COMPLETED)
+        self.assertEqual(OpportunityEstimateAppointment.objects.count(), 1)
+        appointment = OpportunityEstimateAppointment.objects.get()
+        self.assertEqual(appointment.service_location, "123 Oak Street")
+        self.assertEqual(appointment.contractor_opportunity_id, ContractorOpportunity.objects.get().id)
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend", DEFAULT_FROM_EMAIL="qa@myhomebro.local")
+    def test_email_action_sends_only_after_human_approval_and_logs_customer_contact(self):
+        response = self.create_session()
+        approve = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/approve/",
+            {"action": "create_customer_and_opportunity"},
+            format="json",
+        )
+        self.assertEqual(approve.status_code, 200, approve.data)
+
+        prepare = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/",
+            {"action_type": "send_email"},
+            format="json",
+        )
+        self.assertEqual(prepare.status_code, 201, prepare.data)
+        self.assertEqual(len(mail.outbox), 0)
+
+        execute = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/{prepare.data['action_id']}/approve/",
+            {
+                "prepared_payload": {
+                    "subject": "Estimate follow-up",
+                    "body": "Thanks for speaking with us. We can schedule the estimate next.",
+                }
+            },
+            format="json",
+        )
+        self.assertEqual(execute.status_code, 200, execute.data)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["sarah@example.com"])
+        self.assertTrue(CustomerCommunicationLog.objects.filter(communication_type=CustomerCommunicationLog.TYPE_EMAIL).exists())
+
+    def test_sms_action_uses_mockable_delivery_and_logs_after_approval(self):
+        response = self.create_session()
+        approve = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/approve/",
+            {"action": "create_customer_and_opportunity"},
+            format="json",
+        )
+        self.assertEqual(approve.status_code, 200, approve.data)
+
+        prepare = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/",
+            {"action_type": "send_sms"},
+            format="json",
+        )
+        self.assertEqual(prepare.status_code, 201, prepare.data)
+        self.assertFalse(CustomerCommunicationLog.objects.filter(communication_type=CustomerCommunicationLog.TYPE_SMS).exists())
+
+        with patch(
+            "projects.services.project_assistant_quick_capture.send_quick_capture_sms",
+            return_value={"ok": True, "status": "sent", "provider_id": "mock-sms-1"},
+        ) as send_sms:
+            execute = self.client.post(
+                f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/{prepare.data['action_id']}/approve/",
+                {"prepared_payload": {"body": "Thanks Sarah. We can schedule your estimate next."}},
+                format="json",
+            )
+        self.assertEqual(execute.status_code, 200, execute.data)
+        send_sms.assert_called_once()
+        self.assertTrue(CustomerCommunicationLog.objects.filter(communication_type=CustomerCommunicationLog.TYPE_SMS).exists())
+
+    def test_reminder_action_creates_scheduled_follow_up_after_approval(self):
+        customer = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Sarah Johnson",
+            email="sarah@example.com",
+        )
+        response = self.create_session("Remind me tomorrow morning to call Sarah Johnson about her bathroom estimate.")
+        prepare = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/",
+            {
+                "action_type": "create_reminder",
+                "prepared_payload": {
+                    "customer_id": customer.id,
+                    "remind_at": "2026-08-02T14:00:00Z",
+                    "title": "Call Sarah Johnson",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(prepare.status_code, 201, prepare.data)
+        self.assertEqual(CustomerCommunicationLog.objects.count(), 0)
+
+        execute = self.client.post(
+            f"/api/projects/project-assistant/quick-capture/sessions/{response.data['id']}/actions/{prepare.data['action_id']}/approve/",
+            {},
+            format="json",
+        )
+        self.assertEqual(execute.status_code, 200, execute.data)
+        self.assertEqual(CustomerCommunicationLog.objects.count(), 1)
+        reminder = CustomerCommunicationLog.objects.get()
+        self.assertEqual(reminder.customer_id, customer.id)
+        self.assertIsNotNone(reminder.follow_up_at)

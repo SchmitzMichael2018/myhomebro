@@ -92,3 +92,31 @@ export function draftRowsFromQuickCapture(prepared = {}) {
 
   return rows;
 }
+
+export const PROJECT_ASSISTANT_ACTION_LABELS = {
+  schedule_estimate: "Schedule Estimate",
+  send_email: "Prepare Email",
+  send_sms: "Prepare Text Message",
+  create_reminder: "Create Reminder",
+  navigate: "Open Workflow",
+  save_draft: "Save Draft",
+};
+
+export const PROJECT_ASSISTANT_ACTION_APPROVAL_LABELS = {
+  schedule_estimate: "Approve Schedule",
+  send_email: "Approve And Send Email",
+  send_sms: "Approve And Send Text",
+  create_reminder: "Approve Reminder",
+  navigate: "Open",
+  save_draft: "Save Draft",
+};
+
+export function normalizeProjectAssistantActions(actions = []) {
+  return Array.isArray(actions) ? actions.filter(Boolean) : [];
+}
+
+export function projectAssistantActionStatusLabel(status = "") {
+  return String(status || "drafted")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}

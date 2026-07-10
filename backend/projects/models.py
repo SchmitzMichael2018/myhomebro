@@ -38,7 +38,7 @@ from .models_contractor_discovery import (  # noqa: F401
     MarketplaceLocation,
     OpportunityEstimateAppointment,
 )
-from .models_quick_capture import ProjectAssistantCaptureSession  # noqa: E402,F401
+from .models_quick_capture import ProjectAssistantCaptureSession, ProjectAssistantPreparedAction  # noqa: E402,F401
 from .models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement  # noqa: E402,F401
 from .models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from .models_project_taxonomy import ProjectType, ProjectSubtype  # noqa: E402,F401

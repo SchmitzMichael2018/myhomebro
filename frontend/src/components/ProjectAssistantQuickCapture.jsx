@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Mic, Send, ShieldCheck, Square, Volume2, X } from "lucide-react";
+import { Bell, CalendarClock, ChevronDown, ChevronUp, ExternalLink, Mail, MessageSquare, Mic, Send, ShieldCheck, Square, Volume2, X } from "lucide-react";
 
 import api from "../api.js";
 import {
@@ -12,6 +12,10 @@ import {
 import {
   approvalActionForQuickCapture,
   draftRowsFromQuickCapture,
+  normalizeProjectAssistantActions,
+  PROJECT_ASSISTANT_ACTION_APPROVAL_LABELS,
+  PROJECT_ASSISTANT_ACTION_LABELS,
+  projectAssistantActionStatusLabel,
   quickCaptureIntentLabel,
 } from "../lib/projectAssistantQuickCapture.js";
 import {
@@ -83,6 +87,167 @@ function DuplicateMatches({ matches = [], selectedId, onSelect }) {
   );
 }
 
+const ACTION_ICONS = {
+  schedule_estimate: CalendarClock,
+  send_email: Mail,
+  send_sms: MessageSquare,
+  create_reminder: Bell,
+  navigate: ExternalLink,
+};
+
+function actionDraftFields(actionType) {
+  if (actionType === "schedule_estimate") {
+    return [
+      ["scheduled_start", "Estimate Date/Time", "text", "2026-08-01T15:00:00Z"],
+      ["project_address", "Project Address", "text", ""],
+      ["duration_minutes", "Duration Minutes", "number", ""],
+      ["notes", "Notes", "textarea", ""],
+    ];
+  }
+  if (actionType === "send_email") {
+    return [
+      ["recipient", "Recipient", "email", ""],
+      ["subject", "Subject", "text", ""],
+      ["body", "Email Body", "textarea", ""],
+    ];
+  }
+  if (actionType === "send_sms") {
+    return [
+      ["recipient", "Phone", "tel", ""],
+      ["body", "Text Message", "textarea", ""],
+    ];
+  }
+  if (actionType === "create_reminder") {
+    return [
+      ["title", "Title", "text", ""],
+      ["remind_at", "Reminder Date/Time", "text", "2026-08-02T14:00:00Z"],
+      ["note", "Note", "textarea", ""],
+    ];
+  }
+  return [];
+}
+
+function ProjectAssistantActionCard({ action, busy, onApprove }) {
+  const actionType = action.action_type;
+  const Icon = ACTION_ICONS[actionType] || ShieldCheck;
+  const completed = action.status === "completed";
+  const [draft, setDraft] = useState(action.prepared_payload || {});
+
+  useEffect(() => {
+    setDraft(action.prepared_payload || {});
+  }, [action.action_id, action.updated_at]);
+
+  const fields = actionDraftFields(actionType);
+  const errors = Array.isArray(action.validation_errors) ? action.validation_errors : [];
+  const warnings = Array.isArray(action.warnings) ? action.warnings : [];
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-4" data-testid={`project-assistant-action-card-${actionType}`}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-800">
+            <Icon className="h-5 w-5" />
+          </span>
+          <div>
+            <h4 className="text-sm font-black text-slate-950">{action.title || PROJECT_ASSISTANT_ACTION_LABELS[actionType]}</h4>
+            <p className="mt-1 text-sm text-slate-600">{action.summary}</p>
+            <div className="mt-2 flex flex-wrap gap-2 text-xs font-black">
+              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
+                {projectAssistantActionStatusLabel(action.status)}
+              </span>
+              {action.requires_approval ? (
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-900">
+                  Requires Approval
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        {completed ? (
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-800">
+            Completed
+          </span>
+        ) : null}
+      </div>
+
+      {fields.length ? (
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {fields.map(([key, label, type, placeholder]) => (
+            <label key={key} className={type === "textarea" ? "grid gap-1 text-sm font-semibold text-slate-700 sm:col-span-2" : "grid gap-1 text-sm font-semibold text-slate-700"}>
+              {label}
+              {type === "textarea" ? (
+                <textarea
+                  value={draft[key] || ""}
+                  onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
+                  rows={3}
+                  className="min-h-[88px] rounded-lg border border-slate-200 px-3 py-2 text-sm font-normal"
+                  data-testid={`project-assistant-action-field-${actionType}-${key}`}
+                />
+              ) : (
+                <input
+                  type={type}
+                  value={draft[key] || ""}
+                  placeholder={placeholder}
+                  onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
+                  className="min-h-[44px] rounded-lg border border-slate-200 px-3 text-sm font-normal"
+                  data-testid={`project-assistant-action-field-${actionType}-${key}`}
+                />
+              )}
+            </label>
+          ))}
+        </div>
+      ) : null}
+
+      {actionType === "schedule_estimate" && Array.isArray(draft.availability_options) && draft.availability_options.length ? (
+        <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50 px-3 py-2 text-sm text-indigo-950" data-testid="project-assistant-action-availability">
+          <div className="font-black">Availability Found</div>
+          <div className="mt-1">
+            {draft.availability_options.slice(0, 3).map((slot) => (
+              <span key={slot.id || `${slot.weekday}-${slot.start_time}`} className="mr-2 inline-block">
+                Day {slot.weekday}: {slot.start_time}-{slot.end_time} {slot.timezone}
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {errors.length ? (
+        <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-900" data-testid={`project-assistant-action-errors-${actionType}`}>
+          Missing: {errors.map((row) => row.label || row.field).join(", ")}
+        </div>
+      ) : null}
+      {warnings.length ? (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid={`project-assistant-action-warnings-${actionType}`}>
+          {warnings.join(" ")}
+        </div>
+      ) : null}
+
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        {actionType === "navigate" && draft.route ? (
+          <a
+            href={draft.route}
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white"
+            data-testid={`project-assistant-action-open-${actionType}`}
+          >
+            <ExternalLink className="h-4 w-4" />
+            Open Workflow
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onApprove(action.action_id, draft)}
+            disabled={busy || completed}
+            className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+            data-testid={`project-assistant-action-approve-${actionType}`}
+          >
+            <ShieldCheck className="h-4 w-4" />
+            {PROJECT_ASSISTANT_ACTION_APPROVAL_LABELS[actionType] || "Approve"}
+          </button>
+        )}
+      </div>
+    </article>
+  );
+}
+
 export default function ProjectAssistantQuickCapture({ compact = false, onClose = null }) {
   const voiceServiceRef = useRef(null);
   const [input, setInput] = useState("");
@@ -102,6 +267,7 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
   const safety = Array.isArray(prepared.safety_summary) ? prepared.safety_summary : [];
   const draftRows = useMemo(() => draftRowsFromQuickCapture(prepared), [prepared]);
   const approvalAction = approvalActionForQuickCapture(prepared);
+  const preparedActions = normalizeProjectAssistantActions(session?.actions);
 
   const voiceService = useMemo(() => {
     if (!voiceServiceRef.current) {
@@ -234,6 +400,51 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
       setSession(response.data);
     } catch (err) {
       setError(err?.response?.data?.detail || "Project Assistant could not approve this draft.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function replacePreparedAction(updatedAction) {
+    setSession((current) => {
+      if (!current) return current;
+      const existing = normalizeProjectAssistantActions(current.actions);
+      const next = existing.some((row) => row.action_id === updatedAction.action_id)
+        ? existing.map((row) => row.action_id === updatedAction.action_id ? updatedAction : row)
+        : [updatedAction, ...existing];
+      return { ...current, actions: next };
+    });
+  }
+
+  async function prepareNextAction(actionType) {
+    if (!session?.id || !actionType) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api.post(`/projects/project-assistant/quick-capture/sessions/${session.id}/actions/`, {
+        action_type: actionType,
+      });
+      replacePreparedAction(response.data);
+    } catch (err) {
+      setError(err?.response?.data?.detail || "Project Assistant could not prepare that action.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function approvePreparedAction(actionId, preparedPayload) {
+    if (!session?.id || !actionId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await api.post(`/projects/project-assistant/quick-capture/sessions/${session.id}/actions/${actionId}/approve/`, {
+        prepared_payload: preparedPayload,
+      });
+      replacePreparedAction(response.data);
+    } catch (err) {
+      const action = err?.response?.data?.action;
+      if (action) replacePreparedAction(action);
+      setError(err?.response?.data?.detail || "Project Assistant could not approve that action.");
     } finally {
       setBusy(false);
     }
@@ -515,6 +726,48 @@ export default function ProjectAssistantQuickCapture({ compact = false, onClose 
               </ul>
             </ProjectAssistantSection>
           ) : null}
+
+          <ProjectAssistantSection title="Suggested Next Steps" testId="project-assistant-action-hub">
+            <div className="grid gap-3">
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950" data-testid="project-assistant-action-hub-safety">
+                Project Assistant can prepare next actions here, but scheduling, email, SMS, and reminders still require your visible approval.
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["schedule_estimate", "Schedule Estimate"],
+                  ["send_email", "Prepare Email"],
+                  ["send_sms", "Prepare Text"],
+                  ["create_reminder", "Create Reminder"],
+                  ["navigate", "Open Workflow"],
+                ].map(([actionType, label]) => (
+                  <button
+                    key={actionType}
+                    type="button"
+                    onClick={() => prepareNextAction(actionType)}
+                    disabled={busy || cancelled}
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 disabled:opacity-60"
+                    data-testid={`project-assistant-prepare-action-${actionType}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {preparedActions.length ? (
+                <div className="grid gap-3" data-testid="project-assistant-prepared-actions">
+                  {preparedActions.map((action) => (
+                    <ProjectAssistantActionCard
+                      key={action.action_id}
+                      action={action}
+                      busy={busy}
+                      onApprove={approvePreparedAction}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-slate-500">No next actions have been prepared yet.</div>
+              )}
+            </div>
+          </ProjectAssistantSection>
 
           <div className="grid gap-2 sm:grid-cols-2" data-testid="quick-capture-actions">
             {approvalAction ? (
