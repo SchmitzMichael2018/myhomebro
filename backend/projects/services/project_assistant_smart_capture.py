@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+import base64
 import hashlib
+import json
 import re
+import time
 from decimal import Decimal, InvalidOperation
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from projects.models import (
+    AIUsageLedger,
     ContractorAsset,
     ExpenseRequest,
     ExpenseRequestAttachment,
@@ -18,6 +23,10 @@ from projects.models import (
 
 ALLOWED_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
 MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+PROVIDER_DETERMINISTIC = "deterministic"
+PROVIDER_OPENAI = "openai"
+SMART_CAPTURE_PROMPT_VERSION = "smart_capture_v2_2026_07_11"
+CONFIDENCE_VALUES = {"confirmed", "high_confidence", "medium_confidence", "low_confidence", "needs_review", "not_detected"}
 
 
 def clean_text(value) -> str:
@@ -69,11 +78,105 @@ def parse_key_values(text: str) -> dict:
     return parsed
 
 
+RECEIPT_FIELDS = {
+    "merchant_name",
+    "merchant_address",
+    "purchase_date",
+    "purchase_time",
+    "receipt_number",
+    "subtotal",
+    "tax",
+    "total",
+    "currency",
+    "payment_method",
+    "payment_method_masked",
+    "line_items",
+    "suggested_category",
+    "project_reference",
+    "milestone_reference",
+    "customer_reference",
+    "notes",
+    "warnings",
+    "missing_fields",
+    "field_confidence",
+}
+LABEL_FIELDS = {
+    "asset_type",
+    "product_name",
+    "manufacturer",
+    "brand",
+    "model_number",
+    "serial_number",
+    "sku",
+    "barcode",
+    "manufacture_date",
+    "purchase_date",
+    "warranty_period",
+    "warranty_expiration",
+    "voltage",
+    "capacity",
+    "size",
+    "color_or_finish",
+    "lot_or_batch_number",
+    "notes",
+    "destination",
+    "warnings",
+    "missing_fields",
+    "field_confidence",
+}
+
+
+class SmartCaptureProviderError(RuntimeError):
+    def __init__(self, message: str, code: str = "provider_error"):
+        super().__init__(message)
+        self.code = code
+
+
+def smart_capture_provider() -> str:
+    provider = clean_text(getattr(settings, "SMART_CAPTURE_PROVIDER", PROVIDER_DETERMINISTIC)).lower()
+    return provider if provider in {PROVIDER_DETERMINISTIC, PROVIDER_OPENAI} else PROVIDER_DETERMINISTIC
+
+
+def smart_capture_model() -> str:
+    return clean_text(getattr(settings, "OPENAI_SMART_CAPTURE_MODEL", "gpt-4.1-mini")) or "gpt-4.1-mini"
+
+
+def smart_capture_price(capture_type: str) -> Decimal:
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        value = getattr(settings, "SMART_CAPTURE_RECEIPT_PRICE", "0.05")
+    elif capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL:
+        value = getattr(settings, "SMART_CAPTURE_EQUIPMENT_PRICE", "0.05")
+    else:
+        value = getattr(settings, "SMART_CAPTURE_PRODUCT_LABEL_PRICE", "0.05")
+    return decimal_or_none(value) or Decimal("0.00")
+
+
+def smart_capture_feature(capture_type: str) -> str:
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_RECEIPT
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_EQUIPMENT
+    return AIUsageLedger.FEATURE_SMART_CAPTURE_PRODUCT_LABEL
+
+
+def extraction_cache_key(*, provider: str, model: str, file_hash: str, capture_type: str) -> str:
+    raw = "|".join([provider, model, SMART_CAPTURE_PROMPT_VERSION, file_hash, capture_type])
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 class SmartCaptureExtractor:
-    provider_name = "deterministic_text_fixture"
-    provider_version = "phase_1"
+    provider_version = "phase_2"
+
+    def __init__(self, *, session: ProjectAssistantSmartCaptureSession | None = None, actor=None, provider: str | None = None):
+        self.session = session
+        self.actor = actor
+        self.configured_provider = provider or smart_capture_provider()
+        self.provider_name = PROVIDER_OPENAI if self.configured_provider == PROVIDER_OPENAI else "deterministic_text_fixture"
+        self.openai = OpenAISmartCaptureProvider(session=session, actor=actor) if self.configured_provider == PROVIDER_OPENAI else None
 
     def extract_receipt(self, file_bytes: bytes, filename: str = "") -> dict:
+        if self.openai:
+            return self.openai.extract_receipt(file_bytes, filename)
         text = self._decode_text(file_bytes)
         data = parse_key_values(text)
         total = data.get("total") or data.get("amount")
@@ -98,9 +201,13 @@ class SmartCaptureExtractor:
         return self.normalize_result("receipt", text, payload)
 
     def extract_equipment_label(self, file_bytes: bytes, filename: str = "") -> dict:
+        if self.openai:
+            return self.openai.extract_label("equipment_label", file_bytes, filename)
         return self._extract_label("equipment_label", file_bytes, filename)
 
     def extract_product_label(self, file_bytes: bytes, filename: str = "") -> dict:
+        if self.openai:
+            return self.openai.extract_label("product_label", file_bytes, filename)
         return self._extract_label("product_label", file_bytes, filename)
 
     def _extract_label(self, capture_type: str, file_bytes: bytes, filename: str = "") -> dict:
@@ -199,6 +306,487 @@ class SmartCaptureExtractor:
         return clean_text(value)
 
 
+class OpenAISmartCaptureProvider:
+    provider_name = PROVIDER_OPENAI
+
+    def __init__(self, *, session: ProjectAssistantSmartCaptureSession | None = None, actor=None):
+        self.session = session
+        self.actor = actor
+        self.model = smart_capture_model()
+
+    def extract_receipt(self, file_bytes: bytes, filename: str = "") -> dict:
+        payload, meta = self._call_openai(
+            capture_type=ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT,
+            file_bytes=file_bytes,
+            filename=filename,
+        )
+        try:
+            normalized = validate_openai_payload(ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT, payload)
+        except Exception:
+            self._log_validation_failure(meta)
+            raise
+        self._log_success(meta)
+        result = SmartCaptureExtractor(provider=PROVIDER_DETERMINISTIC).normalize_result(
+            ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT,
+            "",
+            normalized,
+        )
+        result["warnings"] = merge_warning_lists(result.get("warnings"), payload.get("warnings"))
+        result["missing_fields"] = normalize_missing_fields(payload.get("missing_fields"), result.get("missing_fields"))
+        result["field_confidence"] = normalize_confidence(payload.get("field_confidence"), result.get("field_confidence"))
+        result["raw_provider_output"] = payload
+        result["provider_meta"] = meta
+        return result
+
+    def extract_label(self, capture_type: str, file_bytes: bytes, filename: str = "") -> dict:
+        payload, meta = self._call_openai(capture_type=capture_type, file_bytes=file_bytes, filename=filename)
+        try:
+            normalized = validate_openai_payload(capture_type, payload)
+        except Exception:
+            self._log_validation_failure(meta)
+            raise
+        self._log_success(meta)
+        # Destination is a human choice. Keep it blank for OpenAI extraction.
+        normalized["destination"] = ""
+        result = SmartCaptureExtractor(provider=PROVIDER_DETERMINISTIC).normalize_result(capture_type, "", normalized)
+        result["warnings"] = merge_warning_lists(result.get("warnings"), payload.get("warnings"))
+        result["missing_fields"] = normalize_missing_fields(payload.get("missing_fields"), result.get("missing_fields"))
+        result["field_confidence"] = normalize_confidence(payload.get("field_confidence"), result.get("field_confidence"))
+        result["raw_provider_output"] = payload
+        result["provider_meta"] = meta
+        return result
+
+    def _log_success(self, meta: dict):
+        log_openai_usage(
+            session=self.session,
+            actor=self.actor,
+            model=self.model,
+            started_at=meta.get("started_at"),
+            completed_at=meta.get("completed_at"),
+            success=True,
+            failure_code="",
+            provider_request_id=meta.get("provider_request_id", ""),
+            usage=meta.get("usage_obj"),
+            cache_hit=False,
+        )
+
+    def _log_validation_failure(self, meta: dict):
+        log_openai_usage(
+            session=self.session,
+            actor=self.actor,
+            model=self.model,
+            started_at=meta.get("started_at"),
+            completed_at=meta.get("completed_at"),
+            success=False,
+            failure_code="schema_validation_failed",
+            provider_request_id=meta.get("provider_request_id", ""),
+            usage=meta.get("usage_obj"),
+            cache_hit=False,
+        )
+
+    def _call_openai(self, *, capture_type: str, file_bytes: bytes, filename: str) -> tuple[dict, dict]:
+        if not getattr(settings, "SMART_CAPTURE_OPENAI_ENABLED", True):
+            raise SmartCaptureProviderError("OpenAI Smart Capture is disabled. Continue manually or switch providers.", "provider_disabled")
+        api_key = clean_text(getattr(settings, "OPENAI_API_KEY", "")) or clean_text(getattr(settings, "AI_OPENAI_API_KEY", ""))
+        if not api_key:
+            raise SmartCaptureProviderError("OpenAI Smart Capture is not configured. Continue manually or switch providers.", "missing_api_key")
+        if self.session and self.session.mime_type == "application/pdf":
+            raise SmartCaptureProviderError("PDF Smart Capture with OpenAI is not enabled in this workflow. Continue manually or upload an image.", "unsupported_file")
+        max_mb = int(getattr(settings, "SMART_CAPTURE_MAX_IMAGE_SIZE_MB", 10) or 10)
+        if len(file_bytes) > max_mb * 1024 * 1024:
+            raise SmartCaptureProviderError("Image is too large for OpenAI Smart Capture.", "file_too_large")
+
+        client = require_openai_client(api_key=api_key)
+        started = timezone.now()
+        start_monotonic = time.monotonic()
+        schema = openai_schema(capture_type)
+        try:
+            response = client.responses.create(
+                model=self.model,
+                input=[
+                    {
+                        "role": "system",
+                        "content": openai_system_prompt(capture_type),
+                    },
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "input_text", "text": openai_user_prompt(capture_type, filename)},
+                            {
+                                "type": "input_image",
+                                "image_url": image_data_url(file_bytes, self.session.mime_type if self.session else "image/jpeg"),
+                                "detail": "high",
+                            },
+                        ],
+                    },
+                ],
+                text={
+                    "format": {
+                        "type": "json_schema",
+                        "name": schema["name"],
+                        "schema": schema["schema"],
+                        "strict": True,
+                    }
+                },
+                timeout=int(getattr(settings, "SMART_CAPTURE_TIMEOUT_SECONDS", 30) or 30),
+            )
+        except Exception as exc:
+            completed = timezone.now()
+            log_openai_usage(
+                session=self.session,
+                actor=self.actor,
+                model=self.model,
+                started_at=started,
+                completed_at=completed,
+                success=False,
+                failure_code=classify_openai_error(exc),
+                provider_request_id="",
+                usage=None,
+                cache_hit=False,
+            )
+            raise SmartCaptureProviderError(safe_openai_error(exc), classify_openai_error(exc)) from exc
+
+        raw = getattr(response, "output_text", "") or "{}"
+        try:
+            payload = json.loads(raw)
+        except Exception as exc:
+            completed = timezone.now()
+            log_openai_usage(
+                session=self.session,
+                actor=self.actor,
+                model=self.model,
+                started_at=started,
+                completed_at=completed,
+                success=False,
+                failure_code="malformed_json",
+                provider_request_id=getattr(response, "id", "") or "",
+                usage=getattr(response, "usage", None),
+                cache_hit=False,
+            )
+            raise SmartCaptureProviderError("OpenAI returned malformed extraction data. Retry or continue manually.", "malformed_json") from exc
+
+        completed = timezone.now()
+        meta = {
+            "provider": PROVIDER_OPENAI,
+            "model": self.model,
+            "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+            "provider_request_id": getattr(response, "id", "") or "",
+            "processing_time_ms": int((time.monotonic() - start_monotonic) * 1000),
+            "usage": usage_payload(getattr(response, "usage", None)),
+            "usage_obj": getattr(response, "usage", None),
+            "started_at": started,
+            "completed_at": completed,
+        }
+        return payload, meta
+
+
+def require_openai_client(*, api_key: str):
+    try:
+        from openai import OpenAI  # type: ignore
+    except Exception as exc:
+        raise SmartCaptureProviderError("OpenAI SDK is not installed.", "sdk_missing") from exc
+    return OpenAI(api_key=api_key)
+
+
+def image_data_url(file_bytes: bytes, mime_type: str) -> str:
+    mime = mime_type if mime_type in {"image/jpeg", "image/png", "image/webp"} else "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(file_bytes).decode('ascii')}"
+
+
+def openai_system_prompt(capture_type: str) -> str:
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        return (
+            "You extract receipt fields from an image for a contractor expense draft. "
+            "Return JSON only through the provided schema. Use null for unknown values. "
+            "Do not invent merchant names, dates, totals, line items, categories, projects, or milestones. "
+            "Never return full payment card numbers or CVV. Mask visible card digits as 'Card ending 1234'. "
+            "Do not create records or recommend payment/reimbursement actions."
+        )
+    return (
+        "You extract equipment or product label fields from an image for a contractor asset draft. "
+        "Return JSON only through the provided schema. Use null for unknown values. "
+        "Do not fabricate serial numbers, ownership, destination, warranty expiration, or maintenance actions. "
+        "If a warranty value is calculated from visible text, say so in warnings and mark the field needs_review."
+    )
+
+
+def openai_user_prompt(capture_type: str, filename: str) -> str:
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        return f"Extract only visible receipt data from {filename or 'this image'}."
+    return f"Extract only visible equipment/product label data from {filename or 'this image'}."
+
+
+def openai_schema(capture_type: str) -> dict:
+    confidence_schema = {
+        "type": "object",
+        "additionalProperties": {"type": "string", "enum": sorted(CONFIDENCE_VALUES)},
+    }
+    missing_schema = {
+        "type": "array",
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["field", "label"],
+            "properties": {"field": {"type": "string"}, "label": {"type": "string"}},
+        },
+    }
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        props = {
+            key: {"type": ["string", "null"]}
+            for key in [
+                "merchant_name",
+                "merchant_address",
+                "purchase_date",
+                "purchase_time",
+                "receipt_number",
+                "subtotal",
+                "tax",
+                "total",
+                "currency",
+                "payment_method_masked",
+                "suggested_category",
+                "project_reference",
+                "milestone_reference",
+                "customer_reference",
+                "notes",
+            ]
+        }
+        props["line_items"] = {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["description", "quantity", "unit_price", "total", "sku"],
+                "properties": {key: {"type": ["string", "null"]} for key in ["description", "quantity", "unit_price", "total", "sku"]},
+            },
+        }
+        props["warnings"] = {"type": "array", "items": {"type": "string"}}
+        props["missing_fields"] = missing_schema
+        props["field_confidence"] = confidence_schema
+        required = list(props.keys())
+        return {"name": "smart_capture_receipt", "schema": {"type": "object", "additionalProperties": False, "required": required, "properties": props}}
+
+    props = {
+        key: {"type": ["string", "null"]}
+        for key in [
+            "asset_type",
+            "product_name",
+            "manufacturer",
+            "brand",
+            "model_number",
+            "serial_number",
+            "sku",
+            "barcode",
+            "manufacture_date",
+            "purchase_date",
+            "warranty_period",
+            "warranty_expiration",
+            "voltage",
+            "capacity",
+            "size",
+            "color_or_finish",
+            "lot_or_batch_number",
+            "notes",
+        ]
+    }
+    props["warnings"] = {"type": "array", "items": {"type": "string"}}
+    props["missing_fields"] = missing_schema
+    props["field_confidence"] = confidence_schema
+    required = list(props.keys())
+    return {"name": "smart_capture_label", "schema": {"type": "object", "additionalProperties": False, "required": required, "properties": props}}
+
+
+def sanitize_string(value, max_length=500) -> str:
+    text = clean_text(value)
+    return text[:max_length]
+
+
+def validate_date_string(value) -> str:
+    text = sanitize_string(value, 32)
+    if not text:
+        return ""
+    return text if parse_date(text) else ""
+
+
+def mask_card_details(value) -> str:
+    text = sanitize_string(value, 80)
+    digits = re.sub(r"\D+", "", text)
+    if len(digits) >= 4:
+        return f"Card ending {digits[-4:]}"
+    return text if "cvv" not in text.lower() else ""
+
+
+def validate_openai_payload(capture_type: str, payload: dict) -> dict:
+    if not isinstance(payload, dict):
+        raise SmartCaptureProviderError("OpenAI extraction returned an invalid object.", "schema_validation_failed")
+    allowed = RECEIPT_FIELDS if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT else LABEL_FIELDS
+    unexpected = sorted(set(payload.keys()) - allowed)
+    if unexpected:
+        raise SmartCaptureProviderError("OpenAI extraction returned unsupported fields.", "unexpected_fields")
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        result = {key: sanitize_string(payload.get(key), 255) for key in RECEIPT_FIELDS if key not in {"line_items", "warnings", "missing_fields", "field_confidence"}}
+        result["payment_method"] = mask_card_details(payload.get("payment_method_masked") or payload.get("payment_method"))
+        for money_key in ["subtotal", "tax", "total"]:
+            amount = decimal_or_none(payload.get(money_key))
+            result[money_key] = f"{amount:.2f}" if amount is not None else ""
+        result["purchase_date"] = validate_date_string(payload.get("purchase_date"))
+        result["line_items"] = validate_line_items(payload.get("line_items"))
+        result["suggested_category"] = normalized_category(payload.get("suggested_category"))
+        return result
+    result = {key: sanitize_string(payload.get(key), 255) for key in LABEL_FIELDS if key not in {"warnings", "missing_fields", "field_confidence"}}
+    for date_key in ["manufacture_date", "purchase_date", "warranty_expiration"]:
+        result[date_key] = validate_date_string(payload.get(date_key))
+    result["notes"] = sanitize_string(payload.get("notes"), 1000)
+    return result
+
+
+def validate_line_items(value) -> list[dict]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise SmartCaptureProviderError("Receipt line items were malformed.", "invalid_line_items")
+    rows = []
+    for item in value[:80]:
+        if not isinstance(item, dict):
+            raise SmartCaptureProviderError("Receipt line item was malformed.", "invalid_line_items")
+        unexpected = set(item.keys()) - {"description", "quantity", "unit_price", "total", "sku"}
+        if unexpected:
+            raise SmartCaptureProviderError("Receipt line item included unsupported fields.", "unexpected_fields")
+        row = {key: sanitize_string(item.get(key), 180) for key in ["description", "quantity", "unit_price", "total", "sku"]}
+        rows.append(row)
+    return rows
+
+
+def normalize_confidence(value, fallback=None) -> dict:
+    fallback = fallback or {}
+    if not isinstance(value, dict):
+        return fallback
+    normalized = {}
+    for key, confidence in value.items():
+        if confidence in CONFIDENCE_VALUES:
+            normalized[sanitize_string(key, 80)] = confidence
+    return {**fallback, **normalized}
+
+
+def normalize_missing_fields(value, fallback=None) -> list[dict]:
+    fallback = fallback or []
+    if not isinstance(value, list):
+        return fallback
+    rows = []
+    for row in value[:80]:
+        if isinstance(row, dict):
+            field = sanitize_string(row.get("field"), 80)
+            label = sanitize_string(row.get("label"), 120)
+            if field and label:
+                rows.append({"field": field, "label": label})
+    existing = {row.get("field") for row in rows}
+    for row in fallback:
+        if row.get("field") not in existing:
+            rows.append(row)
+    return rows
+
+
+def merge_warning_lists(*values) -> list[str]:
+    warnings = []
+    for value in values:
+        if isinstance(value, list):
+            warnings.extend(sanitize_string(item, 300) for item in value if sanitize_string(item, 300))
+    seen = set()
+    unique = []
+    for item in warnings:
+        if item not in seen:
+            unique.append(item)
+            seen.add(item)
+    return unique
+
+
+def usage_payload(usage) -> dict:
+    if usage is None:
+        return {}
+    return {
+        "input_tokens": int(getattr(usage, "input_tokens", 0) or getattr(usage, "prompt_tokens", 0) or 0),
+        "output_tokens": int(getattr(usage, "output_tokens", 0) or getattr(usage, "completion_tokens", 0) or 0),
+        "total_tokens": int(getattr(usage, "total_tokens", 0) or 0),
+    }
+
+
+def classify_openai_error(exc) -> str:
+    name = exc.__class__.__name__.lower()
+    text = str(exc).lower()
+    if "authentication" in name or "invalid api key" in text:
+        return "authentication_failed"
+    if "rate" in name or "rate limit" in text:
+        return "rate_limited"
+    if "quota" in text or "insufficient_quota" in text:
+        return "quota_exceeded"
+    if "timeout" in name or "timed out" in text:
+        return "timeout"
+    if "model" in text:
+        return "invalid_model"
+    if "connection" in name or "network" in text:
+        return "network_error"
+    return "provider_unavailable"
+
+
+def safe_openai_error(exc) -> str:
+    code = classify_openai_error(exc)
+    return {
+        "authentication_failed": "OpenAI authentication failed. Continue manually or check backend configuration.",
+        "rate_limited": "OpenAI rate limit reached. Retry later or continue manually.",
+        "quota_exceeded": "OpenAI quota is unavailable. Continue manually or check provider billing.",
+        "timeout": "OpenAI extraction timed out. Retry extraction or continue manually.",
+        "invalid_model": "Configured OpenAI Smart Capture model is unavailable.",
+        "network_error": "OpenAI Smart Capture could not reach the provider.",
+    }.get(code, "OpenAI Smart Capture is temporarily unavailable. Retry or continue manually.")
+
+
+def log_openai_usage(
+    *,
+    session: ProjectAssistantSmartCaptureSession | None,
+    actor,
+    model: str,
+    started_at,
+    completed_at,
+    success: bool,
+    failure_code: str,
+    provider_request_id: str,
+    usage,
+    cache_hit: bool,
+):
+    if not session or not getattr(settings, "SMART_CAPTURE_LOG_USAGE", True):
+        return None
+    usage_data = usage_payload(usage)
+    billable = smart_capture_price(session.capture_type) if success and not cache_hit else Decimal("0.00")
+    return AIUsageLedger.objects.create(
+        contractor=session.contractor,
+        user=actor,
+        feature=smart_capture_feature(session.capture_type),
+        provider=PROVIDER_OPENAI,
+        model=model,
+        source_type="project_assistant_smart_capture",
+        source_id=str(session.id),
+        capture_session=session,
+        input_units=usage_data.get("input_tokens", 0),
+        output_units=usage_data.get("output_tokens", 0),
+        internal_cost=Decimal("0.0000"),
+        billable_amount=billable,
+        currency="USD",
+        billing_status=AIUsageLedger.BILLING_UNBILLED if billable > 0 else AIUsageLedger.BILLING_NOT_BILLABLE,
+        provider_request_id=provider_request_id or "",
+        success=success,
+        failure_code=failure_code or "",
+        cache_hit=cache_hit,
+        metadata={
+            "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+            "request_started_at": started_at.isoformat() if started_at else "",
+            "request_completed_at": completed_at.isoformat() if completed_at else "",
+            "processing_time_ms": int((completed_at - started_at).total_seconds() * 1000) if started_at and completed_at else 0,
+            "usage": usage_data,
+            "estimated_internal_cost": "not_configured",
+        },
+    )
+
+
 def file_sha256(file_bytes: bytes) -> str:
     return hashlib.sha256(file_bytes).hexdigest()
 
@@ -209,7 +797,8 @@ def validate_upload(file_obj) -> None:
         raise ValueError("Upload a JPEG, PNG, WebP, or PDF file.")
     if getattr(file_obj, "size", 0) <= 0:
         raise ValueError("Uploaded file is empty.")
-    if getattr(file_obj, "size", 0) > MAX_UPLOAD_BYTES:
+    max_bytes = int(getattr(settings, "SMART_CAPTURE_MAX_IMAGE_SIZE_MB", 8) or 8) * 1024 * 1024
+    if getattr(file_obj, "size", 0) > max_bytes:
         raise ValueError("File is too large for Smart Capture.")
 
 
@@ -293,7 +882,50 @@ def create_smart_capture_session(*, contractor, actor, capture_type: str, file_o
 
 @transaction.atomic
 def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: bytes | None = None) -> ProjectAssistantSmartCaptureSession:
-    extractor = SmartCaptureExtractor()
+    provider = smart_capture_provider()
+    model = smart_capture_model() if provider == PROVIDER_OPENAI else "deterministic"
+    cache_key = extraction_cache_key(provider=provider, model=model, file_hash=session.file_sha256, capture_type=session.capture_type)
+    if provider == PROVIDER_OPENAI:
+        cached = (
+            ProjectAssistantSmartCaptureSession.objects.filter(
+                contractor=session.contractor,
+                extraction_cache_key=cache_key,
+                extraction_provider=PROVIDER_OPENAI,
+            )
+            .exclude(pk=session.pk)
+            .filter(status__in=[
+                ProjectAssistantSmartCaptureSession.STATUS_REVIEW_READY,
+                ProjectAssistantSmartCaptureSession.STATUS_NEEDS_INFORMATION,
+                ProjectAssistantSmartCaptureSession.STATUS_COMPLETED,
+            ])
+            .order_by("-updated_at")
+            .first()
+        )
+        if cached:
+            session.raw_extracted_text = cached.raw_extracted_text
+            session.structured_payload = cached.structured_payload
+            session.field_confidence = cached.field_confidence
+            session.missing_fields = cached.missing_fields
+            session.warnings = merge_warning_lists(cached.warnings, ["Reused a previous successful OpenAI extraction for this source image."])
+            session.extraction_provider = PROVIDER_OPENAI
+            session.extraction_model = model
+            session.extraction_prompt_version = SMART_CAPTURE_PROMPT_VERSION
+            session.extraction_cache_key = cache_key
+            session.status = ProjectAssistantSmartCaptureSession.STATUS_NEEDS_INFORMATION if session.missing_fields else ProjectAssistantSmartCaptureSession.STATUS_REVIEW_READY
+            session.audit_metadata = {
+                **(session.audit_metadata or {}),
+                "extractor": PROVIDER_OPENAI,
+                "extractor_version": SMART_CAPTURE_PROMPT_VERSION,
+                "model": model,
+                "cache_hit": True,
+                "cached_from_session": str(cached.id),
+                "extracted_at": timezone.now().isoformat(),
+            }
+            session.possible_matches = possible_matches_for_session(session)
+            session.save()
+            return session
+
+    extractor = SmartCaptureExtractor(session=session, actor=session.created_by, provider=provider)
     if file_bytes is None:
         with session.original_file.open("rb") as source:
             file_bytes = source.read()
@@ -311,6 +943,10 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
         session.field_confidence = result["field_confidence"]
         session.missing_fields = result["missing_fields"]
         session.warnings = result["warnings"]
+        session.extraction_provider = provider
+        session.extraction_model = model
+        session.extraction_prompt_version = SMART_CAPTURE_PROMPT_VERSION
+        session.extraction_cache_key = cache_key
         session.status = (
             ProjectAssistantSmartCaptureSession.STATUS_NEEDS_INFORMATION
             if session.missing_fields
@@ -320,20 +956,37 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
             **(session.audit_metadata or {}),
             "extractor": extractor.provider_name,
             "extractor_version": extractor.provider_version,
+            "model": model,
+            "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+            "provider_request_id": (result.get("provider_meta") or {}).get("provider_request_id", ""),
+            "provider_usage": (result.get("provider_meta") or {}).get("usage", {}),
+            "raw_provider_output": result.get("raw_provider_output") or {},
             "extracted_at": timezone.now().isoformat(),
         }
         session.possible_matches = possible_matches_for_session(session)
         session.save()
     except Exception as exc:
         session.status = ProjectAssistantSmartCaptureSession.STATUS_FAILED
+        session.extraction_provider = provider
+        session.extraction_model = model
+        session.extraction_prompt_version = SMART_CAPTURE_PROMPT_VERSION
+        session.extraction_cache_key = cache_key
         session.warnings = [str(exc)]
-        session.save(update_fields=["status", "warnings", "updated_at"])
+        session.audit_metadata = {
+            **(session.audit_metadata or {}),
+            "extractor": provider,
+            "model": model,
+            "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+            "failure_code": getattr(exc, "code", "extraction_failed"),
+            "failed_at": timezone.now().isoformat(),
+        }
+        session.save()
     return session
 
 
 def update_smart_capture_draft(session: ProjectAssistantSmartCaptureSession, payload: dict) -> ProjectAssistantSmartCaptureSession:
     session.structured_payload = {**(session.structured_payload or {}), **(payload or {})}
-    result = SmartCaptureExtractor().normalize_result(session.capture_type, session.raw_extracted_text, session.structured_payload)
+    result = SmartCaptureExtractor(provider=PROVIDER_DETERMINISTIC).normalize_result(session.capture_type, session.raw_extracted_text, session.structured_payload)
     session.field_confidence = {
         **(result["field_confidence"] or {}),
         **{key: "confirmed" for key in (payload or {}).keys()},

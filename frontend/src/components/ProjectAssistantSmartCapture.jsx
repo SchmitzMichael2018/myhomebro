@@ -203,6 +203,12 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
                 <div className="text-xs font-semibold text-slate-500">{session.original_filename}</div>
               </div>
 
+              {session.billable_price ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" data-testid="smart-capture-price-disclosure">
+                  Smart Capture extraction: ${session.billable_price}. You will only be charged after a successful extraction.
+                </div>
+              ) : null}
+
               {sourceUrl ? (
                 <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50" data-testid="smart-capture-image-preview">
                   {String(session.mime_type || file?.type || "").includes("pdf") ? (

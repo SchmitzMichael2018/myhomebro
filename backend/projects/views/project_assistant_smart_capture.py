@@ -11,6 +11,7 @@ from projects.services.project_assistant_smart_capture import (
     approve_smart_capture,
     create_smart_capture_session,
     run_extraction,
+    smart_capture_price,
     update_smart_capture_draft,
 )
 from projects.views.homeowner import _get_contractor_for_user
@@ -32,6 +33,10 @@ def smart_capture_payload(session: ProjectAssistantSmartCaptureSession, request=
         "original_filename": session.original_filename,
         "mime_type": session.mime_type,
         "file_size": session.file_size,
+        "extraction_provider": session.extraction_provider,
+        "extraction_model": session.extraction_model,
+        "extraction_prompt_version": session.extraction_prompt_version,
+        "billable_price": str(smart_capture_price(session.capture_type)),
         "source_url": source_url,
         "source_metadata": session.source_metadata or {},
         "raw_extracted_text": session.raw_extracted_text,

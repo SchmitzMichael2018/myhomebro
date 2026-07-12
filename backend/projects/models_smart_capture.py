@@ -57,6 +57,10 @@ class ProjectAssistantSmartCaptureSession(models.Model):
     mime_type = models.CharField(max_length=120, blank=True, default="")
     file_size = models.PositiveIntegerField(default=0)
     file_sha256 = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    extraction_provider = models.CharField(max_length=40, blank=True, default="", db_index=True)
+    extraction_model = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    extraction_prompt_version = models.CharField(max_length=40, blank=True, default="")
+    extraction_cache_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
     source_metadata = models.JSONField(default=dict, blank=True)
     raw_extracted_text = models.TextField(blank=True, default="")
     structured_payload = models.JSONField(default=dict, blank=True)
@@ -97,6 +101,7 @@ class ProjectAssistantSmartCaptureSession(models.Model):
         indexes = [
             models.Index(fields=["contractor", "capture_type", "status"], name="pa_smart_capture_idx"),
             models.Index(fields=["contractor", "file_sha256"], name="pa_smart_hash_idx"),
+            models.Index(fields=["contractor", "extraction_cache_key"], name="pa_smart_cache_idx"),
         ]
 
     def mark_completed(self, actor, payload):
@@ -189,3 +194,64 @@ class ContractorAsset(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AIUsageLedger(models.Model):
+    FEATURE_SMART_CAPTURE_RECEIPT = "smart_capture_receipt"
+    FEATURE_SMART_CAPTURE_EQUIPMENT = "smart_capture_equipment"
+    FEATURE_SMART_CAPTURE_PRODUCT_LABEL = "smart_capture_product_label"
+    FEATURE_CHOICES = [
+        (FEATURE_SMART_CAPTURE_RECEIPT, "Smart Capture Receipt"),
+        (FEATURE_SMART_CAPTURE_EQUIPMENT, "Smart Capture Equipment"),
+        (FEATURE_SMART_CAPTURE_PRODUCT_LABEL, "Smart Capture Product Label"),
+    ]
+
+    BILLING_UNBILLED = "unbilled"
+    BILLING_NOT_BILLABLE = "not_billable"
+    BILLING_CHOICES = [
+        (BILLING_UNBILLED, "Unbilled"),
+        (BILLING_NOT_BILLABLE, "Not Billable"),
+    ]
+
+    contractor = models.ForeignKey("projects.Contractor", on_delete=models.CASCADE, related_name="ai_usage_ledger_entries")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ai_usage_ledger_entries",
+    )
+    feature = models.CharField(max_length=80, choices=FEATURE_CHOICES, db_index=True)
+    provider = models.CharField(max_length=40, db_index=True)
+    model = models.CharField(max_length=120, blank=True, default="", db_index=True)
+    source_type = models.CharField(max_length=80, blank=True, default="")
+    source_id = models.CharField(max_length=120, blank=True, default="")
+    capture_session = models.ForeignKey(
+        ProjectAssistantSmartCaptureSession,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="usage_ledger_entries",
+    )
+    input_units = models.PositiveIntegerField(default=0)
+    output_units = models.PositiveIntegerField(default=0)
+    internal_cost = models.DecimalField(max_digits=10, decimal_places=4, default=0)
+    billable_amount = models.DecimalField(max_digits=10, decimal_places=4, default=0)
+    currency = models.CharField(max_length=8, default="USD")
+    billing_status = models.CharField(max_length=32, choices=BILLING_CHOICES, default=BILLING_NOT_BILLABLE, db_index=True)
+    provider_request_id = models.CharField(max_length=255, blank=True, default="", db_index=True)
+    success = models.BooleanField(default=False, db_index=True)
+    failure_code = models.CharField(max_length=80, blank=True, default="")
+    cache_hit = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(fields=["contractor", "feature", "-created_at"], name="ai_usage_feature_idx"),
+            models.Index(fields=["provider", "model", "success"], name="ai_usage_provider_idx"),
+        ]
+
+    def __str__(self):
+        return f"AIUsageLedger({self.provider}/{self.feature}, success={self.success})"
