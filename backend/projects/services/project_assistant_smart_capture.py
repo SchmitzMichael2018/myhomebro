@@ -529,10 +529,7 @@ def openai_user_prompt(capture_type: str, filename: str) -> str:
 
 
 def openai_schema(capture_type: str) -> dict:
-    confidence_schema = {
-        "type": "object",
-        "additionalProperties": {"type": "string", "enum": sorted(CONFIDENCE_VALUES)},
-    }
+    confidence_value_schema = {"type": ["string", "null"], "enum": sorted(CONFIDENCE_VALUES) + [None]}
     missing_schema = {
         "type": "array",
         "items": {
@@ -574,6 +571,17 @@ def openai_schema(capture_type: str) -> dict:
         }
         props["warnings"] = {"type": "array", "items": {"type": "string"}}
         props["missing_fields"] = missing_schema
+        confidence_fields = [
+            key
+            for key in props.keys()
+            if key not in {"line_items", "warnings", "missing_fields", "field_confidence"}
+        ]
+        confidence_schema = {
+            "type": "object",
+            "additionalProperties": False,
+            "required": confidence_fields,
+            "properties": {key: confidence_value_schema for key in confidence_fields},
+        }
         props["field_confidence"] = confidence_schema
         required = list(props.keys())
         return {"name": "smart_capture_receipt", "schema": {"type": "object", "additionalProperties": False, "required": required, "properties": props}}
@@ -603,6 +611,17 @@ def openai_schema(capture_type: str) -> dict:
     }
     props["warnings"] = {"type": "array", "items": {"type": "string"}}
     props["missing_fields"] = missing_schema
+    confidence_fields = [
+        key
+        for key in props.keys()
+        if key not in {"warnings", "missing_fields", "field_confidence"}
+    ]
+    confidence_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": confidence_fields,
+        "properties": {key: confidence_value_schema for key in confidence_fields},
+    }
     props["field_confidence"] = confidence_schema
     required = list(props.keys())
     return {"name": "smart_capture_label", "schema": {"type": "object", "additionalProperties": False, "required": required, "properties": props}}

@@ -19,6 +19,7 @@ from projects.models import (
     ExpenseRequest,
     ProjectAssistantSmartCaptureSession,
 )
+from projects.services.project_assistant_smart_capture import openai_schema
 
 
 def receipt_payload(**patches):
@@ -80,9 +81,11 @@ class FakeResponses:
         self.payload = payload or receipt_payload()
         self.exc = exc
         self.calls = 0
+        self.last_kwargs = None
 
     def create(self, **kwargs):
         self.calls += 1
+        self.last_kwargs = kwargs
         if self.exc:
             raise self.exc
         return SimpleNamespace(
@@ -103,6 +106,24 @@ class FakeOpenAIBadRequestError(Exception):
             "param": "input[1].content[1].image_url",
         }
     }
+
+
+def assert_strict_openai_schema(testcase, schema, path="schema"):
+    schema_type = schema.get("type")
+    is_object = schema_type == "object" or (isinstance(schema_type, list) and "object" in schema_type)
+    if is_object:
+        properties = schema.get("properties")
+        testcase.assertIsInstance(properties, dict, f"{path}.properties must be declared")
+        testcase.assertIs(schema.get("additionalProperties"), False, f"{path}.additionalProperties must be false")
+        testcase.assertEqual(
+            set(schema.get("required", [])),
+            set(properties.keys()),
+            f"{path}.required must exactly match properties",
+        )
+        for key, child in properties.items():
+            assert_strict_openai_schema(testcase, child, f"{path}.properties.{key}")
+    if schema.get("type") == "array" and isinstance(schema.get("items"), dict):
+        assert_strict_openai_schema(testcase, schema["items"], f"{path}.items")
 
 
 @override_settings(
@@ -136,6 +157,42 @@ class ProjectAssistantSmartCaptureOpenAIProviderTests(TestCase):
                 format="multipart",
             )
         return response, fake
+
+    def test_receipt_and_label_schemas_are_strict_openai_structured_outputs(self):
+        for capture_type in [
+            ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT,
+            ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL,
+            ProjectAssistantSmartCaptureSession.CAPTURE_PRODUCT_LABEL,
+        ]:
+            schema = openai_schema(capture_type)["schema"]
+            assert_strict_openai_schema(self, schema, capture_type)
+            root_props = schema["properties"]
+            self.assertIn("field_confidence", root_props)
+            self.assertIn("field_confidence", schema["required"])
+            confidence = root_props["field_confidence"]
+            self.assertIs(confidence["additionalProperties"], False)
+            self.assertEqual(set(confidence["required"]), set(confidence["properties"].keys()))
+
+        receipt_schema = openai_schema(ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT)["schema"]
+        line_item_schema = receipt_schema["properties"]["line_items"]["items"]
+        self.assertEqual(set(line_item_schema["required"]), set(line_item_schema["properties"].keys()))
+        self.assertIn("merchant_name", receipt_schema["properties"]["field_confidence"]["properties"])
+
+        label_schema = openai_schema(ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL)["schema"]
+        self.assertIn("serial_number", label_schema["properties"]["field_confidence"]["properties"])
+        self.assertNotIn("destination", label_schema["properties"])
+        self.assertNotIn("destination", label_schema["required"])
+
+    def test_responses_api_receives_current_strict_schema(self):
+        response, fake = self.post_session("receipt")
+        self.assertEqual(response.status_code, 201, response.data)
+        schema = fake.last_kwargs["text"]["format"]["schema"]
+        self.assertEqual(fake.last_kwargs["text"]["format"]["type"], "json_schema")
+        self.assertEqual(fake.last_kwargs["text"]["format"]["name"], "smart_capture_receipt")
+        self.assertEqual(fake.last_kwargs["text"]["format"]["strict"], True)
+        assert_strict_openai_schema(self, schema, "responses_api_schema")
+        self.assertIn("field_confidence", schema["properties"])
+        self.assertIn("field_confidence", schema["required"])
 
     def test_openai_provider_receipt_response_normalizes_and_logs_usage(self):
         response, fake = self.post_session("receipt")
