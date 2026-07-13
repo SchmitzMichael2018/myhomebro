@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import re
 import time
 from decimal import Decimal, InvalidOperation
@@ -27,6 +28,7 @@ PROVIDER_DETERMINISTIC = "deterministic"
 PROVIDER_OPENAI = "openai"
 SMART_CAPTURE_PROMPT_VERSION = "smart_capture_v2_2026_07_11"
 CONFIDENCE_VALUES = {"confirmed", "high_confidence", "medium_confidence", "low_confidence", "needs_review", "not_detected"}
+logger = logging.getLogger(__name__)
 
 
 def clean_text(value) -> str:
@@ -127,9 +129,10 @@ LABEL_FIELDS = {
 
 
 class SmartCaptureProviderError(RuntimeError):
-    def __init__(self, message: str, code: str = "provider_error"):
+    def __init__(self, message: str, code: str = "provider_error", diagnostics: dict | None = None):
         super().__init__(message)
         self.code = code
+        self.diagnostics = diagnostics or {}
 
 
 def smart_capture_provider() -> str:
@@ -368,6 +371,7 @@ class OpenAISmartCaptureProvider:
             provider_request_id=meta.get("provider_request_id", ""),
             usage=meta.get("usage_obj"),
             cache_hit=False,
+            provider_error_details={},
         )
 
     def _log_validation_failure(self, meta: dict):
@@ -382,6 +386,7 @@ class OpenAISmartCaptureProvider:
             provider_request_id=meta.get("provider_request_id", ""),
             usage=meta.get("usage_obj"),
             cache_hit=False,
+            provider_error_details={},
         )
 
     def _call_openai(self, *, capture_type: str, file_bytes: bytes, filename: str) -> tuple[dict, dict]:
@@ -432,6 +437,7 @@ class OpenAISmartCaptureProvider:
             )
         except Exception as exc:
             completed = timezone.now()
+            diagnostics = sanitized_openai_error_details(exc)
             log_openai_usage(
                 session=self.session,
                 actor=self.actor,
@@ -440,11 +446,16 @@ class OpenAISmartCaptureProvider:
                 completed_at=completed,
                 success=False,
                 failure_code=classify_openai_error(exc),
-                provider_request_id="",
+                provider_request_id=diagnostics.get("provider_request_id", ""),
                 usage=None,
                 cache_hit=False,
+                provider_error_details=diagnostics,
             )
-            raise SmartCaptureProviderError(safe_openai_error(exc), classify_openai_error(exc)) from exc
+            logger.warning(
+                "Smart Capture OpenAI provider error",
+                extra={"smart_capture_openai_error": diagnostics},
+            )
+            raise SmartCaptureProviderError(safe_openai_error(exc), classify_openai_error(exc), diagnostics=diagnostics) from exc
 
         raw = getattr(response, "output_text", "") or "{}"
         try:
@@ -462,6 +473,7 @@ class OpenAISmartCaptureProvider:
                 provider_request_id=getattr(response, "id", "") or "",
                 usage=getattr(response, "usage", None),
                 cache_hit=False,
+                provider_error_details={},
             )
             raise SmartCaptureProviderError("OpenAI returned malformed extraction data. Retry or continue manually.", "malformed_json") from exc
 
@@ -710,6 +722,59 @@ def usage_payload(usage) -> dict:
     }
 
 
+def redact_openai_diagnostic_text(value, max_length=500) -> str:
+    text = sanitize_string(value, max_length)
+    if not text:
+        return ""
+    text = re.sub(r"sk-[A-Za-z0-9_\-]{8,}", "[redacted-api-key]", text)
+    text = re.sub(r"Bearer\s+[A-Za-z0-9_\-\.]+", "Bearer [redacted]", text, flags=re.IGNORECASE)
+    text = re.sub(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+", "[redacted-image-data]", text, flags=re.IGNORECASE)
+    text = re.sub(r"base64,[A-Za-z0-9+/=]{24,}", "base64,[redacted]", text, flags=re.IGNORECASE)
+    return text[:max_length]
+
+
+def _openai_error_body(exc):
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        return body
+    response = getattr(exc, "response", None)
+    if response is not None:
+        try:
+            data = response.json()
+            if isinstance(data, dict):
+                return data
+        except Exception:
+            pass
+    return {}
+
+
+def sanitized_openai_error_details(exc) -> dict:
+    body = _openai_error_body(exc)
+    error = body.get("error") if isinstance(body.get("error"), dict) else body
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None) if response is not None else None
+    provider_request_id = (
+        clean_text(getattr(exc, "request_id", ""))
+        or clean_text(getattr(exc, "request_id_header", ""))
+        or clean_text(getattr(exc, "x_request_id", ""))
+        or clean_text(getattr(exc, "_request_id", ""))
+    )
+    if not provider_request_id and headers:
+        try:
+            provider_request_id = clean_text(headers.get("x-request-id") or headers.get("openai-request-id") or "")
+        except Exception:
+            provider_request_id = ""
+    status_code = getattr(exc, "status_code", None) or getattr(response, "status_code", None)
+    return {
+        "http_status": int(status_code) if str(status_code or "").isdigit() else None,
+        "message": redact_openai_diagnostic_text(error.get("message") or getattr(exc, "message", "") or str(exc), 700),
+        "type": redact_openai_diagnostic_text(error.get("type") or getattr(exc, "type", ""), 120),
+        "code": redact_openai_diagnostic_text(error.get("code") or getattr(exc, "code", ""), 120),
+        "param": redact_openai_diagnostic_text(error.get("param") or getattr(exc, "param", ""), 180),
+        "provider_request_id": redact_openai_diagnostic_text(provider_request_id, 180),
+    }
+
+
 def classify_openai_error(exc) -> str:
     name = exc.__class__.__name__.lower()
     text = str(exc).lower()
@@ -752,6 +817,7 @@ def log_openai_usage(
     provider_request_id: str,
     usage,
     cache_hit: bool,
+    provider_error_details: dict | None = None,
 ):
     if not session or not getattr(settings, "SMART_CAPTURE_LOG_USAGE", True):
         return None
@@ -782,6 +848,7 @@ def log_openai_usage(
             "request_completed_at": completed_at.isoformat() if completed_at else "",
             "processing_time_ms": int((completed_at - started_at).total_seconds() * 1000) if started_at and completed_at else 0,
             "usage": usage_data,
+            "provider_error_details": provider_error_details or {},
             "estimated_internal_cost": "not_configured",
         },
     )
@@ -966,6 +1033,7 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
         session.possible_matches = possible_matches_for_session(session)
         session.save()
     except Exception as exc:
+        diagnostics = getattr(exc, "diagnostics", {}) or {}
         session.status = ProjectAssistantSmartCaptureSession.STATUS_FAILED
         session.extraction_provider = provider
         session.extraction_model = model
@@ -978,6 +1046,8 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
             "model": model,
             "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
             "failure_code": getattr(exc, "code", "extraction_failed"),
+            "provider_error_details": diagnostics,
+            "provider_request_id": diagnostics.get("provider_request_id", ""),
             "failed_at": timezone.now().isoformat(),
         }
         session.save()

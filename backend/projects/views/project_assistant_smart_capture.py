@@ -26,6 +26,9 @@ def smart_capture_payload(session: ProjectAssistantSmartCaptureSession, request=
                 source_url = request.build_absolute_uri(source_url)
             except Exception:
                 pass
+    audit_metadata = dict(session.audit_metadata or {})
+    audit_metadata.pop("provider_error_details", None)
+    audit_metadata.pop("raw_provider_output", None)
     return {
         "id": str(session.id),
         "capture_type": session.capture_type,
@@ -51,7 +54,7 @@ def smart_capture_payload(session: ProjectAssistantSmartCaptureSession, request=
         "created_property_record": session.created_property_record_id,
         "approved_at": session.approved_at,
         "cancelled_at": session.cancelled_at,
-        "audit_metadata": session.audit_metadata or {},
+        "audit_metadata": audit_metadata,
         "created_at": session.created_at,
         "updated_at": session.updated_at,
     }

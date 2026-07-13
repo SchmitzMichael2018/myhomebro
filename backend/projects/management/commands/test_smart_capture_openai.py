@@ -50,6 +50,7 @@ class Command(BaseCommand):
             "model": session.extraction_model,
             "prompt_version": session.extraction_prompt_version,
             "provider_request_id": (session.audit_metadata or {}).get("provider_request_id", ""),
+            "provider_error_details": (session.audit_metadata or {}).get("provider_error_details", {}),
             "usage": (session.audit_metadata or {}).get("provider_usage", {}),
             "structured_payload": session.structured_payload,
             "field_confidence": session.field_confidence,

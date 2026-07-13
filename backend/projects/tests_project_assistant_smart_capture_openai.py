@@ -1,10 +1,14 @@
 import json
+from io import StringIO
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -86,6 +90,19 @@ class FakeResponses:
             output_text=json.dumps(self.payload),
             usage=SimpleNamespace(input_tokens=111, output_tokens=44, total_tokens=155),
         )
+
+
+class FakeOpenAIBadRequestError(Exception):
+    status_code = 400
+    request_id = "req_smart_capture_400"
+    body = {
+        "error": {
+            "message": "Invalid image_url. API key sk-test-secret and data:image/jpeg;base64,AAAAABBBBBCCCCCDDDDD should not appear.",
+            "type": "invalid_request_error",
+            "code": "invalid_image",
+            "param": "input[1].content[1].image_url",
+        }
+    }
 
 
 @override_settings(
@@ -186,6 +203,61 @@ class ProjectAssistantSmartCaptureOpenAIProviderTests(TestCase):
             self.assertEqual(response.status_code, 201, response.data)
             self.assertEqual(response.data["status"], ProjectAssistantSmartCaptureSession.STATUS_FAILED)
         self.assertEqual(ExpenseRequest.objects.count(), 0)
+
+    def test_bad_request_details_are_captured_without_exposing_secrets_to_api(self):
+        response, _ = self.post_session("receipt", fake=FakeResponses(exc=FakeOpenAIBadRequestError()))
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["status"], ProjectAssistantSmartCaptureSession.STATUS_FAILED)
+        warning_text = " ".join(response.data["warnings"])
+        self.assertIn("temporarily unavailable", warning_text)
+        self.assertNotIn("invalid_image", warning_text)
+        self.assertNotIn("sk-test-secret", warning_text)
+        self.assertNotIn("base64", warning_text)
+        self.assertNotIn("provider_error_details", response.data["audit_metadata"])
+
+        session = ProjectAssistantSmartCaptureSession.objects.get(pk=response.data["id"])
+        details = session.audit_metadata["provider_error_details"]
+        self.assertEqual(details["http_status"], 400)
+        self.assertEqual(details["type"], "invalid_request_error")
+        self.assertEqual(details["code"], "invalid_image")
+        self.assertEqual(details["param"], "input[1].content[1].image_url")
+        self.assertEqual(details["provider_request_id"], "req_smart_capture_400")
+        self.assertNotIn("sk-test-secret", json.dumps(details))
+        self.assertNotIn("AAAAABBBBB", json.dumps(details))
+
+        usage = AIUsageLedger.objects.get(capture_session=session)
+        self.assertFalse(usage.success)
+        self.assertEqual(usage.provider_request_id, "req_smart_capture_400")
+        self.assertEqual(usage.metadata["provider_error_details"]["http_status"], 400)
+
+    def test_management_command_outputs_sanitized_bad_request_details(self):
+        fake = FakeResponses(exc=FakeOpenAIBadRequestError())
+        with TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "receipt.jpg"
+            image_path.write_bytes(b"not-real-image")
+            stdout = StringIO()
+            with patch("projects.services.project_assistant_smart_capture.require_openai_client", return_value=SimpleNamespace(responses=fake)):
+                call_command(
+                    "test_smart_capture_openai",
+                    "--file",
+                    str(image_path),
+                    "--type",
+                    "receipt",
+                    "--contractor-id",
+                    str(self.contractor.id),
+                    stdout=stdout,
+                )
+        output = stdout.getvalue()
+        payload = json.loads(output)
+        self.assertEqual(payload["status"], ProjectAssistantSmartCaptureSession.STATUS_FAILED)
+        self.assertEqual(payload["provider_error_details"]["http_status"], 400)
+        self.assertEqual(payload["provider_error_details"]["type"], "invalid_request_error")
+        self.assertEqual(payload["provider_error_details"]["code"], "invalid_image")
+        self.assertEqual(payload["provider_error_details"]["param"], "input[1].content[1].image_url")
+        self.assertEqual(payload["provider_error_details"]["provider_request_id"], "req_smart_capture_400")
+        self.assertNotIn("sk-test-secret", output)
+        self.assertNotIn("AAAAABBBBB", output)
+        self.assertNotIn("data:image", output)
 
     @override_settings(OPENAI_API_KEY="", AI_OPENAI_API_KEY="")
     def test_missing_configuration_and_disabled_provider_preserve_session_for_manual_continuation(self):
