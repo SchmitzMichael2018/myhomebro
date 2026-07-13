@@ -1065,26 +1065,26 @@ export default function BusinessDashboard() {
     () => [
       {
         key: "at-a-glance",
-        title: "At a Glance",
-        subtitle: "Core business health",
+        title: "Overview",
+        subtitle: "Highest-value signals",
         preview: `${topAlertCards.length} alerts · ${kpiCards.length} KPIs`,
       },
       {
         key: "contractor-insights",
-        title: "Contractor Insights",
-        subtitle: "Benchmarks and recommendations",
+        title: "Benchmarks",
+        subtitle: "Comparisons and recommendations",
         preview: `${availableInsightFamilies.length || 0} insight families`,
       },
       {
         key: "reports-trends",
-        title: "Reports & Trends",
-        subtitle: "Charts and exports",
+        title: "Finance",
+        subtitle: "Money, charts, and pipeline",
         preview: `${Object.keys(chartTitles).length} charts · exports`,
       },
       {
         key: "payouts",
-        title: "Payouts",
-        subtitle: "Subcontractor payout status",
+        title: "Reports",
+        subtitle: "Payouts and exports",
         preview: `${payoutSummary?.record_count ?? payoutRows.length} payout records`,
       },
       {

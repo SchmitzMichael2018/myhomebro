@@ -360,10 +360,73 @@ function buildNavigationAssistContext(workspaceMode = "general") {
     };
   }
 
+  if (workspaceMode === "leads") {
+    return {
+      can_navigate: true,
+      capabilities: ["Review opportunity details", "Find missing customer information", "Prepare follow-up", "Open estimate handoff"],
+      actions: [
+        { label: "Open Opportunities", target: "/app/opportunities", intent: "open_opportunities" },
+        { label: "Open Estimates", target: "/app/estimates", intent: "open_estimates" },
+        { label: "Create an Agreement", target: "/app/agreements/new/wizard?step=1", intent: "create_agreement" },
+      ],
+    };
+  }
+
+  if (workspaceMode === "estimates") {
+    return {
+      can_navigate: true,
+      capabilities: ["Review estimate readiness", "Find missing scope or pricing", "Prepare agreement handoff"],
+      actions: [
+        { label: "Open Estimates", target: "/app/estimates", intent: "open_estimates" },
+        { label: "Open Opportunities", target: "/app/opportunities", intent: "open_opportunities" },
+        { label: "Create an Agreement", target: "/app/agreements/new/wizard?step=1", intent: "create_agreement" },
+      ],
+    };
+  }
+
+  if (workspaceMode === "team") {
+    return {
+      can_navigate: true,
+      capabilities: ["Review assignment gaps", "Check workload", "Find schedule risks"],
+      actions: [
+        { label: "Open Assignments", target: "/app/team/assignments", intent: "open_assignments" },
+        { label: "Open Schedule", target: "/app/team/schedule", intent: "open_schedule" },
+        { label: "Open Team Members", target: "/app/team/members", intent: "open_team_members" },
+      ],
+    };
+  }
+
+  if (workspaceMode === "marketing") {
+    return {
+      can_navigate: true,
+      capabilities: ["Review website readiness", "Find profile gaps", "Prepare portfolio, review, and lead-generation suggestions"],
+      actions: [
+        { label: "Open Marketing", target: "/app/marketing", intent: "open_marketing" },
+        { label: "Review Website", target: "/app/marketing?tab=website", intent: "review_website" },
+        { label: "Review Leads", target: "/app/opportunities", intent: "review_leads" },
+      ],
+    };
+  }
+
+  if (workspaceMode === "insights") {
+    return {
+      can_navigate: true,
+      capabilities: ["Explain business health", "Find source records", "Recommend investigations"],
+      actions: [
+        { label: "Open Insights", target: "/app/insights", intent: "open_insights" },
+        { label: "Open Agreements", target: "/app/agreements", intent: "open_agreements" },
+        { label: "Open Payments", target: "/app/payments", intent: "open_payments" },
+      ],
+    };
+  }
+
   return {
     can_navigate: true,
-    capabilities: ["Open workspaces", "Find records", "Route to next tasks"],
-    actions: commonActions,
+    capabilities: ["Open this workspace", "Find relevant records", "Suggest safe next steps"],
+    actions: [
+      { label: "Open Dashboard", target: "/app/dashboard", intent: "open_dashboard" },
+      ...commonActions.slice(0, 2),
+    ],
   };
 }
 
@@ -781,6 +844,9 @@ export function AssistantDockProvider({ children }) {
       cleanContext.workspace_mode ||
       cleanContext.page ||
       routeContext.workspace_mode;
+    if (workspacePage !== routeContext.workspace_mode) {
+      return;
+    }
     const mergedAiContext = buildAiContext({
       ...(routeContext.aiContext || {}),
       ...(cleanContext.aiContext || {}),

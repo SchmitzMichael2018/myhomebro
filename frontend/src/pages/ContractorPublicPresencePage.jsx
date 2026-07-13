@@ -1728,6 +1728,14 @@ export default function ContractorPublicPresencePage() {
               Readiness {websiteReadinessData.score || 0}%
             </div>
           </div>
+          <div className="mb-3 grid gap-2 text-xs font-bold text-slate-700 md:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-slate-950">Setup:</span> business facts, brand, website, SEO, and publish readiness.
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <span className="text-slate-950">Daily operations:</span> portfolio proof, reviews, leads, QR sharing, and content freshness.
+            </div>
+          </div>
           <div className="flex gap-2 overflow-x-auto pb-2">
             {ONLINE_PRESENCE_STEPS.map((step, index) => {
               const isActive = activeTab === step.key;

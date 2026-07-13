@@ -5,6 +5,11 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../components/ProjectAssistantExperience.jsx";
 
 const TABS = [
   { key: "needs_estimate", label: "Needs Estimate" },
@@ -265,7 +270,27 @@ export default function EstimatesPage() {
       eyebrow="Sales Pipeline"
       title="Estimates"
       subtitle="Review every estimate workspace between opportunity intake and agreement conversion without creating duplicate estimate records."
+      variant="operational"
     >
+      <ProjectAssistantPanel
+        subtitle="Estimate Assistant"
+        summary="Project Assistant reviews estimate readiness, missing scope, pricing completeness, incidentals, and agreement handoff blockers for the selected stage."
+        testId="estimates-assistant-panel"
+      >
+        <ProjectAssistantSection title="Recommended next action">
+          {activeTab === "ready"
+            ? "Review estimate assumptions, then create the agreement from the existing workspace."
+            : activeTab === "converted"
+              ? "Open the linked agreement for operational work; keep the estimate as read-only sales history."
+              : activeTab === "archived"
+                ? "Restore only if this estimate should re-enter active sales follow-up."
+                : "Open the estimate workspace and complete customer, address, scope, pricing, and scheduling details."}
+        </ProjectAssistantSection>
+        <ProjectAssistantApprovalNotice compact>
+          Estimate Assistant can prepare review guidance, but contractors still approve pricing, scope, customer messages, and agreement creation.
+        </ProjectAssistantApprovalNotice>
+      </ProjectAssistantPanel>
+
       <section className="rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="estimates-filters">
         <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.4fr)_repeat(4,minmax(150px,1fr))]">
           <label className="relative block">
@@ -336,6 +361,9 @@ export default function EstimatesPage() {
             <div className="text-base font-black text-slate-900">No estimates in this stage</div>
             <p className="mt-2 text-sm font-semibold text-slate-600">
               Estimates created from opportunities, dashboard starts, customers, and property work orders will appear here automatically.
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Project Assistant can help identify missing scope, pricing, or handoff details once an estimate exists.
             </p>
           </div>
         )}

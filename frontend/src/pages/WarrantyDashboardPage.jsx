@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, CalendarClock, ClipboardCheck, FileText, RefreshCw, ShieldCheck, Wrench } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../api";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import {
   ProjectAssistantApprovalNotice,
   ProjectAssistantConfidenceBadge,
@@ -158,16 +159,11 @@ export default function WarrantyDashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 sm:px-6 lg:px-8" data-testid="warranty-dashboard">
-      <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Operations</div>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Warranties</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Track active coverage, customer warranty requests, advisory reviews, and repair work orders after project completion.
-            </p>
-          </div>
+    <ContractorPageSurface
+      eyebrow="Operations"
+      title="Warranties"
+      subtitle="Track active coverage, customer warranty requests, advisory reviews, and repair work orders after project completion."
+      actions={
           <button
             type="button"
             onClick={load}
@@ -176,7 +172,10 @@ export default function WarrantyDashboardPage() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
-        </div>
+      }
+      className="max-w-[1360px]"
+    >
+      <div data-testid="warranty-dashboard">
 
         {error ? (
           <div className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-800">{error}</div>
@@ -237,7 +236,11 @@ export default function WarrantyDashboardPage() {
               </div>
               <div className="mt-3 grid gap-4 xl:grid-cols-2">
                 {filteredRequests.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">No open warranty requests.</div>
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
+                    <div className="font-bold text-slate-900">No open warranty requests match these filters.</div>
+                    <div className="mt-1">New customer warranty requests will appear here for response, scheduling, evidence review, and follow-up.</div>
+                    <div className="mt-1 text-slate-500">Warranty Assistant can summarize coverage context once a request exists.</div>
+                  </div>
                 ) : (
                   buckets.map((bucket) => (
                     <div key={bucket.key} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-testid={`warranty-bucket-${bucket.key}`}>
@@ -247,7 +250,9 @@ export default function WarrantyDashboardPage() {
                       </div>
                       <div className="mt-3 space-y-3">
                         {bucket.rows.length === 0 ? (
-                          <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">Nothing here right now.</div>
+                          <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
+                            No requests are currently in this warranty stage.
+                          </div>
                         ) : bucket.rows.map((row) => (
                     <article key={`${bucket.key}-${row.id}`} className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm" data-testid={`warranty-request-${row.id}`}>
                       <div className="flex flex-col gap-4 lg:items-start lg:justify-between">
@@ -341,7 +346,11 @@ export default function WarrantyDashboardPage() {
               <h2 className="text-xl font-extrabold">Active Warranty Records</h2>
               <div className="mt-3 grid gap-3 lg:grid-cols-2">
                 {warranties.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-600">No warranty records have been generated yet.</div>
+                  <div className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-center text-sm text-slate-600">
+                    <div className="font-bold text-slate-900">No active warranty records yet.</div>
+                    <div className="mt-1">Warranty records appear after completed projects create coverage that can be referenced later.</div>
+                    <div className="mt-1 text-slate-500">Project Assistant can help review warranty evidence and missing information after records exist.</div>
+                  </div>
                 ) : (
                   warranties.map((row) => (
                     <article key={row.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm" data-testid={`warranty-record-${row.id}`}>
@@ -375,6 +384,6 @@ export default function WarrantyDashboardPage() {
           </>
         )}
       </div>
-    </main>
+    </ContractorPageSurface>
   );
 }

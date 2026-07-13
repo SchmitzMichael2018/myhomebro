@@ -139,6 +139,7 @@ export default function TeamOverviewPage() {
   const [teamRows, setTeamRows] = useState([]);
   const [workforce, setWorkforce] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [workloadFilter, setWorkloadFilter] = useState("assigned");
 
   useEffect(() => {
     let active = true;
@@ -229,11 +230,45 @@ export default function TeamOverviewPage() {
   const skillRows = useMemo(() => {
     return Array.isArray(workforce?.skills_matrix) ? workforce.skills_matrix.slice(0, 8) : [];
   }, [workforce]);
-  const mixedWorkRows = useMemo(() => {
-    return workforceRows
-      .filter((row) => row.is_warranty_work || row.is_maintenance_work || row.is_estimate_work || row.source_type === "unassigned_milestone")
-      .slice(0, 8);
+  const workloadBuckets = useMemo(() => {
+    const rows = workforceRows.filter((row) => row.is_warranty_work || row.is_maintenance_work || row.is_estimate_work || row.source_type === "unassigned_milestone");
+    return [
+      {
+        key: "assigned",
+        label: "Assigned Work",
+        helper: "Routed work with an owner.",
+        rows: rows.filter((row) => row.member_name && row.source_type !== "unassigned_milestone"),
+      },
+      {
+        key: "needs_assignment",
+        label: "Needs Assignment",
+        helper: "Work that should be routed before dates or commitments move.",
+        rows: rows.filter((row) => !row.member_name || row.source_type === "unassigned_milestone"),
+      },
+      {
+        key: "upcoming",
+        label: "Upcoming",
+        helper: "Scheduled work coming up soon.",
+        rows: rows.filter((row) => row.scheduled_start),
+      },
+      {
+        key: "warranty",
+        label: "Warranty",
+        helper: "Post-completion service work.",
+        rows: rows.filter((row) => row.is_warranty_work),
+      },
+      {
+        key: "maintenance",
+        label: "Maintenance",
+        helper: "Property and maintenance work.",
+        rows: rows.filter((row) => row.is_maintenance_work),
+      },
+    ];
   }, [workforceRows]);
+  const activeWorkloadBucket = useMemo(
+    () => workloadBuckets.find((bucket) => bucket.key === workloadFilter) || workloadBuckets[0],
+    [workloadBuckets, workloadFilter]
+  );
   const assistant = workforce?.assistant || {};
 
   const quickActionButton = (label, to, testId, tone = "primary") => (
@@ -352,21 +387,38 @@ export default function TeamOverviewPage() {
           <section data-testid="team-workload-mixed-types" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-base font-bold text-slate-900">Unified Workload</div>
+                <div className="text-base font-bold text-slate-900">Actionable Workload</div>
                 <div className="mt-1 text-sm text-slate-600">
-                  Mixed work types stay visible without becoming separate assignment systems.
+                  Grouped by what the team needs to do next instead of raw source data.
                 </div>
               </div>
             </div>
+            <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+              {workloadBuckets.map((bucket) => (
+                <button
+                  key={bucket.key}
+                  type="button"
+                  onClick={() => setWorkloadFilter(bucket.key)}
+                  className={`whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-black transition ${
+                    workloadFilter === bucket.key
+                      ? "border-slate-950 bg-slate-950 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                  }`}
+                >
+                  {bucket.label} <span className="ml-1 opacity-70">{bucket.rows.length}</span>
+                </button>
+              ))}
+            </div>
             {loading ? (
               <div className="mt-4 text-sm text-slate-500">Loading workload...</div>
-            ) : mixedWorkRows.length === 0 ? (
+            ) : activeWorkloadBucket.rows.length === 0 ? (
               <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center text-sm text-slate-700">
-                No estimate, warranty, maintenance, or unassigned milestone work is currently active.
+                <div className="font-semibold text-slate-900">No {activeWorkloadBucket.label.toLowerCase()} right now.</div>
+                <div className="mt-1">{activeWorkloadBucket.helper} Project Assistant can help review assignments once work appears here.</div>
               </div>
             ) : (
               <div className="mt-4 space-y-3">
-                {mixedWorkRows.map((row) => (
+                {activeWorkloadBucket.rows.slice(0, 6).map((row) => (
                   <div key={`${row.source_type}-${row.source_id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div className="min-w-0">
@@ -385,7 +437,7 @@ export default function TeamOverviewPage() {
                           {row.customer_label || "No customer"} {row.property_address ? `| ${row.property_address}` : ""}
                         </div>
                         <div className="mt-1 text-xs font-semibold text-slate-500">
-                          Assigned to {row.member_name || "Unassigned"} | {formatDateTime(row.scheduled_start)}
+                          {row.member_name ? `Assigned to ${row.member_name}` : "Needs Assignment"} | {formatDateTime(row.scheduled_start)}
                         </div>
                       </div>
                       {row.open_url ? (
