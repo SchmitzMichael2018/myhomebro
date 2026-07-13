@@ -726,11 +726,78 @@ export default function ContractorPublicPresencePage() {
   const marketingAdvisorRecommendations = [
     !websitePublished ? 'Publish the website when the public facts and content are ready.' : '',
     !publicProfileReady ? 'Turn on the public profile so customers can find you.' : '',
+    activeLeadCount ? `${activeLeadCount} lead${activeLeadCount === 1 ? '' : 's'} need review before handoff to Opportunities.` : '',
+    !profile.phone_public && !websiteProfile?.contact?.phone_public ? 'Add a public phone number in Company Profile before promoting your website.' : '',
     publicPortfolioCount < 3 ? 'Add more portfolio examples to build trust.' : '',
     publicReviewCount < 1 ? 'Ask recent happy customers for reviews.' : '',
     !profile.seo_description ? 'Add an SEO description for local search basics.' : '',
     staleContentRisk ? 'Review and republish because company/profile facts changed after publish.' : '',
   ].filter(Boolean);
+  const marketingHealthRows = [
+    {
+      key: 'website',
+      label: 'Website',
+      status: websitePublished ? (staleContentRisk ? 'Needs Attention' : 'Published') : statusLabel(websiteData.status || 'draft'),
+      detail: websitePublished ? websiteFreshnessMessage : 'Preview and publish when the website is ready.',
+      action: websitePublished ? 'Review Website' : 'Continue Setup',
+      onClick: () => goToStep(websitePublished ? 'final' : 'website'),
+      tone: websitePublished && !staleContentRisk ? 'good' : 'warn',
+    },
+    {
+      key: 'setup',
+      label: 'Setup',
+      status: missingRequiredFields.length ? 'Incomplete' : 'Ready',
+      detail: missingRequiredFields.length ? `${missingRequiredFields.length} setup item${missingRequiredFields.length === 1 ? '' : 's'} missing.` : 'Core setup fields are ready.',
+      action: missingRequiredFields.length ? 'Fix Setup' : 'Review Setup',
+      onClick: () => goToStep(missingRequiredFields.length ? 'profile' : 'overview'),
+      tone: missingRequiredFields.length ? 'warn' : 'good',
+    },
+    {
+      key: 'leads',
+      label: 'Leads',
+      status: activeLeadCount ? 'Needs Attention' : leadCount ? 'No Open Follow-up' : 'No Recent Activity',
+      detail: activeLeadCount ? `${activeLeadCount} active lead${activeLeadCount === 1 ? '' : 's'} to review.` : 'New profile, website, and QR leads appear here.',
+      action: activeLeadCount ? 'Review Leads' : 'Open Leads',
+      onClick: () => navigate('/app/opportunities'),
+      tone: activeLeadCount ? 'warn' : 'neutral',
+    },
+    {
+      key: 'reputation',
+      label: 'Reviews',
+      status: publicReviewCount ? 'Visible' : 'Needs Proof',
+      detail: publicReviewCount ? `${publicReviewCount} public review${publicReviewCount === 1 ? '' : 's'} visible.` : 'Add reviews before heavy promotion.',
+      action: 'Open Reviews',
+      onClick: () => goToStep('reviews'),
+      tone: publicReviewCount ? 'good' : 'warn',
+    },
+    {
+      key: 'portfolio',
+      label: 'Portfolio',
+      status: publicPortfolioCount ? 'Visible' : 'Incomplete',
+      detail: publicPortfolioCount ? `${publicPortfolioCount} public portfolio item${publicPortfolioCount === 1 ? '' : 's'} visible.` : 'Add completed-project photos to build trust.',
+      action: 'Open Portfolio',
+      onClick: () => goToStep('gallery'),
+      tone: publicPortfolioCount ? 'good' : 'warn',
+    },
+  ];
+  const marketingAttentionItems = [
+    !websitePublished ? { key: 'publish', title: 'Website is not published', detail: 'Customers cannot use the website until it is published.', action: 'Continue Website Setup', onClick: () => goToStep('website'), tone: 'warn' } : null,
+    staleContentRisk ? { key: 'stale', title: 'Website changes may be unpublished', detail: 'Company or profile facts changed after publish.', action: 'Review Website Content', onClick: () => goToStep('final'), tone: 'warn' } : null,
+    missingRequiredFields.length ? { key: 'setup', title: 'Setup has missing required fields', detail: missingRequiredFields.slice(0, 2).join(', '), action: 'Fix Business Information', onClick: () => goToStep('profile'), tone: 'warn' } : null,
+    activeLeadCount ? { key: 'leads', title: `${activeLeadCount} lead${activeLeadCount === 1 ? '' : 's'} need review`, detail: 'Review acquisition details, then continue sales work in Opportunities.', action: 'Review Leads', onClick: () => navigate('/app/opportunities'), tone: 'warn' } : null,
+    publicPortfolioCount < 3 ? { key: 'portfolio', title: 'Portfolio proof is thin', detail: 'Add completed-project photos to strengthen trust.', action: 'Add Portfolio Proof', onClick: () => goToStep('gallery'), tone: 'neutral' } : null,
+    publicReviewCount < 1 ? { key: 'reviews', title: 'No public reviews visible', detail: 'Ask recent happy customers for reviews before heavier promotion.', action: 'Open Reviews', onClick: () => goToStep('reviews'), tone: 'neutral' } : null,
+    !qrData?.public_url && !profile.public_url ? { key: 'qr', title: 'Public sharing link unavailable', detail: 'Check public profile setup before printing QR material.', action: 'Review Profile', onClick: () => goToStep('profile'), tone: 'warn' } : null,
+  ].filter(Boolean);
+  const topMarketingAttention = marketingAttentionItems.slice(0, 4);
+  const primaryMarketingAction = marketingAttentionItems[0] || {
+    key: 'healthy',
+    title: 'Keep proof fresh',
+    detail: 'Your foundation is ready. Add recent portfolio proof, reviews, and follow up on new leads as they arrive.',
+    action: 'Review Website',
+    onClick: () => goToStep('final'),
+    tone: 'good',
+  };
   const serviceKeywords = [
     ...new Set(
       [
@@ -1796,42 +1863,167 @@ export default function ContractorPublicPresencePage() {
           {activeTab === 'overview' ? (
             <section className="space-y-5" data-testid="marketing-overview-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Business Growth Center</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Marketing Overview</h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                  Marketing captures leads through your website, public profile, QR links, reviews, and portfolio. Opportunities is where you manage follow-up and the sales workflow.
-                </p>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  {[
-                    ['Marketing Readiness', `${marketingReadinessScore}%`, websiteReadinessData.missing_required_fields?.length ? 'Missing setup items' : 'Core setup looks ready', 'overview-readiness'],
-                    ['Website Status', websitePublished ? 'Published' : statusLabel(websiteData.status || 'draft'), websitePublished ? 'Live website snapshot exists' : 'Review and publish when ready', 'overview-website-status'],
-                    ['Public Profile Status', publicProfileReady ? 'Public' : 'Preview', publicProfileReady ? 'Customers can view your profile' : 'Turn on visibility when ready', 'overview-profile-status'],
-                    ['Portfolio', `${publicPortfolioCount}`, publicPortfolioCount ? 'Public portfolio items' : 'Add project photos', 'overview-portfolio'],
-                    ['Reviews', `${publicReviewCount}`, publicReviewCount ? 'Public reviews visible' : 'Request or publish reviews', 'overview-reviews'],
-                    ['Leads', `${leadCount}`, activeLeadCount ? `${activeLeadCount} active lead(s)` : 'No active leads yet', 'overview-leads'],
-                    ['SEO Basics', profile.seo_description ? 'Ready' : 'Needs copy', profile.seo_title || profile.seo_description ? 'Title or description exists' : 'Add local search basics', 'overview-seo'],
-                    ['Project Assistant Recommendation', marketingAdvisorRecommendations[0] || 'Keep content current', 'Advisory only', 'overview-advisor-card'],
-                  ].map(([label, value, hint, testId]) => (
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Business Growth Center</div>
+                    <h2 className="mt-2 text-2xl font-black text-slate-950">Marketing Health</h2>
+                    <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                      See whether your website, public profile, portfolio, reviews, and lead capture are ready to bring in work.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="marketing-primary-next-action"
+                    onClick={primaryMarketingAction.onClick}
+                    className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-black text-white shadow-sm hover:bg-blue-700"
+                  >
+                    {primaryMarketingAction.action}
+                  </button>
+                </div>
+                <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5" data-testid="marketing-health-summary">
+                  {marketingHealthRows.map((row) => (
                     <button
-                      key={label}
+                      key={row.key}
                       type="button"
-                      data-testid={testId}
-                      onClick={() => {
-                        if (label === 'Portfolio') goToStep('gallery');
-                        else if (label === 'Reviews') goToStep('reviews');
-                        else if (label === 'Website Status') goToStep('publish');
-                        else if (label === 'SEO Basics') goToStep('seo');
-                        else if (label === 'Public Profile Status') goToStep('profile');
-                      }}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-200 hover:bg-white"
+                      onClick={row.onClick}
+                      data-testid={`marketing-health-${row.key}`}
+                      className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${
+                        row.tone === 'good'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+                          : row.tone === 'warn'
+                            ? 'border-amber-200 bg-amber-50 text-amber-950'
+                            : 'border-slate-200 bg-slate-50 text-slate-900'
+                      }`}
                     >
-                      <div className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">{label}</div>
-                      <div className="mt-2 text-xl font-black text-slate-950">{value}</div>
-                      <div className="mt-1 text-xs leading-5 text-slate-600">{hint}</div>
+                      <div className="text-xs font-black uppercase tracking-[0.14em] opacity-70">{row.label}</div>
+                      <div className="mt-2 text-xl font-black">{row.status}</div>
+                      <div className="mt-1 text-xs leading-5 opacity-80">{row.detail}</div>
+                      <div className="mt-3 text-xs font-black">{row.action}</div>
                     </button>
                   ))}
                 </div>
               </div>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-needs-attention">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Needs Attention</div>
+                    <h3 className="mt-2 text-xl font-black text-slate-950">Highest-value marketing actions</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">Fix these before spending more time promoting your business.</p>
+                  </div>
+                  <div className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-700">
+                    {marketingAttentionItems.length} active
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {(topMarketingAttention.length ? topMarketingAttention : [primaryMarketingAction]).map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={item.onClick}
+                      className={`rounded-xl border p-4 text-left transition hover:-translate-y-0.5 hover:shadow-sm ${
+                        item.tone === 'good'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-950'
+                          : item.tone === 'warn'
+                            ? 'border-amber-200 bg-amber-50 text-amber-950'
+                            : 'border-slate-200 bg-slate-50 text-slate-900'
+                      }`}
+                    >
+                      <div className="text-sm font-black">{item.title}</div>
+                      <div className="mt-1 text-sm leading-6 opacity-80">{item.detail}</div>
+                      <div className="mt-3 text-xs font-black">{item.action}</div>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-website-status-card">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Website Status</div>
+                      <h3 className="mt-2 text-xl font-black text-slate-950">
+                        {websitePublished ? 'Published website' : `${statusLabel(websiteData.status || 'draft')} website`}
+                      </h3>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">{websiteFreshnessMessage}</p>
+                    </div>
+                    <span className={`rounded-full border px-3 py-1.5 text-xs font-black ${websitePublished ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                      {websitePublished ? 'Published' : statusLabel(websiteData.status || 'draft')}
+                    </span>
+                  </div>
+                  <div className="mt-4 grid gap-3 md:grid-cols-3">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Readiness</div>
+                      <div className="mt-1 text-lg font-black text-slate-950">{marketingReadinessScore}%</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Blockers</div>
+                      <div className="mt-1 text-lg font-black text-slate-950">{websitePublishBlockers.length || missingRequiredFields.length}</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">Public URL</div>
+                      <div className="mt-1 truncate text-sm font-bold text-slate-950">{websiteData.public_url || profile.public_url || 'Not published yet'}</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <a href={websiteFullPreviewUrl('desktop')} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Preview Website</a>
+                    <button type="button" onClick={() => goToStep(websitePublished ? 'final' : 'website')} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white">
+                      {websitePublished ? 'Review Website' : 'Continue Setup'}
+                    </button>
+                    <button type="button" onClick={() => goToStep('publish')} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+                      {websitePublished ? 'Update Website' : 'Publish Website'}
+                    </button>
+                    {websiteData.public_url || profile.public_url ? (
+                      <a href={websiteData.public_url || profile.public_url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Open Public Site</a>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-leads-summary">
+                  <div className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">Leads</div>
+                  <h3 className="mt-2 text-xl font-black text-slate-950">{activeLeadCount ? `${activeLeadCount} active lead${activeLeadCount === 1 ? '' : 's'}` : 'No active leads'}</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-600">Marketing shows acquisition and handoff. Opportunities owns the sales progression after review.</p>
+                  <div className="mt-4 space-y-2">
+                    {leadsRows.slice(0, 3).map((lead) => (
+                      <button key={lead.id} type="button" onClick={() => navigate('/app/opportunities')} className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left">
+                        <div className="text-sm font-black text-slate-900">{lead.full_name || lead.name || lead.customer_name || lead.email || `Lead #${lead.id}`}</div>
+                        <div className="mt-1 text-xs text-slate-600">{sourceLabel(lead.source)} | {fmtDateTime(lead.created_at || lead.submitted_at)} | {statusLabel(lead.status)}</div>
+                        <div className="mt-1 text-xs font-bold text-blue-700">Review Lead</div>
+                      </button>
+                    ))}
+                    {!leadsRows.length ? (
+                      <SmartEmptyState
+                        testId="marketing-leads-smart-empty"
+                        title="No public leads yet"
+                        nextStep="Share your website, public profile, or QR link so new requests can flow into Opportunities."
+                        assistantTip="I can review your website readiness, portfolio proof, SEO basics, and lead capture path before you publish or promote it."
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-growth-priorities">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Growth Priorities</div>
+                    <h3 className="mt-2 text-xl font-black text-slate-950">What to improve next</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600">
+                      Focus on the changes most likely to improve trust, discoverability, and lead handoff.
+                    </p>
+                  </div>
+                  <button type="button" onClick={primaryMarketingAction.onClick} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-black text-blue-700">
+                    {primaryMarketingAction.action}
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  {(marketingAdvisorRecommendations.length ? marketingAdvisorRecommendations.slice(0, 4) : ['Keep website content current as projects, reviews, and service areas change.']).map((item) => (
+                    <div key={item} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="text-sm font-black text-slate-950">{item}</div>
+                    </div>
+                  ))}
+                </div>
+              </section>
 
               <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
                 <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="marketing-inherited-company-facts">
@@ -1920,7 +2112,7 @@ export default function ContractorPublicPresencePage() {
                     ))}
                     {!leadsRows.length ? (
                       <SmartEmptyState
-                        testId="marketing-leads-smart-empty"
+                        testId="marketing-leads-lifecycle-empty"
                         title="No public leads yet"
                         nextStep="Share your website, public profile, or QR link so new requests can flow into Opportunities."
                         assistantTip="I can review your website readiness, portfolio proof, SEO basics, and lead capture path before you publish or promote it."
@@ -2162,7 +2354,7 @@ export default function ContractorPublicPresencePage() {
                 <div className="text-xs font-bold text-slate-500">Step 2 of 8</div>
                 <h2 className="mt-2 text-2xl font-black text-slate-950">Brand Kit</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Brand Kit controls the public presentation of your business. It is used on your website and public profile. Proposal/document usage is future-ready unless enabled elsewhere.
+                  Brand Kit controls the public presentation of your business on your website and public profile.
                 </p>
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-white p-4">
@@ -2186,7 +2378,7 @@ export default function ContractorPublicPresencePage() {
                         Generate logo idea
                       </button>
                     </div>
-                    <div className="mt-3 text-xs text-slate-500">Used on website and public profile. Proposal/document usage is future-ready.</div>
+                    <div className="mt-3 text-xs text-slate-500">Used on website and public profile.</div>
                     <AiSuggestionCard suggestion={aiSuggestions['logo-generation']} onAccept={() => dismissAiSuggestion('logo-generation')} onRegenerate={() => requestAiSuggestion('logo_generation', 'logo-generation', profile.business_name_public)} onDismiss={() => dismissAiSuggestion('logo-generation')} />
                   </div>
 

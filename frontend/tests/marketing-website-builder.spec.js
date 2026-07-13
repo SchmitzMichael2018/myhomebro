@@ -566,9 +566,14 @@ test('Marketing Overview renders Business Growth Center foundations', async ({ p
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Overview');
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Brand Kit');
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Portfolio');
-  await expect(page.getByTestId('overview-readiness')).toContainText('Marketing Readiness');
-  await expect(page.getByTestId('overview-website-status')).toContainText('Website Status');
-  await expect(page.getByTestId('overview-profile-status')).toContainText('Public Profile Status');
+  await expect(page.getByTestId('marketing-health-summary')).toContainText('Website');
+  await expect(page.getByTestId('marketing-health-website')).toContainText('Published');
+  await expect(page.getByTestId('marketing-health-leads')).toContainText('No Recent Activity');
+  await expect(page.getByTestId('marketing-needs-attention')).toContainText('Highest-value marketing actions');
+  await expect(page.getByTestId('marketing-website-status-card')).toContainText('Website Status');
+  await expect(page.getByTestId('marketing-website-status-card')).toContainText('Preview Website');
+  await expect(page.getByTestId('marketing-leads-summary')).toContainText('No active leads');
+  await expect(page.getByTestId('marketing-growth-priorities')).toContainText('What to improve next');
   await expect(page.getByTestId('marketing-inherited-company-facts')).toContainText('Inherited from Company Profile');
   await expect(page.getByTestId('marketing-inherited-company-facts')).toContainText('Edit this in Company Profile');
   await expect(page.getByTestId('marketing-public-overrides')).toContainText('Public display name override');
@@ -580,7 +585,7 @@ test('Marketing Overview renders Business Growth Center foundations', async ({ p
 
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Brand Kit/ }).click();
   await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('Used on website');
-  await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('future-ready');
+  await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('public profile');
 
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Portfolio/ }).click();
   await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Portfolio');
