@@ -48,6 +48,39 @@ def receipt_payload(**patches):
     return payload
 
 
+def walmart_live_shape_payload(**patches):
+    payload = receipt_payload(
+        merchant_name="Walmart",
+        merchant_address="",
+        purchase_date="",
+        purchase_time="",
+        receipt_number="12345",
+        subtotal="14.82",
+        tax="1.22",
+        total="16.04",
+        currency="",
+        payment_method_masked="Visa 4111111111111111",
+        line_items=[
+            {"description": "Paint tray", "quantity": "", "unit_price": "6.97", "total": "6.97", "sku": "TRAY-1"},
+            {"description": "Roller cover", "quantity": "0", "unit_price": "0", "total": "0", "sku": "ROLLER-ZERO"},
+        ],
+        suggested_category="other",
+        missing_fields=[{"field": "purchase_date", "label": "Purchase Date"}, {"field": "purchase_date", "label": "Purchase Date"}],
+        field_confidence={
+            "merchant_name": "high_confidence",
+            "purchase_date": "confirmed",
+            "subtotal": "high_confidence",
+            "tax": "high_confidence",
+            "total": "high_confidence",
+            "currency": "confirmed",
+            "suggested_category": "not_detected",
+            "payment_method_masked": "high_confidence",
+        },
+    )
+    payload.update(patches)
+    return payload
+
+
 def label_payload(**patches):
     payload = {
         "asset_type": "equipment",
@@ -212,7 +245,7 @@ class ProjectAssistantSmartCaptureOpenAIProviderTests(TestCase):
         equipment, _ = self.post_session("equipment_label", fake=FakeResponses(label_payload()))
         self.assertEqual(equipment.status_code, 201, equipment.data)
         self.assertEqual(equipment.data["structured_payload"]["manufacturer"], "DeWalt")
-        self.assertEqual(equipment.data["structured_payload"]["destination"], "")
+        self.assertIsNone(equipment.data["structured_payload"]["destination"])
         product, _ = self.post_session("product_label", fake=FakeResponses(label_payload(product_name="LVP Box", asset_type="product")))
         self.assertEqual(product.status_code, 201, product.data)
         self.assertEqual(product.data["structured_payload"]["product_name"], "LVP Box")
@@ -225,6 +258,92 @@ class ProjectAssistantSmartCaptureOpenAIProviderTests(TestCase):
         fields = {row["field"] for row in response.data["missing_fields"]}
         self.assertIn("merchant_name", fields)
         self.assertIn("total", fields)
+
+    def test_live_walmart_shape_normalizes_blank_confidence_currency_and_payment_consistently(self):
+        response, _ = self.post_session("receipt", fake=FakeResponses(walmart_live_shape_payload()))
+        self.assertEqual(response.status_code, 201, response.data)
+        payload = response.data["structured_payload"]
+        confidence = response.data["field_confidence"]
+        self.assertIsNone(payload["purchase_date"])
+        self.assertEqual(confidence["purchase_date"], "not_detected")
+        self.assertEqual([row["field"] for row in response.data["missing_fields"]].count("purchase_date"), 1)
+        self.assertIsNone(payload["line_items"][0]["quantity"])
+        self.assertEqual(payload["line_items"][1]["quantity"], "0.0000")
+        self.assertEqual(payload["line_items"][1]["unit_price"], "0.00")
+        self.assertEqual(payload["subtotal"], "14.82")
+        self.assertEqual(payload["tax"], "1.22")
+        self.assertEqual(payload["total"], "16.04")
+        self.assertIsNone(payload["currency"])
+        self.assertEqual(confidence["currency"], "not_detected")
+        self.assertEqual(payload["suggested_category"], "other")
+        self.assertEqual(confidence["suggested_category"], "not_detected")
+        self.assertEqual(payload["payment_method"], "Card ending 1111")
+        self.assertNotIn("payment_method_masked", payload)
+        self.assertNotIn("4111111111111111", json.dumps(response.data, default=str))
+        self.assertEqual(ExpenseRequest.objects.count(), 0)
+        approve = self.client.post(
+            f"/api/projects/project-assistant/smart-capture/sessions/{response.data['id']}/approve/",
+            {},
+            format="json",
+        )
+        self.assertEqual(approve.status_code, 200, approve.data)
+        self.assertEqual(ExpenseRequest.objects.count(), 1)
+
+    def test_openai_normalization_handles_whitespace_zero_malformed_values_and_missing_deduplication(self):
+        response, _ = self.post_session(
+            "receipt",
+            fake=FakeResponses(
+                receipt_payload(
+                    merchant_name="   ",
+                    purchase_date="not-a-date",
+                    purchase_time="not-a-time",
+                    subtotal="bad-money",
+                    tax="0",
+                    total="0",
+                    currency="   ",
+                    line_items=[
+                        {"description": "   ", "quantity": "bad-qty", "unit_price": "0", "total": "", "sku": "   "}
+                    ],
+                    missing_fields=[
+                        {"field": "merchant_name", "label": "Merchant Name"},
+                        {"field": "merchant_name", "label": "Merchant Name"},
+                    ],
+                    field_confidence={
+                        "merchant_name": "confirmed",
+                        "purchase_date": "high_confidence",
+                        "subtotal": "confirmed",
+                        "tax": "confirmed",
+                        "total": "confirmed",
+                        "currency": "high_confidence",
+                    },
+                )
+            ),
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        payload = response.data["structured_payload"]
+        confidence = response.data["field_confidence"]
+        self.assertIsNone(payload["merchant_name"])
+        self.assertIsNone(payload["purchase_date"])
+        self.assertIsNone(payload["purchase_time"])
+        self.assertIsNone(payload["subtotal"])
+        self.assertEqual(payload["tax"], "0.00")
+        self.assertEqual(payload["total"], "0.00")
+        self.assertIsNone(payload["currency"])
+        self.assertIsNone(payload["line_items"][0]["description"])
+        self.assertIsNone(payload["line_items"][0]["quantity"])
+        self.assertEqual(payload["line_items"][0]["unit_price"], "0.00")
+        self.assertIsNone(payload["line_items"][0]["total"])
+        self.assertIsNone(payload["line_items"][0]["sku"])
+        self.assertEqual(confidence["merchant_name"], "not_detected")
+        self.assertEqual(confidence["purchase_date"], "not_detected")
+        self.assertEqual(confidence["subtotal"], "not_detected")
+        fields = [row["field"] for row in response.data["missing_fields"]]
+        self.assertEqual(fields.count("merchant_name"), 1)
+        self.assertEqual(fields.count("purchase_date"), 1)
+        warning_text = " ".join(response.data["warnings"])
+        self.assertIn("not a valid number", warning_text)
+        self.assertIn("not a valid date", warning_text)
+        self.assertIn("not a valid time", warning_text)
 
     def test_malformed_json_and_invalid_schema_are_failed_and_not_billable(self):
         malformed = FakeResponses()

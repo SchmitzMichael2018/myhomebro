@@ -12,7 +12,7 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_time
 
 from projects.models import (
     AIUsageLedger,
@@ -335,8 +335,11 @@ class OpenAISmartCaptureProvider:
             normalized,
         )
         result["warnings"] = merge_warning_lists(result.get("warnings"), payload.get("warnings"))
-        result["missing_fields"] = normalize_missing_fields(payload.get("missing_fields"), result.get("missing_fields"))
-        result["field_confidence"] = normalize_confidence(payload.get("field_confidence"), result.get("field_confidence"))
+        result = reconcile_openai_normalization(
+            capture_type=ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT,
+            result=result,
+            provider_confidence=payload.get("field_confidence"),
+        )
         result["raw_provider_output"] = payload
         result["provider_meta"] = meta
         return result
@@ -353,8 +356,11 @@ class OpenAISmartCaptureProvider:
         normalized["destination"] = ""
         result = SmartCaptureExtractor(provider=PROVIDER_DETERMINISTIC).normalize_result(capture_type, "", normalized)
         result["warnings"] = merge_warning_lists(result.get("warnings"), payload.get("warnings"))
-        result["missing_fields"] = normalize_missing_fields(payload.get("missing_fields"), result.get("missing_fields"))
-        result["field_confidence"] = normalize_confidence(payload.get("field_confidence"), result.get("field_confidence"))
+        result = reconcile_openai_normalization(
+            capture_type=capture_type,
+            result=result,
+            provider_confidence=payload.get("field_confidence"),
+        )
         result["raw_provider_output"] = payload
         result["provider_meta"] = meta
         return result
@@ -632,11 +638,63 @@ def sanitize_string(value, max_length=500) -> str:
     return text[:max_length]
 
 
-def validate_date_string(value) -> str:
+def normalize_blank_values(value):
+    if isinstance(value, str):
+        return None if value.strip() == "" else value
+    if isinstance(value, list):
+        return [normalize_blank_values(item) for item in value]
+    if isinstance(value, dict):
+        return {key: normalize_blank_values(item) for key, item in value.items()}
+    return value
+
+
+def is_structurally_empty(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip() == ""
+    if isinstance(value, (list, tuple, set)):
+        return len(value) == 0 or all(is_structurally_empty(item) for item in value)
+    if isinstance(value, dict):
+        return len(value) == 0 or all(is_structurally_empty(item) for item in value.values())
+    return False
+
+
+def normalize_decimal_value(value, *, field: str, warnings: list[str], places: int = 2) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    amount = decimal_or_none(value)
+    if amount is None:
+        warnings.append(f"{field.replace('_', ' ').title()} was not a valid number and needs review.")
+        return None
+    quantizer = Decimal("1") if places <= 0 else Decimal("1").scaleb(-places)
+    return str(amount.quantize(quantizer))
+
+
+def validate_date_string(value, *, field: str = "date", warnings: list[str] | None = None) -> str | None:
     text = sanitize_string(value, 32)
     if not text:
-        return ""
-    return text if parse_date(text) else ""
+        return None
+    parsed = parse_date(text)
+    if parsed:
+        return parsed.isoformat()
+    if warnings is not None:
+        warnings.append(f"{field.replace('_', ' ').title()} was not a valid date and needs review.")
+    return None
+
+
+def validate_time_string(value, *, field: str = "time", warnings: list[str] | None = None) -> str | None:
+    text = sanitize_string(value, 32)
+    if not text:
+        return None
+    parsed = parse_time(text)
+    if parsed:
+        return parsed.isoformat()
+    if warnings is not None:
+        warnings.append(f"{field.replace('_', ' ').title()} was not a valid time and needs review.")
+    return None
 
 
 def mask_card_details(value) -> str:
@@ -654,38 +712,125 @@ def validate_openai_payload(capture_type: str, payload: dict) -> dict:
     unexpected = sorted(set(payload.keys()) - allowed)
     if unexpected:
         raise SmartCaptureProviderError("OpenAI extraction returned unsupported fields.", "unexpected_fields")
+    payload = normalize_blank_values(payload)
+    warnings = []
     if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
-        result = {key: sanitize_string(payload.get(key), 255) for key in RECEIPT_FIELDS if key not in {"line_items", "warnings", "missing_fields", "field_confidence"}}
-        result["payment_method"] = mask_card_details(payload.get("payment_method_masked") or payload.get("payment_method"))
+        result = {
+            key: sanitize_string(payload.get(key), 255) if payload.get(key) is not None else None
+            for key in RECEIPT_FIELDS
+            if key not in {"line_items", "warnings", "missing_fields", "field_confidence", "payment_method_masked"}
+        }
+        result["payment_method"] = mask_card_details(payload.get("payment_method_masked") or payload.get("payment_method")) or None
         for money_key in ["subtotal", "tax", "total"]:
-            amount = decimal_or_none(payload.get(money_key))
-            result[money_key] = f"{amount:.2f}" if amount is not None else ""
-        result["purchase_date"] = validate_date_string(payload.get("purchase_date"))
-        result["line_items"] = validate_line_items(payload.get("line_items"))
-        result["suggested_category"] = normalized_category(payload.get("suggested_category"))
+            result[money_key] = normalize_decimal_value(payload.get(money_key), field=money_key, warnings=warnings)
+        result["purchase_date"] = validate_date_string(payload.get("purchase_date"), field="purchase_date", warnings=warnings)
+        result["purchase_time"] = validate_time_string(payload.get("purchase_time"), field="purchase_time", warnings=warnings)
+        result["line_items"] = validate_line_items(payload.get("line_items"), warnings=warnings)
+        category_raw = payload.get("suggested_category")
+        result["suggested_category"] = normalized_category(category_raw)
+        if not clean_text(category_raw) or result["suggested_category"] == "other":
+            warnings.append("Suggested category defaulted to other; review before approval.")
+        if not clean_text(payload.get("currency")):
+            warnings.append("Currency was not detected; review before approval.")
+        result["_normalization_warnings"] = warnings
         return result
-    result = {key: sanitize_string(payload.get(key), 255) for key in LABEL_FIELDS if key not in {"warnings", "missing_fields", "field_confidence"}}
+    result = {
+        key: sanitize_string(payload.get(key), 255) if payload.get(key) is not None else None
+        for key in LABEL_FIELDS
+        if key not in {"warnings", "missing_fields", "field_confidence"}
+    }
     for date_key in ["manufacture_date", "purchase_date", "warranty_expiration"]:
-        result[date_key] = validate_date_string(payload.get(date_key))
-    result["notes"] = sanitize_string(payload.get("notes"), 1000)
+        result[date_key] = validate_date_string(payload.get(date_key), field=date_key, warnings=warnings)
+    result["notes"] = sanitize_string(payload.get("notes"), 1000) if payload.get("notes") is not None else None
+    result["_normalization_warnings"] = warnings
     return result
 
 
-def validate_line_items(value) -> list[dict]:
+def validate_line_items(value, *, warnings: list[str] | None = None) -> list[dict]:
     if value is None:
         return []
     if not isinstance(value, list):
         raise SmartCaptureProviderError("Receipt line items were malformed.", "invalid_line_items")
     rows = []
+    warnings_list = warnings if warnings is not None else []
     for item in value[:80]:
         if not isinstance(item, dict):
             raise SmartCaptureProviderError("Receipt line item was malformed.", "invalid_line_items")
         unexpected = set(item.keys()) - {"description", "quantity", "unit_price", "total", "sku"}
         if unexpected:
             raise SmartCaptureProviderError("Receipt line item included unsupported fields.", "unexpected_fields")
-        row = {key: sanitize_string(item.get(key), 180) for key in ["description", "quantity", "unit_price", "total", "sku"]}
+        row = {
+            "description": sanitize_string(item.get("description"), 180) if item.get("description") is not None else None,
+            "quantity": normalize_decimal_value(item.get("quantity"), field="line item quantity", warnings=warnings_list, places=4),
+            "unit_price": normalize_decimal_value(item.get("unit_price"), field="line item unit price", warnings=warnings_list),
+            "total": normalize_decimal_value(item.get("total"), field="line item total", warnings=warnings_list),
+            "sku": sanitize_string(item.get("sku"), 180) if item.get("sku") is not None else None,
+        }
         rows.append(row)
     return rows
+
+
+def missing_fields_for_payload(capture_type: str, payload: dict) -> list[dict]:
+    required = ["merchant_name", "purchase_date", "total"]
+    if capture_type != ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        required = ["manufacturer", "model_number", "serial_number", "destination"]
+    rows = []
+    seen = set()
+    for key in required:
+        if key in seen:
+            continue
+        if is_structurally_empty(payload.get(key)):
+            rows.append({"field": key, "label": key.replace("_", " ").title()})
+            seen.add(key)
+    return rows
+
+
+def normalize_confidence_value(value: str | None) -> str:
+    aliases = {
+        "high": "high_confidence",
+        "medium": "medium_confidence",
+        "low": "low_confidence",
+        "missing": "not_detected",
+        "none": "not_detected",
+    }
+    text = clean_text(value)
+    text = aliases.get(text, text)
+    return text if text in CONFIDENCE_VALUES else "needs_review"
+
+
+def reconcile_openai_normalization(*, capture_type: str, result: dict, provider_confidence) -> dict:
+    payload = normalize_blank_values(result.get("structured_payload") or {})
+    normalization_warnings = payload.pop("_normalization_warnings", []) or []
+    base_confidence = result.get("field_confidence") or {}
+    provider_confidence = provider_confidence if isinstance(provider_confidence, dict) else {}
+    confidence = {}
+    warnings = merge_warning_lists(result.get("warnings"), normalization_warnings)
+    for key in payload.keys():
+        if key in {"warnings", "missing_fields", "field_confidence"}:
+            continue
+        source_confidence = normalize_confidence_value(provider_confidence.get(key) or base_confidence.get(key))
+        if is_structurally_empty(payload.get(key)):
+            if source_confidence in {"confirmed", "high_confidence"}:
+                warnings = merge_warning_lists(warnings, [f"{key.replace('_', ' ').title()} was missing despite high provider confidence."])
+            confidence[key] = "not_detected"
+            continue
+        if key in {"suggested_category", "currency"} and confidence_indicates_missing(source_confidence):
+            confidence[key] = "not_detected"
+            continue
+        if key == "suggested_category" and payload.get(key) == "other" and source_confidence in {"confirmed", "high_confidence"}:
+            confidence[key] = "needs_review"
+            warnings = merge_warning_lists(warnings, ["Suggested category is generic and needs review."])
+            continue
+        confidence[key] = source_confidence
+    result["structured_payload"] = payload
+    result["field_confidence"] = confidence
+    result["missing_fields"] = missing_fields_for_payload(capture_type, payload)
+    result["warnings"] = warnings
+    return result
+
+
+def confidence_indicates_missing(value: str) -> bool:
+    return value in {"not_detected", "needs_review", ""}
 
 
 def normalize_confidence(value, fallback=None) -> dict:
