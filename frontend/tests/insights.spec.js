@@ -186,11 +186,14 @@ test("Insights command center renders business health, attention, brief, metrics
   await expect(page.getByTestId("insights-needs-attention")).toContainText("Pending customer approvals");
   await expect(page.getByTestId("insights-morning-brief")).toContainText("Morning Brief");
   await expect(page.getByTestId("insights-morning-brief")).toContainText("Completed 3 milestones.");
+  await expect(page.getByTestId("insights-todays-priorities")).toContainText("What to do next");
   await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Money Waiting On Customer Approval");
-  await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Money Customers Still Owe");
+  await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Resolution Cases");
   await expect(page.getByTestId("insights-opportunity-forecast")).toContainText("Potential Revenue");
   await expect(page.getByTestId("insights-opportunity-forecast")).toContainText("$36,000.00");
   await expect(page.getByTestId("insights-operations-analyst")).toContainText("Operations Analyst");
   await expect(page.getByTestId("project-assistant-human-approval")).toContainText("cannot release money");
   await expect(page.getByTestId("dashboard-kpi-strip")).toBeVisible();
+  await page.getByTestId("dashboard-view-selector-reports-trends").click();
+  await expect(page.getByTestId("insights-canonical-metrics-full")).toContainText("Money Customers Still Owe");
 });

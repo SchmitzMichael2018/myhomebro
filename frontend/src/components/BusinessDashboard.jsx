@@ -759,6 +759,18 @@ export default function BusinessDashboard() {
   const opportunityForecast = commandCenter?.opportunity_forecast || {};
   const forecastSections = Array.isArray(opportunityForecast?.sections) ? opportunityForecast.sections : [];
   const operationsAnalyst = commandCenter?.operations_analyst || {};
+  const unhealthyDimensions = healthDimensions.filter((dimension) => dimension.status && dimension.status !== "Healthy");
+  const displayedHealthDimensions = (unhealthyDimensions.length ? unhealthyDimensions : healthDimensions).slice(0, 3);
+  const topNeedsAttention = needsAttention.slice(0, 3);
+  const executiveMetricKeys = [
+    "revenue",
+    "estimate_pipeline",
+    "open_projects",
+    "pending_release",
+    "held_funds",
+    "warranty_requests",
+    "resolution_cases",
+  ];
   const businessPerformance = payload?.business_performance || {};
   const funnel = businessPerformance?.funnel || {};
   const conversionRates = businessPerformance?.conversion_rates || {};
@@ -825,6 +837,14 @@ export default function BusinessDashboard() {
   const onHoldTotal = Number(financialSummary.on_hold_total || 0);
   const pendingReleaseTotal = Number(financialSummary.pending_release_total || 0);
   const pendingReleaseCount = Number(financialSummary.pending_release_count || 0);
+  const analystRecommendations = operationsAnalyst.recommendations?.length
+    ? operationsAnalyst.recommendations
+    : [
+      topNeedsAttention[0]?.why,
+      pendingReleaseCount > 0 ? `${pendingReleaseCount} payment item${pendingReleaseCount === 1 ? "" : "s"} need approval or release follow-up.` : "",
+      quoteFollowUpCount > 0 ? `${quoteFollowUpCount} lead or quote request${quoteFollowUpCount === 1 ? "" : "s"} need sales follow-up.` : "",
+      openDisputesCount > 0 ? `${openDisputesCount} resolution case${openDisputesCount === 1 ? "" : "s"} may affect cash or customer trust.` : "",
+    ].filter(Boolean);
   const topAlertCards = useMemo(() => {
     const cards = [
       {
@@ -1376,8 +1396,8 @@ export default function BusinessDashboard() {
           </div>
         </div>
 
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {healthDimensions.map((dimension) => (
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {displayedHealthDimensions.map((dimension) => (
             <div key={dimension.key} className={`rounded-xl border p-4 ${commandStateTone(dimension.status)}`}>
               <div className="text-sm font-black">{dimension.label}</div>
               <div className="mt-1 text-lg font-black">{dimension.status}</div>
@@ -1410,7 +1430,7 @@ export default function BusinessDashboard() {
             <p className="mt-1 text-sm leading-6 text-sky-100/70">Each item explains why it matters and opens the source workspace.</p>
           </div>
           <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
-            {needsAttention.length} active
+            {needsAttention.length} active | showing top {topNeedsAttention.length || 0}
           </div>
         </div>
         {needsAttention.length === 0 ? (
@@ -1419,7 +1439,7 @@ export default function BusinessDashboard() {
           </div>
         ) : (
           <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {needsAttention.map((item) => (
+            {topNeedsAttention.map((item) => (
               <div key={item.key} data-testid={`insights-attention-${item.key}`} className={`rounded-xl border p-4 shadow-sm ${severityTone(item.severity)}`}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -1454,7 +1474,6 @@ export default function BusinessDashboard() {
             {[
               ["Yesterday", morningBrief.yesterday],
               ["Today", morningBrief.today],
-              ["Upcoming", morningBrief.upcoming],
               ["Risks", morningBrief.risks],
             ].map(([label, rows]) => (
               <div key={label} className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
@@ -1484,7 +1503,7 @@ export default function BusinessDashboard() {
           </ProjectAssistantSection>
           <ProjectAssistantCard title="Recommendations" tone="advisory">
             <ul className="space-y-2 text-sm leading-6">
-              {(operationsAnalyst.recommendations || ["Review the highest priority attention item first."]).map((item) => (
+              {(analystRecommendations.length ? analystRecommendations : ["Review the highest priority attention item first."]).map((item) => (
                 <li key={item}>{item}</li>
               ))}
             </ul>
@@ -1496,29 +1515,52 @@ export default function BusinessDashboard() {
         </ProjectAssistantPanel>
       </div>
 
+      <section data-testid="insights-todays-priorities" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Today&apos;s Priorities</div>
+            <h2 className="mt-2 text-2xl font-black text-white">What to do next</h2>
+            <p className="mt-1 text-sm leading-6 text-sky-100/70">
+              Fastest path from business signal to source workspace.
+            </p>
+          </div>
+          <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
+            {rangeLabel}
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {(topNeedsAttention.length ? topNeedsAttention : [
+            {
+              key: "review-pipeline",
+              title: "Review pipeline",
+              why: "No urgent attention items are active. Check pipeline and upcoming work for the next opportunity.",
+              open_url: "/app/opportunities",
+              action_label: "Open Opportunities",
+              severity: "low",
+              source_workspace: "Opportunities",
+              count: 0,
+            },
+          ]).map((item) => (
+            <a key={`priority-${item.key}`} href={item.open_url || "/app/dashboard"} className={`rounded-xl border p-4 shadow-sm ${severityTone(item.severity)}`}>
+              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">{item.source_workspace || "Workspace"}</div>
+              <div className="mt-2 text-base font-black">{item.title}</div>
+              <div className="mt-2 text-sm leading-6 opacity-90">{item.why}</div>
+              <div className="mt-3 text-xs font-black">{item.action_label || "Open source records"}</div>
+            </a>
+          ))}
+        </div>
+      </section>
+
       <section data-testid="insights-canonical-metrics" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Canonical Metrics</div>
-            <h2 className="mt-2 text-2xl font-black text-white">Plain-English KPIs</h2>
-            <p className="mt-1 text-sm leading-6 text-sky-100/70">One shared definition set for the numbers used throughout Insights.</p>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Core KPIs</div>
+            <h2 className="mt-2 text-2xl font-black text-white">Executive scorecard</h2>
+            <p className="mt-1 text-sm leading-6 text-sky-100/70">The few numbers that explain cash, pipeline, active work, warranty, and resolution pressure.</p>
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            "revenue",
-            "net_paid",
-            "pending_release",
-            "held_funds",
-            "outstanding_receivables",
-            "open_projects",
-            "open_opportunities",
-            "estimate_pipeline",
-            "warranty_requests",
-            "resolution_cases",
-            "team_capacity",
-            "customer_requests",
-          ].map((key) => (
+          {executiveMetricKeys.map((key) => (
             <CanonicalMetricCard key={key} metric={canonicalMetrics[key]} />
           ))}
         </div>
@@ -1956,6 +1998,33 @@ export default function BusinessDashboard() {
           tone={Number(snapshot.disputes_open || 0) > 0 ? "bad" : "default"}
         />
       </DashboardGrid>
+          </DashboardSection>
+
+          <DashboardSection
+            title="Full Metric Definitions"
+            subtitle="Detailed plain-English metric set used across Insights."
+            className="mb-5"
+          >
+            <section data-testid="insights-canonical-metrics-full" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  "revenue",
+                  "net_paid",
+                  "pending_release",
+                  "held_funds",
+                  "outstanding_receivables",
+                  "open_projects",
+                  "open_opportunities",
+                  "estimate_pipeline",
+                  "warranty_requests",
+                  "resolution_cases",
+                  "team_capacity",
+                  "customer_requests",
+                ].map((key) => (
+                  <CanonicalMetricCard key={key} metric={canonicalMetrics[key]} />
+                ))}
+              </div>
+            </section>
           </DashboardSection>
 
       <DashboardSection
