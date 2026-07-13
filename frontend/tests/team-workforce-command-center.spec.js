@@ -192,14 +192,20 @@ test("team overview shows workforce command center with assistant guidance", asy
   await page.goto("/app/team", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "Team Overview" })).toBeVisible();
+  await expect(page.getByTestId("team-decision-brief")).toContainText("Today's Staffing Decisions");
+  await expect(page.getByTestId("team-decision-brief")).toContainText("Needs Assignment");
+  await expect(page.getByTestId("team-decision-brief")).toContainText("Available Today");
   await expect(page.getByTestId("team-workforce-command-center")).toContainText("Workforce Command Center");
   await expect(page.getByTestId("team-workforce-command-center")).toContainText("Warranty");
-  await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Warranty Work Order");
+  await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Needs Assignment");
   await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Estimate Workspace");
+  await expect(page.getByTestId("team-workload-mixed-types")).not.toContainText("Assigned to Unassigned");
+  await page.getByTestId("team-workload-mixed-types").getByRole("button", { name: /Assigned Work/ }).click();
+  await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Warranty Work Order");
   await expect(page.getByTestId("team-capacity-indicators")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-capacity-indicators")).toContainText("Near Capacity");
-  await expect(page.getByTestId("team-skills-matrix")).toContainText("Flooring");
   await expect(page.getByTestId("team-skills-matrix")).toContainText("Warranty Repair");
+  await expect(page.getByTestId("team-skills-matrix")).toContainText("Flooring");
   await expect(page.getByTestId("team-assistant-panel")).toContainText("Team Assistant");
   await expect(page.getByTestId("project-assistant-human-approval")).toContainText("authorized users must assign people");
 });

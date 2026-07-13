@@ -65,6 +65,33 @@ function capacityTone(state) {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
+function capacityRank(state) {
+  if (state === "overbooked") return 0;
+  if (state === "near_capacity") return 1;
+  if (state === "available") return 3;
+  return 2;
+}
+
+function skillCoverageRank(coverage) {
+  if (coverage === "missing") return 0;
+  if (coverage === "thin") return 1;
+  return 2;
+}
+
+function isUnassignedWorkRow(row) {
+  const memberName = normalizeText(row?.member_name);
+  return !memberName || memberName === "unassigned" || row?.source_type === "unassigned_milestone";
+}
+
+function workRiskRank(row) {
+  const priority = normalizeText(row?.priority);
+  const status = normalizeText(row?.status);
+  if (priority === "high" || status.includes("overdue") || status.includes("blocked")) return 0;
+  if (priority === "urgent" || status.includes("at risk")) return 0;
+  if (priority === "normal" || status.includes("scheduled")) return 1;
+  return 2;
+}
+
 function SummaryPill({ label, value, tone = "slate" }) {
   const toneClass =
     tone === "warn"
@@ -139,7 +166,7 @@ export default function TeamOverviewPage() {
   const [teamRows, setTeamRows] = useState([]);
   const [workforce, setWorkforce] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [workloadFilter, setWorkloadFilter] = useState("assigned");
+  const [workloadFilter, setWorkloadFilter] = useState("needs_assignment");
 
   useEffect(() => {
     let active = true;
@@ -225,25 +252,44 @@ export default function TeamOverviewPage() {
 
   const workforceSummary = workforce?.summary || {};
   const capacityRows = useMemo(() => {
-    return Array.isArray(workforce?.capacity) ? workforce.capacity.slice(0, 6) : [];
+    return Array.isArray(workforce?.capacity)
+      ? workforce.capacity
+        .slice()
+        .sort((a, b) => capacityRank(a.state) - capacityRank(b.state) || Number(b.assignment_count_today || 0) - Number(a.assignment_count_today || 0))
+        .slice(0, 6)
+      : [];
   }, [workforce]);
   const skillRows = useMemo(() => {
-    return Array.isArray(workforce?.skills_matrix) ? workforce.skills_matrix.slice(0, 8) : [];
+    return Array.isArray(workforce?.skills_matrix)
+      ? workforce.skills_matrix
+        .slice()
+        .sort((a, b) => skillCoverageRank(a.coverage) - skillCoverageRank(b.coverage) || String(a.skill || "").localeCompare(String(b.skill || "")))
+        .slice(0, 8)
+      : [];
   }, [workforce]);
   const workloadBuckets = useMemo(() => {
-    const rows = workforceRows.filter((row) => row.is_warranty_work || row.is_maintenance_work || row.is_estimate_work || row.source_type === "unassigned_milestone");
+    const rows = workforceRows
+      .filter((row) => row.is_warranty_work || row.is_maintenance_work || row.is_estimate_work || row.source_type === "unassigned_milestone")
+      .slice()
+      .sort((a, b) => workRiskRank(a) - workRiskRank(b) || String(a.scheduled_start || "").localeCompare(String(b.scheduled_start || "")));
     return [
       {
         key: "assigned",
         label: "Assigned Work",
         helper: "Routed work with an owner.",
-        rows: rows.filter((row) => row.member_name && row.source_type !== "unassigned_milestone"),
+        rows: rows.filter((row) => !isUnassignedWorkRow(row)),
       },
       {
         key: "needs_assignment",
         label: "Needs Assignment",
         helper: "Work that should be routed before dates or commitments move.",
-        rows: rows.filter((row) => !row.member_name || row.source_type === "unassigned_milestone"),
+        rows: rows.filter(isUnassignedWorkRow),
+      },
+      {
+        key: "at_risk",
+        label: "At Risk",
+        helper: "High-priority, overdue, or blocked work to review first.",
+        rows: rows.filter((row) => workRiskRank(row) === 0),
       },
       {
         key: "upcoming",
@@ -270,6 +316,24 @@ export default function TeamOverviewPage() {
     [workloadBuckets, workloadFilter]
   );
   const assistant = workforce?.assistant || {};
+  const unassignedRows = workloadBuckets.find((bucket) => bucket.key === "needs_assignment")?.rows || [];
+  const atRiskRows = workloadBuckets.find((bucket) => bucket.key === "at_risk")?.rows || [];
+  const availableCapacityRows = capacityRows.filter((row) => row.state === "available");
+  const overloadedCapacityRows = capacityRows.filter((row) => row.state === "overbooked" || row.state === "near_capacity");
+  const missingSkillRows = skillRows.filter((row) => row.coverage === "missing");
+  const teamAssistantSummary =
+    assistant.summary ||
+    (unassignedRows.length
+      ? `${unassignedRows.length} work item${unassignedRows.length === 1 ? "" : "s"} need assignment before commitments move.`
+      : overloadedCapacityRows.length
+        ? `${overloadedCapacityRows.length} team member${overloadedCapacityRows.length === 1 ? "" : "s"} are near capacity or overbooked.`
+        : "Team coverage looks steady. Review upcoming work and keep assignments current.");
+  const teamAssistantRecommendations = assistant.recommendations || [
+    unassignedRows.length ? "Assign unowned work before confirming new schedules." : "",
+    overloadedCapacityRows.length ? "Review near-capacity team members before adding more work." : "",
+    atRiskRows.length ? "Open at-risk work and confirm owner, schedule, and next action." : "",
+    missingSkillRows.length ? "Add or source coverage for missing skills before accepting matching work." : "",
+  ].filter(Boolean);
 
   const quickActionButton = (label, to, testId, tone = "primary") => (
     <button
@@ -299,6 +363,46 @@ export default function TeamOverviewPage() {
       <div className="space-y-6">
         <HubTabs tabs={teamHubTabs} />
 
+        <section data-testid="team-decision-brief" className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-base font-bold text-white">Today&apos;s Staffing Decisions</div>
+              <div className="mt-1 text-sm text-sky-100/70">
+                Start here: assign ownerless work, protect overloaded people, and confirm the next schedule moves.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate("/app/team/schedule")}
+              className="rounded-xl border border-white/70 bg-white px-4 py-2 text-sm font-bold text-slate-950 shadow-sm hover:bg-sky-50"
+            >
+              Open Schedule
+            </button>
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <button type="button" onClick={() => setWorkloadFilter("needs_assignment")} className="rounded-xl border border-amber-300/35 bg-amber-400/15 p-4 text-left text-amber-100">
+              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">Needs Assignment</div>
+              <div className="mt-2 text-3xl font-black">{unassignedRows.length}</div>
+              <div className="mt-1 text-sm leading-5 opacity-80">Route these before committing dates.</div>
+            </button>
+            <button type="button" onClick={() => setWorkloadFilter("at_risk")} className="rounded-xl border border-rose-300/35 bg-rose-400/15 p-4 text-left text-rose-100">
+              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">At Risk</div>
+              <div className="mt-2 text-3xl font-black">{atRiskRows.length}</div>
+              <div className="mt-1 text-sm leading-5 opacity-80">Review high-priority or blocked work.</div>
+            </button>
+            <button type="button" onClick={() => navigate("/app/team/assignments?capacity=overloaded")} className="rounded-xl border border-white/12 bg-slate-950/40 p-4 text-left text-sky-100">
+              <div className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100/60">Overloaded</div>
+              <div className="mt-2 text-3xl font-black text-white">{overloadedCapacityRows.length}</div>
+              <div className="mt-1 text-sm leading-5 text-sky-100/70">Balance before assigning more work.</div>
+            </button>
+            <button type="button" onClick={() => navigate("/app/team/assignments?capacity=available")} className="rounded-xl border border-emerald-300/35 bg-emerald-400/15 p-4 text-left text-emerald-100">
+              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">Available Today</div>
+              <div className="mt-2 text-3xl font-black">{availableCapacityRows.length}</div>
+              <div className="mt-1 text-sm leading-5 opacity-80">Good candidates for new work.</div>
+            </button>
+          </div>
+        </section>
+
         <section data-testid="team-overview-actions" className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -309,9 +413,10 @@ export default function TeamOverviewPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               {quickActionButton("Assign Work", "/app/team/assignments", "team-overview-assign-work", "primary")}
+              {quickActionButton("Open Schedule", "/app/team/schedule", "team-overview-open-schedule")}
+              {quickActionButton("Review Submitted Work", "/app/reviewer/queue", "team-overview-review-work")}
               {quickActionButton("Invite Subcontractor", "/app/team/subcontractors", "team-overview-invite-subcontractor")}
               {quickActionButton("Add Employee", "/app/team/members", "team-overview-add-employee")}
-              {quickActionButton("Review Submitted Work", "/app/reviewer/queue", "team-overview-review-work")}
             </div>
           </div>
         </section>
@@ -436,8 +541,8 @@ export default function TeamOverviewPage() {
                         <div className="mt-1 text-sm text-slate-600">
                           {row.customer_label || "No customer"} {row.property_address ? `| ${row.property_address}` : ""}
                         </div>
-                        <div className="mt-1 text-xs font-semibold text-slate-500">
-                          {row.member_name ? `Assigned to ${row.member_name}` : "Needs Assignment"} | {formatDateTime(row.scheduled_start)}
+                      <div className="mt-1 text-xs font-semibold text-slate-500">
+                          {isUnassignedWorkRow(row) ? "Needs Assignment" : `Assigned to ${row.member_name}`} | {formatDateTime(row.scheduled_start)}
                         </div>
                       </div>
                       {row.open_url ? (
@@ -460,7 +565,7 @@ export default function TeamOverviewPage() {
             <div>
               <div className="text-base font-bold text-slate-900">Capacity Indicators</div>
               <div className="mt-1 text-sm text-slate-600">
-                Launch thresholds based on current scheduled and assigned work.
+                Overloaded and near-capacity people appear first so staffing decisions are faster.
               </div>
             </div>
             {loading ? (
@@ -480,6 +585,9 @@ export default function TeamOverviewPage() {
                           Today {Number(row.assignment_count_today || 0)} | Week {Number(row.assignment_count_week || 0)} | Total{" "}
                           {Number(row.assignment_count_total || 0)}
                         </div>
+                        {row.reasons?.length ? (
+                          <div className="mt-2 text-xs font-semibold text-slate-600">{row.reasons[0]}</div>
+                        ) : null}
                       </div>
                       <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${capacityTone(row.state)}`}>
                         {formatStatus(row.state)}
@@ -497,7 +605,7 @@ export default function TeamOverviewPage() {
             <div>
               <div className="text-base font-bold text-slate-900">Skills Matrix</div>
               <div className="mt-1 text-sm text-slate-600">
-                Foundation view for matching required work skills to employee capabilities.
+                Missing and thin coverage appear first so you can fix staffing gaps before assigning work.
               </div>
             </div>
             {loading ? (
@@ -528,13 +636,13 @@ export default function TeamOverviewPage() {
           <ProjectAssistantPanel
             testId="team-assistant-panel"
             subtitle="Team Assistant"
-            summary={assistant.summary || "Review workforce coverage, capacity, and missing assignment context before committing work."}
+            summary={teamAssistantSummary}
             actions={<ProjectAssistantConfidenceBadge value={assistant.confidence || "medium"} />}
           >
             <div className="grid gap-3 md:grid-cols-2">
               <ProjectAssistantCard title="Recommended Focus" tone="advisory">
                 <ul className="space-y-2 text-sm leading-6">
-                  {(assistant.recommendations || ["Review unassigned work and capacity before committing new dates."]).map((item) => (
+                  {(teamAssistantRecommendations.length ? teamAssistantRecommendations : ["Review upcoming work and capacity before committing new dates."]).map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>
