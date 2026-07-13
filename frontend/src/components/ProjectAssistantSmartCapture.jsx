@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Camera, FileImage, RotateCcw, ShieldCheck, Upload, X } from "lucide-react";
 
 import api from "../api.js";
@@ -9,6 +9,7 @@ import {
   ProjectAssistantSection,
 } from "./ProjectAssistantExperience.jsx";
 import {
+  CUSTOMER_SMART_CAPTURE_TYPES,
   SMART_CAPTURE_TYPES,
   smartCaptureApprovalSummary,
   smartCaptureFieldsForType,
@@ -26,8 +27,19 @@ function updatePayloadValue(setDraft, key, value) {
   setDraft((current) => ({ ...current, [key]: value }));
 }
 
-export default function ProjectAssistantSmartCapture({ compact = false }) {
-  const [captureType, setCaptureType] = useState("receipt");
+export default function ProjectAssistantSmartCapture({
+  compact = false,
+  mode = "contractor",
+  endpoints = null,
+  propertyOptions = [],
+  defaultPropertyId = "",
+  onComplete,
+}) {
+  const customerMode = mode === "customer";
+  const typeOptions = customerMode ? CUSTOMER_SMART_CAPTURE_TYPES : SMART_CAPTURE_TYPES;
+  const defaultCaptureType = customerMode ? "home_system_label" : "receipt";
+  const [captureType, setCaptureType] = useState(defaultCaptureType);
+  const [propertyId, setPropertyId] = useState(defaultPropertyId || propertyOptions[0]?.id || "");
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [session, setSession] = useState(null);
@@ -37,6 +49,19 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
 
   const fields = useMemo(() => smartCaptureFieldsForType(session?.capture_type || captureType), [session?.capture_type, captureType]);
   const approvalSummary = smartCaptureApprovalSummary(session || {});
+  const apiEndpoints = {
+    create: endpoints?.create || "/projects/project-assistant/smart-capture/sessions/",
+    detail: endpoints?.detail || ((id) => `/projects/project-assistant/smart-capture/sessions/${id}/`),
+    retry: endpoints?.retry || ((id) => `/projects/project-assistant/smart-capture/sessions/${id}/retry/`),
+    approve: endpoints?.approve || ((id) => `/projects/project-assistant/smart-capture/sessions/${id}/approve/`),
+    cancel: endpoints?.cancel || ((id) => `/projects/project-assistant/smart-capture/sessions/${id}/cancel/`),
+  };
+
+  useEffect(() => {
+    if (!customerMode || propertyId) return;
+    const nextId = defaultPropertyId || propertyOptions[0]?.id || "";
+    if (nextId) setPropertyId(nextId);
+  }, [customerMode, defaultPropertyId, propertyId, propertyOptions]);
 
   function selectFile(nextFile) {
     setFile(nextFile || null);
@@ -52,8 +77,9 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
     try {
       const form = new FormData();
       form.append("capture_type", captureType);
+      if (customerMode) form.append("property_id", propertyId || "");
       form.append("file", file);
-      const response = await api.post("/projects/project-assistant/smart-capture/sessions/", form, {
+      const response = await api.post(apiEndpoints.create, form, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setSession(response.data);
@@ -70,8 +96,8 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
     setBusy(true);
     setError("");
     try {
-      const response = await api.patch(`/projects/project-assistant/smart-capture/sessions/${session.id}/`, {
-        structured_payload: draft,
+      const response = await api.patch(apiEndpoints.detail(session.id), {
+        structured_payload: customerMode ? { ...draft, property_id: propertyId || draft.property_id } : draft,
       });
       setSession(response.data);
       setDraft(response.data.structured_payload || {});
@@ -87,11 +113,12 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
     setBusy(true);
     setError("");
     try {
-      const response = await api.post(`/projects/project-assistant/smart-capture/sessions/${session.id}/approve/`, {
-        structured_payload: draft,
+      const response = await api.post(apiEndpoints.approve(session.id), {
+        structured_payload: customerMode ? { ...draft, property_id: propertyId || draft.property_id } : draft,
       });
       setSession(response.data);
       setDraft(response.data.structured_payload || {});
+      onComplete?.(response.data);
     } catch (err) {
       const nextSession = err?.response?.data?.session;
       if (nextSession) {
@@ -109,7 +136,7 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
     setBusy(true);
     setError("");
     try {
-      const response = await api.post(`/projects/project-assistant/smart-capture/sessions/${session.id}/retry/`, {});
+      const response = await api.post(apiEndpoints.retry(session.id), {});
       setSession(response.data);
       setDraft(response.data.structured_payload || {});
     } catch (err) {
@@ -129,7 +156,7 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
     setBusy(true);
     setError("");
     try {
-      const response = await api.post(`/projects/project-assistant/smart-capture/sessions/${session.id}/cancel/`, {});
+      const response = await api.post(apiEndpoints.cancel(session.id), {});
       setSession(response.data);
     } catch (err) {
       setError(err?.response?.data?.detail || "Smart Capture could not cancel this session.");
@@ -148,10 +175,10 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
         <form onSubmit={uploadCapture} className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4" data-testid="smart-capture-upload-form">
           <div className="flex items-center gap-2 text-sm font-black text-slate-950">
             <Camera className="h-4 w-4" />
-            Scan or upload a business record
+            {customerMode ? "Add to My Home" : "Scan or upload a business record"}
           </div>
           <div className="grid gap-2 sm:grid-cols-3">
-            {Object.entries(SMART_CAPTURE_TYPES).map(([key, label]) => (
+            {Object.entries(typeOptions).map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -163,6 +190,24 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
               </button>
             ))}
           </div>
+          {customerMode ? (
+            <label className="grid gap-1 text-sm font-semibold text-slate-700">
+              Save to property
+              <select
+                value={propertyId || ""}
+                onChange={(event) => setPropertyId(event.target.value)}
+                className="min-h-[44px] rounded-lg border border-slate-200 px-3 text-sm font-normal"
+                data-testid="smart-capture-property-select"
+              >
+                <option value="">Choose property</option>
+                {propertyOptions.map((property) => (
+                  <option key={property.id} value={property.id}>
+                    {property.display_name || property.address || `Property #${property.id}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="grid min-h-[132px] cursor-pointer place-items-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm font-semibold text-slate-700" data-testid="smart-capture-dropzone">
             <FileImage className="mb-2 h-7 w-7 text-slate-400" />
             <span>{file ? file.name : "Upload Existing Photo or Take Photo"}</span>
@@ -177,7 +222,7 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
           </label>
           <button
             type="submit"
-            disabled={busy || !file}
+            disabled={busy || !file || (customerMode && !propertyId)}
             className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2 text-sm font-black text-white disabled:opacity-60"
             data-testid="smart-capture-upload"
           >
@@ -206,6 +251,12 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
               {session.billable_price ? (
                 <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" data-testid="smart-capture-price-disclosure">
                   Smart Capture extraction: ${session.billable_price}. You will only be charged after a successful extraction.
+                </div>
+              ) : null}
+
+              {customerMode ? (
+                <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950" data-testid="smart-capture-property-destination">
+                  Save to: {propertyOptions.find((property) => String(property.id) === String(propertyId || draft.property_id))?.address || propertyOptions.find((property) => String(property.id) === String(propertyId || draft.property_id))?.display_name || "Choose a property"}
                 </div>
               ) : null}
 
@@ -270,7 +321,7 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
               </ProjectAssistantApprovalNotice>
 
               <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm text-emerald-950" data-testid="smart-capture-approval-summary">
-                <div className="font-black">If you approve:</div>
+                  <div className="font-black">If you approve:</div>
                 <ul className="mt-1 grid gap-1">
                   {approvalSummary.map((item) => <li key={item}>- {item}</li>)}
                 </ul>
@@ -320,13 +371,13 @@ export default function ProjectAssistantSmartCapture({ compact = false }) {
 
               {completed ? (
                 <ProjectAssistantCard title="Smart Capture saved" tone="success" testId="smart-capture-completed">
-                  Created record: {session.created_expense ? `Expense #${session.created_expense}` : session.created_asset ? `Asset #${session.created_asset}` : `Property record #${session.created_property_record}`}.
+                  Created record: {session.created_property_intelligence_record ? `Home record #${session.created_property_intelligence_record}` : session.created_expense ? `Expense #${session.created_expense}` : session.created_asset ? `Asset #${session.created_asset}` : `Property record #${session.created_property_record}`}.
                 </ProjectAssistantCard>
               ) : null}
             </div>
           ) : (
             <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600" data-testid="smart-capture-empty">
-              Upload a receipt or product label to prepare an editable draft. Manual entry remains available in the normal workspace.
+              {customerMode ? "Upload a label, receipt, warranty, manual, or home photo to prepare an editable home record draft. Manual entry remains available." : "Upload a receipt or product label to prepare an editable draft. Manual entry remains available in the normal workspace."}
             </div>
           )}
         </div>

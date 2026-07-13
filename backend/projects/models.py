@@ -3127,6 +3127,7 @@ from .models_customer_portal import (  # noqa: E402,F401
     PropertyDocumentExtraction,
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
+    PropertyIntelligenceRecord,
     PropertyIntelligenceSnapshot,
     PropertyManagementCompany,
     PropertyManagementStaffMembership,

@@ -1179,6 +1179,145 @@ class PropertyPhoto(models.Model):
         return f"{self.property_profile_id} - {self.title or 'Photo'}"
 
 
+class PropertyIntelligenceRecord(models.Model):
+    RECORD_HOME_SYSTEM = "home_system"
+    RECORD_APPLIANCE = "appliance"
+    RECORD_INSTALLED_PRODUCT = "installed_product"
+    RECORD_PAINT_FINISH = "paint_finish"
+    RECORD_FLOORING_MATERIAL = "flooring_material"
+    RECORD_RECEIPT = "receipt"
+    RECORD_WARRANTY = "warranty"
+    RECORD_MANUAL = "manual"
+    RECORD_PHOTO = "photo"
+    RECORD_MAINTENANCE = "maintenance_record"
+    RECORD_TYPE_CHOICES = [
+        (RECORD_HOME_SYSTEM, "Home System"),
+        (RECORD_APPLIANCE, "Appliance"),
+        (RECORD_INSTALLED_PRODUCT, "Installed Product"),
+        (RECORD_PAINT_FINISH, "Paint or Finish"),
+        (RECORD_FLOORING_MATERIAL, "Flooring or Material"),
+        (RECORD_RECEIPT, "Receipt"),
+        (RECORD_WARRANTY, "Warranty"),
+        (RECORD_MANUAL, "Manual"),
+        (RECORD_PHOTO, "Photo"),
+        (RECORD_MAINTENANCE, "Maintenance Record"),
+    ]
+
+    STATUS_ACTIVE = "active"
+    STATUS_ARCHIVED = "archived"
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, "Active"),
+        (STATUS_ARCHIVED, "Archived"),
+    ]
+
+    property_profile = models.ForeignKey(
+        PropertyProfile,
+        on_delete=models.CASCADE,
+        related_name="intelligence_records",
+    )
+    customer_email = models.EmailField(db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_property_intelligence_records",
+    )
+    source_type = models.CharField(max_length=80, blank=True, default="smart_capture")
+    record_type = models.CharField(max_length=40, choices=RECORD_TYPE_CHOICES, db_index=True)
+    category = models.CharField(max_length=80, blank=True, default="")
+    name = models.CharField(max_length=255, blank=True, default="")
+    manufacturer = models.CharField(max_length=200, blank=True, default="")
+    brand = models.CharField(max_length=200, blank=True, default="")
+    model_number = models.CharField(max_length=200, blank=True, default="")
+    serial_number = models.CharField(max_length=200, blank=True, default="", db_index=True)
+    sku = models.CharField(max_length=120, blank=True, default="")
+    barcode = models.CharField(max_length=120, blank=True, default="")
+    room_or_location = models.CharField(max_length=200, blank=True, default="")
+    system_type = models.CharField(max_length=80, blank=True, default="")
+    product_type = models.CharField(max_length=80, blank=True, default="")
+    color_name = models.CharField(max_length=120, blank=True, default="")
+    color_code = models.CharField(max_length=120, blank=True, default="")
+    finish = models.CharField(max_length=120, blank=True, default="")
+    material = models.CharField(max_length=120, blank=True, default="")
+    lot_or_batch_number = models.CharField(max_length=120, blank=True, default="")
+    capacity = models.CharField(max_length=120, blank=True, default="")
+    voltage = models.CharField(max_length=120, blank=True, default="")
+    manufacture_date = models.DateField(null=True, blank=True)
+    purchase_date = models.DateField(null=True, blank=True)
+    installation_date = models.DateField(null=True, blank=True)
+    installed_by_contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="installed_property_intelligence_records",
+    )
+    related_project = models.ForeignKey(
+        "projects.Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_intelligence_records",
+    )
+    related_agreement = models.ForeignKey(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_intelligence_records",
+    )
+    related_milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_intelligence_records",
+    )
+    warranty_start = models.DateField(null=True, blank=True)
+    warranty_expiration = models.DateField(null=True, blank=True)
+    expected_service_interval = models.CharField(max_length=120, blank=True, default="")
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
+    notes = models.TextField(blank=True, default="")
+    structured_payload = models.JSONField(default=dict, blank=True)
+    source_capture = models.ForeignKey(
+        "projects.ProjectAssistantSmartCaptureSession",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="property_intelligence_records",
+    )
+    source_document = models.ForeignKey(
+        PropertyDocument,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="intelligence_records",
+    )
+    source_photo = models.ForeignKey(
+        PropertyPhoto,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="intelligence_records",
+    )
+    visible_to_associated_contractors = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at", "-id"]
+        indexes = [
+            models.Index(fields=["property_profile", "record_type", "status"], name="prop_intel_type_idx"),
+            models.Index(fields=["customer_email", "record_type", "-updated_at"], name="prop_intel_email_idx"),
+            models.Index(fields=["property_profile", "serial_number"], name="prop_intel_serial_idx"),
+            models.Index(fields=["property_profile", "model_number"], name="prop_intel_model_idx"),
+        ]
+
+    def __str__(self):
+        return self.name or f"{self.record_type} #{self.pk}"
+
+
 class PropertyHomeSystem(models.Model):
     SYSTEM_HVAC = "hvac"
     SYSTEM_ROOF = "roof"

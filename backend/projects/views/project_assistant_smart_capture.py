@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from projects.models import ProjectAssistantSmartCaptureSession
 from projects.services.project_assistant_smart_capture import (
     approve_smart_capture,
+    create_customer_smart_capture_session,
     create_smart_capture_session,
     run_extraction,
     smart_capture_price,
@@ -52,6 +53,7 @@ def smart_capture_payload(session: ProjectAssistantSmartCaptureSession, request=
         "created_expense": session.created_expense_id,
         "created_asset": session.created_asset_id,
         "created_property_record": session.created_property_record_id,
+        "created_property_intelligence_record": session.created_property_intelligence_record_id,
         "approved_at": session.approved_at,
         "cancelled_at": session.cancelled_at,
         "audit_metadata": audit_metadata,

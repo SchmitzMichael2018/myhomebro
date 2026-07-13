@@ -44,6 +44,7 @@ from projects.models import (
     MilestoneComment,
     Notification,
     Project,
+    ProjectAssistantSmartCaptureSession,
     PublicContractorLead,
 )
 from projects.models_attachments import AgreementAttachment
@@ -57,6 +58,7 @@ from projects.models_customer_portal import (
     PropertyDocumentExtraction,
     PropertyHomeSystem,
     PropertyHomeSystemRecommendationPreference,
+    PropertyIntelligenceRecord,
     PropertyManagementCompany,
     PropertyManagementStaffMembership,
     PropertyVendor,
@@ -126,6 +128,14 @@ from projects.services.property_intelligence import build_property_intelligence
 from projects.services.home_system_reminders import build_home_system_reminder
 from projects.services.customer_lifecycle import sync_customer_request_agreement_links, upsert_pm_customer_for_property_work_order_opportunity
 from projects.services.home_system_document_extraction import extract_home_system_document
+from projects.services.project_assistant_smart_capture import (
+    approve_smart_capture,
+    create_customer_smart_capture_session,
+    run_extraction,
+    smart_capture_price,
+    update_smart_capture_draft,
+)
+from projects.views.project_assistant_smart_capture import smart_capture_payload
 from projects.services.customer_portal_supplies import (
     build_home_system_supply_recommendations,
     build_project_material_recommendations,
@@ -1625,6 +1635,13 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         .filter(property_profile=profile, is_archived=False)
         .order_by("system_type", "custom_name", "id")
     ]
+    intelligence_records = [
+        _property_intelligence_record_payload(row)
+        for row in PropertyIntelligenceRecord.objects.filter(
+            property_profile=profile,
+            status=PropertyIntelligenceRecord.STATUS_ACTIVE,
+        ).order_by("-updated_at", "-id")
+    ]
     unit_rows = list(units_for_property(profile))
     units = []
     for unit in unit_rows:
@@ -1661,6 +1678,7 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "documents": documents,
         "photos": photos,
         "home_systems": home_systems,
+        "intelligence_records": intelligence_records,
         "managed_by_company": managed_by_company,
         "managed_by_company_id": managed_by_company["id"] if managed_by_company else None,
         "tenant_maintenance_request_token": _tenant_maintenance_request_token(profile),
@@ -1673,6 +1691,40 @@ def _property_profile_payload_from_profile(profile: PropertyProfile) -> dict:
         "work_orders": property_work_orders,
         "work_order_count": len(property_work_orders),
         "updated_at": _safe_dt(profile.updated_at),
+    }
+
+
+def _property_intelligence_record_payload(record: PropertyIntelligenceRecord) -> dict:
+    return {
+        "id": record.id,
+        "record_type": _safe_text(record.record_type),
+        "record_type_label": record.get_record_type_display(),
+        "category": _safe_text(record.category),
+        "name": _safe_text(record.name),
+        "manufacturer": _safe_text(record.manufacturer),
+        "brand": _safe_text(record.brand),
+        "model_number": _safe_text(record.model_number),
+        "serial_number": _safe_text(record.serial_number),
+        "sku": _safe_text(record.sku),
+        "barcode": _safe_text(record.barcode),
+        "room_or_location": _safe_text(record.room_or_location),
+        "system_type": _safe_text(record.system_type),
+        "product_type": _safe_text(record.product_type),
+        "color_name": _safe_text(record.color_name),
+        "color_code": _safe_text(record.color_code),
+        "finish": _safe_text(record.finish),
+        "material": _safe_text(record.material),
+        "purchase_date": record.purchase_date.isoformat() if record.purchase_date else "",
+        "installation_date": record.installation_date.isoformat() if record.installation_date else "",
+        "warranty_expiration": record.warranty_expiration.isoformat() if record.warranty_expiration else "",
+        "notes": _safe_text(record.notes),
+        "source_capture_id": str(record.source_capture_id or ""),
+        "source_document_id": record.source_document_id,
+        "source_photo_id": record.source_photo_id,
+        "source_document_url": _safe_file_url(getattr(getattr(record, "source_document", None), "file", None)),
+        "source_photo_url": _safe_file_url(getattr(getattr(record, "source_photo", None), "photo", None)),
+        "created_at": _safe_dt(record.created_at),
+        "updated_at": _safe_dt(record.updated_at),
     }
 
 
@@ -9019,6 +9071,138 @@ class CustomerPortalPropertyUploadView(APIView):
                 )
 
         return Response(_build_customer_portal_payload(email, request=request), status=status.HTTP_201_CREATED)
+
+
+def _customer_smart_capture_session_or_404(email: str, session_id) -> ProjectAssistantSmartCaptureSession:
+    return get_object_or_404(
+        ProjectAssistantSmartCaptureSession,
+        pk=session_id,
+        customer_email__iexact=email.lower().strip(),
+        property_profile__customer_email__iexact=email.lower().strip(),
+    )
+
+
+class CustomerPortalSmartCaptureView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def _email(self, token):
+        try:
+            return _unsign_portal_token(token), None
+        except signing.SignatureExpired:
+            return "", Response({"detail": "This portal link has expired."}, status=status.HTTP_403_FORBIDDEN)
+        except signing.BadSignature:
+            return "", Response({"detail": "Invalid portal link."}, status=status.HTTP_403_FORBIDDEN)
+
+    def get(self, request, token: str):
+        email, error = self._email(token)
+        if error:
+            return error
+        property_id = request.query_params.get("property_id")
+        if property_id:
+            profile = _property_profile_for_email_or_404(email, property_id)
+            qs = ProjectAssistantSmartCaptureSession.objects.filter(property_profile=profile, customer_email__iexact=email)
+        else:
+            qs = ProjectAssistantSmartCaptureSession.objects.filter(customer_email__iexact=email)
+        qs = qs.order_by("-updated_at")[:20]
+        return Response({"results": [smart_capture_payload(row, request=request) for row in qs]}, status=status.HTTP_200_OK)
+
+    def post(self, request, token: str):
+        email, error = self._email(token)
+        if error:
+            return error
+        property_id = request.data.get("property_id") or request.data.get("property_profile_id")
+        profiles = list(_property_profiles_for_email(email))
+        if not property_id and len(profiles) == 1:
+            property_id = profiles[0].id
+        if not property_id:
+            return Response({"detail": "Choose a property before starting Smart Capture."}, status=status.HTTP_400_BAD_REQUEST)
+        profile = _property_profile_for_email_or_404(email, property_id)
+        file_obj = request.FILES.get("file") or request.FILES.get("original_file")
+        if file_obj is None:
+            return Response({"detail": "Upload a source file for Smart Capture."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            session = create_customer_smart_capture_session(
+                property_profile=profile,
+                customer_email=email,
+                actor=request.user,
+                capture_type=_safe_text(request.data.get("capture_type")),
+                file_obj=file_obj,
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(smart_capture_payload(session, request=request), status=status.HTTP_201_CREATED)
+
+
+class CustomerPortalSmartCaptureDetailView(CustomerPortalSmartCaptureView):
+    def get(self, request, token: str, session_id, *args, **kwargs):
+        email, error = self._email(token)
+        if error:
+            return error
+        session = _customer_smart_capture_session_or_404(email, session_id)
+        return Response(smart_capture_payload(session, request=request), status=status.HTTP_200_OK)
+
+    def patch(self, request, token: str, session_id, *args, **kwargs):
+        email, error = self._email(token)
+        if error:
+            return error
+        session = _customer_smart_capture_session_or_404(email, session_id)
+        if session.status in {ProjectAssistantSmartCaptureSession.STATUS_COMPLETED, ProjectAssistantSmartCaptureSession.STATUS_CANCELLED}:
+            return Response({"detail": "This Smart Capture session is no longer editable."}, status=status.HTTP_400_BAD_REQUEST)
+        payload = request.data.get("structured_payload") or request.data
+        requested_property_id = payload.get("property_id") or session.property_profile_id
+        if str(requested_property_id) != str(session.property_profile_id):
+            session.property_profile = _property_profile_for_email_or_404(email, requested_property_id)
+            session.customer_email = email
+            session.save(update_fields=["property_profile", "customer_email", "updated_at"])
+        session = update_smart_capture_draft(session, {**payload, "property_id": session.property_profile_id})
+        return Response(smart_capture_payload(session, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalSmartCaptureRetryView(CustomerPortalSmartCaptureDetailView):
+    def post(self, request, token: str, session_id, *args, **kwargs):
+        email, error = self._email(token)
+        if error:
+            return error
+        session = _customer_smart_capture_session_or_404(email, session_id)
+        session = run_extraction(session)
+        return Response(smart_capture_payload(session, request=request), status=status.HTTP_200_OK)
+
+
+class CustomerPortalSmartCaptureApproveView(CustomerPortalSmartCaptureDetailView):
+    def post(self, request, token: str, session_id, *args, **kwargs):
+        email, error = self._email(token)
+        if error:
+            return error
+        session = _customer_smart_capture_session_or_404(email, session_id)
+        payload = request.data.get("structured_payload") or {}
+        requested_property_id = payload.get("property_id") or session.property_profile_id
+        if str(requested_property_id) != str(session.property_profile_id):
+            return Response({"detail": "Choose a property you are authorized to update."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            session = approve_smart_capture(session, actor=request.user, approved_payload={**payload, "property_id": session.property_profile_id})
+        except ValueError as exc:
+            return Response({"detail": str(exc), "session": smart_capture_payload(session, request=request)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                **smart_capture_payload(session, request=request),
+                "portal": _build_customer_portal_payload(email, request=request),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class CustomerPortalSmartCaptureCancelView(CustomerPortalSmartCaptureDetailView):
+    def post(self, request, token: str, session_id, *args, **kwargs):
+        email, error = self._email(token)
+        if error:
+            return error
+        session = _customer_smart_capture_session_or_404(email, session_id)
+        if session.status in {ProjectAssistantSmartCaptureSession.STATUS_COMPLETED, ProjectAssistantSmartCaptureSession.STATUS_CANCELLED}:
+            return Response({"detail": "This Smart Capture session is no longer editable."}, status=status.HTTP_400_BAD_REQUEST)
+        session.mark_cancelled(request.user)
+        session.save()
+        return Response(smart_capture_payload(session, request=request), status=status.HTTP_200_OK)
 
 
 class CustomerPortalUploadSessionView(APIView):

@@ -9,17 +9,36 @@ from django.utils import timezone
 
 def smart_capture_upload_path(instance, filename):
     safe_name = str(filename or "source").replace("\\", "/").split("/")[-1]
-    return f"project_assistant/smart_capture/{instance.contractor_id}/{instance.id}/{safe_name}"
+    owner = instance.contractor_id or instance.property_profile_id or "customer"
+    return f"project_assistant/smart_capture/{owner}/{instance.id}/{safe_name}"
 
 
 class ProjectAssistantSmartCaptureSession(models.Model):
     CAPTURE_RECEIPT = "receipt"
     CAPTURE_EQUIPMENT_LABEL = "equipment_label"
     CAPTURE_PRODUCT_LABEL = "product_label"
+    CAPTURE_HOME_SYSTEM_LABEL = "home_system_label"
+    CAPTURE_APPLIANCE_LABEL = "appliance_label"
+    CAPTURE_INSTALLED_PRODUCT_LABEL = "installed_product_label"
+    CAPTURE_PROPERTY_RECEIPT = "property_receipt"
+    CAPTURE_WARRANTY_DOCUMENT = "warranty_document"
+    CAPTURE_MANUAL_DOCUMENT = "manual_document"
+    CAPTURE_PAINT_FINISH_LABEL = "paint_or_finish_label"
+    CAPTURE_FLOORING_MATERIAL_LABEL = "flooring_or_material_label"
+    CAPTURE_PROPERTY_PHOTO = "property_photo"
     CAPTURE_TYPE_CHOICES = [
         (CAPTURE_RECEIPT, "Receipt"),
         (CAPTURE_EQUIPMENT_LABEL, "Equipment Label"),
         (CAPTURE_PRODUCT_LABEL, "Product Label"),
+        (CAPTURE_HOME_SYSTEM_LABEL, "Home System Label"),
+        (CAPTURE_APPLIANCE_LABEL, "Appliance Label"),
+        (CAPTURE_INSTALLED_PRODUCT_LABEL, "Installed Product Label"),
+        (CAPTURE_PROPERTY_RECEIPT, "Property Receipt"),
+        (CAPTURE_WARRANTY_DOCUMENT, "Warranty Document"),
+        (CAPTURE_MANUAL_DOCUMENT, "Manual Document"),
+        (CAPTURE_PAINT_FINISH_LABEL, "Paint or Finish Label"),
+        (CAPTURE_FLOORING_MATERIAL_LABEL, "Flooring or Material Label"),
+        (CAPTURE_PROPERTY_PHOTO, "Property Photo"),
     ]
 
     STATUS_UPLOADED = "uploaded"
@@ -42,7 +61,15 @@ class ProjectAssistantSmartCaptureSession(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    contractor = models.ForeignKey("projects.Contractor", on_delete=models.CASCADE, related_name="smart_capture_sessions")
+    contractor = models.ForeignKey("projects.Contractor", on_delete=models.CASCADE, null=True, blank=True, related_name="smart_capture_sessions")
+    property_profile = models.ForeignKey(
+        "projects.PropertyProfile",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="smart_capture_sessions",
+    )
+    customer_email = models.EmailField(blank=True, default="", db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -90,6 +117,13 @@ class ProjectAssistantSmartCaptureSession(models.Model):
         blank=True,
         related_name="smart_capture_sessions",
     )
+    created_property_intelligence_record = models.ForeignKey(
+        "projects.PropertyIntelligenceRecord",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="smart_capture_sessions",
+    )
     approved_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
     audit_metadata = models.JSONField(default=dict, blank=True)
@@ -102,6 +136,8 @@ class ProjectAssistantSmartCaptureSession(models.Model):
             models.Index(fields=["contractor", "capture_type", "status"], name="pa_smart_capture_idx"),
             models.Index(fields=["contractor", "file_sha256"], name="pa_smart_hash_idx"),
             models.Index(fields=["contractor", "extraction_cache_key"], name="pa_smart_cache_idx"),
+            models.Index(fields=["property_profile", "capture_type", "status"], name="pa_smart_property_idx"),
+            models.Index(fields=["customer_email", "updated_at"], name="pa_smart_customer_idx"),
         ]
 
     def mark_completed(self, actor, payload):
@@ -200,10 +236,26 @@ class AIUsageLedger(models.Model):
     FEATURE_SMART_CAPTURE_RECEIPT = "smart_capture_receipt"
     FEATURE_SMART_CAPTURE_EQUIPMENT = "smart_capture_equipment"
     FEATURE_SMART_CAPTURE_PRODUCT_LABEL = "smart_capture_product_label"
+    FEATURE_SMART_CAPTURE_HOME_SYSTEM = "smart_capture_home_system"
+    FEATURE_SMART_CAPTURE_APPLIANCE = "smart_capture_appliance"
+    FEATURE_SMART_CAPTURE_PROPERTY_RECEIPT = "smart_capture_property_receipt"
+    FEATURE_SMART_CAPTURE_WARRANTY = "smart_capture_warranty"
+    FEATURE_SMART_CAPTURE_MANUAL = "smart_capture_manual"
+    FEATURE_SMART_CAPTURE_PAINT_FINISH = "smart_capture_paint_finish"
+    FEATURE_SMART_CAPTURE_FLOORING_MATERIAL = "smart_capture_flooring_material"
+    FEATURE_SMART_CAPTURE_PROPERTY_PHOTO = "smart_capture_property_photo"
     FEATURE_CHOICES = [
         (FEATURE_SMART_CAPTURE_RECEIPT, "Smart Capture Receipt"),
         (FEATURE_SMART_CAPTURE_EQUIPMENT, "Smart Capture Equipment"),
         (FEATURE_SMART_CAPTURE_PRODUCT_LABEL, "Smart Capture Product Label"),
+        (FEATURE_SMART_CAPTURE_HOME_SYSTEM, "Smart Capture Home System"),
+        (FEATURE_SMART_CAPTURE_APPLIANCE, "Smart Capture Appliance"),
+        (FEATURE_SMART_CAPTURE_PROPERTY_RECEIPT, "Smart Capture Property Receipt"),
+        (FEATURE_SMART_CAPTURE_WARRANTY, "Smart Capture Warranty"),
+        (FEATURE_SMART_CAPTURE_MANUAL, "Smart Capture Manual"),
+        (FEATURE_SMART_CAPTURE_PAINT_FINISH, "Smart Capture Paint Finish"),
+        (FEATURE_SMART_CAPTURE_FLOORING_MATERIAL, "Smart Capture Flooring Material"),
+        (FEATURE_SMART_CAPTURE_PROPERTY_PHOTO, "Smart Capture Property Photo"),
     ]
 
     BILLING_UNBILLED = "unbilled"
@@ -213,7 +265,15 @@ class AIUsageLedger(models.Model):
         (BILLING_NOT_BILLABLE, "Not Billable"),
     ]
 
-    contractor = models.ForeignKey("projects.Contractor", on_delete=models.CASCADE, related_name="ai_usage_ledger_entries")
+    contractor = models.ForeignKey("projects.Contractor", on_delete=models.CASCADE, null=True, blank=True, related_name="ai_usage_ledger_entries")
+    property_profile = models.ForeignKey(
+        "projects.PropertyProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ai_usage_ledger_entries",
+    )
+    customer_email = models.EmailField(blank=True, default="", db_index=True)
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

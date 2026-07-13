@@ -29,6 +29,33 @@ PROVIDER_OPENAI = "openai"
 SMART_CAPTURE_PROMPT_VERSION = "smart_capture_v2_2026_07_11"
 CONFIDENCE_VALUES = {"confirmed", "high_confidence", "medium_confidence", "low_confidence", "needs_review", "not_detected"}
 logger = logging.getLogger(__name__)
+RECEIPT_CAPTURE_TYPES = {
+    ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT,
+    ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_RECEIPT,
+}
+LABEL_CAPTURE_TYPES = {
+    ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_PRODUCT_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_HOME_SYSTEM_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_APPLIANCE_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_INSTALLED_PRODUCT_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_WARRANTY_DOCUMENT,
+    ProjectAssistantSmartCaptureSession.CAPTURE_MANUAL_DOCUMENT,
+    ProjectAssistantSmartCaptureSession.CAPTURE_PAINT_FINISH_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_FLOORING_MATERIAL_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO,
+}
+CUSTOMER_CAPTURE_TYPES = {
+    ProjectAssistantSmartCaptureSession.CAPTURE_HOME_SYSTEM_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_APPLIANCE_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_INSTALLED_PRODUCT_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_RECEIPT,
+    ProjectAssistantSmartCaptureSession.CAPTURE_WARRANTY_DOCUMENT,
+    ProjectAssistantSmartCaptureSession.CAPTURE_MANUAL_DOCUMENT,
+    ProjectAssistantSmartCaptureSession.CAPTURE_PAINT_FINISH_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_FLOORING_MATERIAL_LABEL,
+    ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO,
+}
 
 
 def clean_text(value) -> str:
@@ -145,9 +172,9 @@ def smart_capture_model() -> str:
 
 
 def smart_capture_price(capture_type: str) -> Decimal:
-    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+    if capture_type in {ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT, ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_RECEIPT}:
         value = getattr(settings, "SMART_CAPTURE_RECEIPT_PRICE", "0.05")
-    elif capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL:
+    elif capture_type in {ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL, ProjectAssistantSmartCaptureSession.CAPTURE_HOME_SYSTEM_LABEL, ProjectAssistantSmartCaptureSession.CAPTURE_APPLIANCE_LABEL}:
         value = getattr(settings, "SMART_CAPTURE_EQUIPMENT_PRICE", "0.05")
     else:
         value = getattr(settings, "SMART_CAPTURE_PRODUCT_LABEL_PRICE", "0.05")
@@ -157,8 +184,24 @@ def smart_capture_price(capture_type: str) -> Decimal:
 def smart_capture_feature(capture_type: str) -> str:
     if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
         return AIUsageLedger.FEATURE_SMART_CAPTURE_RECEIPT
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_RECEIPT:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_PROPERTY_RECEIPT
     if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL:
         return AIUsageLedger.FEATURE_SMART_CAPTURE_EQUIPMENT
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_HOME_SYSTEM_LABEL:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_HOME_SYSTEM
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_APPLIANCE_LABEL:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_APPLIANCE
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_WARRANTY_DOCUMENT:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_WARRANTY
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_MANUAL_DOCUMENT:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_MANUAL
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_PAINT_FINISH_LABEL:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_PAINT_FINISH
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_FLOORING_MATERIAL_LABEL:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_FLOORING_MATERIAL
+    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO:
+        return AIUsageLedger.FEATURE_SMART_CAPTURE_PROPERTY_PHOTO
     return AIUsageLedger.FEATURE_SMART_CAPTURE_PRODUCT_LABEL
 
 
@@ -512,7 +555,7 @@ def image_data_url(file_bytes: bytes, mime_type: str) -> str:
 
 
 def openai_system_prompt(capture_type: str) -> str:
-    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+    if capture_type in RECEIPT_CAPTURE_TYPES:
         return (
             "You extract receipt fields from an image for a contractor expense draft. "
             "Return JSON only through the provided schema. Use null for unknown values. "
@@ -529,7 +572,7 @@ def openai_system_prompt(capture_type: str) -> str:
 
 
 def openai_user_prompt(capture_type: str, filename: str) -> str:
-    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+    if capture_type in RECEIPT_CAPTURE_TYPES:
         return f"Extract only visible receipt data from {filename or 'this image'}."
     return f"Extract only visible equipment/product label data from {filename or 'this image'}."
 
@@ -545,7 +588,7 @@ def openai_schema(capture_type: str) -> dict:
             "properties": {"field": {"type": "string"}, "label": {"type": "string"}},
         },
     }
-    if capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+    if capture_type in RECEIPT_CAPTURE_TYPES:
         props = {
             key: {"type": ["string", "null"]}
             for key in [
@@ -989,6 +1032,8 @@ def log_openai_usage(
     billable = smart_capture_price(session.capture_type) if success and not cache_hit else Decimal("0.00")
     return AIUsageLedger.objects.create(
         contractor=session.contractor,
+        property_profile=session.property_profile,
+        customer_email=session.customer_email or "",
         user=actor,
         feature=smart_capture_feature(session.capture_type),
         provider=PROVIDER_OPENAI,
@@ -1035,6 +1080,67 @@ def validate_upload(file_obj) -> None:
 
 def possible_matches_for_session(session: ProjectAssistantSmartCaptureSession) -> list[dict]:
     matches = []
+    if session.property_profile_id:
+        from projects.models_customer_portal import PropertyIntelligenceRecord
+
+        payload = session.structured_payload or {}
+        serial = clean_text(payload.get("serial_number"))
+        model_number = clean_text(payload.get("model_number"))
+        manufacturer = clean_text(payload.get("manufacturer") or payload.get("brand"))
+        if serial:
+            duplicate = (
+                PropertyIntelligenceRecord.objects.filter(
+                    property_profile=session.property_profile,
+                    serial_number__iexact=serial,
+                    status=PropertyIntelligenceRecord.STATUS_ACTIVE,
+                )
+                .exclude(source_capture=session)
+                .first()
+            )
+            if duplicate:
+                matches.append({
+                    "type": "property_intelligence_record",
+                    "id": duplicate.id,
+                    "label": duplicate.name or duplicate.get_record_type_display(),
+                    "reason": "Same serial number appears in an existing home record.",
+                })
+        if not matches and model_number and manufacturer:
+            duplicate = (
+                PropertyIntelligenceRecord.objects.filter(
+                    property_profile=session.property_profile,
+                    model_number__iexact=model_number,
+                    manufacturer__iexact=manufacturer,
+                    status=PropertyIntelligenceRecord.STATUS_ACTIVE,
+                )
+                .exclude(source_capture=session)
+                .first()
+            )
+            if duplicate:
+                matches.append({
+                    "type": "property_intelligence_record",
+                    "id": duplicate.id,
+                    "label": duplicate.name or duplicate.get_record_type_display(),
+                    "reason": "Same manufacturer and model appear in an existing home record.",
+                })
+        if session.file_sha256:
+            duplicate = (
+                ProjectAssistantSmartCaptureSession.objects.filter(
+                    property_profile=session.property_profile,
+                    file_sha256=session.file_sha256,
+                    status=ProjectAssistantSmartCaptureSession.STATUS_COMPLETED,
+                )
+                .exclude(pk=session.pk)
+                .first()
+            )
+            if duplicate:
+                matches.append({
+                    "type": "source_file",
+                    "id": str(duplicate.id),
+                    "label": "Possible existing home record",
+                    "reason": "This source file hash has already been approved for this property.",
+                })
+        return matches
+
     if session.file_sha256:
         duplicate = (
             ProjectAssistantSmartCaptureSession.objects.filter(
@@ -1112,14 +1218,52 @@ def create_smart_capture_session(*, contractor, actor, capture_type: str, file_o
 
 
 @transaction.atomic
+def create_customer_smart_capture_session(*, property_profile, customer_email: str, actor, capture_type: str, file_obj) -> ProjectAssistantSmartCaptureSession:
+    if capture_type not in CUSTOMER_CAPTURE_TYPES:
+        raise ValueError("Choose a supported customer Smart Capture type.")
+    validate_upload(file_obj)
+    file_bytes = file_obj.read()
+    file_obj.seek(0)
+    session = ProjectAssistantSmartCaptureSession.objects.create(
+        contractor=None,
+        property_profile=property_profile,
+        customer_email=clean_text(customer_email).lower(),
+        created_by=actor if getattr(actor, "is_authenticated", False) else None,
+        capture_type=capture_type,
+        original_file=file_obj,
+        original_filename=getattr(file_obj, "name", "") or "upload",
+        mime_type=getattr(file_obj, "content_type", "") or "",
+        file_size=getattr(file_obj, "size", 0) or len(file_bytes),
+        file_sha256=file_sha256(file_bytes),
+        source_metadata={"upload_method": "customer_portal_smart_capture"},
+        structured_payload={"property_id": getattr(property_profile, "id", None)},
+        audit_metadata={
+            "created_by": getattr(actor, "id", None),
+            "created_at": timezone.now().isoformat(),
+            "customer_email": clean_text(customer_email).lower(),
+            "property_profile_id": getattr(property_profile, "id", None),
+            "no_autonomous_record_creation": True,
+            "no_contractor_expense_or_asset_creation": True,
+        },
+    )
+    run_extraction(session, file_bytes=file_bytes)
+    session.structured_payload = {
+        **(session.structured_payload or {}),
+        "property_id": getattr(property_profile, "id", None),
+    }
+    session.possible_matches = possible_matches_for_session(session)
+    session.save(update_fields=["structured_payload", "possible_matches", "updated_at"])
+    return session
+
+
+@transaction.atomic
 def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: bytes | None = None) -> ProjectAssistantSmartCaptureSession:
     provider = smart_capture_provider()
     model = smart_capture_model() if provider == PROVIDER_OPENAI else "deterministic"
     cache_key = extraction_cache_key(provider=provider, model=model, file_hash=session.file_sha256, capture_type=session.capture_type)
     if provider == PROVIDER_OPENAI:
-        cached = (
+        cached_qs = (
             ProjectAssistantSmartCaptureSession.objects.filter(
-                contractor=session.contractor,
                 extraction_cache_key=cache_key,
                 extraction_provider=PROVIDER_OPENAI,
             )
@@ -1130,8 +1274,14 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
                 ProjectAssistantSmartCaptureSession.STATUS_COMPLETED,
             ])
             .order_by("-updated_at")
-            .first()
         )
+        if session.contractor_id:
+            cached_qs = cached_qs.filter(contractor=session.contractor)
+        elif session.property_profile_id:
+            cached_qs = cached_qs.filter(property_profile=session.property_profile)
+        else:
+            cached_qs = cached_qs.none()
+        cached = cached_qs.first()
         if cached:
             session.raw_extracted_text = cached.raw_extracted_text
             session.structured_payload = cached.structured_payload
@@ -1163,9 +1313,13 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
     session.status = ProjectAssistantSmartCaptureSession.STATUS_PROCESSING
     session.save(update_fields=["status", "updated_at"])
     try:
-        if session.capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
+        if session.capture_type in RECEIPT_CAPTURE_TYPES:
             result = extractor.extract_receipt(file_bytes, session.original_filename)
-        elif session.capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL:
+        elif session.capture_type in {
+            ProjectAssistantSmartCaptureSession.CAPTURE_EQUIPMENT_LABEL,
+            ProjectAssistantSmartCaptureSession.CAPTURE_HOME_SYSTEM_LABEL,
+            ProjectAssistantSmartCaptureSession.CAPTURE_APPLIANCE_LABEL,
+        }:
             result = extractor.extract_equipment_label(file_bytes, session.original_filename)
         else:
             result = extractor.extract_product_label(file_bytes, session.original_filename)
@@ -1241,6 +1395,128 @@ def update_smart_capture_draft(session: ProjectAssistantSmartCaptureSession, pay
     return session
 
 
+def customer_record_type_for_capture(capture_type: str) -> str:
+    from projects.models_customer_portal import PropertyIntelligenceRecord
+
+    return {
+        ProjectAssistantSmartCaptureSession.CAPTURE_HOME_SYSTEM_LABEL: PropertyIntelligenceRecord.RECORD_HOME_SYSTEM,
+        ProjectAssistantSmartCaptureSession.CAPTURE_APPLIANCE_LABEL: PropertyIntelligenceRecord.RECORD_APPLIANCE,
+        ProjectAssistantSmartCaptureSession.CAPTURE_INSTALLED_PRODUCT_LABEL: PropertyIntelligenceRecord.RECORD_INSTALLED_PRODUCT,
+        ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_RECEIPT: PropertyIntelligenceRecord.RECORD_RECEIPT,
+        ProjectAssistantSmartCaptureSession.CAPTURE_WARRANTY_DOCUMENT: PropertyIntelligenceRecord.RECORD_WARRANTY,
+        ProjectAssistantSmartCaptureSession.CAPTURE_MANUAL_DOCUMENT: PropertyIntelligenceRecord.RECORD_MANUAL,
+        ProjectAssistantSmartCaptureSession.CAPTURE_PAINT_FINISH_LABEL: PropertyIntelligenceRecord.RECORD_PAINT_FINISH,
+        ProjectAssistantSmartCaptureSession.CAPTURE_FLOORING_MATERIAL_LABEL: PropertyIntelligenceRecord.RECORD_FLOORING_MATERIAL,
+        ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO: PropertyIntelligenceRecord.RECORD_PHOTO,
+    }.get(capture_type, PropertyIntelligenceRecord.RECORD_INSTALLED_PRODUCT)
+
+
+def _payload_date(value):
+    return parse_date(clean_text(value)) if value else None
+
+
+def _source_title_for_property_record(session, payload):
+    return (
+        clean_text(payload.get("name"))
+        or clean_text(payload.get("product_name"))
+        or clean_text(payload.get("manufacturer"))
+        or clean_text(payload.get("merchant_name"))
+        or clean_text(session.original_filename)
+        or "Smart Capture source"
+    )[:200]
+
+
+def _preserve_property_source_file(session, *, actor, payload):
+    from projects.models_customer_portal import PropertyDocument, PropertyPhoto
+
+    if not session.property_profile_id:
+        return None, None
+    session.original_file.open("rb")
+    try:
+        content = ContentFile(session.original_file.read())
+    finally:
+        session.original_file.close()
+    title = _source_title_for_property_record(session, payload)
+    if session.capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_PHOTO and not (session.mime_type or "").lower().endswith("pdf"):
+        photo = PropertyPhoto(property_profile=session.property_profile, title=title)
+        photo.photo.save(session.original_filename or "smart-capture-photo", content, save=True)
+        return None, photo
+    document_type = {
+        ProjectAssistantSmartCaptureSession.CAPTURE_PROPERTY_RECEIPT: "Receipt",
+        ProjectAssistantSmartCaptureSession.CAPTURE_WARRANTY_DOCUMENT: "Warranty",
+        ProjectAssistantSmartCaptureSession.CAPTURE_MANUAL_DOCUMENT: "Manual",
+        ProjectAssistantSmartCaptureSession.CAPTURE_PAINT_FINISH_LABEL: "Paint or Finish",
+        ProjectAssistantSmartCaptureSession.CAPTURE_FLOORING_MATERIAL_LABEL: "Flooring or Material",
+    }.get(session.capture_type, "Home Record")
+    document = PropertyDocument(
+        property_profile=session.property_profile,
+        title=title,
+        document_type=document_type,
+        upload_source=PropertyDocument.UPLOAD_SOURCE_PORTAL_DESKTOP,
+    )
+    document.file.save(session.original_filename or "smart-capture-source", content, save=True)
+    return document, None
+
+
+def _create_property_intelligence_from_capture(session, *, actor, payload):
+    from projects.models_customer_portal import PropertyIntelligenceRecord
+
+    if not session.property_profile_id:
+        raise ValueError("Choose a property before saving this home record.")
+    if str(payload.get("property_id") or session.property_profile_id) != str(session.property_profile_id):
+        raise ValueError("Choose a property you are authorized to update.")
+    source_document, source_photo = _preserve_property_source_file(session, actor=actor, payload=payload)
+    record_type = clean_text(payload.get("record_type")) or customer_record_type_for_capture(session.capture_type)
+    valid_types = {choice[0] for choice in PropertyIntelligenceRecord.RECORD_TYPE_CHOICES}
+    if record_type not in valid_types:
+        record_type = customer_record_type_for_capture(session.capture_type)
+    name = (
+        clean_text(payload.get("name"))
+        or clean_text(payload.get("product_name"))
+        or clean_text(payload.get("merchant_name"))
+        or clean_text(payload.get("manufacturer"))
+        or PropertyIntelligenceRecord(record_type=record_type).get_record_type_display()
+    )
+    record = PropertyIntelligenceRecord.objects.create(
+        property_profile=session.property_profile,
+        customer_email=session.customer_email or getattr(session.property_profile, "customer_email", ""),
+        created_by=actor if getattr(actor, "is_authenticated", False) else None,
+        source_type="smart_capture",
+        record_type=record_type,
+        category=clean_text(payload.get("suggested_category") or payload.get("category")),
+        name=name[:255],
+        manufacturer=clean_text(payload.get("manufacturer")),
+        brand=clean_text(payload.get("brand")),
+        model_number=clean_text(payload.get("model_number")),
+        serial_number=clean_text(payload.get("serial_number")),
+        sku=clean_text(payload.get("sku")),
+        barcode=clean_text(payload.get("barcode")),
+        room_or_location=clean_text(payload.get("room_or_location") or payload.get("location")),
+        system_type=clean_text(payload.get("system_type") or payload.get("asset_type")),
+        product_type=clean_text(payload.get("product_type") or payload.get("asset_type")),
+        color_name=clean_text(payload.get("color_name") or payload.get("color_or_finish")),
+        color_code=clean_text(payload.get("color_code")),
+        finish=clean_text(payload.get("finish") or payload.get("color_or_finish")),
+        material=clean_text(payload.get("material")),
+        lot_or_batch_number=clean_text(payload.get("lot_or_batch_number")),
+        capacity=clean_text(payload.get("capacity")),
+        voltage=clean_text(payload.get("voltage")),
+        manufacture_date=_payload_date(payload.get("manufacture_date")),
+        purchase_date=_payload_date(payload.get("purchase_date")),
+        installation_date=_payload_date(payload.get("installation_date")),
+        warranty_start=_payload_date(payload.get("warranty_start")),
+        warranty_expiration=_payload_date(payload.get("warranty_expiration")),
+        expected_service_interval=clean_text(payload.get("expected_service_interval")),
+        notes=clean_text(payload.get("notes")),
+        structured_payload=payload,
+        source_capture=session,
+        source_document=source_document,
+        source_photo=source_photo,
+        visible_to_associated_contractors=bool(payload.get("visible_to_associated_contractors")),
+    )
+    return record
+
+
 @transaction.atomic
 def approve_smart_capture(session: ProjectAssistantSmartCaptureSession, *, actor, approved_payload: dict | None = None):
     if session.status in {
@@ -1251,6 +1527,21 @@ def approve_smart_capture(session: ProjectAssistantSmartCaptureSession, *, actor
     if approved_payload:
         session = update_smart_capture_draft(session, approved_payload)
     payload = session.structured_payload or {}
+    if session.property_profile_id:
+        record = _create_property_intelligence_from_capture(session, actor=actor, payload=payload)
+        session.created_property_intelligence_record = record
+        result = {"created_property_intelligence_record": record.id}
+        session.mark_completed(actor, payload)
+        session.audit_metadata = {
+            **(session.audit_metadata or {}),
+            "approval_result": result,
+            "source_file_preserved": True,
+            "no_contractor_expense_or_asset_creation": True,
+            "no_payment_reimbursement_warranty_claim_or_maintenance_action": True,
+        }
+        session.save()
+        return session
+
     if session.capture_type == ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT:
         record = _create_expense_from_capture(session, actor=actor, payload=payload)
         session.created_expense = record

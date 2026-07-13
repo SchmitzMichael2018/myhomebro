@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
+import ProjectAssistantSmartCapture from "./ProjectAssistantSmartCapture.jsx";
 
 const PORTAL_ADDRESS_AUTOCOMPLETE_CLASSES = {
   inputClassName:
@@ -2439,7 +2440,7 @@ function timelineRows({ profile, projects, requests, agreements, documents, paym
   return rows.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
 }
 
-function HomeRecordsDashboard({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onReviewTenantMaintenanceRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation, onScanSystem }) {
+function HomeRecordsDashboard({ profile, portalToken = "", projects, requests, agreements, documents, payments, maintenanceWorkOrders, propertyIntelligence, onOpenRequest, onReviewTenantMaintenanceRequest, onAddSystem, onEditSystem, onArchiveSystem, onMarkServiced, onCreateServiceRequest, onDismissReminder, onIgnoreRecommendation, onRestoreRecommendation, onScanSystem, onPortalUpdate }) {
   const [timelineShowAll, setTimelineShowAll] = useState(false);
   const [timelineCollapsed, setTimelineCollapsed] = useState(true);
   const [highlightedRecommendationSystemId, setHighlightedRecommendationSystemId] = useState("");
@@ -2449,6 +2450,8 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
     ? (profile.home_systems || []).map(normalizeHomeSystem)
     : systemRows({ projects, agreements, documents, requests, maintenanceWorkOrders, propertyIntelligence });
   const timeline = timelineRows({ profile, projects, requests, agreements, documents, payments, maintenanceWorkOrders, homeSystems: systems.filter((system) => system.isStructured) });
+  const intelligenceRecords = Array.isArray(profile?.intelligence_records) ? profile.intelligence_records : [];
+  const smartCaptureBase = portalToken ? `/projects/customer-portal/${encodeURIComponent(portalToken)}/smart-capture/sessions/` : "";
   const timelineDefaultCount = 5;
   const shouldCollapseTimeline = timeline.length > 3;
   const isTimelineCollapsed = shouldCollapseTimeline && timelineCollapsed;
@@ -2472,6 +2475,48 @@ function HomeRecordsDashboard({ profile, projects, requests, agreements, documen
         onViewRecommendations={handleViewRecommendations}
         onScan={onScanSystem}
       />
+
+      {smartCaptureBase ? (
+        <Section title="Add to My Home" eyebrow="Project Assistant Smart Capture" testId="customer-smart-capture-section">
+          <ProjectAssistantSmartCapture
+            compact
+            mode="customer"
+            propertyOptions={profile?.id ? [profile] : []}
+            defaultPropertyId={profile?.id || ""}
+            endpoints={{
+              create: smartCaptureBase,
+              detail: (id) => `${smartCaptureBase}${id}/`,
+              retry: (id) => `${smartCaptureBase}${id}/retry/`,
+              approve: (id) => `${smartCaptureBase}${id}/approve/`,
+              cancel: (id) => `${smartCaptureBase}${id}/cancel/`,
+            }}
+            onComplete={(data) => {
+              if (data?.portal) onPortalUpdate?.(data.portal);
+            }}
+          />
+        </Section>
+      ) : null}
+
+      <Section title="Home Intelligence Records" eyebrow="Structured home memory" testId="property-intelligence-records">
+        {intelligenceRecords.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {intelligenceRecords.map((record) => (
+              <article key={record.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200/80">{record.record_type_label}</div>
+                <div className="mt-1 text-base font-semibold text-white">{record.name || "Home record"}</div>
+                <div className="mt-2 text-sm text-slate-300">
+                  {[record.manufacturer, record.model_number, record.room_or_location].filter(Boolean).join(" · ") || "Details ready for review"}
+                </div>
+                {record.warranty_expiration ? <div className="mt-2 text-xs font-semibold text-amber-100">Warranty expires {formatDate(record.warranty_expiration)}</div> : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No home intelligence records yet" testId="property-intelligence-records-empty">
+            Scan an appliance, receipt, warranty, paint label, flooring label, manual, or property photo to create the first structured home record.
+          </EmptyState>
+        )}
+      </Section>
 
       <SuggestedSuppliesSection
         systems={systems.filter((system) => system.isStructured)}
@@ -2624,6 +2669,8 @@ export default function CustomerPropertyProfile({
   payments = [],
   maintenanceWorkOrders = [],
   propertyIntelligence = {},
+  portalToken = "",
+  onPortalUpdate,
   onOpenRequest,
   onSave,
   onAdd,
@@ -2806,6 +2853,7 @@ export default function CustomerPropertyProfile({
 
       <HomeRecordsDashboard
         profile={selectedProfile}
+        portalToken={portalToken}
         projects={projects}
         requests={requests}
         agreements={agreements}
@@ -2813,6 +2861,7 @@ export default function CustomerPropertyProfile({
         payments={payments}
         maintenanceWorkOrders={maintenanceWorkOrders}
         propertyIntelligence={propertyIntelligence}
+        onPortalUpdate={onPortalUpdate}
         onOpenRequest={onOpenRequest}
         onReviewTenantMaintenanceRequest={onReviewTenantMaintenanceRequest}
         onAddSystem={openAddSystem}

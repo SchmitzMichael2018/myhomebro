@@ -4311,6 +4311,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         <CustomerPropertyProfile
           profile={portal?.property_profile || {}}
           profiles={portal?.property_profiles || []}
+          portalToken={token}
+          onPortalUpdate={onPortalUpdate}
           projects={portal?.projects || []}
           agreements={portal?.agreements || []}
           documents={portal?.documents || []}
