@@ -8,7 +8,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.test import override_settings
 
 from projects.models import Contractor, ProjectAssistantSmartCaptureSession
-from projects.services.project_assistant_smart_capture import create_smart_capture_session, smart_capture_provider
+from projects.services.project_assistant_smart_capture import (
+    SMART_CAPTURE_NORMALIZER_VERSION,
+    create_smart_capture_session,
+    smart_capture_provider,
+)
 
 
 class Command(BaseCommand):
@@ -20,6 +24,7 @@ class Command(BaseCommand):
         parser.add_argument("--contractor-id", type=int, default=None, help="Optional contractor id for scoping.")
         parser.add_argument("--user-id", type=int, default=None, help="Optional user id recorded as creator.")
         parser.add_argument("--provider", default="openai", choices=["openai", "deterministic"], help="Provider to use for this verification run.")
+        parser.add_argument("--force-refresh", action="store_true", help="Bypass Smart Capture extraction cache and make one new provider request.")
 
     def handle(self, *args, **options):
         path = Path(options["file"]).expanduser()
@@ -41,6 +46,7 @@ class Command(BaseCommand):
                 actor=actor,
                 capture_type=options["type"],
                 file_obj=upload,
+                force_refresh=bool(options.get("force_refresh")),
             )
 
         payload = {
@@ -49,6 +55,8 @@ class Command(BaseCommand):
             "provider": session.extraction_provider or smart_capture_provider(),
             "model": session.extraction_model,
             "prompt_version": session.extraction_prompt_version,
+            "normalizer_version": (session.audit_metadata or {}).get("normalizer_version", SMART_CAPTURE_NORMALIZER_VERSION),
+            "cache_hit": bool((session.audit_metadata or {}).get("cache_hit")),
             "provider_request_id": (session.audit_metadata or {}).get("provider_request_id", ""),
             "provider_error_details": (session.audit_metadata or {}).get("provider_error_details", {}),
             "usage": (session.audit_metadata or {}).get("provider_usage", {}),

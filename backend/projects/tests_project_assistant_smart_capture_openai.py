@@ -12,6 +12,7 @@ from django.core.management import call_command
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from projects.management.commands.test_smart_capture_openai import Command as SmartCaptureOpenAICommand
 from projects.models import (
     AIUsageLedger,
     Contractor,
@@ -19,7 +20,7 @@ from projects.models import (
     ExpenseRequest,
     ProjectAssistantSmartCaptureSession,
 )
-from projects.services.project_assistant_smart_capture import openai_schema
+from projects.services.project_assistant_smart_capture import SMART_CAPTURE_NORMALIZER_VERSION, openai_schema
 
 
 def receipt_payload(**patches):
@@ -435,6 +436,52 @@ class ProjectAssistantSmartCaptureOpenAIProviderTests(TestCase):
         self.assertNotIn("AAAAABBBBB", output)
         self.assertNotIn("data:image", output)
 
+    def test_management_command_help_includes_force_refresh(self):
+        parser = SmartCaptureOpenAICommand().create_parser("manage.py", "test_smart_capture_openai")
+        self.assertIn("--force-refresh", parser.format_help())
+
+    def test_management_command_force_refresh_bypasses_cache_and_remains_no_mutation(self):
+        first_fake = FakeResponses(receipt_payload(total="10.00"))
+        with TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir) / "receipt.jpg"
+            image_path.write_bytes(b"same-image")
+            with patch("projects.services.project_assistant_smart_capture.require_openai_client", return_value=SimpleNamespace(responses=first_fake)):
+                call_command(
+                    "test_smart_capture_openai",
+                    "--file",
+                    str(image_path),
+                    "--type",
+                    "receipt",
+                    "--contractor-id",
+                    str(self.contractor.id),
+                    stdout=StringIO(),
+                )
+            second_fake = FakeResponses(receipt_payload(total="20.00"))
+            stdout = StringIO()
+            with patch("projects.services.project_assistant_smart_capture.require_openai_client", return_value=SimpleNamespace(responses=second_fake)):
+                call_command(
+                    "test_smart_capture_openai",
+                    "--file",
+                    str(image_path),
+                    "--type",
+                    "receipt",
+                    "--contractor-id",
+                    str(self.contractor.id),
+                    "--force-refresh",
+                    stdout=stdout,
+                )
+        payload = json.loads(stdout.getvalue())
+        self.assertEqual(first_fake.calls, 1)
+        self.assertEqual(second_fake.calls, 1)
+        self.assertFalse(payload["cache_hit"])
+        self.assertEqual(payload["normalizer_version"], SMART_CAPTURE_NORMALIZER_VERSION)
+        self.assertEqual(payload["structured_payload"]["total"], "20.00")
+        self.assertEqual(payload["no_mutation"]["created_expense"], None)
+        self.assertEqual(payload["no_mutation"]["created_asset"], None)
+        self.assertEqual(ExpenseRequest.objects.count(), 0)
+        self.assertEqual(ContractorAsset.objects.count(), 0)
+        self.assertEqual(AIUsageLedger.objects.filter(success=True).count(), 2)
+
     @override_settings(OPENAI_API_KEY="", AI_OPENAI_API_KEY="")
     def test_missing_configuration_and_disabled_provider_preserve_session_for_manual_continuation(self):
         response, _ = self.post_session("receipt", file_obj=SimpleUploadedFile("missing-config.jpg", b"unique-missing-config", content_type="image/jpeg"))
@@ -457,7 +504,51 @@ class ProjectAssistantSmartCaptureOpenAIProviderTests(TestCase):
         self.assertEqual(fake.calls, 1)
         self.assertEqual(second_fake.calls, 0)
         self.assertEqual(AIUsageLedger.objects.count(), 1)
+        self.assertEqual(AIUsageLedger.objects.get().billable_amount, Decimal("0.0500"))
+        session = ProjectAssistantSmartCaptureSession.objects.get(pk=second.data["id"])
+        self.assertTrue(session.audit_metadata["cache_hit"])
+        self.assertEqual(session.audit_metadata["normalizer_version"], SMART_CAPTURE_NORMALIZER_VERSION)
         self.assertIn("Reused", " ".join(second.data["warnings"]))
+
+    def test_cache_hit_reprocesses_raw_provider_output_with_current_normalizer(self):
+        response, fake = self.post_session("receipt", fake=FakeResponses(walmart_live_shape_payload()))
+        self.assertEqual(response.status_code, 201, response.data)
+        cached = ProjectAssistantSmartCaptureSession.objects.get(pk=response.data["id"])
+        cached.structured_payload = {"purchase_date": "", "total": "16.04"}
+        cached.field_confidence = {"purchase_date": "confirmed"}
+        cached.audit_metadata = {
+            **(cached.audit_metadata or {}),
+            "normalizer_version": "old_normalizer",
+        }
+        cached.save(update_fields=["structured_payload", "field_confidence", "audit_metadata"])
+
+        second, second_fake = self.post_session("receipt", fake=FakeResponses(walmart_live_shape_payload(total="99.99")))
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertEqual(fake.calls, 1)
+        self.assertEqual(second_fake.calls, 0)
+        self.assertTrue(ProjectAssistantSmartCaptureSession.objects.get(pk=second.data["id"]).audit_metadata["cache_hit"])
+        self.assertIsNone(second.data["structured_payload"]["purchase_date"])
+        self.assertEqual(second.data["field_confidence"]["purchase_date"], "not_detected")
+        self.assertEqual([row["field"] for row in second.data["missing_fields"]].count("purchase_date"), 1)
+        self.assertEqual(AIUsageLedger.objects.count(), 1)
+
+    def test_rawless_cache_entry_is_not_reused_and_creates_new_provider_usage(self):
+        response, fake = self.post_session("receipt")
+        self.assertEqual(response.status_code, 201, response.data)
+        cached = ProjectAssistantSmartCaptureSession.objects.get(pk=response.data["id"])
+        cached.audit_metadata = {
+            **(cached.audit_metadata or {}),
+            "raw_provider_output": {},
+            "normalizer_version": "old_normalizer",
+        }
+        cached.save(update_fields=["audit_metadata"])
+        second, second_fake = self.post_session("receipt", fake=FakeResponses(receipt_payload(total="888.00")))
+        self.assertEqual(second.status_code, 201, second.data)
+        self.assertEqual(fake.calls, 1)
+        self.assertEqual(second_fake.calls, 1)
+        self.assertFalse(ProjectAssistantSmartCaptureSession.objects.get(pk=second.data["id"]).audit_metadata["cache_hit"])
+        self.assertEqual(second.data["structured_payload"]["total"], "888.00")
+        self.assertEqual(AIUsageLedger.objects.filter(success=True).count(), 2)
 
     @override_settings(SMART_CAPTURE_PROVIDER="deterministic")
     def test_deterministic_provider_is_not_billable(self):

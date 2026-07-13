@@ -27,6 +27,7 @@ MAX_UPLOAD_BYTES = 8 * 1024 * 1024
 PROVIDER_DETERMINISTIC = "deterministic"
 PROVIDER_OPENAI = "openai"
 SMART_CAPTURE_PROMPT_VERSION = "smart_capture_v2_2026_07_11"
+SMART_CAPTURE_NORMALIZER_VERSION = "smart_capture_normalizer_v2_2026_07_12"
 CONFIDENCE_VALUES = {"confirmed", "high_confidence", "medium_confidence", "low_confidence", "needs_review", "not_detected"}
 logger = logging.getLogger(__name__)
 RECEIPT_CAPTURE_TYPES = {
@@ -206,7 +207,7 @@ def smart_capture_feature(capture_type: str) -> str:
 
 
 def extraction_cache_key(*, provider: str, model: str, file_hash: str, capture_type: str) -> str:
-    raw = "|".join([provider, model, SMART_CAPTURE_PROMPT_VERSION, file_hash, capture_type])
+    raw = "|".join([provider, model, SMART_CAPTURE_PROMPT_VERSION, SMART_CAPTURE_NORMALIZER_VERSION, file_hash, capture_type])
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -372,20 +373,12 @@ class OpenAISmartCaptureProvider:
             self._log_validation_failure(meta)
             raise
         self._log_success(meta)
-        result = SmartCaptureExtractor(provider=PROVIDER_DETERMINISTIC).normalize_result(
-            ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT,
-            "",
-            normalized,
-        )
-        result["warnings"] = merge_warning_lists(result.get("warnings"), payload.get("warnings"))
-        result = reconcile_openai_normalization(
+        return build_openai_extraction_result(
             capture_type=ProjectAssistantSmartCaptureSession.CAPTURE_RECEIPT,
-            result=result,
-            provider_confidence=payload.get("field_confidence"),
+            payload=payload,
+            normalized=normalized,
+            meta=meta,
         )
-        result["raw_provider_output"] = payload
-        result["provider_meta"] = meta
-        return result
 
     def extract_label(self, capture_type: str, file_bytes: bytes, filename: str = "") -> dict:
         payload, meta = self._call_openai(capture_type=capture_type, file_bytes=file_bytes, filename=filename)
@@ -397,16 +390,7 @@ class OpenAISmartCaptureProvider:
         self._log_success(meta)
         # Destination is a human choice. Keep it blank for OpenAI extraction.
         normalized["destination"] = ""
-        result = SmartCaptureExtractor(provider=PROVIDER_DETERMINISTIC).normalize_result(capture_type, "", normalized)
-        result["warnings"] = merge_warning_lists(result.get("warnings"), payload.get("warnings"))
-        result = reconcile_openai_normalization(
-            capture_type=capture_type,
-            result=result,
-            provider_confidence=payload.get("field_confidence"),
-        )
-        result["raw_provider_output"] = payload
-        result["provider_meta"] = meta
-        return result
+        return build_openai_extraction_result(capture_type=capture_type, payload=payload, normalized=normalized, meta=meta)
 
     def _log_success(self, meta: dict):
         log_openai_usage(
@@ -789,6 +773,20 @@ def validate_openai_payload(capture_type: str, payload: dict) -> dict:
     return result
 
 
+def build_openai_extraction_result(*, capture_type: str, payload: dict, normalized: dict | None = None, meta: dict | None = None) -> dict:
+    normalized = normalized if normalized is not None else validate_openai_payload(capture_type, payload)
+    result = SmartCaptureExtractor(provider=PROVIDER_DETERMINISTIC).normalize_result(capture_type, "", normalized)
+    result["warnings"] = merge_warning_lists(result.get("warnings"), payload.get("warnings"))
+    result = reconcile_openai_normalization(
+        capture_type=capture_type,
+        result=result,
+        provider_confidence=payload.get("field_confidence"),
+    )
+    result["raw_provider_output"] = payload
+    result["provider_meta"] = meta or {}
+    return result
+
+
 def validate_line_items(value, *, warnings: list[str] | None = None) -> list[dict]:
     if value is None:
         return []
@@ -1053,6 +1051,7 @@ def log_openai_usage(
         cache_hit=cache_hit,
         metadata={
             "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+            "normalizer_version": SMART_CAPTURE_NORMALIZER_VERSION,
             "request_started_at": started_at.isoformat() if started_at else "",
             "request_completed_at": completed_at.isoformat() if completed_at else "",
             "processing_time_ms": int((completed_at - started_at).total_seconds() * 1000) if started_at and completed_at else 0,
@@ -1190,7 +1189,7 @@ def possible_matches_for_session(session: ProjectAssistantSmartCaptureSession) -
 
 
 @transaction.atomic
-def create_smart_capture_session(*, contractor, actor, capture_type: str, file_obj) -> ProjectAssistantSmartCaptureSession:
+def create_smart_capture_session(*, contractor, actor, capture_type: str, file_obj, force_refresh: bool = False) -> ProjectAssistantSmartCaptureSession:
     valid_types = {choice[0] for choice in ProjectAssistantSmartCaptureSession.CAPTURE_TYPE_CHOICES}
     if capture_type not in valid_types:
         raise ValueError("Choose a supported Smart Capture type.")
@@ -1213,12 +1212,12 @@ def create_smart_capture_session(*, contractor, actor, capture_type: str, file_o
             "no_autonomous_record_creation": True,
         },
     )
-    run_extraction(session, file_bytes=file_bytes)
+    run_extraction(session, file_bytes=file_bytes, force_refresh=force_refresh)
     return session
 
 
 @transaction.atomic
-def create_customer_smart_capture_session(*, property_profile, customer_email: str, actor, capture_type: str, file_obj) -> ProjectAssistantSmartCaptureSession:
+def create_customer_smart_capture_session(*, property_profile, customer_email: str, actor, capture_type: str, file_obj, force_refresh: bool = False) -> ProjectAssistantSmartCaptureSession:
     if capture_type not in CUSTOMER_CAPTURE_TYPES:
         raise ValueError("Choose a supported customer Smart Capture type.")
     validate_upload(file_obj)
@@ -1246,7 +1245,7 @@ def create_customer_smart_capture_session(*, property_profile, customer_email: s
             "no_contractor_expense_or_asset_creation": True,
         },
     )
-    run_extraction(session, file_bytes=file_bytes)
+    run_extraction(session, file_bytes=file_bytes, force_refresh=force_refresh)
     session.structured_payload = {
         **(session.structured_payload or {}),
         "property_id": getattr(property_profile, "id", None),
@@ -1257,11 +1256,11 @@ def create_customer_smart_capture_session(*, property_profile, customer_email: s
 
 
 @transaction.atomic
-def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: bytes | None = None) -> ProjectAssistantSmartCaptureSession:
+def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: bytes | None = None, force_refresh: bool = False) -> ProjectAssistantSmartCaptureSession:
     provider = smart_capture_provider()
     model = smart_capture_model() if provider == PROVIDER_OPENAI else "deterministic"
     cache_key = extraction_cache_key(provider=provider, model=model, file_hash=session.file_sha256, capture_type=session.capture_type)
-    if provider == PROVIDER_OPENAI:
+    if provider == PROVIDER_OPENAI and not force_refresh:
         cached_qs = (
             ProjectAssistantSmartCaptureSession.objects.filter(
                 extraction_cache_key=cache_key,
@@ -1283,28 +1282,49 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
             cached_qs = cached_qs.none()
         cached = cached_qs.first()
         if cached:
-            session.raw_extracted_text = cached.raw_extracted_text
-            session.structured_payload = cached.structured_payload
-            session.field_confidence = cached.field_confidence
-            session.missing_fields = cached.missing_fields
-            session.warnings = merge_warning_lists(cached.warnings, ["Reused a previous successful OpenAI extraction for this source image."])
-            session.extraction_provider = PROVIDER_OPENAI
-            session.extraction_model = model
-            session.extraction_prompt_version = SMART_CAPTURE_PROMPT_VERSION
-            session.extraction_cache_key = cache_key
-            session.status = ProjectAssistantSmartCaptureSession.STATUS_NEEDS_INFORMATION if session.missing_fields else ProjectAssistantSmartCaptureSession.STATUS_REVIEW_READY
-            session.audit_metadata = {
-                **(session.audit_metadata or {}),
-                "extractor": PROVIDER_OPENAI,
-                "extractor_version": SMART_CAPTURE_PROMPT_VERSION,
-                "model": model,
-                "cache_hit": True,
-                "cached_from_session": str(cached.id),
-                "extracted_at": timezone.now().isoformat(),
-            }
-            session.possible_matches = possible_matches_for_session(session)
-            session.save()
-            return session
+            raw_provider_output = (cached.audit_metadata or {}).get("raw_provider_output") or {}
+            cached_normalizer_version = (cached.audit_metadata or {}).get("normalizer_version", "")
+            if raw_provider_output:
+                result = build_openai_extraction_result(
+                    capture_type=session.capture_type,
+                    payload=raw_provider_output,
+                    meta={
+                        "provider": PROVIDER_OPENAI,
+                        "model": model,
+                        "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+                        "normalizer_version": SMART_CAPTURE_NORMALIZER_VERSION,
+                        "provider_request_id": (cached.audit_metadata or {}).get("provider_request_id", ""),
+                        "usage": (cached.audit_metadata or {}).get("provider_usage", {}),
+                    },
+                )
+                session.raw_extracted_text = result["raw_extracted_text"]
+                session.structured_payload = result["structured_payload"]
+                session.field_confidence = result["field_confidence"]
+                session.missing_fields = result["missing_fields"]
+                session.warnings = merge_warning_lists(result["warnings"], ["Reused a previous successful OpenAI extraction for this source image."])
+                session.extraction_provider = PROVIDER_OPENAI
+                session.extraction_model = model
+                session.extraction_prompt_version = SMART_CAPTURE_PROMPT_VERSION
+                session.extraction_cache_key = cache_key
+                session.status = ProjectAssistantSmartCaptureSession.STATUS_NEEDS_INFORMATION if session.missing_fields else ProjectAssistantSmartCaptureSession.STATUS_REVIEW_READY
+                session.audit_metadata = {
+                    **(session.audit_metadata or {}),
+                    "extractor": PROVIDER_OPENAI,
+                    "extractor_version": SMART_CAPTURE_PROMPT_VERSION,
+                    "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+                    "normalizer_version": SMART_CAPTURE_NORMALIZER_VERSION,
+                    "model": model,
+                    "cache_hit": True,
+                    "cached_from_session": str(cached.id),
+                    "cached_normalizer_version": cached_normalizer_version,
+                    "provider_request_id": (cached.audit_metadata or {}).get("provider_request_id", ""),
+                    "provider_usage": (cached.audit_metadata or {}).get("provider_usage", {}),
+                    "raw_provider_output": raw_provider_output,
+                    "extracted_at": timezone.now().isoformat(),
+                }
+                session.possible_matches = possible_matches_for_session(session)
+                session.save()
+                return session
 
     extractor = SmartCaptureExtractor(session=session, actor=session.created_by, provider=provider)
     if file_bytes is None:
@@ -1343,6 +1363,9 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
             "extractor_version": extractor.provider_version,
             "model": model,
             "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+            "normalizer_version": SMART_CAPTURE_NORMALIZER_VERSION,
+            "cache_hit": False,
+            "force_refresh": bool(force_refresh),
             "provider_request_id": (result.get("provider_meta") or {}).get("provider_request_id", ""),
             "provider_usage": (result.get("provider_meta") or {}).get("usage", {}),
             "raw_provider_output": result.get("raw_provider_output") or {},
@@ -1363,6 +1386,7 @@ def run_extraction(session: ProjectAssistantSmartCaptureSession, *, file_bytes: 
             "extractor": provider,
             "model": model,
             "prompt_version": SMART_CAPTURE_PROMPT_VERSION,
+            "normalizer_version": SMART_CAPTURE_NORMALIZER_VERSION,
             "failure_code": getattr(exc, "code", "extraction_failed"),
             "provider_error_details": diagnostics,
             "provider_request_id": diagnostics.get("provider_request_id", ""),
