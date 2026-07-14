@@ -365,18 +365,122 @@ function navItemForSection(key, estimateChecklist, isReadOnlyHistory) {
     : { status: "Not started", tone: "empty" };
 }
 
-function NavStatusIcon({ tone }) {
-  if (tone === "complete") return <CheckCircle2 className="h-4 w-4 text-emerald-200" aria-hidden="true" />;
-  if (tone === "warning") return <AlertTriangle className="h-4 w-4 text-amber-200" aria-hidden="true" />;
-  if (tone === "blocked") return <Lock className="h-4 w-4 text-rose-200" aria-hidden="true" />;
-  return <Circle className="h-4 w-4 text-sky-100/45" aria-hidden="true" />;
+function sectionChecklistItemForNav(key, estimateChecklist, proposal, photos, documents) {
+  const items = estimateChecklist.items || [];
+  if (key === "customer") return checklistItemByKey(items, "customer");
+  if (key === "appointment") {
+    return {
+      key: "appointment",
+      title: "Appointment",
+      complete: Boolean(proposal?.appointment),
+      required: false,
+      target: "appointment",
+      action: "Review appointment",
+      missing: proposal?.appointment ? [] : ["No linked appointment"],
+    };
+  }
+  if (key === "scheduling") return checklistItemByKey(items, "scheduling");
+  if (key === "site") return checklistItemByKey(items, "site-visit");
+  if (key === "measurements") return checklistItemByKey(items, "measurements");
+  if (key === "photos") {
+    return {
+      key: "photos",
+      title: "Photos",
+      complete: (photos || []).length > 0,
+      required: false,
+      target: "photos",
+      action: "Upload photos",
+      missing: (photos || []).length ? [] : ["No photos uploaded"],
+    };
+  }
+  if (key === "documents") {
+    return {
+      key: "documents",
+      title: "Documents",
+      complete: (documents || []).length > 0,
+      required: false,
+      target: "documents",
+      action: "Upload documents",
+      missing: (documents || []).length ? [] : ["No documents uploaded"],
+    };
+  }
+  if (key === "clarifications") return checklistItemByKey(items, "clarifications");
+  if (key === "scope") return checklistItemByKey(items, "scope");
+  if (key === "estimate") return checklistItemByKey(items, "pricing");
+  if (key === "incidentals") {
+    return {
+      key: "adjustments",
+      title: "Incidentals & Allowances",
+      complete: moneyToNumber(proposal?.totals?.incidentals_reserve) > 0,
+      required: false,
+      target: "incidentals",
+      action: "Review adjustments",
+      missing: moneyToNumber(proposal?.totals?.incidentals_reserve) > 0 ? [] : ["No reserve or adjustment entries"],
+    };
+  }
+  if (key === "ready") return checklistItemByKey(items, "ready");
+  return {
+    key,
+    title: key,
+    complete: false,
+    required: false,
+    target: key,
+    action: "Review",
+    missing: [],
+  };
+}
+
+function statusToneFromItem(item, isBlocked = false) {
+  if (isBlocked || item?.blocked) return "blocked";
+  if (item?.complete) return "complete";
+  if (item?.required) return item?.status === "In Progress" ? "warning" : "warning";
+  return "empty";
+}
+
+function statusLabelFromTone(tone, required = false) {
+  if (tone === "complete") return "Complete";
+  if (tone === "blocked") return "Blocked";
+  if (tone === "warning") return required ? "Needs attention" : "In progress";
+  return required ? "Not started" : "Optional";
+}
+
+function NavStatusIcon({ tone, label }) {
+  const accessibleLabel = label || statusLabelFromTone(tone);
+  if (tone === "complete") return <CheckCircle2 className="h-4 w-4 text-emerald-200" aria-label={accessibleLabel} role="img" />;
+  if (tone === "warning") return <AlertTriangle className="h-4 w-4 text-amber-200" aria-label={accessibleLabel} role="img" />;
+  if (tone === "blocked") return <Lock className="h-4 w-4 text-rose-200" aria-label={accessibleLabel} role="img" />;
+  return <Circle className="h-4 w-4 text-sky-100/45" aria-label={accessibleLabel} role="img" />;
+}
+
+function RequiredMarker({ required }) {
+  if (!required) return null;
+  return (
+    <span
+      className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-sm font-black leading-none text-amber-200"
+      aria-label="Required"
+      title="Required"
+    >
+      *
+    </span>
+  );
+}
+
+function workflowGroupStatus(group, estimateChecklist, proposal, photos, documents, isReadOnlyHistory) {
+  const childItems = group.sections.map(([key]) => sectionChecklistItemForNav(key, estimateChecklist, proposal, photos, documents));
+  const requiredItems = childItems.filter((item) => item?.required);
+  if (!requiredItems.length) return { tone: "empty", label: "Optional" };
+  if (group.key === "review" && isReadOnlyHistory) return { tone: "blocked", label: "Blocked" };
+  const completeCount = requiredItems.filter((item) => item.complete).length;
+  if (completeCount === requiredItems.length) return { tone: "complete", label: "Complete" };
+  if (completeCount === 0) return { tone: "empty", label: "Not started" };
+  return { tone: "warning", label: "Needs attention" };
 }
 
 function checklistItemByKey(items, key) {
   return (items || []).find((item) => item.key === key);
 }
 
-function buildOverviewGroups({ estimateChecklist, proposal, photos, documents }) {
+function buildOverviewGroups({ estimateChecklist, proposal, photos, documents, isReadOnlyHistory = false }) {
   const items = estimateChecklist.items || [];
   const customer = checklistItemByKey(items, "customer");
   const address = checklistItemByKey(items, "project-address");
@@ -461,7 +565,7 @@ function buildOverviewGroups({ estimateChecklist, proposal, photos, documents })
       key: "review",
       label: "Review",
       purpose: WORKFLOW_GROUPS[3].purpose,
-      rows: [ready].filter(Boolean),
+      rows: [ready ? { ...ready, blocked: isReadOnlyHistory } : null].filter(Boolean),
     },
   ];
 }
@@ -470,6 +574,19 @@ function OverviewWorkflowGroup({ group, onOpen }) {
   const completed = group.rows.filter((row) => row.complete).length;
   const requiredMissing = group.rows.filter((row) => row.required && !row.complete);
   const nextRow = requiredMissing[0] || group.rows.find((row) => !row.complete) || group.rows[0];
+  const requiredRows = group.rows.filter((row) => row.required);
+  const groupStatus = (() => {
+    if (requiredRows.some((row) => row.blocked)) return { tone: "blocked", label: "Blocked" };
+    if (!requiredRows.length) return { tone: "empty", label: "Optional" };
+    const requiredComplete = requiredRows.filter((row) => row.complete).length;
+    if (requiredComplete === requiredRows.length) return { tone: "complete", label: "Complete" };
+    if (requiredComplete === 0) return { tone: "empty", label: "Not started" };
+    return { tone: "warning", label: "Needs attention" };
+  })();
+  const complete = requiredRows.length
+    ? requiredRows.every((row) => row.complete)
+    : group.rows.every((row) => row.complete);
+  const actionLabel = complete ? `Review ${group.label}` : group.key === "review" ? "Review Agreement Readiness" : `Continue ${group.label}`;
   return (
     <article
       data-testid={`estimate-overview-group-${group.key}`}
@@ -477,30 +594,40 @@ function OverviewWorkflowGroup({ group, onOpen }) {
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">{group.label}</div>
+          <div className="flex items-center gap-2 text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">
+            <NavStatusIcon tone={groupStatus.tone} label={groupStatus.label} />
+            <span>{group.label}</span>
+          </div>
           <p className="mt-1 text-sm font-semibold leading-6 text-sky-100/68">{group.purpose}</p>
         </div>
-        <div className={`rounded-full border px-3 py-1 text-xs font-black ${requiredMissing.length ? "border-amber-200/35 bg-amber-400/12 text-amber-100" : "border-emerald-200/35 bg-emerald-400/12 text-emerald-100"}`}>
+        <div className={`rounded-full border px-3 py-1 text-xs font-black ${
+          groupStatus.tone === "blocked"
+            ? "border-rose-200/35 bg-rose-400/12 text-rose-100"
+            : requiredMissing.length
+              ? "border-amber-200/35 bg-amber-400/12 text-amber-100"
+              : "border-emerald-200/35 bg-emerald-400/12 text-emerald-100"
+        }`}>
           {completed} of {group.rows.length} complete
         </div>
       </div>
       <div className="mt-3 grid gap-2">
         {group.rows.map((row) => {
-          const tone = row.complete ? "complete" : row.required ? "warning" : "empty";
+          const tone = statusToneFromItem(row);
+          const statusLabel = statusLabelFromTone(tone, row.required);
           return (
             <button
               key={row.key}
               data-testid={`estimate-overview-row-${row.key}`}
+              aria-label={`${row.title}: ${row.required ? "Required" : "Optional"}, ${statusLabel}`}
               type="button"
               onClick={() => onOpen(row.target)}
               className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/24 px-3 py-2 text-left hover:bg-white/10"
             >
               <span className="flex min-w-0 items-center gap-2">
-                <NavStatusIcon tone={tone} />
+                <NavStatusIcon tone={tone} label={statusLabel} />
+                <RequiredMarker required={row.required} />
                 <span className="truncate text-sm font-bold text-white">{row.title}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.required ? "bg-amber-300/14 text-amber-100" : "bg-white/8 text-sky-100/55"}`}>
-                  {row.required ? "Required" : "Optional"}
-                </span>
+                {!row.required ? <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-black uppercase text-sky-100/45">Optional</span> : null}
               </span>
               <span className="shrink-0 text-xs font-black text-sky-100/62">{row.complete ? "Done" : row.action}</span>
             </button>
@@ -516,9 +643,9 @@ function OverviewWorkflowGroup({ group, onOpen }) {
         <button
           type="button"
           onClick={() => onOpen(nextRow.target)}
-          className="mt-3 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white hover:bg-amber-200"
+          className={`mt-3 rounded-lg px-3 py-2 text-sm font-black ${complete ? "border border-white/16 bg-white/8 text-white hover:bg-white/12" : "bg-amber-300 text-white hover:bg-amber-200"}`}
         >
-          Continue with {nextRow.title}
+          {actionLabel}
         </button>
       ) : null}
     </article>
@@ -1018,17 +1145,18 @@ export default function ProposalWorkspacePage() {
     () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
     [proposal, draft, totals, photos, documents, clarificationRows]
   );
-  const overviewGroups = useMemo(
-    () => buildOverviewGroups({ estimateChecklist, proposal, photos, documents }),
-    [estimateChecklist, proposal, photos, documents]
-  );
   const isReadOnlyHistory = Boolean(
     proposal && (compactText(proposal.status).toLowerCase() === "converted" || proposal.linked_agreement_id)
+  );
+  const overviewGroups = useMemo(
+    () => buildOverviewGroups({ estimateChecklist, proposal, photos, documents, isReadOnlyHistory }),
+    [estimateChecklist, proposal, photos, documents, isReadOnlyHistory]
   );
   const highestPriorityItem =
     estimateChecklist.requiredMissing[0] ||
     estimateChecklist.items.find((item) => !item.complete) ||
     estimateChecklist.items.find((item) => item.key === "ready");
+  const recommendedSectionKey = highestPriorityItem?.target || "";
   const activeSectionStatus = navItemForSection(active, estimateChecklist, isReadOnlyHistory);
   const opportunityReference = [
     proposal?.source_type ? `${proposal.source_type} #${proposal.source_id || proposal.contractor_opportunity_id || "-"}` : "",
@@ -1822,34 +1950,54 @@ export default function ProposalWorkspacePage() {
             </button>
             {WORKFLOW_GROUPS.map((group) => (
               <div key={group.key} className="space-y-1.5">
-                <div className="px-1 text-[10px] font-black uppercase tracking-[0.18em] text-sky-100/45">{group.label}</div>
+                <div className="flex items-center gap-2 px-1 text-[10px] font-black uppercase tracking-[0.18em] text-sky-100/45">
+                  <NavStatusIcon {...workflowGroupStatus(group, estimateChecklist, proposal, photos, documents, isReadOnlyHistory)} />
+                  <span>{group.label}</span>
+                </div>
                 {group.sections.map(([key, label]) => {
-              const navStatus = navItemForSection(key, estimateChecklist, isReadOnlyHistory);
+              const sectionItem = sectionChecklistItemForNav(key, estimateChecklist, proposal, photos, documents);
+              const isBlocked = key === "ready" && isReadOnlyHistory;
+              const tone = statusToneFromItem(sectionItem, isBlocked);
+              const statusLabel = statusLabelFromTone(tone, sectionItem?.required);
+              const isRecommended = key === recommendedSectionKey && active !== key;
               return (
                 <button
                   key={key}
                   type="button"
                   data-testid={`proposal-nav-${key}`}
+                  aria-label={`${label}: ${sectionItem?.required ? "Required" : "Optional"}, ${statusLabel}${isRecommended ? ", next recommended section" : ""}`}
+                  title={`${sectionItem?.required ? "Required" : "Optional"} - ${statusLabel}${isRecommended ? " - Next" : ""}`}
                   onClick={() => setActive(key)}
                   className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
                     active === key
                       ? "border-sky-300/45 bg-sky-400/16 text-white shadow-[0_12px_32px_rgba(14,165,233,0.12)]"
-                      : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
+                      : isRecommended
+                        ? "border-amber-200/42 bg-amber-300/10 text-white shadow-[inset_3px_0_0_rgba(251,191,36,0.78)] hover:bg-amber-300/14"
+                        : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
                   }`}
                 >
-                  <NavStatusIcon tone={navStatus.tone} />
+                  <NavStatusIcon tone={tone} label={statusLabel} />
+                  <RequiredMarker required={sectionItem?.required} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-black">{label}</span>
-                    {navStatus.status === "Optional" ? (
+                    {!sectionItem?.required ? (
                       <span className="block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-sky-100/45">Optional</span>
                     ) : null}
                   </span>
+                  {isRecommended ? <span className="rounded-full bg-amber-300/18 px-2 py-0.5 text-[10px] font-black uppercase text-amber-100">Next</span> : null}
                 </button>
               );
                 })}
               </div>
             ))}
           </nav>
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/10 px-1 pt-3 text-[10px] font-bold text-sky-100/55" data-testid="proposal-nav-legend">
+            <span><span className="text-amber-200" aria-hidden="true">*</span> Required</span>
+            <span><CheckCircle2 className="inline h-3 w-3 text-emerald-200" aria-hidden="true" /> Complete</span>
+            <span><AlertTriangle className="inline h-3 w-3 text-amber-200" aria-hidden="true" /> Needs attention</span>
+            <span><Circle className="inline h-3 w-3 text-sky-100/45" aria-hidden="true" /> Optional</span>
+            <span><Lock className="inline h-3 w-3 text-rose-200" aria-hidden="true" /> Blocked</span>
+          </div>
         </aside>
 
         <main className="min-w-0 space-y-4">

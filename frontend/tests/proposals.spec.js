@@ -432,14 +432,26 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await expect(page.getByTestId("proposal-nav-estimate")).toContainText("Estimate Pricing");
   await expect(page.getByTestId("proposal-nav-incidentals")).toContainText("Incidentals & Allowances");
   await expect(page.getByTestId("proposal-nav")).not.toContainText("Line Items");
+  await expect(page.getByTestId("proposal-nav-legend")).toContainText("Required");
+  await expect(page.getByTestId("proposal-nav-legend")).toContainText("Complete");
+  await expect(page.getByTestId("proposal-nav-legend")).toContainText("Needs attention");
+  await expect(page.getByTestId("proposal-nav-customer")).toHaveAttribute("aria-label", /Required, Complete/);
+  await expect(page.getByTestId("proposal-nav-estimate")).toHaveAttribute("aria-label", /Required, Needs attention/);
+  await expect(page.getByTestId("proposal-nav-clarifications")).toHaveAttribute("aria-label", /Required, Needs attention, next recommended section/);
+  await expect(page.getByTestId("proposal-nav-appointment")).toHaveAttribute("aria-label", /Optional/);
+  await expect(page.getByTestId("proposal-nav-appointment")).not.toHaveAttribute("title", /Required/);
+  await expect(page.getByTestId("proposal-nav-clarifications")).toContainText("Next");
   await expect(page.getByTestId("proposal-nav-overview")).toHaveClass(/border-sky-300/);
   await expect(page.getByRole("heading", { name: "Project Overview" })).toBeVisible();
   await expect(page.getByTestId("estimate-checklist-progress")).toContainText("readiness requirements complete");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Site & Scope");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Estimate Pricing");
   await expect(page.getByTestId("estimate-overview-group-pricing")).toContainText("Incidentals & Allowances");
-  await expect(page.getByTestId("estimate-overview-row-pricing")).toContainText("Required");
   await expect(page.getByTestId("estimate-overview-row-adjustments")).toContainText("Optional");
+  await expect(page.getByTestId("estimate-overview-row-pricing")).toHaveAttribute("aria-label", /Required, Needs attention/);
+  await expect(page.getByTestId("estimate-overview-row-customer")).toHaveAttribute("aria-label", /Required, Complete/);
+  await expect(page.getByTestId("estimate-overview-row-adjustments")).toHaveAttribute("aria-label", /Optional/);
+  await expect(page.getByTestId("estimate-overview-group-project")).toContainText("Review Project");
 
   await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
   await page.getByTestId("proposal-nav-assistant").click();
@@ -459,6 +471,13 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await expect(page.getByTestId("proposal-workspace")).toBeVisible();
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   expect(hasHorizontalOverflow).toBe(false);
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.route("**/api/projects/proposals/45/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...proposal, id: 45, status: "converted", status_label: "Converted", linked_agreement_id: 450 }) });
+  });
+  await page.goto("/app/proposals/45", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("proposal-nav-ready")).toHaveAttribute("aria-label", /Required, Blocked/);
 });
 
 test("Estimate Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {
