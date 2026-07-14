@@ -5,11 +5,6 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
-import {
-  ProjectAssistantApprovalNotice,
-  ProjectAssistantPanel,
-  ProjectAssistantSection,
-} from "../components/ProjectAssistantExperience.jsx";
 
 const TABS = [
   { key: "needs_estimate", label: "Needs Estimate" },
@@ -98,10 +93,10 @@ function actionLabel(estimate, tabKey) {
 }
 
 function toneForTab(tabKey) {
-  if (tabKey === "converted" || tabKey === "ready") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (tabKey === "archived") return "border-slate-200 bg-slate-100 text-slate-700";
-  if (tabKey === "in_progress") return "border-amber-200 bg-amber-50 text-amber-800";
-  return "border-blue-200 bg-blue-50 text-blue-800";
+  if (tabKey === "converted" || tabKey === "ready") return "border-emerald-200/35 bg-emerald-400/12 text-emerald-100";
+  if (tabKey === "archived") return "border-white/14 bg-white/8 text-sky-100/78";
+  if (tabKey === "in_progress") return "border-amber-200/35 bg-amber-400/12 text-amber-100";
+  return "border-sky-200/35 bg-sky-400/12 text-sky-100";
 }
 
 function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
@@ -111,19 +106,22 @@ function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
   return (
     <div
       data-testid={`estimate-row-${estimate.id}`}
-      className="grid gap-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_130px_130px_160px]"
+      className="grid gap-3 rounded-xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_18px_46px_rgba(2,8,23,0.26)] transition hover:border-sky-200/28 hover:bg-[#082653] lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_150px_150px_150px] lg:items-center"
     >
       <button type="button" onClick={onOpen} className="min-w-0 text-left">
-        <div className="text-sm font-black text-slate-950">{estimate.customer_name || "Unknown customer"}</div>
-        <div className="mt-1 text-sm font-semibold text-slate-600">{estimate.service_location || "No property address"}</div>
-        <div className="mt-2 text-sm text-slate-500">{estimate.project_title || "Untitled estimate"}</div>
+        <div className="text-sm font-black text-white">{estimate.customer_name || "Unknown customer"}</div>
+        <div className="mt-1 text-sm font-semibold text-sky-100/72">{estimate.project_title || "Untitled estimate"}</div>
+        <div className="mt-1 line-clamp-2 text-xs font-semibold text-sky-100/58">{estimate.service_location || "No property address"}</div>
+        <div className="mt-2 text-xs font-bold uppercase tracking-[0.12em] text-amber-100/75">
+          {[estimate.project_type, estimate.project_subtype].filter(Boolean).join(" / ") || "Project type not set"}
+        </div>
       </button>
 
-      <div className="min-w-0 text-sm text-slate-600">
+      <div className="min-w-0 text-sm text-sky-100/70">
         <div>
-          <span className="font-bold text-slate-800">Opportunity:</span>{" "}
+          <span className="font-bold text-sky-50">Opportunity:</span>{" "}
           {estimate.linked_opportunity_id ? (
-            <button type="button" onClick={() => onOpen("opportunity")} className="font-bold text-blue-700 hover:text-blue-900">
+            <button type="button" onClick={() => onOpen("opportunity")} className="font-bold text-sky-200 hover:text-white">
               #{estimate.linked_opportunity_id} {estimate.linked_opportunity_title || ""}
             </button>
           ) : (
@@ -131,9 +129,9 @@ function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
           )}
         </div>
         <div className="mt-1">
-          <span className="font-bold text-slate-800">Agreement:</span>{" "}
+          <span className="font-bold text-sky-50">Agreement:</span>{" "}
           {estimate.linked_agreement_id ? (
-            <button type="button" onClick={onAgreement} className="font-bold text-blue-700 hover:text-blue-900">
+            <button type="button" onClick={onAgreement} className="font-bold text-sky-200 hover:text-white">
               #{estimate.linked_agreement_id} {estimate.linked_agreement_title || ""}
             </button>
           ) : (
@@ -143,18 +141,20 @@ function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
       </div>
 
       <div>
-        <div className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Readiness</div>
-        <div className="mt-2 h-2 rounded-full bg-slate-100">
-          <div className="h-2 rounded-full bg-blue-600" style={{ width: `${readiness}%` }} />
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100/55">Readiness</div>
+          <div className="text-sm font-black text-white">{readiness}%</div>
         </div>
-        <div className="mt-1 text-sm font-black text-slate-900">{readiness}%</div>
+        <div className="mt-2 h-3 overflow-hidden rounded-full bg-white/10">
+          <div className="h-3 rounded-full bg-sky-300" style={{ width: `${readiness}%` }} />
+        </div>
       </div>
 
       <div>
         <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-black ${toneForTab(tabKey)}`}>
           {statusLabel(estimate.status)}
         </div>
-        <div className="mt-2 text-xs font-semibold text-slate-500">Updated {formatDateTime(estimate.updated_at)}</div>
+        <div className="mt-2 text-xs font-semibold text-sky-100/55">Updated {formatDateTime(estimate.updated_at)}</div>
       </div>
 
       <div className="flex items-center lg:justify-end">
@@ -162,7 +162,7 @@ function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
           type="button"
           data-testid={`estimate-primary-action-${estimate.id}`}
           onClick={action}
-          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-slate-800 lg:w-auto"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-amber-200 focus-visible:text-white active:text-white lg:w-auto"
         >
           {tabKey === "archived" ? <ArchiveRestore size={15} /> : tabKey === "converted" ? <ExternalLink size={15} /> : <FileSignature size={15} />}
           {nextAction}
@@ -223,6 +223,24 @@ export default function EstimatesPage() {
     for (const row of enriched) counts[row.tabKey] = (counts[row.tabKey] || 0) + 1;
     return counts;
   }, [enriched]);
+  const queueSummary = useMemo(() => {
+    const blockers = enriched.filter((row) => row.tabKey !== "converted" && row.readiness < 100).length;
+    const priority =
+      tabCounts.needs_estimate > 0
+        ? "Complete customer, scope, pricing, and scheduling details."
+        : tabCounts.in_progress > 0
+          ? "Continue estimates already in progress before opening new work."
+          : tabCounts.ready > 0
+            ? "Review ready estimates and create agreements when appropriate."
+            : "No active estimate blockers in this queue.";
+    return {
+      needsEstimate: tabCounts.needs_estimate || 0,
+      inProgress: tabCounts.in_progress || 0,
+      ready: tabCounts.ready || 0,
+      blockers,
+      priority,
+    };
+  }, [enriched, tabCounts]);
 
   const filtered = useMemo(() => {
     const query = normalize(search);
@@ -269,48 +287,56 @@ export default function EstimatesPage() {
     <ContractorPageSurface
       eyebrow="Sales Pipeline"
       title="Estimates"
-      subtitle="Review every estimate workspace between opportunity intake and agreement conversion without creating duplicate estimate records."
+      subtitle="Review, prepare, and convert estimates into agreements."
       variant="operational"
     >
-      <ProjectAssistantPanel
-        subtitle="Estimate Assistant"
-        summary="Project Assistant reviews estimate readiness, missing scope, pricing completeness, incidentals, and agreement handoff blockers for the selected stage."
-        testId="estimates-assistant-panel"
+      <section
+        className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 px-4 py-3 text-white shadow-[0_18px_46px_rgba(2,8,23,0.24)]"
+        data-testid="estimates-queue-summary"
       >
-        <ProjectAssistantSection title="Recommended next action">
-          {activeTab === "ready"
-            ? "Review estimate assumptions, then create the agreement from the existing workspace."
-            : activeTab === "converted"
-              ? "Open the linked agreement for operational work; keep the estimate as read-only sales history."
-              : activeTab === "archived"
-                ? "Restore only if this estimate should re-enter active sales follow-up."
-                : "Open the estimate workspace and complete customer, address, scope, pricing, and scheduling details."}
-        </ProjectAssistantSection>
-        <ProjectAssistantApprovalNotice compact>
-          Estimate Assistant can prepare review guidance, but contractors still approve pricing, scope, customer messages, and agreement creation.
-        </ProjectAssistantApprovalNotice>
-      </ProjectAssistantPanel>
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,0.7fr)_repeat(4,minmax(7.5rem,0.18fr))_minmax(14rem,0.75fr)] xl:items-center">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Estimate Queue</div>
+            <div className="mt-1 text-sm font-semibold text-sky-100/70">Final pricing and agreement actions require contractor approval.</div>
+          </div>
+          {[
+            ["Needs Estimate", queueSummary.needsEstimate],
+            ["In Progress", queueSummary.inProgress],
+            ["Ready", queueSummary.ready],
+            ["Blockers", queueSummary.blockers],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-white/10 bg-white/7 px-3 py-2">
+              <div className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-100/55">{label}</div>
+              <div className="mt-0.5 text-2xl font-black text-white">{Number(value || 0).toLocaleString()}</div>
+            </div>
+          ))}
+          <div className="rounded-xl border border-white/10 bg-white/7 px-3 py-2">
+            <div className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-100/55">Next Priority</div>
+            <div className="mt-1 text-sm font-bold leading-5 text-white">{queueSummary.priority}</div>
+          </div>
+        </div>
+      </section>
 
-      <section className="rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="estimates-filters">
-        <div className="grid gap-3 lg:grid-cols-[minmax(220px,1.4fr)_repeat(4,minmax(150px,1fr))]">
+      <section className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_18px_46px_rgba(2,8,23,0.2)]" data-testid="estimates-filters">
+        <div className="grid gap-2 lg:grid-cols-[minmax(240px,1.6fr)_repeat(4,minmax(140px,0.8fr))]">
           <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sky-100/50" size={16} />
             <input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search estimates"
-              className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm font-semibold text-slate-800 outline-none focus:border-blue-400"
+              className="h-10 w-full rounded-lg border border-white/12 bg-slate-950/35 pl-9 pr-3 text-sm font-semibold text-white outline-none placeholder:text-sky-100/45 focus:border-sky-300 focus:ring-2 focus:ring-sky-300/20"
             />
           </label>
-          <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800">
+          <select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)} className="h-10 rounded-lg border border-white/12 bg-slate-950/35 px-3 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20">
             <option value="all">All customers</option>
             {customerOptions.map((name) => <option key={name} value={name}>{name}</option>)}
           </select>
-          <select value={projectTypeFilter} onChange={(event) => setProjectTypeFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800">
+          <select value={projectTypeFilter} onChange={(event) => setProjectTypeFilter(event.target.value)} className="h-10 rounded-lg border border-white/12 bg-slate-950/35 px-3 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20">
             <option value="all">All project types</option>
             {projectTypeOptions.map((type) => <option key={type} value={type}>{type}</option>)}
           </select>
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800">
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-10 rounded-lg border border-white/12 bg-slate-950/35 px-3 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20">
             <option value="all">All statuses</option>
             {statusOptions.map((status) => <option key={status} value={status}>{statusLabel(status)}</option>)}
           </select>
@@ -318,33 +344,34 @@ export default function EstimatesPage() {
             type="date"
             value={updatedSince}
             onChange={(event) => setUpdatedSince(event.target.value)}
-            className="h-11 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800"
+            className="h-10 rounded-lg border border-white/12 bg-slate-950/35 px-3 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
             aria-label="Date updated since"
           />
         </div>
       </section>
 
-      <div className="flex gap-2 overflow-x-auto pb-1" data-testid="estimates-tabs">
+      <div className="flex gap-2 overflow-x-auto rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-2 shadow-[0_18px_46px_rgba(2,8,23,0.18)]" data-testid="estimates-tabs">
         {TABS.map((tab) => (
           <button
             key={tab.key}
             type="button"
             data-testid={`estimates-tab-${tab.key}`}
             onClick={() => setActiveTab(tab.key)}
-            className={`whitespace-nowrap rounded-lg border px-3 py-2 text-sm font-black transition ${
+            className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2 text-sm font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/50 ${
               activeTab === tab.key
-                ? "border-slate-950 bg-slate-950 text-white"
-                : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                ? "border-sky-300/45 bg-sky-400/16 text-white"
+                : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
             }`}
           >
-            {tab.label} <span className="ml-1 opacity-70">{tabCounts[tab.key] || 0}</span>
+            <span>{tab.label}</span>
+            <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white">{tabCounts[tab.key] || 0}</span>
           </button>
         ))}
       </div>
 
       <section className="space-y-3" data-testid="estimates-list">
         {loading ? (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm font-bold text-slate-600">Loading estimates...</div>
+          <div className="rounded-xl border border-white/12 bg-[#061d42]/95 p-6 text-sm font-bold text-sky-100/70">Loading estimates...</div>
         ) : filtered.length ? (
           filtered.map((estimate) => (
             <EstimateRow
@@ -357,13 +384,13 @@ export default function EstimatesPage() {
             />
           ))
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center">
-            <div className="text-base font-black text-slate-900">No estimates in this stage</div>
-            <p className="mt-2 text-sm font-semibold text-slate-600">
+          <div className="rounded-xl border border-dashed border-white/16 bg-[#061d42]/95 p-8 text-center">
+            <div className="text-base font-black text-white">No estimates in this stage</div>
+            <p className="mt-2 text-sm font-semibold text-sky-100/70">
               Estimates created from opportunities, dashboard starts, customers, and property work orders will appear here automatically.
             </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Project Assistant can help identify missing scope, pricing, or handoff details once an estimate exists.
+            <p className="mt-2 text-sm text-sky-100/55">
+              Missing scope, pricing, and handoff details will appear in the relevant estimate workspace.
             </p>
           </div>
         )}

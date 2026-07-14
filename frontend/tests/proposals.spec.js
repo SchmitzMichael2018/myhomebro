@@ -327,9 +327,33 @@ test("Estimates landing page lists lifecycle stages and opens existing records",
   await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("link", { name: /Estimates/i })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Project Assistant/i }).first()).toBeVisible();
+  await expect(page.getByTestId("estimates-assistant-panel")).toHaveCount(0);
+  await expect(page.getByText("Estimate Assistant")).toHaveCount(0);
+  await expect(page.getByText("Human approval required")).toHaveCount(0);
+  await expect(page.getByTestId("estimates-queue-summary")).toContainText("Estimate Queue");
+  await expect(page.getByTestId("estimates-queue-summary")).toContainText("Next Priority");
+  await expect(page.getByPlaceholder("Search estimates")).toBeVisible();
+  await expect(page.getByRole("combobox").filter({ hasText: "All customers" })).toBeVisible();
+  await expect(page.getByRole("combobox").filter({ hasText: "All project types" })).toBeVisible();
+  await expect(page.getByRole("combobox").filter({ hasText: "All statuses" })).toBeVisible();
+  await expect(page.getByLabel("Date updated since")).toBeVisible();
   await expect(page.getByTestId("estimates-tabs")).toContainText("Needs Estimate");
+  await expect(page.getByTestId("estimates-tabs")).toContainText("Ready for Agreement");
+  await expect(page.getByTestId("estimates-tabs")).toContainText("Converted");
+  await expect(page.getByTestId("estimates-tabs")).toContainText("Archived");
   await expect(page.getByTestId("estimate-row-42")).toContainText("New Lead Customer");
   await expect(page.getByTestId("estimate-row-42")).toContainText("Bathroom Remodel");
+  await expect(page.getByTestId("estimate-row-42")).toContainText("Readiness");
+  await expect(page.getByTestId("estimate-row-42")).toContainText("%");
+
+  const darkTextClasses = await page.locator('[data-testid="estimates-queue-summary"], [data-testid="estimates-filters"], [data-testid="estimates-tabs"], [data-testid="estimates-list"]').evaluateAll((roots) => {
+    const forbidden = ["text-black", "text-slate-950", "text-slate-900", "text-slate-800"];
+    return roots.flatMap((root) => Array.from(root.querySelectorAll("[class]"))
+      .map((node) => node.getAttribute("class") || "")
+      .filter((className) => forbidden.some((token) => className.includes(token))));
+  });
+  expect(darkTextClasses).toEqual([]);
 
   await page.getByTestId("estimates-tab-in_progress").click();
   await expect(page.getByTestId("estimate-row-43")).toContainText("Flooring Estimate");
@@ -345,6 +369,13 @@ test("Estimates landing page lists lifecycle stages and opens existing records",
   await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
   await page.getByTestId("estimate-primary-action-42").click();
   await expect(page).toHaveURL(/\/app\/estimates\/42/);
+
+  await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("estimates-queue-summary")).toBeVisible();
+  await expect(page.getByTestId("estimates-tabs")).toBeVisible();
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  expect(hasHorizontalOverflow).toBe(false);
 });
 
 test("Create Estimate from Opportunity opens Estimate Workspace", async ({ page }) => {
