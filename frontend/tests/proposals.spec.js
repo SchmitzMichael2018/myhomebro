@@ -654,6 +654,34 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("walkthrough-primary-actions")).toContainText("Voice Note");
   await expect(page.getByTestId("walkthrough-primary-actions")).toContainText("Attach Document");
 
+  await page.getByTestId("walkthrough-estimate-checklist").getByRole("button", { name: /Measurements/ }).click();
+  await expect(page).toHaveURL(/section=measurements/);
+  await expect(page).toHaveURL(/from=walkthrough/);
+  await expect(page.getByTestId("walkthrough-return-banner")).toContainText("Walkthrough Task");
+  await expect(page.getByTestId("walkthrough-return-banner")).toContainText("Add measurement");
+  await expect(page.getByTestId("proposal-measurement-form")).toBeVisible();
+  await page.getByTestId("back-to-walkthrough").click();
+  await expect(page).toHaveURL(/walkthrough=1/);
+  await expect(page.getByTestId("proposal-walkthrough-mode")).toBeVisible();
+  await expect(page.getByTestId("walkthrough-checklist-progress")).toContainText("%");
+
+  await page.goBack();
+  await expect(page.getByTestId("proposal-workspace")).toBeVisible();
+  await expect(page.getByTestId("walkthrough-return-banner")).toHaveCount(0);
+
+  await page.goto("/app/proposals/42?section=measurements", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("proposal-measurement-form")).toBeVisible();
+  await expect(page.getByTestId("walkthrough-return-banner")).toHaveCount(0);
+
+  await page.getByTestId("enter-walkthrough-mode").click();
+  await expect(page.getByTestId("proposal-walkthrough-mode")).toBeVisible();
+  await page.getByTestId("walkthrough-estimate-checklist").getByRole("button", { name: /Scheduling/ }).click();
+  await expect(page).toHaveURL(/section=scheduling/);
+  await expect(page.getByTestId("walkthrough-return-banner")).toContainText("Set scheduling");
+  await expect(page.getByTestId("proposal-scheduling-summary")).toBeVisible();
+  await page.getByTestId("back-to-walkthrough").click();
+  await expect(page.getByTestId("proposal-walkthrough-mode")).toBeVisible();
+
   await page.getByTestId("walkthrough-add-measurement").click();
   await page.getByTestId("walkthrough-measurement-label").fill("Fence length");
   await page.getByTestId("walkthrough-measurement-location").fill("Back yard");

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Camera, Check, CheckCircle2, Circle, FileSignature, FileUp, Lock, Mail, Mic, Phone, Plus, Ruler, Save, ShieldCheck, StickyNote, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -83,6 +83,31 @@ const EMPTY_MEASUREMENT = {
   unit: "",
   notes: "",
 };
+
+const WALKTHROUGH_TASK_LABELS = {
+  customer: "Review customer",
+  "project-address": "Add project address",
+  scheduling: "Set scheduling",
+  "site-visit": "Capture site details",
+  measurements: "Add measurement",
+  files: "Upload photos or documents",
+  photos: "Upload photos",
+  documents: "Upload documents",
+  clarifications: "Review questions",
+  scope: "Review scope notes",
+  pricing: "Add estimate pricing",
+  ready: "Check readiness",
+};
+
+function walkthroughTaskForItem(item, fallbackTarget = "overview") {
+  if (!item) return null;
+  return {
+    key: item.key || fallbackTarget,
+    target: item.target || fallbackTarget,
+    title: WALKTHROUGH_TASK_LABELS[item.key] || item.action || item.title || "Complete walkthrough task",
+    description: item.summary || `Complete ${item.title || "this section"}, then return to the capture checklist.`,
+  };
+}
 
 const EMPTY_LINE_ITEM = {
   category: "labor",
@@ -1092,6 +1117,7 @@ function DateField({ label, value, onChange, disabled = false, testId }) {
 export default function ProposalWorkspacePage() {
   const { proposalId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [proposal, setProposal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1102,6 +1128,8 @@ export default function ProposalWorkspacePage() {
   const [editingLineItemId, setEditingLineItemId] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [walkthroughMode, setWalkthroughMode] = useState(false);
+  const [walkthroughTask, setWalkthroughTask] = useState(null);
+  const [walkthroughScrollY, setWalkthroughScrollY] = useState(0);
   const [walkthroughMeasurementOpen, setWalkthroughMeasurementOpen] = useState(false);
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
@@ -1344,6 +1372,55 @@ export default function ProposalWorkspacePage() {
     loadProposal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalId]);
+
+  useEffect(() => {
+    const requestedSection = searchParams.get("section");
+    const fromWalkthrough = searchParams.get("from") === "walkthrough";
+    const walkthroughRequested = searchParams.get("walkthrough") === "1";
+    if (requestedSection) {
+      setActive(requestedSection);
+    }
+    if (fromWalkthrough) {
+      const taskKey = searchParams.get("task") || requestedSection || "overview";
+      const sourceItem = estimateChecklist.items.find((item) => item.key === taskKey || item.target === requestedSection);
+      setWalkthroughTask(walkthroughTaskForItem(sourceItem || { key: taskKey, target: requestedSection }));
+      setWalkthroughMode(false);
+    } else if (walkthroughRequested) {
+      setWalkthroughTask(null);
+      setWalkthroughMode(true);
+    } else {
+      setWalkthroughTask(null);
+      setWalkthroughMode(false);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!walkthroughMode || !walkthroughScrollY) return;
+    window.requestAnimationFrame(() => window.scrollTo({ top: walkthroughScrollY, behavior: "auto" }));
+  }, [walkthroughMode, walkthroughScrollY]);
+
+  function openWalkthroughSection(item) {
+    const task = walkthroughTaskForItem(item);
+    if (!task) return;
+    setWalkthroughScrollY(window.scrollY || 0);
+    setWalkthroughTask(task);
+    setWalkthroughMode(false);
+    setActive(task.target);
+    navigate(`/app/proposals/${proposalId}?section=${encodeURIComponent(task.target)}&from=walkthrough&task=${encodeURIComponent(task.key)}`);
+  }
+
+  async function returnToWalkthrough() {
+    await loadProposal();
+    setWalkthroughTask(null);
+    setWalkthroughMode(true);
+    navigate(`/app/proposals/${proposalId}?walkthrough=1`, { replace: true });
+  }
+
+  function exitWalkthrough() {
+    setWalkthroughTask(null);
+    setWalkthroughMode(false);
+    navigate(`/app/proposals/${proposalId}`, { replace: true });
+  }
 
   async function loadTemplateRecommendation(sourceProposal) {
     setTemplateLoading(true);
@@ -1637,7 +1714,7 @@ export default function ProposalWorkspacePage() {
             <button
               type="button"
               data-testid="exit-walkthrough-mode"
-              onClick={() => setWalkthroughMode(false)}
+              onClick={exitWalkthrough}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-4 py-3 text-sm font-black text-slate-950 shadow-sm"
             >
               <X size={18} /> Exit
@@ -1654,10 +1731,7 @@ export default function ProposalWorkspacePage() {
                   <button
                     key={item.key}
                     type="button"
-                    onClick={() => {
-                      setWalkthroughMode(false);
-                      setActive(item.target);
-                    }}
+                    onClick={() => openWalkthroughSection(item)}
                     className={`rounded-xl px-3 py-2 text-left text-sm font-black ${
                       item.complete ? "bg-emerald-50 text-emerald-900" : "bg-slate-100 text-slate-800"
                     }`}
@@ -1784,7 +1858,7 @@ export default function ProposalWorkspacePage() {
                   <div className="text-sm font-black uppercase tracking-wide text-slate-500">Photos</div>
                   <div className="mt-2 grid grid-cols-3 gap-2">
                     {recentPhotos.map((item) => (
-                      <button key={item.id} type="button" onClick={() => { setWalkthroughMode(false); setActive("photos"); }} className="rounded-xl bg-slate-100 p-2 text-left">
+                      <button key={item.id} type="button" onClick={() => openWalkthroughSection({ key: "photos", title: "Photos", target: "photos", action: "Upload photos", summary: "Review recently captured photos." })} className="rounded-xl bg-slate-100 p-2 text-left">
                         {item.url ? <img src={item.url} alt={item.caption || item.original_name || "Recent photo"} className="h-20 w-full rounded-lg object-cover" /> : null}
                         <div className="mt-1 truncate text-xs font-bold">{item.caption || item.original_name || "Photo"}</div>
                       </button>
@@ -1797,7 +1871,7 @@ export default function ProposalWorkspacePage() {
                   <div className="text-sm font-black uppercase tracking-wide text-slate-500">Measurements</div>
                   <div className="mt-2 space-y-2">
                     {recentMeasurements.map((item) => (
-                      <button key={item.id} type="button" onClick={() => { setWalkthroughMode(false); setActive("measurements"); }} className="w-full rounded-xl bg-slate-100 px-3 py-2 text-left">
+                      <button key={item.id} type="button" onClick={() => openWalkthroughSection({ key: "measurements", title: "Measurements", target: "measurements", action: "Add measurement", summary: "Review captured measurements." })} className="w-full rounded-xl bg-slate-100 px-3 py-2 text-left">
                         <div className="font-black">{item.label}</div>
                         <div className="text-sm font-semibold text-slate-600">{item.quantity} {item.unit} - {field(item.location)}</div>
                       </button>
@@ -1810,7 +1884,7 @@ export default function ProposalWorkspacePage() {
                   <div className="text-sm font-black uppercase tracking-wide text-slate-500">Notes</div>
                   <div className="mt-2 space-y-2">
                     {recentNotes.slice(0, 3).map((item) => (
-                      <button key={item.label} type="button" onClick={() => { setWalkthroughMode(false); setActive("site"); }} className="w-full rounded-xl bg-slate-100 px-3 py-2 text-left">
+                      <button key={item.label} type="button" onClick={() => openWalkthroughSection({ key: "site-visit", title: "Site Visit", target: "site", action: "Capture site details", summary: "Review captured site notes." })} className="w-full rounded-xl bg-slate-100 px-3 py-2 text-left">
                         <div className="font-black">{item.label}</div>
                         <div className="line-clamp-2 text-sm font-semibold text-slate-600">{item.value}</div>
                       </button>
@@ -2005,6 +2079,31 @@ export default function ProposalWorkspacePage() {
         </aside>
 
         <main className="min-w-0 space-y-4">
+          {walkthroughTask ? (
+            <div
+              className="rounded-2xl border border-sky-200/18 bg-[#061d42]/95 p-4 text-white shadow-[0_18px_48px_rgba(2,8,23,0.24)]"
+              data-testid="walkthrough-return-banner"
+            >
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="min-w-0">
+                  <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Walkthrough Task</div>
+                  <h2 className="mt-1 text-lg font-black text-white">{walkthroughTask.title}</h2>
+                  <p className="mt-1 text-sm font-semibold leading-6 text-sky-100/70">
+                    Complete this section, then return to the capture checklist. {walkthroughTask.description}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-testid="back-to-walkthrough"
+                  onClick={returnToWalkthrough}
+                  className="inline-flex shrink-0 items-center justify-center rounded-lg border border-white/18 bg-white/10 px-4 py-2 text-sm font-black text-white hover:bg-white/15"
+                >
+                  Back to Walkthrough
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           <Section id="overview" active={active === "overview"} title="Project Overview">
             <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-white" data-testid="estimate-checklist-progress">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
