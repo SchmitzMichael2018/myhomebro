@@ -421,11 +421,25 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await expect(page.getByTestId("proposal-workspace-header")).toContainText("Bathroom Remodel");
   await expect(page.getByTestId("proposal-workspace-header")).toContainText("New Lead Customer");
   await expect(page.getByTestId("proposal-nav-overview")).toContainText("Project Overview");
+  await expect(page.getByTestId("proposal-nav")).toContainText("Project");
+  await expect(page.getByTestId("proposal-nav")).toContainText("Site & Scope");
+  await expect(page.getByTestId("proposal-nav")).toContainText("Pricing");
+  await expect(page.getByTestId("proposal-nav")).toContainText("Review");
+  const navText = (await page.getByTestId("proposal-nav").innerText()).toLowerCase();
+  expect(navText.indexOf("customer & contact")).toBeLessThan(navText.indexOf("site & scope"));
+  expect(navText.indexOf("site & scope")).toBeLessThan(navText.indexOf("estimate pricing"));
+  expect(navText.indexOf("pricing")).toBeLessThan(navText.indexOf("ready for agreement"));
+  await expect(page.getByTestId("proposal-nav-estimate")).toContainText("Estimate Pricing");
+  await expect(page.getByTestId("proposal-nav-incidentals")).toContainText("Incidentals & Allowances");
+  await expect(page.getByTestId("proposal-nav")).not.toContainText("Line Items");
   await expect(page.getByTestId("proposal-nav-overview")).toHaveClass(/border-sky-300/);
-  await expect(page.getByTestId("proposal-nav-estimate")).toContainText("Needs attention");
   await expect(page.getByRole("heading", { name: "Project Overview" })).toBeVisible();
-  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Pricing");
-  await expect(page.getByTestId("estimate-readiness-status-pricing")).toContainText("Not Started");
+  await expect(page.getByTestId("estimate-checklist-progress")).toContainText("readiness requirements complete");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Site & Scope");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Estimate Pricing");
+  await expect(page.getByTestId("estimate-overview-group-pricing")).toContainText("Incidentals & Allowances");
+  await expect(page.getByTestId("estimate-overview-row-pricing")).toContainText("Required");
+  await expect(page.getByTestId("estimate-overview-row-adjustments")).toContainText("Optional");
 
   await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
   await page.getByTestId("proposal-nav-assistant").click();
@@ -511,8 +525,8 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("estimate-checklist-progress")).toContainText("%");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Customer");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Project Address");
-  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Pricing");
-  await expect(page.getByTestId("estimate-readiness-status-customer")).toContainText("Complete");
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Estimate Pricing");
+  await expect(page.getByTestId("estimate-overview-row-customer")).toContainText("Done");
   await expect(page.getByTestId("estimate-ready-status")).toContainText("Required items missing");
   const initialProgress = Number((await page.getByTestId("estimate-summary-progress").innerText()).replace("%", ""));
 
@@ -619,7 +633,11 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("proposal-document-list")).toContainText("upload.txt");
 
   await page.getByTestId("proposal-nav-estimate").click();
-  await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Line Items");
+  await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Pricing");
+  await expect(page.getByTestId("proposal-section-estimate")).not.toContainText("Estimate Line Items");
+  await expect(page.getByTestId("proposal-section-estimate")).not.toContainText(/milestone/i);
+  await expect(page.getByTestId("proposal-section-estimate")).toContainText("Cost Categories");
+  await expect(page.getByTestId("proposal-section-estimate")).toContainText("Pricing Adjustments");
   await page.getByTestId("proposal-line-category").selectOption("labor");
   await page.getByTestId("proposal-line-description").fill("Crew labor");
   await page.getByTestId("proposal-line-quantity").fill("10");

@@ -7,27 +7,55 @@ import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 
-const NAV = [
-  ["overview", "Project Overview"],
-  ["assistant", "Project Assistant"],
-  ["clarifications", "Clarifications"],
-  ["appointment", "Appointment"],
-  ["customer", "Customer & Contact"],
-  ["scheduling", "Scheduling"],
-  ["site", "Site Access"],
-  ["measurements", "Measurements"],
-  ["photos", "Photos"],
-  ["documents", "Documents"],
-  ["estimate", "Line Items"],
-  ["incidentals", "Incidentals Reserve"],
-  ["scope", "Scope Notes"],
-  ["ready", "Ready for Agreement"],
-  ["notes", "Notes"],
-  ["history", "History"],
+const WORKFLOW_GROUPS = [
+  {
+    key: "project",
+    label: "Project",
+    purpose: "Confirm who the project is for, where it is, and when the work may occur.",
+    sections: [
+      ["customer", "Customer & Contact"],
+      ["appointment", "Appointment"],
+      ["scheduling", "Scheduling"],
+    ],
+  },
+  {
+    key: "site_scope",
+    label: "Site & Scope",
+    purpose: "Gather the information needed to understand and define the work.",
+    sections: [
+      ["site", "Site Access"],
+      ["measurements", "Measurements"],
+      ["photos", "Photos"],
+      ["documents", "Documents"],
+      ["clarifications", "Clarifications"],
+      ["scope", "Scope Notes"],
+    ],
+  },
+  {
+    key: "pricing",
+    label: "Pricing",
+    purpose: "Build the cost of the job and account for pricing adjustments.",
+    sections: [
+      ["estimate", "Estimate Pricing"],
+      ["incidentals", "Incidentals & Allowances"],
+    ],
+  },
+  {
+    key: "review",
+    label: "Review",
+    purpose: "Confirm the estimate is complete and prepare it for agreement conversion.",
+    sections: [
+      ["ready", "Ready for Agreement"],
+      ["notes", "Notes"],
+      ["history", "History"],
+    ],
+  },
 ];
 
+const NAV = [["overview", "Project Overview"], ...WORKFLOW_GROUPS.flatMap((group) => group.sections)];
+
 const SECTION_DESCRIPTIONS = {
-  overview: "Confirm readiness, missing items, and the next action before turning estimate work into an agreement.",
+  overview: "Confirm required readiness, missing items, and the next action before turning estimate work into an agreement.",
   assistant: "Use compact Project Assistant guidance to choose a template, review blockers, and keep contractor approval in control.",
   clarifications: "Resolve template-driven questions before the estimate becomes agreement language.",
   appointment: "Review the estimate appointment linked to this workspace.",
@@ -37,8 +65,8 @@ const SECTION_DESCRIPTIONS = {
   measurements: "Add quantities and notes that support scope and pricing.",
   photos: "Upload jobsite photos that document existing conditions and estimate context.",
   documents: "Attach plans, receipts, customer files, or supporting estimate documents.",
-  estimate: "Build estimate line items that feed the Agreement Wizard as editable pricing.",
-  incidentals: "Review the incidentals reserve currently represented by estimate line items.",
+  estimate: "Build the labor, materials, equipment, subcontractor costs, and adjustments that make up this estimate.",
+  incidentals: "Review the reserve, allowances, tax, discount, and other pricing adjustments already represented in this estimate.",
   scope: "Write included work, exclusions, assumptions, and allowances for agreement review.",
   ready: "Review remaining blockers and open the existing Agreement Wizard when minimum readiness is met.",
   notes: "Keep internal contractor notes that do not become customer-facing agreement terms automatically.",
@@ -73,6 +101,9 @@ const LINE_ITEM_CATEGORIES = [
   ["allowance", "Allowance"],
   ["other", "Other"],
 ];
+
+const COST_CATEGORY_VALUES = new Set(["labor", "materials", "equipment", "subcontractor", "other"]);
+const PRICING_ADJUSTMENT_VALUES = new Set(["allowance", "incidentals_reserve", "tax", "discount"]);
 
 const PROJECT_START_OPTIONS = [
   ["asap", "ASAP"],
@@ -158,6 +189,11 @@ function money(value) {
   return Number.isFinite(num)
     ? num.toLocaleString("en-US", { style: "currency", currency: "USD" })
     : "$0.00";
+}
+
+function moneyToNumber(value) {
+  const amount = Number.parseFloat(String(value || "0").replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(amount) ? amount : 0;
 }
 
 function formatDateTime(value) {
@@ -285,7 +321,7 @@ function buildProposalAgreementScope(proposal) {
     sectionBlock("Allowances", proposal.allowances),
     measurementLines ? `Measurements\n${measurementLines}` : "",
     attachmentLines ? `Referenced Photos and Documents\n${attachmentLines}` : "",
-    lineItemLines ? `Estimate Line Items\n${lineItemLines}` : "",
+    lineItemLines ? `Estimate Pricing\n${lineItemLines}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -334,6 +370,159 @@ function NavStatusIcon({ tone }) {
   if (tone === "warning") return <AlertTriangle className="h-4 w-4 text-amber-200" aria-hidden="true" />;
   if (tone === "blocked") return <Lock className="h-4 w-4 text-rose-200" aria-hidden="true" />;
   return <Circle className="h-4 w-4 text-sky-100/45" aria-hidden="true" />;
+}
+
+function checklistItemByKey(items, key) {
+  return (items || []).find((item) => item.key === key);
+}
+
+function buildOverviewGroups({ estimateChecklist, proposal, photos, documents }) {
+  const items = estimateChecklist.items || [];
+  const customer = checklistItemByKey(items, "customer");
+  const address = checklistItemByKey(items, "project-address");
+  const scheduling = checklistItemByKey(items, "scheduling");
+  const site = checklistItemByKey(items, "site-visit");
+  const measurements = checklistItemByKey(items, "measurements");
+  const files = checklistItemByKey(items, "files");
+  const clarifications = checklistItemByKey(items, "clarifications");
+  const scope = checklistItemByKey(items, "scope");
+  const pricing = checklistItemByKey(items, "pricing");
+  const ready = checklistItemByKey(items, "ready");
+  const photoReady = (photos || []).length > 0;
+  const documentReady = (documents || []).length > 0;
+
+  return [
+    {
+      key: "project",
+      label: "Project",
+      purpose: WORKFLOW_GROUPS[0].purpose,
+      rows: [
+        customer,
+        address,
+        {
+          key: "appointment",
+          title: "Appointment",
+          complete: Boolean(proposal?.appointment),
+          required: false,
+          target: "appointment",
+          action: "Review appointment",
+          missing: proposal?.appointment ? [] : ["No linked appointment"],
+        },
+        scheduling,
+      ].filter(Boolean),
+    },
+    {
+      key: "site_scope",
+      label: "Site & Scope",
+      purpose: WORKFLOW_GROUPS[1].purpose,
+      rows: [
+        site,
+        measurements,
+        {
+          key: "photos",
+          title: "Photos",
+          complete: photoReady,
+          required: false,
+          target: "photos",
+          action: "Upload photos",
+          missing: photoReady ? [] : ["No photos uploaded"],
+        },
+        {
+          key: "documents",
+          title: "Documents",
+          complete: documentReady,
+          required: false,
+          target: "documents",
+          action: "Upload documents",
+          missing: documentReady ? [] : ["No documents uploaded"],
+        },
+        clarifications,
+        scope,
+      ].filter(Boolean),
+    },
+    {
+      key: "pricing",
+      label: "Pricing",
+      purpose: WORKFLOW_GROUPS[2].purpose,
+      rows: [
+        pricing,
+        {
+          key: "adjustments",
+          title: "Incidentals & Allowances",
+          complete: moneyToNumber(proposal?.totals?.incidentals_reserve) > 0,
+          required: false,
+          target: "incidentals",
+          action: "Review adjustments",
+          missing: moneyToNumber(proposal?.totals?.incidentals_reserve) > 0 ? [] : ["No reserve or adjustment entries"],
+        },
+      ].filter(Boolean),
+    },
+    {
+      key: "review",
+      label: "Review",
+      purpose: WORKFLOW_GROUPS[3].purpose,
+      rows: [ready].filter(Boolean),
+    },
+  ];
+}
+
+function OverviewWorkflowGroup({ group, onOpen }) {
+  const completed = group.rows.filter((row) => row.complete).length;
+  const requiredMissing = group.rows.filter((row) => row.required && !row.complete);
+  const nextRow = requiredMissing[0] || group.rows.find((row) => !row.complete) || group.rows[0];
+  return (
+    <article
+      data-testid={`estimate-overview-group-${group.key}`}
+      className="rounded-2xl border border-white/10 bg-white/7 p-4"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">{group.label}</div>
+          <p className="mt-1 text-sm font-semibold leading-6 text-sky-100/68">{group.purpose}</p>
+        </div>
+        <div className={`rounded-full border px-3 py-1 text-xs font-black ${requiredMissing.length ? "border-amber-200/35 bg-amber-400/12 text-amber-100" : "border-emerald-200/35 bg-emerald-400/12 text-emerald-100"}`}>
+          {completed} of {group.rows.length} complete
+        </div>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {group.rows.map((row) => {
+          const tone = row.complete ? "complete" : row.required ? "warning" : "empty";
+          return (
+            <button
+              key={row.key}
+              data-testid={`estimate-overview-row-${row.key}`}
+              type="button"
+              onClick={() => onOpen(row.target)}
+              className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-slate-950/24 px-3 py-2 text-left hover:bg-white/10"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <NavStatusIcon tone={tone} />
+                <span className="truncate text-sm font-bold text-white">{row.title}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.required ? "bg-amber-300/14 text-amber-100" : "bg-white/8 text-sky-100/55"}`}>
+                  {row.required ? "Required" : "Optional"}
+                </span>
+              </span>
+              <span className="shrink-0 text-xs font-black text-sky-100/62">{row.complete ? "Done" : row.action}</span>
+            </button>
+          );
+        })}
+      </div>
+      {requiredMissing.length ? (
+        <div className="mt-3 rounded-xl border border-amber-200/20 bg-amber-400/10 px-3 py-2 text-sm font-semibold text-amber-100" data-testid={`estimate-overview-missing-${group.key}`}>
+          Needs attention: {requiredMissing.map((row) => row.title).join(", ")}
+        </div>
+      ) : null}
+      {nextRow ? (
+        <button
+          type="button"
+          onClick={() => onOpen(nextRow.target)}
+          className="mt-3 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white hover:bg-amber-200"
+        >
+          Continue with {nextRow.title}
+        </button>
+      ) : null}
+    </article>
+  );
 }
 
 function questionText(question) {
@@ -598,14 +787,14 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents, cl
     },
     {
       key: "pricing",
-      title: "Pricing",
+      title: "Estimate Pricing",
       complete: hasLineItems,
       status: readinessStatus({ complete: hasLineItems, started: hasLineItems }),
       required: true,
-      missing: hasLineItems ? [] : ["At least one estimate line item"],
+      missing: hasLineItems ? [] : ["At least one estimate pricing entry"],
       target: "estimate",
       action: "Add pricing",
-      summary: hasLineItems ? `${proposal.line_items.length} line item${proposal.line_items.length === 1 ? "" : "s"} - ${money(totals?.total)}` : "No estimate pricing yet",
+      summary: hasLineItems ? `${proposal.line_items.length} pricing entr${proposal.line_items.length === 1 ? "y" : "ies"} - ${money(totals?.total)}` : "No estimate pricing yet",
     },
     {
       key: "ready",
@@ -613,12 +802,12 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents, cl
       complete: readyMinimum,
       status: readinessStatus({ complete: readyMinimum, started: contactReady || locationReady || hasScope || hasLineItems }),
       required: true,
-      missing: readyMinimum ? [] : ["Customer/contact", "project address", "clarifications", "scope notes", "estimate line items"].filter((label) => {
+      missing: readyMinimum ? [] : ["Customer/contact", "project address", "clarifications", "scope notes", "estimate pricing"].filter((label) => {
         if (label === "Customer/contact") return !contactReady;
         if (label === "project address") return !locationReady;
         if (label === "clarifications") return !clarificationsReady;
         if (label === "scope notes") return !hasScope;
-        if (label === "estimate line items") return !hasLineItems;
+        if (label === "estimate pricing") return !hasLineItems;
         return false;
       }),
       target: "ready",
@@ -828,6 +1017,10 @@ export default function ProposalWorkspacePage() {
   const estimateChecklist = useMemo(
     () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
     [proposal, draft, totals, photos, documents, clarificationRows]
+  );
+  const overviewGroups = useMemo(
+    () => buildOverviewGroups({ estimateChecklist, proposal, photos, documents }),
+    [estimateChecklist, proposal, photos, documents]
   );
   const isReadOnlyHistory = Boolean(
     proposal && (compactText(proposal.status).toLowerCase() === "converted" || proposal.linked_agreement_id)
@@ -1593,10 +1786,44 @@ export default function ProposalWorkspacePage() {
         <aside className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_24px_70px_rgba(2,8,23,0.3)] lg:sticky lg:top-4 lg:self-start" data-testid="proposal-nav">
           <div className="mb-3 px-1">
             <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Estimate progress</div>
-            <div className="mt-1 text-sm font-semibold text-sky-100/68">{estimateChecklist.completedCount} of {estimateChecklist.items.length} items complete</div>
+            <div className="mt-1 text-sm font-semibold text-sky-100/68">{estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete</div>
           </div>
-          <nav className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
-            {NAV.map(([key, label]) => {
+          <nav className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            <button
+              type="button"
+              data-testid="proposal-nav-overview"
+              onClick={() => setActive("overview")}
+              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+                active === "overview"
+                  ? "border-sky-300/45 bg-sky-400/16 text-white shadow-[0_12px_32px_rgba(14,165,233,0.12)]"
+                  : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <NavStatusIcon tone={estimateChecklist.readyMinimum ? "complete" : "warning"} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-black">Project Overview</span>
+              </span>
+            </button>
+            <button
+              type="button"
+              data-testid="proposal-nav-assistant"
+              onClick={() => setActive("assistant")}
+              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+                active === "assistant"
+                  ? "border-sky-300/45 bg-sky-400/16 text-white shadow-[0_12px_32px_rgba(14,165,233,0.12)]"
+                  : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <NavStatusIcon tone={estimateChecklist.requiredMissing.length ? "warning" : "complete"} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-black">Project Assistant</span>
+                <span className="block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-sky-100/45">Guidance</span>
+              </span>
+            </button>
+            {WORKFLOW_GROUPS.map((group) => (
+              <div key={group.key} className="space-y-1.5">
+                <div className="px-1 text-[10px] font-black uppercase tracking-[0.18em] text-sky-100/45">{group.label}</div>
+                {group.sections.map(([key, label]) => {
               const navStatus = navItemForSection(key, estimateChecklist, isReadOnlyHistory);
               return (
                 <button
@@ -1613,13 +1840,15 @@ export default function ProposalWorkspacePage() {
                   <NavStatusIcon tone={navStatus.tone} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-black">{label}</span>
-                    <span className="block truncate text-[11px] font-bold uppercase tracking-[0.08em] text-sky-100/50">
-                      {navStatus.status}
-                    </span>
+                    {navStatus.status === "Optional" ? (
+                      <span className="block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-sky-100/45">Optional</span>
+                    ) : null}
                   </span>
                 </button>
               );
-            })}
+                })}
+              </div>
+            ))}
           </nav>
         </aside>
 
@@ -1631,7 +1860,7 @@ export default function ProposalWorkspacePage() {
                   <div className="text-xs font-black uppercase tracking-[0.2em] text-blue-200/80">Estimate Readiness</div>
                   <div className="mt-1 text-3xl font-black">{estimateChecklist.percent}%</div>
                   <div className="mt-1 text-sm font-semibold text-slate-300">
-                    {estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness items complete
+                    {estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete
                   </div>
                 </div>
                 <div className={`rounded-xl px-4 py-3 text-sm font-black ${estimateChecklist.readyMinimum ? "bg-emerald-400 text-emerald-950" : "bg-amber-300 text-amber-950"}`} data-testid="estimate-ready-status">
@@ -1643,9 +1872,9 @@ export default function ProposalWorkspacePage() {
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2" data-testid="estimate-checklist-sections">
-              {estimateChecklist.items.map((item) => (
-                <ChecklistCard key={item.key} item={item} onOpen={setActive} />
+            <div className="mt-4 grid gap-3 xl:grid-cols-2" data-testid="estimate-checklist-sections">
+              {overviewGroups.map((group) => (
+                <OverviewWorkflowGroup key={group.key} group={group} onOpen={setActive} />
               ))}
             </div>
 
@@ -2164,20 +2393,37 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="estimate" active={active === "estimate"} title="Estimate Line Items">
+          <Section id="estimate" active={active === "estimate"} title="Estimate Pricing">
             <div className="rounded-lg border border-sky-200/18 bg-sky-400/10 p-3 text-sm font-semibold text-sky-100/78">
-              Estimate pricing stays here until you open the Agreement Wizard. No agreements, payments, assignments, PDFs, or customer sends are created from this checklist.
+              Build the labor, materials, equipment, subcontractor costs, and adjustments that make up this estimate. Pricing remains editable when carried into the Agreement Wizard.
             </div>
             <form onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-6" data-testid="proposal-line-item-form">
+              <div className="md:col-span-6 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-white/10 bg-slate-950/24 px-3 py-2">
+                  <div className="text-xs font-black uppercase tracking-[0.12em] text-sky-100/55">Cost Categories</div>
+                  <div className="mt-1 text-sm font-semibold text-sky-100/72">Labor, materials, equipment, subcontractor, and other direct job costs.</div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-slate-950/24 px-3 py-2">
+                  <div className="text-xs font-black uppercase tracking-[0.12em] text-sky-100/55">Pricing Adjustments</div>
+                  <div className="mt-1 text-sm font-semibold text-sky-100/72">Allowances, incidentals reserve, tax, and discounts.</div>
+                </div>
+              </div>
               <select
                 data-testid="proposal-line-category"
                 className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none md:col-span-2"
                 value={lineItemForm.category}
                 onChange={(event) => patchLineItemForm("category", event.target.value)}
               >
-                {LINE_ITEM_CATEGORIES.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
+                <optgroup label="Cost Categories">
+                  {LINE_ITEM_CATEGORIES.filter(([value]) => COST_CATEGORY_VALUES.has(value)).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Pricing Adjustments">
+                  {LINE_ITEM_CATEGORIES.filter(([value]) => PRICING_ADJUSTMENT_VALUES.has(value)).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </optgroup>
               </select>
               <input
                 data-testid="proposal-line-description"
@@ -2247,7 +2493,7 @@ export default function ProposalWorkspacePage() {
                   ))}
                 </div>
               ) : (
-                <div className="border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No estimate line items yet. Add labor, materials, allowances, or incidentals before creating an agreement.</div>
+                <div className="border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No estimate pricing entries yet. Add labor, materials, allowances, or incidentals before creating an agreement.</div>
               )}
             </div>
 
@@ -2256,7 +2502,7 @@ export default function ProposalWorkspacePage() {
                 ["Subtotal", totals.subtotal],
                 ["Tax", totals.tax],
                 ["Discounts", totals.discounts],
-                ["Incidentals Reserve", totals.incidentals_reserve],
+                ["Incidentals & Allowances", totals.incidentals_reserve],
                 ["Total", totals.total],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-lg bg-slate-950 px-3 py-3 text-white">
@@ -2267,12 +2513,12 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="incidentals" active={active === "incidentals"} title="Incidentals Reserve">
+          <Section id="incidentals" active={active === "incidentals"} title="Incidentals & Allowances">
             <div className="rounded-xl bg-slate-950 p-4 text-white">
               <div className="text-xs font-black uppercase tracking-wide text-slate-400">Current reserve</div>
               <div className="mt-1 text-3xl font-black">{money(totals.incidentals_reserve)}</div>
               <p className="mt-2 text-sm font-semibold text-slate-300">
-                Incidentals Reserve is captured as an estimate line item and passed to the Agreement Wizard as the existing incidentals reserve input.
+                Incidentals, allowances, tax, discounts, and reserve adjustments stay in estimate pricing and pass to the Agreement Wizard as editable pricing inputs.
               </p>
               <button
                 type="button"
@@ -2363,11 +2609,14 @@ export default function ProposalWorkspacePage() {
               <span className="text-xs font-semibold uppercase text-slate-400">Progress</span>
               <span className="text-lg font-black" data-testid="estimate-summary-progress">{estimateChecklist.percent}%</span>
             </div>
+            <div className="mt-1 text-xs font-semibold text-sky-100/62">
+              {estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete
+            </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
               <div className="h-full rounded-full bg-emerald-400" style={{ width: `${estimateChecklist.percent}%` }} />
             </div>
             <div className={`mt-2 text-xs font-black ${estimateChecklist.readyMinimum ? "text-emerald-200" : "text-amber-200"}`}>
-              {estimateChecklist.readyMinimum ? "Ready for Agreement" : `${estimateChecklist.requiredMissing.length} required section${estimateChecklist.requiredMissing.length === 1 ? "" : "s"} missing`}
+              {estimateChecklist.readyMinimum ? "Ready for Agreement" : `${estimateChecklist.requiredMissing.length} required readiness item${estimateChecklist.requiredMissing.length === 1 ? "" : "s"} missing`}
             </div>
           </div>
           <div className="mt-4 rounded-lg bg-white/10 p-3">
