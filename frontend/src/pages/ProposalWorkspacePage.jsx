@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Camera, Check, FileSignature, FileUp, Mail, Mic, Phone, Plus, Ruler, Save, StickyNote, Trash2, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, CheckCircle2, Circle, FileSignature, FileUp, Lock, Mail, Mic, Phone, Plus, Ruler, Save, ShieldCheck, StickyNote, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
@@ -8,7 +8,7 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 
 const NAV = [
-  ["overview", "Estimate Checklist"],
+  ["overview", "Project Overview"],
   ["assistant", "Project Assistant"],
   ["clarifications", "Clarifications"],
   ["appointment", "Appointment"],
@@ -25,6 +25,25 @@ const NAV = [
   ["notes", "Notes"],
   ["history", "History"],
 ];
+
+const SECTION_DESCRIPTIONS = {
+  overview: "Confirm readiness, missing items, and the next action before turning estimate work into an agreement.",
+  assistant: "Use compact Project Assistant guidance to choose a template, review blockers, and keep contractor approval in control.",
+  clarifications: "Resolve template-driven questions before the estimate becomes agreement language.",
+  appointment: "Review the estimate appointment linked to this workspace.",
+  customer: "Verify the customer, contact information, and project address used for agreement prefill.",
+  scheduling: "Capture start, completion, and priority expectations for planning context.",
+  site: "Record access details, site conditions, risks, and customer requests from the visit.",
+  measurements: "Add quantities and notes that support scope and pricing.",
+  photos: "Upload jobsite photos that document existing conditions and estimate context.",
+  documents: "Attach plans, receipts, customer files, or supporting estimate documents.",
+  estimate: "Build estimate line items that feed the Agreement Wizard as editable pricing.",
+  incidentals: "Review the incidentals reserve currently represented by estimate line items.",
+  scope: "Write included work, exclusions, assumptions, and allowances for agreement review.",
+  ready: "Review remaining blockers and open the existing Agreement Wizard when minimum readiness is met.",
+  notes: "Keep internal contractor notes that do not become customer-facing agreement terms automatically.",
+  history: "Review estimate activity, updates, revisions, and conversion events.",
+};
 
 const EMPTY_MEASUREMENT = {
   label: "",
@@ -188,10 +207,10 @@ function proposalScheduleSummary(source = {}) {
 
 function statusTone(status) {
   const value = String(status || "").toLowerCase();
-  if (["ready", "sent", "viewed", "accepted", "converted"].includes(value)) return "border-emerald-300 bg-emerald-50 text-emerald-800";
-  if (["site_visit", "in_progress", "revision_requested"].includes(value)) return "border-amber-300 bg-amber-50 text-amber-800";
-  if (["declined", "expired"].includes(value)) return "border-rose-300 bg-rose-50 text-rose-800";
-  return "border-slate-300 bg-slate-50 text-slate-700";
+  if (["ready", "sent", "viewed", "accepted", "converted"].includes(value)) return "border-emerald-200/35 bg-emerald-400/12 text-emerald-100";
+  if (["site_visit", "in_progress", "revision_requested"].includes(value)) return "border-amber-200/35 bg-amber-400/12 text-amber-100";
+  if (["declined", "expired"].includes(value)) return "border-rose-200/35 bg-rose-400/12 text-rose-100";
+  return "border-white/14 bg-white/8 text-sky-100/78";
 }
 
 function safeHref(kind, value, subject = "", body = "") {
@@ -285,9 +304,36 @@ function readinessStatus({ complete, started }) {
 }
 
 function readinessTone(status) {
-  if (status === "Complete") return "border-emerald-200 bg-emerald-50 text-emerald-900";
-  if (status === "In Progress") return "border-amber-200 bg-amber-50 text-amber-900";
-  return "border-slate-200 bg-white text-slate-700";
+  if (status === "Complete") return "border-emerald-300/28 bg-emerald-400/10 text-emerald-50";
+  if (status === "In Progress") return "border-amber-300/32 bg-amber-400/10 text-amber-50";
+  return "border-white/12 bg-white/7 text-sky-100/78";
+}
+
+function navItemForSection(key, estimateChecklist, isReadOnlyHistory) {
+  if (key === "assistant") {
+    return estimateChecklist.requiredMissing.length ? { status: "Needs attention", tone: "warning" } : { status: "Ready", tone: "complete" };
+  }
+  if (key === "ready") {
+    if (isReadOnlyHistory) return { status: "Blocked", tone: "blocked" };
+    return estimateChecklist.readyMinimum ? { status: "Complete", tone: "complete" } : { status: "Blocked", tone: "blocked" };
+  }
+  if (["notes", "history", "appointment", "incidentals"].includes(key)) {
+    return { status: "Optional", tone: "optional" };
+  }
+  const checklistItem = estimateChecklist.items.find((item) => item.target === key || item.key === key);
+  if (!checklistItem) return { status: "Optional", tone: "optional" };
+  if (checklistItem.complete) return { status: "Complete", tone: "complete" };
+  if (checklistItem.required) return { status: "Needs attention", tone: "warning" };
+  return checklistItem.status === "In Progress"
+    ? { status: "In progress", tone: "warning" }
+    : { status: "Not started", tone: "empty" };
+}
+
+function NavStatusIcon({ tone }) {
+  if (tone === "complete") return <CheckCircle2 className="h-4 w-4 text-emerald-200" aria-hidden="true" />;
+  if (tone === "warning") return <AlertTriangle className="h-4 w-4 text-amber-200" aria-hidden="true" />;
+  if (tone === "blocked") return <Lock className="h-4 w-4 text-rose-200" aria-hidden="true" />;
+  return <Circle className="h-4 w-4 text-sky-100/45" aria-hidden="true" />;
 }
 
 function questionText(question) {
@@ -601,11 +647,22 @@ function primeAgreementWizardForProposalDraft() {
   }
 }
 
-function Section({ id, active, title, children }) {
+function Section({ id, active, title, children, description }) {
   if (!active) return null;
   return (
-    <section id={id} className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200 md:p-5" data-testid={`proposal-section-${id}`}>
-      <h2 className="text-lg font-bold text-slate-950">{title}</h2>
+    <section
+      id={id}
+      className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-4 text-white shadow-[0_24px_70px_rgba(2,8,23,0.34)] md:p-5"
+      data-testid={`proposal-section-${id}`}
+    >
+      <div className="flex flex-col gap-1.5 border-b border-white/10 pb-4">
+        <h2 className="text-xl font-black text-white">{title}</h2>
+        {(description || SECTION_DESCRIPTIONS[id]) ? (
+          <p className="max-w-3xl text-sm font-semibold leading-6 text-sky-100/72">
+            {description || SECTION_DESCRIPTIONS[id]}
+          </p>
+        ) : null}
+      </div>
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -620,18 +677,18 @@ function ChecklistCard({ item, onOpen }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${item.complete ? "bg-emerald-600 text-white" : "bg-white text-slate-400 ring-1 ring-slate-300"}`}>
+            <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg ${item.complete ? "bg-emerald-400 text-emerald-950" : "bg-white/8 text-sky-100/45 ring-1 ring-white/14"}`}>
               {item.complete ? <Check size={16} /> : null}
             </span>
-            <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
-            {item.required ? <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-black uppercase text-white">Required</span> : null}
-            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black uppercase text-slate-700 ring-1 ring-black/5" data-testid={`estimate-readiness-status-${item.key}`}>
+            <h3 className="text-sm font-black text-white">{item.title}</h3>
+            {item.required ? <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-black uppercase text-amber-100 ring-1 ring-amber-200/24">Required</span> : null}
+            <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-black uppercase text-sky-100/78 ring-1 ring-white/12" data-testid={`estimate-readiness-status-${item.key}`}>
               {item.status}
             </span>
           </div>
-          <p className="mt-2 line-clamp-2 text-sm font-semibold text-slate-700">{item.summary}</p>
+          <p className="mt-2 line-clamp-2 text-sm font-semibold text-sky-100/76">{item.summary}</p>
           {!item.complete && item.missing?.length ? (
-            <div className="mt-2 text-xs font-bold text-amber-800">
+            <div className="mt-2 text-xs font-bold text-amber-100">
               Missing: {item.missing.join(", ")}
             </div>
           ) : null}
@@ -639,7 +696,7 @@ function ChecklistCard({ item, onOpen }) {
         <button
           type="button"
           onClick={() => onOpen(item.target)}
-          className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50"
+          className="shrink-0 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/15"
         >
           {item.action}
         </button>
@@ -652,9 +709,9 @@ function InfoGrid({ rows }) {
   return (
     <dl className="grid gap-3 sm:grid-cols-2">
       {rows.map(([label, value]) => (
-        <div key={label} className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
-          <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</dt>
-          <dd className="mt-1 whitespace-pre-wrap text-sm font-semibold text-slate-900">{field(value)}</dd>
+        <div key={label} className="rounded-lg border border-white/10 bg-white/7 px-3 py-2">
+          <dt className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">{label}</dt>
+          <dd className="mt-1 whitespace-pre-wrap text-sm font-semibold text-white">{field(value)}</dd>
         </div>
       ))}
     </dl>
@@ -664,10 +721,10 @@ function InfoGrid({ rows }) {
 function TextAreaField({ label, value, onChange, rows = 4, testId }) {
   return (
     <label className="block">
-      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <span className="text-sm font-semibold text-sky-100/78">{label}</span>
       <textarea
         data-testid={testId}
-        className="mt-1 min-h-[104px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        className="mt-1 min-h-[104px] w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white shadow-sm placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
         rows={rows}
         value={value || ""}
         onChange={(event) => onChange(event.target.value)}
@@ -679,12 +736,12 @@ function TextAreaField({ label, value, onChange, rows = 4, testId }) {
 function SelectField({ label, value, onChange, options, testId }) {
   return (
     <label className="block">
-      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <span className="text-sm font-semibold text-sky-100/78">{label}</span>
       <select
         data-testid={testId}
         value={value || ""}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white shadow-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20"
       >
         {options.map(([optionValue, labelText]) => (
           <option key={optionValue} value={optionValue}>
@@ -699,14 +756,14 @@ function SelectField({ label, value, onChange, options, testId }) {
 function DateField({ label, value, onChange, disabled = false, testId }) {
   return (
     <label className="block">
-      <span className="text-sm font-semibold text-slate-700">{label}</span>
+      <span className="text-sm font-semibold text-sky-100/78">{label}</span>
       <input
         type="date"
         data-testid={testId}
         value={value || ""}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-950 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
+        className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white shadow-sm focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20 disabled:bg-slate-950/20 disabled:text-sky-100/38"
       />
     </label>
   );
@@ -775,6 +832,15 @@ export default function ProposalWorkspacePage() {
   const isReadOnlyHistory = Boolean(
     proposal && (compactText(proposal.status).toLowerCase() === "converted" || proposal.linked_agreement_id)
   );
+  const highestPriorityItem =
+    estimateChecklist.requiredMissing[0] ||
+    estimateChecklist.items.find((item) => !item.complete) ||
+    estimateChecklist.items.find((item) => item.key === "ready");
+  const activeSectionStatus = navItemForSection(active, estimateChecklist, isReadOnlyHistory);
+  const opportunityReference = [
+    proposal?.source_type ? `${proposal.source_type} #${proposal.source_id || proposal.contractor_opportunity_id || "-"}` : "",
+    proposal?.estimate_appointment_id ? `Appointment #${proposal.estimate_appointment_id}` : "",
+  ].filter(Boolean).join(" | ");
 
   function blockReadOnlyHistory() {
     if (!isReadOnlyHistory) return false;
@@ -1439,15 +1505,16 @@ export default function ProposalWorkspacePage() {
 
   return (
     <ContractorPageSurface
+      variant="operational"
       eyebrow="Estimate Workspace"
-      title={proposal.project_title || "Estimate Checklist"}
-      subtitle="Work through the estimate checklist, capture site visit details, and feed the existing Agreement Wizard when ready."
+      title={proposal.project_title || "Estimate Workspace"}
+      subtitle="Prepare scope, pricing, evidence, and agreement handoff details in one focused workspace."
       actions={
         <>
           <button
             type="button"
             data-testid="enter-walkthrough-mode"
-            className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-blue-500"
+            className="rounded-lg border border-sky-300/30 bg-sky-400/15 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-sky-400/24"
             onClick={() => setWalkthroughMode(true)}
           >
             Enter Walkthrough Mode
@@ -1456,14 +1523,14 @@ export default function ProposalWorkspacePage() {
             type="button"
             data-testid="proposal-create-agreement-action"
             disabled={!estimateChecklist.readyMinimum || isReadOnlyHistory}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            className="inline-flex items-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-amber-200 focus-visible:text-white active:text-white disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
             onClick={createAgreementFromProposal}
           >
             <FileSignature size={16} /> Create Agreement from Estimate
           </button>
           <button
             type="button"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-white/15"
             onClick={() => navigate("/app/opportunities")}
           >
             Opportunities
@@ -1476,28 +1543,89 @@ export default function ProposalWorkspacePage() {
           This estimate has been converted and remains available as read-only history. The linked agreement is now the active operational record.
         </div>
       ) : null}
-      <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_280px]" data-testid="proposal-workspace">
-        <aside className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200 lg:sticky lg:top-4 lg:self-start" data-testid="proposal-nav">
-          <nav className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-            {NAV.map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                data-testid={`proposal-nav-${key}`}
-                onClick={() => setActive(key)}
-                className={`rounded-lg px-3 py-2 text-left text-sm font-bold ${
-                  active === key ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+      <div
+        className="mb-4 rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-4 text-white shadow-[0_24px_70px_rgba(2,8,23,0.34)] md:p-5"
+        data-testid="proposal-workspace-header"
+      >
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${estimateChecklist.readyMinimum ? "border-emerald-200/35 bg-emerald-400/12 text-emerald-100" : "border-amber-200/35 bg-amber-400/12 text-amber-100"}`}>
+                {estimateChecklist.readyMinimum ? "Ready for agreement" : "Preparing estimate"}
+              </span>
+              <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs font-bold text-sky-100/80">
+                {proposal.status_label || proposal.status || "Draft"}
+              </span>
+              {isReadOnlyHistory ? (
+                <span className="rounded-full border border-emerald-200/35 bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-100">
+                  Converted history
+                </span>
+              ) : null}
+            </div>
+            <h2 className="mt-3 truncate text-2xl font-black text-white md:text-3xl">
+              {proposal.project_title || "Untitled estimate"}
+            </h2>
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-semibold text-sky-100/78">
+              <span>{proposal.customer_name || "Customer not set"}</span>
+              <span>{proposal.service_location || "No project address"}</span>
+              {opportunityReference ? <span>{opportunityReference}</span> : null}
+              <span>Updated {formatDateTime(proposal.updated_at)}</span>
+            </div>
+          </div>
+          <div className="grid min-w-[14rem] gap-3 sm:grid-cols-3 xl:grid-cols-1">
+            <div className="rounded-xl border border-white/10 bg-white/8 p-3">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Readiness</div>
+              <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.percent}%</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/8 p-3">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Missing</div>
+              <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.requiredMissing.length}</div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/8 p-3">
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Value</div>
+              <div className="mt-1 text-2xl font-black text-white">{money(totals.total)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)_280px]" data-testid="proposal-workspace">
+        <aside className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_24px_70px_rgba(2,8,23,0.3)] lg:sticky lg:top-4 lg:self-start" data-testid="proposal-nav">
+          <div className="mb-3 px-1">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Estimate progress</div>
+            <div className="mt-1 text-sm font-semibold text-sky-100/68">{estimateChecklist.completedCount} of {estimateChecklist.items.length} items complete</div>
+          </div>
+          <nav className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-1">
+            {NAV.map(([key, label]) => {
+              const navStatus = navItemForSection(key, estimateChecklist, isReadOnlyHistory);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  data-testid={`proposal-nav-${key}`}
+                  onClick={() => setActive(key)}
+                  className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+                    active === key
+                      ? "border-sky-300/45 bg-sky-400/16 text-white shadow-[0_12px_32px_rgba(14,165,233,0.12)]"
+                      : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <NavStatusIcon tone={navStatus.tone} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-black">{label}</span>
+                    <span className="block truncate text-[11px] font-bold uppercase tracking-[0.08em] text-sky-100/50">
+                      {navStatus.status}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </nav>
         </aside>
 
         <main className="min-w-0 space-y-4">
-          <Section id="overview" active={active === "overview"} title="Estimate Checklist">
-            <div className="rounded-2xl bg-slate-950 p-4 text-white" data-testid="estimate-checklist-progress">
+          <Section id="overview" active={active === "overview"} title="Project Overview">
+            <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-white" data-testid="estimate-checklist-progress">
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <div className="text-xs font-black uppercase tracking-[0.2em] text-blue-200/80">Estimate Readiness</div>
@@ -1521,7 +1649,7 @@ export default function ProposalWorkspacePage() {
               ))}
             </div>
 
-            <div className="mt-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/7 p-4">
               <div className="flex flex-wrap items-center gap-3">
                 <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(proposal.status)}`} data-testid="proposal-status">
                   {proposal.status_label}
@@ -1530,7 +1658,7 @@ export default function ProposalWorkspacePage() {
                   data-testid="proposal-status-select"
                   value={draft.status}
                   onChange={(event) => patchDraft("status", event.target.value)}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                  className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white"
                 >
                   <option value="draft">Draft</option>
                   <option value="site_visit">Site Visit</option>
@@ -1558,22 +1686,63 @@ export default function ProposalWorkspacePage() {
           </Section>
 
           <Section id="assistant" active={active === "assistant"} title="Project Assistant">
-            <div className="grid gap-4">
-              <div className="rounded-xl bg-slate-950 p-4 text-white" data-testid="proposal-template-recommendation">
+            <div className="rounded-2xl border border-sky-200/16 bg-slate-950/42 p-4 text-white" data-testid="proposal-assistant-guidance">
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,0.45fr)] lg:items-start">
+                <div>
+                  <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Project Assistant</div>
+                  <h3 className="mt-1 text-xl font-black text-white">
+                    {highestPriorityItem?.complete ? "Estimate guidance is current" : highestPriorityItem?.action || "Review readiness"}
+                  </h3>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-sky-100/72">
+                    {highestPriorityItem?.summary || "Project Assistant organizes estimate readiness so the contractor can review and approve the handoff."}
+                  </p>
+                  {highestPriorityItem && !highestPriorityItem.complete ? (
+                    <button
+                      type="button"
+                      data-testid="proposal-assistant-primary-action"
+                      onClick={() => setActive(highestPriorityItem.target || "overview")}
+                      className="mt-3 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white hover:bg-amber-200 focus-visible:text-white active:text-white"
+                    >
+                      {highestPriorityItem.action || "Open section"}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                  <div className="rounded-xl border border-white/10 bg-white/8 p-3">
+                    <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Readiness</div>
+                    <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.percent}%</div>
+                  </div>
+                  <div className="rounded-xl border border-white/10 bg-white/8 p-3">
+                    <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Unresolved blockers</div>
+                    <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.requiredMissing.length}</div>
+                  </div>
+                </div>
+              </div>
+              <div
+                className="mt-4 flex items-start gap-2 rounded-xl border border-white/10 bg-white/6 px-3 py-2 text-xs font-semibold leading-5 text-sky-100/68"
+                data-testid="proposal-assistant-approval-reminder"
+              >
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-100/70" aria-hidden="true" />
+                <span>Contractor approval is required before pricing, messages, or agreement creation are finalized.</span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4">
+              <div className="rounded-xl border border-white/10 bg-white/7 p-4 text-white" data-testid="proposal-template-recommendation">
                 <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-200/80">Template Workflow</div>
-                <h3 className="mt-2 text-xl font-black">
+                <h3 className="mt-2 text-lg font-black text-white">
                   {templateLoading
                     ? "Searching Agreement Template Library..."
                     : templateRecommendation
                       ? "Recommended agreement template"
                       : "Generated draft agreement template"}
                 </h3>
-                <p className="mt-2 text-sm font-semibold leading-6 text-slate-300">
+                <p className="mt-2 text-sm font-semibold leading-6 text-sky-100/72">
                   {selectedTemplate?.match_reason || "Project Assistant prepares a draft template structure for contractor review before the Agreement Wizard."}
                 </p>
                 <div className="mt-4 rounded-xl bg-white/10 p-3">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">Selected</div>
-                  <div className="mt-1 text-lg font-black">{selectedTemplate?.name || "Template search pending"}</div>
+                  <div className="text-xs font-bold uppercase tracking-wide text-sky-100/55">Selected</div>
+                  <div className="mt-1 text-lg font-black text-white">{selectedTemplate?.name || "Template search pending"}</div>
                   <div className="mt-1 text-sm font-semibold text-blue-100">{selectedTemplate?.match_label || templateChoice}</div>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -1609,7 +1778,7 @@ export default function ProposalWorkspacePage() {
                         setTemplateChoice("generated");
                         toast.success("Draft agreement template generated for review.");
                       }}
-                      className="rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-slate-950"
+                      className="rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white focus-visible:text-white active:text-white"
                     >
                       Generate Draft Agreement Template
                     </button>
@@ -1622,16 +1791,16 @@ export default function ProposalWorkspacePage() {
                       setTemplateChoice("blank");
                       toast.success("Estimate checklist set to start blank.");
                     }}
-                    className="rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950"
+                      className="rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-black text-white hover:bg-white/15"
                   >
                     Start Blank
                   </button>
                 </div>
               </div>
 
-              <div className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200" data-testid="proposal-assistant-suggestions">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Suggestions</div>
-                <div className="mt-3 space-y-2">
+              <div className="rounded-xl border border-white/10 bg-white/7 p-4" data-testid="proposal-assistant-suggestions">
+                <div className="text-xs font-black uppercase tracking-wide text-sky-100/58">Suggestions</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {[
                     ["Improve Scope", "scope", !compactText(draft.included_work)],
                     ["Missing Information", "clarifications", !clarificationRows.every((row) => row.complete)],
@@ -1645,21 +1814,21 @@ export default function ProposalWorkspacePage() {
                       key={label}
                       type="button"
                       onClick={() => setActive(target)}
-                      className="flex w-full items-center justify-between rounded-lg bg-white px-3 py-2 text-left text-sm font-black text-slate-800 ring-1 ring-slate-200 hover:bg-slate-100"
+                      className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-white/8 px-3 py-2 text-left text-sm font-black text-white hover:bg-white/12"
                     >
                       {label}
-                      <span className="text-xs text-blue-700">Jump</span>
+                      <span className="text-xs text-sky-100/70">Jump</span>
                     </button>
                   ) : null)}
                 </div>
               </div>
             </div>
 
-            <div className="mt-4 rounded-xl bg-blue-50 p-4 ring-1 ring-blue-100" data-testid="proposal-readiness-missing">
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/7 p-4" data-testid="proposal-readiness-missing">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase tracking-wide text-blue-700">Estimate Readiness</div>
-                  <div className="mt-1 text-2xl font-black text-blue-950">{estimateChecklist.percent}%</div>
+                  <div className="text-xs font-black uppercase tracking-wide text-sky-100/58">Estimate Readiness</div>
+                  <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.percent}%</div>
                 </div>
                 <button type="button" onClick={() => setActive("overview")} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-black text-white">
                   Jump to Readiness
@@ -1668,18 +1837,18 @@ export default function ProposalWorkspacePage() {
               {estimateChecklist.requiredMissing.length ? (
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {estimateChecklist.requiredMissing.map((item) => (
-                    <div key={item.key} className="rounded-lg bg-white p-3 ring-1 ring-blue-100">
-                      <div className="font-black text-slate-950">{item.title}</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-600">{item.missing.join(", ")}</div>
+                    <div key={item.key} className="rounded-lg border border-white/10 bg-slate-950/35 p-3">
+                      <div className="font-black text-white">{item.title}</div>
+                      <div className="mt-1 text-sm font-semibold text-sky-100/68">{item.missing.join(", ")}</div>
                       <div className="mt-2 flex gap-2">
                         <button type="button" onClick={() => setActive(item.target)} className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-black text-white">Jump to Section</button>
-                        <button type="button" onClick={() => toast.success("Assumption noted for contractor review.")} className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-700">Mark Assumption</button>
+                        <button type="button" onClick={() => toast.success("Assumption noted for contractor review.")} className="rounded-lg border border-white/14 bg-white/8 px-3 py-1.5 text-xs font-black text-white">Mark Assumption</button>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="mt-3 rounded-lg bg-white p-3 text-sm font-black text-emerald-700 ring-1 ring-emerald-100">
+                <div className="mt-3 rounded-lg border border-emerald-200/25 bg-emerald-400/10 p-3 text-sm font-black text-emerald-100">
                   Estimate Ready. Open the Agreement Wizard when you are ready to review the draft agreement.
                 </div>
               )}
@@ -1687,30 +1856,30 @@ export default function ProposalWorkspacePage() {
           </Section>
 
           <Section id="clarifications" active={active === "clarifications"} title="Clarification Questions">
-            <div className="rounded-lg bg-slate-50 p-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200" data-testid="proposal-clarification-intro">
+            <div className="rounded-lg border border-white/10 bg-white/7 p-3 text-sm font-semibold text-sky-100/72" data-testid="proposal-clarification-intro">
               Questions come from the selected or generated agreement template. Project Assistant auto-completes questions when measurements, photos, notes, or scope already answer them.
             </div>
             <div className="mt-4 space-y-3" data-testid="proposal-clarification-questions">
               {clarificationRows.map((row) => (
-                <article key={row.key} className={`rounded-xl border p-4 ${row.complete ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+                <article key={row.key} className={`rounded-xl border p-4 ${row.complete ? "border-emerald-200/30 bg-emerald-400/10" : "border-amber-200/30 bg-amber-400/10"}`}>
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-black text-slate-950">{row.label}</h3>
+                        <h3 className="text-sm font-black text-white">{row.label}</h3>
                         <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.complete ? "bg-emerald-600 text-white" : "bg-amber-300 text-amber-950"}`} data-testid={`proposal-clarification-status-${row.key}`}>
                           {row.status}
                         </span>
                       </div>
-                      <p className="mt-2 text-sm font-semibold text-slate-700">{row.question}</p>
+                      <p className="mt-2 text-sm font-semibold text-sky-100/74">{row.question}</p>
                       {row.autoComplete ? (
                         <p className="mt-2 text-xs font-bold text-emerald-800">Auto-completed from captured estimate details.</p>
                       ) : null}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
-                      <button type="button" onClick={() => setActive(row.target)} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200">Jump</button>
+                      <button type="button" onClick={() => setActive(row.target)} className="rounded-lg border border-white/16 bg-white/10 px-3 py-2 text-xs font-black text-white">Jump</button>
                       <button type="button" data-testid={`proposal-clarification-complete-${row.key}`} onClick={() => setClarificationState(row, "complete")} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white">Mark Complete</button>
                       <button type="button" onClick={() => setClarificationState(row, "ignored")} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white">Ignore</button>
-                      <button type="button" onClick={() => setClarificationState(row, "open")} className="rounded-lg bg-white px-3 py-2 text-xs font-black text-slate-700 ring-1 ring-slate-200">Reopen</button>
+                      <button type="button" onClick={() => setClarificationState(row, "open")} className="rounded-lg border border-white/16 bg-white/10 px-3 py-2 text-xs font-black text-white">Reopen</button>
                     </div>
                   </div>
                 </article>
@@ -1731,8 +1900,8 @@ export default function ProposalWorkspacePage() {
                 ]}
               />
             ) : (
-              <div className="rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">
-                No estimate appointment is linked yet.
+              <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">
+                No estimate appointment is linked yet. Appointment details from intake or opportunity review will appear here when available.
               </div>
             )}
           </Section>
@@ -1747,30 +1916,30 @@ export default function ProposalWorkspacePage() {
                 ["Preferred contact", draft.customer_preferred_contact || "Not set"],
               ]}
             />
-            <div className="mt-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200" data-testid="proposal-project-address-workflow">
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/7 p-4" data-testid="proposal-project-address-workflow">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
-                  <h3 className="text-sm font-black text-slate-950">Project Address</h3>
-                  <p className="mt-1 text-sm font-semibold text-slate-600">
+                  <h3 className="text-sm font-black text-white">Project Address</h3>
+                  <p className="mt-1 text-sm font-semibold text-sky-100/70">
                     Every estimate needs a project address before it can move to the Agreement Wizard.
                   </p>
                 </div>
                 {matchedCustomer ? (
-                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-700 ring-1 ring-slate-200">
+                  <span className="rounded-full border border-white/14 bg-white/8 px-3 py-1 text-xs font-black text-sky-100/78">
                     Matched customer profile
                   </span>
                 ) : null}
               </div>
               {propertyOptions.length ? (
                 <label className="mt-4 block">
-                  <span className="text-xs font-black uppercase tracking-wide text-slate-500">Select Existing Property</span>
+                  <span className="text-xs font-black uppercase tracking-wide text-sky-100/55">Select Existing Property</span>
                   <select
                     data-testid="proposal-existing-property-select"
                     value=""
                     onChange={(event) => {
                       if (event.target.value) patchDraft("service_location", event.target.value);
                     }}
-                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                    className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white"
                   >
                     <option value="">Choose saved property...</option>
                     {propertyOptions.map((option) => (
@@ -1779,21 +1948,21 @@ export default function ProposalWorkspacePage() {
                   </select>
                 </label>
               ) : (
-                <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-sm font-semibold text-slate-600">
+                <div className="mt-4 rounded-lg border border-dashed border-white/16 bg-white/6 px-3 py-3 text-sm font-semibold text-sky-100/70">
                   No saved properties found for this customer. Enter a new project address below.
                 </div>
               )}
               <label className="mt-4 block">
-                <span className="text-xs font-black uppercase tracking-wide text-slate-500">New Project Address</span>
+                <span className="text-xs font-black uppercase tracking-wide text-sky-100/55">New Project Address</span>
                 <input
                   data-testid="proposal-project-address-input"
                   value={draft.service_location || ""}
                   onChange={(event) => patchDraft("service_location", event.target.value)}
                   placeholder="Street, city, state, zip"
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-900"
+                  className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white"
                 />
               </label>
-              <label className={`mt-3 flex items-center gap-2 text-sm font-bold ${matchedCustomer ? "text-slate-700" : "text-slate-400"}`}>
+              <label className={`mt-3 flex items-center gap-2 text-sm font-bold ${matchedCustomer ? "text-sky-100/78" : "text-sky-100/38"}`}>
                 <input
                   type="checkbox"
                   data-testid="proposal-save-address-to-customer"
@@ -1819,7 +1988,7 @@ export default function ProposalWorkspacePage() {
               <a className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold ${smsHref ? "bg-emerald-600 text-white" : "pointer-events-none bg-slate-100 text-slate-400"}`} href={smsHref || "#"}>Text</a>
               <button
                 type="button"
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700"
+                className="rounded-lg border border-white/16 bg-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/15"
                 onClick={() => {
                   navigator.clipboard?.writeText(`${proposal.customer_name}\n${proposal.customer_email}\n${proposal.customer_phone}\n${proposal.service_location}`);
                   toast.success("Customer details copied.");
@@ -1897,8 +2066,8 @@ export default function ProposalWorkspacePage() {
               <button type="button" onClick={() => setActive("photos")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800"><Camera size={16} /> Take Photo</button>
               <button type="button" onClick={() => setActive("measurements")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"><Ruler size={16} /> Add Measurement</button>
               <button type="button" onClick={() => patchDraft("site_visit_notes", `${draft.site_visit_notes || ""}${draft.site_visit_notes ? "\n" : ""}`)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800"><StickyNote size={16} /> Quick Note</button>
-              <button type="button" disabled className="rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-400">Voice Note</button>
-              <button type="button" onClick={() => setActive("documents")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-700"><FileUp size={16} /> Attach File</button>
+              <button type="button" disabled className="rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm font-bold text-sky-100/38">Voice Note</button>
+              <button type="button" onClick={() => setActive("documents")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/14 bg-white/8 px-3 py-2 text-sm font-bold text-white hover:bg-white/12"><FileUp size={16} /> Attach File</button>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <TextAreaField label="General notes" testId="proposal-site-notes" value={draft.site_visit_notes} onChange={(value) => patchDraft("site_visit_notes", value)} />
@@ -1925,12 +2094,12 @@ export default function ProposalWorkspacePage() {
           </Section>
 
           <Section id="measurements" active={active === "measurements"} title="Measurements">
-            <form onSubmit={addMeasurement} className="grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-5" data-testid="proposal-measurement-form">
+            <form onSubmit={addMeasurement} className="grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-5" data-testid="proposal-measurement-form">
               {["label", "location", "quantity", "unit"].map((key) => (
                 <input
                   key={key}
                   data-testid={`proposal-measurement-${key}`}
-                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                   placeholder={key === "quantity" ? "Quantity" : key.charAt(0).toUpperCase() + key.slice(1)}
                   value={measurementForm[key]}
                   onChange={(event) => setMeasurementForm((prev) => ({ ...prev, [key]: event.target.value }))}
@@ -1940,7 +2109,7 @@ export default function ProposalWorkspacePage() {
                 <Plus size={16} /> Add
               </button>
               <textarea
-                className="md:col-span-5 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="md:col-span-5 rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Notes"
                 value={measurementForm.notes}
                 onChange={(event) => setMeasurementForm((prev) => ({ ...prev, notes: event.target.value }))}
@@ -1948,18 +2117,18 @@ export default function ProposalWorkspacePage() {
             </form>
             <div className="mt-4 space-y-2" data-testid="proposal-measurement-list">
               {(proposal.measurements || []).length ? proposal.measurements.map((item) => (
-                <div key={item.id} className="flex flex-col gap-2 rounded-lg bg-white p-3 ring-1 ring-slate-200 sm:flex-row sm:items-center sm:justify-between">
+                <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/7 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="font-bold text-slate-900">{item.label}</div>
-                    <div className="text-sm text-slate-600">{field(item.location)} - {item.quantity} {item.unit}</div>
-                    {item.notes ? <div className="text-sm text-slate-500">{item.notes}</div> : null}
+                    <div className="font-bold text-white">{item.label}</div>
+                    <div className="text-sm text-sky-100/70">{field(item.location)} - {item.quantity} {item.unit}</div>
+                    {item.notes ? <div className="text-sm text-sky-100/55">{item.notes}</div> : null}
                   </div>
                   <button type="button" onClick={() => deleteMeasurement(item.id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700">
                     <Trash2 size={15} /> Remove
                   </button>
                 </div>
               )) : (
-                <div className="rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">No measurements yet.</div>
+                <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No measurements have been entered yet. Add dimensions, quantities, or site notes that support the estimate scope.</div>
               )}
             </div>
           </Section>
@@ -1971,12 +2140,12 @@ export default function ProposalWorkspacePage() {
             </label>
             <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3" data-testid="proposal-photo-gallery">
               {photos.length ? photos.map((item) => (
-                <div key={item.id} className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
+                <div key={item.id} className="rounded-lg border border-white/10 bg-white/7 p-3">
                 {item.url ? <img src={item.url} alt={item.caption || item.original_name || "Estimate photo"} className="h-40 w-full rounded-md object-cover" /> : null}
-                  <div className="mt-2 text-sm font-bold text-slate-900">{item.caption || item.original_name || "Photo"}</div>
+                  <div className="mt-2 text-sm font-bold text-white">{item.caption || item.original_name || "Photo"}</div>
                   <button type="button" onClick={() => deleteAttachment(item.id)} className="mt-2 text-sm font-bold text-rose-700">Remove</button>
                 </div>
-              )) : <div className="rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">No photos uploaded yet.</div>}
+              )) : <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No photos uploaded yet. Add before photos, access constraints, or existing-condition images when available.</div>}
             </div>
           </Section>
 
@@ -1987,22 +2156,22 @@ export default function ProposalWorkspacePage() {
             </label>
             <div className="mt-4 space-y-2" data-testid="proposal-document-list">
               {documents.length ? documents.map((item) => (
-                <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
-                  <a href={item.url || "#"} className="font-bold text-blue-700" target="_blank" rel="noreferrer">{item.original_name || "Document"}</a>
+                <div key={item.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-white/7 p-3">
+                  <a href={item.url || "#"} className="font-bold text-sky-100" target="_blank" rel="noreferrer">{item.original_name || "Document"}</a>
                   <button type="button" onClick={() => deleteAttachment(item.id)} className="text-sm font-bold text-rose-700">Remove</button>
                 </div>
-              )) : <div className="rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">No documents uploaded yet.</div>}
+              )) : <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No documents uploaded yet. Plans, customer files, material sheets, and supporting documents will appear here.</div>}
             </div>
           </Section>
 
           <Section id="estimate" active={active === "estimate"} title="Estimate Line Items">
-            <div className="rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-900 ring-1 ring-blue-100">
+            <div className="rounded-lg border border-sky-200/18 bg-sky-400/10 p-3 text-sm font-semibold text-sky-100/78">
               Estimate pricing stays here until you open the Agreement Wizard. No agreements, payments, assignments, PDFs, or customer sends are created from this checklist.
             </div>
-            <form onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200 md:grid-cols-6" data-testid="proposal-line-item-form">
+            <form onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-6" data-testid="proposal-line-item-form">
               <select
                 data-testid="proposal-line-category"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold md:col-span-2"
+                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none md:col-span-2"
                 value={lineItemForm.category}
                 onChange={(event) => patchLineItemForm("category", event.target.value)}
               >
@@ -2012,35 +2181,35 @@ export default function ProposalWorkspacePage() {
               </select>
               <input
                 data-testid="proposal-line-description"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-4"
+                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none md:col-span-4"
                 placeholder="Description"
                 value={lineItemForm.description}
                 onChange={(event) => patchLineItemForm("description", event.target.value)}
               />
               <input
                 data-testid="proposal-line-quantity"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Qty"
                 value={lineItemForm.quantity}
                 onChange={(event) => patchLineItemForm("quantity", event.target.value)}
               />
               <input
                 data-testid="proposal-line-unit"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Unit"
                 value={lineItemForm.unit}
                 onChange={(event) => patchLineItemForm("unit", event.target.value)}
               />
               <input
                 data-testid="proposal-line-unit-price"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Unit price"
                 value={lineItemForm.unit_price}
                 onChange={(event) => patchLineItemForm("unit_price", event.target.value)}
               />
               <input
                 data-testid="proposal-line-notes"
-                className="rounded-lg border border-slate-300 px-3 py-2 text-sm md:col-span-2"
+                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none md:col-span-2"
                 placeholder="Notes"
                 value={lineItemForm.notes}
                 onChange={(event) => patchLineItemForm("notes", event.target.value)}
@@ -2050,35 +2219,35 @@ export default function ProposalWorkspacePage() {
                   <Plus size={16} /> {editingLineItemId ? "Update" : "Add"}
                 </button>
                 {editingLineItemId ? (
-                  <button type="button" onClick={resetLineItemForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">
+                  <button type="button" onClick={resetLineItemForm} className="rounded-lg border border-white/16 px-3 py-2 text-sm font-bold text-white">
                     Cancel
                   </button>
                 ) : null}
               </div>
             </form>
 
-            <div className="mt-4 overflow-hidden rounded-lg ring-1 ring-slate-200" data-testid="proposal-line-item-list">
+            <div className="mt-4 overflow-hidden rounded-lg border border-white/10" data-testid="proposal-line-item-list">
               {(proposal.line_items || []).length ? (
-                <div className="divide-y divide-slate-200">
+                <div className="divide-y divide-white/10">
                   {(proposal.line_items || []).map((item) => (
-                    <div key={item.id} className="grid gap-3 bg-white p-3 md:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto] md:items-center">
+                    <div key={item.id} className="grid gap-3 bg-white/7 p-3 md:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto] md:items-center">
                       <div className="min-w-0">
-                        <div className="text-xs font-black uppercase tracking-wide text-slate-500">{item.category_label}</div>
-                        <div className="font-bold text-slate-950">{item.description}</div>
-                        {item.notes ? <div className="text-sm text-slate-500">{item.notes}</div> : null}
+                        <div className="text-xs font-black uppercase tracking-wide text-sky-100/55">{item.category_label}</div>
+                        <div className="font-bold text-white">{item.description}</div>
+                        {item.notes ? <div className="text-sm text-sky-100/55">{item.notes}</div> : null}
                       </div>
-                      <div className="text-sm font-semibold text-slate-700">{item.quantity} {item.unit}</div>
-                      <div className="text-sm font-semibold text-slate-700">{money(item.unit_price)}</div>
-                      <div className="text-base font-black text-slate-950">{money(item.total)}</div>
+                      <div className="text-sm font-semibold text-sky-100/72">{item.quantity} {item.unit}</div>
+                      <div className="text-sm font-semibold text-sky-100/72">{money(item.unit_price)}</div>
+                      <div className="text-base font-black text-white">{money(item.total)}</div>
                       <div className="flex gap-2">
-                        <button type="button" onClick={() => editLineItem(item)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-bold text-slate-700">Edit</button>
+                        <button type="button" onClick={() => editLineItem(item)} className="rounded-lg border border-white/16 px-3 py-2 text-sm font-bold text-white">Edit</button>
                         <button type="button" onClick={() => deleteLineItem(item.id)} className="rounded-lg border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700">Remove</button>
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="bg-slate-50 p-4 text-sm font-semibold text-slate-600">No estimate line items yet.</div>
+                <div className="border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No estimate line items yet. Add labor, materials, allowances, or incidentals before creating an agreement.</div>
               )}
             </div>
 
@@ -2108,7 +2277,7 @@ export default function ProposalWorkspacePage() {
               <button
                 type="button"
                 onClick={() => setActive("estimate")}
-                className="mt-4 rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950"
+                className="mt-4 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-black text-white hover:bg-white/15"
               >
                 Edit Reserve Line Item
               </button>
@@ -2139,7 +2308,7 @@ export default function ProposalWorkspacePage() {
           </Section>
 
           <Section id="ready" active={active === "ready"} title="Ready for Agreement">
-            <div className={`rounded-xl p-4 ${estimateChecklist.readyMinimum ? "bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200" : "bg-amber-50 text-amber-950 ring-1 ring-amber-200"}`}>
+            <div className={`rounded-xl border p-4 ${estimateChecklist.readyMinimum ? "border-emerald-200/30 bg-emerald-400/10 text-emerald-100" : "border-amber-200/30 bg-amber-400/10 text-amber-100"}`}>
               <div className="text-lg font-black" data-testid="estimate-ready-review-status">
                 {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Finish required checklist items"}
               </div>
@@ -2176,17 +2345,17 @@ export default function ProposalWorkspacePage() {
           <Section id="history" active={active === "history"} title="History">
             <div className="space-y-2" data-testid="proposal-history">
               {(proposal.activity || []).length ? proposal.activity.map((item) => (
-                <div key={item.id} className="rounded-lg bg-slate-50 p-3 ring-1 ring-slate-200">
-                  <div className="font-bold text-slate-900">{item.message}</div>
-                  <div className="text-xs font-semibold text-slate-500">{formatDateTime(item.created_at)}</div>
+                <div key={item.id} className="rounded-lg border border-white/10 bg-white/7 p-3">
+                  <div className="font-bold text-white">{item.message}</div>
+                  <div className="text-xs font-semibold text-sky-100/55">{formatDateTime(item.created_at)}</div>
                 </div>
-              )) : <div className="rounded-lg bg-slate-50 p-4 text-sm font-semibold text-slate-600 ring-1 ring-slate-200">No proposal history yet.</div>}
+              )) : <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No estimate activity has been recorded yet. Updates, revisions, and conversion events will appear here.</div>}
             </div>
           </Section>
         </main>
 
-        <aside className="rounded-xl bg-slate-950 p-4 text-white shadow-sm lg:sticky lg:top-4 lg:self-start" data-testid="proposal-summary-rail">
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Estimate Checklist</div>
+        <aside className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-4 text-white shadow-[0_24px_70px_rgba(2,8,23,0.34)] lg:sticky lg:top-4 lg:self-start" data-testid="proposal-summary-rail">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-100/80">Context Summary</div>
           <div className="mt-2 text-lg font-bold">{proposal.customer_name || "Customer"}</div>
           <div className="mt-1 text-sm text-slate-300">{proposal.service_location || "No service location"}</div>
           <div className="mt-4 rounded-lg bg-white/10 p-3">
@@ -2203,7 +2372,12 @@ export default function ProposalWorkspacePage() {
           </div>
           <div className="mt-4 rounded-lg bg-white/10 p-3">
             <div className="text-xs font-semibold uppercase text-slate-400">Next action</div>
-            <div className="mt-1 text-sm font-bold">{estimateChecklist.readyMinimum ? "Review in Agreement Wizard" : "Finish required checklist items"}</div>
+            <div className="mt-1 text-sm font-bold">{highestPriorityItem?.complete ? "Review in Agreement Wizard" : highestPriorityItem?.action || "Finish required items"}</div>
+            {highestPriorityItem && !highestPriorityItem.complete ? (
+              <button type="button" onClick={() => setActive(highestPriorityItem.target || "overview")} className="mt-2 text-xs font-black text-blue-200">
+                Open section
+              </button>
+            ) : null}
           </div>
           <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-scheduling">
             <div className="text-xs font-semibold uppercase text-slate-400">Scheduling</div>
@@ -2235,12 +2409,16 @@ export default function ProposalWorkspacePage() {
             data-testid="proposal-summary-create-agreement"
             onClick={createAgreementFromProposal}
             disabled={!estimateChecklist.readyMinimum}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-black text-slate-950 hover:bg-slate-100 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-black text-white hover:bg-white/15 focus-visible:text-white active:text-white disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
           >
             <FileSignature size={16} /> Create Agreement from Estimate
           </button>
           <div className="mt-2 text-xs leading-5 text-slate-400">
             Opens the existing Agreement Wizard with this estimate checklist as editable draft input.
+          </div>
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-white/10 bg-white/6 p-2 text-xs leading-5 text-slate-300">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-100/70" aria-hidden="true" />
+            <span>Prepared outputs still require contractor review.</span>
           </div>
         </aside>
       </div>

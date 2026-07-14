@@ -377,6 +377,45 @@ test("Create Estimate from Opportunity opens Estimate Workspace", async ({ page 
   expect(createPayload).toEqual({ source_type: "lead", source_id: 6, estimate_appointment_id: 7001 });
 });
 
+test("Estimate Workspace renders compact dark command-center guidance", async ({ page }) => {
+  await installBaseMocks(page);
+  await installAgreementWizardMocks(page);
+
+  await page.route("**/api/projects/proposals/42/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(proposal) });
+  });
+
+  await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("proposal-workspace-header")).toContainText("Bathroom Remodel");
+  await expect(page.getByTestId("proposal-workspace-header")).toContainText("New Lead Customer");
+  await expect(page.getByTestId("proposal-nav-overview")).toContainText("Project Overview");
+  await expect(page.getByTestId("proposal-nav-overview")).toHaveClass(/border-sky-300/);
+  await expect(page.getByTestId("proposal-nav-estimate")).toContainText("Needs attention");
+  await expect(page.getByRole("heading", { name: "Project Overview" })).toBeVisible();
+  await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Pricing");
+  await expect(page.getByTestId("estimate-readiness-status-pricing")).toContainText("Not Started");
+
+  await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
+  await page.getByTestId("proposal-nav-assistant").click();
+  await expect(page.getByTestId("proposal-assistant-guidance")).toContainText("Project Assistant");
+  await expect(page.getByTestId("proposal-assistant-approval-reminder")).toContainText("Contractor approval is required");
+  await expect(page.getByTestId("proposal-readiness-missing")).toContainText("Pricing");
+
+  const darkTextClasses = await page.getByTestId("proposal-workspace").evaluate((root) => {
+    const forbidden = ["text-black", "text-slate-950", "text-slate-900", "text-slate-800"];
+    return Array.from(root.querySelectorAll("[class]"))
+      .map((node) => node.getAttribute("class") || "")
+      .filter((className) => forbidden.some((token) => className.includes(token)));
+  });
+  expect(darkTextClasses).toEqual([]);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("proposal-workspace")).toBeVisible();
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  expect(hasHorizontalOverflow).toBe(false);
+});
+
 test("Estimate Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {
   await installBaseMocks(page);
   await installAgreementWizardMocks(page);
