@@ -824,6 +824,40 @@
   .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button {
     background:
       linear-gradient(135deg, rgba(30, 64, 175, 0.38), rgba(15, 42, 78, 0.7)) !important;
+    color: #ffffff !important;
+  }
+
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button:hover,
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button:active,
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button:focus-visible,
+  .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button:disabled {
+    color: #ffffff !important;
+  }
+
+  .mhb-contractor-dashboard .mhb-stat {
+    border-color: rgba(148, 197, 255, 0.17) !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    color: #ffffff !important;
+  }
+
+  .mhb-contractor-dashboard .mhb-stat:hover {
+    background: rgba(255, 255, 255, 0.12) !important;
+  }
+
+  .mhb-contractor-dashboard .mhb-stat-head,
+  .mhb-contractor-dashboard .mhb-stat-value {
+    color: #ffffff !important;
+  }
+
+  .mhb-contractor-dashboard .mhb-stat-sub,
+  .mhb-contractor-dashboard .mhb-stat-count {
+    color: rgba(255, 255, 255, 0.72) !important;
+  }
+
+  .mhb-contractor-dashboard .mhb-stat-icon {
+    border-color: rgba(147, 197, 253, 0.3) !important;
+    background: rgba(96, 165, 250, 0.14) !important;
+    color: #dbeafe !important;
   }
 
   .mhb-contractor-dashboard [data-testid="dashboard-quick-actions-row"] button:hover,

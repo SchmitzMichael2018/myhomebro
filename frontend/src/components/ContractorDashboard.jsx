@@ -3618,11 +3618,11 @@ export default function ContractorDashboard() {
                     type="button"
                     data-testid="dashboard-quick-action-create-estimate"
                     onClick={openCreateEstimate}
-                    className="inline-flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-2xl border border-amber-200/65 bg-amber-300 px-4 text-center text-sm font-black text-slate-950 shadow-[0_18px_36px_rgba(251,191,36,0.22)] transition hover:-translate-y-px hover:bg-amber-200"
+                    className="inline-flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-2xl border border-amber-200/65 bg-amber-300 px-4 text-center text-sm font-black text-white shadow-[0_18px_36px_rgba(251,191,36,0.22)] transition hover:-translate-y-px hover:bg-amber-200 focus-visible:text-white active:text-white disabled:text-white"
                   >
-                    <ClipboardCheck className="h-5 w-5" />
-                    <span>Create Estimate</span>
-                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-700">Primary</span>
+                    <ClipboardCheck className="h-5 w-5 text-white" />
+                    <span className="text-white">Create Estimate</span>
+                    <span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-100">Primary</span>
                   </button>
                   <button
                     type="button"

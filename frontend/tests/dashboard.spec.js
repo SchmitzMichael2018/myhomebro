@@ -192,6 +192,17 @@ test("dashboard quick actions show estimate-first workflow in order", async ({ p
     "Expense",
     "Payment",
   ]);
+
+  const quickActionButtons = await actions.getByRole("button").all();
+  for (const button of quickActionButtons) {
+    await expect(button).toHaveCSS("color", "rgb(255, 255, 255)");
+    await button.hover();
+    await expect(button).toHaveCSS("color", "rgb(255, 255, 255)");
+    await button.focus();
+    await expect(button).toHaveCSS("color", "rgb(255, 255, 255)");
+  }
+
+  await expect(actions.getByText("Primary")).toHaveCSS("color", "rgb(254, 243, 199)");
 });
 
 test("Create Estimate launches workspace from an existing customer", async ({ page }) => {
