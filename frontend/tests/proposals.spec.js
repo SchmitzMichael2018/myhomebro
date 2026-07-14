@@ -451,18 +451,46 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await expect(page.getByTestId("estimate-overview-row-pricing")).toHaveAttribute("aria-label", /Required, Needs attention/);
   await expect(page.getByTestId("estimate-overview-row-customer")).toHaveAttribute("aria-label", /Required, Complete/);
   await expect(page.getByTestId("estimate-overview-row-adjustments")).toHaveAttribute("aria-label", /Optional/);
-  await expect(page.getByTestId("estimate-overview-group-project")).toContainText("Review Project");
+  await expect(page.getByTestId("estimate-overview-action-project")).toHaveText("Review");
+  await expect(page.getByTestId("estimate-overview-action-site_scope")).toHaveText("Continue");
+  await expect(page.getByTestId("estimate-overview-action-pricing")).toHaveText("Continue");
+  await expect(page.getByTestId("estimate-overview-action-review")).toHaveText("Check Readiness");
+  const primaryGoldButtons = [
+    "proposal-create-agreement-action",
+    "estimate-overview-action-project",
+    "estimate-overview-action-site_scope",
+    "estimate-overview-action-pricing",
+    "estimate-overview-action-review",
+  ];
+  for (const testId of primaryGoldButtons) {
+    const button = page.getByTestId(testId);
+    await expect(button).toHaveClass(/bg-amber-300/);
+    await expect(button).toHaveClass(/text-slate-950/);
+    await expect(button).not.toHaveClass(/text-white/);
+    await expect(button).not.toHaveClass(/focus-visible:text-white/);
+    await expect(button).not.toHaveClass(/active:text-white/);
+  }
+  await expect(page.getByTestId("proposal-create-agreement-action")).toHaveClass(/disabled:text-slate-600/);
+  await page.getByTestId("estimate-overview-action-site_scope").hover();
+  const hoveredGoldTextColor = await page.getByTestId("estimate-overview-action-site_scope").evaluate((node) => getComputedStyle(node).color);
+  expect(hoveredGoldTextColor).not.toBe("rgb(255, 255, 255)");
+  await page.getByTestId("estimate-overview-action-site_scope").focus();
+  const focusedGoldTextColor = await page.getByTestId("estimate-overview-action-site_scope").evaluate((node) => getComputedStyle(node).color);
+  expect(focusedGoldTextColor).not.toBe("rgb(255, 255, 255)");
 
   await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
   await page.getByTestId("proposal-nav-assistant").click();
   await expect(page.getByTestId("proposal-assistant-guidance")).toContainText("Project Assistant");
   await expect(page.getByTestId("proposal-assistant-approval-reminder")).toContainText("Contractor approval is required");
+  await expect(page.getByTestId("proposal-assistant-primary-action")).toHaveClass(/text-slate-950/);
+  await expect(page.getByTestId("proposal-assistant-primary-action")).not.toHaveClass(/text-white/);
   await expect(page.getByTestId("proposal-readiness-missing")).toContainText("Pricing");
 
   const darkTextClasses = await page.getByTestId("proposal-workspace").evaluate((root) => {
     const forbidden = ["text-black", "text-slate-950", "text-slate-900", "text-slate-800"];
     return Array.from(root.querySelectorAll("[class]"))
       .map((node) => node.getAttribute("class") || "")
+      .filter((className) => !className.includes("bg-amber-300"))
       .filter((className) => forbidden.some((token) => className.includes(token)));
   });
   expect(darkTextClasses).toEqual([]);

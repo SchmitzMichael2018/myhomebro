@@ -73,6 +73,9 @@ const SECTION_DESCRIPTIONS = {
   history: "Review estimate activity, updates, revisions, and conversion events.",
 };
 
+const ESTIMATE_PRIMARY_GOLD_BUTTON =
+  "inline-flex items-center justify-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-amber-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-100 active:translate-y-px active:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-200/55 disabled:text-slate-600";
+
 const EMPTY_MEASUREMENT = {
   label: "",
   location: "",
@@ -586,7 +589,7 @@ function OverviewWorkflowGroup({ group, onOpen }) {
   const complete = requiredRows.length
     ? requiredRows.every((row) => row.complete)
     : group.rows.every((row) => row.complete);
-  const actionLabel = complete ? `Review ${group.label}` : group.key === "review" ? "Review Agreement Readiness" : `Continue ${group.label}`;
+  const actionLabel = group.key === "review" ? "Check Readiness" : complete ? "Review" : "Continue";
   return (
     <article
       data-testid={`estimate-overview-group-${group.key}`}
@@ -642,8 +645,9 @@ function OverviewWorkflowGroup({ group, onOpen }) {
       {nextRow ? (
         <button
           type="button"
+          data-testid={`estimate-overview-action-${group.key}`}
           onClick={() => onOpen(nextRow.target)}
-          className={`mt-3 rounded-lg px-3 py-2 text-sm font-black ${complete ? "border border-white/16 bg-white/8 text-white hover:bg-white/12" : "bg-amber-300 text-white hover:bg-amber-200"}`}
+          className={`mt-3 ${ESTIMATE_PRIMARY_GOLD_BUTTON}`}
         >
           {actionLabel}
         </button>
@@ -1844,7 +1848,7 @@ export default function ProposalWorkspacePage() {
             type="button"
             data-testid="proposal-create-agreement-action"
             disabled={!estimateChecklist.readyMinimum || isReadOnlyHistory}
-            className="inline-flex items-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-amber-200 focus-visible:text-white active:text-white disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
+            className={ESTIMATE_PRIMARY_GOLD_BUTTON}
             onClick={createAgreementFromProposal}
           >
             <FileSignature size={16} /> Create Agreement from Estimate
@@ -2078,7 +2082,7 @@ export default function ProposalWorkspacePage() {
                       type="button"
                       data-testid="proposal-assistant-primary-action"
                       onClick={() => setActive(highestPriorityItem.target || "overview")}
-                      className="mt-3 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white hover:bg-amber-200 focus-visible:text-white active:text-white"
+                      className={`mt-3 ${ESTIMATE_PRIMARY_GOLD_BUTTON}`}
                     >
                       {highestPriorityItem.action || "Open section"}
                     </button>
@@ -2155,7 +2159,7 @@ export default function ProposalWorkspacePage() {
                         setTemplateChoice("generated");
                         toast.success("Draft agreement template generated for review.");
                       }}
-                      className="rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white focus-visible:text-white active:text-white"
+                      className={ESTIMATE_PRIMARY_GOLD_BUTTON}
                     >
                       Generate Draft Agreement Template
                     </button>
