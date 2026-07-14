@@ -464,6 +464,7 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   ];
   for (const testId of primaryGoldButtons) {
     const button = page.getByTestId(testId);
+    await expect(button).toHaveClass(/estimate-workflow-primary/);
     await expect(button).toHaveClass(/bg-amber-300/);
     await expect(button).toHaveClass(/text-slate-950/);
     await expect(button).not.toHaveClass(/text-white/);
@@ -471,12 +472,47 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
     await expect(button).not.toHaveClass(/active:text-white/);
   }
   await expect(page.getByTestId("proposal-create-agreement-action")).toHaveClass(/disabled:text-slate-600/);
-  await page.getByTestId("estimate-overview-action-site_scope").hover();
-  const hoveredGoldTextColor = await page.getByTestId("estimate-overview-action-site_scope").evaluate((node) => getComputedStyle(node).color);
-  expect(hoveredGoldTextColor).not.toBe("rgb(255, 255, 255)");
-  await page.getByTestId("estimate-overview-action-site_scope").focus();
-  const focusedGoldTextColor = await page.getByTestId("estimate-overview-action-site_scope").evaluate((node) => getComputedStyle(node).color);
-  expect(focusedGoldTextColor).not.toBe("rgb(255, 255, 255)");
+  const workflowAction = page.getByTestId("estimate-overview-action-site_scope");
+  const defaultGoldStyle = await workflowAction.evaluate((node) => ({
+    color: getComputedStyle(node).color,
+    backgroundColor: getComputedStyle(node).backgroundColor,
+    descendantColors: Array.from(node.querySelectorAll("span, svg")).map((child) => getComputedStyle(child).color),
+  }));
+  expect(defaultGoldStyle.color).toBe("rgb(15, 23, 42)");
+  expect(defaultGoldStyle.backgroundColor).toBe("rgb(252, 211, 77)");
+  expect(defaultGoldStyle.descendantColors.every((color) => color !== "rgb(255, 255, 255)")).toBe(true);
+  await workflowAction.hover();
+  await page.waitForTimeout(220);
+  const hoveredGoldStyle = await workflowAction.evaluate((node) => ({
+    color: getComputedStyle(node).color,
+    backgroundColor: getComputedStyle(node).backgroundColor,
+  }));
+  expect(hoveredGoldStyle.color).toBe("rgb(15, 23, 42)");
+  expect(hoveredGoldStyle.backgroundColor).toBe("rgb(251, 191, 36)");
+  await workflowAction.focus();
+  const focusedGoldTextColor = await workflowAction.evaluate((node) => getComputedStyle(node).color);
+  expect(focusedGoldTextColor).toBe("rgb(15, 23, 42)");
+  const box = await workflowAction.boundingBox();
+  if (box) {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.waitForTimeout(220);
+    const activeGoldStyle = await workflowAction.evaluate((node) => ({
+      color: getComputedStyle(node).color,
+      backgroundColor: getComputedStyle(node).backgroundColor,
+    }));
+    expect(activeGoldStyle.color).toBe("rgb(15, 23, 42)");
+    expect(activeGoldStyle.backgroundColor).toBe("rgb(245, 158, 11)");
+    await page.mouse.up();
+  }
+  const disabledGoldStyle = await page.getByTestId("proposal-create-agreement-action").evaluate((node) => ({
+    color: getComputedStyle(node).color,
+    backgroundColor: getComputedStyle(node).backgroundColor,
+    descendantColors: Array.from(node.querySelectorAll("span, svg")).map((child) => getComputedStyle(child).color),
+  }));
+  expect(disabledGoldStyle.color).toBe("rgb(71, 85, 105)");
+  expect(disabledGoldStyle.backgroundColor).toBe("rgba(253, 230, 138, 0.55)");
+  expect(disabledGoldStyle.descendantColors.every((color) => color === disabledGoldStyle.color)).toBe(true);
 
   await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
   await page.getByTestId("proposal-nav-assistant").click();

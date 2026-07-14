@@ -74,7 +74,7 @@ const SECTION_DESCRIPTIONS = {
 };
 
 const ESTIMATE_PRIMARY_GOLD_BUTTON =
-  "inline-flex items-center justify-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-amber-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-100 active:translate-y-px active:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-200/55 disabled:text-slate-600";
+  "estimate-workflow-primary inline-flex items-center justify-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-amber-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-100 active:translate-y-px active:bg-amber-500 disabled:cursor-not-allowed disabled:bg-amber-200/55 disabled:text-slate-600";
 
 const EMPTY_MEASUREMENT = {
   label: "",

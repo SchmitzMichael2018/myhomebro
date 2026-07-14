@@ -49,6 +49,32 @@
     @apply rounded-lg px-4 py-2 font-semibold text-blue-600 bg-white border border-blue-600 hover:bg-blue-600 hover:text-white transition duration-300;
   }
 
+  .estimate-workflow-primary {
+    background-color: #fcd34d !important;
+    color: #0f172a !important;
+  }
+
+  .estimate-workflow-primary:hover,
+  .estimate-workflow-primary:focus-visible {
+    background-color: #fbbf24 !important;
+    color: #0f172a !important;
+  }
+
+  .estimate-workflow-primary:active {
+    background-color: #f59e0b !important;
+    color: #0f172a !important;
+  }
+
+  .estimate-workflow-primary:disabled {
+    background-color: rgba(253, 230, 138, 0.55) !important;
+    color: #475569 !important;
+  }
+
+  .estimate-workflow-primary span,
+  .estimate-workflow-primary svg {
+    color: inherit !important;
+  }
+
   [data-testid="public-intake-shell"] input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
   [data-testid="public-intake-shell"] textarea,
   [data-testid="public-intake-shell"] select {
@@ -1830,3 +1856,21 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 
 /* Make events obviously clickable */
 .fc .fc-event { cursor: pointer; }
+
+@layer components {
+  .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300,
+  .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300:hover,
+  .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300:focus-visible,
+  .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300:active {
+    color: #0f172a !important;
+  }
+
+  .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300:disabled {
+    color: #475569 !important;
+  }
+
+  .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300 span,
+  .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300 svg {
+    color: inherit !important;
+  }
+}
