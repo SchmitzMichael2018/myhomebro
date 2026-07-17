@@ -236,7 +236,7 @@ test("team overview shows organization health with assistant guidance", async ({
   await expect(page.getByTestId("team-health-summary")).toContainText("Incomplete Profiles");
   await expect(page.getByTestId("team-health-summary")).toContainText("Active Accounts");
   await expect(page.getByTestId("team-health-summary")).toContainText("Inactive Members");
-  await expect(page.getByTestId("team-assistant-panel")).toContainText("Team Assistant");
+  await expect(page.getByTestId("team-assistant-panel")).toHaveCount(0);
   await expect(page.getByTestId("team-directory")).toContainText("Team Directory");
   await expect(page.getByTestId("team-directory")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-directory")).toContainText("Jordan Crew");
@@ -248,6 +248,10 @@ test("team overview shows organization health with assistant guidance", async ({
   await expect(page.getByTestId("team-invitations-overview")).toContainText("Invitations");
   await expect(page.getByTestId("team-invitations-overview")).toContainText("Employees are created directly");
   await expect(page.getByTestId("team-organization-growth")).toContainText("Organization Growth");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("Recommended improvements");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("Next Steps");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("1 member needs a capability profile");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("1 subcontractor invitation still pending");
   await expect(page.getByTestId("team-overview-manage-members")).toBeVisible();
   await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
   await expect(page.getByTestId("team-overview-invite-subcontractor")).toBeVisible();
@@ -277,8 +281,13 @@ test("team overview shows organization health with assistant guidance", async ({
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Assign Work");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Open Schedule");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Review Submitted Work");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Project Assistant");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Team Assistant");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Organization focus");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Safe prepared actions");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Human Approval Required");
   await expect(page.getByRole("button", { name: "Add Employee" })).toHaveCount(0);
-  await expect(page.getByTestId("project-assistant-human-approval")).toContainText("authorized users must create access");
+  await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);

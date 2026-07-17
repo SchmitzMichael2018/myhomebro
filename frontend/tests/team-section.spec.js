@@ -620,6 +620,9 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.getByTestId("team-roles-overview")).toContainText("Built-in Roles");
   await expect(page.getByTestId("team-invitations-overview")).toContainText("Invitations");
   await expect(page.getByTestId("team-organization-growth")).toContainText("Organization Growth");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("Recommended improvements");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("Next Steps");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("1 member needs a capability profile");
   await expect(page.getByTestId("team-overview-manage-members")).toBeVisible();
   await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
   await expect(page.getByTestId("team-overview-invite-subcontractor")).toBeVisible();
@@ -629,6 +632,10 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Workload");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Capacity Risks");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Available Today");
+  await expect(page.getByTestId("team-assistant-panel")).toHaveCount(0);
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Project Assistant");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Team Assistant");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Human Approval Required");
 
   await page.getByTestId("team-overview-manage-members").click();
   await expect(page).toHaveURL(/\/app\/team\/members/);

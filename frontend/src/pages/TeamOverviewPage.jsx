@@ -7,12 +7,6 @@ import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
 import { teamOrganizationTabs } from "../components/dashboard/hubTabsConfig.js";
-import {
-  ProjectAssistantApprovalNotice,
-  ProjectAssistantCard,
-  ProjectAssistantPanel,
-  ProjectAssistantSection,
-} from "../components/ProjectAssistantExperience.jsx";
 
 const ROLE_OPTIONS = [
   { value: "employee_readonly", label: "Read-only", summary: "Can view permitted account information with limited update access." },
@@ -268,7 +262,11 @@ export default function TeamOverviewPage() {
   const organizationIssues = useMemo(() => {
     const issues = [];
     if (summaryCounts.incompleteProfiles > 0) {
-      issues.push(`${summaryCounts.incompleteProfiles} member${summaryCounts.incompleteProfiles === 1 ? "" : "s"} need capability profiles.`);
+      issues.push(
+        summaryCounts.incompleteProfiles === 1
+          ? "1 member needs a capability profile."
+          : `${summaryCounts.incompleteProfiles} members need capability profiles.`
+      );
     }
     if (invitationSummary.pending > 0) {
       issues.push(`${invitationSummary.pending} subcontractor invitation${invitationSummary.pending === 1 ? "" : "s"} still pending.`);
@@ -284,10 +282,6 @@ export default function TeamOverviewPage() {
     }
     return issues;
   }, [capabilityRows.length, invitationSummary.pending, roleRows, summaryCounts.inactiveMembers, summaryCounts.incompleteProfiles]);
-
-  const assistantSummary = organizationIssues.length
-    ? organizationIssues[0]
-    : "Your organization profile has employees, access levels, invitations, and capabilities ready for review.";
 
   if (whoLoading) {
     return <div className="p-6 text-sm text-gray-500">Loading your profile...</div>;
@@ -343,29 +337,6 @@ export default function TeamOverviewPage() {
           <SummaryCard label="Active Accounts" value={summaryCounts.activeAccounts} helper="Enabled members" onClick={() => navigate("/app/team/members")} />
           <SummaryCard label="Inactive Members" value={summaryCounts.inactiveMembers} helper="Access disabled" onClick={() => navigate("/app/team/members")} />
         </section>
-
-        <ProjectAssistantPanel
-          subtitle="Team Assistant"
-          summary={assistantSummary}
-          className={`${operationalPanel} text-white`}
-          testId="team-assistant-panel"
-        >
-          <div className="grid gap-3 md:grid-cols-2">
-            <ProjectAssistantCard title="Organization focus" tone="advisory">
-              <ul className="space-y-2 text-sm leading-6">
-                {(organizationIssues.length ? organizationIssues : ["Review organization records regularly so roles, account access, and capabilities stay current."]).slice(0, 4).map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </ProjectAssistantCard>
-            <ProjectAssistantSection title="Safe prepared actions">
-              Prepare a profile-completion review, capability coverage review, or invitation follow-up list for an authorized user.
-            </ProjectAssistantSection>
-          </div>
-          <ProjectAssistantApprovalNotice compact>
-            Team Assistant may summarize organization health, but authorized users must create access, change roles, or update member status.
-          </ProjectAssistantApprovalNotice>
-        </ProjectAssistantPanel>
 
         <section data-testid="team-directory" className={`${operationalPanel} rounded-2xl p-4`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -535,9 +506,14 @@ export default function TeamOverviewPage() {
           </section>
 
           <section data-testid="team-organization-growth" className={`${operationalPanel} rounded-2xl p-4`}>
-            <div>
-              <div className={sectionTitleClass}>Organization Growth</div>
-              <div className={sectionHelperClass}>The setup items that make your company profile stronger.</div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div className={sectionTitleClass}>Organization Growth</div>
+                <div className={sectionHelperClass}>Recommended improvements based on your current team records.</div>
+              </div>
+              <span className="inline-flex w-fit rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs font-black uppercase tracking-[0.12em] text-sky-100/70">
+                Next Steps
+              </span>
             </div>
             <div className="mt-4 space-y-3">
               {(organizationIssues.length ? organizationIssues : ["Organization setup looks healthy. Keep profiles, roles, and capabilities current as the company grows."]).map((item) => (
