@@ -1,59 +1,35 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Plus, Search, SlidersHorizontal, Users } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
-import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
+import { teamOrganizationTabs } from "../components/dashboard/hubTabsConfig.js";
 import {
   ProjectAssistantApprovalNotice,
   ProjectAssistantCard,
-  ProjectAssistantConfidenceBadge,
   ProjectAssistantPanel,
   ProjectAssistantSection,
 } from "../components/ProjectAssistantExperience.jsx";
 
+const ROLE_OPTIONS = [
+  { value: "employee_readonly", label: "Read-only", summary: "Can view permitted account information with limited update access." },
+  { value: "employee_milestones", label: "Completion Access", summary: "Can update permitted completion/status fields where authorized." },
+  { value: "employee_supervisor", label: "Supervisor", summary: "Broader team administration access where authorized." },
+];
+
 const operationalPanel = "mhb-operational-panel";
 const operationalCard = "mhb-glass";
 const operationalButton = "mhb-btn";
+const operationalPrimaryButton = "mhb-btn primary";
+const operationalControl = "mhb-operational-control";
 const sectionTitleClass = "text-base font-bold text-white";
 const sectionHelperClass = "mt-1 text-sm text-sky-100/70";
 const loadingTextClass = "mt-4 text-sm text-sky-100/60";
-const rowCardClass = "rounded-xl border border-white/10 bg-white/6 p-4";
-const compactRowCardClass = "rounded-xl border border-white/10 bg-white/6 p-3";
 const emptyStateClass =
-  "mt-4 rounded-2xl border border-dashed border-white/16 bg-white/6 px-5 py-7 text-center text-sm text-sky-100/74";
-
-function formatDateTime(value) {
-  if (!value) return "—";
-  try {
-    return new Date(value).toLocaleString();
-  } catch {
-    return String(value);
-  }
-}
-
-function SummaryCard({ label, value, sub, onClick }) {
-  const Component = onClick ? "button" : "div";
-  return (
-    <Component
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
-      className={[
-        operationalCard,
-        "rounded-2xl p-4 text-left",
-        onClick ? "transition hover:-translate-y-0.5 hover:border-white/24 hover:bg-white/12" : "",
-      ].join(" ")}
-    >
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/58">
-        {label}
-      </div>
-      <div className="mt-2 text-2xl font-bold text-white">{Number(value || 0).toLocaleString()}</div>
-      {sub ? <div className="mt-1 text-xs text-sky-100/65">{sub}</div> : null}
-    </Component>
-  );
-}
+  "rounded-2xl border border-dashed border-white/16 bg-white/6 px-5 py-7 text-center text-sm text-sky-100/74";
 
 function normalizeListResponse(data) {
   if (Array.isArray(data)) return data;
@@ -67,118 +43,82 @@ function normalizeText(value) {
 
 function formatStatus(value) {
   const text = String(value || "").replaceAll("_", " ").trim();
-  return text ? text.replace(/\b\w/g, (char) => char.toUpperCase()) : "Open";
+  return text ? text.replace(/\b\w/g, (char) => char.toUpperCase()) : "Unknown";
 }
 
-function capacityTone(state) {
-  if (state === "overbooked") return "border-rose-300/35 bg-rose-400/15 text-rose-100";
-  if (state === "near_capacity") return "border-amber-300/35 bg-amber-400/15 text-amber-100";
-  if (state === "available") return "border-emerald-300/35 bg-emerald-400/15 text-emerald-100";
-  return "border-white/12 bg-white/8 text-sky-100/78";
-}
-
-function capacityRank(state) {
-  if (state === "overbooked") return 0;
-  if (state === "near_capacity") return 1;
-  if (state === "available") return 3;
-  return 2;
-}
-
-function skillCoverageRank(coverage) {
-  if (coverage === "missing") return 0;
-  if (coverage === "thin") return 1;
-  return 2;
-}
-
-function isUnassignedWorkRow(row) {
-  const memberName = normalizeText(row?.member_name);
-  return !memberName || memberName === "unassigned" || row?.source_type === "unassigned_milestone";
-}
-
-function workRiskRank(row) {
-  const priority = normalizeText(row?.priority);
-  const status = normalizeText(row?.status);
-  if (priority === "high" || status.includes("overdue") || status.includes("blocked")) return 0;
-  if (priority === "urgent" || status.includes("at risk")) return 0;
-  if (priority === "normal" || status.includes("scheduled")) return 1;
-  return 2;
-}
-
-function SummaryPill({ label, value, tone = "slate" }) {
-  const toneClass =
-    tone === "warn"
-      ? "border-amber-300/35 bg-amber-400/15 text-amber-100"
-      : tone === "danger"
-        ? "border-rose-300/35 bg-rose-400/15 text-rose-100"
-        : tone === "good"
-          ? "border-emerald-300/35 bg-emerald-400/15 text-emerald-100"
-          : "border-white/12 bg-white/8 text-sky-100";
-  return (
-    <div className={`rounded-xl border px-3 py-2 ${toneClass}`}>
-      <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">{label}</div>
-      <div className="mt-1 text-xl font-black">{Number(value || 0).toLocaleString()}</div>
-    </div>
-  );
-}
-
-function isDraftOrPlanningItem(item) {
-  const statusText = [
-    item?.status,
-    item?.agreement_status,
-    item?.project_status,
-    item?.signature_status,
-    item?.workflow_status,
-  ]
-    .map(normalizeText)
-    .join(" ");
-
-  if (item?.is_draft || item?.is_archived) return true;
-  if (statusText.includes("draft") || statusText.includes("unsigned") || statusText.includes("planning")) return true;
-  if (statusText.includes("not_sent") || statusText.includes("not sent")) return true;
-  return false;
-}
-
-function itemHasAssignedTeamSignal(item, teamRows = []) {
-  if (
-    item?.assigned_subaccount_id ||
-    item?.subaccount_id ||
-    item?.assigned_worker_id ||
-    item?.assigned_worker?.subaccount_id ||
-    item?.assigned_subcontractor?.subaccount_id ||
-    item?.delegated_reviewer_subaccount?.id
-  ) {
-    return true;
+function formatDate(value) {
+  if (!value) return "Never";
+  try {
+    return new Date(value).toLocaleDateString();
+  } catch {
+    return String(value);
   }
+}
 
-  const itemText = normalizeText(
-    [
-      item?.title,
-      item?.subtitle,
-      item?.assigned_worker_display,
-      item?.assigned_subcontractor_display,
-      item?.employee_name,
-      item?.subcontractor_display_name,
-      item?.assignee_name,
-    ].join(" ")
+function formatRole(value) {
+  return String(value || "")
+    .replace(/^employee_/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || "Role not set";
+}
+
+function roleLabel(value, fallback = "") {
+  return ROLE_OPTIONS.find((role) => role.value === value)?.label || fallback || formatRole(value);
+}
+
+function capabilityName(capability) {
+  return capability?.skill_name || capability?.skill_slug || capability?.name || "Capability";
+}
+
+function capabilitySummary(row, limit = 2) {
+  const capabilities = Array.isArray(row?.capabilities) ? row.capabilities : [];
+  if (!capabilities.length) return "No capabilities recorded";
+  const visible = capabilities.slice(0, limit).map(capabilityName);
+  const hidden = capabilities.length - visible.length;
+  return hidden > 0 ? `${visible.join(", ")} +${hidden} more` : visible.join(", ");
+}
+
+function SummaryCard({ label, value, helper, onClick }) {
+  const Component = onClick ? "button" : "div";
+  return (
+    <Component
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={[
+        operationalCard,
+        "rounded-xl px-4 py-3 text-left",
+        onClick ? "transition hover:-translate-y-0.5 hover:border-white/24 hover:bg-white/12" : "",
+      ].join(" ")}
+    >
+      <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/60">{label}</div>
+      <div className="mt-2 text-2xl font-black text-white">{Number(value || 0).toLocaleString()}</div>
+      {helper ? <div className="mt-1 text-xs font-semibold text-sky-100/60">{helper}</div> : null}
+    </Component>
   );
+}
 
-  return teamRows.some((row) => {
-    const name = normalizeText(row?.display_name);
-    const email = normalizeText(row?.email);
-    return (name && itemText.includes(name)) || (email && itemText.includes(email));
-  });
+function statusBadgeClass(status) {
+  const normalized = normalizeText(status);
+  if (normalized === "active" || normalized === "accepted") return "border-emerald-200/35 bg-emerald-400/12 text-emerald-100";
+  if (normalized === "pending") return "border-amber-200/35 bg-amber-400/12 text-amber-100";
+  if (normalized === "inactive" || normalized === "expired" || normalized === "revoked") return "border-rose-200/35 bg-rose-400/12 text-rose-100";
+  return "border-white/12 bg-white/8 text-sky-100/70";
 }
 
 export default function TeamOverviewPage() {
   const navigate = useNavigate();
-  const { data: identity, loading: whoLoading } = useWhoAmI();
+  const { data: identity, loading: whoLoading, error: whoError } = useWhoAmI();
   const attentionCounts = identity?.attention_counts || {};
 
-  const [operations, setOperations] = useState(null);
   const [teamRows, setTeamRows] = useState([]);
-  const [workforce, setWorkforce] = useState(null);
+  const [subcontractorRows, setSubcontractorRows] = useState([]);
+  const [invitationRows, setInvitationRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [workloadFilter, setWorkloadFilter] = useState("needs_assignment");
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [capabilityFilter, setCapabilityFilter] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -186,21 +126,21 @@ export default function TeamOverviewPage() {
     async function load() {
       try {
         setLoading(true);
-        const [operationsRes, teamRes, workforceRes] = await Promise.all([
-          api.get("/projects/dashboard/operations/"),
+        const [teamRes, subcontractorsRes, invitationsRes] = await Promise.all([
           api.get("/projects/subaccounts/", { params: { page_size: 200 } }),
-          api.get("/projects/workforce/assignments/"),
+          api.get("/projects/subcontractors/"),
+          api.get("/projects/subcontractor-invitations/"),
         ]);
         if (!active) return;
-        setOperations(operationsRes.data || null);
         setTeamRows(normalizeListResponse(teamRes.data));
-        setWorkforce(workforceRes.data || null);
+        setSubcontractorRows(normalizeListResponse(subcontractorsRes.data));
+        setInvitationRows(normalizeListResponse(invitationsRes.data));
       } catch (error) {
         console.error(error);
         if (!active) return;
-        setOperations(null);
         setTeamRows([]);
-        setWorkforce(null);
+        setSubcontractorRows([]);
+        setInvitationRows([]);
       } finally {
         if (active) setLoading(false);
       }
@@ -215,600 +155,400 @@ export default function TeamOverviewPage() {
     };
   }, [whoLoading]);
 
-  const attentionItems = useMemo(() => {
-    const today = Array.isArray(operations?.today) ? operations.today : [];
-    return today.filter((item) => {
-      const type = String(item?.item_type || "").toLowerCase();
-      const isActionable =
-        type.includes("review") ||
-        type.includes("overdue") ||
-        type.includes("needs_changes") ||
-        type.includes("submitted");
-      return isActionable && !isDraftOrPlanningItem(item) && itemHasAssignedTeamSignal(item, teamRows);
-    });
-  }, [operations, teamRows]);
+  const isContractor = ["contractor", "contractor_owner", "employee_supervisor"].includes(
+    String(identity?.identity_type || identity?.role || identity?.type || "").toLowerCase()
+  );
 
-  const weekItems = useMemo(() => {
-    const items = [
-      ...(Array.isArray(operations?.tomorrow) ? operations.tomorrow : []),
-      ...(Array.isArray(operations?.this_week) ? operations.this_week : []),
-    ];
-    return items.filter((item) => !isDraftOrPlanningItem(item) && itemHasAssignedTeamSignal(item, teamRows)).slice(0, 6);
-  }, [operations, teamRows]);
+  const organizationMembers = useMemo(() => {
+    const employees = teamRows.map((row) => ({
+      key: `employee-${row.id}`,
+      id: row.id,
+      type: "Employee",
+      name: row.display_name || row.email || "Unnamed employee",
+      email: row.email || "",
+      role: roleLabel(row.role, row.role_label),
+      roleValue: row.role,
+      status: row.is_active ? "active" : "inactive",
+      capabilities: Array.isArray(row.capabilities) ? row.capabilities : [],
+      lastSeen: row.last_login || row.last_activity_at,
+      openUrl: `/app/team/employees/${row.id}`,
+    }));
+
+    const subcontractors = subcontractorRows.map((row) => ({
+      key: `subcontractor-${row.key || row.subcontractor_user_id || row.email}`,
+      id: row.subcontractor_user_id || row.key || row.email,
+      type: "Subcontractor",
+      name: row.display_name || row.name || row.email || "Unnamed subcontractor",
+      email: row.email || "",
+      role: "External partner",
+      roleValue: "subcontractor",
+      status: row.status || "active",
+      capabilities: [],
+      lastSeen: row.last_activity_at,
+      openUrl: "/app/team/subcontractors",
+    }));
+
+    return [...employees, ...subcontractors];
+  }, [subcontractorRows, teamRows]);
+
+  const capabilityRows = useMemo(() => {
+    const coverage = new Map();
+    teamRows.forEach((member) => {
+      (Array.isArray(member.capabilities) ? member.capabilities : []).forEach((capability) => {
+        const id = String(capability.skill_id || capability.skill_slug || capabilityName(capability));
+        const existing = coverage.get(id) || {
+          id,
+          name: capabilityName(capability),
+          count: 0,
+        };
+        existing.count += 1;
+        coverage.set(id, existing);
+      });
+    });
+    return Array.from(coverage.values()).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [teamRows]);
+
+  const roleRows = useMemo(
+    () =>
+      ROLE_OPTIONS.map((role) => ({
+        ...role,
+        count: teamRows.filter((row) => row.role === role.value).length,
+      })),
+    [teamRows]
+  );
+
+  const filteredMembers = useMemo(() => {
+    const q = normalizeText(search);
+    return organizationMembers.filter((member) => {
+      if (typeFilter && normalizeText(member.type) !== typeFilter) return false;
+      if (statusFilter && normalizeText(member.status) !== statusFilter) return false;
+      if (capabilityFilter) {
+        const hasCapability = member.capabilities.some((capability) => {
+          const id = String(capability.skill_id || capability.skill_slug || capabilityName(capability));
+          return id === capabilityFilter;
+        });
+        if (!hasCapability) return false;
+      }
+      if (!q) return true;
+      return [member.name, member.email, member.role, member.type, member.status, capabilitySummary(member)]
+        .map(normalizeText)
+        .some((value) => value.includes(q));
+    });
+  }, [capabilityFilter, organizationMembers, search, statusFilter, typeFilter]);
 
   const summaryCounts = useMemo(() => {
-    const activeRows = teamRows.filter((row) => row.is_active);
-    const subcontractors = activeRows.filter((row) => normalizeText(row.role).includes("subcontractor"));
-    return {
-      activeTeam: attentionCounts.active_subcontractor_count || activeRows.length,
-      subcontractors: subcontractors.length,
-      assignedWork:
-        attentionCounts.assigned_work_count ||
-        activeRows.reduce((total, row) => total + Number(row.active_assignment_count || 0), 0),
-      unassignedWork: attentionCounts.unassigned_assignment_count || 0,
-      awaitingReview: attentionCounts.awaiting_review_count || attentionCounts.submitted_for_review_count || 0,
-      upcomingSchedule: weekItems.length,
-    };
-  }, [attentionCounts, teamRows, weekItems.length]);
+    const employees = teamRows.length;
+    const subcontractors = subcontractorRows.length || Number(attentionCounts.active_subcontractor_count || 0);
+    const pendingInvitations =
+      invitationRows.filter((row) => normalizeText(row.status) === "pending").length ||
+      Number(attentionCounts.pending_invites_count || 0);
+    const incompleteProfiles = teamRows.filter((row) => !Array.isArray(row.capabilities) || row.capabilities.length === 0).length;
+    const activeAccounts = teamRows.filter((row) => row.is_active).length;
+    const inactiveMembers = teamRows.filter((row) => !row.is_active).length;
+    return { employees, subcontractors, pendingInvitations, incompleteProfiles, activeAccounts, inactiveMembers };
+  }, [attentionCounts.active_subcontractor_count, attentionCounts.pending_invites_count, invitationRows, subcontractorRows.length, teamRows]);
 
-  const workforceRows = useMemo(() => {
-    return Array.isArray(workforce?.results) ? workforce.results : [];
-  }, [workforce]);
+  const invitationSummary = useMemo(() => {
+    const counts = invitationRows.reduce(
+      (acc, row) => {
+        const status = normalizeText(row.status);
+        if (status === "accepted") acc.accepted += 1;
+        else if (status === "expired" || status === "revoked") acc.expired += 1;
+        else acc.pending += 1;
+        return acc;
+      },
+      { pending: 0, accepted: 0, expired: 0 }
+    );
+    if (!invitationRows.length && attentionCounts.pending_invites_count) {
+      counts.pending = Number(attentionCounts.pending_invites_count || 0);
+    }
+    return counts;
+  }, [attentionCounts.pending_invites_count, invitationRows]);
 
-  const workforceSummary = workforce?.summary || {};
-  const capacityRows = useMemo(() => {
-    return Array.isArray(workforce?.capacity)
-      ? workforce.capacity
-        .slice()
-        .sort((a, b) => capacityRank(a.state) - capacityRank(b.state) || Number(b.assignment_count_today || 0) - Number(a.assignment_count_today || 0))
-        .slice(0, 6)
-      : [];
-  }, [workforce]);
-  const skillRows = useMemo(() => {
-    return Array.isArray(workforce?.skills_matrix)
-      ? workforce.skills_matrix
-        .slice()
-        .sort((a, b) => skillCoverageRank(a.coverage) - skillCoverageRank(b.coverage) || String(a.skill || "").localeCompare(String(b.skill || "")))
-        .slice(0, 8)
-      : [];
-  }, [workforce]);
-  const workloadBuckets = useMemo(() => {
-    const rows = workforceRows
-      .filter((row) => row.is_warranty_work || row.is_maintenance_work || row.is_estimate_work || row.source_type === "unassigned_milestone")
-      .slice()
-      .sort((a, b) => workRiskRank(a) - workRiskRank(b) || String(a.scheduled_start || "").localeCompare(String(b.scheduled_start || "")));
-    return [
-      {
-        key: "assigned",
-        label: "Assigned Work",
-        helper: "Routed work with an owner.",
-        rows: rows.filter((row) => !isUnassignedWorkRow(row)),
-      },
-      {
-        key: "needs_assignment",
-        label: "Needs Assignment",
-        helper: "Work that should be routed before dates or commitments move.",
-        rows: rows.filter(isUnassignedWorkRow),
-      },
-      {
-        key: "at_risk",
-        label: "At Risk",
-        helper: "High-priority, overdue, or blocked work to review first.",
-        rows: rows.filter((row) => workRiskRank(row) === 0),
-      },
-      {
-        key: "upcoming",
-        label: "Upcoming",
-        helper: "Scheduled work coming up soon.",
-        rows: rows.filter((row) => row.scheduled_start),
-      },
-      {
-        key: "warranty",
-        label: "Warranty",
-        helper: "Post-completion service work.",
-        rows: rows.filter((row) => row.is_warranty_work),
-      },
-      {
-        key: "maintenance",
-        label: "Maintenance",
-        helper: "Property and maintenance work.",
-        rows: rows.filter((row) => row.is_maintenance_work),
-      },
-    ];
-  }, [workforceRows]);
-  const activeWorkloadBucket = useMemo(
-    () => workloadBuckets.find((bucket) => bucket.key === workloadFilter) || workloadBuckets[0],
-    [workloadBuckets, workloadFilter]
-  );
-  const assistant = workforce?.assistant || {};
-  const unassignedRows = workloadBuckets.find((bucket) => bucket.key === "needs_assignment")?.rows || [];
-  const atRiskRows = workloadBuckets.find((bucket) => bucket.key === "at_risk")?.rows || [];
-  const availableCapacityRows = capacityRows.filter((row) => row.state === "available");
-  const overloadedCapacityRows = capacityRows.filter((row) => row.state === "overbooked" || row.state === "near_capacity");
-  const missingSkillRows = skillRows.filter((row) => row.coverage === "missing");
-  const teamAssistantSummary =
-    assistant.summary ||
-    (unassignedRows.length
-      ? `${unassignedRows.length} work item${unassignedRows.length === 1 ? "" : "s"} need assignment before commitments move.`
-      : overloadedCapacityRows.length
-        ? `${overloadedCapacityRows.length} team member${overloadedCapacityRows.length === 1 ? "" : "s"} are near capacity or overbooked.`
-        : "Team coverage looks steady. Review upcoming work and keep assignments current.");
-  const teamAssistantRecommendations = assistant.recommendations || [
-    unassignedRows.length ? "Assign unowned work before confirming new schedules." : "",
-    overloadedCapacityRows.length ? "Review near-capacity team members before adding more work." : "",
-    atRiskRows.length ? "Open at-risk work and confirm owner, schedule, and next action." : "",
-    missingSkillRows.length ? "Add or source coverage for missing skills before accepting matching work." : "",
-  ].filter(Boolean);
+  const organizationIssues = useMemo(() => {
+    const issues = [];
+    if (summaryCounts.incompleteProfiles > 0) {
+      issues.push(`${summaryCounts.incompleteProfiles} member${summaryCounts.incompleteProfiles === 1 ? "" : "s"} need capability profiles.`);
+    }
+    if (invitationSummary.pending > 0) {
+      issues.push(`${invitationSummary.pending} subcontractor invitation${invitationSummary.pending === 1 ? "" : "s"} still pending.`);
+    }
+    if (!roleRows.some((role) => role.value === "employee_supervisor" && role.count > 0)) {
+      issues.push("No supervisor access level is currently represented.");
+    }
+    if (summaryCounts.inactiveMembers > 0) {
+      issues.push(`${summaryCounts.inactiveMembers} member${summaryCounts.inactiveMembers === 1 ? "" : "s"} are inactive.`);
+    }
+    if (capabilityRows.length === 0) {
+      issues.push("No capabilities have been recorded yet.");
+    }
+    return issues;
+  }, [capabilityRows.length, invitationSummary.pending, roleRows, summaryCounts.inactiveMembers, summaryCounts.incompleteProfiles]);
 
-  const quickActionButton = (label, to, testId, tone = "primary") => (
-    <button
-      key={label}
-      type="button"
-      data-testid={testId}
-      onClick={() => navigate(to)}
-      className={[
-        "rounded-xl px-4 py-3 text-sm font-semibold transition",
-        tone === "primary"
-          ? "mhb-operational-filter-chip is-active"
-          : "mhb-operational-filter-chip",
-      ].join(" ")}
-    >
-      {label}
-    </button>
-  );
+  const assistantSummary = organizationIssues.length
+    ? organizationIssues[0]
+    : "Your organization profile has employees, access levels, invitations, and capabilities ready for review.";
+
+  if (whoLoading) {
+    return <div className="p-6 text-sm text-gray-500">Loading your profile...</div>;
+  }
+
+  if (whoError || !isContractor) {
+    return (
+      <div className="p-6">
+        <h1 className="mb-2 text-xl font-semibold">Team</h1>
+        <p className="text-sm text-red-500">Only contractors can view team organization.</p>
+      </div>
+    );
+  }
 
   return (
     <ContractorPageSurface
       eyebrow="Team"
-      title="Team Overview"
-      subtitle="A quick operational read on who is active, what needs attention, and what is moving this week."
-      className="max-w-[1360px]"
+      title="Team"
+      subtitle="Manage your employees, subcontractors, roles, capabilities, and organization."
+      actions={
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => navigate("/app/team/members")}
+            className={`${operationalPrimaryButton} inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-black`}
+            data-testid="team-overview-add-member"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            Add Team Member
+          </button>
+          <button
+            type="button"
+            onClick={() => navigate("/app/team/subcontractors")}
+            className={`${operationalButton} inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-bold`}
+            data-testid="team-overview-invite-subcontractor"
+          >
+            Invite Subcontractor
+          </button>
+        </div>
+      }
+      className="mx-auto max-w-[1180px]"
+      contentClassName="space-y-4"
       variant="operational"
     >
-      <div className="space-y-6">
-        <HubTabs tabs={teamHubTabs} />
+      <div className="space-y-4" data-testid="team-organization-overview">
+        <HubTabs tabs={teamOrganizationTabs} />
 
-        <section data-testid="team-decision-brief" className={`${operationalPanel} rounded-2xl p-4`}>
+        <section data-testid="team-health-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <SummaryCard label="Employees" value={summaryCounts.employees} helper="Application users" onClick={() => navigate("/app/team/members")} />
+          <SummaryCard label="Subcontractors" value={summaryCounts.subcontractors} helper="External partners" onClick={() => navigate("/app/team/subcontractors")} />
+          <SummaryCard label="Pending Invitations" value={summaryCounts.pendingInvitations} helper="Subcontractor invites" onClick={() => navigate("/app/team/subcontractors")} />
+          <SummaryCard label="Incomplete Profiles" value={summaryCounts.incompleteProfiles} helper="Capabilities missing" onClick={() => navigate("/app/team/members")} />
+          <SummaryCard label="Active Accounts" value={summaryCounts.activeAccounts} helper="Enabled members" onClick={() => navigate("/app/team/members")} />
+          <SummaryCard label="Inactive Members" value={summaryCounts.inactiveMembers} helper="Access disabled" onClick={() => navigate("/app/team/members")} />
+        </section>
+
+        <ProjectAssistantPanel
+          subtitle="Team Assistant"
+          summary={assistantSummary}
+          className={`${operationalPanel} text-white`}
+          testId="team-assistant-panel"
+        >
+          <div className="grid gap-3 md:grid-cols-2">
+            <ProjectAssistantCard title="Organization focus" tone="advisory">
+              <ul className="space-y-2 text-sm leading-6">
+                {(organizationIssues.length ? organizationIssues : ["Review organization records regularly so roles, account access, and capabilities stay current."]).slice(0, 4).map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </ProjectAssistantCard>
+            <ProjectAssistantSection title="Safe prepared actions">
+              Prepare a profile-completion review, capability coverage review, or invitation follow-up list for an authorized user.
+            </ProjectAssistantSection>
+          </div>
+          <ProjectAssistantApprovalNotice compact>
+            Team Assistant may summarize organization health, but authorized users must create access, change roles, or update member status.
+          </ProjectAssistantApprovalNotice>
+        </ProjectAssistantPanel>
+
+        <section data-testid="team-directory" className={`${operationalPanel} rounded-2xl p-4`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="text-base font-bold text-white">Today&apos;s Staffing Decisions</div>
-              <div className="mt-1 text-sm text-sky-100/70">
-                Start here: assign ownerless work, protect overloaded people, and confirm the next schedule moves.
-              </div>
+              <div className={sectionTitleClass}>Team Directory</div>
+              <div className={sectionHelperClass}>Employees and subcontractors in one organization view. Open Team Members for profile and access changes.</div>
             </div>
-            <button
-              type="button"
-              onClick={() => navigate("/app/team/schedule")}
-              className={operationalButton}
-            >
-              Open Schedule
-            </button>
-          </div>
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <button type="button" onClick={() => setWorkloadFilter("needs_assignment")} className="rounded-xl border border-amber-300/35 bg-amber-400/15 p-4 text-left text-amber-100">
-              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">Needs Assignment</div>
-              <div className="mt-2 text-3xl font-black">{unassignedRows.length}</div>
-              <div className="mt-1 text-sm leading-5 opacity-80">Route these before committing dates.</div>
-            </button>
-            <button type="button" onClick={() => setWorkloadFilter("at_risk")} className="rounded-xl border border-rose-300/35 bg-rose-400/15 p-4 text-left text-rose-100">
-              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">At Risk</div>
-              <div className="mt-2 text-3xl font-black">{atRiskRows.length}</div>
-              <div className="mt-1 text-sm leading-5 opacity-80">Review high-priority or blocked work.</div>
-            </button>
-            <button type="button" onClick={() => navigate("/app/team/assignments?capacity=overloaded")} className="rounded-xl border border-white/12 bg-slate-950/40 p-4 text-left text-sky-100">
-              <div className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100/60">Overloaded</div>
-              <div className="mt-2 text-3xl font-black text-white">{overloadedCapacityRows.length}</div>
-              <div className="mt-1 text-sm leading-5 text-sky-100/70">Balance before assigning more work.</div>
-            </button>
-            <button type="button" onClick={() => navigate("/app/team/assignments?capacity=available")} className="rounded-xl border border-emerald-300/35 bg-emerald-400/15 p-4 text-left text-emerald-100">
-              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">Available Today</div>
-              <div className="mt-2 text-3xl font-black">{availableCapacityRows.length}</div>
-              <div className="mt-1 text-sm leading-5 opacity-80">Good candidates for new work.</div>
-            </button>
-          </div>
-        </section>
-
-        <section data-testid="team-overview-actions" className={`${operationalPanel} rounded-2xl p-4`}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="text-base font-bold text-white">Quick Actions</div>
-              <div className="mt-1 text-sm text-sky-100/70">
-                The shortest path to route work, review timing, and jump to team administration when needed.
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {quickActionButton("Assign Work", "/app/team/assignments", "team-overview-assign-work", "primary")}
-              {quickActionButton("Open Schedule", "/app/team/schedule", "team-overview-open-schedule")}
-              {quickActionButton("Review Submitted Work", "/app/reviewer/queue", "team-overview-review-work")}
-              {quickActionButton("Invite Subcontractor", "/app/team/subcontractors", "team-overview-invite-subcontractor")}
-              {quickActionButton("Manage Team Members", "/app/team/members", "team-overview-manage-members")}
-            </div>
-          </div>
-        </section>
-
-        <section data-testid="team-overview-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          <SummaryCard
-            label="Available Today"
-            value={availableCapacityRows.length}
-            sub="Capacity signal"
-            onClick={() => navigate("/app/team/assignments?capacity=available")}
-          />
-          <SummaryCard
-            label="Assigned Work"
-            value={summaryCounts.assignedWork}
-            sub="Currently routed to the team"
-            onClick={() => navigate("/app/team/assignments?assignment_status=assigned")}
-          />
-          <SummaryCard
-            label="Unassigned Work"
-            value={summaryCounts.unassignedWork}
-            sub="Use Assignments to route"
-            onClick={() => navigate("/app/team/assignments?assignment_status=unassigned")}
-          />
-          <SummaryCard
-            label="Awaiting Review"
-            value={summaryCounts.awaitingReview}
-            sub="Submitted work waiting on action"
-            onClick={() => navigate("/app/team/assignments?assignment_status=awaiting_review")}
-          />
-          <SummaryCard
-            label="Upcoming Schedule"
-            value={summaryCounts.upcomingSchedule}
-            sub="Assigned items this week"
-            onClick={() => navigate("/app/team/schedule")}
-          />
-          <SummaryCard
-            label="Capacity Risks"
-            value={overloadedCapacityRows.length}
-            sub="Near capacity or overbooked"
-            onClick={() => navigate("/app/team/assignments?capacity=overloaded")}
-          />
-        </section>
-
-        <section data-testid="team-workforce-command-center" className={`${operationalPanel} rounded-2xl p-4`}>
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <div className={sectionTitleClass}>Workforce Command Center</div>
-              <div className={sectionHelperClass}>
-                Unified read layer for agreements, milestones, estimates, warranty, maintenance, and crew planning.
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/app/team/assignments")}
-              className={operationalButton}
-            >
-              Open Workload
-            </button>
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-            <SummaryPill label="Total" value={workforceSummary.total} />
-            <SummaryPill label="Today" value={workforceSummary.today_count} />
-            <SummaryPill label="This Week" value={workforceSummary.this_week_count} />
-            <SummaryPill label="Unassigned" value={workforceSummary.unassigned_count} tone="warn" />
-            <SummaryPill label="At Risk" value={workforceSummary.at_risk_count} tone="danger" />
-            <SummaryPill label="Warranty" value={workforceSummary.warranty_count} />
-            <SummaryPill label="Maintenance" value={workforceSummary.maintenance_count} />
-            <SummaryPill label="Estimates" value={workforceSummary.estimate_count} />
-          </div>
-        </section>
-
-        <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <section data-testid="team-workload-mixed-types" className={`${operationalPanel} rounded-2xl p-4`}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className={sectionTitleClass}>Actionable Workload</div>
-                <div className={sectionHelperClass}>
-                  Grouped by what the team needs to do next instead of raw source data.
-                </div>
-              </div>
-            </div>
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-              {workloadBuckets.map((bucket) => (
-                <button
-                  key={bucket.key}
-                  type="button"
-                  onClick={() => setWorkloadFilter(bucket.key)}
-                  className={`mhb-operational-filter-chip whitespace-nowrap text-xs font-black ${
-                    workloadFilter === bucket.key ? "is-active" : ""
-                  }`}
-                >
-                  {bucket.label} <span className="ml-1 opacity-70">{bucket.rows.length}</span>
-                </button>
-              ))}
-            </div>
-            {loading ? (
-              <div className={loadingTextClass}>Loading workload...</div>
-            ) : activeWorkloadBucket.rows.length === 0 ? (
-              <div className={emptyStateClass}>
-                <div className="font-semibold text-white">No {activeWorkloadBucket.label.toLowerCase()} right now.</div>
-                <div className="mt-1">{activeWorkloadBucket.helper} Project Assistant can help review assignments once work appears here.</div>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {activeWorkloadBucket.rows.slice(0, 6).map((row) => (
-                  <div key={`${row.source_type}-${row.source_id}`} className={rowCardClass}>
-                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-xs font-bold text-sky-100/75">
-                            {formatStatus(row.source_label || row.source_type)}
-                          </span>
-                          <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-xs font-bold text-sky-100/75">
-                            {formatStatus(row.status)}
-                          </span>
-                        </div>
-                        <div className="mt-2 text-sm font-bold text-white">
-                          {row.milestone_label || row.project_label || row.agreement_label || row.source_label}
-                        </div>
-                        <div className="mt-1 text-sm text-sky-100/70">
-                          {row.customer_label || "No customer"} {row.property_address ? `| ${row.property_address}` : ""}
-                        </div>
-                      <div className="mt-1 text-xs font-semibold text-sky-100/55">
-                          {isUnassignedWorkRow(row) ? "Needs Assignment" : `Assigned to ${row.member_name}`} | {formatDateTime(row.scheduled_start)}
-                        </div>
-                      </div>
-                      {row.open_url ? (
-                        <button
-                          type="button"
-                          onClick={() => navigate(row.open_url)}
-                          className={`${operationalButton} shrink-0 px-3 py-2 text-xs`}
-                        >
-                          Open Source
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section data-testid="team-capacity-indicators" className={`${operationalPanel} rounded-2xl p-4`}>
-            <div>
-              <div className={sectionTitleClass}>Capacity Indicators</div>
-              <div className={sectionHelperClass}>
-                Overloaded and near-capacity people appear first so staffing decisions are faster.
-              </div>
-            </div>
-            {loading ? (
-              <div className={loadingTextClass}>Loading capacity...</div>
-            ) : capacityRows.length === 0 ? (
-              <div className={emptyStateClass}>
-                Add employees to see capacity indicators.
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {capacityRows.map((row) => (
-                  <div key={row.member_id} className={compactRowCardClass}>
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-bold text-white">{row.member_name}</div>
-                        <div className="mt-1 text-xs text-sky-100/58">
-                          Today {Number(row.assignment_count_today || 0)} | Week {Number(row.assignment_count_week || 0)} | Total{" "}
-                          {Number(row.assignment_count_total || 0)}
-                        </div>
-                        {row.reasons?.length ? (
-                          <div className="mt-2 text-xs font-semibold text-sky-100/68">{row.reasons[0]}</div>
-                        ) : null}
-                      </div>
-                      <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${capacityTone(row.state)}`}>
-                        {formatStatus(row.state)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <section data-testid="team-skills-matrix" className={`${operationalPanel} rounded-2xl p-4`}>
-            <div>
-              <div className={sectionTitleClass}>Skills Matrix</div>
-              <div className={sectionHelperClass}>
-                Missing and thin coverage appear first so you can fix staffing gaps before assigning work.
-              </div>
-            </div>
-            {loading ? (
-              <div className={loadingTextClass}>Loading skills...</div>
-            ) : skillRows.length === 0 ? (
-              <div className={emptyStateClass}>
-                Add employee capabilities to build the skills matrix.
-              </div>
-            ) : (
-              <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                {skillRows.map((row) => (
-                  <div key={row.skill} className="rounded-xl border border-white/10 bg-white/6 px-3 py-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-bold text-white">{row.skill}</div>
-                      <span className={`rounded-full border px-2 py-0.5 text-xs font-black ${capacityTone(row.coverage === "missing" ? "overbooked" : row.coverage === "thin" ? "near_capacity" : "available")}`}>
-                        {formatStatus(row.coverage)}
-                      </span>
-                    </div>
-                    <div className="mt-1 text-xs text-sky-100/65">
-                      {Number(row.member_count || 0)} team member{Number(row.member_count || 0) === 1 ? "" : "s"}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <ProjectAssistantPanel
-            testId="team-assistant-panel"
-            subtitle="Team Assistant"
-            summary={teamAssistantSummary}
-            actions={<ProjectAssistantConfidenceBadge value={assistant.confidence || "medium"} />}
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              <ProjectAssistantCard title="Recommended Focus" tone="advisory">
-                <ul className="space-y-2 text-sm leading-6">
-                  {(teamAssistantRecommendations.length ? teamAssistantRecommendations : ["Review upcoming work and capacity before committing new dates."]).map((item) => (
-                    <li key={item}>{item}</li>
-                  ))}
-                </ul>
-              </ProjectAssistantCard>
-              <ProjectAssistantSection title="Safe Prepared Actions">
-                {(assistant.safe_actions || ["Prepare assignment review", "Open source records"]).join(", ")}
-              </ProjectAssistantSection>
-            </div>
-            <ProjectAssistantApprovalNotice compact>
-              Team Assistant may prepare assignment and capacity reviews, but authorized users must assign people or contact customers.
-            </ProjectAssistantApprovalNotice>
-          </ProjectAssistantPanel>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <section data-testid="team-overview-attention" className={`${operationalPanel} rounded-2xl p-4`}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className={sectionTitleClass}>Needs Attention</div>
-                <div className={sectionHelperClass}>
-                  Assigned team work currently asking for a decision or follow-up.
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate("/app/reviewer/queue")}
-                className={operationalButton}
-              >
-                Open Review Queue
-              </button>
-            </div>
-
-            {loading ? (
-              <div className={loadingTextClass}>Loading team overview...</div>
-            ) : attentionItems.length === 0 ? (
-              <div className={emptyStateClass}>
-                <div className="text-sm font-semibold text-white">No assigned team items need attention right now.</div>
-                <div className="mt-1 text-sm text-sky-100/70">
-                  Use Assignments to assign work and Team Schedule to review timing.
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {attentionItems.map((item) => (
-                  <div key={item.id} className={rowCardClass}>
-                    <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{item.title}</div>
-                        <div className="mt-1 text-sm text-sky-100/70">{item.subtitle}</div>
-                      </div>
-                      <div className="text-xs font-semibold text-sky-100/55">
-                        {formatDateTime(item.occurred_at || item.start_date || item.start)}
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(item.actions || []).slice(0, 2).map((action) => (
-                        <button
-                          key={`${item.id}-${action.label}`}
-                          type="button"
-                          onClick={() =>
-                            navigate(
-                              String(action.target || "/app/dashboard").replace(
-                                "{id}",
-                                String(item.milestone_id || item.agreement_id || "")
-                              )
-                            )
-                          }
-                          className={`${operationalButton} px-3 py-1.5 text-xs`}
-                        >
-                          {action.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section data-testid="team-overview-upcoming" className={`${operationalPanel} rounded-2xl p-4`}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className={sectionTitleClass}>Upcoming This Week</div>
-                <div className={sectionHelperClass}>
-                  The next few things that will land on the schedule.
-                </div>
-              </div>
-            </div>
-
-            {loading ? (
-              <div className={loadingTextClass}>Loading schedule...</div>
-            ) : weekItems.length === 0 ? (
-              <div className={emptyStateClass}>
-                <div className="text-sm font-semibold text-white">No upcoming items this week</div>
-                <div className="mt-1 text-sm text-sky-100/70">
-                  Schedule activity will appear here when work is planned or due.
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 space-y-3">
-                {weekItems.map((item) => (
-                  <div key={item.id} className={rowCardClass}>
-                    <div className="text-sm font-semibold text-white">{item.title}</div>
-                    <div className="mt-1 text-sm text-sky-100/70">{item.subtitle}</div>
-                    <div className="mt-2 text-xs text-sky-100/55">
-                      {formatDateTime(item.occurred_at || item.start_date)} {item.milestone_title ? `· ${item.milestone_title}` : ""}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-
-        <section data-testid="team-overview-members" className={`${operationalPanel} rounded-2xl p-4`}>
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className={sectionTitleClass}>Workforce Availability</div>
-              <div className={sectionHelperClass}>
-                Operational capacity by person. Use Team Members for profiles, roles, and account administration.
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate("/app/team/members")}
-              className={operationalButton}
-            >
+            <button type="button" onClick={() => navigate("/app/team/members")} className={operationalButton} data-testid="team-overview-manage-members">
               Manage Team Members
             </button>
           </div>
 
+          <div className="mhb-operational-toolbar mt-4 rounded-2xl p-3" data-testid="team-directory-filters">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <label className="relative min-w-0 flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sky-100/50" aria-hidden="true" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search by name, email, role, or capability"
+                  className={`${operationalControl} w-full rounded-xl py-2 pl-9 pr-3 text-sm font-semibold`}
+                  data-testid="team-directory-search"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setFiltersOpen((value) => !value)}
+                className={`${operationalButton} inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-black`}
+                data-testid="team-directory-filter-toggle"
+              >
+                <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                Filters
+              </button>
+            </div>
+            <div className={`${filtersOpen || typeFilter || statusFilter || capabilityFilter ? "grid" : "hidden"} mt-3 gap-3 sm:grid-cols-3`} data-testid="team-directory-advanced-filters">
+              <select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`}>
+                <option value="">All member types</option>
+                <option value="employee">Employees</option>
+                <option value="subcontractor">Subcontractors</option>
+              </select>
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`}>
+                <option value="">Any status</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="pending">Pending</option>
+              </select>
+              <select value={capabilityFilter} onChange={(event) => setCapabilityFilter(event.target.value)} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`} data-testid="team-directory-capability-filter">
+                <option value="">All capabilities</option>
+                {capabilityRows.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+              </select>
+            </div>
+          </div>
+
           {loading ? (
-            <div className={loadingTextClass}>Loading workforce availability...</div>
-          ) : capacityRows.length === 0 ? (
-            <div className={emptyStateClass}>
-              <div className="text-sm font-semibold text-white">No workforce capacity signals yet</div>
-              <div className="mt-1 text-sm text-sky-100/70">
-                Capacity indicators appear after team members have scheduled or assigned operational records.
-              </div>
+            <div className={loadingTextClass}>Loading team directory...</div>
+          ) : filteredMembers.length === 0 ? (
+            <div className={`mt-4 ${emptyStateClass}`} data-testid="team-directory-empty">
+              <div className="font-semibold text-white">No team members match this view</div>
+              <div className="mt-1">Clear filters or add team members to build your organization.</div>
             </div>
           ) : (
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              {capacityRows.map((row) => (
-                <div key={row.member_id} className={rowCardClass}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-bold text-white">{row.member_name}</div>
-                      <div className="mt-1 text-xs text-sky-100/58">
-                        Today {Number(row.assignment_count_today || 0)} | Week {Number(row.assignment_count_week || 0)} | Total {Number(row.assignment_count_total || 0)}
+            <div className="mt-4 grid gap-3" data-testid="team-directory-results">
+              {filteredMembers.map((member) => (
+                <article key={member.key} className={`${operationalCard} rounded-xl p-4`}>
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_110px_minmax(0,170px)_minmax(0,180px)_90px] lg:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-base font-black text-white">{member.name}</h3>
+                        <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${statusBadgeClass(member.status)}`}>{formatStatus(member.status)}</span>
                       </div>
+                      <p className="mt-1 truncate text-sm font-semibold text-sky-100/65">{member.email || "No email listed"}</p>
                     </div>
-                    <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${capacityTone(row.state)}`}>
-                      {formatStatus(row.state)}
-                    </span>
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/50">Type</div>
+                      <div className="mt-1 text-sm font-bold text-sky-50">{member.type}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/50">Role</div>
+                      <div className="mt-1 text-sm font-bold text-sky-50">{member.role}</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/50">Capabilities</div>
+                      <div className="mt-1 line-clamp-2 text-sm font-semibold text-sky-100/70">{capabilitySummary(member)}</div>
+                    </div>
+                    <button type="button" onClick={() => navigate(member.openUrl)} className={`${operationalButton} rounded-lg px-3 py-2 text-sm font-bold`}>
+                      View
+                    </button>
                   </div>
-                  {row.reasons?.length ? (
-                    <div className="mt-3 text-xs font-semibold text-sky-100/68">{row.reasons[0]}</div>
-                  ) : null}
-                </div>
+                  <div className="mt-3 text-xs font-semibold text-sky-100/55">Last login/activity: {formatDate(member.lastSeen)}</div>
+                </article>
               ))}
             </div>
           )}
         </section>
+
+        <div className="grid gap-4 xl:grid-cols-[1fr_0.9fr]">
+          <section data-testid="team-capability-coverage" className={`${operationalPanel} rounded-2xl p-4`}>
+            <div>
+              <div className={sectionTitleClass}>Capability Coverage</div>
+              <div className={sectionHelperClass}>A read-only view of company capabilities. Click a capability to filter the directory.</div>
+            </div>
+            {loading ? (
+              <div className={loadingTextClass}>Loading capability coverage...</div>
+            ) : capabilityRows.length === 0 ? (
+              <div className={`mt-4 ${emptyStateClass}`}>
+                Add capabilities in Team Members to show company coverage here.
+              </div>
+            ) : (
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                {capabilityRows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => {
+                      setCapabilityFilter(row.id);
+                      setFiltersOpen(true);
+                    }}
+                    className="rounded-xl border border-white/10 bg-white/6 px-3 py-2 text-left transition hover:border-white/24 hover:bg-white/10"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="truncate text-sm font-bold text-white">{row.name}</span>
+                      <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-xs font-black text-sky-100">{row.count}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section data-testid="team-roles-overview" className={`${operationalPanel} rounded-2xl p-4`}>
+            <div>
+              <div className={sectionTitleClass}>Built-in Roles</div>
+              <div className={sectionHelperClass}>Current access levels and employee counts. Custom role creation is not available yet.</div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {roleRows.map((role) => (
+                <div key={role.value} className="rounded-xl border border-white/10 bg-white/6 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-black text-white">{role.label}</div>
+                      <div className="mt-1 text-xs leading-5 text-sky-100/65">{role.summary}</div>
+                    </div>
+                    <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-xs font-black text-sky-100">{role.count}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[0.9fr_1fr]">
+          <section data-testid="team-invitations-overview" className={`${operationalPanel} rounded-2xl p-4`}>
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <div className={sectionTitleClass}>Invitations</div>
+                <div className={sectionHelperClass}>Subcontractor invitation progress. Employees are created directly in Team Members.</div>
+              </div>
+              <button type="button" onClick={() => navigate("/app/team/subcontractors")} className={operationalButton}>
+                Open Invitations
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <SummaryCard label="Pending" value={invitationSummary.pending} helper="Awaiting response" />
+              <SummaryCard label="Accepted" value={invitationSummary.accepted} helper="Joined" />
+              <SummaryCard label="Expired" value={invitationSummary.expired} helper="Closed invites" />
+            </div>
+          </section>
+
+          <section data-testid="team-organization-growth" className={`${operationalPanel} rounded-2xl p-4`}>
+            <div>
+              <div className={sectionTitleClass}>Organization Growth</div>
+              <div className={sectionHelperClass}>The setup items that make your company profile stronger.</div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {(organizationIssues.length ? organizationIssues : ["Organization setup looks healthy. Keep profiles, roles, and capabilities current as the company grows."]).map((item) => (
+                <div key={item} className="flex gap-3 rounded-xl border border-white/10 bg-white/6 p-3 text-sm font-semibold text-sky-100/75">
+                  <Users className="mt-0.5 h-4 w-4 shrink-0 text-sky-100/55" aria-hidden="true" />
+                  <span>{item}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
     </ContractorPageSurface>
   );

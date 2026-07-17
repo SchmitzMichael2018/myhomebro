@@ -27,6 +27,9 @@ const subaccounts = [
     active_assignment_count: 4,
     pending_review_count: 1,
     last_activity_at: "2026-12-28T12:00:00Z",
+    capabilities: [
+      { skill_id: 10, skill_name: "Flooring", skill_level: "lead", skill_level_label: "Lead" },
+    ],
   },
   {
     id: 2,
@@ -38,6 +41,7 @@ const subaccounts = [
     active_assignment_count: 1,
     pending_review_count: 0,
     last_activity_at: "2026-12-27T12:00:00Z",
+    capabilities: [],
   },
 ];
 
@@ -152,6 +156,31 @@ const workforce = {
   ],
 };
 
+const subcontractors = {
+  results: [
+    {
+      key: "sub-1",
+      subcontractor_user_id: 101,
+      display_name: "Morgan Subcontracting",
+      email: "morgan@example.com",
+      status: "active",
+      last_activity_at: "2026-12-25T12:00:00Z",
+    },
+  ],
+};
+
+const invitations = {
+  results: [
+    {
+      id: 501,
+      status: "pending",
+      invite_name: "Casey Trade",
+      invite_email: "casey@example.com",
+      invited_at: "2026-12-24T12:00:00Z",
+    },
+  ],
+};
+
 async function installRoutes(page) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
@@ -181,53 +210,75 @@ async function installRoutes(page) {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(workforce) });
   });
 
+  await page.route("**/api/projects/subcontractors/**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(subcontractors) });
+  });
+
+  await page.route("**/api/projects/subcontractor-invitations/**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(invitations) });
+  });
+
   await page.route("**/api/payments/onboarding/status/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ connected: true }) });
   });
 }
 
-test("team overview shows workforce command center with assistant guidance", async ({ page }) => {
+test("team overview shows organization health with assistant guidance", async ({ page }) => {
   await installRoutes(page);
 
   await page.goto("/app/team", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByRole("heading", { name: "Team Overview" })).toBeVisible();
-  await expect(page.getByTestId("team-decision-brief")).toContainText("Today's Staffing Decisions");
-  await expect(page.getByTestId("team-decision-brief")).toContainText("Needs Assignment");
-  await expect(page.getByTestId("team-decision-brief")).toContainText("Available Today");
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Available Today");
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Capacity Risks");
-  await expect(page.getByTestId("team-overview-actions")).toContainText("Manage Team Members");
-  await expect(page.getByTestId("team-workforce-command-center")).toContainText("Workforce Command Center");
-  await expect(page.locator(".mhb-operational-surface").getByTestId("team-workforce-command-center")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
+  await expect(page.locator(".mhb-operational-surface").getByTestId("team-organization-overview")).toBeVisible();
+  await expect(page.getByTestId("team-health-summary")).toContainText("Employees");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Subcontractors");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Pending Invitations");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Incomplete Profiles");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Active Accounts");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Inactive Members");
+  await expect(page.getByTestId("team-assistant-panel")).toContainText("Team Assistant");
+  await expect(page.getByTestId("team-directory")).toContainText("Team Directory");
+  await expect(page.getByTestId("team-directory")).toContainText("Taylor Crew");
+  await expect(page.getByTestId("team-directory")).toContainText("Jordan Crew");
+  await expect(page.getByTestId("team-capability-coverage")).toContainText("Capability Coverage");
+  await expect(page.getByTestId("team-capability-coverage")).toContainText("Flooring");
+  await expect(page.getByTestId("team-capability-coverage")).toContainText("1");
+  await expect(page.getByTestId("team-roles-overview")).toContainText("Built-in Roles");
+  await expect(page.getByTestId("team-roles-overview")).toContainText("Supervisor");
+  await expect(page.getByTestId("team-invitations-overview")).toContainText("Invitations");
+  await expect(page.getByTestId("team-invitations-overview")).toContainText("Employees are created directly");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("Organization Growth");
+  await expect(page.getByTestId("team-overview-manage-members")).toBeVisible();
+  await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
+  await expect(page.getByTestId("team-overview-invite-subcontractor")).toBeVisible();
+
   for (const testId of [
-    "team-workforce-command-center",
-    "team-workload-mixed-types",
-    "team-capacity-indicators",
-    "team-skills-matrix",
-    "team-overview-attention",
-    "team-overview-upcoming",
-    "team-overview-members",
+    "team-directory",
+    "team-capability-coverage",
+    "team-roles-overview",
+    "team-invitations-overview",
+    "team-organization-growth",
   ]) {
     const section = page.getByTestId(testId);
     await expect(section).toHaveClass(/mhb-operational-panel/);
     await expect(section).not.toHaveClass(/bg-white|bg-slate-50|border-slate-200/);
   }
-  await expect(page.getByTestId("team-workforce-command-center")).toContainText("Warranty");
-  await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Needs Assignment");
-  await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Estimate Workspace");
-  await expect(page.getByTestId("team-workload-mixed-types")).not.toContainText("Assigned to Unassigned");
-  await page.getByTestId("team-workload-mixed-types").getByRole("button", { name: /Assigned Work/ }).click();
-  await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Warranty Work Order");
-  await expect(page.getByTestId("team-capacity-indicators")).toContainText("Taylor Crew");
-  await expect(page.getByTestId("team-capacity-indicators")).toContainText("Near Capacity");
-  await expect(page.getByTestId("team-skills-matrix")).toContainText("Warranty Repair");
-  await expect(page.getByTestId("team-skills-matrix")).toContainText("Flooring");
-  await expect(page.getByTestId("team-overview-members")).toContainText("Workforce Availability");
-  await expect(page.getByTestId("team-overview-members")).not.toContainText("Manage Employees");
+
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Today's Staffing Decisions");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Workforce Command Center");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Actionable Workload");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Assigned Work");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Unassigned Work");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Needs Assignment");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Capacity Risks");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Available Today");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Upcoming Schedule");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Upcoming This Week");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Assign Work");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Open Schedule");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Review Submitted Work");
   await expect(page.getByRole("button", { name: "Add Employee" })).toHaveCount(0);
-  await expect(page.getByTestId("team-assistant-panel")).toContainText("Team Assistant");
-  await expect(page.getByTestId("project-assistant-human-approval")).toContainText("authorized users must assign people");
+  await expect(page.getByTestId("project-assistant-human-approval")).toContainText("authorized users must create access");
 
   await page.setViewportSize({ width: 390, height: 844 });
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);

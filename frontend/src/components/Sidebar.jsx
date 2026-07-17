@@ -36,7 +36,7 @@ const NAV_HINTS = {
   "/app/dashboard": "See what needs attention and what to do next",
   "/app/assistant": "Start new work with Project Assistant guidance across agreements, templates, leads, and setup",
   "/app/business": "View revenue, activity, and business performance",
-  "/app/team": "See team activity, employees, subcontractors, assignments, and schedule",
+  "/app/team": "Manage employees, subcontractors, roles, capabilities, and organization health",
   "/app/reviewer/queue": "Review items waiting on your action or approval",
   "/app/agreements": "Create and manage project agreements, signatures, and funding",
   "/app/estimates": "Manage estimate workspaces between opportunities and agreements",
@@ -358,7 +358,7 @@ export default function Sidebar({ variant = "desktop" }) {
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
         <Item to={`${APP_BASE}/business`} label="Insights" icon={Gauge} />
-        <Item to={`${APP_BASE}/team`} label="Team Overview" icon={Users} />
+        <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
         <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />

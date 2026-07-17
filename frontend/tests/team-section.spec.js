@@ -607,24 +607,28 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await page.goto("/app/team", { waitUntil: "domcontentloaded" });
 
   await expect(page.locator("aside a[href='/app/reviewer/queue']").locator("span").last()).toHaveText("1");
-  await expect(page.locator("aside a[href='/app/team']").locator(".ml-auto")).toContainText("5");
+  await expect(page.locator("aside a[href='/app/team']")).toContainText("Team");
 
-  await expect(page.getByTestId("team-overview-actions")).toContainText("Assign Work");
-  await expect(page.getByTestId("team-overview-actions")).toContainText("Manage Team Members");
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Available Today");
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Assigned Work");
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Capacity Risks");
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Awaiting Review");
-  await expect(page.getByTestId("team-overview-attention")).toContainText("Needs Attention");
-  await expect(page.getByTestId("team-overview-attention")).toContainText("Open Review Queue");
-  await expect(page.getByTestId("team-overview-upcoming")).toContainText("Upcoming This Week");
-  await expect(page.getByTestId("team-overview-upcoming")).toContainText("No upcoming items this week");
-  await expect(page.getByTestId("team-overview-members")).toContainText("Workforce Availability");
-  await expect(page.getByTestId("team-overview-members")).toContainText("Manage Team Members");
-  await expect(page.getByTestId("team-overview-members")).not.toContainText("Role");
-  await expect(page.getByTestId("team-overview-members")).not.toContainText("Manage Employees");
-  await expect(page.getByTestId("team-overview-assign-work")).toBeVisible();
-  await expect(page.getByTestId("team-overview-review-work")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Team", exact: true })).toBeVisible();
+  await expect(page.getByTestId("team-health-summary")).toContainText("Employees");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Subcontractors");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Pending Invitations");
+  await expect(page.getByTestId("team-health-summary")).toContainText("Incomplete Profiles");
+  await expect(page.getByTestId("team-directory")).toContainText("Team Directory");
+  await expect(page.getByTestId("team-directory")).toContainText("Taylor Crew");
+  await expect(page.getByTestId("team-capability-coverage")).toContainText("Capability Coverage");
+  await expect(page.getByTestId("team-roles-overview")).toContainText("Built-in Roles");
+  await expect(page.getByTestId("team-invitations-overview")).toContainText("Invitations");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("Organization Growth");
+  await expect(page.getByTestId("team-overview-manage-members")).toBeVisible();
+  await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
+  await expect(page.getByTestId("team-overview-invite-subcontractor")).toBeVisible();
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Assign Work");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Open Schedule");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Staffing");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Workload");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Capacity Risks");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Available Today");
 
   await page.getByTestId("team-overview-manage-members").click();
   await expect(page).toHaveURL(/\/app\/team\/members/);
@@ -881,9 +885,9 @@ test("team page, subcontractors page, and schedule show operational work", async
   await installTeamRoutes(page);
 
   await page.goto("/app/team", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("team-overview-members")).toBeVisible();
-  await expect(page.getByTestId("team-overview-assign-work")).toBeVisible();
-  await expect(page.getByTestId("team-overview-open-schedule")).toBeVisible();
+  await expect(page.getByTestId("team-directory")).toBeVisible();
+  await expect(page.getByTestId("team-capability-coverage")).toBeVisible();
+  await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
 
   await page.goto("/app/team/subcontractors", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("subcontractors-directory-table")).toContainText("Taylor Crew");

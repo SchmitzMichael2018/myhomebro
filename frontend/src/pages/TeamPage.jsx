@@ -9,7 +9,7 @@ import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
-import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
+import { teamOrganizationTabs } from "../components/dashboard/hubTabsConfig.js";
 import {
   ProjectAssistantApprovalNotice,
   ProjectAssistantPanel,
@@ -576,7 +576,7 @@ export default function TeamPage() {
       variant="operational"
     >
       <div className="space-y-4" data-testid="team-admin-workspace">
-        <HubTabs tabs={teamHubTabs} />
+        <HubTabs tabs={teamOrganizationTabs} />
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" data-testid="team-admin-summary">
           <SummaryCard label="Employees" value={teamSummary.employees} helper="Application users" />
