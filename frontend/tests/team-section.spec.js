@@ -610,19 +610,23 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.locator("aside a[href='/app/team']").locator(".ml-auto")).toContainText("5");
 
   await expect(page.getByTestId("team-overview-actions")).toContainText("Assign Work");
-  await expect(page.getByTestId("team-overview-summary")).toContainText("Team Members");
+  await expect(page.getByTestId("team-overview-actions")).toContainText("Manage Team Members");
+  await expect(page.getByTestId("team-overview-summary")).toContainText("Available Today");
   await expect(page.getByTestId("team-overview-summary")).toContainText("Assigned Work");
+  await expect(page.getByTestId("team-overview-summary")).toContainText("Capacity Risks");
   await expect(page.getByTestId("team-overview-summary")).toContainText("Awaiting Review");
   await expect(page.getByTestId("team-overview-attention")).toContainText("Needs Attention");
   await expect(page.getByTestId("team-overview-attention")).toContainText("Open Review Queue");
   await expect(page.getByTestId("team-overview-upcoming")).toContainText("Upcoming This Week");
   await expect(page.getByTestId("team-overview-upcoming")).toContainText("No upcoming items this week");
-  await expect(page.getByTestId("team-overview-members")).toContainText("Team Members");
-  await expect(page.getByTestId("team-overview-members")).toContainText("No team members yet");
+  await expect(page.getByTestId("team-overview-members")).toContainText("Workforce Availability");
+  await expect(page.getByTestId("team-overview-members")).toContainText("Manage Team Members");
+  await expect(page.getByTestId("team-overview-members")).not.toContainText("Role");
+  await expect(page.getByTestId("team-overview-members")).not.toContainText("Manage Employees");
   await expect(page.getByTestId("team-overview-assign-work")).toBeVisible();
   await expect(page.getByTestId("team-overview-review-work")).toBeVisible();
 
-  await page.getByTestId("team-overview-summary").getByText("Team Members").click();
+  await page.getByTestId("team-overview-manage-members").click();
   await expect(page).toHaveURL(/\/app\/team\/members/);
 });
 
@@ -636,15 +640,24 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.locator(".mhb-operational-surface").getByTestId("team-admin-workspace")).toBeVisible();
   await expect(page.getByTestId("team-add-member-action")).toContainText("Add Team Member");
   await expect(page.getByTestId("team-admin-tab-members")).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId("team-admin-summary")).toContainText("Active Members");
-  await expect(page.getByTestId("team-admin-summary")).toContainText("Capability Gaps");
+  await expect(page.getByTestId("team-admin-summary")).toContainText("Employees");
+  await expect(page.getByTestId("team-admin-summary")).toContainText("Pending Access");
+  await expect(page.getByTestId("team-admin-summary")).toContainText("Incomplete Profiles");
+  await expect(page.getByTestId("team-admin-summary")).toContainText("Inactive Members");
   await expect(page.getByTestId("team-admin-assistant")).toContainText("Team Assistant");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Workload");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("active work item");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Current context");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("staffing recommendations");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Recommended Crew");
 
   await expect(page.getByTestId("team-member-row-1")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-member-row-1")).toContainText("Employee");
   await expect(page.getByTestId("team-member-row-1")).toContainText("Supervisor");
   await expect(page.getByTestId("team-member-row-1")).toContainText("Painting - Skilled");
   await expect(page.getByTestId("team-member-row-1")).toContainText("+2 more");
+  await expect(page.getByTestId("team-member-row-1")).not.toContainText("Assignments");
+  await expect(page.getByTestId("team-member-row-1")).not.toContainText("active work");
   await expect(page.getByTestId("team-member-row-3")).toContainText("No capabilities recorded");
   await expect(page.getByRole("button", { name: "Assign Job" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Assign Project" })).toHaveCount(0);
@@ -657,7 +670,7 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.getByTestId("team-member-detail-capabilities")).toContainText("Painting");
   await expect(page.getByTestId("team-member-role-select")).toBeVisible();
   await page.getByTestId("team-member-role-select").selectOption("employee_milestones");
-  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Milestones");
+  await expect(page.getByTestId("team-member-role-select")).toHaveValue("employee_milestones");
 
   await page.getByTestId("team-filter-toggle").click();
   await page.getByTestId("team-capability-filter").selectOption("10");
@@ -711,8 +724,10 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.getByTestId("team-employee-capability-10")).toContainText("Painting");
   await page.getByTestId("team-employee-capability-remove-30").click();
   await expect(page.getByTestId("team-employee-capability-list")).not.toContainText("Tile");
-  await expect(page.getByTestId("team-employee-schedule-summary")).toContainText("working day");
-  await expect(page.getByTestId("team-employee-assigned-work-summary")).toContainText("Active");
+  await expect(page.getByTestId("team-employee-profile-summary")).toContainText("Profile Summary");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Account Access");
+  await expect(page.getByTestId("team-employee-detail-page")).not.toContainText("Schedule Summary");
+  await expect(page.getByTestId("team-employee-detail-page")).not.toContainText("Assigned Work");
 
   await page.goto("/app/team/employees/3", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("team-employee-no-capabilities")).toContainText("No capabilities assigned");

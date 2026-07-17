@@ -67,7 +67,6 @@ export default function TeamEmployeeDetailPage() {
   const navigate = useNavigate();
   const [employee, setEmployee] = useState(null);
   const [catalog, setCatalog] = useState({ skills: [], skill_levels: [] });
-  const [schedule, setSchedule] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -80,16 +79,14 @@ export default function TeamEmployeeDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [employeeRes, catalogRes, scheduleRes] = await Promise.all([
+      const [employeeRes, catalogRes] = await Promise.all([
         api.get(`/projects/subaccounts/${subaccountId}/`),
         api.get("/projects/workforce/catalog/"),
-        api.get(`/projects/subaccounts/${subaccountId}/schedule/`).catch(() => ({ data: null })),
       ]);
       setEmployee(employeeRes.data || null);
       setCapabilities(Array.isArray(employeeRes.data?.capabilities) ? employeeRes.data.capabilities : []);
       setCompensation(compensationFromEmployee(employeeRes.data));
       setCatalog(catalogRes.data || { skills: [], skill_levels: [] });
-      setSchedule(scheduleRes.data || null);
     } catch (err) {
       console.error(err);
       if (err?.response?.status === 404) {
@@ -202,10 +199,6 @@ export default function TeamEmployeeDetailPage() {
     saveCapabilities(capabilities.filter((capability) => String(capability.skill_id) !== String(skillId)));
   };
 
-  const workingDays = schedule
-    ? ["sun", "mon", "tue", "wed", "thu", "fri", "sat"].filter((day) => schedule[`work_${day}`]).length
-    : null;
-
   return (
     <ContractorPageSurface variant="operational" contentClassName="mx-auto max-w-6xl">
       <div className="space-y-6" data-testid="team-employee-detail-page">
@@ -220,7 +213,7 @@ export default function TeamEmployeeDetailPage() {
               {employee?.display_name || "Employee profile"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Permission role controls app access. Trade capabilities describe the work this employee can perform.
+              Permission role controls app access. Trade capabilities describe this employee's skills and profile completeness.
             </p>
           </div>
           <button
@@ -258,9 +251,9 @@ export default function TeamEmployeeDetailPage() {
                 </div>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Workload</div>
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Profile</div>
                 <div className="mt-2 text-sm font-bold text-slate-950">
-                  {Number(employee?.active_assignment_count || 0)} active / {Number(employee?.pending_review_count || 0)} review
+                  {capabilities.length ? `${capabilities.length} capabilities` : "Capabilities missing"}
                 </div>
               </div>
             </section>
@@ -271,7 +264,7 @@ export default function TeamEmployeeDetailPage() {
                   <div>
                     <h2 className="text-lg font-bold text-slate-950">Compensation</h2>
                     <p className="mt-1 text-sm text-slate-600">
-                      Owner-only labor cost assumptions for future planning simulations. This does not change payroll, assignments, or payments.
+                      Owner-only internal cost assumptions. This does not change payroll or payments.
                     </p>
                   </div>
                   <div className="rounded-lg bg-slate-950 px-3 py-2 text-right text-white" data-testid="team-employee-effective-hourly-cost">
@@ -306,7 +299,7 @@ export default function TeamEmployeeDetailPage() {
                       onChange={updateCompensation}
                       rows={3}
                       className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
-                      placeholder="Internal assumptions, burdened rate notes, or planning caveats"
+                      placeholder="Internal assumptions, burdened rate notes, or administrative caveats"
                     />
                   </label>
                 </div>
@@ -367,7 +360,7 @@ export default function TeamEmployeeDetailPage() {
 
                 {capabilities.length === 0 ? (
                   <div data-testid="team-employee-no-capabilities" className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
-                    No capabilities assigned. Add trade skills so this employee can be found in workforce planning.
+                    No capabilities assigned. Add trade skills so this employee profile is complete.
                   </div>
                 ) : (
                   <div className="mt-5 space-y-3" data-testid="team-employee-capability-list">
@@ -407,30 +400,29 @@ export default function TeamEmployeeDetailPage() {
               </div>
 
               <aside className="space-y-4">
-                <div className="rounded-xl border border-slate-200 bg-white p-5" data-testid="team-employee-schedule-summary">
-                  <h2 className="text-base font-bold text-slate-950">Schedule Summary</h2>
-                  {schedule ? (
-                    <p className="mt-2 text-sm text-slate-600">
-                      {workingDays} working day{workingDays === 1 ? "" : "s"} configured.
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-sm text-slate-600">No schedule summary available yet.</p>
-                  )}
+                <div className="rounded-xl border border-slate-200 bg-white p-5" data-testid="team-employee-profile-summary">
+                  <h2 className="text-base font-bold text-slate-950">Profile Summary</h2>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                    <div className="flex justify-between gap-3">
+                      <span>Capabilities</span>
+                      <span className="font-bold text-slate-950">{capabilities.length ? `${capabilities.length} recorded` : "Missing"}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span>Permission role</span>
+                      <span className="font-bold text-slate-950">{employee?.role_label || roleLabel(employee?.role)}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-white p-5" data-testid="team-employee-assigned-work-summary">
-                  <h2 className="text-base font-bold text-slate-950">Assigned Work</h2>
-                  <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-lg bg-slate-50 p-2">
-                      <div className="text-lg font-bold text-slate-950">{Number(employee?.assignment_count || 0)}</div>
-                      <div className="text-[11px] font-semibold text-slate-500">Total</div>
+                <div className="rounded-xl border border-slate-200 bg-white p-5" data-testid="team-employee-account-access-summary">
+                  <h2 className="text-base font-bold text-slate-950">Account Access</h2>
+                  <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                    <div className="flex justify-between gap-3">
+                      <span>Status</span>
+                      <span className="font-bold text-slate-950">{employee?.is_active ? "Active" : "Inactive"}</span>
                     </div>
-                    <div className="rounded-lg bg-slate-50 p-2">
-                      <div className="text-lg font-bold text-slate-950">{Number(employee?.active_assignment_count || 0)}</div>
-                      <div className="text-[11px] font-semibold text-slate-500">Active</div>
-                    </div>
-                    <div className="rounded-lg bg-slate-50 p-2">
-                      <div className="text-lg font-bold text-slate-950">{Number(employee?.overdue_milestone_count || 0)}</div>
-                      <div className="text-[11px] font-semibold text-slate-500">Overdue</div>
+                    <div className="flex justify-between gap-3">
+                      <span>Last login</span>
+                      <span className="font-bold text-slate-950">{employee?.last_login ? new Date(employee.last_login).toLocaleDateString() : "Never"}</span>
                     </div>
                   </div>
                 </div>

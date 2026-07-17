@@ -195,7 +195,24 @@ test("team overview shows workforce command center with assistant guidance", asy
   await expect(page.getByTestId("team-decision-brief")).toContainText("Today's Staffing Decisions");
   await expect(page.getByTestId("team-decision-brief")).toContainText("Needs Assignment");
   await expect(page.getByTestId("team-decision-brief")).toContainText("Available Today");
+  await expect(page.getByTestId("team-overview-summary")).toContainText("Available Today");
+  await expect(page.getByTestId("team-overview-summary")).toContainText("Capacity Risks");
+  await expect(page.getByTestId("team-overview-actions")).toContainText("Manage Team Members");
   await expect(page.getByTestId("team-workforce-command-center")).toContainText("Workforce Command Center");
+  await expect(page.locator(".mhb-operational-surface").getByTestId("team-workforce-command-center")).toBeVisible();
+  for (const testId of [
+    "team-workforce-command-center",
+    "team-workload-mixed-types",
+    "team-capacity-indicators",
+    "team-skills-matrix",
+    "team-overview-attention",
+    "team-overview-upcoming",
+    "team-overview-members",
+  ]) {
+    const section = page.getByTestId(testId);
+    await expect(section).toHaveClass(/mhb-operational-panel/);
+    await expect(section).not.toHaveClass(/bg-white|bg-slate-50|border-slate-200/);
+  }
   await expect(page.getByTestId("team-workforce-command-center")).toContainText("Warranty");
   await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Needs Assignment");
   await expect(page.getByTestId("team-workload-mixed-types")).toContainText("Estimate Workspace");
@@ -206,6 +223,13 @@ test("team overview shows workforce command center with assistant guidance", asy
   await expect(page.getByTestId("team-capacity-indicators")).toContainText("Near Capacity");
   await expect(page.getByTestId("team-skills-matrix")).toContainText("Warranty Repair");
   await expect(page.getByTestId("team-skills-matrix")).toContainText("Flooring");
+  await expect(page.getByTestId("team-overview-members")).toContainText("Workforce Availability");
+  await expect(page.getByTestId("team-overview-members")).not.toContainText("Manage Employees");
+  await expect(page.getByRole("button", { name: "Add Employee" })).toHaveCount(0);
   await expect(page.getByTestId("team-assistant-panel")).toContainText("Team Assistant");
   await expect(page.getByTestId("project-assistant-human-approval")).toContainText("authorized users must assign people");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  expect(hasHorizontalOverflow).toBe(false);
 });

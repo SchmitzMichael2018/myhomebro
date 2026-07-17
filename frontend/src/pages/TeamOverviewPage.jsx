@@ -14,6 +14,17 @@ import {
   ProjectAssistantSection,
 } from "../components/ProjectAssistantExperience.jsx";
 
+const operationalPanel = "mhb-operational-panel";
+const operationalCard = "mhb-glass";
+const operationalButton = "mhb-btn";
+const sectionTitleClass = "text-base font-bold text-white";
+const sectionHelperClass = "mt-1 text-sm text-sky-100/70";
+const loadingTextClass = "mt-4 text-sm text-sky-100/60";
+const rowCardClass = "rounded-xl border border-white/10 bg-white/6 p-4";
+const compactRowCardClass = "rounded-xl border border-white/10 bg-white/6 p-3";
+const emptyStateClass =
+  "mt-4 rounded-2xl border border-dashed border-white/16 bg-white/6 px-5 py-7 text-center text-sm text-sky-100/74";
+
 function formatDateTime(value) {
   if (!value) return "—";
   try {
@@ -30,15 +41,16 @@ function SummaryCard({ label, value, sub, onClick }) {
       type={onClick ? "button" : undefined}
       onClick={onClick}
       className={[
-        "rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm",
-        onClick ? "transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md" : "",
+        operationalCard,
+        "rounded-2xl p-4 text-left",
+        onClick ? "transition hover:-translate-y-0.5 hover:border-white/24 hover:bg-white/12" : "",
       ].join(" ")}
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/58">
         {label}
       </div>
-      <div className="mt-2 text-2xl font-bold text-slate-900">{Number(value || 0).toLocaleString()}</div>
-      {sub ? <div className="mt-1 text-xs text-slate-600">{sub}</div> : null}
+      <div className="mt-2 text-2xl font-bold text-white">{Number(value || 0).toLocaleString()}</div>
+      {sub ? <div className="mt-1 text-xs text-sky-100/65">{sub}</div> : null}
     </Component>
   );
 }
@@ -59,10 +71,10 @@ function formatStatus(value) {
 }
 
 function capacityTone(state) {
-  if (state === "overbooked") return "border-rose-200 bg-rose-50 text-rose-800";
-  if (state === "near_capacity") return "border-amber-200 bg-amber-50 text-amber-800";
-  if (state === "available") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  return "border-slate-200 bg-slate-50 text-slate-700";
+  if (state === "overbooked") return "border-rose-300/35 bg-rose-400/15 text-rose-100";
+  if (state === "near_capacity") return "border-amber-300/35 bg-amber-400/15 text-amber-100";
+  if (state === "available") return "border-emerald-300/35 bg-emerald-400/15 text-emerald-100";
+  return "border-white/12 bg-white/8 text-sky-100/78";
 }
 
 function capacityRank(state) {
@@ -95,12 +107,12 @@ function workRiskRank(row) {
 function SummaryPill({ label, value, tone = "slate" }) {
   const toneClass =
     tone === "warn"
-      ? "border-amber-200 bg-amber-50 text-amber-800"
+      ? "border-amber-300/35 bg-amber-400/15 text-amber-100"
       : tone === "danger"
-        ? "border-rose-200 bg-rose-50 text-rose-800"
+        ? "border-rose-300/35 bg-rose-400/15 text-rose-100"
         : tone === "good"
-          ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-          : "border-slate-200 bg-slate-50 text-slate-700";
+          ? "border-emerald-300/35 bg-emerald-400/15 text-emerald-100"
+          : "border-white/12 bg-white/8 text-sky-100";
   return (
     <div className={`rounded-xl border px-3 py-2 ${toneClass}`}>
       <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">{label}</div>
@@ -202,13 +214,6 @@ export default function TeamOverviewPage() {
       active = false;
     };
   }, [whoLoading]);
-
-  const teamActivityRows = useMemo(() => {
-    return teamRows
-      .slice()
-      .sort((a, b) => Number(b.active_assignment_count || 0) - Number(a.active_assignment_count || 0))
-      .slice(0, 6);
-  }, [teamRows]);
 
   const attentionItems = useMemo(() => {
     const today = Array.isArray(operations?.today) ? operations.today : [];
@@ -363,7 +368,7 @@ export default function TeamOverviewPage() {
       <div className="space-y-6">
         <HubTabs tabs={teamHubTabs} />
 
-        <section data-testid="team-decision-brief" className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+        <section data-testid="team-decision-brief" className={`${operationalPanel} rounded-2xl p-4`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className="text-base font-bold text-white">Today&apos;s Staffing Decisions</div>
@@ -374,7 +379,7 @@ export default function TeamOverviewPage() {
             <button
               type="button"
               onClick={() => navigate("/app/team/schedule")}
-              className="rounded-xl border border-white/70 bg-white px-4 py-2 text-sm font-bold text-slate-950 shadow-sm hover:bg-sky-50"
+              className={operationalButton}
             >
               Open Schedule
             </button>
@@ -403,12 +408,12 @@ export default function TeamOverviewPage() {
           </div>
         </section>
 
-        <section data-testid="team-overview-actions" className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+        <section data-testid="team-overview-actions" className={`${operationalPanel} rounded-2xl p-4`}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-base font-bold text-white">Quick Actions</div>
               <div className="mt-1 text-sm text-sky-100/70">
-                The shortest path to assign work, invite help, and clear submitted items.
+                The shortest path to route work, review timing, and jump to team administration when needed.
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -416,23 +421,17 @@ export default function TeamOverviewPage() {
               {quickActionButton("Open Schedule", "/app/team/schedule", "team-overview-open-schedule")}
               {quickActionButton("Review Submitted Work", "/app/reviewer/queue", "team-overview-review-work")}
               {quickActionButton("Invite Subcontractor", "/app/team/subcontractors", "team-overview-invite-subcontractor")}
-              {quickActionButton("Add Employee", "/app/team/members", "team-overview-add-employee")}
+              {quickActionButton("Manage Team Members", "/app/team/members", "team-overview-manage-members")}
             </div>
           </div>
         </section>
 
-        <section data-testid="team-overview-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
+        <section data-testid="team-overview-summary" className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           <SummaryCard
-            label="Team Members"
-            value={summaryCounts.activeTeam}
-            sub="Active employees and crews"
-            onClick={() => navigate("/app/team/members")}
-          />
-          <SummaryCard
-            label="Subcontractors"
-            value={summaryCounts.subcontractors}
-            sub="Active external partners"
-            onClick={() => navigate("/app/team/subcontractors")}
+            label="Available Today"
+            value={availableCapacityRows.length}
+            sub="Capacity signal"
+            onClick={() => navigate("/app/team/assignments?capacity=available")}
           />
           <SummaryCard
             label="Assigned Work"
@@ -458,20 +457,26 @@ export default function TeamOverviewPage() {
             sub="Assigned items this week"
             onClick={() => navigate("/app/team/schedule")}
           />
+          <SummaryCard
+            label="Capacity Risks"
+            value={overloadedCapacityRows.length}
+            sub="Near capacity or overbooked"
+            onClick={() => navigate("/app/team/assignments?capacity=overloaded")}
+          />
         </section>
 
-        <section data-testid="team-workforce-command-center" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section data-testid="team-workforce-command-center" className={`${operationalPanel} rounded-2xl p-4`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <div className="text-base font-bold text-slate-900">Workforce Command Center</div>
-              <div className="mt-1 text-sm text-slate-600">
+              <div className={sectionTitleClass}>Workforce Command Center</div>
+              <div className={sectionHelperClass}>
                 Unified read layer for agreements, milestones, estimates, warranty, maintenance, and crew planning.
               </div>
             </div>
             <button
               type="button"
               onClick={() => navigate("/app/team/assignments")}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className={operationalButton}
             >
               Open Workload
             </button>
@@ -489,11 +494,11 @@ export default function TeamOverviewPage() {
         </section>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <section data-testid="team-workload-mixed-types" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section data-testid="team-workload-mixed-types" className={`${operationalPanel} rounded-2xl p-4`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-base font-bold text-slate-900">Actionable Workload</div>
-                <div className="mt-1 text-sm text-slate-600">
+                <div className={sectionTitleClass}>Actionable Workload</div>
+                <div className={sectionHelperClass}>
                   Grouped by what the team needs to do next instead of raw source data.
                 </div>
               </div>
@@ -504,10 +509,8 @@ export default function TeamOverviewPage() {
                   key={bucket.key}
                   type="button"
                   onClick={() => setWorkloadFilter(bucket.key)}
-                  className={`whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-black transition ${
-                    workloadFilter === bucket.key
-                      ? "border-slate-950 bg-slate-950 text-white"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:text-blue-700"
+                  className={`mhb-operational-filter-chip whitespace-nowrap text-xs font-black ${
+                    workloadFilter === bucket.key ? "is-active" : ""
                   }`}
                 >
                   {bucket.label} <span className="ml-1 opacity-70">{bucket.rows.length}</span>
@@ -515,33 +518,33 @@ export default function TeamOverviewPage() {
               ))}
             </div>
             {loading ? (
-              <div className="mt-4 text-sm text-slate-500">Loading workload...</div>
+              <div className={loadingTextClass}>Loading workload...</div>
             ) : activeWorkloadBucket.rows.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center text-sm text-slate-700">
-                <div className="font-semibold text-slate-900">No {activeWorkloadBucket.label.toLowerCase()} right now.</div>
+              <div className={emptyStateClass}>
+                <div className="font-semibold text-white">No {activeWorkloadBucket.label.toLowerCase()} right now.</div>
                 <div className="mt-1">{activeWorkloadBucket.helper} Project Assistant can help review assignments once work appears here.</div>
               </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {activeWorkloadBucket.rows.slice(0, 6).map((row) => (
-                  <div key={`${row.source_type}-${row.source_id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div key={`${row.source_type}-${row.source_id}`} className={rowCardClass}>
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+                          <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-xs font-bold text-sky-100/75">
                             {formatStatus(row.source_label || row.source_type)}
                           </span>
-                          <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-600">
+                          <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-xs font-bold text-sky-100/75">
                             {formatStatus(row.status)}
                           </span>
                         </div>
-                        <div className="mt-2 text-sm font-bold text-slate-950">
+                        <div className="mt-2 text-sm font-bold text-white">
                           {row.milestone_label || row.project_label || row.agreement_label || row.source_label}
                         </div>
-                        <div className="mt-1 text-sm text-slate-600">
+                        <div className="mt-1 text-sm text-sky-100/70">
                           {row.customer_label || "No customer"} {row.property_address ? `| ${row.property_address}` : ""}
                         </div>
-                      <div className="mt-1 text-xs font-semibold text-slate-500">
+                      <div className="mt-1 text-xs font-semibold text-sky-100/55">
                           {isUnassignedWorkRow(row) ? "Needs Assignment" : `Assigned to ${row.member_name}`} | {formatDateTime(row.scheduled_start)}
                         </div>
                       </div>
@@ -549,7 +552,7 @@ export default function TeamOverviewPage() {
                         <button
                           type="button"
                           onClick={() => navigate(row.open_url)}
-                          className="shrink-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-100"
+                          className={`${operationalButton} shrink-0 px-3 py-2 text-xs`}
                         >
                           Open Source
                         </button>
@@ -561,32 +564,32 @@ export default function TeamOverviewPage() {
             )}
           </section>
 
-          <section data-testid="team-capacity-indicators" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section data-testid="team-capacity-indicators" className={`${operationalPanel} rounded-2xl p-4`}>
             <div>
-              <div className="text-base font-bold text-slate-900">Capacity Indicators</div>
-              <div className="mt-1 text-sm text-slate-600">
+              <div className={sectionTitleClass}>Capacity Indicators</div>
+              <div className={sectionHelperClass}>
                 Overloaded and near-capacity people appear first so staffing decisions are faster.
               </div>
             </div>
             {loading ? (
-              <div className="mt-4 text-sm text-slate-500">Loading capacity...</div>
+              <div className={loadingTextClass}>Loading capacity...</div>
             ) : capacityRows.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center text-sm text-slate-700">
+              <div className={emptyStateClass}>
                 Add employees to see capacity indicators.
               </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {capacityRows.map((row) => (
-                  <div key={row.member_id} className="rounded-xl border border-slate-200 p-3">
+                  <div key={row.member_id} className={compactRowCardClass}>
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-bold text-slate-950">{row.member_name}</div>
-                        <div className="mt-1 text-xs text-slate-500">
+                        <div className="text-sm font-bold text-white">{row.member_name}</div>
+                        <div className="mt-1 text-xs text-sky-100/58">
                           Today {Number(row.assignment_count_today || 0)} | Week {Number(row.assignment_count_week || 0)} | Total{" "}
                           {Number(row.assignment_count_total || 0)}
                         </div>
                         {row.reasons?.length ? (
-                          <div className="mt-2 text-xs font-semibold text-slate-600">{row.reasons[0]}</div>
+                          <div className="mt-2 text-xs font-semibold text-sky-100/68">{row.reasons[0]}</div>
                         ) : null}
                       </div>
                       <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${capacityTone(row.state)}`}>
@@ -601,30 +604,30 @@ export default function TeamOverviewPage() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
-          <section data-testid="team-skills-matrix" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section data-testid="team-skills-matrix" className={`${operationalPanel} rounded-2xl p-4`}>
             <div>
-              <div className="text-base font-bold text-slate-900">Skills Matrix</div>
-              <div className="mt-1 text-sm text-slate-600">
+              <div className={sectionTitleClass}>Skills Matrix</div>
+              <div className={sectionHelperClass}>
                 Missing and thin coverage appear first so you can fix staffing gaps before assigning work.
               </div>
             </div>
             {loading ? (
-              <div className="mt-4 text-sm text-slate-500">Loading skills...</div>
+              <div className={loadingTextClass}>Loading skills...</div>
             ) : skillRows.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center text-sm text-slate-700">
+              <div className={emptyStateClass}>
                 Add employee capabilities to build the skills matrix.
               </div>
             ) : (
               <div className="mt-4 grid gap-2 sm:grid-cols-2">
                 {skillRows.map((row) => (
-                  <div key={row.skill} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div key={row.skill} className="rounded-xl border border-white/10 bg-white/6 px-3 py-2">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-bold text-slate-900">{row.skill}</div>
+                      <div className="text-sm font-bold text-white">{row.skill}</div>
                       <span className={`rounded-full border px-2 py-0.5 text-xs font-black ${capacityTone(row.coverage === "missing" ? "overbooked" : row.coverage === "thin" ? "near_capacity" : "available")}`}>
                         {formatStatus(row.coverage)}
                       </span>
                     </div>
-                    <div className="mt-1 text-xs text-slate-600">
+                    <div className="mt-1 text-xs text-sky-100/65">
                       {Number(row.member_count || 0)} team member{Number(row.member_count || 0) === 1 ? "" : "s"}
                     </div>
                   </div>
@@ -658,42 +661,42 @@ export default function TeamOverviewPage() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-          <section data-testid="team-overview-attention" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section data-testid="team-overview-attention" className={`${operationalPanel} rounded-2xl p-4`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-base font-bold text-slate-900">Needs Attention</div>
-                <div className="mt-1 text-sm text-slate-600">
+                <div className={sectionTitleClass}>Needs Attention</div>
+                <div className={sectionHelperClass}>
                   Assigned team work currently asking for a decision or follow-up.
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => navigate("/app/reviewer/queue")}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                className={operationalButton}
               >
                 Open Review Queue
               </button>
             </div>
 
             {loading ? (
-              <div className="mt-4 text-sm text-slate-500">Loading team overview…</div>
+              <div className={loadingTextClass}>Loading team overview...</div>
             ) : attentionItems.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center">
-                <div className="text-sm font-semibold text-slate-900">No assigned team items need attention right now.</div>
-                <div className="mt-1 text-sm text-slate-700">
+              <div className={emptyStateClass}>
+                <div className="text-sm font-semibold text-white">No assigned team items need attention right now.</div>
+                <div className="mt-1 text-sm text-sky-100/70">
                   Use Assignments to assign work and Team Schedule to review timing.
                 </div>
               </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {attentionItems.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div key={item.id} className={rowCardClass}>
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div>
-                        <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                        <div className="mt-1 text-sm text-slate-600">{item.subtitle}</div>
+                        <div className="text-sm font-semibold text-white">{item.title}</div>
+                        <div className="mt-1 text-sm text-sky-100/70">{item.subtitle}</div>
                       </div>
-                      <div className="text-xs font-semibold text-slate-500">
+                      <div className="text-xs font-semibold text-sky-100/55">
                         {formatDateTime(item.occurred_at || item.start_date || item.start)}
                       </div>
                     </div>
@@ -710,7 +713,7 @@ export default function TeamOverviewPage() {
                               )
                             )
                           }
-                          className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                          className={`${operationalButton} px-3 py-1.5 text-xs`}
                         >
                           {action.label}
                         </button>
@@ -722,32 +725,32 @@ export default function TeamOverviewPage() {
             )}
           </section>
 
-          <section data-testid="team-overview-upcoming" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <section data-testid="team-overview-upcoming" className={`${operationalPanel} rounded-2xl p-4`}>
             <div className="flex items-start justify-between gap-3">
               <div>
-                <div className="text-base font-bold text-slate-900">Upcoming This Week</div>
-                <div className="mt-1 text-sm text-slate-600">
+                <div className={sectionTitleClass}>Upcoming This Week</div>
+                <div className={sectionHelperClass}>
                   The next few things that will land on the schedule.
                 </div>
               </div>
             </div>
 
             {loading ? (
-              <div className="mt-4 text-sm text-slate-500">Loading schedule…</div>
+              <div className={loadingTextClass}>Loading schedule...</div>
             ) : weekItems.length === 0 ? (
-              <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center">
-                <div className="text-sm font-semibold text-slate-900">No upcoming items this week</div>
-                <div className="mt-1 text-sm text-slate-700">
+              <div className={emptyStateClass}>
+                <div className="text-sm font-semibold text-white">No upcoming items this week</div>
+                <div className="mt-1 text-sm text-sky-100/70">
                   Schedule activity will appear here when work is planned or due.
                 </div>
               </div>
             ) : (
               <div className="mt-4 space-y-3">
                 {weekItems.map((item) => (
-                  <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="text-sm font-semibold text-slate-900">{item.title}</div>
-                    <div className="mt-1 text-sm text-slate-600">{item.subtitle}</div>
-                    <div className="mt-2 text-xs text-slate-500">
+                  <div key={item.id} className={rowCardClass}>
+                    <div className="text-sm font-semibold text-white">{item.title}</div>
+                    <div className="mt-1 text-sm text-sky-100/70">{item.subtitle}</div>
+                    <div className="mt-2 text-xs text-sky-100/55">
                       {formatDateTime(item.occurred_at || item.start_date)} {item.milestone_title ? `· ${item.milestone_title}` : ""}
                     </div>
                   </div>
@@ -757,84 +760,52 @@ export default function TeamOverviewPage() {
           </section>
         </div>
 
-        <section data-testid="team-overview-members" className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section data-testid="team-overview-members" className={`${operationalPanel} rounded-2xl p-4`}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-base font-bold text-slate-900">Team Members</div>
-              <div className="mt-1 text-sm text-slate-600">
-                Quick visibility into who is working, who is waiting, and who is due.
+              <div className={sectionTitleClass}>Workforce Availability</div>
+              <div className={sectionHelperClass}>
+                Operational capacity by person. Use Team Members for profiles, roles, and account administration.
               </div>
             </div>
             <button
               type="button"
               onClick={() => navigate("/app/team/members")}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className={operationalButton}
             >
-              Manage Employees
+              Manage Team Members
             </button>
           </div>
 
           {loading ? (
-            <div className="mt-4 text-sm text-slate-500">Loading team members…</div>
-          ) : teamActivityRows.length === 0 ? (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-7 text-center">
-              <div className="text-sm font-semibold text-slate-900">No team members yet</div>
-              <div className="mt-1 text-sm text-slate-700">
-                Add an employee in Team to start routing work and schedules.
+            <div className={loadingTextClass}>Loading workforce availability...</div>
+          ) : capacityRows.length === 0 ? (
+            <div className={emptyStateClass}>
+              <div className="text-sm font-semibold text-white">No workforce capacity signals yet</div>
+              <div className="mt-1 text-sm text-sky-100/70">
+                Capacity indicators appear after team members have scheduled or assigned operational records.
               </div>
             </div>
           ) : (
-            <div className="mt-4 overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="border-b bg-slate-50 text-xs uppercase text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Name</th>
-                    <th className="px-4 py-3 text-left">Role</th>
-                    <th className="px-4 py-3 text-left">Work</th>
-                    <th className="px-4 py-3 text-left">Last Activity</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {teamActivityRows.map((row) => (
-                    <tr key={row.id}>
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-slate-900">{row.display_name}</div>
-                        <div className="mt-1 text-xs text-slate-500">{row.email}</div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        <div>{row.role_label || row.role}</div>
-                        <div className="mt-1 text-xs text-slate-500">{row.is_active ? "Active" : "Inactive"}</div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        <div>Active: {Number(row.active_assignment_count || 0)}</div>
-                        <div className="mt-1">Review: {Number(row.pending_review_count || 0)}</div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        <div>{formatDateTime(row.last_activity_at || row.last_login)}</div>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/app/team/assignments?subaccount=${row.id}`)}
-                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                          >
-                            View Work
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/app/team/schedule?subaccount=${row.id}`)}
-                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                          >
-                            Schedule
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {capacityRows.map((row) => (
+                <div key={row.member_id} className={rowCardClass}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-bold text-white">{row.member_name}</div>
+                      <div className="mt-1 text-xs text-sky-100/58">
+                        Today {Number(row.assignment_count_today || 0)} | Week {Number(row.assignment_count_week || 0)} | Total {Number(row.assignment_count_total || 0)}
+                      </div>
+                    </div>
+                    <span className={`rounded-full border px-2.5 py-1 text-xs font-black ${capacityTone(row.state)}`}>
+                      {formatStatus(row.state)}
+                    </span>
+                  </div>
+                  {row.reasons?.length ? (
+                    <div className="mt-3 text-xs font-semibold text-sky-100/68">{row.reasons[0]}</div>
+                  ) : null}
+                </div>
+              ))}
             </div>
           )}
         </section>

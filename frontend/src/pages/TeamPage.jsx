@@ -1,9 +1,9 @@
 // src/pages/TeamPage.jsx
-// Focused team administration workspace. Assignment workflows stay in Assignments/Schedule.
+// Focused team administration workspace.
 
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Plus, Search, ShieldCheck, SlidersHorizontal, UserCog, Users } from "lucide-react";
+import { Plus, Search, ShieldCheck, SlidersHorizontal, Users } from "lucide-react";
 
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
@@ -17,9 +17,9 @@ import {
 } from "../components/ProjectAssistantExperience.jsx";
 
 const ROLE_OPTIONS = [
-  { value: "employee_readonly", label: "Read-only", summary: "Can view assigned information with limited update access." },
-  { value: "employee_milestones", label: "Milestones", summary: "Can update milestone completion where authorized." },
-  { value: "employee_supervisor", label: "Supervisor", summary: "Can manage assigned agreements and team workflows." },
+  { value: "employee_readonly", label: "Read-only", summary: "Can view permitted account information with limited update access." },
+  { value: "employee_milestones", label: "Completion Access", summary: "Can update permitted completion/status fields where authorized." },
+  { value: "employee_supervisor", label: "Supervisor", summary: "Broader team administration access where authorized." },
 ];
 
 const teamTabs = [
@@ -112,9 +112,6 @@ function SummaryCard({ label, value, helper }) {
 }
 
 function MemberRow({ member, selected, onSelect }) {
-  const workContext = Number(member.active_assignment_count || 0) > 0
-    ? `${Number(member.active_assignment_count || 0)} active work item(s)`
-    : "No active work context";
   const accountStatus = member.last_login ? "Login active" : "Access not used";
 
   return (
@@ -131,7 +128,6 @@ function MemberRow({ member, selected, onSelect }) {
             </span>
           </div>
           <p className="mt-1 truncate text-sm font-semibold text-sky-100/65">{member.email || "No email listed"}</p>
-          <p className="mt-2 text-xs font-semibold text-sky-100/55">{workContext}</p>
         </div>
         <div>
           <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/50">Type</div>
@@ -156,7 +152,7 @@ function MemberRow({ member, selected, onSelect }) {
       </div>
       <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-sky-100/55">
         <span>Account: {accountStatus}</span>
-        <span>Last activity: {formatDateTime(member.last_activity_at || member.last_login)}</span>
+        <span>Last login: {formatDate(member.last_login)}</span>
       </div>
     </article>
   );
@@ -169,7 +165,7 @@ function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChange
       <aside className={`${operationalCard} rounded-2xl p-5`} data-testid="team-member-detail-panel">
         <h2 className="text-lg font-black text-white">Select a team member</h2>
         <p className="mt-2 text-sm leading-6 text-sky-100/70">
-          Choose a member to review role, account access, capabilities, and notes without turning the directory into a dispatch board.
+          Choose a member to review role, account access, capabilities, and notes.
         </p>
       </aside>
     );
@@ -201,10 +197,6 @@ function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChange
             <div className="flex justify-between gap-3 border-b border-white/10 pb-2">
               <dt className="text-sky-100/55">Membership status</dt>
               <dd className="font-bold text-sky-50">{member.is_active ? "Active" : "Inactive"}</dd>
-            </div>
-            <div className="flex justify-between gap-3 border-b border-white/10 pb-2">
-              <dt className="text-sky-100/55">Current context</dt>
-              <dd className="font-bold text-sky-50">{Number(member.active_assignment_count || 0)} active</dd>
             </div>
           </dl>
         </section>
@@ -447,7 +439,7 @@ export default function TeamPage() {
       setSelectedMemberId((current) => (current === sub.id ? null : current));
     } catch (err) {
       console.error("Error deleting subaccount", err?.response || err);
-      const msg = err.response?.data?.detail || "Unable to delete employee. They may have assignment history.";
+      const msg = err.response?.data?.detail || "Unable to delete employee. They may have linked account history.";
       alert(msg);
     } finally {
       setDeletingId(null);
@@ -455,12 +447,10 @@ export default function TeamPage() {
   }
 
   const teamSummary = useMemo(() => {
-    const activeMembers = subaccounts.filter((row) => row.is_active).length;
     const membersWithCapabilities = subaccounts.filter((row) => Array.isArray(row.capabilities) && row.capabilities.length > 0).length;
-    const inactiveMembers = subaccounts.length - activeMembers;
+    const inactiveMembers = subaccounts.filter((row) => !row.is_active).length;
     const noAccessUse = subaccounts.filter((row) => !row.last_login).length;
     return {
-      activeMembers,
       employees: subaccounts.length,
       subcontractors: Number(attentionCounts.active_subcontractor_count || 0),
       pendingInvitations: Number(attentionCounts.pending_invites_count || 0),
@@ -544,7 +534,7 @@ export default function TeamPage() {
   }, [capabilityOptions, subaccounts]);
 
   const assistantSummary = teamSummary.incompleteCapabilityProfiles > 0
-    ? `${teamSummary.incompleteCapabilityProfiles} team member${teamSummary.incompleteCapabilityProfiles === 1 ? "" : "s"} need capability profiles before staffing recommendations can use complete skill data.`
+    ? `${teamSummary.incompleteCapabilityProfiles} team member${teamSummary.incompleteCapabilityProfiles === 1 ? "" : "s"} need capability profiles before team records are complete.`
     : "Team administration data looks complete enough for role, access, and capability review.";
 
   if (whoLoading) {
@@ -589,11 +579,12 @@ export default function TeamPage() {
         <HubTabs tabs={teamHubTabs} />
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" data-testid="team-admin-summary">
-          <SummaryCard label="Active Members" value={teamSummary.activeMembers} helper="Employees enabled" />
           <SummaryCard label="Employees" value={teamSummary.employees} helper="Application users" />
           <SummaryCard label="Subcontractors" value={teamSummary.subcontractors} helper="Tracked separately" />
+          <SummaryCard label="Pending Access" value={teamSummary.noAccessUse} helper="Login not used" />
           <SummaryCard label="Pending Invites" value={teamSummary.pendingInvitations} helper="Subcontractor invites" />
-          <SummaryCard label="Capability Gaps" value={teamSummary.incompleteCapabilityProfiles} helper="Profiles to complete" />
+          <SummaryCard label="Incomplete Profiles" value={teamSummary.incompleteCapabilityProfiles} helper="Capabilities missing" />
+          <SummaryCard label="Inactive Members" value={teamSummary.inactiveMembers} helper="Access disabled" />
         </section>
 
         <ProjectAssistantPanel
@@ -603,10 +594,10 @@ export default function TeamPage() {
           testId="team-admin-assistant"
         >
           <ProjectAssistantSection title="Administrative focus">
-            Review missing capability profiles, unused employee access, inactive members, and built-in role coverage here. Use Assignments or Schedule when it is time to route work.
+            Review missing capability profiles, unused employee access, inactive members, pending setup, and built-in role coverage here.
           </ProjectAssistantSection>
           <ProjectAssistantApprovalNotice compact>
-            Project Assistant may summarize team data quality, but authorized users must create access, change roles, or assign work.
+            Project Assistant may summarize team data quality, but authorized users must create access, change roles, or update member status.
           </ProjectAssistantApprovalNotice>
         </ProjectAssistantPanel>
 
@@ -799,12 +790,12 @@ export default function TeamPage() {
               <div className="space-y-4" data-testid="team-capabilities-workspace">
                 <div>
                   <h2 className="text-lg font-black text-white">Capabilities</h2>
-                  <p className="mt-1 text-sm text-sky-100/65">Review team skill coverage without assigning jobs from this page.</p>
+                  <p className="mt-1 text-sm text-sky-100/65">Review skills, proficiency, and capability profile completeness.</p>
                 </div>
                 {teamSummary.membersWithCapabilities === 0 ? (
                   <EmptyState
                     title="No capability profiles completed"
-                    description="Add skills and experience to team-member profiles so they can be matched to the right work elsewhere in MyHomeBro."
+                    description="Add skills and experience to team-member profiles so administrative records are complete."
                   />
                 ) : (
                   <div className="grid gap-3 lg:grid-cols-2">
