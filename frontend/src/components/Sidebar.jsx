@@ -358,7 +358,7 @@ export default function Sidebar({ variant = "desktop" }) {
       <>
         <Item to={`${APP_BASE}/dashboard`} label="Dashboard" icon={LayoutDashboard} />
         <Item to={`${APP_BASE}/business`} label="Insights" icon={Gauge} />
-        <Item to={`${APP_BASE}/team`} label="Team" icon={Users} />
+        <Item to={`${APP_BASE}/team`} label="Team Overview" icon={Users} />
         <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
         <Item to={`${APP_BASE}/opportunities`} label="Opportunities" icon={ClipboardList} />
         <Item to={`${APP_BASE}/estimates`} label="Estimates" icon={ClipboardList} />

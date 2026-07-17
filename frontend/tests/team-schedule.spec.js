@@ -168,5 +168,5 @@ test("team schedule assignment rows show project context", async ({ page }) => {
   await expect(page.getByTestId("team-schedule-assignment-AA-202")).toContainText("Status");
   await expect(page.getByTestId("team-schedule-assignment-AA-202")).toContainText("Duration");
   await expect(page.getByTestId("team-schedule-assignment-AA-202")).toContainText("Owner");
-  await expect(page.getByTestId("team-schedule-assignment-AA-202")).toContainText("Milestones");
+  await expect(page.getByTestId("team-schedule-assignment-AA-202")).toContainText("Linked record");
 });

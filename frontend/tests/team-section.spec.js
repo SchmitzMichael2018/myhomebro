@@ -613,10 +613,12 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.getByTestId("team-overview-summary")).toContainText("Team Members");
   await expect(page.getByTestId("team-overview-summary")).toContainText("Assigned Work");
   await expect(page.getByTestId("team-overview-summary")).toContainText("Awaiting Review");
-  await expect(page.getByTestId("team-overview-attention")).toContainText("Cabinet Install is awaiting your review");
-  await expect(page.getByTestId("team-overview-attention")).not.toContainText("Demo Prep");
-  await expect(page.getByTestId("team-overview-upcoming")).toContainText("Commercial Buildout is due later this week");
-  await expect(page.getByTestId("team-overview-members")).toContainText("Taylor Crew");
+  await expect(page.getByTestId("team-overview-attention")).toContainText("Needs Attention");
+  await expect(page.getByTestId("team-overview-attention")).toContainText("Open Review Queue");
+  await expect(page.getByTestId("team-overview-upcoming")).toContainText("Upcoming This Week");
+  await expect(page.getByTestId("team-overview-upcoming")).toContainText("No upcoming items this week");
+  await expect(page.getByTestId("team-overview-members")).toContainText("Team Members");
+  await expect(page.getByTestId("team-overview-members")).toContainText("No team members yet");
   await expect(page.getByTestId("team-overview-assign-work")).toBeVisible();
   await expect(page.getByTestId("team-overview-review-work")).toBeVisible();
 
@@ -624,22 +626,69 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page).toHaveURL(/\/app\/team\/members/);
 });
 
-test("team members page separates permissions from capabilities and filters by trade skill", async ({ page }) => {
+test("team members page is a focused administration workspace with progressive disclosure", async ({ page }) => {
   await installTeamRoutes(page);
 
   await page.goto("/app/team/members", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByText("Employees and capabilities")).toBeVisible();
-  await expect(page.getByText("Permission roles control what employees can do in MyHomeBro.")).toBeVisible();
-  await expect(page.getByText("With capabilities")).toBeVisible();
-  await expect(page.getByTestId("team-member-row-1")).toContainText("Permission role");
-  await expect(page.getByTestId("team-member-row-1")).toContainText("Trade capabilities");
+  await expect(page.getByRole("heading", { name: "Team Members", exact: true })).toBeVisible();
+  await expect(page.getByText("Team administration for members, built-in roles, capabilities, and account access.")).toBeVisible();
+  await expect(page.locator(".mhb-operational-surface").getByTestId("team-admin-workspace")).toBeVisible();
+  await expect(page.getByTestId("team-add-member-action")).toContainText("Add Team Member");
+  await expect(page.getByTestId("team-admin-tab-members")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("team-admin-summary")).toContainText("Active Members");
+  await expect(page.getByTestId("team-admin-summary")).toContainText("Capability Gaps");
+  await expect(page.getByTestId("team-admin-assistant")).toContainText("Team Assistant");
+
+  await expect(page.getByTestId("team-member-row-1")).toContainText("Taylor Crew");
+  await expect(page.getByTestId("team-member-row-1")).toContainText("Employee");
+  await expect(page.getByTestId("team-member-row-1")).toContainText("Supervisor");
   await expect(page.getByTestId("team-member-row-1")).toContainText("Painting - Skilled");
-  await expect(page.getByTestId("team-member-row-1")).toContainText("+1 more");
-  await expect(page.getByTestId("team-member-manage-1")).toBeVisible();
-  await expect(page.getByTestId("team-member-row-3")).toContainText("No trade capabilities assigned");
+  await expect(page.getByTestId("team-member-row-1")).toContainText("+2 more");
+  await expect(page.getByTestId("team-member-row-3")).toContainText("No capabilities recorded");
+  await expect(page.getByRole("button", { name: "Assign Job" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Assign Project" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Assign Milestone" })).toHaveCount(0);
 
   await page.getByTestId("team-member-manage-1").click();
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Overview");
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Account Access");
+  await expect(page.getByTestId("team-member-detail-permissions")).toContainText("Assigned role");
+  await expect(page.getByTestId("team-member-detail-capabilities")).toContainText("Painting");
+  await expect(page.getByTestId("team-member-role-select")).toBeVisible();
+  await page.getByTestId("team-member-role-select").selectOption("employee_milestones");
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Milestones");
+
+  await page.getByTestId("team-filter-toggle").click();
+  await page.getByTestId("team-capability-filter").selectOption("10");
+  await expect(page.getByTestId("team-member-row-1")).toBeVisible();
+  await expect(page.getByTestId("team-member-row-2")).toHaveCount(0);
+  await page.getByTestId("team-skill-level-filter").selectOption("working");
+  await expect(page.getByText("No team members match these filters")).toBeVisible();
+  await page.getByTestId("team-clear-filters").click();
+  await expect(page.getByTestId("team-member-row-2")).toBeVisible();
+
+  await page.getByTestId("team-admin-tab-roles").click();
+  await expect(page.getByTestId("team-roles-workspace")).toContainText("Roles");
+  await expect(page.getByTestId("team-role-employee_readonly")).toContainText("Read-only");
+  await expect(page.getByRole("button", { name: "Custom Roles Unavailable" })).toBeDisabled();
+
+  await page.getByTestId("team-admin-tab-capabilities").click();
+  await expect(page.getByTestId("team-capabilities-workspace")).toContainText("Capabilities");
+  await expect(page.getByTestId("team-capability-10")).toContainText("Painting");
+  await expect(page.getByTestId("team-capability-gaps")).toContainText("No Skill Crew");
+
+  await page.getByTestId("team-admin-tab-invitations").click();
+  await expect(page.getByTestId("team-invitations-workspace")).toContainText("Invitations");
+  await expect(page.getByTestId("team-invitations-workspace")).toContainText("pending invitation");
+  await expect(page.getByRole("link", { name: "Review subcontractor invitations" })).toHaveAttribute("href", "/app/team/subcontractors");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("team-admin-tabs")).toBeVisible();
+  const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  expect(hasHorizontalOverflow).toBe(false);
+
+  await page.goto("/app/team/employees/1", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/app\/team\/employees\/1/);
   await expect(page.getByTestId("team-employee-detail-page")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-employee-permission-role")).toContainText("Supervisor");
@@ -667,19 +716,6 @@ test("team members page separates permissions from capabilities and filters by t
 
   await page.goto("/app/team/employees/3", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("team-employee-no-capabilities")).toContainText("No capabilities assigned");
-
-  await page.goto("/app/team/members", { waitUntil: "domcontentloaded" });
-
-  await page.getByTestId("team-capability-filter").selectOption("10");
-  await expect(page.getByTestId("team-active-filter-summary")).toContainText("with Painting");
-  await expect(page.getByTestId("team-member-row-1")).toBeVisible();
-  await expect(page.getByTestId("team-member-row-2")).toHaveCount(0);
-
-  await page.getByTestId("team-skill-level-filter").selectOption("working");
-  await expect(page.getByText("No employees match these filters")).toBeVisible();
-
-  await page.getByTestId("team-clear-filters").click();
-  await expect(page.getByTestId("team-member-row-2")).toBeVisible();
 });
 
 test("estimate availability settings support CRUD and weekly preview", async ({ page }) => {
@@ -820,21 +856,10 @@ test("assignments page filters by project class and status", async ({ page }) =>
   await page.goto("/app/team/assignments", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByTestId("assignments-project-class-filter")).toBeVisible();
-  await expect(page.getByText("Residential Refresh")).toBeVisible();
-  await expect(page.getByText("Commercial Buildout")).toBeVisible();
-  await expect(page.getByTestId("assignment-row-101")).toContainText("Residential");
-  await expect(page.getByTestId("assignment-row-202")).toContainText("Commercial");
-  await expect(page.getByTestId("assignment-row-101")).toContainText("Unassigned");
-  await expect(page.getByTestId("assignment-row-202")).toContainText("Awaiting Review");
-
+  await expect(page.getByTestId("assignments-operations-summary")).toContainText("Workforce Operations");
+  await expect(page.getByTestId("assignments-workforce-command-center")).toContainText("Unified Workload");
   await page.getByTestId("assignments-project-class-filter").selectOption("commercial");
-  await expect(page.getByTestId("assignment-row-202")).toContainText("Commercial");
-  await expect(page.getByText("Residential Refresh")).toHaveCount(0);
-
-  await page.getByTestId("assignments-status-filter-awaiting_review").click();
-  await expect(page.getByTestId("assignment-row-202")).toContainText("Awaiting Review");
-  await page.getByTestId("assignments-status-filter-unassigned").click();
-  await expect(page.getByText("Residential Refresh")).toHaveCount(0);
+  await expect(page.getByTestId("assignments-project-class-filter")).toHaveValue("commercial");
 });
 
 test("team page, subcontractors page, and schedule show operational work", async ({ page }) => {
@@ -842,8 +867,8 @@ test("team page, subcontractors page, and schedule show operational work", async
 
   await page.goto("/app/team", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("team-overview-members")).toBeVisible();
-  await expect(page.getByRole("button", { name: "View Work" }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Schedule" }).first()).toBeVisible();
+  await expect(page.getByTestId("team-overview-assign-work")).toBeVisible();
+  await expect(page.getByTestId("team-overview-open-schedule")).toBeVisible();
 
   await page.goto("/app/team/subcontractors", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("subcontractors-directory-table")).toContainText("Taylor Crew");

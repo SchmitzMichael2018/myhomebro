@@ -1,19 +1,39 @@
 // src/pages/TeamPage.jsx
-// Team management page with work visibility and quick links into assignments/schedule.
+// Focused team administration workspace. Assignment workflows stay in Assignments/Schedule.
 
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { Plus, Search, ShieldCheck, SlidersHorizontal, UserCog, Users } from "lucide-react";
+
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
 import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
+import {
+  ProjectAssistantApprovalNotice,
+  ProjectAssistantPanel,
+  ProjectAssistantSection,
+} from "../components/ProjectAssistantExperience.jsx";
 
 const ROLE_OPTIONS = [
-  { value: "employee_readonly", label: "Read-only" },
-  { value: "employee_milestones", label: "Milestones (can mark complete)" },
-  { value: "employee_supervisor", label: "Supervisor (manage assigned agreements/teams)" },
+  { value: "employee_readonly", label: "Read-only", summary: "Can view assigned information with limited update access." },
+  { value: "employee_milestones", label: "Milestones", summary: "Can update milestone completion where authorized." },
+  { value: "employee_supervisor", label: "Supervisor", summary: "Can manage assigned agreements and team workflows." },
 ];
+
+const teamTabs = [
+  { key: "members", label: "Members" },
+  { key: "roles", label: "Roles" },
+  { key: "capabilities", label: "Capabilities" },
+  { key: "invitations", label: "Invitations" },
+];
+
+const operationalPanel = "mhb-operational-panel";
+const operationalCard = "mhb-glass";
+const operationalControl = "mhb-operational-control";
+const operationalButton = "mhb-btn";
+const operationalPrimaryButton = "mhb-btn primary";
 
 function normalizeListResponse(data) {
   if (Array.isArray(data)) return data;
@@ -22,7 +42,7 @@ function normalizeListResponse(data) {
 }
 
 function formatDateTime(value) {
-  if (!value) return "—";
+  if (!value) return "Never";
   try {
     return new Date(value).toLocaleString();
   } catch {
@@ -31,7 +51,7 @@ function formatDateTime(value) {
 }
 
 function formatDate(value) {
-  if (!value) return "—";
+  if (!value) return "Never";
   try {
     return new Date(value).toLocaleDateString();
   } catch {
@@ -39,44 +59,11 @@ function formatDate(value) {
   }
 }
 
-function CountPill({ label, value }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-2 text-2xl font-bold text-slate-900">
-        {Number(value || 0).toLocaleString()}
-      </div>
-    </div>
-  );
-}
-
-function OverviewStat({ label, value, helper }) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</div>
-      <div className="mt-2 text-2xl font-bold text-slate-950">{Number(value || 0).toLocaleString()}</div>
-      {helper ? <div className="mt-1 text-xs text-slate-500">{helper}</div> : null}
-    </div>
-  );
-}
-
-function WorkBadge({ count, tone = "neutral", label }) {
-  const toneClass =
-    tone === "good"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : tone === "warn"
-        ? "border-amber-200 bg-amber-50 text-amber-800"
-        : tone === "danger"
-          ? "border-rose-200 bg-rose-50 text-rose-800"
-          : "border-slate-200 bg-slate-50 text-slate-700";
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold ${toneClass}`}>
-      {label}
-      {typeof count === "number" ? <span className="ml-1">{count}</span> : null}
-    </span>
-  );
+function formatRole(value) {
+  return String(value || "")
+    .replace(/^employee_/, "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || "Role not set";
 }
 
 function capabilityLabel(capability) {
@@ -85,42 +72,233 @@ function capabilityLabel(capability) {
   return level ? `${skill} - ${level}` : skill;
 }
 
-function PermissionRoleBadge({ role }) {
+function capabilitySummary(row, limit = 2) {
+  const capabilities = Array.isArray(row?.capabilities) ? row.capabilities : [];
+  if (!capabilities.length) return "No capabilities recorded";
+  const visible = capabilities.slice(0, limit).map(capabilityLabel);
+  const hidden = capabilities.length - visible.length;
+  return hidden > 0 ? `${visible.join(", ")} +${hidden} more` : visible.join(", ");
+}
+
+function statusBadgeClass(active) {
+  return active
+    ? "border-emerald-200/35 bg-emerald-400/12 text-emerald-100"
+    : "border-white/12 bg-white/8 text-sky-100/70";
+}
+
+function EmptyState({ title, description, action = null }) {
   return (
-    <span className="inline-flex max-w-full rounded-full border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
-      <span className="truncate">{role || "Permission role not set"}</span>
-    </span>
+    <div className={`${operationalCard} flex min-h-[11rem] items-center justify-center rounded-2xl px-5 py-7 text-center`} data-testid="team-empty-state">
+      <div className="max-w-xl">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-sky-200/20 bg-sky-400/12 text-sky-100">
+          <Users className="h-6 w-6" aria-hidden="true" />
+        </div>
+        <h3 className="mt-4 text-lg font-black text-white">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-sky-100/70">{description}</p>
+        {action ? action : null}
+      </div>
+    </div>
   );
 }
 
-function CapabilityChips({ capabilities = [], limit = 3 }) {
-  const visible = capabilities.slice(0, limit);
-  const hiddenCount = Math.max(capabilities.length - visible.length, 0);
+function SummaryCard({ label, value, helper }) {
+  return (
+    <div className={`${operationalCard} rounded-xl px-4 py-3`}>
+      <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/60">{label}</div>
+      <div className="mt-2 text-2xl font-black text-white">{Number(value || 0).toLocaleString()}</div>
+      {helper ? <div className="mt-1 text-xs font-semibold text-sky-100/60">{helper}</div> : null}
+    </div>
+  );
+}
 
-  if (!capabilities.length) {
-    return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-        No trade capabilities assigned. Manage this employee profile to add trade skills.
+function MemberRow({ member, selected, onSelect }) {
+  const workContext = Number(member.active_assignment_count || 0) > 0
+    ? `${Number(member.active_assignment_count || 0)} active work item(s)`
+    : "No active work context";
+  const accountStatus = member.last_login ? "Login active" : "Access not used";
+
+  return (
+    <article
+      className={`${selected ? operationalPanel : operationalCard} rounded-xl p-4 transition`}
+      data-testid={`team-member-row-${member.id}`}
+    >
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1.3fr)_100px_145px_minmax(0,170px)_90px] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-base font-black text-white">{member.display_name || "Unnamed team member"}</h3>
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${statusBadgeClass(member.is_active)}`}>
+              {member.is_active ? "Active" : "Inactive"}
+            </span>
+          </div>
+          <p className="mt-1 truncate text-sm font-semibold text-sky-100/65">{member.email || "No email listed"}</p>
+          <p className="mt-2 text-xs font-semibold text-sky-100/55">{workContext}</p>
+        </div>
+        <div>
+          <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/50">Type</div>
+          <div className="mt-1 text-sm font-bold text-sky-50">Employee</div>
+        </div>
+        <div>
+          <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/50">Role</div>
+          <div className="mt-1 text-sm font-bold text-sky-50">{member.role_label || formatRole(member.role)}</div>
+        </div>
+        <div>
+          <div className="text-[11px] font-black uppercase tracking-[0.13em] text-sky-100/50">Capabilities</div>
+          <div className="mt-1 line-clamp-2 text-sm font-semibold text-sky-100/70">{capabilitySummary(member)}</div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onSelect(member)}
+          className={`${operationalPrimaryButton} inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm font-black`}
+          data-testid={`team-member-manage-${member.id}`}
+        >
+          Manage
+        </button>
       </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-sky-100/55">
+        <span>Account: {accountStatus}</span>
+        <span>Last activity: {formatDateTime(member.last_activity_at || member.last_login)}</span>
+      </div>
+    </article>
+  );
+}
+
+function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChangeRole, deletingId }) {
+  const navigate = useNavigate();
+  if (!member) {
+    return (
+      <aside className={`${operationalCard} rounded-2xl p-5`} data-testid="team-member-detail-panel">
+        <h2 className="text-lg font-black text-white">Select a team member</h2>
+        <p className="mt-2 text-sm leading-6 text-sky-100/70">
+          Choose a member to review role, account access, capabilities, and notes without turning the directory into a dispatch board.
+        </p>
+      </aside>
     );
   }
 
+  const capabilities = Array.isArray(member.capabilities) ? member.capabilities : [];
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {visible.map((capability) => (
-        <span
-          key={`${capability.skill_id}-${capability.skill_level}`}
-          className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-800"
-        >
-          {capabilityLabel(capability)}
-        </span>
-      ))}
-      {hiddenCount ? (
-        <span className="inline-flex rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-          +{hiddenCount} more
-        </span>
-      ) : null}
-    </div>
+    <aside className={`${operationalPanel} rounded-2xl p-5`} data-testid="team-member-detail-panel">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-100/55">Member profile</div>
+          <h2 className="mt-1 truncate text-xl font-black text-white">{member.display_name || "Unnamed team member"}</h2>
+          <p className="mt-1 text-sm font-semibold text-sky-100/65">{member.email || "No email listed"}</p>
+        </div>
+        <button type="button" onClick={onClose} className={`${operationalButton} rounded-lg px-3 py-2 text-sm font-bold lg:hidden`}>
+          Close
+        </button>
+      </div>
+
+      <div className="mt-5 space-y-4">
+        <section>
+          <h3 className="text-sm font-black text-white">Overview</h3>
+          <dl className="mt-2 grid gap-2 text-sm">
+            <div className="flex justify-between gap-3 border-b border-white/10 pb-2">
+              <dt className="text-sky-100/55">Member type</dt>
+              <dd className="font-bold text-sky-50">Employee</dd>
+            </div>
+            <div className="flex justify-between gap-3 border-b border-white/10 pb-2">
+              <dt className="text-sky-100/55">Membership status</dt>
+              <dd className="font-bold text-sky-50">{member.is_active ? "Active" : "Inactive"}</dd>
+            </div>
+            <div className="flex justify-between gap-3 border-b border-white/10 pb-2">
+              <dt className="text-sky-100/55">Current context</dt>
+              <dd className="font-bold text-sky-50">{Number(member.active_assignment_count || 0)} active</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section data-testid="team-member-detail-capabilities">
+          <h3 className="text-sm font-black text-white">Capabilities</h3>
+          {capabilities.length ? (
+            <div className="mt-2 space-y-2">
+              {capabilities.slice(0, 5).map((capability) => (
+                <div key={`${member.id}-${capability.skill_id}`} className="rounded-lg border border-white/10 bg-white/6 px-3 py-2">
+                  <div className="text-sm font-bold text-sky-50">{capability.skill_name || capability.skill_slug || "Capability"}</div>
+                  <div className="mt-0.5 text-xs font-semibold text-sky-100/60">{capability.skill_level_label || capability.skill_level || "Level not set"}</div>
+                </div>
+              ))}
+              {capabilities.length > 5 ? <div className="text-xs font-semibold text-sky-100/55">+{capabilities.length - 5} more on the full profile</div> : null}
+            </div>
+          ) : (
+            <p className="mt-2 rounded-lg border border-dashed border-white/16 bg-white/6 px-3 py-2 text-sm text-sky-100/65">
+              No capability profile completed.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => navigate(`/app/team/employees/${member.id}`)}
+            className={`${operationalButton} mt-3 rounded-lg px-3 py-2 text-sm font-bold`}
+          >
+            Manage Capabilities
+          </button>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-black text-white">Account Access</h3>
+          <div className="mt-2 rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-sky-100/70">
+            <div className="font-bold text-sky-50">{member.last_login ? "Application access used" : "Application access created, not used yet"}</div>
+            <div className="mt-1">
+              Access is created directly when an employee is added with a temporary password. Password reset and welcome-email resend actions are not available here.
+            </div>
+            <div className="mt-1">Last login: {formatDate(member.last_login)}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onToggleActive(member)}
+            className={`${operationalButton} mt-3 rounded-lg px-3 py-2 text-sm font-bold`}
+          >
+            {member.is_active ? "Disable Access" : "Activate Access"}
+          </button>
+        </section>
+
+        <section data-testid="team-member-detail-permissions">
+          <h3 className="text-sm font-black text-white">Permissions</h3>
+          <p className="mt-1 text-xs font-semibold text-sky-100/60">
+            Change this member's assigned built-in access level. Custom role definitions are not currently available.
+          </p>
+          <label className="mt-2 block">
+            <span className="text-xs font-black uppercase tracking-[0.13em] text-sky-100/55">Assigned role</span>
+            <select
+              value={member.role || "employee_readonly"}
+              onChange={(event) => onChangeRole(member, event.target.value)}
+              className={`${operationalControl} mt-1 w-full rounded-lg px-3 py-2 text-sm font-semibold`}
+              data-testid="team-member-role-select"
+            >
+              {ROLE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+        </section>
+
+        <section>
+          <h3 className="text-sm font-black text-white">Notes</h3>
+          <p className="mt-2 rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-sky-100/70">
+            {member.notes || "No notes recorded. Use the full profile for supported editable fields."}
+          </p>
+        </section>
+
+        <div className="flex flex-wrap gap-2 border-t border-white/10 pt-4">
+          <button
+            type="button"
+            onClick={() => navigate(`/app/team/employees/${member.id}`)}
+            className={`${operationalPrimaryButton} rounded-lg px-3 py-2 text-sm font-black`}
+          >
+            Open Full Profile
+          </button>
+          <button
+            type="button"
+            onClick={() => onDelete(member)}
+            disabled={deletingId === member.id}
+            className="rounded-lg border border-rose-300/35 bg-rose-400/10 px-3 py-2 text-sm font-bold text-rose-100 hover:bg-rose-400/16 disabled:opacity-50"
+          >
+            {deletingId === member.id ? "Deleting..." : "Delete"}
+          </button>
+        </div>
+      </div>
+    </aside>
   );
 }
 
@@ -138,7 +316,19 @@ export default function TeamPage() {
   const [subaccounts, setSubaccounts] = useState([]);
   const [loadingSubs, setLoadingSubs] = useState(true);
   const [subsError, setSubsError] = useState("");
-
+  const [activeTab, setActiveTab] = useState("members");
+  const [selectedMemberId, setSelectedMemberId] = useState(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState({
+    search: "",
+    type: "",
+    role: "",
+    status: "",
+    account: "",
+    capability: "",
+    skillLevel: "",
+  });
   const [form, setForm] = useState({
     display_name: "",
     email: "",
@@ -148,8 +338,6 @@ export default function TeamPage() {
   });
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
-  const [capabilityFilter, setCapabilityFilter] = useState("");
-  const [skillLevelFilter, setSkillLevelFilter] = useState("");
 
   const fetchSubaccounts = async () => {
     try {
@@ -159,7 +347,9 @@ export default function TeamPage() {
         params: { page_size: 250, _ts: Date.now() },
         headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
       });
-      setSubaccounts(normalizeListResponse(res.data));
+      const rows = normalizeListResponse(res.data);
+      setSubaccounts(rows);
+      setSelectedMemberId((current) => current || rows[0]?.id || null);
     } catch (err) {
       console.error("fetchSubaccounts error", err?.response || err);
       const msg =
@@ -181,13 +371,13 @@ export default function TeamPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [whoLoading, whoError, isContractor]);
 
-  function handleChange(e) {
-    const { name, value } = e.target;
+  function handleChange(event) {
+    const { name, value } = event.target;
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
-  async function handleCreate(e) {
-    e.preventDefault();
+  async function handleCreate(event) {
+    event.preventDefault();
     if (!form.display_name || !form.email || !form.password) {
       alert("Display name, email, and password are required.");
       return;
@@ -206,22 +396,16 @@ export default function TeamPage() {
 
       const res = await api.post("/projects/subaccounts/", payload);
       setSubaccounts((prev) => [res.data, ...prev]);
-      setForm({
-        display_name: "",
-        email: "",
-        role: "employee_readonly",
-        password: "",
-        notes: "",
-      });
+      setSelectedMemberId(res.data?.id || null);
+      setForm({ display_name: "", email: "", role: "employee_readonly", password: "", notes: "" });
+      setShowCreate(false);
       alert("Employee created. Share the login email and temporary password.");
     } catch (err) {
       console.error("Error creating subaccount", err?.response || err);
       const msg =
         err.response?.data?.detail ||
         err.response?.data?.email ||
-        (Array.isArray(err.response?.data?.password)
-          ? err.response.data.password[0]
-          : null) ||
+        (Array.isArray(err.response?.data?.password) ? err.response.data.password[0] : null) ||
         "Unable to create employee. Check email uniqueness and try again.";
       alert(msg);
     } finally {
@@ -231,9 +415,7 @@ export default function TeamPage() {
 
   async function handleToggleActive(sub) {
     try {
-      const res = await api.patch(`/projects/subaccounts/${sub.id}/`, {
-        is_active: !sub.is_active,
-      });
+      const res = await api.patch(`/projects/subaccounts/${sub.id}/`, { is_active: !sub.is_active });
       setSubaccounts((prev) => prev.map((row) => (row.id === sub.id ? res.data : row)));
     } catch (err) {
       console.error("Error toggling active state", err?.response || err);
@@ -262,11 +444,10 @@ export default function TeamPage() {
       setDeletingId(sub.id);
       await api.delete(`/projects/subaccounts/${sub.id}/`);
       setSubaccounts((prev) => prev.filter((row) => row.id !== sub.id));
+      setSelectedMemberId((current) => (current === sub.id ? null : current));
     } catch (err) {
       console.error("Error deleting subaccount", err?.response || err);
-      const msg =
-        err.response?.data?.detail ||
-        "Unable to delete employee. They may have assignment history.";
+      const msg = err.response?.data?.detail || "Unable to delete employee. They may have assignment history.";
       alert(msg);
     } finally {
       setDeletingId(null);
@@ -275,14 +456,20 @@ export default function TeamPage() {
 
   const teamSummary = useMemo(() => {
     const activeMembers = subaccounts.filter((row) => row.is_active).length;
-    const membersWithCapabilities = subaccounts.filter((row) => (
-      Array.isArray(row.capabilities) && row.capabilities.length > 0
-    )).length;
-    const activeWork = subaccounts.reduce((sum, row) => sum + Number(row.active_assignment_count || 0), 0);
-    const pendingReviews = subaccounts.reduce((sum, row) => sum + Number(row.pending_review_count || 0), 0);
-    const overdue = subaccounts.reduce((sum, row) => sum + Number(row.overdue_milestone_count || 0), 0);
-    return { activeMembers, membersWithCapabilities, activeWork, pendingReviews, overdue };
-  }, [subaccounts]);
+    const membersWithCapabilities = subaccounts.filter((row) => Array.isArray(row.capabilities) && row.capabilities.length > 0).length;
+    const inactiveMembers = subaccounts.length - activeMembers;
+    const noAccessUse = subaccounts.filter((row) => !row.last_login).length;
+    return {
+      activeMembers,
+      employees: subaccounts.length,
+      subcontractors: Number(attentionCounts.active_subcontractor_count || 0),
+      pendingInvitations: Number(attentionCounts.pending_invites_count || 0),
+      incompleteCapabilityProfiles: Math.max(subaccounts.length - membersWithCapabilities, 0),
+      membersWithCapabilities,
+      inactiveMembers,
+      noAccessUse,
+    };
+  }, [attentionCounts.active_subcontractor_count, attentionCounts.pending_invites_count, subaccounts]);
 
   const capabilityOptions = useMemo(() => {
     const byId = new Map();
@@ -313,539 +500,388 @@ export default function TeamPage() {
   }, [subaccounts]);
 
   const filteredSubaccounts = useMemo(() => {
+    const search = filters.search.trim().toLowerCase();
     return subaccounts.filter((row) => {
       const capabilities = Array.isArray(row.capabilities) ? row.capabilities : [];
-      if (!capabilityFilter && !skillLevelFilter) return true;
-      return capabilities.some((capability) => {
-        const skillMatches = !capabilityFilter || String(capability.skill_id) === String(capabilityFilter);
-        const levelMatches = !skillLevelFilter || String(capability.skill_level) === String(skillLevelFilter);
-        return skillMatches && levelMatches;
-      });
+      const searchable = `${row.display_name || ""} ${row.email || ""} ${row.role_label || ""} ${row.role || ""}`.toLowerCase();
+      if (search && !searchable.includes(search)) return false;
+      if (filters.type && filters.type !== "employee") return false;
+      if (filters.role && row.role !== filters.role) return false;
+      if (filters.status === "active" && !row.is_active) return false;
+      if (filters.status === "inactive" && row.is_active) return false;
+      if (filters.account === "used" && !row.last_login) return false;
+      if (filters.account === "unused" && row.last_login) return false;
+      if (filters.capability || filters.skillLevel) {
+        return capabilities.some((capability) => {
+          const skillMatches = !filters.capability || String(capability.skill_id) === String(filters.capability);
+          const levelMatches = !filters.skillLevel || String(capability.skill_level) === String(filters.skillLevel);
+          return skillMatches && levelMatches;
+        });
+      }
+      return true;
     });
-  }, [capabilityFilter, skillLevelFilter, subaccounts]);
+  }, [filters, subaccounts]);
 
-  const hasActiveFilters = Boolean(capabilityFilter || skillLevelFilter);
-  const selectedCapabilityLabel = capabilityOptions.find((option) => option.id === capabilityFilter)?.name || "";
-  const selectedSkillLevelLabel = skillLevelOptions.find((option) => option.value === skillLevelFilter)?.label || "";
-  const hasAnyCapabilities = teamSummary.membersWithCapabilities > 0;
+  const selectedMember = useMemo(
+    () => subaccounts.find((row) => String(row.id) === String(selectedMemberId)) || filteredSubaccounts[0] || null,
+    [filteredSubaccounts, selectedMemberId, subaccounts]
+  );
+
+  const roleSummaries = useMemo(() => {
+    return ROLE_OPTIONS.map((role) => ({
+      ...role,
+      count: subaccounts.filter((row) => row.role === role.value).length,
+    }));
+  }, [subaccounts]);
+
+  const capabilityRows = useMemo(() => {
+    return capabilityOptions.map((option) => {
+      const members = subaccounts.filter((row) =>
+        (Array.isArray(row.capabilities) ? row.capabilities : []).some((capability) => String(capability.skill_id) === option.id)
+      );
+      return { ...option, members };
+    });
+  }, [capabilityOptions, subaccounts]);
+
+  const assistantSummary = teamSummary.incompleteCapabilityProfiles > 0
+    ? `${teamSummary.incompleteCapabilityProfiles} team member${teamSummary.incompleteCapabilityProfiles === 1 ? "" : "s"} need capability profiles before staffing recommendations can use complete skill data.`
+    : "Team administration data looks complete enough for role, access, and capability review.";
 
   if (whoLoading) {
-    return (
-      <div className="p-6">
-        <p className="text-gray-500">Loading your profile...</p>
-      </div>
-    );
+    return <div className="p-6 text-sm text-gray-500">Loading your profile...</div>;
   }
 
   if (whoError || !isContractor) {
     return (
       <div className="p-6">
-        <h1 className="mb-2 text-xl font-semibold">Team Management</h1>
+        <h1 className="mb-2 text-xl font-semibold">Team</h1>
         <p className="text-sm text-red-500">Only contractors can manage team members.</p>
       </div>
     );
   }
 
-  const contractorName = identity?.email || "Contractor";
+  const hasActiveFilters = Boolean(filters.search || filters.type || filters.role || filters.status || filters.account || filters.capability || filters.skillLevel);
 
   return (
     <ContractorPageSurface
       eyebrow="Team"
-      title="Employees"
-      subtitle="Create employee logins, review workload, and keep the team connected to current jobs."
-      className="max-w-[1440px]"
+      title="Team Members"
+      subtitle="Team administration for members, built-in roles, capabilities, and account access."
+      actions={
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab("members");
+            setShowCreate((value) => !value);
+          }}
+          className={`${operationalPrimaryButton} inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-black`}
+          data-testid="team-add-member-action"
+        >
+          <Plus className="h-4 w-4" aria-hidden="true" />
+          Add Team Member
+        </button>
+      }
+      className="mx-auto max-w-[1180px]"
+      contentClassName="space-y-4"
       variant="operational"
     >
-    <div className="space-y-6">
-      <HubTabs tabs={teamHubTabs} />
+      <div className="space-y-4" data-testid="team-admin-workspace">
+        <HubTabs tabs={teamHubTabs} />
 
-      <header className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 text-white shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Team overview</div>
-            <h1 className="mt-2 text-2xl font-bold">Employees and capabilities</h1>
-            <p className="mt-2 text-sm leading-6 text-slate-200">
-              Permission roles control what employees can do in MyHomeBro. Capabilities describe trade skills used for
-              staffing, filtering, and future workforce planning.
-            </p>
-            <p className="mt-2 text-xs text-slate-400">
-              Signed in as <span className="font-medium text-slate-200">{contractorName}</span>
-            </p>
-          </div>
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" data-testid="team-admin-summary">
+          <SummaryCard label="Active Members" value={teamSummary.activeMembers} helper="Employees enabled" />
+          <SummaryCard label="Employees" value={teamSummary.employees} helper="Application users" />
+          <SummaryCard label="Subcontractors" value={teamSummary.subcontractors} helper="Tracked separately" />
+          <SummaryCard label="Pending Invites" value={teamSummary.pendingInvitations} helper="Subcontractor invites" />
+          <SummaryCard label="Capability Gaps" value={teamSummary.incompleteCapabilityProfiles} helper="Profiles to complete" />
+        </section>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:min-w-[360px]">
-            <div className="rounded-xl border border-white/10 bg-white/10 p-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">Active members</div>
-              <div className="mt-1 text-2xl font-bold">{Number(teamSummary.activeMembers || 0).toLocaleString()}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/10 p-3">
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">With capabilities</div>
-              <div className="mt-1 text-2xl font-bold">
-                {Number(teamSummary.membersWithCapabilities || 0).toLocaleString()}
-              </div>
-            </div>
-          </div>
-        </div>
+        <ProjectAssistantPanel
+          subtitle="Team Assistant"
+          summary={assistantSummary}
+          className={`${operationalPanel} text-white`}
+          testId="team-admin-assistant"
+        >
+          <ProjectAssistantSection title="Administrative focus">
+            Review missing capability profiles, unused employee access, inactive members, and built-in role coverage here. Use Assignments or Schedule when it is time to route work.
+          </ProjectAssistantSection>
+          <ProjectAssistantApprovalNotice compact>
+            Project Assistant may summarize team data quality, but authorized users must create access, change roles, or assign work.
+          </ProjectAssistantApprovalNotice>
+        </ProjectAssistantPanel>
 
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => navigate("/app/team")}
-            className="inline-flex items-center rounded-md border border-white/20 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100"
-            type="button"
-          >
-            Overview
-          </button>
-          <button
-            onClick={fetchSubaccounts}
-            className="inline-flex items-center rounded-md border border-white/20 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
-            type="button"
-          >
-            Refresh employees
-          </button>
-          <button
-            onClick={() => navigate("/app/dashboard")}
-            className="inline-flex items-center rounded-md border border-white/20 bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-            type="button"
-          >
-            Back to Dashboard
-          </button>
-        </div>
-      </header>
-
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <OverviewStat
-          label="Active Team"
-          value={teamSummary.activeMembers || attentionCounts.active_subcontractor_count || 0}
-          helper="Employees currently available in the team list"
-        />
-        <OverviewStat
-          label="Capabilities Added"
-          value={teamSummary.membersWithCapabilities}
-          helper="Members with at least one trade skill"
-        />
-        <CountPill label="Active Work" value={teamSummary.activeWork || attentionCounts.assigned_work_count || 0} />
-        <CountPill label="Awaiting Review" value={teamSummary.pendingReviews || attentionCounts.awaiting_review_count || 0} />
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="team-capability-filters">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">Find employees by capability</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Choose a trade first, then narrow by skill level when you need a stronger match.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setCapabilityFilter("");
-              setSkillLevelFilter("");
-            }}
-            className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!hasActiveFilters}
-            data-testid="team-clear-filters"
-          >
-            Clear filters
-          </button>
-        </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Trade / capability</span>
-            <select
-              value={capabilityFilter}
-              onChange={(event) => setCapabilityFilter(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              data-testid="team-capability-filter"
-            >
-              <option value="">All capabilities</option>
-              {capabilityOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Skill level</span>
-            <select
-              value={skillLevelFilter}
-              onChange={(event) => setSkillLevelFilter(event.target.value)}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-              data-testid="team-skill-level-filter"
-            >
-              <option value="">All skill levels</option>
-              {skillLevelOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600" data-testid="team-active-filter-summary">
-          {hasActiveFilters ? (
-            <>
-              Showing {filteredSubaccounts.length} of {subaccounts.length} employees
-              {selectedCapabilityLabel ? ` with ${selectedCapabilityLabel}` : ""}
-              {selectedSkillLevelLabel ? ` at ${selectedSkillLevelLabel} level` : ""}.
-            </>
-          ) : hasAnyCapabilities ? (
-            <>Showing all employees. Use filters to find trade skills faster.</>
-          ) : (
-            <>No capabilities have been added yet. Add skills on employee profiles to unlock trade filtering.</>
-          )}
-        </div>
-      </section>
-
-      <section className="bg-white border rounded-xl shadow-sm p-4 md:p-5">
-        <h2 className="mb-3 text-sm font-semibold text-gray-800">Add Employee</h2>
-
-        <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <input
-            name="display_name"
-            value={form.display_name}
-            onChange={handleChange}
-            placeholder="Display name"
-            className="rounded-md border px-3 py-2 text-sm"
-          />
-          <input
-            name="email"
-            type="email"
-            value={form.email}
-            onChange={handleChange}
-            placeholder="Email"
-            className="rounded-md border px-3 py-2 text-sm"
-          />
-          <select
-            name="role"
-            value={form.role}
-            onChange={handleChange}
-            className="rounded-md border px-3 py-2 text-sm"
-          >
-            {ROLE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <input
-            name="password"
-            type="password"
-            value={form.password}
-            onChange={handleChange}
-            placeholder="Temporary password"
-            className="rounded-md border px-3 py-2 text-sm"
-          />
-          <textarea
-            name="notes"
-            value={form.notes}
-            onChange={handleChange}
-            rows={2}
-            placeholder="Optional notes"
-            className="md:col-span-2 rounded-md border px-3 py-2 text-sm"
-          />
-          <div className="md:col-span-2 flex justify-end">
-            <button
-              disabled={creating}
-              className="rounded-md bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50"
-              type="submit"
-            >
-              {creating ? "Creating…" : "Create Employee"}
-            </button>
-          </div>
-        </form>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-1 border-b border-slate-200 px-4 py-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <div className="text-base font-bold text-slate-900">
-              Team Members ({filteredSubaccounts.length} of {subaccounts.length})
-            </div>
-            <div className="mt-1 text-sm text-slate-500">
-              Permission roles stay separate from trade capabilities.
-            </div>
-          </div>
-          {hasActiveFilters ? (
-            <span className="inline-flex w-fit rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-800">
-              Filtered view
-            </span>
-          ) : null}
-        </div>
-
-        {subsError ? <div className="px-4 py-3 text-sm text-red-700">{subsError}</div> : null}
-
-        {loadingSubs ? (
-          <div className="px-4 py-4 text-sm text-gray-500">Loading…</div>
-        ) : filteredSubaccounts.length === 0 ? (
-          <div className="px-4 py-8">
-            <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm text-slate-600">
-              <div className="font-semibold text-slate-900">
-                {subaccounts.length === 0
-                  ? "No team members yet"
-                  : hasAnyCapabilities
-                    ? "No employees match these filters"
-                    : "No capabilities added yet"}
-              </div>
-              <div className="mt-1">
-                {subaccounts.length === 0
-                  ? "Add an employee above, then add capabilities from their profile as your workforce data grows."
-                  : hasAnyCapabilities
-                    ? "Clear filters or choose a broader trade or skill level."
-                    : "Add capabilities on employee profiles so contractors can filter by trade skills."}
-              </div>
-              {hasActiveFilters ? (
+        <section className={`${operationalPanel} rounded-2xl`} data-testid="team-admin-tabs">
+          <div className="overflow-x-auto border-b border-white/10 px-3 pt-3">
+            <div className="flex min-w-max gap-2" role="tablist" aria-label="Team administration tabs">
+              {teamTabs.map((tab) => (
                 <button
+                  key={tab.key}
                   type="button"
-                  onClick={() => {
-                    setCapabilityFilter("");
-                    setSkillLevelFilter("");
-                  }}
-                  className="mt-4 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  role="tab"
+                  aria-selected={activeTab === tab.key}
+                  data-testid={`team-admin-tab-${tab.key}`}
+                  onClick={() => setActiveTab(tab.key)}
+                  className={`inline-flex items-center rounded-t-xl border px-4 py-2 text-sm font-black ${
+                    activeTab === tab.key
+                      ? "border-sky-300/45 bg-sky-400/16 text-white"
+                      : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
+                  }`}
                 >
-                  Clear filters
+                  {tab.label}
                 </button>
-              ) : null}
+              ))}
             </div>
           </div>
-        ) : (
-          <>
-          <div className="grid gap-3 p-4">
-            {filteredSubaccounts.map((sub) => {
-              const workCount = Number(sub.active_assignment_count || 0);
-              const pendingReviewCount = Number(sub.pending_review_count || 0);
-              const overdueCount = Number(sub.overdue_milestone_count || 0);
-              const statusTone = sub.is_active ? "good" : "neutral";
-              const capabilities = Array.isArray(sub.capabilities) ? sub.capabilities : [];
 
-              return (
-                <article
-                  key={sub.id}
-                  data-testid={`team-member-row-${sub.id}`}
-                  className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
-                >
-                  <div className="grid gap-4 xl:grid-cols-[minmax(220px,1.1fr)_minmax(220px,1fr)_minmax(220px,1.1fr)_auto] xl:items-start">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <div className="truncate text-base font-bold text-slate-950">
-                          {sub.display_name || "Unnamed employee"}
-                        </div>
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                            statusTone === "good"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                              : "border-slate-200 bg-slate-50 text-slate-700"
-                          }`}
-                        >
-                          {sub.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </div>
-                      <div className="mt-1 truncate text-sm text-slate-500">{sub.email || "No email listed"}</div>
-                      <div className="mt-3">
-                        <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                          Permission role
-                        </div>
-                        <div className="mt-1">
-                          <PermissionRoleBadge role={sub.role_label || sub.role} />
-                        </div>
-                      </div>
+          <div className="p-4" data-testid="team-admin-panel">
+            {activeTab === "members" ? (
+              <div className="space-y-4">
+                {showCreate ? (
+                  <form onSubmit={handleCreate} className={`${operationalCard} grid gap-3 rounded-2xl p-4 md:grid-cols-2`} data-testid="team-create-member-form">
+                    <div className="md:col-span-2">
+                      <h2 className="text-base font-black text-white">Add Team Member</h2>
+                      <p className="mt-1 text-sm text-sky-100/65">
+                        Creates application access directly with a temporary password. This does not send an employee invitation or welcome email.
+                      </p>
                     </div>
-
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                        Trade capabilities
-                      </div>
-                      <div className="mt-2">
-                        <CapabilityChips capabilities={capabilities} />
-                      </div>
+                    <input name="display_name" value={form.display_name} onChange={handleChange} placeholder="Display name" className={`${operationalControl} rounded-lg px-3 py-2 text-sm`} />
+                    <input name="email" type="email" value={form.email} onChange={handleChange} placeholder="Email" className={`${operationalControl} rounded-lg px-3 py-2 text-sm`} />
+                    <select name="role" value={form.role} onChange={handleChange} className={`${operationalControl} rounded-lg px-3 py-2 text-sm`}>
+                      {ROLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                    </select>
+                    <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="Temporary password" className={`${operationalControl} rounded-lg px-3 py-2 text-sm`} />
+                    <textarea name="notes" value={form.notes} onChange={handleChange} rows={2} placeholder="Optional notes" className={`${operationalControl} rounded-lg px-3 py-2 text-sm md:col-span-2`} />
+                    <div className="flex justify-end gap-2 md:col-span-2">
+                      <button type="button" onClick={() => setShowCreate(false)} className={`${operationalButton} rounded-lg px-4 py-2 text-sm font-bold`}>Cancel</button>
+                      <button disabled={creating} className={`${operationalPrimaryButton} rounded-lg px-4 py-2 text-sm font-black disabled:opacity-50`} type="submit">
+                        {creating ? "Creating..." : "Create Employee Access"}
+                      </button>
                     </div>
+                  </form>
+                ) : null}
 
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">Workload</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <WorkBadge count={workCount} label="Active" tone={workCount > 0 ? "good" : "neutral"} />
-                        <WorkBadge
-                          count={pendingReviewCount}
-                          label="Awaiting Review"
-                          tone={pendingReviewCount > 0 ? "warn" : "neutral"}
+                <section className="mhb-operational-toolbar rounded-2xl p-3" data-testid="team-member-filters">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <label className="relative min-w-0 flex-1">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sky-100/50" aria-hidden="true" />
+                      <input
+                        value={filters.search}
+                        onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+                        placeholder="Search by name, email, or role"
+                        className={`${operationalControl} w-full rounded-xl py-2 pl-9 pr-3 text-sm font-semibold`}
+                        data-testid="team-member-search"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setFiltersOpen((value) => !value)}
+                      className={`${operationalButton} inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-black`}
+                      data-testid="team-filter-toggle"
+                    >
+                      <SlidersHorizontal className="h-4 w-4" aria-hidden="true" />
+                      Filters
+                    </button>
+                  </div>
+                  <div className={`${filtersOpen || hasActiveFilters ? "grid" : "hidden"} mt-3 gap-3 sm:grid-cols-2 lg:grid-cols-6`} data-testid="team-advanced-filters">
+                    <select value={filters.type} onChange={(event) => setFilters((prev) => ({ ...prev, type: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`}>
+                      <option value="">All member types</option>
+                      <option value="employee">Employees</option>
+                      <option value="subcontractor">Subcontractors</option>
+                    </select>
+                    <select value={filters.role} onChange={(event) => setFilters((prev) => ({ ...prev, role: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`}>
+                      <option value="">All roles</option>
+                      {ROLE_OPTIONS.map((role) => <option key={role.value} value={role.value}>{role.label}</option>)}
+                    </select>
+                    <select value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`}>
+                      <option value="">Any status</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                    <select value={filters.account} onChange={(event) => setFilters((prev) => ({ ...prev, account: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`}>
+                      <option value="">Any account status</option>
+                      <option value="used">Login used</option>
+                      <option value="unused">Access not used</option>
+                    </select>
+                    <select value={filters.capability} onChange={(event) => setFilters((prev) => ({ ...prev, capability: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`} data-testid="team-capability-filter">
+                      <option value="">All capabilities</option>
+                      {capabilityOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                    </select>
+                    <select value={filters.skillLevel} onChange={(event) => setFilters((prev) => ({ ...prev, skillLevel: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`} data-testid="team-skill-level-filter">
+                      <option value="">All skill levels</option>
+                      {skillLevelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </div>
+                  {hasActiveFilters ? (
+                    <button
+                      type="button"
+                      onClick={() => setFilters({ search: "", type: "", role: "", status: "", account: "", capability: "", skillLevel: "" })}
+                      className={`${operationalButton} mt-3 rounded-lg px-3 py-2 text-sm font-bold`}
+                      data-testid="team-clear-filters"
+                    >
+                      Clear filters
+                    </button>
+                  ) : null}
+                </section>
+
+                {subsError ? <div className="rounded-lg border border-red-300/30 bg-red-400/10 p-4 text-sm font-semibold text-red-100">{subsError}</div> : null}
+
+                {loadingSubs ? (
+                  <div className={`${operationalCard} rounded-xl p-6 text-sm font-bold text-sky-100/70`}>Loading team members...</div>
+                ) : filteredSubaccounts.length === 0 ? (
+                  <EmptyState
+                    title={subaccounts.length === 0 ? "No team members yet" : "No team members match these filters"}
+                    description={subaccounts.length === 0
+                      ? "Add employees or subcontractors to manage their role, capabilities, and account access."
+                      : "Clear filters or search more broadly to find team members."}
+                    action={subaccounts.length === 0 ? (
+                      <button type="button" onClick={() => setShowCreate(true)} className={`${operationalPrimaryButton} mt-4 rounded-xl px-4 py-2 text-sm font-black`}>
+                        Add Team Member
+                      </button>
+                    ) : null}
+                  />
+                ) : (
+                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+                    <div className="min-w-0 space-y-3" data-testid="team-members-directory">
+                      {filteredSubaccounts.map((sub) => (
+                        <MemberRow
+                          key={sub.id}
+                          member={sub}
+                          selected={String(selectedMember?.id) === String(sub.id)}
+                          onSelect={(member) => setSelectedMemberId(member.id)}
                         />
-                        <WorkBadge count={overdueCount} label="Overdue" tone={overdueCount > 0 ? "danger" : "neutral"} />
-                      </div>
-                      <div className="mt-3 text-xs text-slate-500">
-                        Assignments: {Number(sub.assignment_count || 0)} | Last activity{" "}
-                        {formatDateTime(sub.last_activity_at || sub.last_login)}
-                      </div>
-                      {sub.last_login ? (
-                        <div className="mt-1 text-xs text-slate-500">Last login {formatDate(sub.last_login)}</div>
-                      ) : null}
+                      ))}
                     </div>
+                    <MemberDetailPanel
+                      member={selectedMember}
+                      onClose={() => setSelectedMemberId(null)}
+                      onToggleActive={handleToggleActive}
+                      onDelete={handleDelete}
+                      onChangeRole={handleChangeRole}
+                      deletingId={deletingId}
+                    />
+                  </div>
+                )}
+              </div>
+            ) : null}
 
-                    <div className="flex flex-wrap gap-2 xl:max-w-[240px] xl:justify-end">
-                      <button
-                        onClick={() => navigate(`/app/team/employees/${sub.id}`)}
-                        className="rounded-md border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-100"
-                        type="button"
-                        data-testid={`team-member-manage-${sub.id}`}
-                      >
-                        Manage Employee
-                      </button>
-                      <button
-                        onClick={() => navigate(`/app/team/assignments?subaccount=${sub.id}`)}
-                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        type="button"
-                      >
-                        View Work
-                      </button>
-                      <button
-                        onClick={() => navigate(`/app/team/schedule?subaccount=${sub.id}`)}
-                        className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        type="button"
-                      >
-                        Schedule
-                      </button>
-                      <button
-                        onClick={() => handleToggleActive(sub)}
-                        className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        type="button"
-                      >
-                        {sub.is_active ? "Deactivate" : "Activate"}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(sub)}
-                        disabled={deletingId === sub.id}
-                        className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                        type="button"
-                      >
-                        {deletingId === sub.id ? "Deleting..." : "Delete"}
-                      </button>
+            {activeTab === "roles" ? (
+              <div className="space-y-4" data-testid="team-roles-workspace">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h2 className="text-lg font-black text-white">Roles</h2>
+                    <p className="mt-1 text-sm text-sky-100/65">These are built-in employee access levels. Member type and account status are managed separately.</p>
+                  </div>
+                  <button type="button" disabled className={`${operationalButton} rounded-lg px-4 py-2 text-sm font-black disabled:opacity-45`}>
+                    Custom Roles Unavailable
+                  </button>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  {roleSummaries.map((role) => (
+                    <article key={role.value} className={`${operationalCard} rounded-xl p-4`} data-testid={`team-role-${role.value}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-black text-white">{role.label}</h3>
+                          <p className="mt-2 text-sm leading-6 text-sky-100/65">{role.summary}</p>
+                        </div>
+                        <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-xs font-bold text-sky-100/75">{role.count}</span>
+                      </div>
+                      <div className="mt-4 text-xs font-semibold text-sky-100/55">Built-in access level. Assign it from member detail.</div>
+                    </article>
+                  ))}
+                </div>
+                <div className={`${operationalCard} rounded-xl p-4 text-sm text-sky-100/70`}>
+                  Custom role creation is not exposed by the current API. Role assignment remains available through the existing member-management behavior.
+                </div>
+              </div>
+            ) : null}
+
+            {activeTab === "capabilities" ? (
+              <div className="space-y-4" data-testid="team-capabilities-workspace">
+                <div>
+                  <h2 className="text-lg font-black text-white">Capabilities</h2>
+                  <p className="mt-1 text-sm text-sky-100/65">Review team skill coverage without assigning jobs from this page.</p>
+                </div>
+                {teamSummary.membersWithCapabilities === 0 ? (
+                  <EmptyState
+                    title="No capability profiles completed"
+                    description="Add skills and experience to team-member profiles so they can be matched to the right work elsewhere in MyHomeBro."
+                  />
+                ) : (
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    {capabilityRows.map((row) => (
+                      <article key={row.id} className={`${operationalCard} rounded-xl p-4`} data-testid={`team-capability-${row.id}`}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="font-black text-white">{row.name}</h3>
+                            <p className="mt-1 text-sm text-sky-100/65">{row.members.length} member{row.members.length === 1 ? "" : "s"} with this capability</p>
+                          </div>
+                          <ShieldCheck className="h-5 w-5 text-sky-100/60" aria-hidden="true" />
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {row.members.slice(0, 4).map((member) => (
+                            <button
+                              key={`${row.id}-${member.id}`}
+                              type="button"
+                              onClick={() => {
+                                setActiveTab("members");
+                                setSelectedMemberId(member.id);
+                              }}
+                              className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-left text-sm text-sky-100/80 hover:bg-white/10"
+                            >
+                              <span className="font-bold text-sky-50">{member.display_name || member.email}</span>
+                              <span>{capabilitySummary(member, 1)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+                {teamSummary.incompleteCapabilityProfiles > 0 ? (
+                  <div className={`${operationalCard} rounded-xl p-4`} data-testid="team-capability-gaps">
+                    <h3 className="font-black text-white">Incomplete capability profiles</h3>
+                    <p className="mt-1 text-sm text-sky-100/65">{teamSummary.incompleteCapabilityProfiles} member{teamSummary.incompleteCapabilityProfiles === 1 ? "" : "s"} do not have skills recorded.</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {subaccounts.filter((row) => !Array.isArray(row.capabilities) || row.capabilities.length === 0).slice(0, 5).map((member) => (
+                        <button key={member.id} type="button" onClick={() => navigate(`/app/team/employees/${member.id}`)} className={`${operationalButton} rounded-lg px-3 py-2 text-sm font-bold`}>
+                          {member.display_name || member.email}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                </article>
-              );
-            })}
-          </div>
-          <div className="hidden">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
-                <tr>
-                  <th className="px-4 py-2 text-left">Name</th>
-                  <th className="px-4 py-2 text-left">Role</th>
-                  <th className="px-4 py-2 text-left">Work</th>
-                  <th className="px-4 py-2 text-left">Last Activity</th>
-                  <th className="px-4 py-2 text-left">Status</th>
-                  <th className="px-4 py-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredSubaccounts.map((sub) => {
-                  const workCount = Number(sub.active_assignment_count || 0);
-                  const pendingReviewCount = Number(sub.pending_review_count || 0);
-                  const overdueCount = Number(sub.overdue_milestone_count || 0);
-                  const statusTone = sub.is_active ? "good" : "neutral";
+                ) : null}
+              </div>
+            ) : null}
 
-                  return (
-                    <tr key={sub.id} data-legacy-testid={`team-member-row-${sub.id}`} className="border-t">
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-gray-900">{sub.display_name || "—"}</div>
-                        <div className="mt-1 text-xs text-gray-500">{sub.email || "—"}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-sm text-gray-800">{sub.role_label || sub.role || "—"}</div>
-                        <div className="mt-1 text-xs text-gray-500">
-                          Assignments: {Number(sub.assignment_count || 0)}
-                        </div>
-                        {Array.isArray(sub.capabilities) && sub.capabilities.length ? (
-                          <div className="mt-2 flex max-w-xs flex-wrap gap-1">
-                            {sub.capabilities.slice(0, 4).map((capability) => (
-                              <span
-                                key={`${sub.id}-${capability.skill_id}`}
-                                className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-800"
-                              >
-                                {capabilityLabel(capability)}
-                              </span>
-                            ))}
-                            {sub.capabilities.length > 4 ? (
-                              <span className="text-[11px] font-semibold text-slate-500">
-                                +{sub.capabilities.length - 4}
-                              </span>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
-                          <WorkBadge count={workCount} label="Active" tone={workCount > 0 ? "good" : "neutral"} />
-                          <WorkBadge
-                            count={pendingReviewCount}
-                            label="Awaiting Review"
-                            tone={pendingReviewCount > 0 ? "warn" : "neutral"}
-                          />
-                          <WorkBadge count={overdueCount} label="Overdue" tone={overdueCount > 0 ? "danger" : "neutral"} />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-gray-700">
-                        <div>{formatDateTime(sub.last_activity_at || sub.last_login)}</div>
-                        {sub.last_login ? (
-                          <div className="mt-1 text-xs text-gray-500">Last login {formatDate(sub.last_login)}</div>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                            statusTone === "good"
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                              : "border-slate-200 bg-slate-50 text-slate-700"
-                          }`}
-                        >
-                          {sub.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <button
-                            onClick={() => navigate(`/app/team/assignments?subaccount=${sub.id}`)}
-                            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            type="button"
-                          >
-                            View Work
-                          </button>
-                          <button
-                            onClick={() => navigate(`/app/team/schedule?subaccount=${sub.id}`)}
-                            className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            type="button"
-                          >
-                            Schedule
-                          </button>
-                          <button
-                            onClick={() => handleToggleActive(sub)}
-                            className="rounded-md border px-3 py-1.5 text-xs font-semibold"
-                            type="button"
-                          >
-                            {sub.is_active ? "Deactivate" : "Activate"}
-                          </button>
-                          <button
-                            onClick={() => handleDelete(sub)}
-                            disabled={deletingId === sub.id}
-                            className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
-                            type="button"
-                          >
-                            {deletingId === sub.id ? "Deleting…" : "Delete"}
-                          </button>
-                        </div>
-                        <div className="mt-2 text-xs text-gray-500">
-                          Role can be changed inline after creation.
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {activeTab === "invitations" ? (
+              <div className="space-y-4" data-testid="team-invitations-workspace">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h2 className="text-lg font-black text-white">Invitations</h2>
+                    <p className="mt-1 text-sm text-sky-100/65">Employee access is created directly. Subcontractor invitations stay in the existing Subcontractors workspace.</p>
+                  </div>
+                  <Link to="/app/team/subcontractors" className={`${operationalPrimaryButton} inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-black`}>
+                    Review subcontractor invitations
+                  </Link>
+                </div>
+                {teamSummary.pendingInvitations > 0 ? (
+                  <div className={`${operationalCard} rounded-xl p-4`}>
+                    <h3 className="font-black text-white">{teamSummary.pendingInvitations} pending invitation{teamSummary.pendingInvitations === 1 ? "" : "s"}</h3>
+                    <p className="mt-1 text-sm text-sky-100/65">
+                      Pending subcontractor invitations are managed in the existing Subcontractors workspace; employee invitations are not part of the current access model.
+                    </p>
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="No pending invitations"
+                    description="Subcontractor invitations appear in the existing Subcontractors workspace. Employee access is currently created directly through Add Team Member."
+                  />
+                )}
+              </div>
+            ) : null}
           </div>
-          </>
-        )}
-      </section>
-    </div>
+        </section>
+      </div>
     </ContractorPageSurface>
   );
 }
