@@ -157,49 +157,22 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
   );
 }
 
-function ViewSelectorCard({ title, subtitle, preview, selected, onClick, testId }) {
+function ViewSelectorCard({ title, selected, onClick, testId }) {
   return (
     <button
       type="button"
       data-testid={testId}
       aria-pressed={selected}
+      role="tab"
+      aria-selected={selected}
       onClick={onClick}
-      className={`group min-h-[126px] rounded-2xl border p-4 text-left shadow-sm transition ${
+      className={`inline-flex shrink-0 items-center justify-center rounded-full border px-4 py-2 text-sm font-black transition ${
         selected
-          ? "border-sky-300/45 bg-sky-500/20 text-white shadow-md"
-          : "border-white/12 bg-slate-950/45 text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/10 hover:shadow-sm"
+          ? "border-amber-300/65 bg-amber-300 text-slate-950 shadow-sm"
+          : "border-white/12 bg-white/6 text-sky-100/78 hover:border-white/24 hover:bg-white/10 hover:text-white"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div
-            className={`text-sm font-semibold ${
-              selected ? "text-white/75" : "text-sky-100/60"
-            }`}
-          >
-            {title}
-          </div>
-          <div
-            className={`mt-1 text-lg font-bold leading-tight ${
-              selected ? "text-white" : "text-white"
-            }`}
-          >
-            {subtitle}
-          </div>
-        </div>
-        <span
-          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${
-            selected
-              ? "border-white/20 bg-white/10 text-white"
-              : "border-white/12 bg-slate-900/60 text-sky-100/70"
-          }`}
-        >
-          {selected ? "Selected" : "View"}
-        </span>
-      </div>
-      <div className={`mt-3 text-sm leading-5 ${selected ? "text-sky-100/85" : "text-sky-100/70"}`}>
-        {preview}
-      </div>
+      {title}
     </button>
   );
 }
@@ -474,11 +447,11 @@ function widgetLabel(id, viewId = "scorecard") {
 
 function ScorecardMetric({ label, value, sub, goal }) {
   return (
-    <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{label}</div>
-      <div className="mt-2 text-2xl font-black text-white">{value}</div>
-      <div className="mt-2 text-sm leading-5 text-sky-100/70">{sub}</div>
-      {goal ? <div className="mt-2 text-xs font-bold text-amber-100">Goal: {goal}</div> : null}
+    <div className="min-h-[112px] rounded-xl border border-white/10 bg-white/[0.055] p-3 shadow-sm">
+      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-100/58">{label}</div>
+      <div className="mt-2 text-2xl font-black leading-none text-white">{value}</div>
+      <div className="mt-2 line-clamp-2 text-xs leading-5 text-sky-100/62">{sub}</div>
+      {goal ? <div className="mt-2 text-[11px] font-black text-amber-200">Goal {goal}</div> : null}
     </div>
   );
 }
@@ -496,20 +469,20 @@ function GoalProgressCard({ goal, currentValue }) {
   const formatValue = moneyGoal ? money : (value) => int(value);
 
   return (
-    <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
+    <div className="rounded-xl border border-white/10 bg-white/[0.055] p-3">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-black text-white">{goal.name || goal.metric_label}</div>
-          <div className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-100/55">
+          <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-100/55">
             {achieved ? "Achieved" : days === null ? "Active goal" : `${Math.max(days, 0)} days remaining`}
           </div>
         </div>
-        <div className="text-right text-sm font-black text-sky-50">{Math.round(progress)}%</div>
+        <div className="text-right text-sm font-black text-amber-100">{Math.round(progress)}%</div>
       </div>
-      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-900/70">
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-900/70">
         <div className="h-full rounded-full bg-amber-300" style={{ width: `${Math.max(4, progress)}%` }} />
       </div>
-      <div className="mt-3 text-sm leading-6 text-sky-100/75">
+      <div className="mt-2 text-xs leading-5 text-sky-100/72">
         {formatValue(current)} of {formatValue(target)}
         {!achieved ? ` | ${formatValue(gap)} remaining` : ""}
       </div>
@@ -1641,7 +1614,7 @@ export default function BusinessDashboard() {
     <ContractorPageSurface
       eyebrow="Insights"
       title="Insights"
-      subtitle="Track revenue, payouts, project health, and risks."
+      subtitle="Track business performance, goals, trends, and risks."
       variant="operational"
       className="mhb-business-dashboard"
       actions={
@@ -1674,7 +1647,7 @@ export default function BusinessDashboard() {
             className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50 shadow-sm hover:bg-white/15"
             data-testid="insights-customize-open"
           >
-            Customize Insights
+            Customize {activeViewConfig.title}
           </button>
 
           <button
@@ -1689,42 +1662,59 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-view-selector-row"
-        className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7"
+        className="mb-3 -mx-1 overflow-x-auto px-1"
+        role="tablist"
+        aria-label="Insights dashboard views"
       >
-        {businessViewCards.map((card) => (
-          <ViewSelectorCard
-            key={card.key}
-            testId={`dashboard-view-selector-${card.key}`}
-            title={card.title}
-            subtitle={card.subtitle}
-            preview={card.preview}
-            selected={activeBusinessView === card.key}
-            onClick={() => {
-              setActiveBusinessView(card.key);
-              const nextPeriod = periodByView[card.key] || VIEW_BY_ID[card.key]?.defaultPeriod || "30";
-              if (nextPeriod !== range) setRange(nextPeriod);
-            }}
-          />
-        ))}
+        <div className="flex min-w-max gap-2 rounded-2xl border border-white/10 bg-slate-950/30 p-1">
+          {businessViewCards.map((card) => (
+            <ViewSelectorCard
+              key={card.key}
+              testId={`dashboard-view-selector-${card.key}`}
+              title={card.title}
+              subtitle={card.subtitle}
+              preview={card.preview}
+              selected={activeBusinessView === card.key}
+              onClick={() => {
+                setActiveBusinessView(card.key);
+                const nextPeriod = periodByView[card.key] || VIEW_BY_ID[card.key]?.defaultPeriod || "30";
+                if (nextPeriod !== range) setRange(nextPeriod);
+              }}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+        <div>
+          <h2 data-testid="insights-active-view-heading" className="text-xl font-black text-white md:text-2xl">
+            {activeViewConfig.title}
+          </h2>
+          <p data-testid="insights-active-view-purpose" className="mt-1 max-w-3xl text-sm leading-6 text-sky-100/72">
+            {activeViewConfig.subtitle}
+          </p>
+        </div>
+        <div className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs font-black text-sky-100/70">
+          {rangeLabel}
+        </div>
       </section>
 
       {activeBusinessView === "scorecard" ? (
-        <div data-testid="insights-scorecard" className="space-y-5">
+        <div data-testid="insights-scorecard" className="grid gap-4 xl:grid-cols-12">
           {activeVisibleWidgetIds.map((widgetId) => {
             if (widgetId === "business_snapshot") {
               return (
-                <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-12">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Business Snapshot</div>
-                      <h2 className="mt-2 text-2xl font-black text-white">How the business is performing</h2>
-                      <p className="mt-1 text-sm leading-6 text-sky-100/70">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Business Snapshot</div>
+                      <h2 className="mt-1 text-xl font-black text-white">How the business is performing</h2>
+                      <p className="mt-1 text-sm leading-6 text-sky-100/65">
                         Paid revenue, project value, and funnel metrics from the selected reporting period.
                       </p>
                     </div>
-                    <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">{rangeLabel}</div>
                   </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     {snapshotCards.map((card) => (
                       <ScorecardMetric key={card.key} {...card} />
                     ))}
@@ -1734,25 +1724,25 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "goal_progress") {
               return (
-                <section key={widgetId} data-testid="insights-goal-progress" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                <section key={widgetId} data-testid="insights-goal-progress" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Goal Progress</div>
-                      <h2 className="mt-2 text-2xl font-black text-white">Progress toward business goals</h2>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Goal Progress</div>
+                      <h2 className="mt-1 text-xl font-black text-white">Progress toward business goals</h2>
                     </div>
-                    <button type="button" onClick={() => openGoalEditor()} className="rounded-xl border border-amber-300/70 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 hover:bg-amber-200">
+                    <button type="button" onClick={() => openGoalEditor()} className="rounded-lg border border-amber-300/70 bg-amber-300 px-3 py-1.5 text-sm font-black text-slate-950 hover:bg-amber-200">
                       Set Your First Goal
                     </button>
                   </div>
                   {goalsLoading ? (
                     <div className="mt-4 text-sm text-sky-100/70">Loading goals...</div>
                   ) : activeGoals.length === 0 ? (
-                    <div className="mt-4 rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-5 text-sm text-sky-100/70">
+                    <div className="mt-3 rounded-xl border border-dashed border-white/14 bg-slate-950/25 p-4 text-sm text-sky-100/70">
                       <div className="font-black text-white">No goals yet</div>
                       <div className="mt-1">Set a business goal to track progress here.</div>
                     </div>
                   ) : (
-                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
                       {activeGoals.map((goal) => (
                         <div key={goal.id} className="space-y-2">
                           <GoalProgressCard goal={goal} currentValue={goalCurrentValues[goal.metric_type]} />
@@ -1773,15 +1763,15 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "primary_trend") {
               return (
-                <section key={widgetId} data-testid="insights-primary-trend" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                <section key={widgetId} data-testid="insights-primary-trend" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-5">
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Primary Performance Trend</div>
-                    <h2 className="mt-2 text-2xl font-black text-white">Revenue trend</h2>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Primary Performance Trend</div>
+                    <h2 className="mt-1 text-xl font-black text-white">Revenue trend</h2>
                     <p className="mt-1 text-sm leading-6 text-sky-100/70">Paid revenue by period bucket. Open detailed reports for drilldowns and exports.</p>
                   </div>
-                  <div className="mt-4">
+                  <div className="mt-3">
                     {hasSeriesValue(revenueChart, ["revenue"]) ? (
-                      <div className="h-72">
+                      <div className="h-60">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={revenueChart}>
                             <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" />
@@ -1801,29 +1791,34 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "needs_attention") {
               return (
-                <section key={widgetId} data-testid="insights-needs-attention" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                <section key={widgetId} data-testid="insights-needs-attention" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-3">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Needs Attention</div>
-                      <h2 className="mt-2 text-2xl font-black text-white">Top action items</h2>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Needs Attention</div>
+                      <h2 className="mt-1 text-xl font-black text-white">Top action items</h2>
                       <p className="mt-1 text-sm leading-6 text-sky-100/70">Limited to the most actionable records from source workspaces.</p>
                     </div>
-                    <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
+                    <div className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs font-black text-sky-100/78">
                       Showing {topNeedsAttention.length} of {needsAttention.length}
                     </div>
                   </div>
                   {topNeedsAttention.length === 0 ? (
-                    <div className="mt-4 rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-5 text-sm text-sky-100/70">
+                    <div className="mt-3 rounded-xl border border-dashed border-white/14 bg-slate-950/25 p-4 text-sm text-sky-100/70">
                       No urgent attention items right now.
                     </div>
                   ) : (
-                    <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                    <div className="mt-3 divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-slate-950/20">
                       {topNeedsAttention.map((item) => (
-                        <a key={item.key} href={item.open_url} className={`rounded-xl border p-4 shadow-sm ${severityTone(item.severity)}`}>
-                          <div className="text-sm font-black">{item.title}</div>
-                          <div className="mt-1 text-xs font-bold uppercase tracking-[0.12em] opacity-75">{item.source_workspace}</div>
-                          <div className="mt-3 text-sm leading-6 opacity-90">{item.why}</div>
-                          <div className="mt-3 text-xs font-black">{item.action_label || "Open"}</div>
+                        <a key={item.key} href={item.open_url} className="grid gap-2 p-3 text-sky-100 transition hover:bg-white/6 md:grid-cols-[1fr_auto] md:items-center">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={`h-2.5 w-2.5 rounded-full ${item.severity === "high" ? "bg-rose-300" : item.severity === "medium" ? "bg-amber-300" : "bg-sky-300"}`} />
+                              <span className="text-sm font-black text-white">{item.title}</span>
+                              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-100/55">{item.source_workspace}</span>
+                            </div>
+                            <div className="mt-1 line-clamp-1 text-sm text-sky-100/68">{item.why}</div>
+                          </div>
+                          <div className="text-xs font-black text-sky-100">{item.action_label || "Open"}</div>
                         </a>
                       ))}
                     </div>
@@ -1833,12 +1828,12 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "reports_handoff") {
               return (
-                <section key={widgetId} data-testid="insights-reports-handoff" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                <section key={widgetId} data-testid="insights-reports-handoff" className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 shadow-sm xl:col-span-12">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Reports & Trends</div>
-                      <h2 className="mt-2 text-2xl font-black text-white">Need the full analysis?</h2>
-                      <p className="mt-1 text-sm leading-6 text-sky-100/70">Detailed charts, tables, exports, payout history, and drilldowns stay in Reports & Trends.</p>
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-100">Explore deeper insights</div>
+                      <h2 className="mt-1 text-xl font-black text-white">Go to Reports & Trends</h2>
+                      <p className="mt-1 text-sm leading-6 text-sky-100/70">Open detailed charts, tables, exports, payout history, and drilldowns.</p>
                     </div>
                     <button
                       type="button"
@@ -1857,7 +1852,7 @@ export default function BusinessDashboard() {
               );
             }
             return (
-              <section key={widgetId} data-testid={`insights-optional-${widgetId}`} className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+              <section key={widgetId} data-testid={`insights-optional-${widgetId}`} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-4">
                 <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">{widgetLabel(widgetId)}</div>
                 <h2 className="mt-2 text-xl font-black text-white">{widgetLabel(widgetId)}</h2>
                 <p className="mt-1 text-sm leading-6 text-sky-100/70">Optional scorecard signal backed by existing Insights data. Open Reports & Trends for the detailed breakdown.</p>
@@ -3297,8 +3292,8 @@ export default function BusinessDashboard() {
 
       {customizeOpen ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/60" data-testid="insights-customize-panel">
-          <div className="h-full w-full max-w-md overflow-y-auto border-l border-white/12 bg-slate-950 p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-3">
+          <div className="flex h-full w-full max-w-md flex-col border-l border-white/12 bg-slate-950 shadow-2xl">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-white/10 bg-slate-950/95 p-4 backdrop-blur">
               <div>
                 <h2 className="text-xl font-black text-white">Customize {activeViewConfig.title}</h2>
                 <p className="mt-1 text-sm leading-6 text-sky-100/70">Choose which sections appear in this view and in what order. Changes save immediately.</p>
@@ -3308,13 +3303,17 @@ export default function BusinessDashboard() {
               </button>
             </div>
 
-            <section className="mt-5">
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <section>
               <h3 className="text-sm font-black text-white">Visible Insights</h3>
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 overflow-hidden rounded-xl border border-white/10">
                 {activeVisibleWidgetIds.map((widgetId, index) => (
-                  <div key={widgetId} className="rounded-xl border border-white/12 bg-white/6 p-3">
-                    <div className="font-bold text-sky-50">{widgetLabel(widgetId, activeBusinessView)}</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
+                  <div key={widgetId} className="flex items-center gap-2 border-b border-white/10 bg-white/[0.045] p-2 last:border-b-0">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
+                      <span className="text-sky-100/35" aria-hidden="true">::</span>
+                      <span className="truncate text-sm font-bold text-sky-50">{widgetLabel(widgetId, activeBusinessView)}</span>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1">
                       <button
                         type="button"
                         disabled={index === 0}
@@ -3323,9 +3322,10 @@ export default function BusinessDashboard() {
                           [next[index - 1], next[index]] = [next[index], next[index - 1]];
                           saveInsightsPreferences(next);
                         }}
-                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-50 disabled:opacity-40"
+                        aria-label={`Move ${widgetLabel(widgetId, activeBusinessView)} up`}
+                        className="rounded-md border border-white/12 bg-white/6 px-2 py-1 text-xs font-black text-sky-50 disabled:opacity-35"
                       >
-                        Move Up
+                        ↑
                       </button>
                       <button
                         type="button"
@@ -3335,14 +3335,15 @@ export default function BusinessDashboard() {
                           [next[index], next[index + 1]] = [next[index + 1], next[index]];
                           saveInsightsPreferences(next);
                         }}
-                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-50 disabled:opacity-40"
+                        aria-label={`Move ${widgetLabel(widgetId, activeBusinessView)} down`}
+                        className="rounded-md border border-white/12 bg-white/6 px-2 py-1 text-xs font-black text-sky-50 disabled:opacity-35"
                       >
-                        Move Down
+                        ↓
                       </button>
                       <button
                         type="button"
                         onClick={() => saveInsightsPreferences(activeVisibleWidgetIds.filter((id) => id !== widgetId))}
-                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-50"
+                        className="rounded-md border border-white/12 bg-white/6 px-2 py-1 text-xs font-bold text-sky-50"
                       >
                         Hide
                       </button>
@@ -3354,13 +3355,13 @@ export default function BusinessDashboard() {
 
             <section className="mt-6">
               <h3 className="text-sm font-black text-white">Available Insights</h3>
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 overflow-hidden rounded-xl border border-white/10">
                 {activeWidgetCatalog.filter((widget) => !activeVisibleWidgetIds.includes(widget.id)).map((widget) => (
                   <button
                     key={widget.id}
                     type="button"
                     onClick={() => saveInsightsPreferences([...activeVisibleWidgetIds, widget.id])}
-                    className="flex w-full items-center justify-between rounded-xl border border-white/12 bg-white/6 p-3 text-left text-sm font-bold text-sky-50 hover:bg-white/10"
+                    className="flex w-full items-center justify-between border-b border-white/10 bg-white/[0.045] p-2.5 text-left text-sm font-bold text-sky-50 last:border-b-0 hover:bg-white/10"
                   >
                     <span>{widget.label}</span>
                     <span>Add</span>
@@ -3368,15 +3369,18 @@ export default function BusinessDashboard() {
                 ))}
               </div>
             </section>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => saveInsightsPreferences(VIEW_WIDGET_DEFAULTS[activeBusinessView] || DEFAULT_INSIGHTS_WIDGETS)}
-              className="mt-6 w-full rounded-xl border border-amber-300/70 bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-200"
-              data-testid="insights-restore-default"
-            >
-              Restore Recommended Default
-            </button>
+            <div className="sticky bottom-0 border-t border-white/10 bg-slate-950/95 p-4 backdrop-blur">
+              <button
+                type="button"
+                onClick={() => saveInsightsPreferences(VIEW_WIDGET_DEFAULTS[activeBusinessView] || DEFAULT_INSIGHTS_WIDGETS)}
+                className="w-full rounded-xl border border-white/15 bg-white/8 px-4 py-2 text-sm font-black text-sky-50 hover:bg-white/12"
+                data-testid="insights-restore-default"
+              >
+                Restore Recommended Default
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

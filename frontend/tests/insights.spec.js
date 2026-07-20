@@ -270,6 +270,13 @@ test("Insights scorecard renders defaults, goals, customization, and reports han
   await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "Insights" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Insights dashboard views" })).toBeVisible();
+  await expect(page.getByTestId("dashboard-view-selector-row")).not.toContainText("visible insights");
+  await expect(page.getByTestId("dashboard-view-selector-row")).not.toContainText("How is my business doing right now?");
+  await expect(page.getByTestId("dashboard-view-selector-scorecard")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("insights-active-view-heading")).toHaveText("Scorecard");
+  await expect(page.getByTestId("insights-active-view-purpose")).toContainText("How is my business doing right now?");
+  await expect(page.getByTestId("insights-customize-open")).toContainText("Customize Scorecard");
   await expect(page.getByTestId("insights-scorecard")).toBeVisible();
   await expect(page.getByTestId("insights-business-snapshot")).toContainText("Revenue");
   await expect(page.getByTestId("insights-business-snapshot")).toContainText("$12,800.00");
@@ -288,7 +295,9 @@ test("Insights scorecard renders defaults, goals, customization, and reports han
   await expect(page.getByTestId("insights-goal-progress")).toContainText("$12,800.00 of $50,000.00");
 
   await page.getByTestId("insights-customize-open").click();
+  await expect(page.getByTestId("insights-customize-panel")).toContainText("Customize Scorecard");
   await expect(page.getByTestId("insights-customize-panel")).toContainText("Visible Insights");
+  await expect(page.getByRole("button", { name: "Move Business Snapshot down" })).toBeVisible();
   await page.getByRole("button", { name: "Hide" }).first().click();
   await expect(page.getByTestId("insights-business-snapshot")).toHaveCount(0);
   await page.reload({ waitUntil: "domcontentloaded" });
@@ -309,6 +318,8 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
 
   await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
   await page.getByTestId("dashboard-view-selector-executive").click();
+  await expect(page.getByTestId("dashboard-view-selector-executive")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("insights-active-view-heading")).toHaveText("Executive Overview");
   await expect(page.getByTestId("insights-business-health")).toContainText("Business Health");
   await expect(page.getByTestId("insights-business-health")).toContainText("Needs Attention overall");
   await expect(page.getByTestId("insights-business-alerts")).toContainText("Business Alerts");
@@ -364,4 +375,18 @@ test("Insights customization persists per active view", async ({ page }) => {
 
   await page.getByTestId("dashboard-view-selector-scorecard").click();
   await expect(page.getByTestId("insights-business-snapshot")).toBeVisible();
+});
+
+test("Insights mobile layout avoids horizontal overflow", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installInsightsRoutes(page);
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("tablist", { name: "Insights dashboard views" })).toBeVisible();
+  await expect(page.getByTestId("insights-business-snapshot")).toBeVisible();
+  await page.getByTestId("insights-customize-open").click();
+  await expect(page.getByTestId("insights-customize-panel")).toContainText("Customize Scorecard");
+
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(2);
 });
