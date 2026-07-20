@@ -1,154 +1,69 @@
 import React, { useMemo } from "react";
-import DashboardSection from "./DashboardSection.jsx";
-import DashboardCard from "./DashboardCard.jsx";
-import InsightComparisonRow from "./InsightComparisonRow.jsx";
-import InsightRecommendationCard from "./InsightRecommendationCard.jsx";
+import {
+  ArrowDown,
+  ArrowRight,
+  CheckCircle2,
+  FileBarChart2,
+  Lightbulb,
+  Target,
+} from "lucide-react";
 
 function safeStr(value) {
   return value == null ? "" : String(value).trim();
 }
 
-function confidenceLabel(value) {
-  const c = safeStr(value).toLowerCase();
-  if (c === "high") return "High confidence";
-  if (c === "medium") return "Moderate confidence";
-  return "Preliminary view";
-}
-
 function formatFamilyOption(option) {
-  if (!option || typeof option !== "object") return "All Projects";
-  const label = safeStr(option.label) || "All Projects";
-  const count = Number(option.count || 0);
-  if (option.key === "all") return label;
-  return count > 0 ? `${label} (${count})` : label;
-}
-
-function formatSourceLabel(sourceType) {
-  const source = safeStr(sourceType).toLowerCase();
-  if (source === "blended_all") return "Based on similar projects on MyHomeBro, your market, and your past work.";
-  if (source === "blended_platform_regional") return "Based on similar projects on MyHomeBro and your market.";
-  if (source === "blended_platform_contractor") return "Based on similar projects on MyHomeBro and your past work.";
-  if (source === "regional") return "Based on similar projects in your market.";
-  if (source === "contractor") return "Based on your past work for similar projects.";
-  return "Based on similar projects on MyHomeBro.";
+  const label = safeStr(option?.label) || "All Projects";
+  const count = Number(option?.count || 0);
+  return option?.key !== "all" && count > 0 ? `${label} (${count})` : label;
 }
 
 function fallbackInsights() {
   return {
     available: false,
-    source_type: "platform",
-    source_label: "Based on similar projects on MyHomeBro.",
     confidence: "low",
-    selected_family_key: "all",
-    selected_family_label: "All Projects",
-    effective_family_key: "general",
-    effective_family_label: "General Project",
-    scope_mode: "all_projects",
     scope_label: "All Projects",
-    scope_notice: "",
     available_families: [{ key: "all", label: "All Projects", count: 0 }],
-    sample_sizes: { platform: 0, regional: 0, contractor: 0 },
-    summary_cards: [
-      {
-        key: "pricing",
-        label: "Pricing Position",
-        headline: "Complete more jobs to sharpen this view",
-        support: "Completed projects will help compare your pricing against similar work.",
-        badge: "Benchmark",
-        confidence: "Preliminary view",
-      },
-      {
-        key: "pace",
-        label: "Project Pace",
-        headline: "Complete more jobs to sharpen this view",
-        support: "Completed projects will help compare your timelines against similar work.",
-        badge: "Timing",
-        confidence: "Preliminary view",
-      },
-      {
-        key: "milestones",
-        label: "Milestone Style",
-        headline: "Complete more jobs to sharpen this view",
-        support: "Completed projects will help compare your milestone structure against similar work.",
-        badge: "Structure",
-        confidence: "Preliminary view",
-      },
-      {
-        key: "reliability",
-        label: "Reliability Signals",
-        headline: "Complete more jobs to sharpen this view",
-        support: "Completed projects will help compare change patterns and amendment trends.",
-        badge: "Quality",
-        confidence: "Preliminary view",
-      },
-    ],
-    comparison_rows: [
-      {
-        key: "pricing",
-        label: "Pricing vs benchmark",
-        comparison: "Completed jobs will sharpen this comparison.",
-        meter: 50,
-        confidence: "Preliminary view",
-      },
-      {
-        key: "pace",
-        label: "Project pace vs benchmark",
-        comparison: "Completed jobs will sharpen this comparison.",
-        meter: 50,
-        confidence: "Preliminary view",
-      },
-      {
-        key: "structure",
-        label: "Milestone count vs peers",
-        comparison: "Completed jobs will sharpen this comparison.",
-        meter: 50,
-        confidence: "Preliminary view",
-      },
-      {
-        key: "reliability",
-        label: "Reliability signals",
-        comparison: "Completed jobs will sharpen this comparison.",
-        meter: 50,
-        confidence: "Preliminary view",
-      },
-    ],
-    recommendations: [
-      "Complete more jobs to unlock contractor-specific insights.",
-    ],
-    explanations: [],
+    sample_sizes: {},
+    summary_cards: [],
+    comparison_rows: [],
+    recommendations: [],
   };
 }
 
 function normalizeInsights(insights) {
   const base = fallbackInsights();
   if (!insights || typeof insights !== "object") return base;
-
   return {
     ...base,
     ...insights,
-    source_label: safeStr(insights.source_label) || formatSourceLabel(insights.source_type),
-    confidence: safeStr(insights.confidence) || base.confidence,
-    selected_family_key: safeStr(insights.selected_family_key) || base.selected_family_key,
-    selected_family_label: safeStr(insights.selected_family_label) || base.selected_family_label,
-    effective_family_key: safeStr(insights.effective_family_key) || base.effective_family_key,
-    effective_family_label: safeStr(insights.effective_family_label) || base.effective_family_label,
-    scope_mode: safeStr(insights.scope_mode) || base.scope_mode,
-    scope_label: safeStr(insights.scope_label) || base.scope_label,
-    scope_notice: safeStr(insights.scope_notice) || base.scope_notice,
     available_families: Array.isArray(insights.available_families) && insights.available_families.length
       ? insights.available_families
       : base.available_families,
-    summary_cards: Array.isArray(insights.summary_cards) && insights.summary_cards.length
-      ? insights.summary_cards
-      : base.summary_cards,
-    comparison_rows: Array.isArray(insights.comparison_rows) && insights.comparison_rows.length
-      ? insights.comparison_rows
-      : base.comparison_rows,
-    recommendations: Array.isArray(insights.recommendations) && insights.recommendations.length
-      ? insights.recommendations
-      : base.recommendations,
-    explanations: Array.isArray(insights.explanations) ? insights.explanations : [],
+    summary_cards: Array.isArray(insights.summary_cards) ? insights.summary_cards : [],
+    comparison_rows: Array.isArray(insights.comparison_rows) ? insights.comparison_rows : [],
+    recommendations: Array.isArray(insights.recommendations) ? insights.recommendations : [],
   };
+}
+
+function statusForRow(row) {
+  const text = `${safeStr(row?.label)} ${safeStr(row?.comparison)}`.toLowerCase();
+  if (/below|longer|worse|slower|behind/.test(text)) return "below";
+  if (/above|better|faster|competitive/.test(text)) return "above";
+  return "average";
+}
+
+function metricLabel(row) {
+  return safeStr(row?.label).replace(/\s+vs\s+(benchmark|peers)$/i, "") || "Benchmark metric";
+}
+
+function MetricIcon({ status }) {
+  const styles = status === "above"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-600"
+    : status === "below"
+    ? "border-red-200 bg-red-50 text-red-500"
+    : "border-amber-200 bg-amber-50 text-amber-500";
+  return <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${styles}`}><Target aria-hidden="true" className="h-4 w-4" /></span>;
 }
 
 export default function ContractorInsightsSection({
@@ -156,163 +71,62 @@ export default function ContractorInsightsSection({
   availableFamilies = [],
   selectedFamilyKey = "all",
   onFamilyChange,
+  onOpenReports,
 }) {
   const data = useMemo(() => normalizeInsights(insights), [insights]);
-  const sampleSizes = data.sample_sizes || {};
-  const familyOptions = useMemo(() => {
-    const options = Array.isArray(availableFamilies) && availableFamilies.length
-      ? availableFamilies
-      : [{ key: "all", label: "All Projects", count: 0 }];
-    if (!options.some((option) => option?.key === "all")) {
-      return [{ key: "all", label: "All Projects", count: 0 }, ...options];
-    }
-    return options;
-  }, [availableFamilies]);
-  const sampleText = [
-    `${sampleSizes.platform || 0} platform projects`,
-    sampleSizes.regional ? `${sampleSizes.regional} market projects` : null,
-    sampleSizes.contractor ? `${sampleSizes.contractor} of your completed jobs` : null,
-  ].filter(Boolean).join(" · ");
-  const showSamples = Boolean(sampleText) && data.confidence !== "Preliminary view";
-  const selectedFamilyLabel =
-    safeStr(data.scope_label) ||
-    safeStr(data.selected_family_label) ||
-    "All Projects";
+  const families = availableFamilies.length ? availableFamilies : data.available_families;
+  const rows = data.comparison_rows;
+  const statuses = rows.map(statusForRow);
+  const aboveCount = statuses.filter((status) => status === "above").length;
+  const averageCount = statuses.filter((status) => status === "average").length;
+  const belowCount = statuses.filter((status) => status === "below").length;
+  const overall = !data.available || !rows.length
+    ? "Unavailable"
+    : aboveCount > belowCount
+    ? "Above Average"
+    : belowCount > aboveCount
+    ? "Needs Improvement"
+    : "Near Benchmark";
 
   return (
-    <DashboardSection
-      title="Benchmark Summary"
-      subtitle="How your work compares with similar projects, your market, and your own history."
-      testId="dashboard-contractor-insights-section"
-      className="mb-5"
-      actions={
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <label
-            htmlFor="contractor-insights-family-filter"
-            className="text-xs font-semibold text-slate-700"
-          >
-            Project family
-          </label>
-          <select
-            id="contractor-insights-family-filter"
-            data-testid="dashboard-contractor-insights-family-filter"
-            value={selectedFamilyKey}
-            onChange={(event) => {
-              if (typeof onFamilyChange === "function") {
-                onFamilyChange(event.target.value);
-              }
-            }}
-            className="min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm"
-          >
-            {familyOptions.map((option) => (
-              <option key={option.key} value={option.key}>
-                {formatFamilyOption(option)}
-              </option>
-            ))}
-          </select>
-        </div>
-      }
-    >
-      <div className="border-b border-slate-200 pb-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="text-lg font-bold text-slate-900">{selectedFamilyLabel}</div>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                {data.source_type === "blended_all"
-                  ? "Platform + Market + Contractor"
-                  : data.source_type === "blended_platform_regional"
-                  ? "Platform + Market"
-                  : data.source_type === "blended_platform_contractor"
-                  ? "Platform + Contractor"
-                  : data.source_type === "regional"
-                  ? "Market"
-                  : data.source_type === "contractor"
-                  ? "Contractor"
-                  : "Platform"}
-              </span>
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                {confidenceLabel(data.confidence)}
-              </span>
-            </div>
-            <div className="mt-2 text-sm leading-6 text-slate-600">{data.source_label}</div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                {selectedFamilyLabel}
-              </span>
-              {data.scope_mode === "fallback_all" ? (
-                <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                  Broader view
-                </span>
-              ) : null}
-            </div>
-            {safeStr(data.scope_notice) ? (
-              <div
-                data-testid="dashboard-contractor-insights-scope-notice"
-                className="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600"
-              >
-                {data.scope_notice}
-              </div>
-            ) : null}
-            {showSamples ? (
-              <div className="mt-2 text-xs font-medium text-slate-500">{sampleText}</div>
-            ) : null}
-            {!data.available ? (
-              <div className="mt-3 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                Complete more finished jobs to unlock sharper contractor benchmark comparisons.
-              </div>
-            ) : null}
+    <div data-testid="dashboard-contractor-insights-section" className="space-y-3">
+      <section data-testid="insights-benchmarks-overview" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
+        <div className="flex flex-col gap-4 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><h2 className="text-lg font-bold text-slate-950">Benchmark Overview</h2><p className="mt-1 text-sm text-slate-600">How your business compares with similar contractors.</p></div>
+          <div className="flex items-center gap-2">
+            <label htmlFor="contractor-insights-family-filter" className="text-xs font-semibold text-slate-600">Project family</label>
+            <select id="contractor-insights-family-filter" data-testid="dashboard-contractor-insights-family-filter" value={selectedFamilyKey} onChange={(event) => onFamilyChange?.(event.target.value)} className="min-w-0 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 sm:min-w-[190px]">
+              {families.map((option) => <option key={option.key} value={option.key}>{formatFamilyOption(option)}</option>)}
+            </select>
           </div>
         </div>
-      </div>
-
-      <div className="grid border-y border-slate-200 md:grid-cols-2 xl:grid-cols-4">
-        {data.summary_cards.map((card) => (
-          <div key={card.key} data-testid={`dashboard-contractor-insights-summary-${card.key}`} className="border-b border-slate-200 py-4 md:px-5 md:[&:nth-child(even)]:border-l xl:border-b-0 xl:[&:not(:first-child)]:border-l">
-            <div className="text-sm font-semibold text-slate-500">{card.label}</div>
-            <div className="mt-1 font-bold leading-6 text-slate-950">{card.headline}</div>
-            <div className="mt-1 text-xs leading-5 text-slate-500">{card.support}</div>
+        {safeStr(data.scope_notice) ? <p data-testid="dashboard-contractor-insights-scope-notice" className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-800">{data.scope_notice}</p> : null}
+        <div className="grid gap-6 pt-5 lg:grid-cols-[1fr_1fr_1.35fr] lg:items-center">
+          <div className="text-center lg:border-r lg:border-slate-200 lg:pr-6">
+            <div className="mx-auto flex h-24 w-48 items-end justify-center rounded-t-full border-[10px] border-b-0 border-emerald-500/80 pb-2"><span className="text-xl font-bold text-emerald-700">{overall}</span></div>
+            <p className="mt-2 text-sm font-bold text-slate-900">Overall performance</p>
+            <p className="text-xs text-slate-500">{safeStr(data.scope_label) || "All Projects"}</p>
           </div>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div>
-          <DashboardCard
-            testId="dashboard-contractor-insights-standings"
-            className="h-full border-slate-200 bg-white"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-lg font-semibold text-slate-900">Peer Comparisons</div>
-                <div className="mt-1 text-sm text-slate-500">Where this project family stands.</div>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                {confidenceLabel(data.confidence)}
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {data.comparison_rows.map((row) => (
-                <InsightComparisonRow
-                  key={row.key}
-                  testId={`dashboard-contractor-insights-row-${row.key}`}
-                  label={row.label}
-                  comparison={row.comparison}
-                  meter={row.meter}
-                  confidence={row.confidence}
-                />
-              ))}
-            </div>
-          </DashboardCard>
+          <div className="space-y-3 text-sm">
+            {rows.length ? <><div className="flex items-center gap-3"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" /><strong className="w-5 text-emerald-700">{aboveCount}</strong><span className="text-slate-600">Above average</span></div><div className="flex items-center gap-3"><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /><strong className="w-5 text-amber-700">{averageCount}</strong><span className="text-slate-600">Near benchmark</span></div><div className="flex items-center gap-3"><span className="h-2.5 w-2.5 rounded-full bg-red-500" /><strong className="w-5 text-red-600">{belowCount}</strong><span className="text-slate-600">Needs improvement</span></div></> : <p className="text-slate-500">Comparison counts are unavailable.</p>}
+          </div>
+          <div className="flex gap-4 rounded-xl bg-blue-50/70 p-5"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-700"><Lightbulb aria-hidden="true" className="h-5 w-5" /></span><div><h3 className="font-bold text-slate-950">About Benchmarks</h3><p className="mt-1 text-sm leading-6 text-slate-600">Benchmarks compare your business with similar contractors using aggregated platform data.</p><button type="button" className="mt-2 inline-flex items-center gap-2 text-sm font-bold text-blue-700">Learn more about benchmarks <ArrowRight aria-hidden="true" className="h-4 w-4" /></button></div></div>
         </div>
+      </section>
 
-        <InsightRecommendationCard
-          testId="dashboard-contractor-insights-recommendations"
-          title="Recommended adjustments"
-          bullets={data.recommendations}
-        />
+      <section data-testid="insights-benchmarks-table" className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="px-5 py-4 md:px-6"><h2 className="text-lg font-bold text-slate-950">Key Benchmark Metrics</h2></div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[850px] text-left"><thead className="border-y border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-500"><tr><th className="px-6 py-3">Metric</th><th className="px-4 py-3">Your Business</th><th className="px-4 py-3">Industry Average</th><th className="px-4 py-3">Top Performers</th><th className="px-4 py-3">Your Percentile</th><th className="px-4 py-3">Difference</th></tr></thead><tbody className="divide-y divide-slate-100">
+          {rows.length ? rows.map((row) => { const status = statusForRow(row); return <tr key={row.key || row.label} data-testid={`dashboard-contractor-insights-row-${row.key}`}><td className="px-6 py-3"><div className="flex items-center gap-3"><MetricIcon status={status} /><div><div className="text-sm font-bold text-slate-900">{metricLabel(row)}</div><div className="text-xs text-slate-500">{safeStr(row.confidence) || "Benchmark context"}</div></div></div></td><td className="px-4 py-3 text-sm font-semibold text-slate-700">Unavailable</td><td className="px-4 py-3 text-sm text-slate-500">Unavailable</td><td className="px-4 py-3 text-sm text-slate-500">Unavailable</td><td className="px-4 py-3 text-sm text-slate-500">Unavailable</td><td className={`px-4 py-3 text-sm font-semibold ${status === "above" ? "text-emerald-700" : status === "below" ? "text-red-600" : "text-slate-600"}`}>{safeStr(row.comparison) || "Unavailable"}</td></tr>; }) : <tr><td colSpan="6" className="px-6 py-8 text-center text-sm text-slate-500">Benchmark metrics are unavailable for this project family.</td></tr>}
+        </tbody></table></div>
+      </section>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <section data-testid="dashboard-contractor-insights-standings" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"><h2 className="text-lg font-bold text-slate-950">Performance vs. Peers</h2><div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500"><span className="flex items-center gap-2"><i className="h-2.5 w-5 rounded bg-emerald-500" />Your Business</span><span className="flex items-center gap-2"><i className="h-px w-5 border-t border-dashed border-blue-500" />Industry Average</span><span className="flex items-center gap-2"><i className="h-2.5 w-5 rounded bg-slate-200" />Top Performers</span></div><div data-testid="insights-benchmarks-chart" className="mt-6 space-y-5">{rows.length ? rows.map((row) => <div key={row.key}><div className="mb-2 flex justify-between gap-3 text-xs"><span className="font-semibold text-slate-700">{metricLabel(row)}</span><span className="text-slate-500">Peer values unavailable</span></div><div className="h-3 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.max(0, Math.min(100, Number(row.meter) || 0))}%` }} /></div></div>) : <div className="py-12 text-center text-sm text-slate-500">Peer comparison data is unavailable.</div>}</div></section>
+        <section data-testid="dashboard-contractor-insights-recommendations" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6"><h2 className="text-lg font-bold text-slate-950">Focus Opportunities</h2><p className="mt-1 text-sm text-slate-500">Areas with the biggest potential for improvement.</p><div className="mt-5 divide-y divide-slate-100">{data.recommendations.length ? data.recommendations.map((item, index) => <div key={`${item}-${index}`} className="flex items-center gap-3 py-4 first:pt-0"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-blue-50 text-blue-600">{index === 0 ? <ArrowDown aria-hidden="true" className="h-4 w-4" /> : <CheckCircle2 aria-hidden="true" className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><h3 className="text-sm font-bold text-slate-900">{item.split(".")[0]}</h3><p className="mt-1 text-xs leading-5 text-slate-500">{item}</p></div><ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" /></div>) : <p className="py-8 text-center text-sm text-slate-500">Focus opportunities are unavailable.</p>}</div></section>
       </div>
-    </DashboardSection>
+
+      <section className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileBarChart2 aria-hidden="true" className="h-5 w-5" /></span><div><h2 className="font-bold text-slate-950">Explore deeper insights</h2><p className="mt-0.5 text-sm text-slate-500">Dive into detailed reports, charts, performance by category, exports, and more.</p></div></div><button type="button" onClick={onOpenReports} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-blue-500 px-4 text-sm font-bold text-blue-700 hover:bg-blue-50">Go to Reports & Trends <ArrowRight aria-hidden="true" className="h-4 w-4" /></button></div></section>
+    </div>
   );
 }

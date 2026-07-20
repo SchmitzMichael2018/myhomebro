@@ -2755,44 +2755,8 @@ export default function BusinessDashboard() {
             availableFamilies={availableInsightFamilies}
             selectedFamilyKey={insightFamilyKey}
             onFamilyChange={handleFamilyChange}
+            onOpenReports={() => setActiveBusinessView("reports-trends")}
           />
-          ) : null}
-          {viewHas("peer_comparisons") ? (
-            <DashboardSection title="Peer Comparisons" subtitle="Benchmark context is shown only when sample sizes are available.">
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                {contractorInsights?.available ? (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {(contractorInsights.comparison_rows || []).map((row) => (
-                      <div key={row.key || row.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="text-sm font-bold text-slate-900">{row.label}</div>
-                        <div className="mt-2 text-sm leading-6 text-slate-700">{row.comparison}</div>
-                        <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{row.confidence || "Sample context unavailable"}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <Empty text="Not enough benchmark data yet. Completed projects and reliable comparison samples will populate this view." />
-                )}
-              </div>
-            </DashboardSection>
-          ) : null}
-          {viewHas("category_performance") ? (
-            <DashboardSection title="Category Performance" subtitle="Contractor-only category breakdown for this period.">
-              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-                {byCategory.length === 0 ? (
-                  <Empty text="No category breakdown available for this range yet." />
-                ) : (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {byCategory.map((row) => (
-                      <div key={row.category} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                        <div className="text-sm font-bold text-slate-900">{row.category}</div>
-                        <div className="mt-2 text-sm text-slate-700">{int(row.jobs)} jobs | {money(row.avg_revenue)} average revenue | {num(row.avg_completion_days, 1)} avg days</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </DashboardSection>
           ) : null}
         </div>
       ) : null}
