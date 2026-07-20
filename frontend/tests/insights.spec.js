@@ -146,7 +146,7 @@ const summaryPayload = {
   },
 };
 
-async function installInsightsRoutes(page) {
+async function installInsightsRoutes(page, summaryResponse = summaryPayload) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
   });
@@ -168,7 +168,7 @@ async function installInsightsRoutes(page) {
   });
 
   await page.route("**/api/projects/business/contractor/summary/**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summaryPayload) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summaryResponse) });
   });
 
   let goals = [];
@@ -404,8 +404,16 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await page.getByTestId("dashboard-view-selector-operations").click();
   await expect(page.getByTestId("insights-operations-waiting-queue")).toContainText("Waiting Queue");
   await expect(page.getByTestId("insights-operations-active-work")).toContainText("Active Work");
+  await expect(page.getByTestId("insights-operations-active-unavailable")).toContainText("Project-level active work details are not available yet");
+  await expect(page.getByTestId("insights-operations-active-work")).not.toContainText("caught up");
   await expect(page.getByTestId("insights-operations-schedule-health")).toContainText("Schedule Health");
+  await expect(page.getByTestId("insights-operations-schedule-health")).toContainText("Behind");
+  await expect(page.getByTestId("insights-operations-schedule-unavailable")).toContainText("Additional schedule detail unavailable");
   await expect(page.getByTestId("insights-operations-daily-focus")).toContainText("Daily Focus");
+  await expect(page.getByTestId("insights-operations-daily-focus")).toContainText("Review Milestones");
+  await expect(page.getByTestId("insights-operations-queue-reviews")).toContainText("Awaiting Review");
+  await expect(page.getByTestId("insights-operations-queue-reviews")).toHaveAttribute("href", "/app/reviewer/queue");
+  await expect(page.getByTestId("insights-operations-daily-focus")).toHaveCount(1);
   await expect(page.getByTestId("dashboard-operational-health-section")).toHaveCount(0);
   await expect(page.getByText("Approvals, disputes, active jobs")).toHaveCount(0);
 
@@ -622,10 +630,18 @@ test("capture Operations reference implementation", async ({ page }) => {
   await expect(page.getByTestId("dashboard-view-operations")).not.toContainText("Revenue Collected");
   await expect(page.getByTestId("dashboard-view-operations")).not.toContainText("Performance vs. Peers");
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, "insights-operations-reference-implementation.png"), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-operations-refined-desktop.png"), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("dashboard-view-selector-operations").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, "insights-operations-reference-mobile.png"), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-operations-refined-mobile.png"), fullPage: true });
+});
+
+test("Operations distinguishes unavailable active-work data from an empty date range", async ({ page }) => {
+  await installInsightsRoutes(page, { ...summaryPayload, active_work: [] });
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-operations").click();
+  await expect(page.getByTestId("insights-operations-active-no-match")).toContainText("No active project work matches this date range");
+  await expect(page.getByTestId("insights-operations-active-unavailable")).toHaveCount(0);
 });
