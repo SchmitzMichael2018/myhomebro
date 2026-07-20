@@ -79,6 +79,19 @@ function setupStatusLabel(member) {
   return member?.setup_status_label || (member?.last_login ? "Access Active" : "Setup Link Not Sent");
 }
 
+function setupActionLabel(member) {
+  const status = member?.setup_status || "";
+  if (status === "access_not_created") return "Create Access & Send Setup Link";
+  if (status === "setup_pending") return "Resend Setup Link";
+  if (status === "setup_link_expired") return "Send New Setup Link";
+  return "Send Setup Link";
+}
+
+function shouldShowSetupAction(member) {
+  const status = member?.setup_status || "";
+  return status !== "access_active" && status !== "access_disabled";
+}
+
 function isAccessActive(member) {
   if (member?.setup_status) return member.setup_status === "access_active";
   return Boolean(member?.last_login);
@@ -205,52 +218,29 @@ function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChange
           </dl>
         </section>
 
-        <section data-testid="team-member-detail-capabilities">
-          <h3 className="text-sm font-black text-white">Capabilities</h3>
-          {capabilities.length ? (
-            <div className="mt-2 space-y-2">
-              {capabilities.slice(0, 5).map((capability) => (
-                <div key={`${member.id}-${capability.skill_id}`} className="rounded-lg border border-white/10 bg-white/6 px-3 py-2">
-                  <div className="text-sm font-bold text-sky-50">{capability.skill_name || capability.skill_slug || "Capability"}</div>
-                  <div className="mt-0.5 text-xs font-semibold text-sky-100/60">{capability.skill_level_label || capability.skill_level || "Level not set"}</div>
-                </div>
-              ))}
-              {capabilities.length > 5 ? <div className="text-xs font-semibold text-sky-100/55">+{capabilities.length - 5} more on the full profile</div> : null}
-            </div>
-          ) : (
-            <p className="mt-2 rounded-lg border border-dashed border-white/16 bg-white/6 px-3 py-2 text-sm text-sky-100/65">
-              No capability profile completed.
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={() => navigate(`/app/team/employees/${member.id}`)}
-            className={`${operationalButton} mt-3 rounded-lg px-3 py-2 text-sm font-bold`}
-          >
-            Manage Capabilities
-          </button>
-        </section>
-
         <section>
           <h3 className="text-sm font-black text-white">Account Access</h3>
           <div className="mt-2 rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-sky-100/70">
             <div className="font-bold text-sky-50">{setupStatusLabel(member)}</div>
             <div className="mt-1">Login email: {member.email || "No email listed"}</div>
             <div className="mt-1">Setup email sent: {formatDateTime(member.setup_sent_at)}</div>
+            {member.setup_completed_at ? <div className="mt-1">Setup completed: {formatDateTime(member.setup_completed_at)}</div> : null}
             <div className="mt-1">Last login: {formatDate(member.last_login)}</div>
-            <div className="mt-2 rounded-lg border border-amber-300/25 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100">
-              Existing passwords cannot be viewed. Team members choose their own password from the secure setup link.
-            </div>
+            {member.setup_status === "setup_pending" && member.email ? (
+              <div className="mt-2 rounded-lg border border-sky-300/25 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100">
+                A setup link was sent to {member.email}. The member must complete setup before signing in.
+              </div>
+            ) : null}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            {member.setup_status !== "access_active" && member.setup_status !== "access_disabled" ? (
+            {shouldShowSetupAction(member) ? (
               <button
                 type="button"
                 onClick={() => onSendSetupLink(member)}
                 className={`${operationalPrimaryButton} rounded-lg px-3 py-2 text-sm font-black`}
                 data-testid="team-send-setup-link"
               >
-                {member.setup_status === "setup_pending" ? "Resend Setup Link" : "Send Setup Link"}
+                {setupActionLabel(member)}
               </button>
             ) : null}
             <button
@@ -281,6 +271,32 @@ function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChange
               ))}
             </select>
           </label>
+        </section>
+
+        <section data-testid="team-member-detail-capabilities">
+          <h3 className="text-sm font-black text-white">Capabilities</h3>
+          {capabilities.length ? (
+            <div className="mt-2 space-y-2">
+              {capabilities.slice(0, 5).map((capability) => (
+                <div key={`${member.id}-${capability.skill_id}`} className="rounded-lg border border-white/10 bg-white/6 px-3 py-2">
+                  <div className="text-sm font-bold text-sky-50">{capability.skill_name || capability.skill_slug || "Capability"}</div>
+                  <div className="mt-0.5 text-xs font-semibold text-sky-100/60">{capability.skill_level_label || capability.skill_level || "Level not set"}</div>
+                </div>
+              ))}
+              {capabilities.length > 5 ? <div className="text-xs font-semibold text-sky-100/55">+{capabilities.length - 5} more on the full profile</div> : null}
+            </div>
+          ) : (
+            <p className="mt-2 rounded-lg border border-dashed border-white/16 bg-white/6 px-3 py-2 text-sm text-sky-100/65">
+              No capability profile completed.
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => navigate(`/app/team/employees/${member.id}`)}
+            className={`${operationalButton} mt-3 rounded-lg px-3 py-2 text-sm font-bold`}
+          >
+            Manage Capabilities
+          </button>
         </section>
 
         <section>

@@ -41,6 +41,7 @@ const subaccountsPayload = {
       setup_status_label: "Access Active",
       setup_sent_at: "2026-04-17T12:00:00Z",
       setup_completed_at: "2026-04-17T12:30:00Z",
+      notes: "Crew lead and site supervisor.",
       cost_basis: "hourly",
       hourly_cost: "38.00",
       annual_salary: null,
@@ -74,6 +75,7 @@ const subaccountsPayload = {
       setup_status_label: "Access Active",
       setup_sent_at: "2026-04-19T12:00:00Z",
       setup_completed_at: "2026-04-19T12:30:00Z",
+      notes: "",
       capabilities: [
         { skill_id: 20, skill_name: "Plumbing", skill_level: "working", skill_level_label: "Working" },
       ],
@@ -97,6 +99,73 @@ const subaccountsPayload = {
       setup_status_label: "Setup Link Not Sent",
       setup_sent_at: null,
       setup_completed_at: null,
+      notes: "",
+      capabilities: [],
+    },
+    {
+      id: 4,
+      display_name: "Pending Setup Crew",
+      email: "pending@example.com",
+      role: "employee_readonly",
+      role_label: "Read-only",
+      is_active: true,
+      assignment_count: 0,
+      active_assignment_count: 0,
+      pending_review_count: 0,
+      overdue_milestone_count: 0,
+      last_activity_at: "",
+      last_login: "",
+      application_access_enabled: false,
+      has_usable_password: false,
+      setup_status: "setup_pending",
+      setup_status_label: "Setup Pending",
+      setup_sent_at: "2026-04-21T16:00:00Z",
+      setup_completed_at: null,
+      notes: "",
+      capabilities: [],
+    },
+    {
+      id: 5,
+      display_name: "Expired Setup Crew",
+      email: "expired@example.com",
+      role: "employee_readonly",
+      role_label: "Read-only",
+      is_active: true,
+      assignment_count: 0,
+      active_assignment_count: 0,
+      pending_review_count: 0,
+      overdue_milestone_count: 0,
+      last_activity_at: "",
+      last_login: "",
+      application_access_enabled: false,
+      has_usable_password: false,
+      setup_status: "setup_link_expired",
+      setup_status_label: "Setup Link Expired",
+      setup_sent_at: "2026-04-01T16:00:00Z",
+      setup_completed_at: null,
+      notes: "",
+      capabilities: [],
+    },
+    {
+      id: 6,
+      display_name: "Disabled Access Crew",
+      email: "disabled@example.com",
+      role: "employee_readonly",
+      role_label: "Read-only",
+      is_active: false,
+      assignment_count: 0,
+      active_assignment_count: 0,
+      pending_review_count: 0,
+      overdue_milestone_count: 0,
+      last_activity_at: "",
+      last_login: "",
+      application_access_enabled: false,
+      has_usable_password: true,
+      setup_status: "access_disabled",
+      setup_status_label: "Access Disabled",
+      setup_sent_at: "2026-04-01T16:00:00Z",
+      setup_completed_at: "2026-04-01T17:00:00Z",
+      notes: "",
       capabilities: [],
     },
   ],
@@ -687,7 +756,7 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.getByTestId("team-organization-growth")).toContainText("Organization Growth");
   await expect(page.getByTestId("team-organization-growth")).toContainText("Recommended improvements");
   await expect(page.getByTestId("team-organization-growth")).toContainText("Next Steps");
-  await expect(page.getByTestId("team-organization-growth")).toContainText("1 member needs a capability profile");
+  await expect(page.getByTestId("team-organization-growth")).toContainText("4 members need capability profiles");
   await expect(page.getByTestId("team-overview-manage-members")).toBeVisible();
   await expect(page.getByTestId("team-overview-manage-members")).toContainText("Manage Access & Profiles");
   await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
@@ -760,6 +829,12 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.getByTestId("team-member-detail-panel")).not.toContainText("Temporary password:");
   await expect(page.getByTestId("team-member-detail-permissions")).toContainText("Assigned role");
   await expect(page.getByTestId("team-member-detail-capabilities")).toContainText("Painting");
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Notes");
+  const panelOrder = await page.getByTestId("team-member-detail-panel").evaluate((panel) => {
+    const labels = ["Overview", "Account Access", "Permissions", "Capabilities", "Notes"];
+    return labels.map((label) => panel.textContent.indexOf(label));
+  });
+  expect(panelOrder).toEqual([...panelOrder].sort((a, b) => a - b));
   await expect(page.getByTestId("team-member-role-select")).toBeVisible();
   await page.getByTestId("team-member-role-select").selectOption("employee_milestones");
   await expect(page.getByTestId("team-member-role-select")).toHaveValue("employee_milestones");
@@ -775,8 +850,17 @@ test("team members page is a focused administration workspace with progressive d
 
   await page.getByTestId("team-member-manage-3").click();
   await expect(page.getByTestId("team-member-detail-panel")).toContainText("Setup Link Not Sent");
+  await expect(page.getByTestId("team-send-setup-link")).toContainText("Send Setup Link");
   await page.getByTestId("team-send-setup-link").click();
   await expect(page.getByTestId("team-member-detail-panel")).toContainText("Setup Pending");
+  await expect(page.getByTestId("team-send-setup-link")).toContainText("Resend Setup Link");
+  await page.getByTestId("team-member-manage-5").click();
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Setup Link Expired");
+  await expect(page.getByTestId("team-send-setup-link")).toContainText("Send New Setup Link");
+  await page.getByTestId("team-member-manage-6").click();
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Access Disabled");
+  await expect(page.getByTestId("team-send-setup-link")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Enable Access" })).toBeVisible();
 
   await page.getByTestId("team-admin-tab-roles").click();
   await expect(page.getByTestId("team-roles-workspace")).toContainText("Roles");
@@ -802,10 +886,21 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page).toHaveURL(/\/app\/team\/employees\/1/);
   await expect(page.getByTestId("team-employee-detail-page")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-employee-permission-role")).toContainText("Supervisor");
+  await expect(page.getByTestId("team-employee-profile-summary")).toContainText("Profile Summary");
+  await expect(page.getByTestId("team-employee-profile-summary")).toContainText("Member Status");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Account Access");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Access Active");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Login Email");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Setup Link Sent");
+  await expect(page.getByTestId("team-employee-permissions-section")).toContainText("Member Status");
+  await expect(page.getByTestId("team-employee-permissions-section")).toContainText("Application Access");
+  await expect(page.getByTestId("team-employee-permissions-section")).toContainText("Permission Role");
   await expect(page.getByTestId("team-employee-capabilities-section")).toContainText("Trade Capabilities");
   await expect(page.getByTestId("team-employee-capability-list")).toContainText("Painting");
   await expect(page.getByTestId("team-employee-compensation-section")).toContainText("Compensation");
   await expect(page.getByTestId("team-employee-effective-hourly-cost")).toContainText("$38.00");
+  await expect(page.getByTestId("team-employee-cost-basis")).toHaveCount(0);
+  await page.getByTestId("team-employee-edit-compensation").click();
   await page.getByTestId("team-employee-cost-basis").selectOption("salary");
   await page.getByTestId("team-employee-annual-salary").fill("104000");
   await page.getByTestId("team-employee-standard-hours").fill("40");
@@ -821,18 +916,36 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.getByTestId("team-employee-capability-10")).toContainText("Painting");
   await page.getByTestId("team-employee-capability-remove-30").click();
   await expect(page.getByTestId("team-employee-capability-list")).not.toContainText("Tile");
-  await expect(page.getByTestId("team-employee-profile-summary")).toContainText("Profile Summary");
-  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Account Access");
-  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Application access");
-  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Login email");
-  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Access Active");
   await expect(page.getByTestId("team-employee-account-access-summary")).not.toContainText("Reset Password Unavailable");
   await expect(page.getByTestId("team-employee-toggle-access")).toContainText("Disable Access");
+  await expect(page.getByTestId("team-employee-notes-section")).toContainText("Notes");
+  const fullPageOrder = await page.getByTestId("team-employee-detail-page").evaluate((pageRoot) => {
+    const labels = ["Profile Summary", "Account Access", "Permissions", "Trade Capabilities", "Compensation", "Notes"];
+    return labels.map((label) => pageRoot.textContent.indexOf(label));
+  });
+  expect(fullPageOrder).toEqual([...fullPageOrder].sort((a, b) => a - b));
+  const accountBox = await page.getByTestId("team-employee-account-access-summary").boundingBox();
+  const compensationBox = await page.getByTestId("team-employee-compensation-section").boundingBox();
+  expect(accountBox.y).toBeLessThan(compensationBox.y);
   await expect(page.getByTestId("team-employee-detail-page")).not.toContainText("Schedule Summary");
   await expect(page.getByTestId("team-employee-detail-page")).not.toContainText("Assigned Work");
 
   await page.goto("/app/team/employees/3", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("team-employee-no-capabilities")).toContainText("No capabilities assigned");
+  await expect(page.getByTestId("team-employee-send-setup-link")).toContainText("Resend Setup Link");
+  await page.goto("/app/team/employees/4", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Setup Pending");
+  await expect(page.getByTestId("team-employee-send-setup-link")).toContainText("Resend Setup Link");
+  await page.goto("/app/team/employees/5", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Setup Link Expired");
+  await expect(page.getByTestId("team-employee-send-setup-link")).toContainText("Send New Setup Link");
+  await page.goto("/app/team/employees/6", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Access Disabled");
+  await expect(page.getByTestId("team-employee-send-setup-link")).toHaveCount(0);
+  await expect(page.getByTestId("team-employee-toggle-access")).toContainText("Enable Access");
+  await page.setViewportSize({ width: 390, height: 844 });
+  const employeeHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
+  expect(employeeHorizontalOverflow).toBe(false);
 });
 
 test("estimate availability settings support CRUD and weekly preview", async ({ page }) => {
