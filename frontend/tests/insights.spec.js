@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import fs from "node:fs";
+import path from "node:path";
 
 const commandCenter = {
   business_health: {
@@ -444,4 +446,43 @@ test("Insights mobile layout avoids horizontal overflow", async ({ page }) => {
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(2);
+});
+
+test("capture redesigned Insights workspaces", async ({ page }) => {
+  test.setTimeout(180000);
+  await installInsightsRoutes(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Insights", exact: true })).toBeVisible();
+  await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
+  await page.evaluate(() => document.fonts.ready);
+
+  const views = [
+    ["scorecard", "insights-scorecard.png"],
+    ["executive", "insights-executive.png"],
+    ["benchmarks", "insights-benchmarks.png"],
+    ["financial", "insights-financial.png"],
+    ["operations", "insights-operations.png"],
+    ["reports-trends", "insights-reports.png"],
+    ["payouts", "insights-payouts.png"],
+  ];
+
+  for (const [view, filename] of views) {
+    const tab = page.getByTestId(`dashboard-view-selector-${view}`);
+    await tab.click();
+    await expect(tab).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Insights", exact: true })).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.screenshot({ path: path.join(screenshotDir, filename), fullPage: false });
+  }
+
+  await page.getByTestId("dashboard-view-selector-reports-trends").click();
+  await expect(page.getByTestId("dashboard-view-selector-reports-trends")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("dashboard-charts-section").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: path.join(screenshotDir, "insights-reports-bottom.png"), fullPage: false });
 });

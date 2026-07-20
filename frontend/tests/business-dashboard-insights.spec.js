@@ -252,13 +252,13 @@ test("business dashboard shows contractor insights panel with family filter and 
   await page.getByTestId("dashboard-view-selector-benchmarks").click();
 
   await expect(page.getByTestId("dashboard-contractor-insights-section")).toBeVisible();
-  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Contractor Insights");
-  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Helpful benchmarks based on similar projects, your market, and your past work.");
+  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Benchmark Summary");
+  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("How your work compares with similar projects, your market, and your own history.");
   await expect(page.getByTestId("dashboard-contractor-insights-summary-pricing")).toContainText("Pricing Position");
   await expect(page.getByTestId("dashboard-contractor-insights-summary-pace")).toContainText("Project Pace");
   await expect(page.getByTestId("dashboard-contractor-insights-summary-milestones")).toContainText("Milestone Style");
   await expect(page.getByTestId("dashboard-contractor-insights-summary-reliability")).toContainText("Reliability Signals");
-  await expect(page.getByTestId("dashboard-contractor-insights-standings")).toContainText("Where you stand");
+  await expect(page.getByTestId("dashboard-contractor-insights-standings")).toContainText("Peer Comparisons");
   await expect(page.getByTestId("dashboard-contractor-insights-row-pricing")).toContainText("Pricing vs benchmark");
   await expect(page.getByTestId("dashboard-contractor-insights-row-pace")).toContainText("Project pace vs benchmark");
   await expect(page.getByTestId("dashboard-contractor-insights-row-structure")).toContainText("Milestone count vs peers");

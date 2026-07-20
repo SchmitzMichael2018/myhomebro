@@ -73,8 +73,9 @@ function pct(v, digits = 1) {
 
 function Empty({ text }) {
   return (
-    <div className="rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-6 text-center text-sm text-sky-100/70">
-      {text}
+    <div className="flex items-center gap-3 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+      <Info aria-hidden="true" className="h-5 w-5 shrink-0 text-slate-400" />
+      <span>{text}</span>
     </div>
   );
 }
@@ -82,18 +83,18 @@ function Empty({ text }) {
 function Stat({ label, value, sub, tone = "default" }) {
   const toneClass =
     tone === "good"
-      ? "border-emerald-300/35 bg-emerald-400/15"
+      ? "border-emerald-100 bg-emerald-50/60"
       : tone === "warn"
-      ? "border-amber-300/35 bg-amber-400/15"
+      ? "border-amber-100 bg-amber-50/60"
       : tone === "bad"
-      ? "border-rose-300/35 bg-rose-400/15"
-      : "border-white/12 bg-slate-950/40";
+      ? "border-rose-100 bg-rose-50/60"
+      : "border-slate-100 bg-white";
 
   return (
     <div className={`rounded-xl border p-4 shadow-sm ${toneClass}`}>
-      <div className="text-sm font-semibold text-sky-100/70">{label}</div>
-      <div className="mt-2 text-2xl font-extrabold text-white">{value}</div>
-      {sub ? <div className="mt-1 text-xs text-sky-100/60">{sub}</div> : null}
+      <div className="text-sm font-semibold text-slate-600">{label}</div>
+      <div className="mt-2 text-2xl font-extrabold text-slate-950">{value}</div>
+      {sub ? <div className="mt-1 text-xs text-slate-500">{sub}</div> : null}
     </div>
   );
 }
@@ -127,11 +128,11 @@ function LightMetric({ label, value, sub, tone = "default", icon: Icon }) {
 }
 
 function dashboardToneClass(tone) {
-  if (tone === "good") return "border-emerald-300/35 bg-emerald-400/15";
-  if (tone === "warn") return "border-amber-300/35 bg-amber-400/15";
-  if (tone === "bad") return "border-rose-300/35 bg-rose-400/15";
-  if (tone === "info") return "border-sky-300/35 bg-sky-400/15";
-  return "border-white/12 bg-slate-950/40";
+  if (tone === "good") return "border-emerald-100 bg-emerald-50/50";
+  if (tone === "warn") return "border-amber-100 bg-amber-50/50";
+  if (tone === "bad") return "border-rose-100 bg-rose-50/50";
+  if (tone === "info") return "border-blue-100 bg-blue-50/50";
+  return "border-slate-100 bg-white";
 }
 
 function KpiCard({ label, value, sub, tone = "default", testId }) {
@@ -148,9 +149,9 @@ function KpiCard({ label, value, sub, tone = "default", testId }) {
 }
 
 function commandStateTone(status) {
-  if (status === "At Risk") return "border-rose-300/35 bg-rose-400/15 text-rose-100";
-  if (status === "Needs Attention") return "border-amber-300/35 bg-amber-400/15 text-amber-100";
-  return "border-emerald-300/35 bg-emerald-400/15 text-emerald-100";
+  if (status === "At Risk") return "border-rose-200 bg-rose-50 text-rose-700";
+  if (status === "Needs Attention") return "border-amber-200 bg-amber-50 text-amber-700";
+  return "border-emerald-200 bg-emerald-50 text-emerald-700";
 }
 
 function severityTone(severity) {
@@ -167,12 +168,12 @@ function CanonicalMetricCard({ metric }) {
     <Wrapper
       href={metric.href || undefined}
       data-testid={`insights-canonical-metric-${metric.key}`}
-      className="group rounded-2xl border border-white/12 bg-slate-950/40 p-4 shadow-sm transition hover:border-sky-300/35 hover:bg-sky-500/10"
+      className="group border-l border-slate-200 px-5 py-2 first:border-l-0 transition hover:bg-slate-50"
     >
-      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{metric.label}</div>
-      <div className="mt-2 text-2xl font-black text-white">{value}</div>
-      <div className="mt-2 text-sm leading-5 text-sky-100/70">{metric.detail}</div>
-      {metric.href ? <div className="mt-3 text-xs font-bold text-sky-100">Open source records</div> : null}
+      <div className="text-sm font-semibold text-slate-600">{metric.label}</div>
+      <div className="mt-2 text-2xl font-black text-slate-950">{value}</div>
+      <div className="mt-2 text-xs leading-5 text-slate-500">{metric.detail}</div>
+      {metric.href ? <div className="mt-3 text-xs font-bold text-blue-700">Open source records</div> : null}
     </Wrapper>
   );
 }
@@ -183,24 +184,24 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
     <Wrapper
       data-testid={testId}
       href={href || undefined}
-      className={`group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-px hover:border-sky-300/35 hover:bg-sky-500/10 hover:shadow-sm ${dashboardToneClass(
+      className={`group border-b border-slate-200 px-1 py-5 transition last:border-b-0 hover:bg-slate-50 ${dashboardToneClass(
         tone
       )} ${href ? "cursor-pointer" : ""}`}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{label}</div>
+          <div className="text-sm font-semibold text-slate-600">{label}</div>
           <div className="mt-3 flex flex-wrap items-end gap-x-3 gap-y-1">
-            <span className="text-3xl font-bold leading-none text-white">{int(count)}</span>
-            <span className="pb-0.5 text-sm font-medium text-sky-100/60">items</span>
+            <span className="text-3xl font-bold leading-none text-slate-950">{int(count)}</span>
+            <span className="pb-0.5 text-sm font-medium text-slate-500">items</span>
             {amount ? (
-              <span className="ml-auto text-2xl font-semibold leading-none text-white">{amount}</span>
+              <span className="ml-auto text-2xl font-semibold leading-none text-slate-950">{amount}</span>
             ) : null}
           </div>
-          <div className="mt-3 text-sm leading-5 text-sky-100/70">{description}</div>
+          <div className="mt-3 text-sm leading-5 text-slate-500">{description}</div>
         </div>
         {href ? (
-          <ArrowRight aria-hidden="true" className="mt-1 h-4 w-4 text-sky-100/55 transition group-hover:translate-x-0.5 group-hover:text-white" />
+          <ArrowRight aria-hidden="true" className="mt-1 h-4 w-4 text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-blue-600" />
         ) : null}
       </div>
     </Wrapper>
@@ -208,6 +209,15 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
 }
 
 function ViewSelectorCard({ title, icon: Icon, selected, onClick, testId }) {
+  const workspaceTitle = title === "Executive Overview"
+    ? "Executive"
+    : title === "Financial Performance"
+      ? "Financial"
+      : title === "Reports & Trends"
+        ? "Reports"
+        : title === "Payouts & Exports"
+          ? "Payouts"
+          : title;
   return (
     <button
       type="button"
@@ -216,14 +226,14 @@ function ViewSelectorCard({ title, icon: Icon, selected, onClick, testId }) {
       role="tab"
       aria-selected={selected}
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-bold transition md:px-4 ${
+      className={`inline-flex shrink-0 items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition md:px-4 ${
         selected
           ? "border-blue-600 text-blue-700"
           : "border-transparent text-slate-700 hover:border-slate-300 hover:text-slate-950"
       }`}
     >
       {Icon ? <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} /> : null}
-      {title}
+      {workspaceTitle}
     </button>
   );
 }
@@ -390,11 +400,11 @@ function ChartCard({ title, description, testId, children }) {
   return (
     <div
       data-testid={testId}
-      className="rounded-xl border border-white/12 bg-slate-950/40 p-4 shadow-sm"
+      className="bg-white p-2"
     >
       <div className="mb-3">
-        <div className="text-base font-bold text-white">{title}</div>
-        <div className="mt-1 text-sm text-sky-100/70">{description}</div>
+        <div className="text-lg font-bold text-slate-950">{title}</div>
+        <div className="mt-1 text-sm text-slate-500">{description}</div>
       </div>
       {children}
     </div>
@@ -514,13 +524,13 @@ function ScorecardMetric({ label, value, sub, goal, currentValue, goalValue, tre
   const neutral = trend === "neutral";
   const hasGoal = Boolean(goal);
   return (
-    <div className="min-h-[168px] rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="border-l border-slate-200 px-4 py-2 first:border-l-0">
       <div className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
         <span>{label}</span>
         <Info aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
       </div>
-      <div className="mt-5 text-3xl font-black leading-none tracking-tight text-slate-950">{value}</div>
-      <div className="mt-3 flex items-center gap-1.5 text-sm">
+      <div className="mt-3 text-2xl font-black leading-none tracking-tight text-slate-950">{value}</div>
+      <div className="mt-2 flex items-center gap-1.5 text-xs">
         {neutral ? (
           <span aria-hidden="true" className="h-2 w-2 rounded-full bg-blue-500" />
         ) : positive ? (
@@ -531,10 +541,10 @@ function ScorecardMetric({ label, value, sub, goal, currentValue, goalValue, tre
         <span className={neutral ? "font-bold text-blue-700" : positive ? "font-bold text-emerald-600" : "font-bold text-red-600"}>{sub}</span>
         <span className="text-slate-500">{comparison}</span>
       </div>
-      <div className="mt-7 text-sm text-slate-900">
+      <div className="mt-4 text-xs text-slate-700">
         {hasGoal ? <>Goal: {goal}</> : "Goal: Not set"}
       </div>
-      <div className="mt-2 flex items-center gap-3">
+      <div className="mt-2 flex items-center gap-2">
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
           <div
             className={`h-full rounded-full ${neutral ? "bg-blue-600" : positive ? "bg-emerald-600" : "bg-red-500"}`}
@@ -1745,7 +1755,7 @@ export default function BusinessDashboard() {
       title="Insights"
       subtitle="Track revenue, payouts, project health, and risks."
       variant="light-console"
-      className="mhb-business-dashboard"
+      className="mhb-insights-workspace"
       contentClassName="space-y-4"
       actions={
         <div className="flex flex-wrap items-center gap-2">
@@ -1758,7 +1768,7 @@ export default function BusinessDashboard() {
               setRange(e.target.value);
               saveInsightsPreferences(activeVisibleWidgetIds, e.target.value, activeBusinessView);
             }}
-              className="h-10 appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-9 text-sm font-semibold text-slate-900 shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              className="h-9 appearance-none rounded-md border border-slate-200 bg-white py-1.5 pl-10 pr-9 text-sm font-semibold text-slate-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
           >
             <option value="30">This Month</option>
             <option value="90">This Quarter</option>
@@ -1773,7 +1783,7 @@ export default function BusinessDashboard() {
           <button
             type="button"
             onClick={() => openGoalEditor()}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 shadow-sm hover:border-blue-200 hover:bg-blue-50"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
             data-testid="insights-set-goal"
           >
             <Target aria-hidden="true" className="h-4 w-4 text-blue-600" />
@@ -1782,7 +1792,7 @@ export default function BusinessDashboard() {
           <button
             type="button"
             onClick={() => setCustomizeOpen(true)}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-blue-600 bg-blue-600 px-4 text-sm font-bold text-white shadow-sm hover:bg-blue-700"
+            className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
             data-testid="insights-customize-open"
             aria-label={`Customize ${activeViewConfig.title}`}
           >
@@ -1792,14 +1802,14 @@ export default function BusinessDashboard() {
 
           <button
             onClick={fetchData}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 shadow-sm hover:border-blue-200 hover:bg-blue-50"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-50"
           >
             <RefreshCw aria-hidden="true" className="h-4 w-4 text-blue-600" />
             Refresh
           </button>
           <button
             type="button"
-            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             aria-label="Notifications"
           >
             <Bell aria-hidden="true" className="h-4 w-4" />
@@ -1810,11 +1820,11 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-view-selector-row"
-        className="mb-3 -mx-1 overflow-x-auto border-b border-slate-200 px-1"
+        className="mb-7 -mx-1 overflow-x-auto border-b border-slate-200 px-1"
         role="tablist"
         aria-label="Insights dashboard views"
       >
-        <div className="flex min-w-max gap-5">
+        <div className="flex min-w-max gap-1">
           {businessViewCards.map((card) => (
             <ViewSelectorCard
               key={card.key}
@@ -1850,7 +1860,7 @@ export default function BusinessDashboard() {
           {activeVisibleWidgetIds.map((widgetId) => {
             if (widgetId === "business_snapshot") {
               return (
-                <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-12">
+                <section key={widgetId} data-testid="insights-business-snapshot" className="border-b border-slate-200 bg-white pb-6 xl:col-span-12">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <h2 className="text-lg font-bold text-slate-950">Business Snapshot</h2>
@@ -1871,7 +1881,7 @@ export default function BusinessDashboard() {
                       <ArrowRight aria-hidden="true" className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+                  <div className="mt-4 grid gap-y-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
                     {snapshotCards.map((card) => (
                       <ScorecardMetric key={card.key} {...card} />
                     ))}
@@ -2081,20 +2091,20 @@ export default function BusinessDashboard() {
       {activeBusinessView === "executive" ? (
         <div className="flex flex-col">
       {viewHas("business_health") ? (
-      <section data-testid="insights-business-health" className="order-1 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-business-health" className="order-1 mb-10 border-b border-slate-200 pb-9">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
-            <div className="text-sm font-bold text-sky-200">Business Health</div>
-            <h2 className="mt-2 text-3xl font-black text-white">{businessHealth.summary || "Business health loading"}</h2>
+            <div className="text-lg font-bold text-slate-950">Business Health</div>
+            <h2 className="mt-3 text-4xl font-black tracking-tight text-slate-950">{businessHealth.summary || "Business health loading"}</h2>
           </div>
-          <div className={`rounded-full border px-4 py-2 text-sm font-black ${commandStateTone(businessHealth.overall)}`}>
+          <div className={`rounded-full border px-6 py-3 text-lg font-black ${commandStateTone(businessHealth.overall)}`}>
             {businessHealth.overall || "Healthy"}
           </div>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {displayedHealthDimensions.map((dimension) => (
-            <div key={dimension.key} className={`rounded-xl border p-4 ${commandStateTone(dimension.status)}`}>
+            <div key={dimension.key} className="border-l border-slate-200 px-4 first:border-l-0">
               <div className="text-sm font-black">{dimension.label}</div>
               <div className="mt-1 text-lg font-black">{dimension.status}</div>
               <div className="mt-2 text-xs leading-5 opacity-80">{dimension.detail}</div>
@@ -2103,40 +2113,40 @@ export default function BusinessDashboard() {
         </div>
 
         <div className="mt-5 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">Biggest Win</div>
-            <div className="mt-2 text-sm leading-6 text-sky-100">{businessHealth.biggest_win || "No business win detected yet."}</div>
+          <div className="border-t border-slate-100 pt-4">
+            <div className="text-sm font-semibold text-slate-500">Biggest Win</div>
+            <div className="mt-2 text-sm leading-6 text-slate-700">{businessHealth.biggest_win || "No business win detected yet."}</div>
           </div>
-          <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">Biggest Concern</div>
-            <div className="mt-2 text-sm leading-6 text-sky-100">{businessHealth.biggest_concern || "No urgent concern found."}</div>
+          <div className="border-t border-slate-100 pt-4">
+            <div className="text-sm font-semibold text-slate-500">Biggest Concern</div>
+            <div className="mt-2 text-sm leading-6 text-slate-700">{businessHealth.biggest_concern || "No urgent concern found."}</div>
           </div>
-          <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">Recommended Focus</div>
-            <div className="mt-2 text-sm leading-6 text-sky-100">{businessHealth.recommended_focus || "Review reports and keep current work moving."}</div>
+          <div className="border-t border-slate-100 pt-4">
+            <div className="text-sm font-semibold text-slate-500">Recommended Focus</div>
+            <div className="mt-2 text-sm leading-6 text-slate-700">{businessHealth.recommended_focus || "Review reports and keep current work moving."}</div>
           </div>
         </div>
       </section>
       ) : null}
 
       {viewHas("business_alerts") ? (
-      <section data-testid="insights-business-alerts" className="order-4 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-business-alerts" className="order-4 mb-5 pt-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-sm font-bold text-sky-200">Business Alerts</div>
-            <h2 className="mt-2 text-2xl font-black text-white">Conditions leadership should watch</h2>
-            <p className="mt-1 text-sm leading-6 text-sky-100/70">Business conditions from source records. Configuration controls live in their source workspaces.</p>
+            <h2 className="text-2xl font-bold text-slate-950">Business Alerts</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-500">Conditions leadership should watch.</p>
           </div>
-          <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
+          <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
             {topAlertCards.length} active
           </div>
         </div>
         {topAlertCards.length === 0 ? (
-          <div className="mt-4 rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-5 text-sm text-sky-100/70">
-            No business alerts in this range.
+          <div className="mt-4 flex items-center gap-3 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <Info aria-hidden="true" className="h-5 w-5 text-slate-400" />
+            <span>No business alerts in this range. Alerts appear when source records need leadership attention.</span>
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="mt-4 divide-y divide-slate-200">
             {topAlertCards.map((card) => (
               <ActionCard
                 key={card.key}
@@ -2156,10 +2166,9 @@ export default function BusinessDashboard() {
 
       {viewHas("morning_brief") ? (
       <div className="order-3 mb-5">
-        <section data-testid="insights-morning-brief" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
-          <div className="text-sm font-bold text-sky-200">Morning Brief</div>
-          <h2 className="mt-2 text-2xl font-black text-white">Operations Analyst brief</h2>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-sky-100/70">
+        <section data-testid="insights-morning-brief" className="border-b border-slate-200 pb-9 pt-3">
+          <div className="text-2xl font-bold text-slate-950">Morning Brief</div>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">
             {operationsAnalyst.summary || businessHealth.recommended_focus || "Review the highest priority business signal first."}
           </p>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -2168,9 +2177,9 @@ export default function BusinessDashboard() {
               ["Today", morningBrief.today],
               ["Risks", morningBrief.risks],
             ].map(([label, rows]) => (
-              <div key={label} className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{label}</div>
-                <ul className="mt-2 space-y-1 text-sm leading-6 text-sky-100">
+              <div key={label} className="border-l border-slate-200 px-4 first:border-l-0">
+                <div className="text-sm font-semibold text-slate-500">{label}</div>
+                <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
                   {(Array.isArray(rows) && rows.length ? rows : ["No activity."]).map((row) => (
                     <li key={row}>{row}</li>
                   ))}
@@ -2178,7 +2187,7 @@ export default function BusinessDashboard() {
               </div>
             ))}
           </div>
-          <div className="mt-3 rounded-xl border border-sky-300/25 bg-sky-400/10 p-4 text-sm leading-6 text-sky-100">
+          <div className="mt-5 border-l-2 border-blue-500 bg-blue-50/60 px-4 py-3 text-sm leading-6 text-slate-700">
             <span className="font-black">Recommended action: </span>
             {morningBrief.recommended_action || "Review reports and keep current work moving."}
           </div>
@@ -2187,11 +2196,10 @@ export default function BusinessDashboard() {
       ) : null}
 
       {viewHas("executive_scorecard") ? (
-      <section data-testid="insights-canonical-metrics" className="order-2 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-canonical-metrics" className="order-2 mb-7 border-b border-slate-200 pb-8">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-sm font-bold text-sky-200">Executive Scorecard</div>
-            <h2 className="mt-2 text-2xl font-black text-white">Executive scorecard</h2>
+            <h2 className="text-2xl font-bold text-slate-950">Executive Scorecard</h2>
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -2203,11 +2211,10 @@ export default function BusinessDashboard() {
       ) : null}
 
       {viewHas("strategic_risks") ? (
-      <section data-testid="insights-opportunity-forecast" className="order-5 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-opportunity-forecast" className="order-5 mb-5 border-t border-slate-200 pt-8">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Opportunity Forecast</div>
-          <h2 className="mt-2 text-2xl font-black text-white">Pipeline by workflow state</h2>
-          <p className="mt-1 text-sm leading-6 text-sky-100/70">
+          <h2 className="text-2xl font-bold text-slate-950">Opportunity Forecast</h2>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
             {opportunityForecast.source_note || "Deterministic workflow state from opportunities, estimates, agreements, and collected payments."}
           </p>
         </div>
@@ -2216,11 +2223,11 @@ export default function BusinessDashboard() {
             <a
               key={section.label}
               href={section.href}
-              className="rounded-2xl border border-white/12 bg-slate-950/40 p-4 shadow-sm transition hover:border-sky-300/35 hover:bg-sky-500/10"
+              className="border-l border-slate-200 px-4 py-2 first:border-l-0 transition hover:bg-slate-50"
             >
-              <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{section.label}</div>
-              <div className="mt-2 text-2xl font-black text-white">{money(section.value)}</div>
-              <div className="mt-3 text-xs font-black text-sky-100">Open source records</div>
+              <div className="text-sm font-semibold text-slate-500">{section.label}</div>
+              <div className="mt-2 text-2xl font-black text-slate-950">{money(section.value)}</div>
+              <div className="mt-3 text-xs font-bold text-blue-700">Open source records</div>
             </a>
           ))}
         </div>
@@ -2533,7 +2540,7 @@ export default function BusinessDashboard() {
             title="Financial Performance"
             subtitle="Collected revenue, contractor earnings, outstanding money, and fee movement stay separate."
           >
-            <section data-testid="dashboard-financial-section" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section data-testid="dashboard-financial-section" className="bg-white py-2">
               <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                 <div>
                   <div className="text-base font-bold text-slate-900">Money Movement</div>
@@ -2561,7 +2568,7 @@ export default function BusinessDashboard() {
               </div>
 
               <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_0.8fr]">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                <div className="border-t border-slate-200 pt-6">
                   <div className="text-sm font-bold text-slate-900">Financial Trend</div>
                   <div className="mt-1 text-sm text-slate-600">Gross revenue, platform fees, and net paid over time.</div>
                   <div className="mt-4">
@@ -2586,7 +2593,7 @@ export default function BusinessDashboard() {
                   </div>
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="border-l border-slate-200 pl-6">
                   <div className="text-sm font-bold text-slate-900">Payment Performance</div>
                   <div className="mt-1 text-sm text-slate-600">What is settled, waiting, or held.</div>
                   <div className="mt-4 grid gap-3">
@@ -3081,7 +3088,7 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-charts-section"
-        className="order-2 rounded-xl border border-slate-200 bg-slate-50/55 p-5 shadow-sm"
+        className="order-2 border-b border-slate-200 bg-white pb-8"
       >
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
@@ -3103,7 +3110,7 @@ export default function BusinessDashboard() {
             testId="dashboard-chart-revenue"
           >
             {hasSeriesValue(revenueChart, ["revenue"]) ? (
-              <div className="h-72">
+              <div className="h-96">
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={revenueChart}>
                     <CartesianGrid strokeDasharray="3 3" />

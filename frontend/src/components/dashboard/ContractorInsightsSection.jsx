@@ -213,7 +213,7 @@ export default function ContractorInsightsSection({
         </div>
       }
     >
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="border-b border-slate-200 pb-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">

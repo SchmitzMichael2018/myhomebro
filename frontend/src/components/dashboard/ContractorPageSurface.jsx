@@ -13,8 +13,10 @@ export default function ContractorPageSurface({
 }) {
   const operational = variant === "operational";
   const lightConsole = variant === "light-console";
-  const shellClass = operational || lightConsole
-    ? "mhb-operational-surface min-w-0 w-full max-w-[1440px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8"
+  const shellClass = operational
+    ? "mhb-operational-surface min-w-0 w-full max-w-[1440px] px-4 pb-10 pt-3 md:px-6 lg:px-8 xl:px-10"
+    : lightConsole
+    ? "min-w-0 w-full max-w-[1440px] px-4 pb-10 pt-3 md:px-6 lg:px-8 xl:px-10"
     : "min-w-0 w-full max-w-[1440px] px-3 pb-7 pt-3 md:px-5 lg:px-7 xl:px-8";
   const surfaceBase = operational || lightConsole
     ? "rounded-none border-0 bg-transparent p-0 shadow-none backdrop-blur-none"
@@ -22,7 +24,7 @@ export default function ContractorPageSurface({
   const headerClass = operational
     ? "mb-5 flex flex-col gap-3.5 border-b border-white/10 pb-4 md:flex-row md:items-end md:justify-between"
     : lightConsole
-    ? "mb-4 flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-end md:justify-between"
+    ? "mb-2 flex flex-col gap-3 border-b border-slate-200 pb-3 md:flex-row md:items-center md:justify-between xl:pr-48"
     : "mb-5 flex flex-col gap-3.5 border-b border-slate-200/80 pb-4 md:flex-row md:items-end md:justify-between";
   const eyebrowClass = operational
     ? "text-[11px] font-semibold uppercase tracking-[0.2em] text-sky-100/70"
@@ -32,12 +34,12 @@ export default function ContractorPageSurface({
   const titleClass = operational
     ? "mt-1 text-2xl font-bold tracking-tight text-white md:text-[2rem]"
     : lightConsole
-    ? "text-2xl font-bold tracking-tight text-slate-950 md:text-[2rem]"
+    ? "text-xl font-bold tracking-tight text-slate-950 md:text-2xl"
     : "mt-1 text-2xl font-bold tracking-tight text-slate-950 md:text-[2rem]";
   const subtitleClass = operational
     ? "mt-2 max-w-4xl text-sm leading-6 text-sky-100/80 md:text-[15px]"
     : lightConsole
-    ? "mt-2 max-w-4xl text-sm leading-6 text-slate-600 md:text-[15px]"
+    ? "mt-0.5 max-w-4xl text-xs leading-5 text-slate-500"
     : "mt-2 max-w-4xl text-sm leading-6 text-slate-700 md:text-[15px]";
 
   return (
