@@ -944,6 +944,7 @@ export default function BusinessDashboard() {
   const financialSummary = payload?.financial_summary || {};
   const financialSeries = payload?.financial_series || [];
   const financialInsights = payload?.financial_insights || [];
+  const recentFinancialEvents = payload?.recent_financial_events || [];
   const payoutSeries = payload?.payout_series || [];
   const workflowSeries = payload?.workflow_series || [];
   const feeSummary = payload?.fee_summary || {};
@@ -2443,76 +2444,48 @@ export default function BusinessDashboard() {
       ) : null}
 
       {activeBusinessView === "financial" ? (
-        <div data-testid="dashboard-view-financial" className="space-y-5">
-          <DashboardSection
-            title="Financial Performance"
-            subtitle="Collected revenue, contractor earnings, outstanding money, and fee movement stay separate."
-          >
-            <section data-testid="dashboard-financial-section" className="bg-white py-2">
-              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <div className="text-base font-bold text-slate-900">Money Movement</div>
-                  <div className="mt-1 text-sm text-slate-600">
-                    Selected range: {rangeLabel}. Collected revenue, net paid, held funds, and receivables are shown as distinct figures.
-                  </div>
-                </div>
-                <div className="text-xs text-slate-500">Financial dashboard only</div>
-              </div>
+        <div data-testid="dashboard-view-financial" className="space-y-3">
+          <section data-testid="dashboard-financial-section" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"><div><h2 className="text-lg font-bold text-slate-950">Financial Snapshot</h2><p className="mt-1 text-sm text-slate-500">{rangeLabel}</p></div><button type="button" onClick={() => setActiveBusinessView("reports-trends")} className="inline-flex items-center gap-2 text-sm font-bold text-blue-700">View Financial Report <ArrowRight aria-hidden="true" className="h-4 w-4" /></button></div>
+            <div className="mt-5 grid divide-y divide-slate-200 border-y border-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-5">
+              {[
+                ["Revenue Collected", money(financialSummary.gross_revenue_total || snapshot.total_revenue), "Paid invoices and draws", "text-slate-950"],
+                ["Contractor Earnings", money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value), "After platform fees; not profit", "text-slate-950"],
+                ["Outstanding Invoices", money(canonicalMetrics.outstanding_receivables?.value), "Sent invoices and submitted draws", "text-slate-950"],
+                ["Pending Payments", money(financialSummary.pending_release_total || pendingReleaseTotal), `${int(financialSummary.pending_release_count)} waiting to release`, "text-amber-700"],
+                ["Money On Hold", money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value), `${int(financialSummary.on_hold_count)} requiring review`, "text-red-600"],
+              ].map(([label, value, detail, tone]) => <div key={label} className="px-1 py-4 first:pl-0 sm:px-4 last:pr-0"><div className="text-xs font-semibold text-slate-600">{label}</div><div className={`mt-2 text-2xl font-black tabular-nums ${tone}`}>{value}</div><div className="mt-1 text-xs leading-5 text-slate-500">{detail}</div></div>)}
+            </div>
+          </section>
 
-              <div className="mt-6 grid grid-cols-1 divide-y divide-slate-200 border-y border-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-                {[
-                  ["Money In", "Collected revenue", money(financialSummary.gross_revenue_total || snapshot.total_revenue), "Paid invoices and draw requests"],
-                  ["Money Out", "Contractor earnings", money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value), "Collected after platform fees; not profit"],
-                  ["Outstanding", "Open receivables", money(canonicalMetrics.outstanding_receivables?.value), "Sent invoices and submitted draws"],
-                  ["Cash Flow", "Money on hold", money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value), "Paused by resolution or review"],
-                ].map(([group, label, value, detail]) => (
-                  <div key={group} className="px-1 py-5 first:pl-0 sm:px-5 last:pr-0">
-                    <div className="text-sm font-bold text-slate-500">{group}</div>
-                    <div className="mt-3 text-xs font-semibold text-slate-600">{label}</div>
-                    <div className="mt-1 text-2xl font-black tabular-nums text-slate-950">{value}</div>
-                    <div className="mt-1 text-xs leading-5 text-slate-500">{detail}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_0.8fr]">
-                <div className="border-t border-slate-200 pt-6">
-                  <div className="text-sm font-bold text-slate-900">Financial Trend</div>
-                  <div className="mt-1 text-sm text-slate-600">Gross revenue, platform fees, and net paid over time.</div>
-                  <div className="mt-4">
-                    {hasSeriesValue(financialTrendChart, ["gross_revenue", "platform_fees", "net_paid"]) ? (
-                      <div className="h-80" data-testid="dashboard-financial-trend-chart">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={financialTrendChart}>
-                            <CartesianGrid strokeDasharray="3 3" />
-                            <XAxis dataKey="bucket_label" tick={{ fontSize: 12 }} />
-                            <YAxis tickFormatter={axisMoney} width={70} />
-                            <Tooltip formatter={(value) => money(value)} />
-                            <Legend />
-                            <Line type="monotone" dataKey="gross_revenue" name="Collected Revenue" stroke="#0f172a" strokeWidth={2} dot={false} />
-                            <Line type="monotone" dataKey="platform_fees" name="Platform Fees" stroke="#b45309" strokeWidth={2} dot={false} />
-                            <Line type="monotone" dataKey="net_paid" name="Net Paid" stroke="#0f766e" strokeWidth={2} dot={false} />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      </div>
-                    ) : (
-                      <ChartEmptyState text={`Not enough financial trend data for ${rangeLabel.toLowerCase()}. Paid invoices and released draw requests will populate this chart.`} />
-                    )}
-                  </div>
-                </div>
-
-                <div className="border-l border-slate-200 pl-6">
-                  <div className="text-sm font-bold text-slate-900">Payment Performance</div>
-                  <div className="mt-1 text-sm text-slate-600">What is settled, waiting, or held.</div>
-                  <div className="mt-4 grid gap-3">
-                    <Stat label="Paid Events" value={int(financialSummary.paid_events_count)} sub="Payments that settled" tone="good" />
-                    <Stat label="Pending Release" value={money(financialSummary.pending_release_total || pendingReleaseTotal)} sub="Approved or ready but not released" tone={Number(financialSummary.pending_release_total || 0) > 0 ? "warn" : "default"} />
-                    <Stat label="Platform Fees" value={money(snapshot.platform_fees_paid)} sub="Fees recorded in range" />
-                  </div>
-                </div>
-              </div>
+          <div className="grid gap-3 xl:grid-cols-[1.45fr_0.75fr]">
+            <section data-testid="dashboard-financial-hero" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-slate-950">Revenue Overview</h2><p className="mt-1 text-sm text-slate-500">Collected revenue for {rangeLabel.toLowerCase()}.</p>
+              {financialTrendChart.length > 1 && hasSeriesValue(financialTrendChart, ["gross_revenue"]) ? <div className="mt-4 h-64" data-testid="dashboard-financial-trend-chart"><ResponsiveContainer width="100%" height="100%"><BarChart data={financialTrendChart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="bucket_label" tick={{ fontSize: 12 }} /><YAxis tickFormatter={axisMoney} width={70} /><Tooltip formatter={(value) => money(value)} /><Bar dataKey="gross_revenue" name="Revenue Collected" fill="#2563eb" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div> : <div data-testid="dashboard-financial-current-summary" className="mt-5 grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-emerald-50 p-4"><div className="text-xs font-semibold text-emerald-800">Current Revenue</div><div className="mt-2 text-xl font-black text-emerald-900">{money(financialSummary.gross_revenue_total || snapshot.total_revenue)}</div></div><div className="rounded-lg bg-blue-50 p-4"><div className="text-xs font-semibold text-blue-800">Current Outstanding</div><div className="mt-2 text-xl font-black text-blue-950">{money(canonicalMetrics.outstanding_receivables?.value)}</div></div><div className="rounded-lg bg-red-50 p-4"><div className="text-xs font-semibold text-red-700">Current Held</div><div className="mt-2 text-xl font-black text-red-800">{money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value)}</div></div><p className="sm:col-span-3 text-sm text-slate-500">More reporting periods are needed for a trend chart.</p></div>}
+              <button type="button" onClick={() => setActiveBusinessView("reports-trends")} className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-blue-700">View trend analysis <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
             </section>
-          </DashboardSection>
+
+            <section data-testid="dashboard-payment-pipeline" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-slate-950">Payment Pipeline</h2><p className="mt-1 text-sm text-slate-500">Settled, waiting, and held funds.</p><div className="mt-4 divide-y divide-slate-100">
+              {[
+                ["Collected", financialSummary.gross_revenue_total || snapshot.total_revenue, financialSummary.paid_events_count, "bg-emerald-500"],
+                ["Waiting Approval", financialSummary.pending_release_total || pendingReleaseTotal, financialSummary.pending_release_count, "bg-amber-400"],
+                ["Held", financialSummary.on_hold_total || canonicalMetrics.held_funds?.value, financialSummary.on_hold_count, "bg-red-500"],
+              ].map(([label, value, count, color]) => <div key={label} className="flex items-center gap-3 py-4 first:pt-0"><span className={`h-3 w-3 rounded-full ${color}`} /><div className="flex-1 text-sm font-bold text-slate-900">{label}</div><div className="text-right"><div className="font-bold tabular-nums text-slate-950">{money(value)}</div><div className="text-xs text-slate-500">{int(count)} item{Number(count) === 1 ? "" : "s"}</div></div></div>)}
+            </div></section>
+          </div>
+
+          <section data-testid="dashboard-accounts-receivable" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-bold text-slate-950">Outstanding Invoices</h2><p className="mt-1 text-sm text-slate-500">Aging buckets are not available in the current financial data.</p></div><div className="text-left sm:text-right"><div className="text-2xl font-black text-slate-950">{money(canonicalMetrics.outstanding_receivables?.value)}</div><div className="text-xs text-slate-500">Sent invoices and submitted draws</div></div></div></section>
+
+          <div className="grid gap-3 xl:grid-cols-2">
+            <section data-testid="dashboard-recent-financial-activity" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-slate-950">Recent Financial Activity</h2>{recentFinancialEvents.length ? <div className="mt-4 overflow-x-auto"><table className="min-w-[620px] w-full text-left text-sm"><thead className="border-b border-slate-200 text-xs text-slate-500"><tr><th className="py-2 pr-3">Project</th><th className="py-2 pr-3">Type</th><th className="py-2 pr-3">Amount</th><th className="py-2 pr-3">Status</th><th className="py-2">Date</th></tr></thead><tbody className="divide-y divide-slate-100">{recentFinancialEvents.slice(0, 5).map((event) => <tr key={event.id}><td className="py-3 pr-3 font-semibold text-slate-900">{event.agreement_title}</td><td className="py-3 pr-3 text-slate-600">{event.record_type}</td><td className="py-3 pr-3 font-semibold text-slate-900">{money(event.gross_amount)}</td><td className="py-3 pr-3 capitalize text-slate-600">{event.status}</td><td className="py-3 text-slate-500">{formatDateTime(event.activity_at)}</td></tr>)}</tbody></table></div> : <div className="mt-4"><Empty text="No completed payments exist yet. Financial activity will appear as projects are completed." /></div>}<a href="/app/payments" className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-blue-700">View all transactions <ArrowRight aria-hidden="true" className="h-4 w-4" /></a></section>
+
+            <section data-testid="dashboard-financial-insights-section" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-slate-950">Financial Insights</h2><p className="mt-1 text-sm text-slate-500">Current financial observations.</p><div className="mt-4 divide-y divide-slate-100">{(financialInsights.length ? financialInsights : [
+              { title: "Payments recorded", explanation: `${int(financialSummary.paid_events_count)} settled payment event${Number(financialSummary.paid_events_count) === 1 ? "" : "s"} in this period.`, severity: "low" },
+              { title: "Funds waiting", explanation: `${money(financialSummary.pending_release_total)} is waiting for release.`, severity: "medium" },
+              { title: "Platform fees", explanation: `${money(financialSummary.platform_fees_total || snapshot.platform_fees_paid)} in platform fees was recorded.`, severity: "low" },
+            ]).slice(0, 3).map((insight, index) => <div key={`${insight.title}-${index}`} data-testid={`dashboard-financial-insight-${index}`} className="flex items-center gap-3 py-4 first:pt-0"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${insight.severity === "high" ? "bg-red-50 text-red-600" : insight.severity === "medium" ? "bg-amber-50 text-amber-600" : "bg-emerald-50 text-emerald-600"}`}><CircleDollarSign aria-hidden="true" className="h-4 w-4" /></span><div className="min-w-0 flex-1"><div className="text-sm font-bold text-slate-900">{insight.title}</div><div className="mt-1 text-xs leading-5 text-slate-500">{insight.explanation}</div></div><ChevronRight aria-hidden="true" className="h-4 w-4 text-slate-400" /></div>)}</div></section>
+          </div>
+
+          <section data-testid="dashboard-financial-reports-handoff" className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileBarChart2 aria-hidden="true" className="h-5 w-5" /></span><div><h2 className="font-bold text-slate-950">Explore deeper insights</h2><p className="mt-0.5 text-sm text-slate-500">Detailed reports, cash flow, fees, and exports.</p></div></div><button type="button" onClick={() => setActiveBusinessView("reports-trends")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-blue-500 px-4 text-sm font-bold text-blue-700 hover:bg-blue-50">Go to Reports & Trends <ArrowRight aria-hidden="true" className="h-4 w-4" /></button></div></section>
         </div>
       ) : null}
 

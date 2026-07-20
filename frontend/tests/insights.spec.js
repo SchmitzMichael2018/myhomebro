@@ -392,9 +392,12 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByTestId("insights-morning-brief")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-financial").click();
-  await expect(page.getByTestId("dashboard-view-financial")).toContainText("Financial Performance");
-  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Money In");
-  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Outstanding");
+  await expect(page.getByTestId("dashboard-view-financial")).toContainText("Financial Snapshot");
+  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Revenue Collected");
+  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Outstanding Invoices");
+  await expect(page.getByTestId("dashboard-payment-pipeline")).toBeVisible();
+  await expect(page.getByTestId("dashboard-recent-financial-activity")).toBeVisible();
+  await expect(page.getByTestId("dashboard-financial-insights-section")).toBeVisible();
   await expect(page.getByTestId("insights-business-health")).toHaveCount(0);
   await expect(page.getByTestId("dashboard-view-contractor-insights")).toHaveCount(0);
 
@@ -572,4 +575,29 @@ test("capture Executive reference implementation", async ({ page }) => {
   await expect(page.getByTestId("insights-executive-workspace")).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: path.join(screenshotDir, "insights-executive-reference-mobile.png"), fullPage: false });
+});
+
+test("capture Financial reference implementation", async ({ page }) => {
+  await installInsightsRoutes(page);
+  const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-financial").click();
+  await expect(page.getByTestId("dashboard-view-selector-financial")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Financial Snapshot");
+  await expect(page.getByTestId("dashboard-financial-hero")).toBeVisible();
+  await expect(page.getByTestId("dashboard-payment-pipeline")).toBeVisible();
+  await expect(page.getByTestId("dashboard-financial-current-summary")).toContainText("More reporting periods");
+  await expect(page.getByTestId("dashboard-recent-financial-activity")).toContainText("No completed payments exist yet");
+  await expect(page.getByTestId("dashboard-financial-insights-section")).toBeVisible();
+  await expect(page.getByTestId("dashboard-financial-reports-handoff")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-financial-reference-implementation.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("dashboard-view-selector-financial").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-financial-reference-mobile.png"), fullPage: true });
 });
