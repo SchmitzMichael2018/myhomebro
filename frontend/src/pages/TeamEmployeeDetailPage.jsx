@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
-import { teamHubTabs } from "../components/dashboard/hubTabsConfig.js";
+import { teamOrganizationTabs } from "../components/dashboard/hubTabsConfig.js";
 
 function roleLabel(value) {
   return String(value || "")
@@ -42,6 +42,19 @@ function formatMoney(value) {
   const num = Number(value);
   if (!Number.isFinite(num)) return "-";
   return num.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
+function formatDateTime(value) {
+  if (!value) return "Never";
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
+function setupStatusLabel(employee) {
+  return employee?.setup_status_label || (employee?.last_login ? "Access Active" : "Setup Link Not Sent");
 }
 
 function CompensationInput({ label, name, value, onChange, testId }) {
@@ -166,6 +179,51 @@ export default function TeamEmployeeDetailPage() {
     }
   };
 
+  const toggleAccess = async () => {
+    if (!employee) return;
+    const nextEnabled = !employee.is_active;
+    const confirmed = window.confirm(
+      `${nextEnabled ? "Enable" : "Disable"} application access for ${employee.display_name || "this employee"}?`
+    );
+    if (!confirmed) return;
+    setSaving(true);
+    try {
+      const { data } = await api.patch(`/projects/subaccounts/${subaccountId}/`, { is_active: nextEnabled });
+      setEmployee(data || null);
+      setCapabilities(Array.isArray(data?.capabilities) ? data.capabilities : capabilities);
+      setCompensation(compensationFromEmployee(data));
+      toast.success(nextEnabled ? "Application access enabled." : "Application access disabled.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || "Could not update application access.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sendSetupLink = async () => {
+    if (!employee) return;
+    setSaving(true);
+    try {
+      const { data } = await api.post(`/projects/subaccounts/${subaccountId}/send-setup-link/`);
+      setEmployee((current) => ({
+        ...current,
+        setup_status: data?.setup_status || current?.setup_status,
+        setup_status_label: data?.setup_status_label || current?.setup_status_label,
+        setup_sent_at: data?.setup_sent_at || current?.setup_sent_at,
+        setup_completed_at: null,
+        application_access_enabled: false,
+        has_usable_password: false,
+      }));
+      toast.success("Account setup link sent.");
+    } catch (err) {
+      console.error(err);
+      toast.error(err?.response?.data?.detail || err?.response?.data?.email || "Could not send setup link.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const addCapability = () => {
     if (!newSkillId) return;
     const skill = (catalog.skills || []).find((item) => String(item.id) === String(newSkillId));
@@ -202,7 +260,7 @@ export default function TeamEmployeeDetailPage() {
   return (
     <ContractorPageSurface variant="operational" contentClassName="mx-auto max-w-6xl">
       <div className="space-y-6" data-testid="team-employee-detail-page">
-        <HubTabs tabs={teamHubTabs} />
+        <HubTabs tabs={teamOrganizationTabs} />
 
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -417,13 +475,50 @@ export default function TeamEmployeeDetailPage() {
                   <h2 className="text-base font-bold text-slate-950">Account Access</h2>
                   <div className="mt-3 grid gap-2 text-sm text-slate-600">
                     <div className="flex justify-between gap-3">
-                      <span>Status</span>
-                      <span className="font-bold text-slate-950">{employee?.is_active ? "Active" : "Inactive"}</span>
+                      <span>Application access</span>
+                      <span className="font-bold text-slate-950">{setupStatusLabel(employee)}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span>Login email</span>
+                      <span className="font-bold text-slate-950">{employee?.email || "No email"}</span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <span>Setup email sent</span>
+                      <span className="font-bold text-slate-950">{formatDateTime(employee?.setup_sent_at)}</span>
                     </div>
                     <div className="flex justify-between gap-3">
                       <span>Last login</span>
                       <span className="font-bold text-slate-950">{employee?.last_login ? new Date(employee.last_login).toLocaleDateString() : "Never"}</span>
                     </div>
+                    <div className="flex justify-between gap-3">
+                      <span>Permission role</span>
+                      <span className="font-bold text-slate-950">{employee?.role_label || roleLabel(employee?.role)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">
+                    Existing passwords cannot be viewed. Setup links let team members choose their own password.
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {employee?.setup_status !== "access_active" && employee?.setup_status !== "access_disabled" ? (
+                      <button
+                        type="button"
+                        onClick={sendSetupLink}
+                        disabled={saving}
+                        className="rounded-lg bg-blue-700 px-3 py-2 text-sm font-bold text-white hover:bg-blue-600 disabled:opacity-60"
+                        data-testid="team-employee-send-setup-link"
+                      >
+                        {employee?.setup_status === "setup_pending" ? "Resend Setup Link" : "Send Setup Link"}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={toggleAccess}
+                      disabled={saving}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      data-testid="team-employee-toggle-access"
+                    >
+                      {employee?.is_active ? "Disable Access" : "Enable Access"}
+                    </button>
                   </div>
                 </div>
               </aside>

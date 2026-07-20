@@ -35,6 +35,12 @@ const subaccountsPayload = {
       overdue_milestone_count: 1,
       last_activity_at: "2026-04-19T10:00:00Z",
       last_login: "2026-04-18T18:30:00Z",
+      application_access_enabled: true,
+      has_usable_password: true,
+      setup_status: "access_active",
+      setup_status_label: "Access Active",
+      setup_sent_at: "2026-04-17T12:00:00Z",
+      setup_completed_at: "2026-04-17T12:30:00Z",
       cost_basis: "hourly",
       hourly_cost: "38.00",
       annual_salary: null,
@@ -62,6 +68,12 @@ const subaccountsPayload = {
       overdue_milestone_count: 0,
       last_activity_at: "2026-04-20T14:00:00Z",
       last_login: "2026-04-20T13:00:00Z",
+      application_access_enabled: true,
+      has_usable_password: true,
+      setup_status: "access_active",
+      setup_status_label: "Access Active",
+      setup_sent_at: "2026-04-19T12:00:00Z",
+      setup_completed_at: "2026-04-19T12:30:00Z",
       capabilities: [
         { skill_id: 20, skill_name: "Plumbing", skill_level: "working", skill_level_label: "Working" },
       ],
@@ -79,6 +91,12 @@ const subaccountsPayload = {
       overdue_milestone_count: 0,
       last_activity_at: "",
       last_login: "",
+      application_access_enabled: false,
+      has_usable_password: false,
+      setup_status: "setup_link_not_sent",
+      setup_status_label: "Setup Link Not Sent",
+      setup_sent_at: null,
+      setup_completed_at: null,
       capabilities: [],
     },
   ],
@@ -413,6 +431,31 @@ async function installTeamRoutes(page) {
       });
       return;
     }
+    const setupMatch = url.pathname.match(/\/api\/projects\/subaccounts\/(\d+)\/send-setup-link\/$/);
+    if (setupMatch) {
+      const id = Number(setupMatch[1]);
+      const row = subaccountRows.find((item) => Number(item.id) === id);
+      if (row) {
+        row.setup_status = "setup_pending";
+        row.setup_status_label = "Setup Pending";
+        row.setup_sent_at = "2026-04-21T16:00:00Z";
+        row.setup_completed_at = null;
+        row.application_access_enabled = false;
+        row.has_usable_password = false;
+      }
+      await route.fulfill({
+        status: row ? 200 : 404,
+        contentType: "application/json",
+        body: JSON.stringify(row ? {
+          detail: "Account setup link sent.",
+          email: row.email,
+          setup_status: row.setup_status,
+          setup_status_label: row.setup_status_label,
+          setup_sent_at: row.setup_sent_at,
+        } : { detail: "Not found." }),
+      });
+      return;
+    }
     const capabilityMatch = url.pathname.match(/\/api\/projects\/subaccounts\/(\d+)\/capabilities\/$/);
     if (capabilityMatch) {
       const id = Number(capabilityMatch[1]);
@@ -461,6 +504,28 @@ async function installTeamRoutes(page) {
         contentType: "application/json",
         body: JSON.stringify(row || { detail: "Not found." }),
       });
+      return;
+    }
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON();
+      const row = {
+        id: Math.max(...subaccountRows.map((item) => item.id)) + 1,
+        display_name: payload.display_name,
+        email: payload.email,
+        role: payload.role,
+        role_label: "Read-only",
+        is_active: true,
+        capabilities: [],
+        last_login: "",
+        setup_status: payload.send_setup_link ? "setup_pending" : "setup_link_not_sent",
+        setup_status_label: payload.send_setup_link ? "Setup Pending" : "Setup Link Not Sent",
+        setup_sent_at: payload.send_setup_link ? "2026-04-21T16:00:00Z" : null,
+        setup_completed_at: null,
+        application_access_enabled: false,
+        has_usable_password: false,
+      };
+      subaccountRows.unshift(row);
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(row) });
       return;
     }
     await route.fulfill({
@@ -624,8 +689,10 @@ test("team overview and sidebar show attention counts", async ({ page }) => {
   await expect(page.getByTestId("team-organization-growth")).toContainText("Next Steps");
   await expect(page.getByTestId("team-organization-growth")).toContainText("1 member needs a capability profile");
   await expect(page.getByTestId("team-overview-manage-members")).toBeVisible();
+  await expect(page.getByTestId("team-overview-manage-members")).toContainText("Manage Access & Profiles");
   await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
   await expect(page.getByTestId("team-overview-invite-subcontractor")).toBeVisible();
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Estimate Availability");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Assign Work");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Open Schedule");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Staffing");
@@ -652,15 +719,25 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.getByTestId("team-add-member-action")).toContainText("Add Team Member");
   await expect(page.getByTestId("team-admin-tab-members")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("team-admin-summary")).toContainText("Employees");
-  await expect(page.getByTestId("team-admin-summary")).toContainText("Pending Access");
+  await expect(page.getByTestId("team-admin-summary")).toContainText("Pending Setup");
   await expect(page.getByTestId("team-admin-summary")).toContainText("Incomplete Profiles");
   await expect(page.getByTestId("team-admin-summary")).toContainText("Inactive Members");
-  await expect(page.getByTestId("team-admin-assistant")).toContainText("Team Assistant");
+  await expect(page.getByTestId("team-admin-assistant")).toHaveCount(0);
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Project Assistant");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Team Assistant");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Human Approval Required");
+  await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Estimate Availability");
   await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Workload");
   await expect(page.getByTestId("team-admin-workspace")).not.toContainText("active work item");
   await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Current context");
   await expect(page.getByTestId("team-admin-workspace")).not.toContainText("staffing recommendations");
   await expect(page.getByTestId("team-admin-workspace")).not.toContainText("Recommended Crew");
+
+  await page.getByTestId("team-add-member-action").click();
+  await expect(page.getByTestId("team-create-member-form")).toContainText("Send account setup link after creating this member");
+  await expect(page.getByTestId("team-create-member-form")).not.toContainText("Temporary password");
+  await expect(page.getByRole("button", { name: "Create & Send Setup Link" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel" }).click();
 
   await expect(page.getByTestId("team-member-row-1")).toContainText("Taylor Crew");
   await expect(page.getByTestId("team-member-row-1")).toContainText("Employee");
@@ -677,6 +754,10 @@ test("team members page is a focused administration workspace with progressive d
   await page.getByTestId("team-member-manage-1").click();
   await expect(page.getByTestId("team-member-detail-panel")).toContainText("Overview");
   await expect(page.getByTestId("team-member-detail-panel")).toContainText("Account Access");
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Access Active");
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Setup email sent:");
+  await expect(page.getByTestId("team-member-detail-panel")).not.toContainText("Reset Password Unavailable");
+  await expect(page.getByTestId("team-member-detail-panel")).not.toContainText("Temporary password:");
   await expect(page.getByTestId("team-member-detail-permissions")).toContainText("Assigned role");
   await expect(page.getByTestId("team-member-detail-capabilities")).toContainText("Painting");
   await expect(page.getByTestId("team-member-role-select")).toBeVisible();
@@ -691,6 +772,11 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.getByText("No team members match these filters")).toBeVisible();
   await page.getByTestId("team-clear-filters").click();
   await expect(page.getByTestId("team-member-row-2")).toBeVisible();
+
+  await page.getByTestId("team-member-manage-3").click();
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Setup Link Not Sent");
+  await page.getByTestId("team-send-setup-link").click();
+  await expect(page.getByTestId("team-member-detail-panel")).toContainText("Setup Pending");
 
   await page.getByTestId("team-admin-tab-roles").click();
   await expect(page.getByTestId("team-roles-workspace")).toContainText("Roles");
@@ -737,6 +823,11 @@ test("team members page is a focused administration workspace with progressive d
   await expect(page.getByTestId("team-employee-capability-list")).not.toContainText("Tile");
   await expect(page.getByTestId("team-employee-profile-summary")).toContainText("Profile Summary");
   await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Account Access");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Application access");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Login email");
+  await expect(page.getByTestId("team-employee-account-access-summary")).toContainText("Access Active");
+  await expect(page.getByTestId("team-employee-account-access-summary")).not.toContainText("Reset Password Unavailable");
+  await expect(page.getByTestId("team-employee-toggle-access")).toContainText("Disable Access");
   await expect(page.getByTestId("team-employee-detail-page")).not.toContainText("Schedule Summary");
   await expect(page.getByTestId("team-employee-detail-page")).not.toContainText("Assigned Work");
 

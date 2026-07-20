@@ -13,6 +13,7 @@ import SignUpModal from "./components/SignUpModal.jsx";
 
 import ForgotPassword from "./components/ForgotPassword";
 import ResetPassword from "./components/ResetPassword";
+import TeamAccountSetup from "./components/TeamAccountSetup";
 
 import AgreementReview from "./pages/AgreementReview.jsx";
 import ProjectDashboardPage from "./pages/ProjectDashboardPage.jsx";
@@ -64,6 +65,7 @@ export default function App() {
           {/* 🔐 Public password reset */}
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/reset-password/:uid/:token" element={<ResetPassword />} />
+          <Route path="/team-account-setup/:uid/:token" element={<TeamAccountSetup />} />
 
           {/* 🔓 Public agreement signing / funding */}
           <Route path="/public-sign/:token" element={<PublicSign />} />

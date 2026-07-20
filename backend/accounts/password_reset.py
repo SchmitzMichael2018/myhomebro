@@ -6,10 +6,14 @@ from datetime import datetime
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
+from django.utils import timezone
+from django.utils.encoding import force_str
 from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_decode
 from django.utils.http import urlsafe_base64_encode
 
 from rest_framework.views import APIView
@@ -20,6 +24,12 @@ from rest_framework import status
 from .serializers import (
     PasswordResetRequestSerializer,
     PasswordResetConfirmSerializer,
+)
+from projects.models import ContractorSubAccount
+from projects.services.team_account_setup import (
+    team_account_setup_expires_at,
+    team_account_setup_status,
+    team_account_setup_status_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -150,5 +160,78 @@ class PasswordResetConfirmView(APIView):
 
         return Response(
             {"detail": "Password has been reset successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+
+def _decode_setup_user(uidb64: str):
+    user_id = force_str(urlsafe_base64_decode(uidb64))
+    return User.objects.get(pk=user_id)
+
+
+class TeamAccountSetupValidateView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, uid, token):
+        try:
+            user = _decode_setup_user(uid)
+            subaccount = ContractorSubAccount.objects.select_related("parent_contractor", "user").get(user=user)
+        except Exception:
+            return Response({"detail": "This setup link is invalid or expired."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({"detail": "This setup link is invalid or expired."}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "detail": "Setup link is valid.",
+                "email": user.email,
+                "display_name": subaccount.display_name,
+                "contractor_business_name": getattr(subaccount.parent_contractor, "business_name", "") or "",
+                "setup_status": team_account_setup_status(subaccount),
+                "setup_status_label": team_account_setup_status_label(subaccount),
+                "setup_expires_at": team_account_setup_expires_at(subaccount),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class TeamAccountSetupConfirmView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        uid = request.data.get("uid")
+        token = request.data.get("token")
+        new_password = request.data.get("new_password")
+        if not uid or not token or not new_password:
+            return Response(
+                {"detail": "Setup link and password are required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            user = _decode_setup_user(uid)
+            subaccount = ContractorSubAccount.objects.select_related("parent_contractor", "user").get(user=user)
+        except Exception:
+            return Response({"detail": "This setup link is invalid or expired."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not default_token_generator.check_token(user, token):
+            return Response({"detail": "This setup link is invalid or expired."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            validate_password(new_password, user=user)
+        except Exception as exc:
+            return Response({"new_password": list(getattr(exc, "messages", [str(exc)]))}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.is_active = True
+        user.save(update_fields=["password", "is_active"])
+
+        subaccount.is_active = True
+        subaccount.setup_completed_at = timezone.now()
+        subaccount.save(update_fields=["is_active", "setup_completed_at", "updated_at"])
+
+        return Response(
+            {"detail": "Team account setup complete. You can now sign in."},
             status=status.HTTP_200_OK,
         )

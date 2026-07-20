@@ -342,10 +342,10 @@ export default function TeamOverviewPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <div className={sectionTitleClass}>Team Directory</div>
-              <div className={sectionHelperClass}>Employees and subcontractors in one organization view. Open Team Members for profile and access changes.</div>
+              <div className={sectionHelperClass}>Employees and subcontractors in one organization view. Open administration for access, profile, and capability changes.</div>
             </div>
             <button type="button" onClick={() => navigate("/app/team/members")} className={operationalButton} data-testid="team-overview-manage-members">
-              Manage Team Members
+              Manage Access & Profiles
             </button>
           </div>
 

@@ -6,6 +6,8 @@ from .email_verification_views import EmailVerificationView
 from .password_reset import (
     PasswordResetRequestView,
     PasswordResetConfirmView,
+    TeamAccountSetupConfirmView,
+    TeamAccountSetupValidateView,
 )
 from .account_settings_views import (
     ChangeEmailView,
@@ -46,6 +48,16 @@ urlpatterns = [
         "auth/password-reset/confirm/",
         PasswordResetConfirmView.as_view(),
         name="password_reset_confirm",
+    ),
+    path(
+        "auth/team-account-setup/<uid>/<token>/",
+        TeamAccountSetupValidateView.as_view(),
+        name="team_account_setup_validate",
+    ),
+    path(
+        "auth/team-account-setup/confirm/",
+        TeamAccountSetupConfirmView.as_view(),
+        name="team_account_setup_confirm",
     ),
 
     # Auth (JWT login/refresh/etc.) -------------------------------------------

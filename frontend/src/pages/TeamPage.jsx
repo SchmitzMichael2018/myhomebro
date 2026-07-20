@@ -10,11 +10,6 @@ import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
 import { teamOrganizationTabs } from "../components/dashboard/hubTabsConfig.js";
-import {
-  ProjectAssistantApprovalNotice,
-  ProjectAssistantPanel,
-  ProjectAssistantSection,
-} from "../components/ProjectAssistantExperience.jsx";
 
 const ROLE_OPTIONS = [
   { value: "employee_readonly", label: "Read-only", summary: "Can view permitted account information with limited update access." },
@@ -80,6 +75,15 @@ function capabilitySummary(row, limit = 2) {
   return hidden > 0 ? `${visible.join(", ")} +${hidden} more` : visible.join(", ");
 }
 
+function setupStatusLabel(member) {
+  return member?.setup_status_label || (member?.last_login ? "Access Active" : "Setup Link Not Sent");
+}
+
+function isAccessActive(member) {
+  if (member?.setup_status) return member.setup_status === "access_active";
+  return Boolean(member?.last_login);
+}
+
 function statusBadgeClass(active) {
   return active
     ? "border-emerald-200/35 bg-emerald-400/12 text-emerald-100"
@@ -112,7 +116,7 @@ function SummaryCard({ label, value, helper }) {
 }
 
 function MemberRow({ member, selected, onSelect }) {
-  const accountStatus = member.last_login ? "Login active" : "Access not used";
+  const accountStatus = setupStatusLabel(member);
 
   return (
     <article
@@ -158,7 +162,7 @@ function MemberRow({ member, selected, onSelect }) {
   );
 }
 
-function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChangeRole, deletingId }) {
+function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChangeRole, onSendSetupLink, deletingId }) {
   const navigate = useNavigate();
   if (!member) {
     return (
@@ -230,19 +234,33 @@ function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChange
         <section>
           <h3 className="text-sm font-black text-white">Account Access</h3>
           <div className="mt-2 rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm text-sky-100/70">
-            <div className="font-bold text-sky-50">{member.last_login ? "Application access used" : "Application access created, not used yet"}</div>
-            <div className="mt-1">
-              Access is created directly when an employee is added with a temporary password. Password reset and welcome-email resend actions are not available here.
-            </div>
+            <div className="font-bold text-sky-50">{setupStatusLabel(member)}</div>
+            <div className="mt-1">Login email: {member.email || "No email listed"}</div>
+            <div className="mt-1">Setup email sent: {formatDateTime(member.setup_sent_at)}</div>
             <div className="mt-1">Last login: {formatDate(member.last_login)}</div>
+            <div className="mt-2 rounded-lg border border-amber-300/25 bg-amber-400/10 px-3 py-2 text-xs font-semibold text-amber-100">
+              Existing passwords cannot be viewed. Team members choose their own password from the secure setup link.
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => onToggleActive(member)}
-            className={`${operationalButton} mt-3 rounded-lg px-3 py-2 text-sm font-bold`}
-          >
-            {member.is_active ? "Disable Access" : "Activate Access"}
-          </button>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {member.setup_status !== "access_active" && member.setup_status !== "access_disabled" ? (
+              <button
+                type="button"
+                onClick={() => onSendSetupLink(member)}
+                className={`${operationalPrimaryButton} rounded-lg px-3 py-2 text-sm font-black`}
+                data-testid="team-send-setup-link"
+              >
+                {member.setup_status === "setup_pending" ? "Resend Setup Link" : "Send Setup Link"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => onToggleActive(member)}
+              className={`${operationalButton} rounded-lg px-3 py-2 text-sm font-bold`}
+            >
+              {member.is_active ? "Disable Access" : "Enable Access"}
+            </button>
+          </div>
         </section>
 
         <section data-testid="team-member-detail-permissions">
@@ -325,9 +343,10 @@ export default function TeamPage() {
     display_name: "",
     email: "",
     role: "employee_readonly",
-    password: "",
+    send_setup_link: true,
     notes: "",
   });
+  const [createdAccess, setCreatedAccess] = useState(null);
   const [creating, setCreating] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
 
@@ -364,14 +383,14 @@ export default function TeamPage() {
   }, [whoLoading, whoError, isContractor]);
 
   function handleChange(event) {
-    const { name, value } = event.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    const { name, type, checked, value } = event.target;
+    setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   }
 
   async function handleCreate(event) {
     event.preventDefault();
-    if (!form.display_name || !form.email || !form.password) {
-      alert("Display name, email, and password are required.");
+    if (!form.display_name || !form.email) {
+      alert("Display name and email are required.");
       return;
     }
 
@@ -381,7 +400,7 @@ export default function TeamPage() {
         display_name: form.display_name.trim(),
         email: form.email.trim(),
         role: form.role,
-        password: form.password,
+        send_setup_link: Boolean(form.send_setup_link),
         is_active: true,
         notes: form.notes || "",
       };
@@ -389,9 +408,14 @@ export default function TeamPage() {
       const res = await api.post("/projects/subaccounts/", payload);
       setSubaccounts((prev) => [res.data, ...prev]);
       setSelectedMemberId(res.data?.id || null);
-      setForm({ display_name: "", email: "", role: "employee_readonly", password: "", notes: "" });
+      setCreatedAccess({
+        email: payload.email,
+        setupSent: Boolean(res.data?.setup_sent_at),
+        setupStatus: res.data?.setup_status_label || "Setup Link Not Sent",
+      });
+      setForm({ display_name: "", email: "", role: "employee_readonly", send_setup_link: true, notes: "" });
       setShowCreate(false);
-      alert("Employee created. Share the login email and temporary password.");
+      alert(payload.send_setup_link ? "Team member created and setup link sent." : "Team member created. Send a setup link when they are ready for access.");
     } catch (err) {
       console.error("Error creating subaccount", err?.response || err);
       const msg =
@@ -405,7 +429,41 @@ export default function TeamPage() {
     }
   }
 
+  async function handleSendSetupLink(sub) {
+    try {
+      const res = await api.post(`/projects/subaccounts/${sub.id}/send-setup-link/`);
+      const next = {
+        ...sub,
+        setup_status: res.data?.setup_status || sub.setup_status,
+        setup_status_label: res.data?.setup_status_label || sub.setup_status_label,
+        setup_sent_at: res.data?.setup_sent_at || sub.setup_sent_at,
+        setup_completed_at: null,
+        application_access_enabled: false,
+        has_usable_password: false,
+      };
+      setSubaccounts((prev) => prev.map((row) => (row.id === sub.id ? next : row)));
+      setCreatedAccess({
+        email: res.data?.email || sub.email,
+        setupSent: true,
+        setupStatus: res.data?.setup_status_label || "Setup Pending",
+      });
+      alert("Account setup link sent.");
+    } catch (err) {
+      console.error("Error sending setup link", err?.response || err);
+      const msg =
+        err?.response?.data?.detail ||
+        err?.response?.data?.email ||
+        "Unable to send setup link.";
+      alert(msg);
+    }
+  }
+
   async function handleToggleActive(sub) {
+    const nextEnabled = !sub.is_active;
+    const confirmed = window.confirm(
+      `${nextEnabled ? "Enable" : "Disable"} application access for ${sub.display_name || "this member"}?`
+    );
+    if (!confirmed) return;
     try {
       const res = await api.patch(`/projects/subaccounts/${sub.id}/`, { is_active: !sub.is_active });
       setSubaccounts((prev) => prev.map((row) => (row.id === sub.id ? res.data : row)));
@@ -449,7 +507,7 @@ export default function TeamPage() {
   const teamSummary = useMemo(() => {
     const membersWithCapabilities = subaccounts.filter((row) => Array.isArray(row.capabilities) && row.capabilities.length > 0).length;
     const inactiveMembers = subaccounts.filter((row) => !row.is_active).length;
-    const noAccessUse = subaccounts.filter((row) => !row.last_login).length;
+    const noAccessUse = subaccounts.filter((row) => !isAccessActive(row)).length;
     return {
       employees: subaccounts.length,
       subcontractors: Number(attentionCounts.active_subcontractor_count || 0),
@@ -499,8 +557,8 @@ export default function TeamPage() {
       if (filters.role && row.role !== filters.role) return false;
       if (filters.status === "active" && !row.is_active) return false;
       if (filters.status === "inactive" && row.is_active) return false;
-      if (filters.account === "used" && !row.last_login) return false;
-      if (filters.account === "unused" && row.last_login) return false;
+      if (filters.account === "used" && !isAccessActive(row)) return false;
+      if (filters.account === "unused" && isAccessActive(row)) return false;
       if (filters.capability || filters.skillLevel) {
         return capabilities.some((capability) => {
           const skillMatches = !filters.capability || String(capability.skill_id) === String(filters.capability);
@@ -532,10 +590,6 @@ export default function TeamPage() {
       return { ...option, members };
     });
   }, [capabilityOptions, subaccounts]);
-
-  const assistantSummary = teamSummary.incompleteCapabilityProfiles > 0
-    ? `${teamSummary.incompleteCapabilityProfiles} team member${teamSummary.incompleteCapabilityProfiles === 1 ? "" : "s"} need capability profiles before team records are complete.`
-    : "Team administration data looks complete enough for role, access, and capability review.";
 
   if (whoLoading) {
     return <div className="p-6 text-sm text-gray-500">Loading your profile...</div>;
@@ -581,25 +635,11 @@ export default function TeamPage() {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" data-testid="team-admin-summary">
           <SummaryCard label="Employees" value={teamSummary.employees} helper="Application users" />
           <SummaryCard label="Subcontractors" value={teamSummary.subcontractors} helper="Tracked separately" />
-          <SummaryCard label="Pending Access" value={teamSummary.noAccessUse} helper="Login not used" />
+          <SummaryCard label="Pending Setup" value={teamSummary.noAccessUse} helper="Setup incomplete" />
           <SummaryCard label="Pending Invites" value={teamSummary.pendingInvitations} helper="Subcontractor invites" />
           <SummaryCard label="Incomplete Profiles" value={teamSummary.incompleteCapabilityProfiles} helper="Capabilities missing" />
           <SummaryCard label="Inactive Members" value={teamSummary.inactiveMembers} helper="Access disabled" />
         </section>
-
-        <ProjectAssistantPanel
-          subtitle="Team Assistant"
-          summary={assistantSummary}
-          className={`${operationalPanel} text-white`}
-          testId="team-admin-assistant"
-        >
-          <ProjectAssistantSection title="Administrative focus">
-            Review missing capability profiles, unused employee access, inactive members, pending setup, and built-in role coverage here.
-          </ProjectAssistantSection>
-          <ProjectAssistantApprovalNotice compact>
-            Project Assistant may summarize team data quality, but authorized users must create access, change roles, or update member status.
-          </ProjectAssistantApprovalNotice>
-        </ProjectAssistantPanel>
 
         <section className={`${operationalPanel} rounded-2xl`} data-testid="team-admin-tabs">
           <div className="overflow-x-auto border-b border-white/10 px-3 pt-3">
@@ -627,12 +667,32 @@ export default function TeamPage() {
           <div className="p-4" data-testid="team-admin-panel">
             {activeTab === "members" ? (
               <div className="space-y-4">
+                {createdAccess ? (
+                  <div
+                    className="rounded-2xl border border-emerald-300/30 bg-emerald-400/12 p-4 text-sm text-emerald-50"
+                    data-testid="team-created-access-notice"
+                  >
+                    <div className="font-black">Team member access prepared</div>
+                    <div className="mt-1">Username/email: {createdAccess.email}</div>
+                    <div className="mt-1">Setup status: <span className="font-black">{createdAccess.setupStatus}</span></div>
+                    <div className="mt-2 text-xs font-semibold text-emerald-100/80">
+                      No credential was generated or displayed. The team member chooses their own password from the secure setup link.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setCreatedAccess(null)}
+                      className={`${operationalButton} mt-3 rounded-lg px-3 py-2 text-xs font-bold`}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                ) : null}
                 {showCreate ? (
                   <form onSubmit={handleCreate} className={`${operationalCard} grid gap-3 rounded-2xl p-4 md:grid-cols-2`} data-testid="team-create-member-form">
                     <div className="md:col-span-2">
                       <h2 className="text-base font-black text-white">Add Team Member</h2>
                       <p className="mt-1 text-sm text-sky-100/65">
-                        Creates application access directly with a temporary password. This does not send an employee invitation or welcome email.
+                        Create the member profile, then optionally email a secure setup link so they choose their own password.
                       </p>
                     </div>
                     <input name="display_name" value={form.display_name} onChange={handleChange} placeholder="Display name" className={`${operationalControl} rounded-lg px-3 py-2 text-sm`} />
@@ -640,12 +700,21 @@ export default function TeamPage() {
                     <select name="role" value={form.role} onChange={handleChange} className={`${operationalControl} rounded-lg px-3 py-2 text-sm`}>
                       {ROLE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                     </select>
-                    <input name="password" type="password" value={form.password} onChange={handleChange} placeholder="Temporary password" className={`${operationalControl} rounded-lg px-3 py-2 text-sm`} />
+                    <label className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm font-semibold text-sky-100/75">
+                      <input
+                        type="checkbox"
+                        name="send_setup_link"
+                        checked={Boolean(form.send_setup_link)}
+                        onChange={handleChange}
+                        className="h-4 w-4 rounded border-white/20"
+                      />
+                      Send account setup link after creating this member
+                    </label>
                     <textarea name="notes" value={form.notes} onChange={handleChange} rows={2} placeholder="Optional notes" className={`${operationalControl} rounded-lg px-3 py-2 text-sm md:col-span-2`} />
                     <div className="flex justify-end gap-2 md:col-span-2">
                       <button type="button" onClick={() => setShowCreate(false)} className={`${operationalButton} rounded-lg px-4 py-2 text-sm font-bold`}>Cancel</button>
                       <button disabled={creating} className={`${operationalPrimaryButton} rounded-lg px-4 py-2 text-sm font-black disabled:opacity-50`} type="submit">
-                        {creating ? "Creating..." : "Create Employee Access"}
+                        {creating ? "Creating..." : form.send_setup_link ? "Create & Send Setup Link" : "Create Member Only"}
                       </button>
                     </div>
                   </form>
@@ -690,8 +759,8 @@ export default function TeamPage() {
                     </select>
                     <select value={filters.account} onChange={(event) => setFilters((prev) => ({ ...prev, account: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`}>
                       <option value="">Any account status</option>
-                      <option value="used">Login used</option>
-                      <option value="unused">Access not used</option>
+                      <option value="used">Access active</option>
+                      <option value="unused">Setup incomplete</option>
                     </select>
                     <select value={filters.capability} onChange={(event) => setFilters((prev) => ({ ...prev, capability: event.target.value }))} className={`${operationalControl} rounded-lg px-3 py-2 text-sm font-semibold`} data-testid="team-capability-filter">
                       <option value="">All capabilities</option>
@@ -748,6 +817,7 @@ export default function TeamPage() {
                       onToggleActive={handleToggleActive}
                       onDelete={handleDelete}
                       onChangeRole={handleChangeRole}
+                      onSendSetupLink={handleSendSetupLink}
                       deletingId={deletingId}
                     />
                   </div>

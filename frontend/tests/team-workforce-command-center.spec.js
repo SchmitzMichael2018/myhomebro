@@ -253,6 +253,7 @@ test("team overview shows organization health with assistant guidance", async ({
   await expect(page.getByTestId("team-organization-growth")).toContainText("1 member needs a capability profile");
   await expect(page.getByTestId("team-organization-growth")).toContainText("1 subcontractor invitation still pending");
   await expect(page.getByTestId("team-overview-manage-members")).toBeVisible();
+  await expect(page.getByTestId("team-overview-manage-members")).toContainText("Manage Access & Profiles");
   await expect(page.getByTestId("team-overview-add-member")).toBeVisible();
   await expect(page.getByTestId("team-overview-invite-subcontractor")).toBeVisible();
 
@@ -286,6 +287,7 @@ test("team overview shows organization health with assistant guidance", async ({
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Organization focus");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Safe prepared actions");
   await expect(page.getByTestId("team-organization-overview")).not.toContainText("Human Approval Required");
+  await expect(page.getByTestId("team-organization-overview")).not.toContainText("Estimate Availability");
   await expect(page.getByRole("button", { name: "Add Employee" })).toHaveCount(0);
   await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
 

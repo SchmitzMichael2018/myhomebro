@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.utils.crypto import get_random_string
+from django.utils import timezone
 
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
@@ -21,6 +21,11 @@ from projects.serializers.subaccounts import (
     ContractorSubAccountCreateSerializer,
 )
 from projects.services.milestone_workflow import is_effective_reviewer_user
+from projects.services.team_account_setup import (
+    issue_team_account_setup_link,
+    team_account_setup_status,
+    team_account_setup_status_label,
+)
 from projects.services.team_attention import build_contractor_attention_counts
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 from projects.permissions_subaccounts import IsContractorOrSubAccount
@@ -135,17 +140,21 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
                 {"email": "You cannot use the contractor owner's email as a team member."}
             )
 
-        temp_password = vd.get("password") or vd.get("temporary_password")
-        if not temp_password:
-            temp_password = get_random_string(16)
+        password = vd.get("password") or vd.get("temporary_password")
+        send_setup_link = bool(vd.get("send_setup_link"))
 
         existing_user = User.objects.filter(email__iexact=email).first()
         if existing_user is not None:
             raise ValidationError({"email": "A user with this email already exists."})
 
-        user = User.objects.create_user(email=email, password=temp_password)
+        user = User.objects.create_user(email=email, password=password or None, is_active=bool(password))
 
         subaccount = serializer.save(parent_contractor=contractor, user=user)
+        if password:
+            subaccount.setup_completed_at = timezone.now()
+            subaccount.save(update_fields=["setup_completed_at", "updated_at"])
+        elif send_setup_link:
+            issue_team_account_setup_link(subaccount, enforce_cooldown=False)
 
         out = ContractorSubAccountSerializer(subaccount, context=self.get_serializer_context())
         return Response(out.data, status=status.HTTP_201_CREATED)
@@ -165,6 +174,47 @@ class ContractorSubAccountViewSet(viewsets.ModelViewSet):
             .get()
         )
         return Response(ContractorSubAccountSerializer(refreshed, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="send-setup-link")
+    @transaction.atomic
+    def send_setup_link(self, request, *args, **kwargs):
+        contractor = self._require_contractor_owner()
+        subaccount = self.get_object()
+        if subaccount.parent_contractor_id != contractor.id:
+            raise PermissionDenied("You do not own this team member.")
+
+        email = _normalize_email(getattr(getattr(subaccount, "user", None), "email", None))
+        if not email:
+            raise ValidationError({"email": "This team member needs a login email before a setup link can be sent."})
+        if subaccount.user.has_usable_password() and subaccount.setup_completed_at:
+            raise ValidationError(
+                {"detail": "Account setup is already complete. Use self-service password reset for existing accounts."}
+            )
+
+        result = issue_team_account_setup_link(subaccount, enforce_cooldown=True)
+        subaccount.refresh_from_db()
+        if not result["sent"]:
+            return Response(
+                {
+                    "detail": "A setup link was sent recently. Try again after the cooldown.",
+                    "retry_after_seconds": result["retry_after_seconds"],
+                    "setup_status": team_account_setup_status(subaccount),
+                    "setup_status_label": team_account_setup_status_label(subaccount),
+                    "setup_sent_at": subaccount.setup_sent_at,
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        return Response(
+            {
+                "detail": "Account setup link sent.",
+                "email": email,
+                "setup_status": team_account_setup_status(subaccount),
+                "setup_status_label": team_account_setup_status_label(subaccount),
+                "setup_sent_at": subaccount.setup_sent_at,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     def partial_update(self, request, *args, **kwargs):
         kwargs["partial"] = True

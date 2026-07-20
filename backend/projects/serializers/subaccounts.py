@@ -11,6 +11,11 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from projects.models import ContractorSubAccount
+from projects.services.team_account_setup import (
+    team_account_setup_expires_at,
+    team_account_setup_status,
+    team_account_setup_status_label,
+)
 from projects.services.team_attention import build_subaccount_work_summary
 from projects.serializers.workforce import EmployeeCapabilitySerializer
 
@@ -28,6 +33,11 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
     overdue_milestone_count = serializers.SerializerMethodField()
     capabilities = EmployeeCapabilitySerializer(many=True, read_only=True)
     calculated_effective_hourly_cost = serializers.SerializerMethodField()
+    application_access_enabled = serializers.SerializerMethodField()
+    has_usable_password = serializers.SerializerMethodField()
+    setup_status = serializers.SerializerMethodField()
+    setup_status_label = serializers.SerializerMethodField()
+    setup_expires_at = serializers.SerializerMethodField()
 
     LABOR_COST_FIELDS = {
         "cost_basis",
@@ -59,6 +69,13 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
             "updated_at",
             "last_login",
             "last_activity_at",
+            "application_access_enabled",
+            "has_usable_password",
+            "setup_status",
+            "setup_status_label",
+            "setup_sent_at",
+            "setup_completed_at",
+            "setup_expires_at",
             "assignment_count",
             "active_assignment_count",
             "pending_review_count",
@@ -105,11 +122,30 @@ class ContractorSubAccountSerializer(serializers.ModelSerializer):
             return None
         return f"{value.quantize(Decimal('0.01'))}"
 
+    def get_application_access_enabled(self, obj: ContractorSubAccount) -> bool:
+        user = getattr(obj, "user", None)
+        return bool(obj.is_active and user and user.is_active and user.has_usable_password())
+
+    def get_has_usable_password(self, obj: ContractorSubAccount) -> bool:
+        user = getattr(obj, "user", None)
+        return bool(user and user.has_usable_password())
+
+    def get_setup_status(self, obj: ContractorSubAccount) -> str:
+        return team_account_setup_status(obj)
+
+    def get_setup_status_label(self, obj: ContractorSubAccount) -> str:
+        return team_account_setup_status_label(obj)
+
+    def get_setup_expires_at(self, obj: ContractorSubAccount):
+        return team_account_setup_expires_at(obj)
+
 
 class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
     """
     CREATE (POST):
-      - requires: email + (password OR temporary_password)
+      - requires: email
+      - accepts optional legacy password/temporary_password
+      - accepts optional send_setup_link
       - DOES NOT create the auth User (the View does)
       - View will inject: user + parent_contractor
 
@@ -126,6 +162,7 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
     temporary_password = serializers.CharField(
         write_only=True, min_length=8, required=False, allow_blank=False
     )
+    send_setup_link = serializers.BooleanField(write_only=True, required=False, default=False)
 
     LABOR_COST_FIELDS = [
         "cost_basis",
@@ -147,6 +184,7 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
             "email",
             "password",
             "temporary_password",
+            "send_setup_link",
             "cost_basis",
             "hourly_cost",
             "annual_salary",
@@ -158,7 +196,7 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         """
-        On CREATE: require email + password (or temporary_password)
+        On CREATE: require email. Password fields are legacy-only; setup links are preferred.
         On UPDATE/PATCH: allow partial updates without password/email
         """
         is_create = self.instance is None
@@ -179,11 +217,6 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
 
         pwd = attrs.get("password")
         tmp = attrs.get("temporary_password")
-
-        if not pwd and not tmp:
-            raise serializers.ValidationError(
-                {"password": "Password or temporary_password is required."}
-            )
 
         # Normalize alias: temporary_password -> password
         if not pwd and tmp:
@@ -220,6 +253,7 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
         validated_data.pop("email", None)
         validated_data.pop("password", None)
         validated_data.pop("temporary_password", None)
+        validated_data.pop("send_setup_link", None)
 
         user = validated_data.pop("user")
         parent_contractor = validated_data.pop("parent_contractor")
@@ -236,6 +270,10 @@ class ContractorSubAccountCreateSerializer(serializers.ModelSerializer):
         for field in ["display_name", "role", "is_active", "notes", *self.LABOR_COST_FIELDS]:
             if field in validated_data:
                 setattr(instance, field, validated_data[field])
+
+        if "is_active" in validated_data and getattr(instance, "user", None):
+            instance.user.is_active = bool(validated_data["is_active"] and instance.user.has_usable_password())
+            instance.user.save(update_fields=["is_active"])
 
         # Be explicit and safe about update_fields
         update_fields = ["updated_at"]

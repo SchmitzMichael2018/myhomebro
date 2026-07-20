@@ -1,7 +1,10 @@
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.test import TestCase
+from django.test import override_settings
 from django.utils import timezone
 from datetime import timedelta
+import re
 from rest_framework.test import APIClient
 
 from projects.models import (
@@ -413,3 +416,164 @@ class WorkforceCapabilityApiTests(TestCase):
         self.assertEqual(capacity_state_for_counts(1, 4)[0], "normal")
         self.assertEqual(capacity_state_for_counts(3, 9)[0], "near_capacity")
         self.assertEqual(capacity_state_for_counts(4, 12)[0], "overbooked")
+
+
+@override_settings(
+    EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    DEFAULT_FROM_EMAIL="qa@myhomebro.local",
+    FRONTEND_BASE_URL="https://app.myhomebro.test",
+    TEAM_ACCOUNT_SETUP_COOLDOWN_SECONDS=60,
+)
+class TeamAccountSetupLinkTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.owner_user = User.objects.create_user(email="owner-setup@example.com", password="test-pass-123")
+        self.contractor = Contractor.objects.create(user=self.owner_user, business_name="Setup Crew Co")
+        self.client = APIClient()
+        _use_secure_requests(self.client)
+
+    def _extract_setup_parts(self):
+        body = mail.outbox[-1].body
+        match = re.search(r"https://app\.myhomebro\.test/team-account-setup/([^/]+)/([^/]+)/", body)
+        self.assertIsNotNone(match, body)
+        return match.group(1), match.group(2)
+
+    def test_owner_can_create_employee_and_send_setup_link_without_password(self):
+        self.client.force_authenticate(user=self.owner_user)
+        response = self.client.post(
+            "/api/projects/subaccounts/",
+            {
+                "display_name": "Jordan Setup",
+                "email": "jordan.setup@example.com",
+                "role": ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+                "send_setup_link": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["setup_status"], "setup_pending")
+        self.assertNotIn("token", response.data)
+        self.assertNotIn("password", response.data)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].subject, "Set up your MyHomeBro team account")
+        self.assertIn("Setup Crew Co", mail.outbox[0].body)
+        self.assertNotIn("temporary password", mail.outbox[0].body.lower())
+
+        subaccount = ContractorSubAccount.objects.get(id=response.data["id"])
+        self.assertFalse(subaccount.user.is_active)
+        self.assertFalse(subaccount.user.has_usable_password())
+        self.assertIsNotNone(subaccount.setup_sent_at)
+
+    def test_setup_link_completion_activates_account_and_is_single_use(self):
+        self.client.force_authenticate(user=self.owner_user)
+        self.client.post(
+            "/api/projects/subaccounts/",
+            {
+                "display_name": "Alex Setup",
+                "email": "alex.setup@example.com",
+                "role": ContractorSubAccount.ROLE_EMPLOYEE_READONLY,
+                "send_setup_link": True,
+            },
+            format="json",
+        )
+        uid, token = self._extract_setup_parts()
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post(
+            "/api/accounts/auth/team-account-setup/confirm/",
+            {"uid": uid, "token": token, "new_password": "MyHomeBroSetup!2026"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        subaccount = ContractorSubAccount.objects.select_related("user").get(user__email="alex.setup@example.com")
+        self.assertTrue(subaccount.user.is_active)
+        self.assertTrue(subaccount.user.has_usable_password())
+        self.assertTrue(subaccount.user.check_password("MyHomeBroSetup!2026"))
+        self.assertTrue(subaccount.is_active)
+        self.assertIsNotNone(subaccount.setup_completed_at)
+
+        response = self.client.post(
+            "/api/accounts/auth/team-account-setup/confirm/",
+            {"uid": uid, "token": token, "new_password": "AnotherPass!2026"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_resending_setup_link_invalidates_previous_pending_token(self):
+        self.client.force_authenticate(user=self.owner_user)
+        create_response = self.client.post(
+            "/api/projects/subaccounts/",
+            {
+                "display_name": "Riley Resend",
+                "email": "riley.resend@example.com",
+                "role": ContractorSubAccount.ROLE_EMPLOYEE_READONLY,
+                "send_setup_link": True,
+            },
+            format="json",
+        )
+        first_uid, first_token = self._extract_setup_parts()
+        subaccount = ContractorSubAccount.objects.get(id=create_response.data["id"])
+        subaccount.setup_sent_at = timezone.now() - timedelta(seconds=61)
+        subaccount.save(update_fields=["setup_sent_at", "updated_at"])
+
+        response = self.client.post(f"/api/projects/subaccounts/{subaccount.id}/send-setup-link/")
+        self.assertEqual(response.status_code, 200)
+        second_uid, second_token = self._extract_setup_parts()
+
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            "/api/accounts/auth/team-account-setup/confirm/",
+            {"uid": first_uid, "token": first_token, "new_password": "OldTokenPass!2026"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+
+        response = self.client.post(
+            "/api/accounts/auth/team-account-setup/confirm/",
+            {"uid": second_uid, "token": second_token, "new_password": "NewTokenPass!2026"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def test_setup_link_resend_has_cooldown(self):
+        self.client.force_authenticate(user=self.owner_user)
+        create_response = self.client.post(
+            "/api/projects/subaccounts/",
+            {
+                "display_name": "Casey Cooldown",
+                "email": "casey.cooldown@example.com",
+                "role": ContractorSubAccount.ROLE_EMPLOYEE_READONLY,
+                "send_setup_link": True,
+            },
+            format="json",
+        )
+
+        response = self.client.post(f"/api/projects/subaccounts/{create_response.data['id']}/send-setup-link/")
+
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("retry_after_seconds", response.data)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_employee_cannot_send_setup_link_for_team_member(self):
+        employee_user = get_user_model().objects.create_user(email="employee-owner-test@example.com", password="test-pass-123")
+        ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=employee_user,
+            display_name="Employee Manager",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_SUPERVISOR,
+        )
+        pending_user = get_user_model().objects.create_user(email="pending-target@example.com", password=None, is_active=False)
+        pending_sub = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=pending_user,
+            display_name="Pending Target",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_READONLY,
+        )
+        self.client.force_authenticate(user=employee_user)
+
+        response = self.client.post(f"/api/projects/subaccounts/{pending_sub.id}/send-setup-link/")
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(len(mail.outbox), 0)
