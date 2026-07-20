@@ -308,16 +308,24 @@ test("Insights scorecard renders defaults, goals, customization, and reports han
   await expect(page.getByTestId("dashboard-view-selector-row")).not.toContainText("visible insights");
   await expect(page.getByTestId("dashboard-view-selector-row")).not.toContainText("How is my business doing right now?");
   await expect(page.getByTestId("dashboard-view-selector-scorecard")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("dashboard-view-selector-executive")).toHaveAttribute("aria-selected", "false");
   await expect(page.getByTestId("insights-active-view-heading")).toHaveText("Scorecard");
   await expect(page.getByTestId("insights-active-view-purpose")).toContainText("How is my business doing right now?");
   await expect(page.getByTestId("insights-customize-open")).toHaveAccessibleName("Customize Scorecard");
   await expect(page.getByTestId("insights-scorecard")).toBeVisible();
   await expect(page.getByTestId("insights-business-snapshot")).toContainText("Revenue");
   await expect(page.getByTestId("insights-business-snapshot")).toContainText("$12,800.00");
-  await expect(page.getByTestId("insights-goal-progress")).toContainText("No goals yet");
-  await expect(page.getByTestId("insights-primary-trend")).toContainText("Primary Performance Trend");
+  await expect(page.getByTestId("insights-business-snapshot")).not.toContainText("Goal: Not set");
+  await expect(page.getByTestId("insights-business-snapshot")).not.toContainText("--");
+  await expect(page.getByTestId("insights-goal-progress")).toContainText("Goal tracking starts with your first goal");
+  await expect(page.getByTestId("insights-goal-empty")).toBeVisible();
+  await expect(page.getByTestId("insights-primary-trend")).toContainText("Performance Trend");
+  await expect(page.getByTestId("insights-primary-trend")).toContainText("Your revenue trend is taking shape");
+  await expect(page.getByTestId("insights-trend-education")).toBeVisible();
+  await expect(page.getByTestId("insights-trend-full-chart")).toHaveCount(0);
   await expect(page.getByTestId("insights-needs-attention")).toContainText("Overdue milestones");
   await expect(page.getByTestId("insights-needs-attention")).toContainText("Pending customer approvals");
+  await expect(page.getByTestId("insights-attention-row-overdue_milestones")).toBeVisible();
   await expect(page.getByTestId("insights-reports-handoff")).toContainText("Go to Reports & Trends");
   await expect(page.getByTestId("insights-operations-analyst")).toHaveCount(0);
 
@@ -485,4 +493,41 @@ test("capture redesigned Insights workspaces", async ({ page }) => {
   await expect(page.getByTestId("dashboard-view-selector-reports-trends")).toHaveAttribute("aria-selected", "true");
   await page.getByTestId("dashboard-charts-section").scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(screenshotDir, "insights-reports-bottom.png"), fullPage: false });
+});
+
+test("capture redesigned Scorecard workspace", async ({ page }) => {
+  await installInsightsRoutes(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("dashboard-view-selector-scorecard")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("insights-scorecard")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
+  await page.evaluate(() => {
+    const main = document.querySelector("main");
+    for (const element of [main, main?.parentElement, document.getElementById("root"), document.body, document.documentElement]) {
+      if (!element) continue;
+      element.style.setProperty("height", "auto", "important");
+      element.style.setProperty("max-height", "none", "important");
+      element.style.setProperty("overflow", "visible", "important");
+    }
+    for (const element of document.querySelectorAll("body *")) {
+      const style = window.getComputedStyle(element);
+      if (["auto", "scroll"].includes(style.overflowY) && element.scrollHeight > element.clientHeight) {
+        element.style.setProperty("height", "auto", "important");
+        element.style.setProperty("max-height", "none", "important");
+        element.style.setProperty("overflow-y", "visible", "important");
+      }
+    }
+  });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-scorecard-reference-implementation.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("insights-scorecard")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-scorecard-reference-mobile.png"), fullPage: false });
 });

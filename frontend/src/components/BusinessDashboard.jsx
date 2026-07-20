@@ -11,9 +11,7 @@ import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
 import { useWorkspaceProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import {
-  ArrowDown,
   ArrowRight,
-  ArrowUp,
   BarChart3,
   Bell,
   CalendarDays,
@@ -226,10 +224,10 @@ function ViewSelectorCard({ title, icon: Icon, selected, onClick, testId }) {
       role="tab"
       aria-selected={selected}
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center justify-center gap-2 border-b-2 px-3 py-2.5 text-sm font-semibold transition md:px-4 ${
+      className={`inline-flex min-h-11 min-w-[140px] flex-1 shrink-0 items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
         selected
-          ? "border-blue-600 text-blue-700"
-          : "border-transparent text-slate-700 hover:border-slate-300 hover:text-slate-950"
+          ? "border-blue-400 bg-blue-50 text-blue-700 shadow-sm"
+          : "border-slate-200 bg-white text-slate-800 hover:border-blue-200 hover:bg-slate-50"
       }`}
     >
       {Icon ? <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} /> : null}
@@ -511,49 +509,19 @@ function widgetLabel(id, viewId = "scorecard") {
   return WIDGET_CATALOG_BY_VIEW[viewId]?.find((item) => item.id === id)?.label || id;
 }
 
-function goalPercentForMetric(currentValue, goalValue) {
-  const current = Number(currentValue || 0);
-  const target = Number(goalValue || 0);
-  if (!Number.isFinite(current) || !Number.isFinite(target) || target <= 0) return null;
-  return Math.max(0, Math.min((current / target) * 100, 100));
-}
-
-function ScorecardMetric({ label, value, sub, goal, currentValue, goalValue, trend = "up", comparison = "vs selected period" }) {
-  const progress = goalPercentForMetric(currentValue, goalValue);
-  const positive = trend !== "down";
-  const neutral = trend === "neutral";
-  const hasGoal = Boolean(goal);
+function ScorecardMetric({ label, value, sub, comparison }) {
+  const pending = String(sub || "").toLowerCase() === "pending";
   return (
-    <div className="border-l border-slate-200 px-4 py-2 first:border-l-0">
-      <div className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+    <div className="border-l border-slate-200 px-5 py-1 first:border-l-0">
+      <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
         <span>{label}</span>
         <Info aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
       </div>
       <div className="mt-3 text-2xl font-black leading-none tracking-tight text-slate-950">{value}</div>
-      <div className="mt-2 flex items-center gap-1.5 text-xs">
-        {neutral ? (
-          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-blue-500" />
-        ) : positive ? (
-          <ArrowUp aria-hidden="true" className="h-4 w-4 text-emerald-600" />
-        ) : (
-          <ArrowDown aria-hidden="true" className="h-4 w-4 text-red-600" />
-        )}
-        <span className={neutral ? "font-bold text-blue-700" : positive ? "font-bold text-emerald-600" : "font-bold text-red-600"}>{sub}</span>
-        <span className="text-slate-500">{comparison}</span>
-      </div>
-      <div className="mt-4 text-xs text-slate-700">
-        {hasGoal ? <>Goal: {goal}</> : "Goal: Not set"}
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className={`h-full rounded-full ${neutral ? "bg-blue-600" : positive ? "bg-emerald-600" : "bg-red-500"}`}
-            style={{ width: `${progress === null ? 0 : Math.max(6, progress)}%` }}
-          />
-        </div>
-        <div className="w-10 text-right text-sm font-semibold text-slate-700">
-          {progress === null ? "--" : `${Math.round(progress)}%`}
-        </div>
+      <div className="mt-3 flex items-center gap-1.5 text-xs">
+        <span aria-hidden="true" className={`h-2 w-2 rounded-full ${pending ? "bg-orange-500" : "bg-blue-500"}`} />
+        <span className={pending ? "font-semibold text-slate-600" : "font-bold text-blue-700"}>{sub}</span>
+        <span className="truncate text-slate-500">{comparison}</span>
       </div>
     </div>
   );
@@ -1820,11 +1788,11 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-view-selector-row"
-        className="mb-7 -mx-1 overflow-x-auto border-b border-slate-200 px-1"
+        className="mb-5 -mx-1 overflow-x-auto px-1 pb-1"
         role="tablist"
         aria-label="Insights dashboard views"
       >
-        <div className="flex min-w-max gap-1">
+        <div className="flex min-w-max gap-2">
           {businessViewCards.map((card) => (
             <ViewSelectorCard
               key={card.key}
@@ -1856,14 +1824,14 @@ export default function BusinessDashboard() {
       </section>
 
       {activeBusinessView === "scorecard" ? (
-        <div data-testid="insights-scorecard" className="grid gap-4 xl:grid-cols-12">
+        <div data-testid="insights-scorecard" className="space-y-3 rounded-2xl border border-slate-200/90 bg-slate-50/60 p-3 shadow-sm md:p-4">
           {activeVisibleWidgetIds.map((widgetId) => {
             if (widgetId === "business_snapshot") {
               return (
-                <section key={widgetId} data-testid="insights-business-snapshot" className="border-b border-slate-200 bg-white pb-6 xl:col-span-12">
+                <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h2 className="text-lg font-bold text-slate-950">Business Snapshot</h2>
+                      <h2 className="text-xl font-bold text-slate-950">Business Snapshot</h2>
                       <p className="sr-only">
                         Paid revenue, project value, and funnel metrics from the selected reporting period.
                       </p>
@@ -1881,7 +1849,7 @@ export default function BusinessDashboard() {
                       <ArrowRight aria-hidden="true" className="h-4 w-4" />
                     </button>
                   </div>
-                  <div className="mt-4 grid gap-y-5 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+                  <div className="mt-5 grid gap-y-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                     {snapshotCards.map((card) => (
                       <ScorecardMetric key={card.key} {...card} />
                     ))}
@@ -1891,7 +1859,7 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "goal_progress") {
               return (
-                <section key={widgetId} data-testid="insights-goal-progress" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-4">
+                <section key={widgetId} data-testid="insights-goal-progress" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <h2 className="text-lg font-bold text-slate-950">Goal Progress</h2>
@@ -1904,20 +1872,22 @@ export default function BusinessDashboard() {
                   {goalsLoading ? (
                     <div className="mt-4 text-sm text-slate-500">Loading goals...</div>
                   ) : activeGoals.length === 0 ? (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                      <div className="font-bold text-slate-950">No goals yet</div>
-                      <div className="mt-1">Set a business goal to track progress here.</div>
+                    <div data-testid="insights-goal-empty" className="mt-4 flex flex-col gap-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-3">
+                        <Target aria-hidden="true" className="h-5 w-5 shrink-0 text-blue-600" />
+                        <div><div className="font-bold text-slate-950">Goal tracking starts with your first goal</div><div className="mt-0.5">Set a target to measure progress against current business results.</div></div>
+                      </div>
                       <button
                         type="button"
                         onClick={() => openGoalEditor()}
-                        className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800"
+                        className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-blue-500 bg-white px-4 text-sm font-bold text-blue-700 hover:bg-blue-50"
                       >
                         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-blue-600 text-lg leading-none">+</span>
                         Set Your First Goal
                       </button>
                     </div>
                   ) : (
-                    <div className="mt-5 space-y-6">
+                    <div className="mt-4 grid gap-5 lg:grid-cols-2">
                       {activeGoals.map((goal) => (
                         <div key={goal.id} className="space-y-2">
                           <GoalProgressCard goal={goal} currentValue={goalCurrentValues[goal.metric_type]} />
@@ -1938,10 +1908,10 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "primary_trend") {
               return (
-                <section key={widgetId} data-testid="insights-primary-trend" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-5">
+                <section key={widgetId} data-testid="insights-primary-trend" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-bold text-slate-950">Primary Performance Trend</h2>
+                      <h2 className="text-xl font-bold text-slate-950">Performance Trend</h2>
                       <select
                         value="revenue"
                         onChange={() => {}}
@@ -1964,8 +1934,8 @@ export default function BusinessDashboard() {
                     </div>
                   </div>
                   <div className="mt-3">
-                    {hasSeriesValue(revenueChart, ["revenue"]) ? (
-                      <div className="h-60">
+                    {revenueChart.length >= 2 && hasSeriesValue(revenueChart, ["revenue"]) ? (
+                      <div className={revenueChart.length >= 5 ? "h-72" : "h-44"} data-testid={revenueChart.length >= 5 ? "insights-trend-full-chart" : "insights-trend-mini-chart"}>
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={revenueChart}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
@@ -1977,11 +1947,13 @@ export default function BusinessDashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <ChartEmptyState tone="light" text="Not enough paid revenue data for a trend yet." />
+                      <div data-testid="insights-trend-education" className="mt-5 grid items-center gap-5 rounded-xl bg-gradient-to-r from-blue-50/80 to-slate-50 px-5 py-5 md:grid-cols-[minmax(180px,0.65fr)_1fr]">
+                        <div className="flex justify-center"><div className="flex h-20 w-20 items-center justify-center rounded-full bg-blue-100/70"><BarChart3 aria-hidden="true" className="h-9 w-9 text-blue-600" /></div></div>
+                        <div><div className="font-bold text-slate-950">{revenueChart.length === 0 ? "Revenue history will appear here" : "Your revenue trend is taking shape"}</div><div className="mt-1 text-sm leading-6 text-slate-600">{revenueChart.length === 0 ? "Paid invoices populate revenue history for the selected period." : "Revenue trends appear after paid invoices are recorded across multiple periods."}</div></div>
+                      </div>
                     )}
                   </div>
-                  <div className="mt-4 border-t border-slate-200 pt-4">
-                    <div className="text-sm font-semibold text-slate-950">Paid revenue by period</div>
+                  <div className="mt-4">
                     <button
                       type="button"
                       onClick={() => {
@@ -1989,7 +1961,7 @@ export default function BusinessDashboard() {
                         const nextPeriod = periodByView["reports-trends"] || VIEW_BY_ID["reports-trends"].defaultPeriod;
                         if (nextPeriod !== range) setRange(nextPeriod);
                       }}
-                      className="mt-1 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800"
+                      className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800"
                     >
                       View in Reports & Trends
                       <ArrowRight aria-hidden="true" className="h-4 w-4" />
@@ -2000,10 +1972,10 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "needs_attention") {
               return (
-                <section key={widgetId} data-testid="insights-needs-attention" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-3">
+                <section key={widgetId} data-testid="insights-needs-attention" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:p-6">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <h2 className="text-lg font-bold text-slate-950">Needs Attention</h2>
+                      <h2 className="text-xl font-bold text-slate-950">Needs Attention</h2>
                       <p className="sr-only">Limited to the most actionable records from source workspaces.</p>
                     </div>
                     <button type="button" className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800">
@@ -2012,13 +1984,15 @@ export default function BusinessDashboard() {
                     </button>
                   </div>
                   {topNeedsAttention.length === 0 ? (
-                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                      No urgent attention items right now.
+                    <div className="mt-3 flex items-center gap-3 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                      <Info aria-hidden="true" className="h-5 w-5 text-emerald-600" />
+                      <div><span className="font-bold text-slate-950">Nothing needs immediate attention.</span> New approval, milestone, warranty, and payment issues will appear here.</div>
                     </div>
                   ) : (
-                    <div className="mt-4 divide-y divide-slate-200">
+                    <ul className="mt-4 divide-y divide-slate-200" aria-label="Needs attention items">
                       {topNeedsAttention.map((item) => (
-                        <a key={item.key} href={item.open_url} className="grid gap-3 py-4 text-slate-900 transition hover:bg-slate-50 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+                        <li key={item.key} data-testid={`insights-attention-row-${item.key}`}>
+                        <a href={item.open_url} className="grid gap-3 py-4 text-slate-900 transition hover:bg-slate-50 sm:grid-cols-[auto_1fr_auto] sm:items-center">
                           <div className={`flex h-9 w-9 items-center justify-center rounded-full border ${
                             item.severity === "high"
                               ? "border-red-500 text-red-600"
@@ -2042,23 +2016,24 @@ export default function BusinessDashboard() {
                           </div>
                           <ChevronRight aria-hidden="true" className="h-5 w-5 text-slate-500" />
                         </a>
+                        </li>
                       ))}
-                    </div>
+                    </ul>
                   )}
                 </section>
               );
             }
             if (widgetId === "reports_handoff") {
               return (
-                <section key={widgetId} data-testid="insights-reports-handoff" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-12">
+                <section key={widgetId} data-testid="insights-reports-handoff" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:px-6 md:py-4">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-center gap-4">
-                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
                         <BarChart3 aria-hidden="true" className="h-6 w-6" />
                       </div>
                       <div>
-                        <h2 className="text-lg font-bold text-slate-950">Explore deeper insights</h2>
-                        <p className="mt-1 text-sm leading-6 text-slate-600">Dive into detailed reports, charts, performance by category, exports, and more.</p>
+                        <h2 className="text-base font-bold text-slate-950">Explore deeper insights</h2>
+                        <p className="mt-0.5 text-sm text-slate-600">Dive into detailed reports, charts, performance by category, exports, and more.</p>
                       </div>
                     </div>
                     <button
@@ -2068,7 +2043,7 @@ export default function BusinessDashboard() {
                         const nextPeriod = periodByView["reports-trends"] || VIEW_BY_ID["reports-trends"].defaultPeriod;
                         if (nextPeriod !== range) setRange(nextPeriod);
                       }}
-                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-5 text-sm font-bold text-slate-950 shadow-sm hover:bg-white"
+                      className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 hover:bg-slate-50"
                       data-testid="insights-open-reports"
                     >
                       Go to Reports & Trends
