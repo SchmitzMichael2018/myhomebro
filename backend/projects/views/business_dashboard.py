@@ -76,18 +76,89 @@ DEFAULT_INSIGHTS_WIDGETS = [
     "reports_handoff",
 ]
 
-AVAILABLE_INSIGHTS_WIDGETS = [
-    "business_snapshot",
-    "goal_progress",
-    "primary_trend",
-    "needs_attention",
-    "reports_handoff",
-    "estimate_conversion",
-    "payment_performance",
-    "project_completion",
-    "warranty_trends",
-    "resolution_trends",
-]
+INSIGHTS_VIEW_DEFAULTS = {
+    "scorecard": DEFAULT_INSIGHTS_WIDGETS,
+    "executive": [
+        "business_health",
+        "executive_scorecard",
+        "morning_brief",
+        "business_alerts",
+    ],
+    "benchmarks": [
+        "contractor_insights",
+        "peer_comparisons",
+        "category_performance",
+        "recommendation_summary",
+    ],
+    "financial": [
+        "financial_snapshot",
+        "financial_trend",
+        "payment_performance",
+        "platform_fee_tracker",
+    ],
+    "operations": [
+        "operations_health",
+        "milestone_completion",
+        "warranty_activity",
+        "resolution_cases",
+    ],
+    "reports-trends": [
+        "report_controls",
+        "charts",
+        "metric_definitions",
+        "category_reports",
+    ],
+    "payouts": [
+        "payout_snapshot",
+        "payout_activity",
+        "export_center",
+    ],
+}
+
+INSIGHTS_VIEW_AVAILABLE = {
+    "scorecard": DEFAULT_INSIGHTS_WIDGETS
+    + [
+        "estimate_conversion",
+        "payment_performance",
+        "project_completion",
+        "warranty_trends",
+        "resolution_trends",
+    ],
+    "executive": INSIGHTS_VIEW_DEFAULTS["executive"]
+    + [
+        "strategic_risks",
+        "biggest_win",
+    ],
+    "benchmarks": INSIGHTS_VIEW_DEFAULTS["benchmarks"]
+    + [
+        "completion_benchmark",
+        "estimate_benchmark",
+        "review_benchmark",
+    ],
+    "financial": INSIGHTS_VIEW_DEFAULTS["financial"]
+    + [
+        "outstanding_invoices",
+        "payment_pipeline",
+        "payout_summary",
+    ],
+    "operations": INSIGHTS_VIEW_DEFAULTS["operations"]
+    + [
+        "schedule_performance",
+        "awaiting_review",
+        "project_health_by_category",
+    ],
+    "reports-trends": INSIGHTS_VIEW_DEFAULTS["reports-trends"]
+    + [
+        "business_performance",
+        "fee_drilldown",
+        "progress_financials",
+    ],
+    "payouts": INSIGHTS_VIEW_DEFAULTS["payouts"]
+    + [
+        "failed_payouts",
+        "pending_payouts",
+    ],
+}
 
 
 def _serialize_insights_goal(goal):
@@ -106,14 +177,32 @@ def _serialize_insights_goal(goal):
 
 def _preference_payload(pref):
     visible = pref.visible_widget_ids if isinstance(pref.visible_widget_ids, list) else []
-    visible = [item for item in visible if item in AVAILABLE_INSIGHTS_WIDGETS]
+    visible = [item for item in visible if item in INSIGHTS_VIEW_AVAILABLE["scorecard"]]
     if not visible:
         visible = list(DEFAULT_INSIGHTS_WIDGETS)
+    view_preferences = pref.view_preferences if isinstance(pref.view_preferences, dict) else {}
+    sanitized_view_preferences = {}
+    for view_id, defaults in INSIGHTS_VIEW_DEFAULTS.items():
+        raw_view_pref = view_preferences.get(view_id) if isinstance(view_preferences.get(view_id), dict) else {}
+        available = INSIGHTS_VIEW_AVAILABLE.get(view_id, defaults)
+        raw_visible = raw_view_pref.get("visible_widget_ids")
+        view_visible = [item for item in raw_visible if item in available] if isinstance(raw_visible, list) else []
+        if not view_visible:
+            view_visible = list(defaults)
+        sanitized_view_preferences[view_id] = {
+            "visible_widget_ids": view_visible,
+            "widget_order": view_visible,
+            "default_reporting_period": raw_view_pref.get("default_reporting_period") or pref.default_reporting_period or "30",
+            "chart_preferences": raw_view_pref.get("chart_preferences") if isinstance(raw_view_pref.get("chart_preferences"), dict) else {},
+            "available_widget_ids": available,
+            "default_widget_ids": defaults,
+        }
     return {
         "visible_widget_ids": visible,
         "default_reporting_period": pref.default_reporting_period or "30",
-        "available_widget_ids": AVAILABLE_INSIGHTS_WIDGETS,
+        "available_widget_ids": INSIGHTS_VIEW_AVAILABLE["scorecard"],
         "default_widget_ids": DEFAULT_INSIGHTS_WIDGETS,
+        "view_preferences": sanitized_view_preferences,
     }
 
 
@@ -1480,6 +1569,7 @@ class ContractorInsightsPreferenceAPIView(APIView):
                 "contractor": contractor,
                 "visible_widget_ids": list(DEFAULT_INSIGHTS_WIDGETS),
                 "default_reporting_period": "30",
+                "view_preferences": {},
             },
         )
         if pref.contractor_id != contractor.id:
@@ -1495,22 +1585,38 @@ class ContractorInsightsPreferenceAPIView(APIView):
             user=request.user,
             defaults={"contractor": contractor},
         )
-        visible = request.data.get("visible_widget_ids", pref.visible_widget_ids)
+        view_id = str(request.data.get("view_id") or "scorecard").strip()
+        if view_id not in INSIGHTS_VIEW_DEFAULTS:
+            return Response({"view_id": "Choose a supported Insights view."}, status=status.HTTP_400_BAD_REQUEST)
+        visible = request.data.get("visible_widget_ids", pref.visible_widget_ids if view_id == "scorecard" else None)
         if not isinstance(visible, list):
             return Response({"visible_widget_ids": "Expected a list."}, status=status.HTTP_400_BAD_REQUEST)
         normalized = []
+        available_widgets = INSIGHTS_VIEW_AVAILABLE[view_id]
         for widget_id in visible:
-            if widget_id in AVAILABLE_INSIGHTS_WIDGETS and widget_id not in normalized:
+            if widget_id in available_widgets and widget_id not in normalized:
                 normalized.append(widget_id)
         if not normalized:
-            normalized = list(DEFAULT_INSIGHTS_WIDGETS)
+            normalized = list(INSIGHTS_VIEW_DEFAULTS[view_id])
         period = str(request.data.get("default_reporting_period", pref.default_reporting_period or "30"))
         if period not in {"30", "90", "ytd", "all"}:
             period = "30"
+        view_preferences = pref.view_preferences if isinstance(pref.view_preferences, dict) else {}
+        view_preferences[view_id] = {
+            **(view_preferences.get(view_id) if isinstance(view_preferences.get(view_id), dict) else {}),
+            "visible_widget_ids": normalized,
+            "widget_order": normalized,
+            "default_reporting_period": period,
+            "chart_preferences": request.data.get("chart_preferences")
+            if isinstance(request.data.get("chart_preferences"), dict)
+            else (view_preferences.get(view_id, {}).get("chart_preferences") if isinstance(view_preferences.get(view_id), dict) else {}),
+        }
         pref.contractor = contractor
-        pref.visible_widget_ids = normalized
+        if view_id == "scorecard":
+            pref.visible_widget_ids = normalized
         pref.default_reporting_period = period
-        pref.save(update_fields=["contractor", "visible_widget_ids", "default_reporting_period", "updated_at"])
+        pref.view_preferences = view_preferences
+        pref.save(update_fields=["contractor", "visible_widget_ids", "view_preferences", "default_reporting_period", "updated_at"])
         return Response(_preference_payload(pref))
 
 

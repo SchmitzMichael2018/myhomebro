@@ -11,14 +11,6 @@ import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
 import { useWorkspaceProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import {
-  ProjectAssistantApprovalNotice,
-  ProjectAssistantCard,
-  ProjectAssistantConfidenceBadge,
-  ProjectAssistantEvidenceList,
-  ProjectAssistantPanel,
-  ProjectAssistantSection,
-} from "./ProjectAssistantExperience.jsx";
-import {
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -157,7 +149,7 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
             aria-hidden="true"
             className="mt-1 text-lg font-semibold leading-none text-sky-100/55 transition group-hover:translate-x-0.5 group-hover:text-white"
           >
-            →
+            â†’
           </span>
         ) : null}
       </div>
@@ -280,7 +272,7 @@ function SummaryActionCard({
             <div className="inline-flex items-center gap-2 text-sm font-semibold text-sky-100">
               <span>{actionLabel}</span>
               <span aria-hidden="true" className="transition group-hover:translate-x-0.5">
-                â†’
+                Ã¢â€ â€™
               </span>
             </div>
           </div>
@@ -388,21 +380,96 @@ const DEFAULT_INSIGHTS_WIDGETS = [
   "reports_handoff",
 ];
 
-const WIDGET_CATALOG = [
-  { id: "business_snapshot", label: "Business Snapshot", category: "default" },
-  { id: "goal_progress", label: "Goal Progress", category: "default" },
-  { id: "primary_trend", label: "Primary Performance Trend", category: "default" },
-  { id: "needs_attention", label: "Needs Attention", category: "default" },
-  { id: "reports_handoff", label: "Detailed Reports Link", category: "default" },
-  { id: "estimate_conversion", label: "Estimate Conversion", category: "optional" },
-  { id: "payment_performance", label: "Payment Performance", category: "optional" },
-  { id: "project_completion", label: "Project Completion", category: "optional" },
-  { id: "warranty_trends", label: "Warranty Trends", category: "optional" },
-  { id: "resolution_trends", label: "Resolution Trends", category: "optional" },
+const INSIGHTS_VIEWS = [
+  { key: "scorecard", title: "Scorecard", subtitle: "How is my business doing right now?", defaultPeriod: "30" },
+  { key: "executive", title: "Executive Overview", subtitle: "Overall health and leadership signals.", defaultPeriod: "30" },
+  { key: "benchmarks", title: "Benchmarks", subtitle: "Compare project types, periods, and peers.", defaultPeriod: "90" },
+  { key: "financial", title: "Financial Performance", subtitle: "How money is moving through the business.", defaultPeriod: "30" },
+  { key: "operations", title: "Operations", subtitle: "How work execution is performing.", defaultPeriod: "30" },
+  { key: "reports-trends", title: "Reports & Trends", subtitle: "Detailed analytics, charts, and tables.", defaultPeriod: "90" },
+  { key: "payouts", title: "Payouts & Exports", subtitle: "Money that has gone out and export actions.", defaultPeriod: "30" },
 ];
 
-function widgetLabel(id) {
-  return WIDGET_CATALOG.find((item) => item.id === id)?.label || id;
+const VIEW_BY_ID = Object.fromEntries(INSIGHTS_VIEWS.map((view) => [view.key, view]));
+
+const VIEW_WIDGET_DEFAULTS = {
+  scorecard: DEFAULT_INSIGHTS_WIDGETS,
+  executive: ["business_health", "executive_scorecard", "morning_brief", "business_alerts"],
+  benchmarks: ["contractor_insights", "peer_comparisons", "category_performance", "recommendation_summary"],
+  financial: ["financial_snapshot", "financial_trend", "payment_performance", "platform_fee_tracker"],
+  operations: ["operations_health", "milestone_completion", "warranty_activity", "resolution_cases"],
+  "reports-trends": ["report_controls", "charts", "metric_definitions", "category_reports"],
+  payouts: ["payout_snapshot", "payout_activity", "export_center"],
+};
+
+const WIDGET_CATALOG_BY_VIEW = {
+  scorecard: [
+    { id: "business_snapshot", label: "Business Snapshot" },
+    { id: "goal_progress", label: "Goal Progress" },
+    { id: "primary_trend", label: "Primary Performance Trend" },
+    { id: "needs_attention", label: "Needs Attention" },
+    { id: "reports_handoff", label: "Detailed Reports Link" },
+    { id: "estimate_conversion", label: "Estimate Conversion" },
+    { id: "payment_performance", label: "Payment Performance" },
+    { id: "project_completion", label: "Project Completion" },
+    { id: "warranty_trends", label: "Warranty Trends" },
+    { id: "resolution_trends", label: "Resolution Trends" },
+  ],
+  executive: [
+    { id: "business_health", label: "Business Health" },
+    { id: "executive_scorecard", label: "Executive Scorecard" },
+    { id: "morning_brief", label: "Morning Brief" },
+    { id: "business_alerts", label: "Business Alerts" },
+    { id: "strategic_risks", label: "Strategic Risks" },
+    { id: "biggest_win", label: "Biggest Win" },
+  ],
+  benchmarks: [
+    { id: "contractor_insights", label: "Contractor Insights" },
+    { id: "peer_comparisons", label: "Peer Comparisons" },
+    { id: "category_performance", label: "Category Performance" },
+    { id: "recommendation_summary", label: "Recommendation Summary" },
+    { id: "completion_benchmark", label: "Completion Benchmark" },
+    { id: "estimate_benchmark", label: "Estimate Benchmark" },
+    { id: "review_benchmark", label: "Review Benchmark" },
+  ],
+  financial: [
+    { id: "financial_snapshot", label: "Financial Snapshot" },
+    { id: "financial_trend", label: "Financial Trend" },
+    { id: "payment_performance", label: "Payment Performance" },
+    { id: "platform_fee_tracker", label: "Platform Fee Tracker" },
+    { id: "outstanding_invoices", label: "Outstanding Invoices" },
+    { id: "payment_pipeline", label: "Payment Pipeline" },
+    { id: "payout_summary", label: "Payout Summary" },
+  ],
+  operations: [
+    { id: "operations_health", label: "Operations Health" },
+    { id: "milestone_completion", label: "Milestone Completion" },
+    { id: "warranty_activity", label: "Warranty Activity" },
+    { id: "resolution_cases", label: "Resolution Cases" },
+    { id: "schedule_performance", label: "Schedule Performance" },
+    { id: "awaiting_review", label: "Awaiting Review" },
+    { id: "project_health_by_category", label: "Project Health by Category" },
+  ],
+  "reports-trends": [
+    { id: "report_controls", label: "Report Controls" },
+    { id: "charts", label: "Charts" },
+    { id: "metric_definitions", label: "Metric Definitions" },
+    { id: "category_reports", label: "Category Reports" },
+    { id: "business_performance", label: "Business Performance" },
+    { id: "fee_drilldown", label: "Fee Drilldown" },
+    { id: "progress_financials", label: "Progress Financials" },
+  ],
+  payouts: [
+    { id: "payout_snapshot", label: "Payout Snapshot" },
+    { id: "payout_activity", label: "Payout Activity" },
+    { id: "export_center", label: "Export Center" },
+    { id: "failed_payouts", label: "Failed Payouts" },
+    { id: "pending_payouts", label: "Pending Payouts" },
+  ],
+};
+
+function widgetLabel(id, viewId = "scorecard") {
+  return WIDGET_CATALOG_BY_VIEW[viewId]?.find((item) => item.id === id)?.label || id;
 }
 
 function ScorecardMetric({ label, value, sub, goal }) {
@@ -579,7 +646,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                   <tr key={row.id} data-testid={`drilldown-row-${row.id}`}>
                     <td className="py-3 pr-3 font-semibold text-slate-900">{row.agreement_title}</td>
                     <td className="py-3 pr-3 text-slate-700">{row.invoice_number}</td>
-                    <td className="py-3 pr-3 text-slate-700">{row.milestone_title || "—"}</td>
+                    <td className="py-3 pr-3 text-slate-700">{row.milestone_title || "â€”"}</td>
                     <td className="py-3 pr-3 text-slate-700">{formatDateTime(row.paid_at)}</td>
                     <td className="py-3 pr-3 font-semibold text-slate-900">{money(row.gross_amount)}</td>
                     <td className="py-3">
@@ -592,7 +659,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                           Open
                         </a>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-slate-400">â€”</span>
                       )}
                     </td>
                   </tr>
@@ -638,7 +705,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                           Open
                         </a>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-slate-400">â€”</span>
                       )}
                     </td>
                   </tr>
@@ -686,7 +753,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                           Open
                         </a>
                       ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <span className="text-xs text-slate-400">â€”</span>
                       )}
                     </td>
                   </tr>
@@ -718,7 +785,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                 <tr key={row.id} data-testid={`drilldown-row-${row.id}`}>
                   <td className="py-3 pr-3 font-semibold text-slate-900">{row.agreement_title}</td>
                   <td className="py-3 pr-3 text-slate-700">{row.milestone_title}</td>
-                  <td className="py-3 pr-3 text-slate-700">{row.completion_date || "—"}</td>
+                  <td className="py-3 pr-3 text-slate-700">{row.completion_date || "â€”"}</td>
                   <td className="py-3 pr-3 text-slate-700">
                     {String(row.subcontractor_completion_status || "overdue").replaceAll("_", " ")}
                   </td>
@@ -733,7 +800,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                         Open
                       </a>
                     ) : (
-                      <span className="text-xs text-slate-400">—</span>
+                      <span className="text-xs text-slate-400">â€”</span>
                     )}
                   </td>
                 </tr>
@@ -781,7 +848,10 @@ export default function BusinessDashboard() {
   const [error, setError] = useState("");
   const [goals, setGoals] = useState([]);
   const [goalsLoading, setGoalsLoading] = useState(true);
-  const [visibleWidgetIds, setVisibleWidgetIds] = useState(DEFAULT_INSIGHTS_WIDGETS);
+  const [visibleWidgetsByView, setVisibleWidgetsByView] = useState(VIEW_WIDGET_DEFAULTS);
+  const [periodByView, setPeriodByView] = useState(() =>
+    Object.fromEntries(INSIGHTS_VIEWS.map((view) => [view.key, view.defaultPeriod]))
+  );
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [goalEditorOpen, setGoalEditorOpen] = useState(false);
   const [editingGoalId, setEditingGoalId] = useState(null);
@@ -792,6 +862,8 @@ export default function BusinessDashboard() {
     target_value: "",
     deadline: "",
   });
+  const [reportChartMetric, setReportChartMetric] = useState("revenue");
+  const [reportChartType, setReportChartType] = useState("area");
 
   const [payload, setPayload] = useState(null);
   const {
@@ -846,6 +918,10 @@ export default function BusinessDashboard() {
   const unhealthyDimensions = healthDimensions.filter((dimension) => dimension.status && dimension.status !== "Healthy");
   const displayedHealthDimensions = (unhealthyDimensions.length ? unhealthyDimensions : healthDimensions).slice(0, 3);
   const topNeedsAttention = needsAttention.slice(0, 3);
+  const activeViewConfig = VIEW_BY_ID[activeBusinessView] || VIEW_BY_ID.scorecard;
+  const activeVisibleWidgetIds = visibleWidgetsByView[activeBusinessView] || VIEW_WIDGET_DEFAULTS[activeBusinessView] || DEFAULT_INSIGHTS_WIDGETS;
+  const activeWidgetCatalog = WIDGET_CATALOG_BY_VIEW[activeBusinessView] || WIDGET_CATALOG_BY_VIEW.scorecard;
+  const viewHas = (widgetId) => activeVisibleWidgetIds.includes(widgetId);
   const activeGoals = goals.filter((goal) => goal.is_active);
   const goalCurrentValues = useMemo(() => ({
     monthly_revenue: Number(snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0),
@@ -979,14 +1055,6 @@ export default function BusinessDashboard() {
   const onHoldTotal = Number(financialSummary.on_hold_total || 0);
   const pendingReleaseTotal = Number(financialSummary.pending_release_total || 0);
   const pendingReleaseCount = Number(financialSummary.pending_release_count || 0);
-  const analystRecommendations = operationsAnalyst.recommendations?.length
-    ? operationsAnalyst.recommendations
-    : [
-      topNeedsAttention[0]?.why,
-      pendingReleaseCount > 0 ? `${pendingReleaseCount} payment item${pendingReleaseCount === 1 ? "" : "s"} need approval or release follow-up.` : "",
-      quoteFollowUpCount > 0 ? `${quoteFollowUpCount} lead or quote request${quoteFollowUpCount === 1 ? "" : "s"} need sales follow-up.` : "",
-      openDisputesCount > 0 ? `${openDisputesCount} resolution case${openDisputesCount === 1 ? "" : "s"} may affect cash or customer trust.` : "",
-    ].filter(Boolean);
   const topAlertCards = useMemo(() => {
     const cards = [
       {
@@ -1012,8 +1080,8 @@ export default function BusinessDashboard() {
         label: "Projects at risk",
         count: Math.max(onHoldCount, openDisputesCount),
         amount: money(onHoldTotal),
-        description: "Disputes or holds that need a closer look.",
-        href: "/app/disputes",
+        description: "Resolution cases or holds that need a closer look.",
+        href: "/app/resolution",
         tone: onHoldTotal > 0 || openDisputesCount > 0 ? "bad" : "default",
       },
     ];
@@ -1056,11 +1124,11 @@ export default function BusinessDashboard() {
         tone: quoteFollowUpCount > 0 ? "info" : "default",
       },
       {
-        key: "open-disputes",
-        label: "Open disputes",
+        key: "open-resolution-cases",
+        label: "Open resolution cases",
         count: openDisputesCount,
-        description: "Items that need a closer look or resolution.",
-        href: "/app/disputes",
+        description: "Cases that need review before they affect trust or cash.",
+        href: "/app/resolution",
         tone: openDisputesCount > 0 ? "bad" : "default",
       },
     ],
@@ -1224,44 +1292,22 @@ export default function BusinessDashboard() {
   };
 
   const businessViewCards = useMemo(
-    () => [
-      {
-        key: "scorecard",
-        title: "Scorecard",
-        subtitle: "Personalized default",
-        preview: `${visibleWidgetIds.length} visible insights · ${activeGoals.length} goals`,
-      },
-      {
-        key: "at-a-glance",
-        title: "Overview",
-        subtitle: "Highest-value signals",
-        preview: `${topAlertCards.length} alerts · ${kpiCards.length} KPIs`,
-      },
-      {
-        key: "contractor-insights",
-        title: "Benchmarks",
-        subtitle: "Comparisons and recommendations",
-        preview: `${availableInsightFamilies.length || 0} insight families`,
-      },
-      {
-        key: "reports-trends",
-        title: "Finance",
-        subtitle: "Money, charts, and pipeline",
-        preview: `${Object.keys(chartTitles).length} charts · exports`,
-      },
-      {
-        key: "payouts",
-        title: "Reports",
-        subtitle: "Payouts and exports",
-        preview: `${payoutSummary?.record_count ?? payoutRows.length} payout records`,
-      },
-      {
-        key: "operations",
-        title: "Operations",
-        subtitle: "Approvals, disputes, active jobs",
-        preview: `${operationalHealthCards.filter((card) => Number(card.count || 0) > 0).length} action items`,
-      },
-    ],
+    () =>
+      INSIGHTS_VIEWS.map((view) => {
+        const previews = {
+          scorecard: `${(visibleWidgetsByView.scorecard || DEFAULT_INSIGHTS_WIDGETS).length} visible insights | ${activeGoals.length} goals`,
+          executive: `${topAlertCards.length} alerts | ${kpiCards.length} KPIs`,
+          benchmarks: `${availableInsightFamilies.length || 0} insight families`,
+          financial: `${Object.keys(chartTitles).length} charts | cash flow`,
+          operations: `${operationalHealthCards.filter((card) => Number(card.count || 0) > 0).length} action items`,
+          "reports-trends": `${Object.keys(chartTitles).length} charts | exports`,
+          payouts: `${payoutSummary?.record_count ?? payoutRows.length} payout records`,
+        };
+        return {
+          ...view,
+          preview: previews[view.key] || "",
+        };
+      }),
     [
       availableInsightFamilies.length,
       activeGoals.length,
@@ -1271,7 +1317,7 @@ export default function BusinessDashboard() {
       payoutRows.length,
       payoutSummary?.record_count,
       topAlertCards.length,
-      visibleWidgetIds.length,
+      visibleWidgetsByView.scorecard,
     ]
   );
 
@@ -1294,15 +1340,29 @@ export default function BusinessDashboard() {
   const fetchInsightsPreferences = async () => {
     try {
       const { data } = await api.get("/projects/business/contractor/insights-preferences/");
-      const visible = Array.isArray(data?.visible_widget_ids) && data.visible_widget_ids.length
-        ? data.visible_widget_ids
-        : DEFAULT_INSIGHTS_WIDGETS;
-      setVisibleWidgetIds(visible);
-      if (data?.default_reporting_period && data.default_reporting_period !== range) {
-        setRange(data.default_reporting_period);
+      const nextVisibleByView = { ...VIEW_WIDGET_DEFAULTS };
+      const nextPeriodByView = Object.fromEntries(INSIGHTS_VIEWS.map((view) => [view.key, view.defaultPeriod]));
+      Object.entries(data?.view_preferences || {}).forEach(([viewId, pref]) => {
+        if (!VIEW_WIDGET_DEFAULTS[viewId]) return;
+        if (Array.isArray(pref?.visible_widget_ids) && pref.visible_widget_ids.length) {
+          nextVisibleByView[viewId] = pref.visible_widget_ids;
+        }
+        if (pref?.default_reporting_period) {
+          nextPeriodByView[viewId] = pref.default_reporting_period;
+        }
+      });
+      if (Array.isArray(data?.visible_widget_ids) && data.visible_widget_ids.length) {
+        nextVisibleByView.scorecard = data.visible_widget_ids;
       }
+      if (data?.default_reporting_period) {
+        nextPeriodByView.scorecard = data.default_reporting_period;
+      }
+      setVisibleWidgetsByView(nextVisibleByView);
+      setPeriodByView(nextPeriodByView);
+      const nextPeriod = nextPeriodByView[activeBusinessView] || activeViewConfig.defaultPeriod || "30";
+      if (nextPeriod !== range) setRange(nextPeriod);
     } catch (err) {
-      setVisibleWidgetIds(DEFAULT_INSIGHTS_WIDGETS);
+      setVisibleWidgetsByView(VIEW_WIDGET_DEFAULTS);
     }
   };
 
@@ -1318,14 +1378,19 @@ export default function BusinessDashboard() {
     }
   };
 
-  const saveInsightsPreferences = async (nextVisible = visibleWidgetIds, nextPeriod = range) => {
-    setVisibleWidgetIds(nextVisible);
+  const saveInsightsPreferences = async (nextVisible = activeVisibleWidgetIds, nextPeriod = range, viewId = activeBusinessView) => {
+    setVisibleWidgetsByView((prev) => ({ ...prev, [viewId]: nextVisible }));
+    setPeriodByView((prev) => ({ ...prev, [viewId]: nextPeriod }));
     try {
       const { data } = await api.patch("/projects/business/contractor/insights-preferences/", {
+        view_id: viewId,
         visible_widget_ids: nextVisible,
         default_reporting_period: nextPeriod,
       });
-      if (Array.isArray(data?.visible_widget_ids)) setVisibleWidgetIds(data.visible_widget_ids);
+      const savedView = data?.view_preferences?.[viewId];
+      if (Array.isArray(savedView?.visible_widget_ids)) {
+        setVisibleWidgetsByView((prev) => ({ ...prev, [viewId]: savedView.visible_widget_ids }));
+      }
     } catch (err) {
       console.error("Failed to save Insights preferences:", err);
     }
@@ -1586,7 +1651,7 @@ export default function BusinessDashboard() {
             value={range}
             onChange={(e) => {
               setRange(e.target.value);
-              saveInsightsPreferences(visibleWidgetIds, e.target.value);
+              saveInsightsPreferences(activeVisibleWidgetIds, e.target.value, activeBusinessView);
             }}
             className="rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 shadow-sm outline-none focus:border-sky-300/60"
           >
@@ -1624,7 +1689,7 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-view-selector-row"
-        className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5"
+        className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7"
       >
         {businessViewCards.map((card) => (
           <ViewSelectorCard
@@ -1634,14 +1699,18 @@ export default function BusinessDashboard() {
             subtitle={card.subtitle}
             preview={card.preview}
             selected={activeBusinessView === card.key}
-            onClick={() => setActiveBusinessView(card.key)}
+            onClick={() => {
+              setActiveBusinessView(card.key);
+              const nextPeriod = periodByView[card.key] || VIEW_BY_ID[card.key]?.defaultPeriod || "30";
+              if (nextPeriod !== range) setRange(nextPeriod);
+            }}
           />
         ))}
       </section>
 
       {activeBusinessView === "scorecard" ? (
         <div data-testid="insights-scorecard" className="space-y-5">
-          {visibleWidgetIds.map((widgetId) => {
+          {activeVisibleWidgetIds.map((widgetId) => {
             if (widgetId === "business_snapshot") {
               return (
                 <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
@@ -1771,7 +1840,16 @@ export default function BusinessDashboard() {
                       <h2 className="mt-2 text-2xl font-black text-white">Need the full analysis?</h2>
                       <p className="mt-1 text-sm leading-6 text-sky-100/70">Detailed charts, tables, exports, payout history, and drilldowns stay in Reports & Trends.</p>
                     </div>
-                    <button type="button" onClick={() => setActiveBusinessView("reports-trends")} className="rounded-xl border border-white/70 bg-white px-4 py-2 text-sm font-black text-slate-950 hover:bg-sky-50" data-testid="insights-open-reports">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveBusinessView("reports-trends");
+                        const nextPeriod = periodByView["reports-trends"] || VIEW_BY_ID["reports-trends"].defaultPeriod;
+                        if (nextPeriod !== range) setRange(nextPeriod);
+                      }}
+                      className="rounded-xl border border-white/70 bg-white px-4 py-2 text-sm font-black text-slate-950 hover:bg-sky-50"
+                      data-testid="insights-open-reports"
+                    >
                       View Detailed Reports
                     </button>
                   </div>
@@ -1789,8 +1867,9 @@ export default function BusinessDashboard() {
         </div>
       ) : null}
 
-      {activeBusinessView !== "scorecard" ? (
+      {activeBusinessView === "executive" ? (
         <>
+      {viewHas("business_health") ? (
       <section data-testid="insights-business-health" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
@@ -1830,51 +1909,44 @@ export default function BusinessDashboard() {
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section data-testid="insights-needs-attention" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      {viewHas("business_alerts") ? (
+      <section data-testid="insights-business-alerts" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Needs Attention</div>
-            <h2 className="mt-2 text-2xl font-black text-white">Prioritized action queue</h2>
-            <p className="mt-1 text-sm leading-6 text-sky-100/70">Each item explains why it matters and opens the source workspace.</p>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Business Alerts</div>
+            <h2 className="mt-2 text-2xl font-black text-white">Conditions leadership should watch</h2>
+            <p className="mt-1 text-sm leading-6 text-sky-100/70">Business conditions from source records. Configuration controls live in their source workspaces.</p>
           </div>
           <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
-            {needsAttention.length} active | showing top {topNeedsAttention.length || 0}
+            {topAlertCards.length} active
           </div>
         </div>
-        {needsAttention.length === 0 ? (
+        {topAlertCards.length === 0 ? (
           <div className="mt-4 rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-5 text-sm text-sky-100/70">
-            No urgent attention items right now.
+            No business alerts in this range.
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 lg:grid-cols-2">
-            {topNeedsAttention.map((item) => (
-              <div key={item.key} data-testid={`insights-attention-${item.key}`} className={`rounded-xl border p-4 shadow-sm ${severityTone(item.severity)}`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-black">{item.title}</div>
-                    <div className="mt-1 text-xs font-bold uppercase tracking-[0.12em] opacity-75">
-                      {item.source_workspace} | {item.severity}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-black">{int(item.count)}</div>
-                    {item.amount ? <div className="text-xs font-bold opacity-80">{money(item.amount)}</div> : null}
-                  </div>
-                </div>
-                <div className="mt-3 text-sm leading-6 opacity-90">{item.why}</div>
-                <a
-                  href={item.open_url}
-                  className="mt-3 inline-flex rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-black text-white hover:bg-white/15"
-                >
-                  {item.action_label || "Open"}
-                </a>
-              </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {topAlertCards.map((card) => (
+              <ActionCard
+                key={card.key}
+                testId={`dashboard-business-alert-${card.key}`}
+                label={card.label}
+                count={card.count}
+                amount={card.amount}
+                description={card.description}
+                href={card.href}
+                tone={card.tone}
+              />
             ))}
           </div>
         )}
       </section>
+      ) : null}
 
+      {viewHas("morning_brief") ? (
       <div className="mb-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
         <section data-testid="insights-morning-brief" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Morning Brief</div>
@@ -1901,65 +1973,20 @@ export default function BusinessDashboard() {
           </div>
         </section>
 
-        <ProjectAssistantPanel
-          testId="insights-operations-analyst"
-          subtitle="Operations Analyst"
-          summary={operationsAnalyst.summary || "Project Assistant reviews business health, attention items, and source records before recommending next steps."}
-          actions={<ProjectAssistantConfidenceBadge value={operationsAnalyst.confidence || "medium"} />}
-        >
-          <ProjectAssistantSection title="Why this matters">
-            {operationsAnalyst.why_this_matters || "Insights highlights business bottlenecks, but operational work stays in source workspaces."}
-          </ProjectAssistantSection>
-          <ProjectAssistantCard title="Recommendations" tone="advisory">
-            <ul className="space-y-2 text-sm leading-6">
-              {(analystRecommendations.length ? analystRecommendations : ["Review the highest priority attention item first."]).map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </ProjectAssistantCard>
-          <ProjectAssistantEvidenceList items={operationsAnalyst.evidence || []} />
-          <ProjectAssistantApprovalNotice compact>
-            Operations Analyst can prepare reviews and links, but it cannot release money, change pricing, notify customers, or modify records.
-          </ProjectAssistantApprovalNotice>
-        </ProjectAssistantPanel>
+        <section data-testid="insights-executive-synthesis" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Executive Priorities</div>
+          <h2 className="mt-2 text-2xl font-black text-white">Leadership summary</h2>
+          <p className="mt-2 text-sm leading-6 text-sky-100/70">
+            {operationsAnalyst.summary || businessHealth.recommended_focus || "Review the highest priority business signal first."}
+          </p>
+          <div className="mt-4 rounded-xl border border-white/12 bg-slate-950/40 p-4 text-sm leading-6 text-sky-100">
+            {operationsAnalyst.why_this_matters || "These signals are drawn from source workspaces so leadership can decide what needs attention today."}
+          </div>
+        </section>
       </div>
+      ) : null}
 
-      <section data-testid="insights-todays-priorities" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Today&apos;s Priorities</div>
-            <h2 className="mt-2 text-2xl font-black text-white">What to do next</h2>
-            <p className="mt-1 text-sm leading-6 text-sky-100/70">
-              Fastest path from business signal to source workspace.
-            </p>
-          </div>
-          <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
-            {rangeLabel}
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          {(topNeedsAttention.length ? topNeedsAttention : [
-            {
-              key: "review-pipeline",
-              title: "Review pipeline",
-              why: "No urgent attention items are active. Check pipeline and upcoming work for the next opportunity.",
-              open_url: "/app/opportunities",
-              action_label: "Open Opportunities",
-              severity: "low",
-              source_workspace: "Opportunities",
-              count: 0,
-            },
-          ]).map((item) => (
-            <a key={`priority-${item.key}`} href={item.open_url || "/app/dashboard"} className={`rounded-xl border p-4 shadow-sm ${severityTone(item.severity)}`}>
-              <div className="text-xs font-bold uppercase tracking-[0.14em] opacity-75">{item.source_workspace || "Workspace"}</div>
-              <div className="mt-2 text-base font-black">{item.title}</div>
-              <div className="mt-2 text-sm leading-6 opacity-90">{item.why}</div>
-              <div className="mt-3 text-xs font-black">{item.action_label || "Open source records"}</div>
-            </a>
-          ))}
-        </div>
-      </section>
-
+      {viewHas("executive_scorecard") ? (
       <section data-testid="insights-canonical-metrics" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
@@ -1974,7 +2001,9 @@ export default function BusinessDashboard() {
           ))}
         </div>
       </section>
+      ) : null}
 
+      {viewHas("strategic_risks") ? (
       <section data-testid="insights-opportunity-forecast" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Opportunity Forecast</div>
@@ -1997,6 +2026,7 @@ export default function BusinessDashboard() {
           ))}
         </div>
       </section>
+      ) : null}
         </>
       ) : null}
 
@@ -2298,11 +2328,76 @@ export default function BusinessDashboard() {
         </div>
       ) : null}
 
+      {activeBusinessView === "financial" ? (
+        <div data-testid="dashboard-view-financial" className="space-y-5">
+          <DashboardSection
+            title="Financial Performance"
+            subtitle="Collected revenue, contractor earnings, outstanding money, and fee movement stay separate."
+          >
+            <section data-testid="dashboard-financial-section" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <div className="text-base font-bold text-slate-900">Money Movement</div>
+                  <div className="mt-1 text-sm text-slate-600">
+                    Selected range: {rangeLabel}. Collected revenue, net paid, held funds, and receivables are shown as distinct figures.
+                  </div>
+                </div>
+                <div className="text-xs text-slate-500">Financial dashboard only</div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <Stat label="Collected Revenue" value={money(financialSummary.gross_revenue_total || snapshot.total_revenue)} sub="Paid invoices and draw requests" tone="good" />
+                <Stat label="Estimated Contractor Earnings" value={money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value)} sub="Collected after platform fees; not profit" />
+                <Stat label="Outstanding Invoices" value={money(canonicalMetrics.outstanding_receivables?.value)} sub="Sent invoices and submitted draws" tone={Number(canonicalMetrics.outstanding_receivables?.value || 0) > 0 ? "warn" : "default"} />
+                <Stat label="Money On Hold" value={money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value)} sub="Paused by resolution or review" tone={Number(financialSummary.on_hold_total || 0) > 0 ? "bad" : "default"} />
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_0.8fr]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="text-sm font-bold text-slate-900">Financial Trend</div>
+                  <div className="mt-1 text-sm text-slate-600">Gross revenue, platform fees, and net paid over time.</div>
+                  <div className="mt-4">
+                    {hasSeriesValue(financialTrendChart, ["gross_revenue", "platform_fees", "net_paid"]) ? (
+                      <div className="h-80" data-testid="dashboard-financial-trend-chart">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={financialTrendChart}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="bucket_label" tick={{ fontSize: 12 }} />
+                            <YAxis tickFormatter={axisMoney} width={70} />
+                            <Tooltip formatter={(value) => money(value)} />
+                            <Legend />
+                            <Line type="monotone" dataKey="gross_revenue" name="Collected Revenue" stroke="#0f172a" strokeWidth={2} dot={false} />
+                            <Line type="monotone" dataKey="platform_fees" name="Platform Fees" stroke="#b45309" strokeWidth={2} dot={false} />
+                            <Line type="monotone" dataKey="net_paid" name="Net Paid" stroke="#0f766e" strokeWidth={2} dot={false} />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <ChartEmptyState text={`Not enough financial trend data for ${rangeLabel.toLowerCase()}. Paid invoices and released draw requests will populate this chart.`} />
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <div className="text-sm font-bold text-slate-900">Payment Performance</div>
+                  <div className="mt-1 text-sm text-slate-600">What is settled, waiting, or held.</div>
+                  <div className="mt-4 grid gap-3">
+                    <Stat label="Paid Events" value={int(financialSummary.paid_events_count)} sub="Payments that settled" tone="good" />
+                    <Stat label="Pending Release" value={money(financialSummary.pending_release_total || pendingReleaseTotal)} sub="Approved or ready but not released" tone={Number(financialSummary.pending_release_total || 0) > 0 ? "warn" : "default"} />
+                    <Stat label="Platform Fees" value={money(snapshot.platform_fees_paid)} sub="Fees recorded in range" />
+                  </div>
+                </div>
+              </div>
+            </section>
+          </DashboardSection>
+        </div>
+      ) : null}
+
       {activeBusinessView === "operations" ? (
         <div data-testid="dashboard-view-operations">
           <DashboardSection
             title="Operations"
-            subtitle="Approvals, signatures, leads, and risk signals that need attention."
+            subtitle="Execution health across projects, milestones, warranty activity, and resolution cases."
             className="mb-5"
           >
             <div
@@ -2325,7 +2420,7 @@ export default function BusinessDashboard() {
         </div>
       ) : null}
 
-      {activeBusinessView === "reports-trends" ? (
+      {activeBusinessView === "reports-legacy-disabled" ? (
         <div data-testid="dashboard-view-reports-summary">
           <DashboardSection
             title="Business Snapshot"
@@ -2348,7 +2443,7 @@ export default function BusinessDashboard() {
         <Stat
           label="Pending Payout / Escrow"
           value={money(pendingExposure)}
-          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} · Escrow: ${money(snapshot.escrow_pending)}`}
+          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} Â· Escrow: ${money(snapshot.escrow_pending)}`}
           tone={pendingExposure > 0 ? "warn" : "default"}
         />
         <Stat
@@ -2385,7 +2480,7 @@ export default function BusinessDashboard() {
         <Stat
           label="Pending Payout / Escrow"
           value={money(pendingExposure)}
-          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} · Escrow: ${money(snapshot.escrow_pending)}`}
+          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} Â· Escrow: ${money(snapshot.escrow_pending)}`}
           tone={pendingExposure > 0 ? "warn" : "default"}
         />
 
@@ -2529,14 +2624,53 @@ export default function BusinessDashboard() {
         </div>
       ) : null}
 
-      {activeBusinessView === "contractor-insights" ? (
-        <div data-testid="dashboard-view-contractor-insights">
+      {activeBusinessView === "benchmarks" ? (
+        <div data-testid="dashboard-view-contractor-insights" className="space-y-5">
+          {viewHas("contractor_insights") ? (
           <ContractorInsightsSection
             insights={contractorInsights}
             availableFamilies={availableInsightFamilies}
             selectedFamilyKey={insightFamilyKey}
             onFamilyChange={handleFamilyChange}
           />
+          ) : null}
+          {viewHas("peer_comparisons") ? (
+            <DashboardSection title="Peer Comparisons" subtitle="Benchmark context is shown only when sample sizes are available.">
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                {contractorInsights?.available ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {(contractorInsights.comparison_rows || []).map((row) => (
+                      <div key={row.key || row.label} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-sm font-bold text-slate-900">{row.label}</div>
+                        <div className="mt-2 text-sm leading-6 text-slate-700">{row.comparison}</div>
+                        <div className="mt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{row.confidence || "Sample context unavailable"}</div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty text="Not enough benchmark data yet. Completed projects and reliable comparison samples will populate this view." />
+                )}
+              </div>
+            </DashboardSection>
+          ) : null}
+          {viewHas("category_performance") ? (
+            <DashboardSection title="Category Performance" subtitle="Contractor-only category breakdown for this period.">
+              <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+                {byCategory.length === 0 ? (
+                  <Empty text="No category breakdown available for this range yet." />
+                ) : (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {byCategory.map((row) => (
+                      <div key={row.category} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="text-sm font-bold text-slate-900">{row.category}</div>
+                        <div className="mt-2 text-sm text-slate-700">{int(row.jobs)} jobs | {money(row.avg_revenue)} average revenue | {num(row.avg_completion_days, 1)} avg days</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </DashboardSection>
+          ) : null}
         </div>
       ) : null}
 
@@ -2544,9 +2678,49 @@ export default function BusinessDashboard() {
         <div data-testid="dashboard-view-reports-trends">
           <DashboardSection
             title="Reports & Trends"
-            subtitle="Supporting reporting stays available here once the top metrics and alerts have been reviewed."
+            subtitle="Detailed analytics, charts, category tables, and exports."
             className="mb-5"
           >
+      <section data-testid="dashboard-report-controls" className="mb-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-base font-bold text-slate-900">Chart Configuration</div>
+            <div className="mt-1 text-sm text-slate-600">
+              Choose a supported report chart without changing the underlying calculations.
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm font-semibold text-slate-700">
+              <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Metric</span>
+              <select
+                data-testid="insights-report-chart-metric"
+                value={reportChartMetric}
+                onChange={(event) => setReportChartMetric(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              >
+                <option value="revenue">Revenue over time</option>
+                <option value="payouts">Payout composition</option>
+                <option value="fees">Fee activity</option>
+                <option value="workflow">Overdue milestones</option>
+              </select>
+            </label>
+            <label className="text-sm font-semibold text-slate-700">
+              <span className="mb-1 block text-xs uppercase tracking-wide text-slate-500">Chart type</span>
+              <select
+                data-testid="insights-report-chart-type"
+                value={reportChartType}
+                onChange={(event) => setReportChartType(event.target.value)}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              >
+                <option value="area">Area</option>
+                <option value="line">Line</option>
+                <option value="bar">Bar</option>
+                <option value="stacked_bar">Stacked bar</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </section>
       <section className="rounded-xl border border-slate-200 bg-white/95 p-5 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
@@ -2649,7 +2823,7 @@ export default function BusinessDashboard() {
                       </td>
                       <td className="py-3 pr-3 text-slate-700">{money(row.fee_cap)}</td>
                       <td className="py-3 pr-3 text-slate-700">{money(row.remaining_cap)}</td>
-                      <td className="py-3 pr-3 text-slate-700">{row.payment_status || "—"}</td>
+                      <td className="py-3 pr-3 text-slate-700">{row.payment_status || "â€”"}</td>
                       <td className="py-3">
                         {row.agreement_id ? (
                           <a
@@ -2660,7 +2834,7 @@ export default function BusinessDashboard() {
                             Open
                           </a>
                         ) : (
-                          <span className="text-xs text-slate-400">—</span>
+                          <span className="text-xs text-slate-400">â€”</span>
                         )}
                       </td>
                     </tr>
@@ -3126,8 +3300,8 @@ export default function BusinessDashboard() {
           <div className="h-full w-full max-w-md overflow-y-auto border-l border-white/12 bg-slate-950 p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-xl font-black text-white">Customize Insights</h2>
-                <p className="mt-1 text-sm leading-6 text-sky-100/70">Choose which scorecard sections appear and in what order.</p>
+                <h2 className="text-xl font-black text-white">Customize {activeViewConfig.title}</h2>
+                <p className="mt-1 text-sm leading-6 text-sky-100/70">Choose which sections appear in this view and in what order. Changes save immediately.</p>
               </div>
               <button type="button" onClick={() => setCustomizeOpen(false)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50">
                 Close
@@ -3137,15 +3311,15 @@ export default function BusinessDashboard() {
             <section className="mt-5">
               <h3 className="text-sm font-black text-white">Visible Insights</h3>
               <div className="mt-3 space-y-2">
-                {visibleWidgetIds.map((widgetId, index) => (
+                {activeVisibleWidgetIds.map((widgetId, index) => (
                   <div key={widgetId} className="rounded-xl border border-white/12 bg-white/6 p-3">
-                    <div className="font-bold text-sky-50">{widgetLabel(widgetId)}</div>
+                    <div className="font-bold text-sky-50">{widgetLabel(widgetId, activeBusinessView)}</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
                         disabled={index === 0}
                         onClick={() => {
-                          const next = [...visibleWidgetIds];
+                          const next = [...activeVisibleWidgetIds];
                           [next[index - 1], next[index]] = [next[index], next[index - 1]];
                           saveInsightsPreferences(next);
                         }}
@@ -3155,9 +3329,9 @@ export default function BusinessDashboard() {
                       </button>
                       <button
                         type="button"
-                        disabled={index === visibleWidgetIds.length - 1}
+                        disabled={index === activeVisibleWidgetIds.length - 1}
                         onClick={() => {
-                          const next = [...visibleWidgetIds];
+                          const next = [...activeVisibleWidgetIds];
                           [next[index], next[index + 1]] = [next[index + 1], next[index]];
                           saveInsightsPreferences(next);
                         }}
@@ -3167,7 +3341,7 @@ export default function BusinessDashboard() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => saveInsightsPreferences(visibleWidgetIds.filter((id) => id !== widgetId))}
+                        onClick={() => saveInsightsPreferences(activeVisibleWidgetIds.filter((id) => id !== widgetId))}
                         className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-50"
                       >
                         Hide
@@ -3181,11 +3355,11 @@ export default function BusinessDashboard() {
             <section className="mt-6">
               <h3 className="text-sm font-black text-white">Available Insights</h3>
               <div className="mt-3 space-y-2">
-                {WIDGET_CATALOG.filter((widget) => !visibleWidgetIds.includes(widget.id)).map((widget) => (
+                {activeWidgetCatalog.filter((widget) => !activeVisibleWidgetIds.includes(widget.id)).map((widget) => (
                   <button
                     key={widget.id}
                     type="button"
-                    onClick={() => saveInsightsPreferences([...visibleWidgetIds, widget.id])}
+                    onClick={() => saveInsightsPreferences([...activeVisibleWidgetIds, widget.id])}
                     className="flex w-full items-center justify-between rounded-xl border border-white/12 bg-white/6 p-3 text-left text-sm font-bold text-sky-50 hover:bg-white/10"
                   >
                     <span>{widget.label}</span>
@@ -3197,7 +3371,7 @@ export default function BusinessDashboard() {
 
             <button
               type="button"
-              onClick={() => saveInsightsPreferences(DEFAULT_INSIGHTS_WIDGETS)}
+              onClick={() => saveInsightsPreferences(VIEW_WIDGET_DEFAULTS[activeBusinessView] || DEFAULT_INSIGHTS_WIDGETS)}
               className="mt-6 w-full rounded-xl border border-amber-300/70 bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-200"
               data-testid="insights-restore-default"
             >

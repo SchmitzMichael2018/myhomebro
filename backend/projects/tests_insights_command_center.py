@@ -192,10 +192,13 @@ class InsightsCommandCenterApiTests(TestCase):
         response = self.client.get("/api/projects/business/contractor/insights-preferences/")
         self.assertEqual(response.status_code, 200)
         self.assertIn("business_snapshot", response.data["visible_widget_ids"])
+        self.assertIn("scorecard", response.data["view_preferences"])
+        self.assertIn("financial", response.data["view_preferences"])
 
         response = self.client.patch(
             "/api/projects/business/contractor/insights-preferences/",
             {
+                "view_id": "scorecard",
                 "visible_widget_ids": ["goal_progress", "business_snapshot"],
                 "default_reporting_period": "90",
             },
@@ -208,3 +211,26 @@ class InsightsCommandCenterApiTests(TestCase):
 
         response = self.client.get("/api/projects/business/contractor/insights-preferences/")
         self.assertEqual(response.data["visible_widget_ids"], ["goal_progress", "business_snapshot"])
+        self.assertEqual(
+            response.data["view_preferences"]["scorecard"]["visible_widget_ids"],
+            ["goal_progress", "business_snapshot"],
+        )
+
+        response = self.client.patch(
+            "/api/projects/business/contractor/insights-preferences/",
+            {
+                "view_id": "financial",
+                "visible_widget_ids": ["financial_trend", "platform_fee_tracker"],
+                "default_reporting_period": "30",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.data["view_preferences"]["financial"]["visible_widget_ids"],
+            ["financial_trend", "platform_fee_tracker"],
+        )
+        self.assertEqual(
+            response.data["view_preferences"]["scorecard"]["visible_widget_ids"],
+            ["goal_progress", "business_snapshot"],
+        )

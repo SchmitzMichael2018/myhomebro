@@ -1055,6 +1055,7 @@ class ContractorInsightsPreference(models.Model):
         related_name="insights_preferences",
     )
     visible_widget_ids = models.JSONField(default=list, blank=True)
+    view_preferences = models.JSONField(default=dict, blank=True)
     default_reporting_period = models.CharField(max_length=24, default="30", blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -175,6 +175,36 @@ async function installInsightsRoutes(page) {
     default_reporting_period: "30",
     available_widget_ids: ["business_snapshot", "goal_progress", "primary_trend", "needs_attention", "reports_handoff", "estimate_conversion"],
     default_widget_ids: ["business_snapshot", "goal_progress", "primary_trend", "needs_attention", "reports_handoff"],
+    view_preferences: {
+      scorecard: {
+        visible_widget_ids: ["business_snapshot", "goal_progress", "primary_trend", "needs_attention", "reports_handoff"],
+        default_reporting_period: "30",
+      },
+      executive: {
+        visible_widget_ids: ["business_health", "executive_scorecard", "morning_brief", "business_alerts"],
+        default_reporting_period: "30",
+      },
+      benchmarks: {
+        visible_widget_ids: ["contractor_insights", "peer_comparisons", "category_performance", "recommendation_summary"],
+        default_reporting_period: "90",
+      },
+      financial: {
+        visible_widget_ids: ["financial_snapshot", "financial_trend", "payment_performance", "platform_fee_tracker"],
+        default_reporting_period: "30",
+      },
+      operations: {
+        visible_widget_ids: ["operations_health", "milestone_completion", "warranty_activity", "resolution_cases"],
+        default_reporting_period: "30",
+      },
+      "reports-trends": {
+        visible_widget_ids: ["report_controls", "charts", "metric_definitions", "category_reports"],
+        default_reporting_period: "90",
+      },
+      payouts: {
+        visible_widget_ids: ["payout_snapshot", "payout_activity", "export_center"],
+        default_reporting_period: "30",
+      },
+    },
   };
 
   await page.route("**/api/projects/business/contractor/insights-goals/**", async (route) => {
@@ -208,7 +238,23 @@ async function installInsightsRoutes(page) {
 
   await page.route("**/api/projects/business/contractor/insights-preferences/**", async (route) => {
     if (route.request().method() === "PATCH") {
-      preferences = { ...preferences, ...route.request().postDataJSON() };
+      const payload = route.request().postDataJSON();
+      const viewId = payload.view_id || "scorecard";
+      preferences = {
+        ...preferences,
+        ...(viewId === "scorecard" ? {
+          visible_widget_ids: payload.visible_widget_ids,
+          default_reporting_period: payload.default_reporting_period,
+        } : {}),
+        view_preferences: {
+          ...preferences.view_preferences,
+          [viewId]: {
+            ...(preferences.view_preferences[viewId] || {}),
+            visible_widget_ids: payload.visible_widget_ids,
+            default_reporting_period: payload.default_reporting_period,
+          },
+        },
+      };
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(preferences) });
   });
@@ -253,28 +299,69 @@ test("Insights scorecard renders defaults, goals, customization, and reports han
   await page.getByTestId("insights-customize-panel").getByRole("button", { name: "Close" }).click();
 
   await page.getByTestId("insights-open-reports").click();
-  await expect(page.getByTestId("insights-canonical-metrics-full")).toContainText("Money Customers Still Owe");
+  await expect(page.getByTestId("dashboard-view-reports-trends")).toBeVisible();
+  await expect(page.getByTestId("dashboard-report-controls")).toContainText("Chart Configuration");
+  await expect(page.getByTestId("insights-scorecard")).toHaveCount(0);
 });
 
-test("Insights reports and trends regression remains available", async ({ page }) => {
+test("Insights top-level views render independent dashboards", async ({ page }) => {
   await installInsightsRoutes(page);
 
   await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
-  await page.getByTestId("dashboard-view-selector-at-a-glance").click();
+  await page.getByTestId("dashboard-view-selector-executive").click();
   await expect(page.getByTestId("insights-business-health")).toContainText("Business Health");
   await expect(page.getByTestId("insights-business-health")).toContainText("Needs Attention overall");
-  await expect(page.getByTestId("insights-needs-attention")).toContainText("Overdue milestones");
-  await expect(page.getByTestId("insights-needs-attention")).toContainText("Pending customer approvals");
+  await expect(page.getByTestId("insights-business-alerts")).toContainText("Business Alerts");
+  await expect(page.getByTestId("insights-needs-attention")).toHaveCount(0);
   await expect(page.getByTestId("insights-morning-brief")).toContainText("Morning Brief");
   await expect(page.getByTestId("insights-morning-brief")).toContainText("Completed 3 milestones.");
-  await expect(page.getByTestId("insights-todays-priorities")).toContainText("What to do next");
   await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Money Waiting On Customer Approval");
   await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Resolution Cases");
-  await expect(page.getByTestId("insights-opportunity-forecast")).toContainText("Potential Revenue");
-  await expect(page.getByTestId("insights-opportunity-forecast")).toContainText("$36,000.00");
-  await expect(page.getByTestId("insights-operations-analyst")).toContainText("Operations Analyst");
-  await expect(page.getByTestId("project-assistant-human-approval")).toContainText("cannot release money");
-  await expect(page.getByTestId("dashboard-kpi-strip")).toBeVisible();
+  await expect(page.getByTestId("insights-operations-analyst")).toHaveCount(0);
+
+  await page.getByTestId("dashboard-view-selector-benchmarks").click();
+  await expect(page.getByTestId("dashboard-view-contractor-insights")).toBeVisible();
+  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Contractor Insights");
+  await expect(page.getByTestId("insights-business-health")).toHaveCount(0);
+  await expect(page.getByTestId("insights-morning-brief")).toHaveCount(0);
+
+  await page.getByTestId("dashboard-view-selector-financial").click();
+  await expect(page.getByTestId("dashboard-view-financial")).toContainText("Financial Performance");
+  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Collected Revenue");
+  await expect(page.getByTestId("insights-business-health")).toHaveCount(0);
+  await expect(page.getByTestId("dashboard-view-contractor-insights")).toHaveCount(0);
+
+  await page.getByTestId("dashboard-view-selector-operations").click();
+  await expect(page.getByTestId("dashboard-view-operations")).toContainText("Execution health");
+  await expect(page.getByTestId("dashboard-operational-health-section")).toContainText("Open resolution cases");
+  await expect(page.getByText("Approvals, disputes, active jobs")).toHaveCount(0);
+
   await page.getByTestId("dashboard-view-selector-reports-trends").click();
-  await expect(page.getByTestId("insights-canonical-metrics-full")).toContainText("Money Customers Still Owe");
+  await expect(page.getByTestId("dashboard-report-controls")).toContainText("Chart Configuration");
+  await page.getByTestId("insights-report-chart-metric").selectOption("fees");
+  await page.getByTestId("insights-report-chart-type").selectOption("bar");
+  await expect(page.getByTestId("dashboard-view-financial")).toHaveCount(0);
+
+  await page.getByTestId("dashboard-view-selector-payouts").click();
+  await expect(page.getByTestId("dashboard-view-payouts")).toContainText("Payout Snapshot");
+  await expect(page.getByTestId("dashboard-report-controls")).toHaveCount(0);
+});
+
+test("Insights customization persists per active view", async ({ page }) => {
+  await installInsightsRoutes(page);
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-financial").click();
+  await expect(page.getByTestId("dashboard-financial-section")).toBeVisible();
+  await page.getByTestId("insights-customize-open").click();
+  await expect(page.getByTestId("insights-customize-panel")).toContainText("Customize Financial Performance");
+  await expect(page.getByTestId("insights-customize-panel")).toContainText("Financial Snapshot");
+  await page.getByRole("button", { name: "Hide" }).first().click();
+  await page.getByTestId("insights-customize-panel").getByRole("button", { name: "Close" }).click();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-financial").click();
+  await expect(page.getByTestId("dashboard-financial-section")).toBeVisible();
+
+  await page.getByTestId("dashboard-view-selector-scorecard").click();
+  await expect(page.getByTestId("insights-business-snapshot")).toBeVisible();
 });
