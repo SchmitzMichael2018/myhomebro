@@ -954,14 +954,28 @@ export default function BusinessDashboard() {
   const businessHealth = commandCenter?.business_health || {};
   const healthDimensions = Array.isArray(businessHealth?.dimensions) ? businessHealth.dimensions : [];
   const needsAttention = Array.isArray(commandCenter?.needs_attention) ? commandCenter.needs_attention : [];
-  const morningBrief = commandCenter?.morning_brief || {};
   const canonicalMetrics = commandCenter?.metrics || {};
-  const opportunityForecast = commandCenter?.opportunity_forecast || {};
-  const forecastSections = Array.isArray(opportunityForecast?.sections) ? opportunityForecast.sections : [];
-  const operationsAnalyst = commandCenter?.operations_analyst || {};
   const unhealthyDimensions = healthDimensions.filter((dimension) => dimension.status && dimension.status !== "Healthy");
   const displayedHealthDimensions = (unhealthyDimensions.length ? unhealthyDimensions : healthDimensions).slice(0, 3);
   const topNeedsAttention = needsAttention.slice(0, 3);
+  const executivePriority = topNeedsAttention[0] || null;
+  const executivePositiveSignals = [
+    Number(snapshot.total_revenue || financialSummary.gross_revenue_total || 0) > 0
+      ? { key: "revenue", title: "Revenue is moving", detail: "Collected revenue is recorded in the selected period." }
+      : null,
+    Number(financialSummary.paid_events_count || 0) > 0
+      ? { key: "payments", title: "Payments are settling", detail: `${int(financialSummary.paid_events_count)} paid event${Number(financialSummary.paid_events_count) === 1 ? "" : "s"} recorded.` }
+      : null,
+    Number(snapshot.jobs_completed || 0) > 0
+      ? { key: "projects", title: "Projects are progressing", detail: `${int(snapshot.jobs_completed)} completed project${Number(snapshot.jobs_completed) === 1 ? "" : "s"} in this period.` }
+      : null,
+    Number(canonicalMetrics.resolution_cases?.value || 0) === 0
+      ? { key: "resolution", title: "No open resolution cases", detail: "No active resolution pressure is recorded." }
+      : null,
+    Number(canonicalMetrics.warranty_requests?.value || 0) === 0
+      ? { key: "warranty", title: "No urgent warranty pressure", detail: "No warranty requests currently need review." }
+      : null,
+  ].filter(Boolean).slice(0, 3);
   const activeViewConfig = VIEW_BY_ID[activeBusinessView] || VIEW_BY_ID.scorecard;
   const activeVisibleWidgetIds = visibleWidgetsByView[activeBusinessView] || VIEW_WIDGET_DEFAULTS[activeBusinessView] || DEFAULT_INSIGHTS_WIDGETS;
   const activeWidgetCatalog = WIDGET_CATALOG_BY_VIEW[activeBusinessView] || WIDGET_CATALOG_BY_VIEW.scorecard;
@@ -1053,15 +1067,6 @@ export default function BusinessDashboard() {
       goalValue: null,
     },
   ], [businessPerformance, canonicalMetrics, financialSummary, goalsByMetric, snapshot]);
-  const executiveMetricKeys = [
-    "revenue",
-    "estimate_pipeline",
-    "open_projects",
-    "pending_release",
-    "held_funds",
-    "warranty_requests",
-    "resolution_cases",
-  ];
   const funnel = businessPerformance?.funnel || {};
   const conversionRates = businessPerformance?.conversion_rates || {};
   const revenueMetrics = businessPerformance?.revenue || {};
@@ -2064,150 +2069,78 @@ export default function BusinessDashboard() {
       ) : null}
 
       {activeBusinessView === "executive" ? (
-        <div className="flex flex-col">
-      {viewHas("business_health") ? (
-      <section data-testid="insights-business-health" className="order-1 mb-10 border-b border-slate-200 pb-9">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="max-w-3xl">
-            <div className="text-lg font-bold text-slate-950">Business Health</div>
-            <h2 className="mt-3 text-4xl font-black tracking-tight text-slate-950">{businessHealth.summary || "Business health loading"}</h2>
-          </div>
-          <div className={`rounded-full border px-6 py-3 text-lg font-black ${commandStateTone(businessHealth.overall)}`}>
-            {businessHealth.overall || "Healthy"}
-          </div>
-        </div>
-
-        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {displayedHealthDimensions.map((dimension) => (
-            <div key={dimension.key} className="border-l border-slate-200 px-4 first:border-l-0">
-              <div className="text-sm font-black">{dimension.label}</div>
-              <div className="mt-1 text-lg font-black">{dimension.status}</div>
-              <div className="mt-2 text-xs leading-5 opacity-80">{dimension.detail}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-5 grid gap-3 lg:grid-cols-3">
-          <div className="border-t border-slate-100 pt-4">
-            <div className="text-sm font-semibold text-slate-500">Biggest Win</div>
-            <div className="mt-2 text-sm leading-6 text-slate-700">{businessHealth.biggest_win || "No business win detected yet."}</div>
-          </div>
-          <div className="border-t border-slate-100 pt-4">
-            <div className="text-sm font-semibold text-slate-500">Biggest Concern</div>
-            <div className="mt-2 text-sm leading-6 text-slate-700">{businessHealth.biggest_concern || "No urgent concern found."}</div>
-          </div>
-          <div className="border-t border-slate-100 pt-4">
-            <div className="text-sm font-semibold text-slate-500">Recommended Focus</div>
-            <div className="mt-2 text-sm leading-6 text-slate-700">{businessHealth.recommended_focus || "Review reports and keep current work moving."}</div>
-          </div>
-        </div>
-      </section>
-      ) : null}
-
-      {viewHas("business_alerts") ? (
-      <section data-testid="insights-business-alerts" className="order-4 mb-5 pt-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-950">Business Alerts</h2>
-            <p className="mt-1 text-sm leading-6 text-slate-500">Conditions leadership should watch.</p>
-          </div>
-          <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600">
-            {topAlertCards.length} active
-          </div>
-        </div>
-        {topAlertCards.length === 0 ? (
-          <div className="mt-4 flex items-center gap-3 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">
-            <Info aria-hidden="true" className="h-5 w-5 text-slate-400" />
-            <span>No business alerts in this range. Alerts appear when source records need leadership attention.</span>
-          </div>
-        ) : (
-          <div className="mt-4 divide-y divide-slate-200">
-            {topAlertCards.map((card) => (
-              <ActionCard
-                key={card.key}
-                testId={`dashboard-business-alert-${card.key}`}
-                label={card.label}
-                count={card.count}
-                amount={card.amount}
-                description={card.description}
-                href={card.href}
-                tone={card.tone}
-              />
-            ))}
-          </div>
-        )}
-      </section>
-      ) : null}
-
-      {viewHas("morning_brief") ? (
-      <div className="order-3 mb-5">
-        <section data-testid="insights-morning-brief" className="border-b border-slate-200 pb-9 pt-3">
-          <div className="text-2xl font-bold text-slate-950">Morning Brief</div>
-          <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-500">
-            {operationsAnalyst.summary || businessHealth.recommended_focus || "Review the highest priority business signal first."}
-          </p>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {[
-              ["Yesterday", morningBrief.yesterday],
-              ["Today", morningBrief.today],
-              ["Risks", morningBrief.risks],
-            ].map(([label, rows]) => (
-              <div key={label} className="border-l border-slate-200 px-4 first:border-l-0">
-                <div className="text-sm font-semibold text-slate-500">{label}</div>
-                <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
-                  {(Array.isArray(rows) && rows.length ? rows : ["No activity."]).map((row) => (
-                    <li key={row}>{row}</li>
+        <div data-testid="insights-executive-workspace" className="space-y-3 rounded-2xl border border-slate-200/90 bg-slate-50/60 p-3 shadow-sm md:p-4">
+          <section className="grid rounded-xl border border-slate-200 bg-white shadow-sm lg:grid-cols-[280px_1fr]">
+            {viewHas("business_health") ? (
+              <div data-testid="insights-business-health" className="p-6 lg:border-r lg:border-slate-200">
+                <h2 className="text-xl font-bold text-slate-950">Business Health</h2>
+                <div className="relative mx-auto mt-5 h-28 w-52 overflow-hidden">
+                  <svg viewBox="0 0 200 110" className="h-full w-full" aria-hidden="true">
+                    <path d="M20 96 A80 80 0 0 1 180 96" fill="none" stroke="#e2e8f0" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M20 96 A80 80 0 0 1 180 96" fill="none" stroke={businessHealth.overall === "At Risk" ? "#dc2626" : businessHealth.overall === "Needs Attention" ? "#d97706" : "#16a34a"} strokeWidth="11" strokeLinecap="round" />
+                  </svg>
+                  <div className="absolute inset-x-0 bottom-0 text-center text-3xl font-black text-slate-950">{businessHealth.overall || "Insufficient data"}</div>
+                </div>
+                <p className="mt-4 text-center text-sm font-semibold text-slate-800">{businessHealth.recommended_focus || businessHealth.summary || "Business health is still being established."}</p>
+                <div className="mt-5 space-y-2">
+                  {displayedHealthDimensions.slice(0, 3).map((dimension) => (
+                    <div key={dimension.key} className="flex items-center gap-2 text-sm text-slate-600"><span className={dimension.status === "At Risk" ? "text-red-600" : dimension.status === "Needs Attention" ? "text-amber-600" : "text-emerald-600"}>●</span><span>{dimension.label}: {dimension.status}</span></div>
                   ))}
-                </ul>
+                </div>
               </div>
-            ))}
-          </div>
-          <div className="mt-5 border-l-2 border-blue-500 bg-blue-50/60 px-4 py-3 text-sm leading-6 text-slate-700">
-            <span className="font-black">Recommended action: </span>
-            {morningBrief.recommended_action || "Review reports and keep current work moving."}
-          </div>
-        </section>
-      </div>
-      ) : null}
+            ) : null}
 
-      {viewHas("executive_scorecard") ? (
-      <section data-testid="insights-canonical-metrics" className="order-2 mb-7 border-b border-slate-200 pb-8">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-950">Executive Scorecard</h2>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {executiveMetricKeys.map((key) => (
-            <CanonicalMetricCard key={key} metric={canonicalMetrics[key]} />
-          ))}
-        </div>
-      </section>
-      ) : null}
+            {viewHas("executive_scorecard") ? (
+              <div data-testid="insights-canonical-metrics" className="p-6">
+                <h2 className="text-xl font-bold text-slate-950">Executive Scorecard</h2>
+                <div className="mt-7 grid sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ["Revenue", money(snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0), "Current selected period"],
+                    ["Contractor Earnings", money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value || 0), "Current selected period"],
+                    ["Projects Completed", int(snapshot.jobs_completed || 0), "Current selected period"],
+                    ["Review Rating", "Pending", "Review data unavailable"],
+                  ].map(([label, value, detail]) => (
+                    <div key={label} data-testid={`insights-executive-metric-${label.toLowerCase().replaceAll(" ", "-")}`} className="border-l border-slate-200 px-5 py-2 first:border-l-0">
+                      <div className="text-sm font-semibold text-slate-600">{label}</div>
+                      <div className="mt-3 text-2xl font-black text-slate-950">{value}</div>
+                      <div className="mt-2 text-xs text-slate-500">{detail}</div>
+                    </div>
+                  ))}
+                </div>
+                <button type="button" onClick={() => setActiveBusinessView("scorecard")} className="mt-7 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800">View full scorecard <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
+              </div>
+            ) : null}
+          </section>
 
-      {viewHas("strategic_risks") ? (
-      <section data-testid="insights-opportunity-forecast" className="order-5 mb-5 border-t border-slate-200 pt-8">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-950">Opportunity Forecast</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-500">
-            {opportunityForecast.source_note || "Deterministic workflow state from opportunities, estimates, agreements, and collected payments."}
-          </p>
-        </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {forecastSections.map((section) => (
-            <a
-              key={section.label}
-              href={section.href}
-              className="border-l border-slate-200 px-4 py-2 first:border-l-0 transition hover:bg-slate-50"
-            >
-              <div className="text-sm font-semibold text-slate-500">{section.label}</div>
-              <div className="mt-2 text-2xl font-black text-slate-950">{money(section.value)}</div>
-              <div className="mt-3 text-xs font-bold text-blue-700">Open source records</div>
-            </a>
-          ))}
-        </div>
-      </section>
-      ) : null}
+          {viewHas("morning_brief") || viewHas("business_alerts") ? (
+            <div className="grid gap-3 lg:grid-cols-2">
+              <section data-testid="insights-morning-brief" className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-xl font-bold text-slate-950">Morning Brief</h2>
+                <p className="mt-1 text-sm text-slate-500">Your top priorities this morning.</p>
+                {topNeedsAttention.length ? (
+                  <ul className="mt-5 divide-y divide-slate-200">
+                    {topNeedsAttention.map((item) => (
+                      <li key={item.key} data-testid={`insights-executive-brief-${item.key}`}><a href={item.open_url} className="grid grid-cols-[auto_1fr_auto] items-center gap-3 py-4 hover:bg-slate-50"><span className={`flex h-8 w-8 items-center justify-center rounded-full border ${item.severity === "high" ? "border-red-200 text-red-600" : "border-amber-200 text-amber-600"}`}><TriangleAlert aria-hidden="true" className="h-4 w-4" /></span><span><span className="block text-sm font-bold text-slate-950">{item.title}</span><span className="mt-1 block text-sm text-slate-500">{item.why}</span></span><ChevronRight aria-hidden="true" className="h-5 w-5 text-slate-400" /></a></li>
+                    ))}
+                  </ul>
+                ) : <div className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">No urgent priorities this morning.</div>}
+              </section>
+
+              <section data-testid="insights-whats-working" className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h2 className="text-xl font-bold text-slate-950">What&apos;s Working</h2>
+                <p className="mt-1 text-sm text-slate-500">Recent positive momentum.</p>
+                {executivePositiveSignals.length ? <ul className="mt-5 space-y-1">{executivePositiveSignals.map((signal) => <li key={signal.key} data-testid={`insights-positive-${signal.key}`} className="flex gap-3 py-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 font-bold text-emerald-600">✓</span><span><span className="block text-sm font-bold text-slate-950">{signal.title}</span><span className="mt-1 block text-sm text-slate-500">{signal.detail}</span></span></li>)}</ul> : <div className="mt-5 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600">More completed activity will reveal positive business trends.</div>}
+              </section>
+            </div>
+          ) : null}
+
+          <section data-testid="insights-top-priority" className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-xl font-bold text-slate-950">Top Priority</h2>
+            <p className="mt-1 text-sm text-slate-500">Focus on the action that will have the greatest impact.</p>
+            {executivePriority ? <div className="mt-5 flex flex-col gap-5 md:flex-row md:items-center"><div className="flex min-w-0 flex-1 items-start gap-4"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700"><BarChart3 aria-hidden="true" className="h-5 w-5" /></span><div><h3 className="font-bold text-slate-950">{executivePriority.title}</h3><p className="mt-1 text-sm text-slate-600">{executivePriority.why}</p></div></div><div className="border-l border-slate-200 pl-5"><div className="text-xs font-semibold text-slate-500">Impact</div><div className="mt-1 font-bold text-slate-950">High operational impact</div></div><a href={executivePriority.open_url} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-blue-500 px-4 text-sm font-bold text-blue-700 hover:bg-blue-50">{executivePriority.source_workspace ? `Open ${executivePriority.source_workspace}` : executivePriority.action_label || "Open source records"}<ArrowRight aria-hidden="true" className="h-4 w-4" /></a></div> : <div className="mt-5 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-800">No urgent priority is supported by current records.</div>}
+          </section>
+
+          <section data-testid="insights-executive-reports-handoff" className="rounded-xl border border-slate-200 bg-white px-6 py-4 shadow-sm"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700"><FileBarChart2 aria-hidden="true" className="h-5 w-5" /></span><div><h2 className="font-bold text-slate-950">Explore deeper insights</h2><p className="mt-0.5 text-sm text-slate-500">Dive into detailed reports, charts, performance by category, exports, and more.</p></div></div><button type="button" onClick={() => setActiveBusinessView("reports-trends")} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-bold text-slate-900 hover:bg-slate-50">Go to Reports & Trends <ArrowRight aria-hidden="true" className="h-4 w-4" /></button></div></section>
         </div>
       ) : null}
 

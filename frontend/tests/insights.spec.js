@@ -363,14 +363,23 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByTestId("dashboard-view-selector-executive")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("insights-active-view-heading")).toHaveText("Executive Overview");
   await expect(page.getByTestId("insights-business-health")).toContainText("Business Health");
-  await expect(page.getByTestId("insights-business-health")).toContainText("Needs Attention overall");
-  await expect(page.getByTestId("insights-business-alerts")).toContainText("Business Alerts");
+  await expect(page.getByTestId("insights-business-health")).toContainText("Needs Attention");
+  await expect(page.getByTestId("insights-business-health")).toContainText("Late milestones can delay invoices");
+  await expect(page.getByTestId("insights-business-alerts")).toHaveCount(0);
   await expect(page.getByTestId("insights-needs-attention")).toHaveCount(0);
   await expect(page.getByTestId("insights-morning-brief")).toContainText("Morning Brief");
-  await expect(page.getByTestId("insights-morning-brief")).toContainText("Completed 3 milestones.");
+  await expect(page.getByTestId("insights-morning-brief")).toContainText("Overdue milestones");
+  await expect(page.getByTestId("insights-morning-brief").locator("li")).toHaveCount(2);
+  await expect(page.getByTestId("insights-whats-working")).toContainText("Revenue is moving");
+  await expect(page.getByTestId("insights-whats-working")).toContainText("Payments are settling");
+  await expect(page.getByTestId("insights-top-priority")).toContainText("Overdue milestones");
+  await expect(page.getByTestId("insights-top-priority").getByRole("link")).toHaveAttribute("href", "/app/milestones");
   await expect(page.getByTestId("insights-executive-synthesis")).toHaveCount(0);
-  await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Money Waiting On Customer Approval");
-  await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Resolution Cases");
+  await expect(page.getByTestId("insights-canonical-metrics").locator('[data-testid^="insights-executive-metric-"]')).toHaveCount(4);
+  await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Contractor Earnings");
+  await expect(page.getByTestId("insights-canonical-metrics")).not.toContainText("vs last month");
+  await expect(page.getByTestId("insights-executive-workspace")).not.toContainText("Industry Benchmark");
+  await expect(page.getByTestId("insights-opportunity-forecast")).toHaveCount(0);
   await expect(page.getByTestId("insights-operations-analyst")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-benchmarks").click();
@@ -530,4 +539,35 @@ test("capture redesigned Scorecard workspace", async ({ page }) => {
   await expect(page.getByTestId("insights-scorecard")).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: path.join(screenshotDir, "insights-scorecard-reference-mobile.png"), fullPage: false });
+});
+
+test("capture Executive reference implementation", async ({ page }) => {
+  await installInsightsRoutes(page);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-executive").click();
+  await expect(page.getByTestId("dashboard-view-selector-executive")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("insights-executive-workspace")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.addStyleTag({ content: "*, *::before, *::after { animation: none !important; transition: none !important; }" });
+  await page.evaluate(() => {
+    const main = document.querySelector("main");
+    for (const element of [main, main?.parentElement, document.getElementById("root"), document.body, document.documentElement]) {
+      if (!element) continue;
+      element.style.setProperty("height", "auto", "important");
+      element.style.setProperty("max-height", "none", "important");
+      element.style.setProperty("overflow", "visible", "important");
+    }
+  });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-executive-reference-implementation.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-executive").click();
+  await expect(page.getByTestId("insights-executive-workspace")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-executive-reference-mobile.png"), fullPage: false });
 });
