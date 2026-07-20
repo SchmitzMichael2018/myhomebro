@@ -260,7 +260,39 @@ async function installInsightsRoutes(page) {
   });
 
   await page.route("**/api/projects/payouts/history/**", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [], summary: {} }) });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [
+          {
+            id: 11,
+            payout_id: 11,
+            agreement_title: "Kitchen Remodel",
+            milestone_title: "Cabinet Install",
+            subcontractor_display_name: "Taylor Flooring",
+            payout_status: "paid",
+            payout_amount: "800.00",
+          },
+          {
+            id: 12,
+            payout_id: 12,
+            agreement_title: "Hallway Flooring",
+            milestone_title: "LVP Installation",
+            subcontractor_display_name: "Austin Finish Crew",
+            payout_status: "ready_for_payout",
+            payout_amount: "450.00",
+          },
+        ],
+        summary: {
+          total_paid_amount: "800.00",
+          total_ready_amount: "450.00",
+          total_failed_amount: "0.00",
+          total_pending_amount: "125.00",
+          record_count: 2,
+        },
+      }),
+    });
   });
 }
 
@@ -354,7 +386,27 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByTestId("dashboard-view-financial")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-payouts").click();
-  await expect(page.getByTestId("dashboard-view-payouts")).toContainText("Payout Snapshot");
+  await expect(page.getByTestId("dashboard-view-payouts")).toContainText("Payouts");
+  await expect(page.getByTestId("dashboard-report-controls")).toHaveCount(0);
+});
+
+test("Payouts and Exports view renders clean labels and available export actions", async ({ page }) => {
+  await installInsightsRoutes(page);
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-payouts").click();
+
+  const payoutsView = page.getByTestId("dashboard-view-payouts");
+  await expect(payoutsView).toContainText("Paid to Subcontractors");
+  await expect(payoutsView).toContainText("Pending Payouts");
+  await expect(payoutsView).toContainText("Payout Activity");
+  await expect(payoutsView).toContainText("Kitchen Remodel");
+  await expect(payoutsView).toContainText("Export Center");
+  await expect(page.getByTestId("dashboard-payouts-export")).toContainText("Download CSV");
+  await expect(page.getByTestId("dashboard-payouts-full-history")).toContainText("View Payout History");
+
+  const visibleText = await payoutsView.innerText();
+  expect(visibleText).not.toMatch(/Ã|Â|ï¿½|�|â|&[a-z]+;/i);
   await expect(page.getByTestId("dashboard-report-controls")).toHaveCount(0);
 });
 

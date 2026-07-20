@@ -18,9 +18,12 @@ import {
   Bell,
   CalendarDays,
   ChartNoAxesCombined,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Clock3,
+  Download,
+  ExternalLink,
   FileBarChart2,
   FileText,
   Grid2X2,
@@ -91,6 +94,34 @@ function Stat({ label, value, sub, tone = "default" }) {
       <div className="text-sm font-semibold text-sky-100/70">{label}</div>
       <div className="mt-2 text-2xl font-extrabold text-white">{value}</div>
       {sub ? <div className="mt-1 text-xs text-sky-100/60">{sub}</div> : null}
+    </div>
+  );
+}
+
+function LightMetric({ label, value, sub, tone = "default", icon: Icon }) {
+  const toneClass =
+    tone === "good"
+      ? "text-emerald-700 bg-emerald-50 border-emerald-100"
+      : tone === "warn"
+      ? "text-amber-700 bg-amber-50 border-amber-100"
+      : tone === "bad"
+      ? "text-red-700 bg-red-50 border-red-100"
+      : "text-blue-700 bg-blue-50 border-blue-100";
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-slate-900">{label}</div>
+          <div className="mt-3 text-2xl font-black leading-none text-slate-950">{value}</div>
+        </div>
+        {Icon ? (
+          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border ${toneClass}`}>
+            <Icon aria-hidden="true" className="h-4 w-4" />
+          </div>
+        ) : null}
+      </div>
+      {sub ? <div className="mt-3 text-sm leading-5 text-slate-500">{sub}</div> : null}
     </div>
   );
 }
@@ -169,12 +200,7 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
           <div className="mt-3 text-sm leading-5 text-sky-100/70">{description}</div>
         </div>
         {href ? (
-          <span
-            aria-hidden="true"
-            className="mt-1 text-lg font-semibold leading-none text-sky-100/55 transition group-hover:translate-x-0.5 group-hover:text-white"
-          >
-            â†’
-          </span>
+          <ArrowRight aria-hidden="true" className="mt-1 h-4 w-4 text-sky-100/55 transition group-hover:translate-x-0.5 group-hover:text-white" />
         ) : null}
       </div>
     </Wrapper>
@@ -270,7 +296,7 @@ function SummaryActionCard({
             <div className="inline-flex items-center gap-2 text-sm font-semibold text-sky-100">
               <span>{actionLabel}</span>
               <span aria-hidden="true" className="transition group-hover:translate-x-0.5">
-                Ã¢â€ â€™
+                --------
               </span>
             </div>
           </div>
@@ -686,7 +712,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                   <tr key={row.id} data-testid={`drilldown-row-${row.id}`}>
                     <td className="py-3 pr-3 font-semibold text-slate-900">{row.agreement_title}</td>
                     <td className="py-3 pr-3 text-slate-700">{row.invoice_number}</td>
-                    <td className="py-3 pr-3 text-slate-700">{row.milestone_title || "â€”"}</td>
+                    <td className="py-3 pr-3 text-slate-700">{row.milestone_title || "---"}</td>
                     <td className="py-3 pr-3 text-slate-700">{formatDateTime(row.paid_at)}</td>
                     <td className="py-3 pr-3 font-semibold text-slate-900">{money(row.gross_amount)}</td>
                     <td className="py-3">
@@ -699,7 +725,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                           Open
                         </a>
                       ) : (
-                        <span className="text-xs text-slate-400">â€”</span>
+                        <span className="text-xs text-slate-400">---</span>
                       )}
                     </td>
                   </tr>
@@ -745,7 +771,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                           Open
                         </a>
                       ) : (
-                        <span className="text-xs text-slate-400">â€”</span>
+                        <span className="text-xs text-slate-400">---</span>
                       )}
                     </td>
                   </tr>
@@ -793,7 +819,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                           Open
                         </a>
                       ) : (
-                        <span className="text-xs text-slate-400">â€”</span>
+                        <span className="text-xs text-slate-400">---</span>
                       )}
                     </td>
                   </tr>
@@ -825,7 +851,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                 <tr key={row.id} data-testid={`drilldown-row-${row.id}`}>
                   <td className="py-3 pr-3 font-semibold text-slate-900">{row.agreement_title}</td>
                   <td className="py-3 pr-3 text-slate-700">{row.milestone_title}</td>
-                  <td className="py-3 pr-3 text-slate-700">{row.completion_date || "â€”"}</td>
+                  <td className="py-3 pr-3 text-slate-700">{row.completion_date || "---"}</td>
                   <td className="py-3 pr-3 text-slate-700">
                     {String(row.subcontractor_completion_status || "overdue").replaceAll("_", " ")}
                   </td>
@@ -840,7 +866,7 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
                         Open
                       </a>
                     ) : (
-                      <span className="text-xs text-slate-400">â€”</span>
+                      <span className="text-xs text-slate-400">---</span>
                     )}
                   </td>
                 </tr>
@@ -1037,7 +1063,7 @@ export default function BusinessDashboard() {
       label: "Review Rating",
       value: (
         <span className="inline-flex items-center gap-1">
-          <span>—</span>
+          <span>-</span>
           <Star aria-hidden="true" className="h-6 w-6 fill-amber-400 text-amber-400" />
         </span>
       ),
@@ -1739,9 +1765,10 @@ export default function BusinessDashboard() {
             <option value="ytd">This Year</option>
             <option value="all">All Time</option>
           </select>
-            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
-              ▾
-            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500"
+            />
           </div>
           <button
             type="button"
@@ -2627,7 +2654,7 @@ export default function BusinessDashboard() {
         <Stat
           label="Pending Payout / Escrow"
           value={money(pendingExposure)}
-          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} Â· Escrow: ${money(snapshot.escrow_pending)}`}
+          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} -- Escrow: ${money(snapshot.escrow_pending)}`}
           tone={pendingExposure > 0 ? "warn" : "default"}
         />
         <Stat
@@ -2664,7 +2691,7 @@ export default function BusinessDashboard() {
         <Stat
           label="Pending Payout / Escrow"
           value={money(pendingExposure)}
-          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} Â· Escrow: ${money(snapshot.escrow_pending)}`}
+          sub={`Subs ready: ${money(payoutSummary?.total_ready_amount)} -- Escrow: ${money(snapshot.escrow_pending)}`}
           tone={pendingExposure > 0 ? "warn" : "default"}
         />
 
@@ -3007,7 +3034,7 @@ export default function BusinessDashboard() {
                       </td>
                       <td className="py-3 pr-3 text-slate-700">{money(row.fee_cap)}</td>
                       <td className="py-3 pr-3 text-slate-700">{money(row.remaining_cap)}</td>
-                      <td className="py-3 pr-3 text-slate-700">{row.payment_status || "â€”"}</td>
+                      <td className="py-3 pr-3 text-slate-700">{row.payment_status || "---"}</td>
                       <td className="py-3">
                         {row.agreement_id ? (
                           <a
@@ -3018,7 +3045,7 @@ export default function BusinessDashboard() {
                             Open
                           </a>
                         ) : (
-                          <span className="text-xs text-slate-400">â€”</span>
+                          <span className="text-xs text-slate-400">---</span>
                         )}
                       </td>
                     </tr>
@@ -3399,17 +3426,15 @@ export default function BusinessDashboard() {
       ) : null}
 
       {activeBusinessView === "payouts" ? (
-        <div data-testid="dashboard-view-payouts">
-          <div
+        <div data-testid="dashboard-view-payouts" className="space-y-4">
+          <section
             data-testid="dashboard-payouts-section"
             className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
           >
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <div className="text-base font-bold text-slate-900">Payout Snapshot</div>
-                <div className="mt-1 text-sm text-slate-600">
-                  Track paid, ready, failed, and pending subcontractor payouts alongside your business reporting.
-                </div>
+                <h2 className="text-lg font-bold text-slate-950">Payouts</h2>
+                <p className="mt-1 text-sm text-slate-600">Subcontractor payout status for the selected date range.</p>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -3418,64 +3443,133 @@ export default function BusinessDashboard() {
                   data-testid="dashboard-payouts-export"
                   onClick={exportPayoutCsv}
                   disabled={payoutExporting}
-                  className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
                 >
-                  {payoutExporting ? "Exporting..." : "Export CSV"}
+                  <Download aria-hidden="true" className="h-4 w-4" />
+                  {payoutExporting ? "Exporting..." : "Download CSV"}
                 </button>
                 <a
                   data-testid="dashboard-payouts-full-history"
                   href="/app/payouts/history"
-                  className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                 >
-                  View Full Payout History
+                  View Payout History
+                  <ExternalLink aria-hidden="true" className="h-4 w-4" />
                 </a>
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <Stat
-                label="Paid to Subs"
+              <LightMetric
+                label="Paid to Subcontractors"
                 value={money(payoutSummary?.total_paid_amount)}
                 sub="Completed subcontractor payouts"
                 tone="good"
+                icon={WalletCards}
               />
-              <Stat
-                label="Ready for Payout"
+              <LightMetric
+                label="Pending Payouts"
                 value={money(payoutSummary?.total_ready_amount)}
-                sub="Can be paid now"
+                sub="Ready for contractor release"
                 tone="warn"
+                icon={Clock3}
               />
-              <Stat
+              <LightMetric
                 label="Failed Payouts"
                 value={money(payoutSummary?.total_failed_amount)}
                 sub="Needs contractor follow-up"
                 tone="bad"
+                icon={TriangleAlert}
               />
-              <Stat
-                label="Pending Payouts"
+              <LightMetric
+                label="Scheduled Payouts"
                 value={money(payoutSummary?.total_pending_amount)}
                 sub="Not ready yet"
+                icon={CalendarDays}
               />
+            </div>
+          </section>
+
+          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-950">Payout Activity</h2>
+                <p className="mt-1 text-sm text-slate-600">Recent subcontractor payout records and status mix.</p>
+              </div>
+              <div className="text-sm font-semibold text-slate-500">
+                {payoutSummary?.record_count ?? payoutRows.length} records
+              </div>
             </div>
 
-            <div className="mt-5">
-              <SummaryActionCard
-                testId="dashboard-summary-payout-activity"
-                title="Payout Activity"
-                subtitle="Recent payout mix without the long list."
-                headline={money(payoutSummary?.total_paid_amount)}
-                headlineLabel="Paid out"
-                metrics={[
-                  { label: "Ready", count: payoutStatusCounts.ready, amount: money(payoutSummary?.total_ready_amount) },
-                  { label: "Pending", count: payoutStatusCounts.pending, amount: money(payoutSummary?.total_pending_amount) },
-                  { label: "Failed", count: payoutStatusCounts.failed, amount: money(payoutSummary?.total_failed_amount) },
-                ]}
-                href="/app/payouts/history"
-                actionLabel="View Payout Details"
-                tone={payoutStatusCounts.ready > 0 ? "warn" : "default"}
-              />
+            <div className="mt-4 grid gap-3 lg:grid-cols-[280px_1fr]">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="text-sm font-bold text-slate-950">Status Mix</div>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="font-black text-slate-950">{int(payoutStatusCounts.ready)}</div>
+                    <div className="text-slate-500">Ready</div>
+                  </div>
+                  <div>
+                    <div className="font-black text-slate-950">{int(payoutStatusCounts.pending)}</div>
+                    <div className="text-slate-500">Pending</div>
+                  </div>
+                  <div>
+                    <div className="font-black text-slate-950">{int(payoutStatusCounts.paid)}</div>
+                    <div className="text-slate-500">Paid</div>
+                  </div>
+                  <div>
+                    <div className="font-black text-slate-950">{int(payoutStatusCounts.failed)}</div>
+                    <div className="text-slate-500">Failed</div>
+                  </div>
+                </div>
+              </div>
+
+              {payoutRows.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                  No payout records in this date range.
+                </div>
+              ) : (
+                <div className="overflow-hidden rounded-lg border border-slate-200">
+                  <div className="divide-y divide-slate-200">
+                    {payoutRows.slice(0, 5).map((row) => (
+                      <a
+                        key={row.id || `${row.agreement_title}-${row.milestone_title}`}
+                        href={row.payout_id ? `/app/payouts/history/${row.payout_id}` : "/app/payouts/history"}
+                        className="grid gap-3 bg-white p-3 text-sm hover:bg-slate-50 md:grid-cols-[1fr_auto_auto] md:items-center"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate font-bold text-slate-950">{row.agreement_title || "Payout record"}</div>
+                          <div className="mt-1 truncate text-slate-500">{row.milestone_title || row.subcontractor_display_name || "Subcontractor payout"}</div>
+                        </div>
+                        <div className="font-semibold text-slate-700">{money(row.payout_amount || row.amount)}</div>
+                        <div className="rounded-full border border-slate-200 px-2 py-1 text-xs font-bold text-slate-600">
+                          {String(row.payout_status || "pending").replaceAll("_", " ")}
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          </section>
+
+          <section data-testid="dashboard-payouts-export-center" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-950">Export Center</h2>
+                <p className="mt-1 text-sm text-slate-600">Download payout records for bookkeeping using the current date range.</p>
+              </div>
+              <button
+                type="button"
+                onClick={exportPayoutCsv}
+                disabled={payoutExporting}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                <Download aria-hidden="true" className="h-4 w-4" />
+                {payoutExporting ? "Exporting..." : "Download CSV"}
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
 
@@ -3514,7 +3608,7 @@ export default function BusinessDashboard() {
                         aria-label={`Move ${widgetLabel(widgetId, activeBusinessView)} up`}
                         className="rounded-md border border-white/12 bg-white/6 px-2 py-1 text-xs font-black text-sky-50 disabled:opacity-35"
                       >
-                        ↑
+                        Up
                       </button>
                       <button
                         type="button"
@@ -3527,7 +3621,7 @@ export default function BusinessDashboard() {
                         aria-label={`Move ${widgetLabel(widgetId, activeBusinessView)} down`}
                         className="rounded-md border border-white/12 bg-white/6 px-2 py-1 text-xs font-black text-sky-50 disabled:opacity-35"
                       >
-                        ↓
+                        Down
                       </button>
                       <button
                         type="button"
