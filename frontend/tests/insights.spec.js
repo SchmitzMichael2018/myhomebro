@@ -269,22 +269,22 @@ test("Insights scorecard renders defaults, goals, customization, and reports han
 
   await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByRole("heading", { name: "Insights" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Insights", exact: true })).toBeVisible();
   await expect(page.getByRole("tablist", { name: "Insights dashboard views" })).toBeVisible();
   await expect(page.getByTestId("dashboard-view-selector-row")).not.toContainText("visible insights");
   await expect(page.getByTestId("dashboard-view-selector-row")).not.toContainText("How is my business doing right now?");
   await expect(page.getByTestId("dashboard-view-selector-scorecard")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("insights-active-view-heading")).toHaveText("Scorecard");
   await expect(page.getByTestId("insights-active-view-purpose")).toContainText("How is my business doing right now?");
-  await expect(page.getByTestId("insights-customize-open")).toContainText("Customize Scorecard");
+  await expect(page.getByTestId("insights-customize-open")).toHaveAccessibleName("Customize Scorecard");
   await expect(page.getByTestId("insights-scorecard")).toBeVisible();
   await expect(page.getByTestId("insights-business-snapshot")).toContainText("Revenue");
   await expect(page.getByTestId("insights-business-snapshot")).toContainText("$12,800.00");
   await expect(page.getByTestId("insights-goal-progress")).toContainText("No goals yet");
-  await expect(page.getByTestId("insights-primary-trend")).toContainText("Revenue trend");
+  await expect(page.getByTestId("insights-primary-trend")).toContainText("Primary Performance Trend");
   await expect(page.getByTestId("insights-needs-attention")).toContainText("Overdue milestones");
   await expect(page.getByTestId("insights-needs-attention")).toContainText("Pending customer approvals");
-  await expect(page.getByTestId("insights-reports-handoff")).toContainText("View Detailed Reports");
+  await expect(page.getByTestId("insights-reports-handoff")).toContainText("Go to Reports & Trends");
   await expect(page.getByTestId("insights-operations-analyst")).toHaveCount(0);
 
   await page.getByTestId("insights-set-goal").click();

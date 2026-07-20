@@ -11,6 +11,30 @@ import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
 import { useWorkspaceProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import {
+  ArrowDown,
+  ArrowRight,
+  ArrowUp,
+  BarChart3,
+  Bell,
+  CalendarDays,
+  ChartNoAxesCombined,
+  ChevronRight,
+  CircleDollarSign,
+  Clock3,
+  FileBarChart2,
+  FileText,
+  Grid2X2,
+  Info,
+  MoreVertical,
+  RefreshCw,
+  Settings,
+  Star,
+  Target,
+  TriangleAlert,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import {
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -157,7 +181,7 @@ function ActionCard({ label, count, amount, description, href, tone = "default",
   );
 }
 
-function ViewSelectorCard({ title, selected, onClick, testId }) {
+function ViewSelectorCard({ title, icon: Icon, selected, onClick, testId }) {
   return (
     <button
       type="button"
@@ -166,12 +190,13 @@ function ViewSelectorCard({ title, selected, onClick, testId }) {
       role="tab"
       aria-selected={selected}
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center justify-center rounded-full border px-4 py-2 text-sm font-black transition ${
+      className={`inline-flex shrink-0 items-center justify-center gap-2 border-b-2 px-3 py-3 text-sm font-bold transition md:px-4 ${
         selected
-          ? "border-amber-300/65 bg-amber-300 text-slate-950 shadow-sm"
-          : "border-white/12 bg-white/6 text-sky-100/78 hover:border-white/24 hover:bg-white/10 hover:text-white"
+          ? "border-blue-600 text-blue-700"
+          : "border-transparent text-slate-700 hover:border-slate-300 hover:text-slate-950"
       }`}
     >
+      {Icon ? <Icon aria-hidden="true" className="h-4 w-4" strokeWidth={2} /> : null}
       {title}
     </button>
   );
@@ -322,9 +347,14 @@ function hasSeriesValue(rows, keys) {
   );
 }
 
-function ChartEmptyState({ text }) {
+function ChartEmptyState({ text, tone = "dark" }) {
+  const light = tone === "light";
   return (
-    <div className="flex h-72 items-center justify-center rounded-xl border border-dashed border-white/14 bg-slate-950/35 px-6 text-center text-sm text-sky-100/70">
+    <div className={`flex h-72 items-center justify-center rounded-xl border border-dashed px-6 text-center text-sm ${
+      light
+        ? "border-slate-200 bg-slate-50 text-slate-500"
+        : "border-white/14 bg-slate-950/35 text-sky-100/70"
+    }`}>
       {text}
     </div>
   );
@@ -354,13 +384,13 @@ const DEFAULT_INSIGHTS_WIDGETS = [
 ];
 
 const INSIGHTS_VIEWS = [
-  { key: "scorecard", title: "Scorecard", subtitle: "How is my business doing right now?", defaultPeriod: "30" },
-  { key: "executive", title: "Executive Overview", subtitle: "Overall health and leadership signals.", defaultPeriod: "30" },
-  { key: "benchmarks", title: "Benchmarks", subtitle: "Compare project types, periods, and peers.", defaultPeriod: "90" },
-  { key: "financial", title: "Financial Performance", subtitle: "How money is moving through the business.", defaultPeriod: "30" },
-  { key: "operations", title: "Operations", subtitle: "How work execution is performing.", defaultPeriod: "30" },
-  { key: "reports-trends", title: "Reports & Trends", subtitle: "Detailed analytics, charts, and tables.", defaultPeriod: "90" },
-  { key: "payouts", title: "Payouts & Exports", subtitle: "Money that has gone out and export actions.", defaultPeriod: "30" },
+  { key: "scorecard", title: "Scorecard", subtitle: "How is my business doing right now?", defaultPeriod: "30", icon: Grid2X2 },
+  { key: "executive", title: "Executive Overview", subtitle: "Overall health and leadership signals.", defaultPeriod: "30", icon: ChartNoAxesCombined },
+  { key: "benchmarks", title: "Benchmarks", subtitle: "Compare project types, periods, and peers.", defaultPeriod: "90", icon: BarChart3 },
+  { key: "financial", title: "Financial Performance", subtitle: "How money is moving through the business.", defaultPeriod: "30", icon: FileText },
+  { key: "operations", title: "Operations", subtitle: "How work execution is performing.", defaultPeriod: "30", icon: Users },
+  { key: "reports-trends", title: "Reports & Trends", subtitle: "Detailed analytics, charts, and tables.", defaultPeriod: "90", icon: FileBarChart2 },
+  { key: "payouts", title: "Payouts & Exports", subtitle: "Money that has gone out and export actions.", defaultPeriod: "30", icon: WalletCards },
 ];
 
 const VIEW_BY_ID = Object.fromEntries(INSIGHTS_VIEWS.map((view) => [view.key, view]));
@@ -445,13 +475,50 @@ function widgetLabel(id, viewId = "scorecard") {
   return WIDGET_CATALOG_BY_VIEW[viewId]?.find((item) => item.id === id)?.label || id;
 }
 
-function ScorecardMetric({ label, value, sub, goal }) {
+function goalPercentForMetric(currentValue, goalValue) {
+  const current = Number(currentValue || 0);
+  const target = Number(goalValue || 0);
+  if (!Number.isFinite(current) || !Number.isFinite(target) || target <= 0) return null;
+  return Math.max(0, Math.min((current / target) * 100, 100));
+}
+
+function ScorecardMetric({ label, value, sub, goal, currentValue, goalValue, trend = "up", comparison = "vs selected period" }) {
+  const progress = goalPercentForMetric(currentValue, goalValue);
+  const positive = trend !== "down";
+  const neutral = trend === "neutral";
+  const hasGoal = Boolean(goal);
   return (
-    <div className="min-h-[112px] rounded-xl border border-white/10 bg-white/[0.055] p-3 shadow-sm">
-      <div className="text-[11px] font-bold uppercase tracking-[0.14em] text-sky-100/58">{label}</div>
-      <div className="mt-2 text-2xl font-black leading-none text-white">{value}</div>
-      <div className="mt-2 line-clamp-2 text-xs leading-5 text-sky-100/62">{sub}</div>
-      {goal ? <div className="mt-2 text-[11px] font-black text-amber-200">Goal {goal}</div> : null}
+    <div className="min-h-[168px] rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+        <span>{label}</span>
+        <Info aria-hidden="true" className="h-3.5 w-3.5 text-slate-400" />
+      </div>
+      <div className="mt-5 text-3xl font-black leading-none tracking-tight text-slate-950">{value}</div>
+      <div className="mt-3 flex items-center gap-1.5 text-sm">
+        {neutral ? (
+          <span aria-hidden="true" className="h-2 w-2 rounded-full bg-blue-500" />
+        ) : positive ? (
+          <ArrowUp aria-hidden="true" className="h-4 w-4 text-emerald-600" />
+        ) : (
+          <ArrowDown aria-hidden="true" className="h-4 w-4 text-red-600" />
+        )}
+        <span className={neutral ? "font-bold text-blue-700" : positive ? "font-bold text-emerald-600" : "font-bold text-red-600"}>{sub}</span>
+        <span className="text-slate-500">{comparison}</span>
+      </div>
+      <div className="mt-7 text-sm text-slate-900">
+        {hasGoal ? <>Goal: {goal}</> : "Goal: Not set"}
+      </div>
+      <div className="mt-2 flex items-center gap-3">
+        <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={`h-full rounded-full ${neutral ? "bg-blue-600" : positive ? "bg-emerald-600" : "bg-red-500"}`}
+            style={{ width: `${progress === null ? 0 : Math.max(6, progress)}%` }}
+          />
+        </div>
+        <div className="w-10 text-right text-sm font-semibold text-slate-700">
+          {progress === null ? "--" : `${Math.round(progress)}%`}
+        </div>
+      </div>
     </div>
   );
 }
@@ -469,22 +536,22 @@ function GoalProgressCard({ goal, currentValue }) {
   const formatValue = moneyGoal ? money : (value) => int(value);
 
   return (
-    <div className="rounded-xl border border-white/10 bg-white/[0.055] p-3">
+    <div className="rounded-lg border border-slate-100 bg-white p-1">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-black text-white">{goal.name || goal.metric_label}</div>
-          <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-100/55">
+          <div className="text-base font-bold text-slate-950">{goal.name || goal.metric_label}</div>
+          <div className="mt-1 text-xs font-semibold text-slate-500">
             {achieved ? "Achieved" : days === null ? "Active goal" : `${Math.max(days, 0)} days remaining`}
           </div>
         </div>
-        <div className="text-right text-sm font-black text-amber-100">{Math.round(progress)}%</div>
+        <div className="text-right text-sm font-bold text-slate-700">{formatValue(current)} of {formatValue(target)}</div>
       </div>
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-900/70">
-        <div className="h-full rounded-full bg-amber-300" style={{ width: `${Math.max(4, progress)}%` }} />
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+        <div className="h-full rounded-full bg-emerald-600" style={{ width: `${Math.max(4, progress)}%` }} />
       </div>
-      <div className="mt-2 text-xs leading-5 text-sky-100/72">
-        {formatValue(current)} of {formatValue(target)}
-        {!achieved ? ` | ${formatValue(gap)} remaining` : ""}
+      <div className="mt-2 flex items-center justify-between text-sm">
+        <span className="font-bold text-emerald-600">{Math.round(progress)}%</span>
+        <span className="text-slate-500">{!achieved ? `${formatValue(gap)} remaining` : "Goal reached"}</span>
       </div>
     </div>
   );
@@ -915,35 +982,71 @@ export default function BusinessDashboard() {
       key: "revenue",
       label: "Revenue",
       value: money(snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0),
-      sub: "Collected revenue in the selected period",
+      sub: "Current",
+      comparison: "selected period",
+      trend: "neutral",
       goal: goalsByMetric.monthly_revenue ? money(goalsByMetric.monthly_revenue.target_value) : null,
+      currentValue: snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0,
+      goalValue: goalsByMetric.monthly_revenue?.target_value,
     },
     {
       key: "net_paid",
-      label: "Estimated Earnings",
+      label: "Contractor Earnings",
       value: money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value || 0),
-      sub: "Collected after platform fees; not full profit",
+      sub: "Current",
+      comparison: "selected period",
+      trend: "neutral",
+      currentValue: financialSummary.net_paid_total || canonicalMetrics.net_paid?.value || 0,
+      goalValue: goalsByMetric.monthly_revenue?.target_value,
     },
     {
       key: "completed",
       label: "Projects Completed",
       value: int(snapshot.jobs_completed || 0),
-      sub: "Completed agreements in the period",
+      sub: "Current",
+      comparison: "selected period",
+      trend: "neutral",
       goal: goalsByMetric.projects_completed ? int(goalsByMetric.projects_completed.target_value) : null,
+      currentValue: snapshot.jobs_completed || 0,
+      goalValue: goalsByMetric.projects_completed?.target_value,
     },
     {
       key: "average_value",
       label: "Average Project Value",
       value: money(businessPerformance?.revenue?.average_project_value || snapshot.avg_revenue_per_job || 0),
-      sub: "Average from current project value records",
+      sub: "Current",
+      comparison: "selected period",
+      trend: "neutral",
       goal: goalsByMetric.average_project_value ? money(goalsByMetric.average_project_value.target_value) : null,
+      currentValue: businessPerformance?.revenue?.average_project_value || snapshot.avg_revenue_per_job || 0,
+      goalValue: goalsByMetric.average_project_value?.target_value,
     },
     {
       key: "estimate_acceptance",
       label: "Estimate Acceptance",
       value: pct(businessPerformance?.conversion_rates?.bid_to_award_rate || 0),
-      sub: "Bid-to-award rate from funnel data",
+      sub: "Funnel",
+      comparison: "selected period",
+      trend: "neutral",
       goal: goalsByMetric.estimate_acceptance_rate ? pct(goalsByMetric.estimate_acceptance_rate.target_value) : null,
+      currentValue: businessPerformance?.conversion_rates?.bid_to_award_rate || 0,
+      goalValue: goalsByMetric.estimate_acceptance_rate?.target_value,
+    },
+    {
+      key: "review_rating",
+      label: "Review Rating",
+      value: (
+        <span className="inline-flex items-center gap-1">
+          <span>—</span>
+          <Star aria-hidden="true" className="h-6 w-6 fill-amber-400 text-amber-400" />
+        </span>
+      ),
+      sub: "Pending",
+      comparison: "review data pending",
+      trend: "neutral",
+      goal: null,
+      currentValue: 0,
+      goalValue: null,
     },
   ], [businessPerformance, canonicalMetrics, financialSummary, goalsByMetric, snapshot]);
   const executiveMetricKeys = [
@@ -1614,47 +1717,65 @@ export default function BusinessDashboard() {
     <ContractorPageSurface
       eyebrow="Insights"
       title="Insights"
-      subtitle="Track business performance, goals, trends, and risks."
-      variant="operational"
+      subtitle="Track revenue, payouts, project health, and risks."
+      variant="light-console"
       className="mhb-business-dashboard"
+      contentClassName="space-y-4"
       actions={
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-sky-100/75">Range</label>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="text-sm font-semibold text-slate-700">Date Range</label>
+          <div className="relative">
+            <CalendarDays aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
           <select
             value={range}
             onChange={(e) => {
               setRange(e.target.value);
               saveInsightsPreferences(activeVisibleWidgetIds, e.target.value, activeBusinessView);
             }}
-            className="rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 shadow-sm outline-none focus:border-sky-300/60"
+              className="h-10 appearance-none rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-9 text-sm font-semibold text-slate-900 shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
           >
             <option value="30">This Month</option>
             <option value="90">This Quarter</option>
             <option value="ytd">This Year</option>
             <option value="all">All Time</option>
           </select>
+            <span aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+              ▾
+            </span>
+          </div>
           <button
             type="button"
             onClick={() => openGoalEditor()}
-            className="rounded-xl border border-amber-300/70 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-amber-200"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 shadow-sm hover:border-blue-200 hover:bg-blue-50"
             data-testid="insights-set-goal"
           >
+            <Target aria-hidden="true" className="h-4 w-4 text-blue-600" />
             Set Goal
           </button>
           <button
             type="button"
             onClick={() => setCustomizeOpen(true)}
-            className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50 shadow-sm hover:bg-white/15"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-blue-600 bg-blue-600 px-4 text-sm font-bold text-white shadow-sm hover:bg-blue-700"
             data-testid="insights-customize-open"
+            aria-label={`Customize ${activeViewConfig.title}`}
           >
-            Customize {activeViewConfig.title}
+            <Settings aria-hidden="true" className="h-4 w-4" />
+            Customize
           </button>
 
           <button
             onClick={fetchData}
-            className="rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 shadow-sm hover:bg-sky-50"
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-900 shadow-sm hover:border-blue-200 hover:bg-blue-50"
           >
+            <RefreshCw aria-hidden="true" className="h-4 w-4 text-blue-600" />
             Refresh
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-700 shadow-sm hover:border-blue-200 hover:bg-blue-50"
+            aria-label="Notifications"
+          >
+            <Bell aria-hidden="true" className="h-4 w-4" />
           </button>
         </div>
       }
@@ -1662,16 +1783,17 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-view-selector-row"
-        className="mb-3 -mx-1 overflow-x-auto px-1"
+        className="mb-3 -mx-1 overflow-x-auto border-b border-slate-200 px-1"
         role="tablist"
         aria-label="Insights dashboard views"
       >
-        <div className="flex min-w-max gap-2 rounded-2xl border border-white/10 bg-slate-950/30 p-1">
+        <div className="flex min-w-max gap-5">
           {businessViewCards.map((card) => (
             <ViewSelectorCard
               key={card.key}
               testId={`dashboard-view-selector-${card.key}`}
               title={card.title}
+              icon={card.icon}
               subtitle={card.subtitle}
               preview={card.preview}
               selected={activeBusinessView === card.key}
@@ -1685,17 +1807,14 @@ export default function BusinessDashboard() {
         </div>
       </section>
 
-      <section className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <section className="sr-only">
         <div>
-          <h2 data-testid="insights-active-view-heading" className="text-xl font-black text-white md:text-2xl">
+          <h2 data-testid="insights-active-view-heading">
             {activeViewConfig.title}
           </h2>
-          <p data-testid="insights-active-view-purpose" className="mt-1 max-w-3xl text-sm leading-6 text-sky-100/72">
+          <p data-testid="insights-active-view-purpose">
             {activeViewConfig.subtitle}
           </p>
-        </div>
-        <div className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs font-black text-sky-100/70">
-          {rangeLabel}
         </div>
       </section>
 
@@ -1704,17 +1823,28 @@ export default function BusinessDashboard() {
           {activeVisibleWidgetIds.map((widgetId) => {
             if (widgetId === "business_snapshot") {
               return (
-                <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-12">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-12">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Business Snapshot</div>
-                      <h2 className="mt-1 text-xl font-black text-white">How the business is performing</h2>
-                      <p className="mt-1 text-sm leading-6 text-sky-100/65">
+                      <h2 className="text-lg font-bold text-slate-950">Business Snapshot</h2>
+                      <p className="sr-only">
                         Paid revenue, project value, and funnel metrics from the selected reporting period.
                       </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveBusinessView("reports-trends");
+                        const nextPeriod = periodByView["reports-trends"] || VIEW_BY_ID["reports-trends"].defaultPeriod;
+                        if (nextPeriod !== range) setRange(nextPeriod);
+                      }}
+                      className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800"
+                    >
+                      View all metrics
+                      <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                    </button>
                   </div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
                     {snapshotCards.map((card) => (
                       <ScorecardMetric key={card.key} {...card} />
                     ))}
@@ -1724,33 +1854,41 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "goal_progress") {
               return (
-                <section key={widgetId} data-testid="insights-goal-progress" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <section key={widgetId} data-testid="insights-goal-progress" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Goal Progress</div>
-                      <h2 className="mt-1 text-xl font-black text-white">Progress toward business goals</h2>
+                      <h2 className="text-lg font-bold text-slate-950">Goal Progress</h2>
                     </div>
-                    <button type="button" onClick={() => openGoalEditor()} className="rounded-lg border border-amber-300/70 bg-amber-300 px-3 py-1.5 text-sm font-black text-slate-950 hover:bg-amber-200">
-                      Set Your First Goal
+                    <button type="button" onClick={() => openGoalEditor()} className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800">
+                      Manage Goals
+                      <ArrowRight aria-hidden="true" className="h-4 w-4" />
                     </button>
                   </div>
                   {goalsLoading ? (
-                    <div className="mt-4 text-sm text-sky-100/70">Loading goals...</div>
+                    <div className="mt-4 text-sm text-slate-500">Loading goals...</div>
                   ) : activeGoals.length === 0 ? (
-                    <div className="mt-3 rounded-xl border border-dashed border-white/14 bg-slate-950/25 p-4 text-sm text-sky-100/70">
-                      <div className="font-black text-white">No goals yet</div>
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                      <div className="font-bold text-slate-950">No goals yet</div>
                       <div className="mt-1">Set a business goal to track progress here.</div>
+                      <button
+                        type="button"
+                        onClick={() => openGoalEditor()}
+                        className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800"
+                      >
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-blue-600 text-lg leading-none">+</span>
+                        Set Your First Goal
+                      </button>
                     </div>
                   ) : (
-                    <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                    <div className="mt-5 space-y-6">
                       {activeGoals.map((goal) => (
                         <div key={goal.id} className="space-y-2">
                           <GoalProgressCard goal={goal} currentValue={goalCurrentValues[goal.metric_type]} />
                           <div className="flex flex-wrap gap-2">
-                            <button type="button" onClick={() => openGoalEditor(goal)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-sky-50 hover:bg-white/15">
+                            <button type="button" onClick={() => openGoalEditor(goal)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
                               Edit Goal
                             </button>
-                            <button type="button" onClick={() => deactivateGoal(goal)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-sky-50 hover:bg-white/15">
+                            <button type="button" onClick={() => deactivateGoal(goal)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
                               Deactivate
                             </button>
                           </div>
@@ -1763,62 +1901,109 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "primary_trend") {
               return (
-                <section key={widgetId} data-testid="insights-primary-trend" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-5">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Primary Performance Trend</div>
-                    <h2 className="mt-1 text-xl font-black text-white">Revenue trend</h2>
-                    <p className="mt-1 text-sm leading-6 text-sky-100/70">Paid revenue by period bucket. Open detailed reports for drilldowns and exports.</p>
+                <section key={widgetId} data-testid="insights-primary-trend" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-lg font-bold text-slate-950">Primary Performance Trend</h2>
+                      <select
+                        value="revenue"
+                        onChange={() => {}}
+                        className="mt-4 h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-900 shadow-sm outline-none"
+                        aria-label="Primary trend metric"
+                      >
+                        <option value="revenue">Revenue</option>
+                      </select>
+                    </div>
+                    <MoreVertical aria-hidden="true" className="h-5 w-5 text-slate-500" />
+                  </div>
+                  <div className="mt-4">
+                    <div className="text-3xl font-black leading-none text-slate-950">
+                      {money(snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0)}
+                    </div>
+                    <div className="mt-2 flex items-center gap-1.5 text-sm">
+                      <span aria-hidden="true" className="h-2 w-2 rounded-full bg-blue-500" />
+                      <span className="font-bold text-blue-700">Current</span>
+                      <span className="text-slate-500">selected period</span>
+                    </div>
                   </div>
                   <div className="mt-3">
                     {hasSeriesValue(revenueChart, ["revenue"]) ? (
                       <div className="h-60">
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={revenueChart}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" />
-                            <XAxis dataKey="bucket_label" stroke="rgba(224,242,254,0.7)" />
-                            <YAxis tickFormatter={axisMoney} stroke="rgba(224,242,254,0.7)" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                            <XAxis dataKey="bucket_label" stroke="#64748b" />
+                            <YAxis tickFormatter={axisMoney} stroke="#64748b" />
                             <Tooltip formatter={(value) => money(value)} />
-                            <Area type="monotone" dataKey="revenue" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.25} />
+                            <Area type="monotone" dataKey="revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.18} />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <ChartEmptyState text="Not enough paid revenue data for a trend yet." />
+                      <ChartEmptyState tone="light" text="Not enough paid revenue data for a trend yet." />
                     )}
+                  </div>
+                  <div className="mt-4 border-t border-slate-200 pt-4">
+                    <div className="text-sm font-semibold text-slate-950">Paid revenue by period</div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveBusinessView("reports-trends");
+                        const nextPeriod = periodByView["reports-trends"] || VIEW_BY_ID["reports-trends"].defaultPeriod;
+                        if (nextPeriod !== range) setRange(nextPeriod);
+                      }}
+                      className="mt-1 inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800"
+                    >
+                      View in Reports & Trends
+                      <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                    </button>
                   </div>
                 </section>
               );
             }
             if (widgetId === "needs_attention") {
               return (
-                <section key={widgetId} data-testid="insights-needs-attention" className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-3">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <section key={widgetId} data-testid="insights-needs-attention" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-3">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200/90">Needs Attention</div>
-                      <h2 className="mt-1 text-xl font-black text-white">Top action items</h2>
-                      <p className="mt-1 text-sm leading-6 text-sky-100/70">Limited to the most actionable records from source workspaces.</p>
+                      <h2 className="text-lg font-bold text-slate-950">Needs Attention</h2>
+                      <p className="sr-only">Limited to the most actionable records from source workspaces.</p>
                     </div>
-                    <div className="rounded-full border border-white/12 bg-white/6 px-3 py-1 text-xs font-black text-sky-100/78">
-                      Showing {topNeedsAttention.length} of {needsAttention.length}
-                    </div>
+                    <button type="button" className="inline-flex items-center gap-2 text-sm font-bold text-blue-700 hover:text-blue-800">
+                      View all
+                      <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                    </button>
                   </div>
                   {topNeedsAttention.length === 0 ? (
-                    <div className="mt-3 rounded-xl border border-dashed border-white/14 bg-slate-950/25 p-4 text-sm text-sky-100/70">
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
                       No urgent attention items right now.
                     </div>
                   ) : (
-                    <div className="mt-3 divide-y divide-white/10 overflow-hidden rounded-xl border border-white/10 bg-slate-950/20">
+                    <div className="mt-4 divide-y divide-slate-200">
                       {topNeedsAttention.map((item) => (
-                        <a key={item.key} href={item.open_url} className="grid gap-2 p-3 text-sky-100 transition hover:bg-white/6 md:grid-cols-[1fr_auto] md:items-center">
-                          <div>
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className={`h-2.5 w-2.5 rounded-full ${item.severity === "high" ? "bg-rose-300" : item.severity === "medium" ? "bg-amber-300" : "bg-sky-300"}`} />
-                              <span className="text-sm font-black text-white">{item.title}</span>
-                              <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-sky-100/55">{item.source_workspace}</span>
-                            </div>
-                            <div className="mt-1 line-clamp-1 text-sm text-sky-100/68">{item.why}</div>
+                        <a key={item.key} href={item.open_url} className="grid gap-3 py-4 text-slate-900 transition hover:bg-slate-50 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+                          <div className={`flex h-9 w-9 items-center justify-center rounded-full border ${
+                            item.severity === "high"
+                              ? "border-red-500 text-red-600"
+                              : item.severity === "medium"
+                                ? "border-orange-500 text-orange-600"
+                                : "border-blue-500 text-blue-600"
+                          }`}>
+                            {item.severity === "high" ? (
+                              <CircleDollarSign aria-hidden="true" className="h-5 w-5" />
+                            ) : item.severity === "medium" ? (
+                              <Clock3 aria-hidden="true" className="h-5 w-5" />
+                            ) : (
+                              <TriangleAlert aria-hidden="true" className="h-5 w-5" />
+                            )}
                           </div>
-                          <div className="text-xs font-black text-sky-100">{item.action_label || "Open"}</div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-bold text-slate-950">{item.title}</span>
+                            </div>
+                            <div className="mt-1 line-clamp-2 text-sm text-slate-500">{item.why}</div>
+                          </div>
+                          <ChevronRight aria-hidden="true" className="h-5 w-5 text-slate-500" />
                         </a>
                       ))}
                     </div>
@@ -1828,12 +2013,16 @@ export default function BusinessDashboard() {
             }
             if (widgetId === "reports_handoff") {
               return (
-                <section key={widgetId} data-testid="insights-reports-handoff" className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 shadow-sm xl:col-span-12">
+                <section key={widgetId} data-testid="insights-reports-handoff" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-12">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-100">Explore deeper insights</div>
-                      <h2 className="mt-1 text-xl font-black text-white">Go to Reports & Trends</h2>
-                      <p className="mt-1 text-sm leading-6 text-sky-100/70">Open detailed charts, tables, exports, payout history, and drilldowns.</p>
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-blue-100 bg-blue-50 text-blue-700">
+                        <BarChart3 aria-hidden="true" className="h-6 w-6" />
+                      </div>
+                      <div>
+                        <h2 className="text-lg font-bold text-slate-950">Explore deeper insights</h2>
+                        <p className="mt-1 text-sm leading-6 text-slate-600">Dive into detailed reports, charts, performance by category, exports, and more.</p>
+                      </div>
                     </div>
                     <button
                       type="button"
@@ -1842,20 +2031,20 @@ export default function BusinessDashboard() {
                         const nextPeriod = periodByView["reports-trends"] || VIEW_BY_ID["reports-trends"].defaultPeriod;
                         if (nextPeriod !== range) setRange(nextPeriod);
                       }}
-                      className="rounded-xl border border-white/70 bg-white px-4 py-2 text-sm font-black text-slate-950 hover:bg-sky-50"
+                      className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-5 text-sm font-bold text-slate-950 shadow-sm hover:bg-white"
                       data-testid="insights-open-reports"
                     >
-                      View Detailed Reports
+                      Go to Reports & Trends
+                      <ArrowRight aria-hidden="true" className="h-4 w-4" />
                     </button>
                   </div>
                 </section>
               );
             }
             return (
-              <section key={widgetId} data-testid={`insights-optional-${widgetId}`} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4 shadow-sm xl:col-span-4">
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">{widgetLabel(widgetId)}</div>
-                <h2 className="mt-2 text-xl font-black text-white">{widgetLabel(widgetId)}</h2>
-                <p className="mt-1 text-sm leading-6 text-sky-100/70">Optional scorecard signal backed by existing Insights data. Open Reports & Trends for the detailed breakdown.</p>
+              <section key={widgetId} data-testid={`insights-optional-${widgetId}`} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-4">
+                <h2 className="text-lg font-bold text-slate-950">{widgetLabel(widgetId)}</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Optional scorecard signal backed by existing Insights data. Open Reports & Trends for the detailed breakdown.</p>
               </section>
             );
           })}
