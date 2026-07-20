@@ -402,8 +402,11 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByTestId("dashboard-view-contractor-insights")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-operations").click();
-  await expect(page.getByTestId("dashboard-view-operations")).toContainText("Execution health");
-  await expect(page.getByTestId("dashboard-operational-health-section")).toContainText("Open resolution cases");
+  await expect(page.getByTestId("insights-operations-waiting-queue")).toContainText("Waiting Queue");
+  await expect(page.getByTestId("insights-operations-active-work")).toContainText("Active Work");
+  await expect(page.getByTestId("insights-operations-schedule-health")).toContainText("Schedule Health");
+  await expect(page.getByTestId("insights-operations-daily-focus")).toContainText("Daily Focus");
+  await expect(page.getByTestId("dashboard-operational-health-section")).toHaveCount(0);
   await expect(page.getByText("Approvals, disputes, active jobs")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-reports-trends").click();
@@ -600,4 +603,29 @@ test("capture Financial reference implementation", async ({ page }) => {
   await page.getByTestId("dashboard-view-selector-financial").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: path.join(screenshotDir, "insights-financial-refined-mobile.png"), fullPage: true });
+});
+
+test("capture Operations reference implementation", async ({ page }) => {
+  await installInsightsRoutes(page);
+  const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-operations").click();
+  await expect(page.getByTestId("dashboard-view-selector-operations")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("insights-operations-waiting-queue")).toBeVisible();
+  await expect(page.getByTestId("insights-operations-active-work")).toBeVisible();
+  await expect(page.getByTestId("insights-operations-schedule-health")).toBeVisible();
+  await expect(page.getByTestId("insights-operations-daily-focus")).toBeVisible();
+  await expect(page.getByTestId("dashboard-operational-health-section")).toHaveCount(0);
+  await expect(page.getByTestId("dashboard-view-operations")).not.toContainText("Revenue Collected");
+  await expect(page.getByTestId("dashboard-view-operations")).not.toContainText("Performance vs. Peers");
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-operations-reference-implementation.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("dashboard-view-selector-operations").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-operations-reference-mobile.png"), fullPage: true });
 });
