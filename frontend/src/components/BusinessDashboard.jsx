@@ -2079,16 +2079,13 @@ export default function BusinessDashboard() {
       ) : null}
 
       {activeBusinessView === "executive" ? (
-        <>
+        <div className="flex flex-col">
       {viewHas("business_health") ? (
-      <section data-testid="insights-business-health" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-business-health" className="order-1 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Business Health</div>
+            <div className="text-sm font-bold text-sky-200">Business Health</div>
             <h2 className="mt-2 text-3xl font-black text-white">{businessHealth.summary || "Business health loading"}</h2>
-            <p className="mt-2 text-sm leading-6 text-sky-100/70">
-              Insights explains what changed and why. Use the source workspace links below to take action.
-            </p>
           </div>
           <div className={`rounded-full border px-4 py-2 text-sm font-black ${commandStateTone(businessHealth.overall)}`}>
             {businessHealth.overall || "Healthy"}
@@ -2123,10 +2120,10 @@ export default function BusinessDashboard() {
       ) : null}
 
       {viewHas("business_alerts") ? (
-      <section data-testid="insights-business-alerts" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-business-alerts" className="order-4 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Business Alerts</div>
+            <div className="text-sm font-bold text-sky-200">Business Alerts</div>
             <h2 className="mt-2 text-2xl font-black text-white">Conditions leadership should watch</h2>
             <p className="mt-1 text-sm leading-6 text-sky-100/70">Business conditions from source records. Configuration controls live in their source workspaces.</p>
           </div>
@@ -2158,11 +2155,14 @@ export default function BusinessDashboard() {
       ) : null}
 
       {viewHas("morning_brief") ? (
-      <div className="mb-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+      <div className="order-3 mb-5">
         <section data-testid="insights-morning-brief" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Morning Brief</div>
+          <div className="text-sm font-bold text-sky-200">Morning Brief</div>
           <h2 className="mt-2 text-2xl font-black text-white">Operations Analyst brief</h2>
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-sky-100/70">
+            {operationsAnalyst.summary || businessHealth.recommended_focus || "Review the highest priority business signal first."}
+          </p>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
             {[
               ["Yesterday", morningBrief.yesterday],
               ["Today", morningBrief.today],
@@ -2183,27 +2183,15 @@ export default function BusinessDashboard() {
             {morningBrief.recommended_action || "Review reports and keep current work moving."}
           </div>
         </section>
-
-        <section data-testid="insights-executive-synthesis" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Executive Priorities</div>
-          <h2 className="mt-2 text-2xl font-black text-white">Leadership summary</h2>
-          <p className="mt-2 text-sm leading-6 text-sky-100/70">
-            {operationsAnalyst.summary || businessHealth.recommended_focus || "Review the highest priority business signal first."}
-          </p>
-          <div className="mt-4 rounded-xl border border-white/12 bg-slate-950/40 p-4 text-sm leading-6 text-sky-100">
-            {operationsAnalyst.why_this_matters || "These signals are drawn from source workspaces so leadership can decide what needs attention today."}
-          </div>
-        </section>
       </div>
       ) : null}
 
       {viewHas("executive_scorecard") ? (
-      <section data-testid="insights-canonical-metrics" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-canonical-metrics" className="order-2 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Core KPIs</div>
+            <div className="text-sm font-bold text-sky-200">Executive Scorecard</div>
             <h2 className="mt-2 text-2xl font-black text-white">Executive scorecard</h2>
-            <p className="mt-1 text-sm leading-6 text-sky-100/70">The few numbers that explain cash, pipeline, active work, warranty, and resolution pressure.</p>
           </div>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -2215,7 +2203,7 @@ export default function BusinessDashboard() {
       ) : null}
 
       {viewHas("strategic_risks") ? (
-      <section data-testid="insights-opportunity-forecast" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+      <section data-testid="insights-opportunity-forecast" className="order-5 mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Opportunity Forecast</div>
           <h2 className="mt-2 text-2xl font-black text-white">Pipeline by workflow state</h2>
@@ -2238,7 +2226,7 @@ export default function BusinessDashboard() {
         </div>
       </section>
       ) : null}
-        </>
+        </div>
       ) : null}
 
       {activeBusinessView === "at-a-glance" ? (
@@ -2556,11 +2544,20 @@ export default function BusinessDashboard() {
                 <div className="text-xs text-slate-500">Financial dashboard only</div>
               </div>
 
-              <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                <Stat label="Collected Revenue" value={money(financialSummary.gross_revenue_total || snapshot.total_revenue)} sub="Paid invoices and draw requests" tone="good" />
-                <Stat label="Estimated Contractor Earnings" value={money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value)} sub="Collected after platform fees; not profit" />
-                <Stat label="Outstanding Invoices" value={money(canonicalMetrics.outstanding_receivables?.value)} sub="Sent invoices and submitted draws" tone={Number(canonicalMetrics.outstanding_receivables?.value || 0) > 0 ? "warn" : "default"} />
-                <Stat label="Money On Hold" value={money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value)} sub="Paused by resolution or review" tone={Number(financialSummary.on_hold_total || 0) > 0 ? "bad" : "default"} />
+              <div className="mt-6 grid grid-cols-1 divide-y divide-slate-200 border-y border-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+                {[
+                  ["Money In", "Collected revenue", money(financialSummary.gross_revenue_total || snapshot.total_revenue), "Paid invoices and draw requests"],
+                  ["Money Out", "Contractor earnings", money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value), "Collected after platform fees; not profit"],
+                  ["Outstanding", "Open receivables", money(canonicalMetrics.outstanding_receivables?.value), "Sent invoices and submitted draws"],
+                  ["Cash Flow", "Money on hold", money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value), "Paused by resolution or review"],
+                ].map(([group, label, value, detail]) => (
+                  <div key={group} className="px-1 py-5 first:pl-0 sm:px-5 last:pr-0">
+                    <div className="text-sm font-bold text-slate-500">{group}</div>
+                    <div className="mt-3 text-xs font-semibold text-slate-600">{label}</div>
+                    <div className="mt-1 text-2xl font-black tabular-nums text-slate-950">{value}</div>
+                    <div className="mt-1 text-xs leading-5 text-slate-500">{detail}</div>
+                  </div>
+                ))}
               </div>
 
               <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[1.5fr_0.8fr]">
@@ -2613,7 +2610,7 @@ export default function BusinessDashboard() {
           >
             <div
               data-testid="dashboard-operational-health-section"
-              className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"
+              className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"
             >
               {operationalHealthCards.map((card) => (
                 <ActionCard
@@ -2890,9 +2887,9 @@ export default function BusinessDashboard() {
           <DashboardSection
             title="Reports & Trends"
             subtitle="Detailed analytics, charts, category tables, and exports."
-            className="mb-5"
+            className="mb-5 flex flex-col"
           >
-      <section data-testid="dashboard-report-controls" className="mb-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section data-testid="dashboard-report-controls" className="order-1 mb-5 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="text-base font-bold text-slate-900">Chart Configuration</div>
@@ -2932,7 +2929,7 @@ export default function BusinessDashboard() {
           </div>
         </div>
       </section>
-      <section className="rounded-xl border border-slate-200 bg-white/95 p-5 shadow-sm">
+      <section className="order-3 mt-5 rounded-xl border border-slate-200 bg-white/95 p-5 shadow-sm">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
             <div className="text-base font-bold text-slate-900">Operational Context</div>
@@ -2969,7 +2966,7 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-fee-tracker-section"
-        className="mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+        className="order-4 mt-5 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
       >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
@@ -3084,7 +3081,7 @@ export default function BusinessDashboard() {
 
       <section
         data-testid="dashboard-charts-section"
-        className="mt-5 rounded-xl border border-slate-200 bg-slate-50/55 p-5 shadow-sm"
+        className="order-2 rounded-xl border border-slate-200 bg-slate-50/55 p-5 shadow-sm"
       >
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
@@ -3099,6 +3096,7 @@ export default function BusinessDashboard() {
         </div>
 
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="xl:col-span-2">
           <ChartCard
             title="Revenue Over Time"
             description="Paid invoice revenue grouped by the current dashboard range."
@@ -3135,6 +3133,7 @@ export default function BusinessDashboard() {
               <ChartEmptyState text="No paid invoice revenue in this range yet." />
             )}
           </ChartCard>
+          </div>
 
           <ChartCard
             title="Subcontractor Payouts"
@@ -3429,7 +3428,7 @@ export default function BusinessDashboard() {
         <div data-testid="dashboard-view-payouts" className="space-y-4">
           <section
             data-testid="dashboard-payouts-section"
-            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="rounded-xl border border-slate-200 bg-white px-5 py-6 shadow-sm"
           >
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
@@ -3525,8 +3524,9 @@ export default function BusinessDashboard() {
               </div>
 
               {payoutRows.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
-                  No payout records in this date range.
+                <div className="rounded-lg bg-slate-50 px-5 py-4 text-sm text-slate-600">
+                  <div className="font-bold text-slate-900">No payout activity in this range</div>
+                  <div className="mt-1">Approved subcontractor milestones create payout records here. Open Payout History to review another date range.</div>
                 </div>
               ) : (
                 <div className="overflow-hidden rounded-lg border border-slate-200">

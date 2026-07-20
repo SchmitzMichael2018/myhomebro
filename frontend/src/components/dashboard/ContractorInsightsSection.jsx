@@ -1,8 +1,6 @@
 import React, { useMemo } from "react";
 import DashboardSection from "./DashboardSection.jsx";
-import DashboardGrid from "./DashboardGrid.jsx";
 import DashboardCard from "./DashboardCard.jsx";
-import InsightSummaryCard from "./InsightSummaryCard.jsx";
 import InsightComparisonRow from "./InsightComparisonRow.jsx";
 import InsightRecommendationCard from "./InsightRecommendationCard.jsx";
 
@@ -183,8 +181,8 @@ export default function ContractorInsightsSection({
 
   return (
     <DashboardSection
-      title="Contractor Insights"
-      subtitle="Helpful benchmarks based on similar projects, your market, and your past work."
+      title="Benchmark Summary"
+      subtitle="How your work compares with similar projects, your market, and your own history."
       testId="dashboard-contractor-insights-section"
       className="mb-5"
       actions={
@@ -219,7 +217,7 @@ export default function ContractorInsightsSection({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-3xl">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-sm font-bold text-slate-900">Dashboard benchmark view</div>
+              <div className="text-lg font-bold text-slate-900">{selectedFamilyLabel}</div>
               <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 {data.source_type === "blended_all"
                   ? "Platform + Market + Contractor"
@@ -268,34 +266,26 @@ export default function ContractorInsightsSection({
         </div>
       </div>
 
-      <DashboardGrid columns="narrow" className="xl:grid-cols-4">
+      <div className="grid border-y border-slate-200 md:grid-cols-2 xl:grid-cols-4">
         {data.summary_cards.map((card) => (
-          <InsightSummaryCard
-            key={card.key}
-            testId={`dashboard-contractor-insights-summary-${card.key}`}
-            label={card.label}
-            headline={card.headline}
-            support={card.support}
-            badge={card.badge}
-            confidence={card.confidence}
-          />
+          <div key={card.key} data-testid={`dashboard-contractor-insights-summary-${card.key}`} className="border-b border-slate-200 py-4 md:px-5 md:[&:nth-child(even)]:border-l xl:border-b-0 xl:[&:not(:first-child)]:border-l">
+            <div className="text-sm font-semibold text-slate-500">{card.label}</div>
+            <div className="mt-1 font-bold leading-6 text-slate-950">{card.headline}</div>
+            <div className="mt-1 text-xs leading-5 text-slate-500">{card.support}</div>
+          </div>
         ))}
-      </DashboardGrid>
+      </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div>
           <DashboardCard
             testId="dashboard-contractor-insights-standings"
             className="h-full border-slate-200 bg-white"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                  Where you stand
-                </div>
-                <div className="mt-1 text-base font-semibold text-slate-900">
-                  A quick read on how this project family compares.
-                </div>
+                <div className="text-lg font-semibold text-slate-900">Peer Comparisons</div>
+                <div className="mt-1 text-sm text-slate-500">Where this project family stands.</div>
               </div>
               <div className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                 {confidenceLabel(data.confidence)}

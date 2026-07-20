@@ -358,19 +358,22 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByTestId("insights-needs-attention")).toHaveCount(0);
   await expect(page.getByTestId("insights-morning-brief")).toContainText("Morning Brief");
   await expect(page.getByTestId("insights-morning-brief")).toContainText("Completed 3 milestones.");
+  await expect(page.getByTestId("insights-executive-synthesis")).toHaveCount(0);
   await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Money Waiting On Customer Approval");
   await expect(page.getByTestId("insights-canonical-metrics")).toContainText("Resolution Cases");
   await expect(page.getByTestId("insights-operations-analyst")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-benchmarks").click();
   await expect(page.getByTestId("dashboard-view-contractor-insights")).toBeVisible();
-  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Contractor Insights");
+  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Benchmark Summary");
+  await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Peer Comparisons");
   await expect(page.getByTestId("insights-business-health")).toHaveCount(0);
   await expect(page.getByTestId("insights-morning-brief")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-financial").click();
   await expect(page.getByTestId("dashboard-view-financial")).toContainText("Financial Performance");
-  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Collected Revenue");
+  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Money In");
+  await expect(page.getByTestId("dashboard-financial-section")).toContainText("Outstanding");
   await expect(page.getByTestId("insights-business-health")).toHaveCount(0);
   await expect(page.getByTestId("dashboard-view-contractor-insights")).toHaveCount(0);
 
