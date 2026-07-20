@@ -380,6 +380,76 @@ function ChartCard({ title, description, testId, children }) {
   );
 }
 
+const DEFAULT_INSIGHTS_WIDGETS = [
+  "business_snapshot",
+  "goal_progress",
+  "primary_trend",
+  "needs_attention",
+  "reports_handoff",
+];
+
+const WIDGET_CATALOG = [
+  { id: "business_snapshot", label: "Business Snapshot", category: "default" },
+  { id: "goal_progress", label: "Goal Progress", category: "default" },
+  { id: "primary_trend", label: "Primary Performance Trend", category: "default" },
+  { id: "needs_attention", label: "Needs Attention", category: "default" },
+  { id: "reports_handoff", label: "Detailed Reports Link", category: "default" },
+  { id: "estimate_conversion", label: "Estimate Conversion", category: "optional" },
+  { id: "payment_performance", label: "Payment Performance", category: "optional" },
+  { id: "project_completion", label: "Project Completion", category: "optional" },
+  { id: "warranty_trends", label: "Warranty Trends", category: "optional" },
+  { id: "resolution_trends", label: "Resolution Trends", category: "optional" },
+];
+
+function widgetLabel(id) {
+  return WIDGET_CATALOG.find((item) => item.id === id)?.label || id;
+}
+
+function ScorecardMetric({ label, value, sub, goal }) {
+  return (
+    <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4 shadow-sm">
+      <div className="text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/60">{label}</div>
+      <div className="mt-2 text-2xl font-black text-white">{value}</div>
+      <div className="mt-2 text-sm leading-5 text-sky-100/70">{sub}</div>
+      {goal ? <div className="mt-2 text-xs font-bold text-amber-100">Goal: {goal}</div> : null}
+    </div>
+  );
+}
+
+function GoalProgressCard({ goal, currentValue }) {
+  const target = Number(goal.target_value || 0);
+  const current = Number(currentValue || 0);
+  const progress = target > 0 ? Math.min((current / target) * 100, 100) : 0;
+  const gap = Math.max(target - current, 0);
+  const days = goal.deadline
+    ? Math.ceil((new Date(goal.deadline).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+  const achieved = progress >= 100;
+  const moneyGoal = goal.metric_type.includes("revenue") || goal.metric_type === "average_project_value";
+  const formatValue = moneyGoal ? money : (value) => int(value);
+
+  return (
+    <div className="rounded-xl border border-white/12 bg-slate-950/40 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-white">{goal.name || goal.metric_label}</div>
+          <div className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-sky-100/55">
+            {achieved ? "Achieved" : days === null ? "Active goal" : `${Math.max(days, 0)} days remaining`}
+          </div>
+        </div>
+        <div className="text-right text-sm font-black text-sky-50">{Math.round(progress)}%</div>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-900/70">
+        <div className="h-full rounded-full bg-amber-300" style={{ width: `${Math.max(4, progress)}%` }} />
+      </div>
+      <div className="mt-3 text-sm leading-6 text-sky-100/75">
+        {formatValue(current)} of {formatValue(target)}
+        {!achieved ? ` | ${formatValue(gap)} remaining` : ""}
+      </div>
+    </div>
+  );
+}
+
 function FunnelStep({ label, value, sub, fillPct, testId }) {
   return (
     <div data-testid={testId} className="rounded-xl border border-white/12 bg-slate-950/40 p-4 shadow-sm">
@@ -705,10 +775,23 @@ function DrilldownModal({ open, selection, loading, error, data, onClose }) {
 }
 
 export default function BusinessDashboard() {
-  const [range, setRange] = useState("90"); // backend supports: 30 | 90 | ytd | all
-  const [activeBusinessView, setActiveBusinessView] = useState("at-a-glance");
+  const [range, setRange] = useState("30"); // backend supports: 30 | 90 | ytd | all
+  const [activeBusinessView, setActiveBusinessView] = useState("scorecard");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [goals, setGoals] = useState([]);
+  const [goalsLoading, setGoalsLoading] = useState(true);
+  const [visibleWidgetIds, setVisibleWidgetIds] = useState(DEFAULT_INSIGHTS_WIDGETS);
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [goalEditorOpen, setGoalEditorOpen] = useState(false);
+  const [editingGoalId, setEditingGoalId] = useState(null);
+  const [goalSaving, setGoalSaving] = useState(false);
+  const [goalForm, setGoalForm] = useState({
+    metric_type: "monthly_revenue",
+    name: "",
+    target_value: "",
+    deadline: "",
+  });
 
   const [payload, setPayload] = useState(null);
   const {
@@ -750,6 +833,7 @@ export default function BusinessDashboard() {
   const feeSummary = payload?.fee_summary || {};
   const workflowSummary = payload?.workflow_summary || {};
   const progressSummary = payload?.progress_summary || {};
+  const businessPerformance = payload?.business_performance || {};
   const commandCenter = payload?.command_center || {};
   const businessHealth = commandCenter?.business_health || {};
   const healthDimensions = Array.isArray(businessHealth?.dimensions) ? businessHealth.dimensions : [];
@@ -762,6 +846,57 @@ export default function BusinessDashboard() {
   const unhealthyDimensions = healthDimensions.filter((dimension) => dimension.status && dimension.status !== "Healthy");
   const displayedHealthDimensions = (unhealthyDimensions.length ? unhealthyDimensions : healthDimensions).slice(0, 3);
   const topNeedsAttention = needsAttention.slice(0, 3);
+  const activeGoals = goals.filter((goal) => goal.is_active);
+  const goalCurrentValues = useMemo(() => ({
+    monthly_revenue: Number(snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0),
+    annual_revenue: Number(snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0),
+    projects_completed: Number(snapshot.jobs_completed || 0),
+    average_project_value: Number(businessPerformance?.revenue?.average_project_value || snapshot.avg_revenue_per_job || 0),
+    estimate_acceptance_rate: Number(businessPerformance?.conversion_rates?.bid_to_award_rate || 0),
+  }), [businessPerformance, canonicalMetrics.revenue?.value, financialSummary.gross_revenue_total, snapshot]);
+  const goalsByMetric = useMemo(() => {
+    const map = {};
+    activeGoals.forEach((goal) => {
+      if (!map[goal.metric_type]) map[goal.metric_type] = goal;
+    });
+    return map;
+  }, [activeGoals]);
+  const snapshotCards = useMemo(() => [
+    {
+      key: "revenue",
+      label: "Revenue",
+      value: money(snapshot.total_revenue || financialSummary.gross_revenue_total || canonicalMetrics.revenue?.value || 0),
+      sub: "Collected revenue in the selected period",
+      goal: goalsByMetric.monthly_revenue ? money(goalsByMetric.monthly_revenue.target_value) : null,
+    },
+    {
+      key: "net_paid",
+      label: "Estimated Earnings",
+      value: money(financialSummary.net_paid_total || canonicalMetrics.net_paid?.value || 0),
+      sub: "Collected after platform fees; not full profit",
+    },
+    {
+      key: "completed",
+      label: "Projects Completed",
+      value: int(snapshot.jobs_completed || 0),
+      sub: "Completed agreements in the period",
+      goal: goalsByMetric.projects_completed ? int(goalsByMetric.projects_completed.target_value) : null,
+    },
+    {
+      key: "average_value",
+      label: "Average Project Value",
+      value: money(businessPerformance?.revenue?.average_project_value || snapshot.avg_revenue_per_job || 0),
+      sub: "Average from current project value records",
+      goal: goalsByMetric.average_project_value ? money(goalsByMetric.average_project_value.target_value) : null,
+    },
+    {
+      key: "estimate_acceptance",
+      label: "Estimate Acceptance",
+      value: pct(businessPerformance?.conversion_rates?.bid_to_award_rate || 0),
+      sub: "Bid-to-award rate from funnel data",
+      goal: goalsByMetric.estimate_acceptance_rate ? pct(goalsByMetric.estimate_acceptance_rate.target_value) : null,
+    },
+  ], [businessPerformance, canonicalMetrics, financialSummary, goalsByMetric, snapshot]);
   const executiveMetricKeys = [
     "revenue",
     "estimate_pipeline",
@@ -771,12 +906,19 @@ export default function BusinessDashboard() {
     "warranty_requests",
     "resolution_cases",
   ];
-  const businessPerformance = payload?.business_performance || {};
   const funnel = businessPerformance?.funnel || {};
   const conversionRates = businessPerformance?.conversion_rates || {};
   const revenueMetrics = businessPerformance?.revenue || {};
   const rangeLabel =
-    range === "all" ? "All time" : range === "ytd" ? "Year to date" : `Last ${range} days`;
+    range === "30"
+      ? "This month"
+      : range === "90"
+        ? "This quarter"
+        : range === "all"
+          ? "All time"
+          : range === "ytd"
+            ? "Year to date"
+            : `Last ${range} days`;
   const payoutQuery = useMemo(() => buildPayoutQuery(range), [range]);
   const payoutStatusCounts = useMemo(
     () => ({
@@ -1084,6 +1226,12 @@ export default function BusinessDashboard() {
   const businessViewCards = useMemo(
     () => [
       {
+        key: "scorecard",
+        title: "Scorecard",
+        subtitle: "Personalized default",
+        preview: `${visibleWidgetIds.length} visible insights · ${activeGoals.length} goals`,
+      },
+      {
         key: "at-a-glance",
         title: "Overview",
         subtitle: "Highest-value signals",
@@ -1116,12 +1264,14 @@ export default function BusinessDashboard() {
     ],
     [
       availableInsightFamilies.length,
+      activeGoals.length,
       chartTitles,
       kpiCards.length,
       operationalHealthCards,
       payoutRows.length,
       payoutSummary?.record_count,
       topAlertCards.length,
+      visibleWidgetIds.length,
     ]
   );
 
@@ -1138,6 +1288,92 @@ export default function BusinessDashboard() {
       setMeData(null);
     } finally {
       setMeLoading(false);
+    }
+  };
+
+  const fetchInsightsPreferences = async () => {
+    try {
+      const { data } = await api.get("/projects/business/contractor/insights-preferences/");
+      const visible = Array.isArray(data?.visible_widget_ids) && data.visible_widget_ids.length
+        ? data.visible_widget_ids
+        : DEFAULT_INSIGHTS_WIDGETS;
+      setVisibleWidgetIds(visible);
+      if (data?.default_reporting_period && data.default_reporting_period !== range) {
+        setRange(data.default_reporting_period);
+      }
+    } catch (err) {
+      setVisibleWidgetIds(DEFAULT_INSIGHTS_WIDGETS);
+    }
+  };
+
+  const fetchInsightsGoals = async () => {
+    setGoalsLoading(true);
+    try {
+      const { data } = await api.get("/projects/business/contractor/insights-goals/");
+      setGoals(Array.isArray(data?.results) ? data.results : []);
+    } catch (err) {
+      setGoals([]);
+    } finally {
+      setGoalsLoading(false);
+    }
+  };
+
+  const saveInsightsPreferences = async (nextVisible = visibleWidgetIds, nextPeriod = range) => {
+    setVisibleWidgetIds(nextVisible);
+    try {
+      const { data } = await api.patch("/projects/business/contractor/insights-preferences/", {
+        visible_widget_ids: nextVisible,
+        default_reporting_period: nextPeriod,
+      });
+      if (Array.isArray(data?.visible_widget_ids)) setVisibleWidgetIds(data.visible_widget_ids);
+    } catch (err) {
+      console.error("Failed to save Insights preferences:", err);
+    }
+  };
+
+  const openGoalEditor = (goal = null) => {
+    setEditingGoalId(goal?.id || null);
+    setGoalForm({
+      metric_type: goal?.metric_type || "monthly_revenue",
+      name: goal?.name || "",
+      target_value: goal?.target_value || "",
+      deadline: goal?.deadline || "",
+    });
+    setGoalEditorOpen(true);
+  };
+
+  const saveGoal = async (event) => {
+    event.preventDefault();
+    setGoalSaving(true);
+    try {
+      const payload = {
+        metric_type: goalForm.metric_type,
+        name: goalForm.name,
+        target_value: goalForm.target_value,
+        deadline: goalForm.deadline || null,
+        is_active: true,
+      };
+      if (editingGoalId) {
+        const { data } = await api.patch(`/projects/business/contractor/insights-goals/${editingGoalId}/`, payload);
+        setGoals((rows) => rows.map((row) => (row.id === editingGoalId ? data : row)));
+      } else {
+        const { data } = await api.post("/projects/business/contractor/insights-goals/", payload);
+        setGoals((rows) => [data, ...rows]);
+      }
+      setGoalEditorOpen(false);
+    } catch (err) {
+      setError("Failed to save Insights goal.");
+    } finally {
+      setGoalSaving(false);
+    }
+  };
+
+  const deactivateGoal = async (goal) => {
+    try {
+      const { data } = await api.patch(`/projects/business/contractor/insights-goals/${goal.id}/`, { is_active: false });
+      setGoals((rows) => rows.map((row) => (row.id === goal.id ? data : row)));
+    } catch (err) {
+      setError("Failed to update Insights goal.");
     }
   };
 
@@ -1309,6 +1545,8 @@ export default function BusinessDashboard() {
 
   useEffect(() => {
     fetchMe();
+    fetchInsightsPreferences();
+    fetchInsightsGoals();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1346,14 +1584,33 @@ export default function BusinessDashboard() {
           <label className="text-xs font-semibold text-sky-100/75">Range</label>
           <select
             value={range}
-            onChange={(e) => setRange(e.target.value)}
+            onChange={(e) => {
+              setRange(e.target.value);
+              saveInsightsPreferences(visibleWidgetIds, e.target.value);
+            }}
             className="rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 shadow-sm outline-none focus:border-sky-300/60"
           >
-            <option value="30">Last 30 days</option>
-            <option value="90">Last 90 days</option>
-            <option value="ytd">Year to date</option>
-            <option value="all">All time</option>
+            <option value="30">This Month</option>
+            <option value="90">This Quarter</option>
+            <option value="ytd">This Year</option>
+            <option value="all">All Time</option>
           </select>
+          <button
+            type="button"
+            onClick={() => openGoalEditor()}
+            className="rounded-xl border border-amber-300/70 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 shadow-sm hover:bg-amber-200"
+            data-testid="insights-set-goal"
+          >
+            Set Goal
+          </button>
+          <button
+            type="button"
+            onClick={() => setCustomizeOpen(true)}
+            className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50 shadow-sm hover:bg-white/15"
+            data-testid="insights-customize-open"
+          >
+            Customize Insights
+          </button>
 
           <button
             onClick={fetchData}
@@ -1382,6 +1639,158 @@ export default function BusinessDashboard() {
         ))}
       </section>
 
+      {activeBusinessView === "scorecard" ? (
+        <div data-testid="insights-scorecard" className="space-y-5">
+          {visibleWidgetIds.map((widgetId) => {
+            if (widgetId === "business_snapshot") {
+              return (
+                <section key={widgetId} data-testid="insights-business-snapshot" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Business Snapshot</div>
+                      <h2 className="mt-2 text-2xl font-black text-white">How the business is performing</h2>
+                      <p className="mt-1 text-sm leading-6 text-sky-100/70">
+                        Paid revenue, project value, and funnel metrics from the selected reporting period.
+                      </p>
+                    </div>
+                    <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">{rangeLabel}</div>
+                  </div>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+                    {snapshotCards.map((card) => (
+                      <ScorecardMetric key={card.key} {...card} />
+                    ))}
+                  </div>
+                </section>
+              );
+            }
+            if (widgetId === "goal_progress") {
+              return (
+                <section key={widgetId} data-testid="insights-goal-progress" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Goal Progress</div>
+                      <h2 className="mt-2 text-2xl font-black text-white">Progress toward business goals</h2>
+                    </div>
+                    <button type="button" onClick={() => openGoalEditor()} className="rounded-xl border border-amber-300/70 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 hover:bg-amber-200">
+                      Set Your First Goal
+                    </button>
+                  </div>
+                  {goalsLoading ? (
+                    <div className="mt-4 text-sm text-sky-100/70">Loading goals...</div>
+                  ) : activeGoals.length === 0 ? (
+                    <div className="mt-4 rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-5 text-sm text-sky-100/70">
+                      <div className="font-black text-white">No goals yet</div>
+                      <div className="mt-1">Set a business goal to track progress here.</div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                      {activeGoals.map((goal) => (
+                        <div key={goal.id} className="space-y-2">
+                          <GoalProgressCard goal={goal} currentValue={goalCurrentValues[goal.metric_type]} />
+                          <div className="flex flex-wrap gap-2">
+                            <button type="button" onClick={() => openGoalEditor(goal)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-sky-50 hover:bg-white/15">
+                              Edit Goal
+                            </button>
+                            <button type="button" onClick={() => deactivateGoal(goal)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-bold text-sky-50 hover:bg-white/15">
+                              Deactivate
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            }
+            if (widgetId === "primary_trend") {
+              return (
+                <section key={widgetId} data-testid="insights-primary-trend" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Primary Performance Trend</div>
+                    <h2 className="mt-2 text-2xl font-black text-white">Revenue trend</h2>
+                    <p className="mt-1 text-sm leading-6 text-sky-100/70">Paid revenue by period bucket. Open detailed reports for drilldowns and exports.</p>
+                  </div>
+                  <div className="mt-4">
+                    {hasSeriesValue(revenueChart, ["revenue"]) ? (
+                      <div className="h-72">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <AreaChart data={revenueChart}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.12)" />
+                            <XAxis dataKey="bucket_label" stroke="rgba(224,242,254,0.7)" />
+                            <YAxis tickFormatter={axisMoney} stroke="rgba(224,242,254,0.7)" />
+                            <Tooltip formatter={(value) => money(value)} />
+                            <Area type="monotone" dataKey="revenue" stroke="#fbbf24" fill="#fbbf24" fillOpacity={0.25} />
+                          </AreaChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ) : (
+                      <ChartEmptyState text="Not enough paid revenue data for a trend yet." />
+                    )}
+                  </div>
+                </section>
+              );
+            }
+            if (widgetId === "needs_attention") {
+              return (
+                <section key={widgetId} data-testid="insights-needs-attention" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Needs Attention</div>
+                      <h2 className="mt-2 text-2xl font-black text-white">Top action items</h2>
+                      <p className="mt-1 text-sm leading-6 text-sky-100/70">Limited to the most actionable records from source workspaces.</p>
+                    </div>
+                    <div className="rounded-full border border-white/12 bg-white/10 px-3 py-1 text-xs font-black text-sky-100">
+                      Showing {topNeedsAttention.length} of {needsAttention.length}
+                    </div>
+                  </div>
+                  {topNeedsAttention.length === 0 ? (
+                    <div className="mt-4 rounded-xl border border-dashed border-white/14 bg-slate-950/35 p-5 text-sm text-sky-100/70">
+                      No urgent attention items right now.
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                      {topNeedsAttention.map((item) => (
+                        <a key={item.key} href={item.open_url} className={`rounded-xl border p-4 shadow-sm ${severityTone(item.severity)}`}>
+                          <div className="text-sm font-black">{item.title}</div>
+                          <div className="mt-1 text-xs font-bold uppercase tracking-[0.12em] opacity-75">{item.source_workspace}</div>
+                          <div className="mt-3 text-sm leading-6 opacity-90">{item.why}</div>
+                          <div className="mt-3 text-xs font-black">{item.action_label || "Open"}</div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            }
+            if (widgetId === "reports_handoff") {
+              return (
+                <section key={widgetId} data-testid="insights-reports-handoff" className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Reports & Trends</div>
+                      <h2 className="mt-2 text-2xl font-black text-white">Need the full analysis?</h2>
+                      <p className="mt-1 text-sm leading-6 text-sky-100/70">Detailed charts, tables, exports, payout history, and drilldowns stay in Reports & Trends.</p>
+                    </div>
+                    <button type="button" onClick={() => setActiveBusinessView("reports-trends")} className="rounded-xl border border-white/70 bg-white px-4 py-2 text-sm font-black text-slate-950 hover:bg-sky-50" data-testid="insights-open-reports">
+                      View Detailed Reports
+                    </button>
+                  </div>
+                </section>
+              );
+            }
+            return (
+              <section key={widgetId} data-testid={`insights-optional-${widgetId}`} className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">{widgetLabel(widgetId)}</div>
+                <h2 className="mt-2 text-xl font-black text-white">{widgetLabel(widgetId)}</h2>
+                <p className="mt-1 text-sm leading-6 text-sky-100/70">Optional scorecard signal backed by existing Insights data. Open Reports & Trends for the detailed breakdown.</p>
+              </section>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {activeBusinessView !== "scorecard" ? (
+        <>
       <section data-testid="insights-business-health" className="mb-5 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="max-w-3xl">
@@ -1588,6 +1997,8 @@ export default function BusinessDashboard() {
           ))}
         </div>
       </section>
+        </>
+      ) : null}
 
       {activeBusinessView === "at-a-glance" ? (
         <div data-testid="dashboard-view-at-a-glance">
@@ -2709,6 +3120,140 @@ export default function BusinessDashboard() {
           </div>
         </div>
       ) : null}
+
+      {customizeOpen ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/60" data-testid="insights-customize-panel">
+          <div className="h-full w-full max-w-md overflow-y-auto border-l border-white/12 bg-slate-950 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-black text-white">Customize Insights</h2>
+                <p className="mt-1 text-sm leading-6 text-sky-100/70">Choose which scorecard sections appear and in what order.</p>
+              </div>
+              <button type="button" onClick={() => setCustomizeOpen(false)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50">
+                Close
+              </button>
+            </div>
+
+            <section className="mt-5">
+              <h3 className="text-sm font-black text-white">Visible Insights</h3>
+              <div className="mt-3 space-y-2">
+                {visibleWidgetIds.map((widgetId, index) => (
+                  <div key={widgetId} className="rounded-xl border border-white/12 bg-white/6 p-3">
+                    <div className="font-bold text-sky-50">{widgetLabel(widgetId)}</div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() => {
+                          const next = [...visibleWidgetIds];
+                          [next[index - 1], next[index]] = [next[index], next[index - 1]];
+                          saveInsightsPreferences(next);
+                        }}
+                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-50 disabled:opacity-40"
+                      >
+                        Move Up
+                      </button>
+                      <button
+                        type="button"
+                        disabled={index === visibleWidgetIds.length - 1}
+                        onClick={() => {
+                          const next = [...visibleWidgetIds];
+                          [next[index], next[index + 1]] = [next[index + 1], next[index]];
+                          saveInsightsPreferences(next);
+                        }}
+                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-50 disabled:opacity-40"
+                      >
+                        Move Down
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveInsightsPreferences(visibleWidgetIds.filter((id) => id !== widgetId))}
+                        className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-xs font-bold text-sky-50"
+                      >
+                        Hide
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="mt-6">
+              <h3 className="text-sm font-black text-white">Available Insights</h3>
+              <div className="mt-3 space-y-2">
+                {WIDGET_CATALOG.filter((widget) => !visibleWidgetIds.includes(widget.id)).map((widget) => (
+                  <button
+                    key={widget.id}
+                    type="button"
+                    onClick={() => saveInsightsPreferences([...visibleWidgetIds, widget.id])}
+                    className="flex w-full items-center justify-between rounded-xl border border-white/12 bg-white/6 p-3 text-left text-sm font-bold text-sky-50 hover:bg-white/10"
+                  >
+                    <span>{widget.label}</span>
+                    <span>Add</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <button
+              type="button"
+              onClick={() => saveInsightsPreferences(DEFAULT_INSIGHTS_WIDGETS)}
+              className="mt-6 w-full rounded-xl border border-amber-300/70 bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-200"
+              data-testid="insights-restore-default"
+            >
+              Restore Recommended Default
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {goalEditorOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 px-4" data-testid="insights-goal-editor">
+          <form onSubmit={saveGoal} className="w-full max-w-lg rounded-2xl border border-white/12 bg-slate-950 p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-black text-white">{editingGoalId ? "Edit Goal" : "Set Goal"}</h2>
+                <p className="mt-1 text-sm leading-6 text-sky-100/70">Goals belong to the contractor organization. Layout preferences are saved for your user account.</p>
+              </div>
+              <button type="button" onClick={() => setGoalEditorOpen(false)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50">
+                Close
+              </button>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <label className="block">
+                <span className="text-sm font-bold text-sky-100">Metric</span>
+                <select
+                  value={goalForm.metric_type}
+                  onChange={(event) => setGoalForm((current) => ({ ...current, metric_type: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-white/15 bg-slate-900 px-3 py-2 text-sm font-semibold text-sky-50"
+                >
+                  <option value="monthly_revenue">Monthly Revenue</option>
+                  <option value="annual_revenue">Annual Revenue</option>
+                  <option value="projects_completed">Projects Completed</option>
+                  <option value="average_project_value">Average Project Value</option>
+                  <option value="estimate_acceptance_rate">Estimate Acceptance Rate</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-sm font-bold text-sky-100">Goal name</span>
+                <input value={goalForm.name} onChange={(event) => setGoalForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-slate-900 px-3 py-2 text-sm font-semibold text-sky-50" placeholder="Monthly Revenue" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-bold text-sky-100">Target value</span>
+                <input required type="number" min="0.01" step="0.01" value={goalForm.target_value} onChange={(event) => setGoalForm((current) => ({ ...current, target_value: event.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-slate-900 px-3 py-2 text-sm font-semibold text-sky-50" placeholder="50000" />
+              </label>
+              <label className="block">
+                <span className="text-sm font-bold text-sky-100">Deadline</span>
+                <input type="date" value={goalForm.deadline || ""} onChange={(event) => setGoalForm((current) => ({ ...current, deadline: event.target.value }))} className="mt-1 w-full rounded-xl border border-white/15 bg-slate-900 px-3 py-2 text-sm font-semibold text-sky-50" />
+              </label>
+            </div>
+            <button disabled={goalSaving} className="mt-5 w-full rounded-xl border border-amber-300/70 bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-200 disabled:opacity-60" type="submit">
+              {goalSaving ? "Saving..." : "Save Goal"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+
       {/* Footer note */}
       <div className="mhb-helper-text rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
         Data reflects your completed agreements and paid invoices within the selected range.

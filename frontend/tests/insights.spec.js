@@ -169,17 +169,98 @@ async function installInsightsRoutes(page) {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summaryPayload) });
   });
 
+  let goals = [];
+  let preferences = {
+    visible_widget_ids: ["business_snapshot", "goal_progress", "primary_trend", "needs_attention", "reports_handoff"],
+    default_reporting_period: "30",
+    available_widget_ids: ["business_snapshot", "goal_progress", "primary_trend", "needs_attention", "reports_handoff", "estimate_conversion"],
+    default_widget_ids: ["business_snapshot", "goal_progress", "primary_trend", "needs_attention", "reports_handoff"],
+  };
+
+  await page.route("**/api/projects/business/contractor/insights-goals/**", async (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    const detailMatch = url.pathname.match(/\/api\/projects\/business\/contractor\/insights-goals\/(\d+)\/$/);
+    if (method === "POST") {
+      const payload = route.request().postDataJSON();
+      const goal = {
+        id: goals.length + 1,
+        metric_type: payload.metric_type,
+        metric_label: "Monthly Revenue",
+        name: payload.name || "Monthly Revenue",
+        target_value: Number(payload.target_value || 0).toFixed(2),
+        deadline: payload.deadline || null,
+        is_active: true,
+      };
+      goals = [goal, ...goals];
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(goal) });
+      return;
+    }
+    if (method === "PATCH" && detailMatch) {
+      const id = Number(detailMatch[1]);
+      const payload = route.request().postDataJSON();
+      goals = goals.map((goal) => goal.id === id ? { ...goal, ...payload } : goal);
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(goals.find((goal) => goal.id === id)) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: goals }) });
+  });
+
+  await page.route("**/api/projects/business/contractor/insights-preferences/**", async (route) => {
+    if (route.request().method() === "PATCH") {
+      preferences = { ...preferences, ...route.request().postDataJSON() };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(preferences) });
+  });
+
   await page.route("**/api/projects/payouts/history/**", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [], summary: {} }) });
   });
 }
 
-test("Insights command center renders business health, attention, brief, metrics, forecast, and analyst", async ({ page }) => {
+test("Insights scorecard renders defaults, goals, customization, and reports handoff", async ({ page }) => {
   await installInsightsRoutes(page);
 
   await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("heading", { name: "Insights" })).toBeVisible();
+  await expect(page.getByTestId("insights-scorecard")).toBeVisible();
+  await expect(page.getByTestId("insights-business-snapshot")).toContainText("Revenue");
+  await expect(page.getByTestId("insights-business-snapshot")).toContainText("$12,800.00");
+  await expect(page.getByTestId("insights-goal-progress")).toContainText("No goals yet");
+  await expect(page.getByTestId("insights-primary-trend")).toContainText("Revenue trend");
+  await expect(page.getByTestId("insights-needs-attention")).toContainText("Overdue milestones");
+  await expect(page.getByTestId("insights-needs-attention")).toContainText("Pending customer approvals");
+  await expect(page.getByTestId("insights-reports-handoff")).toContainText("View Detailed Reports");
+  await expect(page.getByTestId("insights-operations-analyst")).toHaveCount(0);
+
+  await page.getByTestId("insights-set-goal").click();
+  await expect(page.getByTestId("insights-goal-editor")).toBeVisible();
+  await page.getByPlaceholder("50000").fill("50000");
+  await page.getByRole("button", { name: "Save Goal" }).click();
+  await expect(page.getByTestId("insights-goal-progress")).toContainText("Monthly Revenue");
+  await expect(page.getByTestId("insights-goal-progress")).toContainText("$12,800.00 of $50,000.00");
+
+  await page.getByTestId("insights-customize-open").click();
+  await expect(page.getByTestId("insights-customize-panel")).toContainText("Visible Insights");
+  await page.getByRole("button", { name: "Hide" }).first().click();
+  await expect(page.getByTestId("insights-business-snapshot")).toHaveCount(0);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("insights-business-snapshot")).toHaveCount(0);
+  await page.getByTestId("insights-customize-open").click();
+  await page.getByTestId("insights-restore-default").click();
+  await expect(page.getByTestId("insights-business-snapshot")).toBeVisible();
+  await page.getByTestId("insights-customize-panel").getByRole("button", { name: "Close" }).click();
+
+  await page.getByTestId("insights-open-reports").click();
+  await expect(page.getByTestId("insights-canonical-metrics-full")).toContainText("Money Customers Still Owe");
+});
+
+test("Insights reports and trends regression remains available", async ({ page }) => {
+  await installInsightsRoutes(page);
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-at-a-glance").click();
   await expect(page.getByTestId("insights-business-health")).toContainText("Business Health");
   await expect(page.getByTestId("insights-business-health")).toContainText("Needs Attention overall");
   await expect(page.getByTestId("insights-needs-attention")).toContainText("Overdue milestones");

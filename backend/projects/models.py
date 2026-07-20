@@ -1002,6 +1002,70 @@ class ContractorWebsite(models.Model):
         return f"Website {self.contractor_id} ({self.status})"
 
 
+class ContractorInsightsGoal(models.Model):
+    METRIC_MONTHLY_REVENUE = "monthly_revenue"
+    METRIC_ANNUAL_REVENUE = "annual_revenue"
+    METRIC_PROJECTS_COMPLETED = "projects_completed"
+    METRIC_AVERAGE_PROJECT_VALUE = "average_project_value"
+    METRIC_ESTIMATE_ACCEPTANCE_RATE = "estimate_acceptance_rate"
+    METRIC_CHOICES = [
+        (METRIC_MONTHLY_REVENUE, "Monthly Revenue"),
+        (METRIC_ANNUAL_REVENUE, "Annual Revenue"),
+        (METRIC_PROJECTS_COMPLETED, "Projects Completed"),
+        (METRIC_AVERAGE_PROJECT_VALUE, "Average Project Value"),
+        (METRIC_ESTIMATE_ACCEPTANCE_RATE, "Estimate Acceptance Rate"),
+    ]
+
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="insights_goals",
+    )
+    metric_type = models.CharField(max_length=64, choices=METRIC_CHOICES, db_index=True)
+    name = models.CharField(max_length=160, blank=True, default="")
+    target_value = models.DecimalField(max_digits=14, decimal_places=2)
+    deadline = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_insights_goals",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-is_active", "deadline", "-updated_at"]
+
+    def __str__(self) -> str:
+        return self.name or self.get_metric_type_display()
+
+
+class ContractorInsightsPreference(models.Model):
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="insights_preference",
+    )
+    contractor = models.ForeignKey(
+        "projects.Contractor",
+        on_delete=models.CASCADE,
+        related_name="insights_preferences",
+    )
+    visible_widget_ids = models.JSONField(default=list, blank=True)
+    default_reporting_period = models.CharField(max_length=24, default="30", blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["user_id"]
+
+    def __str__(self) -> str:
+        return f"Insights preferences for {self.user_id}"
+
+
 class ContractorWebsitePage(models.Model):
     PAGE_HOME = "home"
     PAGE_SERVICES = "services"

@@ -249,6 +249,7 @@ test("business dashboard shows contractor insights panel with family filter and 
   });
 
   await page.goto("/app/business", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-contractor-insights").click();
 
   await expect(page.getByTestId("dashboard-contractor-insights-section")).toBeVisible();
   await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Contractor Insights");

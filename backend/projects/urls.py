@@ -222,6 +222,9 @@ from .views.business_dashboard import (
     BusinessDashboardPayoutsExportView,
     BusinessDashboardRevenueExportView,
     BusinessDashboardSummaryAPIView,
+    ContractorInsightsGoalDetailAPIView,
+    ContractorInsightsGoalsAPIView,
+    ContractorInsightsPreferenceAPIView,
 )
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
@@ -995,6 +998,21 @@ urlpatterns = [
         "business/contractor/drilldown/",
         BusinessDashboardDrilldownAPIView.as_view(),
         name="contractor_business_drilldown",
+    ),
+    path(
+        "business/contractor/insights-goals/",
+        ContractorInsightsGoalsAPIView.as_view(),
+        name="contractor_insights_goals",
+    ),
+    path(
+        "business/contractor/insights-goals/<int:goal_id>/",
+        ContractorInsightsGoalDetailAPIView.as_view(),
+        name="contractor_insights_goal_detail",
+    ),
+    path(
+        "business/contractor/insights-preferences/",
+        ContractorInsightsPreferenceAPIView.as_view(),
+        name="contractor_insights_preferences",
     ),
     path(
         "business-dashboard/export/revenue/",

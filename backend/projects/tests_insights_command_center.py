@@ -155,3 +155,56 @@ class InsightsCommandCenterApiTests(TestCase):
         self.assertEqual(command_center["operations_analyst"]["role"], "Operations Analyst")
         self.assertEqual(command_center["opportunity_forecast"]["source_note"], "Deterministic workflow state from opportunities, estimates, agreements, and collected payments.")
 
+    def test_contractor_can_manage_insights_goals(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.post(
+            "/api/projects/business/contractor/insights-goals/",
+            {
+                "metric_type": "monthly_revenue",
+                "name": "Monthly Revenue",
+                "target_value": "50000",
+                "deadline": "2026-07-31",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["metric_type"], "monthly_revenue")
+        self.assertEqual(response.data["target_value"], "50000.00")
+
+        goal_id = response.data["id"]
+        response = self.client.patch(
+            f"/api/projects/business/contractor/insights-goals/{goal_id}/",
+            {"is_active": False},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["is_active"])
+
+        response = self.client.get("/api/projects/business/contractor/insights-goals/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["results"]), 1)
+
+    def test_insights_preferences_are_user_scoped_and_persist_layout(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get("/api/projects/business/contractor/insights-preferences/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("business_snapshot", response.data["visible_widget_ids"])
+
+        response = self.client.patch(
+            "/api/projects/business/contractor/insights-preferences/",
+            {
+                "visible_widget_ids": ["goal_progress", "business_snapshot"],
+                "default_reporting_period": "90",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["visible_widget_ids"], ["goal_progress", "business_snapshot"])
+        self.assertEqual(response.data["default_reporting_period"], "90")
+
+        response = self.client.get("/api/projects/business/contractor/insights-preferences/")
+        self.assertEqual(response.data["visible_widget_ids"], ["goal_progress", "business_snapshot"])

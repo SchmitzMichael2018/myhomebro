@@ -14,10 +14,13 @@ from django.utils.dateparse import parse_date
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework import status
 
 from projects.models import (
     Agreement,
     Contractor,
+    ContractorInsightsGoal,
+    ContractorInsightsPreference,
     DrawRequest,
     DrawRequestStatus,
     ExternalPaymentRecord,
@@ -63,6 +66,55 @@ def _require_contractor(request):
         return request.user.contractor_profile
     except Contractor.DoesNotExist:
         return None
+
+
+DEFAULT_INSIGHTS_WIDGETS = [
+    "business_snapshot",
+    "goal_progress",
+    "primary_trend",
+    "needs_attention",
+    "reports_handoff",
+]
+
+AVAILABLE_INSIGHTS_WIDGETS = [
+    "business_snapshot",
+    "goal_progress",
+    "primary_trend",
+    "needs_attention",
+    "reports_handoff",
+    "estimate_conversion",
+    "payment_performance",
+    "project_completion",
+    "warranty_trends",
+    "resolution_trends",
+]
+
+
+def _serialize_insights_goal(goal):
+    return {
+        "id": goal.id,
+        "metric_type": goal.metric_type,
+        "metric_label": goal.get_metric_type_display(),
+        "name": goal.name or goal.get_metric_type_display(),
+        "target_value": str(Decimal(goal.target_value).quantize(Decimal("0.01"))),
+        "deadline": goal.deadline.isoformat() if goal.deadline else None,
+        "is_active": goal.is_active,
+        "created_at": goal.created_at.isoformat() if goal.created_at else None,
+        "updated_at": goal.updated_at.isoformat() if goal.updated_at else None,
+    }
+
+
+def _preference_payload(pref):
+    visible = pref.visible_widget_ids if isinstance(pref.visible_widget_ids, list) else []
+    visible = [item for item in visible if item in AVAILABLE_INSIGHTS_WIDGETS]
+    if not visible:
+        visible = list(DEFAULT_INSIGHTS_WIDGETS)
+    return {
+        "visible_widget_ids": visible,
+        "default_reporting_period": pref.default_reporting_period or "30",
+        "available_widget_ids": AVAILABLE_INSIGHTS_WIDGETS,
+        "default_widget_ids": DEFAULT_INSIGHTS_WIDGETS,
+    }
 
 
 def _format_money(value):
@@ -1338,6 +1390,128 @@ class BusinessDashboardSummaryAPIView(APIView):
         )
 
         return Response(payload)
+
+
+class ContractorInsightsGoalsAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        contractor = _require_contractor(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+        goals = ContractorInsightsGoal.objects.filter(contractor=contractor).order_by("-is_active", "deadline", "-updated_at")
+        return Response({"results": [_serialize_insights_goal(goal) for goal in goals]})
+
+    def post(self, request):
+        contractor = _require_contractor(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+
+        metric_type = str(request.data.get("metric_type") or "").strip()
+        valid_types = {value for value, _label in ContractorInsightsGoal.METRIC_CHOICES}
+        if metric_type not in valid_types:
+            return Response({"metric_type": "Choose a supported goal metric."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            target_value = Decimal(str(request.data.get("target_value")))
+        except Exception:
+            return Response({"target_value": "Enter a valid target value."}, status=status.HTTP_400_BAD_REQUEST)
+        if target_value <= 0:
+            return Response({"target_value": "Target must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+        deadline = parse_date(str(request.data.get("deadline") or "")) if request.data.get("deadline") else None
+
+        goal = ContractorInsightsGoal.objects.create(
+            contractor=contractor,
+            metric_type=metric_type,
+            name=str(request.data.get("name") or "").strip(),
+            target_value=target_value,
+            deadline=deadline,
+            is_active=bool(request.data.get("is_active", True)),
+            created_by=request.user,
+        )
+        return Response(_serialize_insights_goal(goal), status=status.HTTP_201_CREATED)
+
+
+class ContractorInsightsGoalDetailAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, goal_id):
+        contractor = _require_contractor(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+        try:
+            goal = ContractorInsightsGoal.objects.get(contractor=contractor, id=goal_id)
+        except ContractorInsightsGoal.DoesNotExist:
+            return Response({"detail": "Goal not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if "name" in request.data:
+            goal.name = str(request.data.get("name") or "").strip()
+        if "metric_type" in request.data:
+            metric_type = str(request.data.get("metric_type") or "").strip()
+            valid_types = {value for value, _label in ContractorInsightsGoal.METRIC_CHOICES}
+            if metric_type not in valid_types:
+                return Response({"metric_type": "Choose a supported goal metric."}, status=status.HTTP_400_BAD_REQUEST)
+            goal.metric_type = metric_type
+        if "target_value" in request.data:
+            try:
+                target_value = Decimal(str(request.data.get("target_value")))
+            except Exception:
+                return Response({"target_value": "Enter a valid target value."}, status=status.HTTP_400_BAD_REQUEST)
+            if target_value <= 0:
+                return Response({"target_value": "Target must be greater than zero."}, status=status.HTTP_400_BAD_REQUEST)
+            goal.target_value = target_value
+        if "deadline" in request.data:
+            goal.deadline = parse_date(str(request.data.get("deadline") or "")) if request.data.get("deadline") else None
+        if "is_active" in request.data:
+            goal.is_active = bool(request.data.get("is_active"))
+        goal.save()
+        return Response(_serialize_insights_goal(goal))
+
+
+class ContractorInsightsPreferenceAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        contractor = _require_contractor(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+        pref, _ = ContractorInsightsPreference.objects.get_or_create(
+            user=request.user,
+            defaults={
+                "contractor": contractor,
+                "visible_widget_ids": list(DEFAULT_INSIGHTS_WIDGETS),
+                "default_reporting_period": "30",
+            },
+        )
+        if pref.contractor_id != contractor.id:
+            pref.contractor = contractor
+            pref.save(update_fields=["contractor", "updated_at"])
+        return Response(_preference_payload(pref))
+
+    def patch(self, request):
+        contractor = _require_contractor(request)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=400)
+        pref, _ = ContractorInsightsPreference.objects.get_or_create(
+            user=request.user,
+            defaults={"contractor": contractor},
+        )
+        visible = request.data.get("visible_widget_ids", pref.visible_widget_ids)
+        if not isinstance(visible, list):
+            return Response({"visible_widget_ids": "Expected a list."}, status=status.HTTP_400_BAD_REQUEST)
+        normalized = []
+        for widget_id in visible:
+            if widget_id in AVAILABLE_INSIGHTS_WIDGETS and widget_id not in normalized:
+                normalized.append(widget_id)
+        if not normalized:
+            normalized = list(DEFAULT_INSIGHTS_WIDGETS)
+        period = str(request.data.get("default_reporting_period", pref.default_reporting_period or "30"))
+        if period not in {"30", "90", "ytd", "all"}:
+            period = "30"
+        pref.contractor = contractor
+        pref.visible_widget_ids = normalized
+        pref.default_reporting_period = period
+        pref.save(update_fields=["contractor", "visible_widget_ids", "default_reporting_period", "updated_at"])
+        return Response(_preference_payload(pref))
 
 
 class BusinessDashboardDrilldownAPIView(APIView):
