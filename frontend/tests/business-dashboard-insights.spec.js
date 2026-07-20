@@ -265,7 +265,7 @@ test("business dashboard shows contractor insights panel with family filter and 
   await expect(page.getByTestId("insights-benchmarks-table")).toContainText("Key Benchmark Metrics");
   await expect(page.getByTestId("insights-benchmarks-table")).toContainText("Qualitative Comparison");
   await expect(page.getByTestId("insights-benchmarks-table")).not.toContainText("Unavailable");
-  await expect(page.getByTestId("insights-benchmarks-status-explanation")).toContainText("4 supported benchmark signals");
+  await expect(page.getByTestId("insights-benchmarks-status-explanation")).toContainText("4 signals: 2 above, 1 in line, 1 below");
   await expect(page.getByTestId("dashboard-contractor-insights-standings")).toContainText("Performance vs. Peers");
   await expect(page.getByTestId("insights-benchmarks-chart")).toBeVisible();
   await expect(page.getByTestId("dashboard-contractor-insights-row-pricing")).toContainText("Pricing");
@@ -274,7 +274,7 @@ test("business dashboard shows contractor insights panel with family filter and 
   await expect(page.getByTestId("dashboard-contractor-insights-row-reliability")).toContainText("Reliability signals");
   await expect(page.getByTestId("dashboard-contractor-insights-recommendations")).toContainText("Focus Opportunities");
   await expect(page.getByTestId("dashboard-contractor-insights-recommendations")).toContainText("Review project pricing");
-  await expect(page.getByTestId("dashboard-contractor-insights-recommendations")).toContainText("You may want to review pricing for this type of project to stay competitive.");
+  await expect(page.getByTestId("dashboard-contractor-insights-recommendations")).toContainText("Pricing is above similar projects in this family.");
   await expect(page.getByTestId("dashboard-contractor-insights-family-filter")).toBeVisible();
 
   await page.getByTestId("dashboard-contractor-insights-family-filter").selectOption("roofing");
