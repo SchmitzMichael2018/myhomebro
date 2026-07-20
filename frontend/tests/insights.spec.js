@@ -171,6 +171,10 @@ async function installInsightsRoutes(page, summaryResponse = summaryPayload) {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(summaryResponse) });
   });
 
+  await page.route("**/api/projects/business-dashboard/export/**", async (route) => {
+    await route.fulfill({ status: 200, contentType: "text/csv", body: "report,value\nsummary,1\n" });
+  });
+
   let goals = [];
   let preferences = {
     visible_widget_ids: ["business_snapshot", "goal_progress", "primary_trend", "needs_attention", "reports_handoff"],
@@ -418,7 +422,14 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByText("Approvals, disputes, active jobs")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-reports-trends").click();
-  await expect(page.getByTestId("reports-popular")).toContainText("Popular Reports");
+  await expect(page.getByTestId("reports-popular")).toContainText("Available Reports");
+  await expect(page.getByTestId("reports-category-all")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("reports-category-financial").click();
+  await expect(page.getByTestId("reports-category-financial")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("reports-popular")).toContainText("Revenue Summary");
+  await expect(page.getByTestId("reports-popular")).toContainText("Platform Fee Report");
+  await expect(page.getByTestId("reports-popular")).not.toContainText("Project Pipeline");
+  await page.getByTestId("reports-category-all").click();
   await expect(page.getByTestId("reports-shortcuts")).toBeVisible();
   await expect(page.getByTestId("reports-recent")).toContainText("No reports have been run yet");
   await expect(page.getByTestId("reports-trend-previews")).toBeVisible();
@@ -648,7 +659,7 @@ test("Operations distinguishes unavailable active-work data from an empty date r
   await expect(page.getByTestId("insights-operations-active-unavailable")).toHaveCount(0);
 });
 
-test("capture Reports reference implementation", async ({ page }) => {
+test("capture refined Reports workspace", async ({ page }) => {
   await installInsightsRoutes(page);
   const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
   fs.mkdirSync(screenshotDir, { recursive: true });
@@ -662,13 +673,29 @@ test("capture Reports reference implementation", async ({ page }) => {
   await expect(page.getByTestId("reports-shortcuts")).toBeVisible();
   await expect(page.getByTestId("reports-recent")).toBeVisible();
   await expect(page.getByTestId("reports-trend-previews")).toBeVisible();
+  await expect(page.getByTestId("reports-popular")).toContainText("Available Reports");
+  await expect(page.getByTestId("reports-recent")).toContainText("Run a report and it will appear here.");
+  await expect(page.getByRole("button", { name: "Open Revenue report" })).toBeVisible();
+  await expect(page.getByTestId("reports-shortcuts").locator("button")).toHaveText([
+    /Revenue Summary/,
+    /Project Pipeline/,
+    /Payout Report/,
+    /Platform Fee Report/,
+    /Custom Report Builder/,
+  ]);
+  await expect(page.getByLabel("Never run")).toHaveCount(4);
+  await expect(page.getByLabel("Revenue Summary actions")).toHaveCount(0);
   await expect(page.getByTestId("dashboard-report-controls")).toHaveCount(0);
   await expect(page.getByTestId("dashboard-charts-section")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, "insights-reports-reference-implementation.png"), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-reports-refined-desktop.png"), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("dashboard-view-selector-reports-trends").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, "insights-reports-reference-mobile.png"), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-reports-refined-mobile.png"), fullPage: true });
+
+  const revenueExport = page.waitForRequest((request) => request.url().includes("/business-dashboard/export/revenue/"));
+  await page.getByRole("button", { name: "Open Revenue report" }).click();
+  await revenueExport;
 });
