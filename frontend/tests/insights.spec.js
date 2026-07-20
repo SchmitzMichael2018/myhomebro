@@ -351,7 +351,7 @@ test("Insights scorecard renders defaults, goals, customization, and reports han
 
   await page.getByTestId("insights-open-reports").click();
   await expect(page.getByTestId("dashboard-view-reports-trends")).toBeVisible();
-  await expect(page.getByTestId("dashboard-report-controls")).toContainText("Chart Configuration");
+  await expect(page.getByTestId("reports-categories")).toContainText("Report Categories");
   await expect(page.getByTestId("insights-scorecard")).toHaveCount(0);
 });
 
@@ -418,9 +418,11 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByText("Approvals, disputes, active jobs")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-reports-trends").click();
-  await expect(page.getByTestId("dashboard-report-controls")).toContainText("Chart Configuration");
-  await page.getByTestId("insights-report-chart-metric").selectOption("fees");
-  await page.getByTestId("insights-report-chart-type").selectOption("bar");
+  await expect(page.getByTestId("reports-popular")).toContainText("Popular Reports");
+  await expect(page.getByTestId("reports-shortcuts")).toBeVisible();
+  await expect(page.getByTestId("reports-recent")).toContainText("No reports have been run yet");
+  await expect(page.getByTestId("reports-trend-previews")).toBeVisible();
+  await expect(page.getByTestId("run-report-revenue")).toBeVisible();
   await expect(page.getByTestId("dashboard-view-financial")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-payouts").click();
@@ -516,7 +518,7 @@ test("capture redesigned Insights workspaces", async ({ page }) => {
 
   await page.getByTestId("dashboard-view-selector-reports-trends").click();
   await expect(page.getByTestId("dashboard-view-selector-reports-trends")).toHaveAttribute("aria-selected", "true");
-  await page.getByTestId("dashboard-charts-section").scrollIntoViewIfNeeded();
+  await page.getByTestId("reports-trend-previews").scrollIntoViewIfNeeded();
   await page.screenshot({ path: path.join(screenshotDir, "insights-reports-bottom.png"), fullPage: false });
 });
 
@@ -644,4 +646,29 @@ test("Operations distinguishes unavailable active-work data from an empty date r
   await page.getByTestId("dashboard-view-selector-operations").click();
   await expect(page.getByTestId("insights-operations-active-no-match")).toContainText("No active project work matches this date range");
   await expect(page.getByTestId("insights-operations-active-unavailable")).toHaveCount(0);
+});
+
+test("capture Reports reference implementation", async ({ page }) => {
+  await installInsightsRoutes(page);
+  const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-reports-trends").click();
+  await expect(page.getByTestId("dashboard-view-selector-reports-trends")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("reports-categories")).toBeVisible();
+  await expect(page.getByTestId("reports-popular")).toBeVisible();
+  await expect(page.getByTestId("reports-shortcuts")).toBeVisible();
+  await expect(page.getByTestId("reports-recent")).toBeVisible();
+  await expect(page.getByTestId("reports-trend-previews")).toBeVisible();
+  await expect(page.getByTestId("dashboard-report-controls")).toHaveCount(0);
+  await expect(page.getByTestId("dashboard-charts-section")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-reports-reference-implementation.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("dashboard-view-selector-reports-trends").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-reports-reference-mobile.png"), fullPage: true });
 });

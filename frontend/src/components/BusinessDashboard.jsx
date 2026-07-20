@@ -9,6 +9,7 @@ import DashboardGrid from "./dashboard/DashboardGrid.jsx";
 import DashboardSection from "./dashboard/DashboardSection.jsx";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
+import ReportsLibrary from "./dashboard/ReportsLibrary.jsx";
 import { useWorkspaceProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import {
   ArrowRight,
@@ -2755,6 +2756,17 @@ export default function BusinessDashboard() {
       ) : null}
 
       {activeBusinessView === "reports-trends" ? (
+        <div data-testid="dashboard-view-reports-trends"><ReportsLibrary
+            onRunReport={exportDashboardReport}
+            revenueSeries={revenueChart}
+            workflowSeries={workflowChart}
+            snapshot={snapshot}
+            businessPerformance={businessPerformance}
+            outstandingValue={canonicalMetrics.outstanding_receivables?.value}
+          /></div>
+      ) : null}
+
+      {activeBusinessView === "reports-library-legacy-disabled" ? (
         <div data-testid="dashboard-view-reports-trends">
           <DashboardSection
             title="Reports & Trends"
