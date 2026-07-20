@@ -229,6 +229,13 @@ test("business dashboard shows contractor insights panel with family filter and 
       recommendations: [
         "Roofing projects often benefit from keeping the inspection step clear in the plan.",
       ],
+      comparison_rows: allProjectsPayload.contractor_insights.comparison_rows.map((row, index) => ({
+        ...row,
+        contractor_value: ["$6,000", "21 days", "6", "2.0%"][index],
+        industry_average: ["$5,200", "19 days", "5", "2.5%"][index],
+        top_performer_value: ["$9,800", "14 days", "7", "1.0%"][index],
+        percentile: ["72nd", "58th", "66th", "75th"][index],
+      })),
     },
   };
 
@@ -256,7 +263,9 @@ test("business dashboard shows contractor insights panel with family filter and 
   await expect(page.getByTestId("dashboard-contractor-insights-section")).toBeVisible();
   await expect(page.getByTestId("insights-benchmarks-overview")).toContainText("Benchmark Overview");
   await expect(page.getByTestId("insights-benchmarks-table")).toContainText("Key Benchmark Metrics");
-  await expect(page.getByTestId("insights-benchmarks-table")).toContainText("Unavailable");
+  await expect(page.getByTestId("insights-benchmarks-table")).toContainText("Qualitative Comparison");
+  await expect(page.getByTestId("insights-benchmarks-table")).not.toContainText("Unavailable");
+  await expect(page.getByTestId("insights-benchmarks-status-explanation")).toContainText("4 supported benchmark signals");
   await expect(page.getByTestId("dashboard-contractor-insights-standings")).toContainText("Performance vs. Peers");
   await expect(page.getByTestId("insights-benchmarks-chart")).toBeVisible();
   await expect(page.getByTestId("dashboard-contractor-insights-row-pricing")).toContainText("Pricing");
@@ -264,22 +273,26 @@ test("business dashboard shows contractor insights panel with family filter and 
   await expect(page.getByTestId("dashboard-contractor-insights-row-structure")).toContainText("Milestone count");
   await expect(page.getByTestId("dashboard-contractor-insights-row-reliability")).toContainText("Reliability signals");
   await expect(page.getByTestId("dashboard-contractor-insights-recommendations")).toContainText("Focus Opportunities");
+  await expect(page.getByTestId("dashboard-contractor-insights-recommendations")).toContainText("Review project pricing");
   await expect(page.getByTestId("dashboard-contractor-insights-recommendations")).toContainText("You may want to review pricing for this type of project to stay competitive.");
   await expect(page.getByTestId("dashboard-contractor-insights-family-filter")).toBeVisible();
 
   await page.getByTestId("dashboard-contractor-insights-family-filter").selectOption("roofing");
   await expect(page.getByTestId("dashboard-contractor-insights-scope-notice")).toContainText("roofing-specific insights");
   await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Roofing");
+  await expect(page.getByTestId("insights-benchmarks-table")).toContainText("Industry Average");
+  await expect(page.getByTestId("insights-benchmarks-table")).toContainText("$5,200");
 
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.getByTestId("dashboard-contractor-insights-family-filter").selectOption("all");
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
   fs.mkdirSync(screenshotDir, { recursive: true });
-  await page.screenshot({ path: path.join(screenshotDir, "insights-benchmarks-reference-implementation.png"), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-benchmarks-refined-desktop.png"), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("dashboard-view-selector-benchmarks").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, "insights-benchmarks-reference-mobile.png"), fullPage: false });
+  await expect(page.getByTestId("insights-benchmarks-mobile-rows")).toBeVisible();
+  await page.screenshot({ path: path.join(screenshotDir, "insights-benchmarks-refined-mobile.png"), fullPage: true });
 });

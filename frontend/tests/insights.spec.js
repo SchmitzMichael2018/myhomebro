@@ -386,6 +386,8 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByTestId("dashboard-view-contractor-insights")).toBeVisible();
   await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Benchmark Overview");
   await expect(page.getByTestId("dashboard-contractor-insights-section")).toContainText("Performance vs. Peers");
+  await expect(page.getByTestId("insights-benchmarks-low-data")).toContainText("More completed projects");
+  await expect(page.getByTestId("insights-benchmarks-status-explanation")).toContainText("Preliminary");
   await expect(page.getByTestId("insights-business-health")).toHaveCount(0);
   await expect(page.getByTestId("insights-morning-brief")).toHaveCount(0);
 
