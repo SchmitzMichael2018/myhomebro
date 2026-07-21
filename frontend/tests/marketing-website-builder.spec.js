@@ -629,6 +629,83 @@ test('capture Business Information reference implementation', async ({ page }) =
   await page.screenshot({ path: path.join(screenshotDir, 'marketing-business-information-reference-mobile.png'), fullPage: true });
 });
 
+test('Brand Kit provides guided controls, a live preview, and saves before continuing', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  await page.goto('/app/marketing?tab=brand', { waitUntil: 'domcontentloaded' });
+
+  const step = page.getByTestId('marketing-brand-kit-tab');
+  await expect(step).toBeVisible();
+  await expect(step).toContainText("Let's get to know your brand");
+  await expect(step).toContainText('Do you already have a logo?');
+  await expect(step).toContainText('Do you have colors in mind?');
+  await expect(step).toContainText('How should customers describe your business?');
+  await expect(step).toContainText('What should customers feel when they visit?');
+  await expect(step).toContainText('Colors');
+  await expect(step).toContainText('Website Appearance');
+  await expect(step).toContainText('Website Text Style');
+  await expect(step).toContainText('Writing Style & Tagline');
+  await expect(step).toContainText('Website Cover Photo');
+  await expect(step).not.toContainText('Step 2 of 8');
+  await expect(step).not.toContainText('Project Assistant is not configured yet');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(page.getByTestId('brand-preview')).toContainText('Bright Build Co');
+  await expect(page.getByTestId('brand-preview')).toContainText('Preview only — save to apply these changes.');
+  await expect(page.getByTestId('brand-preview')).not.toContainText('Choose a tone');
+
+  const generate = page.getByTestId('generate-brand-kit');
+  await expect(generate).toBeDisabled();
+  await expect(page.getByTestId('brand-generation-readiness')).toContainText('Choose logo direction and color direction');
+  const textLogo = page.getByRole('button', { name: 'Use business name' });
+  await textLogo.focus();
+  await page.keyboard.press('Space');
+  await expect(textLogo).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Choose colors' }).click();
+  await page.getByRole('button', { name: 'Use mine' }).click();
+  await page.getByRole('button', { name: 'Professional & dependable' }).click();
+  await page.getByRole('button', { name: 'Confident' }).click();
+  await expect(generate).toBeEnabled();
+  await expect(page.getByTestId('brand-generation-readiness')).toContainText('Uses your selected preferences');
+  await expect(page.getByRole('button', { name: 'Professional & dependable' })).toHaveAttribute('aria-pressed', 'true');
+  const sectionOrder = await step.locator('.grid.md\\:grid-cols-2').first().evaluate((grid) => [...grid.children].map((node) => ({ label: node.querySelector('.font-black')?.textContent, order: Number(getComputedStyle(node).order) })).sort((a, b) => a.order - b.order).map((item) => item.label));
+  expect(sectionOrder).toEqual(['Logo', 'Colors', 'Website Appearance', 'Writing Style & Tagline', 'Website Cover Photo']);
+  await expect(step.getByText('Background Style')).toBeVisible();
+  await expect(step.getByText('Preview-only until website theme support is enabled.')).toBeVisible();
+
+  await page.getByTestId('brand-kit-primary-color').fill('#123456');
+  await expect(page.getByTestId('brand-preview').locator('[style*="rgb(18, 52, 86)"]')).toHaveCount(1);
+  await page.getByTestId('brand-kit-tagline').fill('Built with care.');
+  await expect(page.getByTestId('brand-preview')).toContainText('Built with care.');
+  await expect(page.getByRole('button', { name: 'Save & Continue' })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Save & Continue' }).click();
+  await expect(page.getByTestId('public-presence-gallery-tab')).toBeVisible();
+});
+
+test('capture final Brand Kit implementation', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=brand', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('marketing-brand-kit-tab')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const aboveFold = await page.getByTestId('marketing-brand-kit-tab').evaluate((root) => {
+    const logo = [...root.querySelectorAll('div')].find((node) => node.textContent === 'Logo');
+    const colors = [...root.querySelectorAll('div')].find((node) => node.textContent === 'Colors');
+    const appearance = [...root.querySelectorAll('div')].find((node) => node.textContent === 'Website Appearance');
+    return { logoTop: logo?.getBoundingClientRect().top || 9999, colorsTop: colors?.getBoundingClientRect().top || 9999, appearanceTop: appearance?.getBoundingClientRect().top || 9999 };
+  });
+  expect(aboveFold.logoTop).toBeLessThan(1000);
+  expect(aboveFold.colorsTop).toBeLessThan(1000);
+  expect(aboveFold.appearanceTop).toBeLessThan(1000);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-brand-kit-final-desktop.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('brand-preview')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-brand-kit-final-mobile.png'), fullPage: true });
+});
+
 test('Marketing Overview renders the consolidated readiness workspace', async ({ page }) => {
   await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
 
@@ -657,7 +734,7 @@ test('Marketing Overview renders the consolidated readiness workspace', async ({
   await expect(page.getByTestId('online-presence-setup-shell').getByRole('button', { name: 'Project Assistant' })).toHaveCount(0);
 
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Brand Kit/ }).click();
-  await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('Used on website');
+  await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('Used across your website');
   await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('public profile');
 
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Portfolio/ }).click();

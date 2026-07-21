@@ -94,6 +94,14 @@ const CUSTOMER_TRUST_BADGES = [
   '24/7 emergency service',
 ];
 
+const BRAND_TEXT_STYLE_LABELS = {
+  clean_sans: 'Clean & Modern',
+  modern_sans: 'Bold & Strong',
+  editorial_serif: 'Traditional & Trusted',
+  warm_serif: 'Friendly & Approachable',
+  compact_sans: 'Premium & Refined',
+};
+
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.results)) return data.results;
@@ -534,6 +542,19 @@ export default function ContractorPublicPresencePage() {
   const [profileBusy, setProfileBusy] = useState(false);
   const [websiteDecisionError, setWebsiteDecisionError] = useState('');
   const [customTradeOpen, setCustomTradeOpen] = useState(false);
+  const [brandPersonality, setBrandPersonality] = useState([]);
+  const [customerFeeling, setCustomerFeeling] = useState('');
+  const [brandBackground, setBrandBackground] = useState('Clean White');
+  const [logoDirection, setLogoDirection] = useState('');
+  const [colorDirection, setColorDirection] = useState('');
+  const [taglineDirection, setTaglineDirection] = useState('');
+  const missingBrandPreferences = [
+    !logoDirection && 'logo direction',
+    !colorDirection && 'color direction',
+    !taglineDirection && 'tagline preference',
+    !brandPersonality.length && 'business personality',
+    !customerFeeling && 'customer feeling',
+  ].filter(Boolean);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [heroFile, setHeroFile] = useState(null);
@@ -2350,17 +2371,29 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'brand' ? (
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]" data-testid="marketing-brand-kit-tab">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold text-slate-500">Step 2 of 8</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Brand Kit</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Brand Kit controls the public presentation of your business on your website and public profile.
-                </p>
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <section className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_340px]" data-testid="marketing-brand-kit-tab">
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <h2 className="text-2xl font-black text-slate-950">Brand Kit</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Create a professional look and writing style that represents your business.</p>
+                <div className="mt-3 min-w-0 rounded-xl border border-blue-100 bg-blue-50/50 p-3" data-testid="brand-guided-interview">
+                  <h3 className="text-base font-black text-slate-950">Let&apos;s get to know your brand</h3>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    <div><div className="text-xs font-bold text-slate-900">Do you already have a logo?</div><div className="mt-1.5 flex flex-wrap gap-1"><label className={`cursor-pointer rounded-full border px-2 py-1 text-[11px] font-bold ${logoDirection === 'upload' ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}><span>{logoDirection === 'upload' ? '✓ ' : ''}Upload my logo</span><input type="file" className="hidden" onChange={(e) => { setLogoFile(e.target.files?.[0] || null); setLogoDirection('upload'); }} /></label><button type="button" aria-pressed={logoDirection === 'concept'} onClick={() => setLogoDirection('concept')} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${logoDirection === 'concept' ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}>{logoDirection === 'concept' ? '✓ ' : ''}Help me create one</button><button type="button" aria-pressed={logoDirection === 'text'} onClick={() => setLogoDirection('text')} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${logoDirection === 'text' ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}>{logoDirection === 'text' ? '✓ ' : ''}Use business name</button></div></div>
+                    <div><div className="text-xs font-bold text-slate-900">Do you have colors in mind?</div><div className="mt-1.5 flex flex-wrap gap-1">{[['manual', 'Choose colors'], ['recommend', 'Recommend colors']].map(([value, label]) => <button key={value} type="button" aria-pressed={colorDirection === value} onClick={() => setColorDirection(value)} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${colorDirection === value ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}>{colorDirection === value ? '✓ ' : ''}{label}</button>)}</div></div>
+                    <div><div className="text-xs font-bold text-slate-900">Do you already have a tagline?</div><div className="mt-1.5 flex flex-wrap gap-1">{[['mine', 'Use mine'], ['generate', 'Generate ideas'], ['skip', 'Skip']].map(([value, label]) => <button key={value} type="button" aria-pressed={taglineDirection === value} onClick={() => setTaglineDirection(value)} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${taglineDirection === value ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}>{taglineDirection === value ? '✓ ' : ''}{label}</button>)}</div></div>
+                  </div>
+                  <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                    <div><div className="text-xs font-bold text-slate-900">How should customers describe your business?</div><div className="mt-1.5 flex flex-wrap gap-1">{['Professional & dependable', 'Friendly & approachable', 'Premium & detailed', 'Tough & hardworking', 'Modern & efficient', 'Family-owned & local'].map((item) => <button key={item} type="button" aria-pressed={brandPersonality.includes(item)} onClick={() => setBrandPersonality((current) => current.includes(item) ? current.filter((value) => value !== item) : current.length < 2 ? [...current, item] : [current[1], item])} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${brandPersonality.includes(item) ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}>{brandPersonality.includes(item) ? '✓ ' : ''}{item}</button>)}</div></div>
+                    <div><div className="text-xs font-bold text-slate-900">What should customers feel when they visit?</div><div className="mt-1.5 flex flex-wrap gap-1">{['Confident', 'Safe', 'Reassured', 'Impressed', 'Comfortable', 'Energized'].map((item) => <button key={item} type="button" aria-pressed={customerFeeling === item} onClick={() => setCustomerFeeling(item)} className={`rounded-full border px-2 py-1 text-[11px] font-bold ${customerFeeling === item ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-700'}`}>{customerFeeling === item ? '✓ ' : ''}{item}</button>)}</div></div>
+                  </div>
+                  <div className="mt-2 text-center"><button type="button" onClick={() => requestAiSuggestion('design_recommendation', 'brand-design-recommendation', [profile.primary_trade, logoDirection, colorDirection, taglineDirection, ...brandPersonality, customerFeeling].filter(Boolean).join(', '))} disabled={aiBusyTarget === 'brand-design-recommendation' || missingBrandPreferences.length > 0} className="w-full rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-black text-white shadow-sm disabled:border disabled:border-amber-200 disabled:bg-amber-50 disabled:text-amber-800 disabled:shadow-none sm:w-auto" data-testid="generate-brand-kit">{aiBusyTarget === 'brand-design-recommendation' ? 'Creating suggestions...' : 'Generate My Brand Kit'}</button><div className="mx-auto mt-1 max-w-lg text-[11px] text-slate-600" data-testid="brand-generation-readiness">{missingBrandPreferences.length ? `Choose ${missingBrandPreferences.slice(0, 2).join(' and ')}${missingBrandPreferences.length > 2 ? ' and complete the remaining preferences' : ''} to continue.` : 'Uses your selected preferences to suggest colors, writing style, tagline ideas, and a logo direction.'}</div></div>
+                  <AiSuggestionCard suggestion={aiSuggestions['brand-design-recommendation']} onAccept={() => dismissAiSuggestion('brand-design-recommendation')} onRegenerate={() => requestAiSuggestion('design_recommendation', 'brand-design-recommendation', [profile.primary_trade, ...brandPersonality, customerFeeling].filter(Boolean).join(', '))} onDismiss={() => dismissAiSuggestion('brand-design-recommendation')} />
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <div className="rounded-xl border border-slate-200 bg-white p-4">
                     <div className="text-sm font-black text-slate-900">Logo</div>
-                    <div className="mt-4 flex min-h-36 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+                    <p className="mt-1 text-xs text-slate-500">Used across your website and public profile.</p>
+                    <div className="mt-3 flex min-h-28 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 p-3 text-center">
                       {profile.logo_url ? (
                         <img src={profile.logo_url} alt="Logo" className="max-h-28 object-contain" />
                       ) : (
@@ -2376,60 +2409,64 @@ export default function ContractorPublicPresencePage() {
                         <input type="file" className="hidden" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
                       </label>
                       <button type="button" onClick={() => requestAiSuggestion('logo_generation', 'logo-generation', profile.business_name_public)} disabled={aiBusyTarget === 'logo-generation'} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-60" data-testid="ai-generate-logo">
-                        Generate logo idea
+                        Create Logo Concept
                       </button>
+                      <button type="button" onClick={() => setLogoDirection('text')} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Use Text Logo</button>
                     </div>
-                    <div className="mt-3 text-xs text-slate-500">Used on website and public profile.</div>
                     <AiSuggestionCard suggestion={aiSuggestions['logo-generation']} onAccept={() => dismissAiSuggestion('logo-generation')} onRegenerate={() => requestAiSuggestion('logo_generation', 'logo-generation', profile.business_name_public)} onDismiss={() => dismissAiSuggestion('logo-generation')} />
                   </div>
 
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="text-sm font-black text-slate-900">Hero / Cover Image</div>
-                    <div className="mt-4 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="order-5 rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="text-sm font-black text-slate-900">Website Cover Photo</div>
+                    <p className="mt-1 text-xs text-slate-500">The large image customers see at the top of your website.</p>
+                    <div className="mt-3 flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
                       {profile.hero_image_url || profile.cover_image_url ? (
                         <img src={profile.hero_image_url || profile.cover_image_url} alt="Hero" className="h-full w-full object-cover" />
                       ) : (
-                        <span className="text-sm font-bold text-slate-400">Add a strong project photo</span>
+                        <span className="px-4 text-center text-sm font-bold text-slate-400">Add a completed-project photo or choose one later.</span>
                       )}
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       <label className="inline-flex cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
-                        Upload Hero Image
+                        Upload Photo
                         <input type="file" className="hidden" onChange={(e) => setHeroFile(e.target.files?.[0] || null)} />
                       </label>
                       <button type="button" onClick={() => requestAiSuggestion('hero_image_generation', 'hero-image-generation', profile.primary_trade)} disabled={aiBusyTarget === 'hero-image-generation'} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-60" data-testid="ai-generate-hero-image">
-                        Hero image idea
+                        Recommend a Photo
                       </button>
                     </div>
-                    <div className="mt-3 text-xs text-slate-500">Used on website hero and public profile cover areas.</div>
                     <AiSuggestionCard suggestion={aiSuggestions['hero-image-generation']} onAccept={() => dismissAiSuggestion('hero-image-generation')} onRegenerate={() => requestAiSuggestion('hero_image_generation', 'hero-image-generation', profile.primary_trade)} onDismiss={() => dismissAiSuggestion('hero-image-generation')} />
                   </div>
 
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-black text-slate-900">Colors</div>
-                    <label className="mt-4 block text-xs font-bold text-slate-700">Primary color<input type="color" value={profile.brand_primary_color || '#2563eb'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_primary_color: event.target.value }))} className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="brand-kit-primary-color" /></label>
-                    <label className="mt-4 block text-xs font-bold text-slate-700">Accent color<input type="color" value={profile.brand_accent_color || '#14b8a6'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_accent_color: event.target.value }))} className="mt-2 h-10 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="brand-kit-accent-color" /></label>
-                    <div className="mt-3 text-xs text-slate-500">Used on website, public profile, buttons, and visual accents.</div>
+                  <div className="order-2 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Colors</div><p className="mt-1 text-xs text-slate-500">These colors shape buttons, links, and visual accents.</p>
+                    <div className="mt-3 grid grid-cols-2 gap-3"><label className="block text-xs font-bold text-slate-700">Primary color<input type="color" value={profile.brand_primary_color || '#2563eb'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_primary_color: event.target.value }))} className="mt-1.5 h-12 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="brand-kit-primary-color" /></label><label className="block text-xs font-bold text-slate-700">Accent color<input type="color" value={profile.brand_accent_color || '#14b8a6'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_accent_color: event.target.value }))} className="mt-1.5 h-12 w-full rounded-lg border border-slate-300 bg-white p-1" data-testid="brand-kit-accent-color" /></label></div>
                   </div>
 
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="text-sm font-black text-slate-900">Voice, Font, and Tagline</div>
-                    <label className="mt-4 block text-xs font-bold text-slate-700">Font theme<select value={profile.brand_font_theme || 'clean_sans'} onChange={(event) => setProfile((prev) => ({ ...prev, brand_font_theme: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="brand-kit-font-theme">{FONT_THEME_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-                    <label className="mt-4 block text-xs font-bold text-slate-700">Public tagline<input value={profile.tagline || ''} onChange={(event) => setProfile((prev) => ({ ...prev, tagline: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Clear work. Clean finish. Reliable schedule." data-testid="brand-kit-tagline" /></label>
-                    <label className="mt-4 block text-xs font-bold text-slate-700">Brand voice / tone<select value={profile.proposal_tone || ''} onChange={(event) => setProfile((prev) => ({ ...prev, proposal_tone: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="brand-kit-voice">{PROPOSAL_TONE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <div className="order-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Website Appearance</div><p className="mt-1 text-xs text-slate-500">Choose how your website text and background should feel.</p><div className="mt-3 text-xs font-bold text-slate-700">Website Text Style</div>
+                    <div className="mt-3 flex gap-2 overflow-x-auto pb-1">{FONT_THEME_OPTIONS.map((option) => <button key={option.value} type="button" aria-pressed={option.value === (profile.brand_font_theme || 'clean_sans')} onClick={() => setProfile((prev) => ({ ...prev, brand_font_theme: option.value }))} data-testid={option.value === (profile.brand_font_theme || 'clean_sans') ? 'brand-kit-font-theme' : undefined} className={`min-h-24 min-w-28 rounded-lg border p-3 text-left ${option.value === (profile.brand_font_theme || 'clean_sans') ? 'border-blue-500 bg-blue-100 ring-1 ring-blue-200' : 'border-slate-200 bg-white'}`}><span className="block text-lg font-black text-slate-900">Aa</span><span className="mt-1 block text-xs font-bold text-slate-700">{option.value === (profile.brand_font_theme || 'clean_sans') ? '✓ ' : ''}{BRAND_TEXT_STYLE_LABELS[option.value]}</span></button>)}</div>
+                    <div className="mt-3 border-t border-slate-200 pt-3 text-xs font-bold text-slate-700">Background Style <span className="font-normal text-slate-500">· Preview setting</span></div><div className="mt-2 flex flex-wrap gap-1.5">{['Clean White', 'Light Gray', 'Warm Neutral', 'Dark Professional', 'Subtle Brand Tint'].map((item) => <button key={item} type="button" aria-pressed={brandBackground === item} onClick={() => setBrandBackground(item)} className={`rounded-lg border px-2 py-1.5 text-xs font-bold ${brandBackground === item ? 'border-blue-500 bg-blue-100 text-blue-800' : 'border-slate-200 bg-white text-slate-600'}`}>{brandBackground === item ? '✓ ' : ''}{item}</button>)}</div><p className="mt-2 text-[11px] text-slate-500">Preview-only until website theme support is enabled.</p>
+                  </div>
+
+                  <div className="order-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Writing Style &amp; Tagline</div><p className="mt-1 text-xs text-slate-500">Choose how your website speaks to customers.</p>
+                    <label className="mt-3 block text-xs font-bold text-slate-700">Writing Style<select value={profile.proposal_tone || ''} onChange={(event) => setProfile((prev) => ({ ...prev, proposal_tone: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="brand-kit-voice">{PROPOSAL_TONE_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                    <label className="mt-3 block text-xs font-bold text-slate-700">Tagline<input value={profile.tagline || ''} onChange={(event) => setProfile((prev) => ({ ...prev, tagline: event.target.value }))} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="No tagline selected yet." data-testid="brand-kit-tagline" /></label>
+                    <button type="button" onClick={() => requestAiSuggestion('tagline', 'brand-tagline', profile.tagline)} className="mt-2 rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700">Generate Taglines</button>
+                    <AiSuggestionCard suggestion={aiSuggestions['brand-tagline']} onAccept={() => acceptAiSuggestion('brand-tagline', (value) => setProfile((prev) => ({ ...prev, tagline: value })))} onRegenerate={() => requestAiSuggestion('tagline', 'brand-tagline', profile.tagline)} onDismiss={() => dismissAiSuggestion('brand-tagline')} />
                   </div>
                 </div>
-                <button type="button" data-testid="brand-kit-save" onClick={saveProfile} disabled={profileBusy} className="mt-5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
-                  {profileBusy ? 'Saving...' : 'Save Brand Kit'}
-                </button>
               </div>
-              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-black text-slate-950">Where Brand Kit appears</div>
-                <div className="mt-3 space-y-2 text-sm text-slate-700">
-                  {['Used on website', 'Used on public profile', 'Future-ready for proposals/documents if supported', 'Social preview image support is future-ready'].map((item) => (
-                    <div key={item} className="flex gap-2"><span className="text-blue-600">-</span>{item}</div>
-                  ))}
+              <aside className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-colors duration-200" data-testid="brand-preview" aria-live="polite">
+                <div className="text-lg font-black text-slate-950">Brand Preview</div>
+                <p className="mt-1 text-sm text-slate-600">See how your brand will look on your website.</p>
+                <div className="mt-4 overflow-hidden rounded-xl border border-slate-200 transition-colors duration-200" style={{ backgroundColor: brandBackground === 'Dark Professional' ? '#0f172a' : brandBackground === 'Warm Neutral' ? '#faf7f2' : brandBackground === 'Light Gray' ? '#f1f5f9' : brandBackground === 'Subtle Brand Tint' ? `${profile.brand_primary_color || '#2563eb'}12` : '#ffffff' }}>
+                  <div className="flex items-center justify-between bg-white px-4 py-3"><div>{profile.logo_url ? <img src={profile.logo_url} alt="Brand logo preview" className="max-h-9 max-w-36 object-contain" /> : <div className="font-black uppercase tracking-wide text-slate-950">{profile.business_name_public || 'Your Business'}</div>}</div><span className="text-xl text-slate-500">☰</span></div>
+                  <div className="relative min-h-56 overflow-hidden p-5" style={{ backgroundColor: profile.brand_primary_color || '#2563eb' }}>{profile.hero_image_url || profile.cover_image_url ? <img src={profile.hero_image_url || profile.cover_image_url} alt="Cover preview" className="absolute inset-0 h-full w-full object-cover opacity-45" /> : null}<div className="relative text-white"><div className="max-w-xs text-2xl font-black">{profile.tagline || profile.business_name_public || 'Your business, clearly presented.'}</div><p className="mt-2 text-sm text-white/85">{profile.bio || 'Your services and experience will appear here.'}</p><span className="mt-4 inline-block rounded-lg px-3 py-2 text-xs font-black" style={{ backgroundColor: profile.brand_accent_color || '#14b8a6' }}>Request a Quote</span></div></div>
+                  <div className="space-y-2 bg-white p-4 text-xs text-slate-700"><div className="flex justify-between"><span>Text style</span><strong>{BRAND_TEXT_STYLE_LABELS[profile.brand_font_theme || 'clean_sans'] || 'Clean & Modern'}</strong></div><div className="flex justify-between"><span>Writing style</span><strong>{profile.proposal_tone ? (PROPOSAL_TONE_OPTIONS.find(([value]) => value === profile.proposal_tone)?.[1] || 'Not selected') : 'Not selected'}</strong></div><div className="flex justify-between"><span>Tagline</span><strong>{profile.tagline || 'No tagline selected'}</strong></div><div className="flex justify-between"><span>Cover photo</span><strong>{profile.hero_image_url || profile.cover_image_url ? 'Selected' : 'No cover photo selected'}</strong></div><div className="flex justify-between"><span>Background</span><strong>{brandBackground} · Preview</strong></div></div>
                 </div>
+                <div className="mt-4 rounded-xl bg-blue-50 p-3 text-sm text-blue-950">Preview only — save to apply these changes.</div>
               </aside>
             </section>
           ) : null}
@@ -2823,6 +2860,8 @@ export default function ContractorPublicPresencePage() {
             <button type="button" onClick={goToPreviousStep} disabled={activeStepIndex === 0} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-40">Back</button>
             {activeTab === 'profile' ? (
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="public-presence-save-profile" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
+            ) : activeTab === 'brand' ? (
+              <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="brand-kit-save" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'publish' ? (
               <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
@@ -2830,7 +2869,7 @@ export default function ContractorPublicPresencePage() {
             )}
           </div>
 
-          {!['decision', 'profile'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {!['decision', 'profile', 'brand'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}
