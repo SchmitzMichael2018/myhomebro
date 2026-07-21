@@ -473,7 +473,7 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
   });
 }
 
-test('Marketing Website Builder tab loads the new Design & Content step with dev override', async ({ page }) => {
+test('Marketing Content step composes supported pages, styles, copy, and preview', async ({ page }) => {
   await mockMarketingPage(page, { pro: false, developmentOverride: true, statusOverride: 'paused' });
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
@@ -483,13 +483,28 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Content');
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('SEO');
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Review');
-  await expect(page.getByTestId('website-builder-design-tab')).toContainText('Developer Override Active');
+  await expect(page.getByTestId('marketing-website-builder-tab')).toContainText('Build your website pages and content that turns visitors into customers.');
+  await expect(page.getByTestId('website-builder-design-tab')).not.toContainText('Developer Override Active');
+  await expect(page.getByTestId('marketing-website-builder-tab')).not.toContainText(/Step \d+ of \d+/);
+  await expect(page.getByTestId('marketing-website-builder-tab')).not.toContainText('FAQ generation coming soon');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
   await expect(page.getByText('Your website is saved but paused. Choose a plan to reactivate customization.')).toHaveCount(0);
   await expect(page.getByTestId('website-builder-preview-toggle')).toHaveCount(0);
   await expect(page.getByTestId('website-builder-preview-button')).toBeVisible();
   await expect(page.getByTestId('website-builder-preview-button')).toHaveAttribute('target', '_blank');
   await expect(page.getByTestId('website-builder-preview-button')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=desktop$/);
   await expect(page.getByTestId('marketing-website-builder-tab').getByTestId('public-website-renderer')).toHaveCount(0);
+  await expect(page.getByTestId('content-style-cards').getByRole('button')).toHaveCount(4);
+  await expect(page.getByTestId('content-style-starter')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('content-style-premium_home').click();
+  await expect(page.getByTestId('content-style-premium_home')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('content-page-builder').locator('[data-testid^="content-page-row-"]')).toHaveCount(3);
+  await expect(page.getByTestId('content-page-builder')).toContainText('Published');
+  await expect(page.getByTestId('marketing-website-builder-tab')).not.toContainText('Add Custom Page');
+  await expect(page.getByTestId('content-generation')).not.toContainText('FAQ');
+  await expect(page.getByTestId('content-search-preview')).toContainText('Bright Build Co');
+  await expect(page.getByTestId('marketing-website-builder-tab').locator('input[name*="seo"], textarea[name*="seo"]')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save & Continue' })).toHaveCount(1);
 
   const themeState = await page.getByTestId('online-presence-setup-shell').evaluate((shell) => {
     const parseRgb = (value) => {
@@ -541,9 +556,7 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
     documentFits: true,
   });
 
-  await expect(page.getByTestId('website-builder-primary-color')).toBeEnabled();
-  await page.getByTestId('website-builder-primary-color').fill('#0f766e');
-  await expect(page.getByTestId('website-builder-save-page')).toBeEnabled();
+  await expect(page.getByTestId('website-builder-hero-headline')).toBeEnabled();
   await page.goto('/app/marketing/preview?mode=mobile', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('contractor-website-preview-page')).toBeVisible();
   await expect(page.getByTestId('full-preview-mobile-frame')).toBeVisible();
@@ -572,6 +585,25 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
   await expect(page.getByTestId('online-presence-publish-tab')).toContainText('Ready to Publish');
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
+});
+
+test('capture Marketing Content reference implementation', async ({ page }) => {
+  await mockMarketingPage(page, { developmentOverride: true });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('content-style-cards')).toBeVisible();
+  await expect(page.getByTestId('content-page-builder')).toBeVisible();
+  await expect(page.getByTestId('content-generation')).toBeVisible();
+  await expect(page.getByTestId('content-website-preview')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-content-reference-implementation.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('content-style-cards')).toBeVisible();
+  await expect(page.getByTestId('content-save-continue')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-content-reference-mobile.png'), fullPage: true });
 });
 
 test('Website Decision uses selectable cards and one progression action', async ({ page }) => {
@@ -943,9 +975,9 @@ test('Pro contractor can edit Design & Content, open full preview, and publish a
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
 
   await page.getByTestId('website-builder-hero-headline').fill('Premium remodeling, handled clearly');
-  await page.getByTestId('website-builder-save-page').click();
+  await page.getByTestId('content-save-continue').click();
   await expect(page.getByText('Website page saved.')).toBeVisible();
-  await expect(page.getByTestId('website-builder-hero-headline')).toHaveValue('Premium remodeling, handled clearly');
+  await expect(page.getByTestId('online-presence-seo-tab')).toBeVisible();
 
   await page.goto('/app/marketing/preview?mode=mobile', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('full-preview-mobile-frame')).toBeVisible();
