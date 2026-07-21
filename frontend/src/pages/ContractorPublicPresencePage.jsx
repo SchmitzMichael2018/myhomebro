@@ -603,6 +603,7 @@ export default function ContractorPublicPresencePage() {
   const [reviewFilter, setReviewFilter] = useState('all');
   const [reviewSort, setReviewSort] = useState('newest');
   const [searchPhraseInput, setSearchPhraseInput] = useState('');
+  const [finalPreviewMode, setFinalPreviewMode] = useState('desktop');
 
   const websiteFeatures = websiteReadiness?.entitlements?.features || {};
   const websiteBuilderGate = websiteFeatures.website_builder || {};
@@ -892,6 +893,32 @@ export default function ContractorPublicPresencePage() {
     { label: 'Content', ready: Boolean(heroContent.headline && heroContent.subheadline) },
   ];
   const firstIncompletePublishSignal = marketingPublishSignals.find((item) => !item.ready);
+  const finalReadinessRows = [
+    {
+      label: 'Business Information',
+      step: 'profile',
+      complete: marketingPublishSignals[0].ready,
+      required: missingRequiredFields.length > 0,
+      detail: marketingPublishSignals[0].ready ? '' : 'Add your business name, primary trade, and service area.',
+    },
+    { label: 'Brand Kit', step: 'brand', complete: marketingPublishSignals[1].ready, detail: marketingPublishSignals[1].ready ? '' : 'Finish your core brand selections.' },
+    { label: 'Portfolio', step: 'gallery', complete: marketingPublishSignals[2].ready, detail: marketingPublishSignals[2].ready ? '' : 'No public portfolio items yet.' },
+    { label: 'Reviews', step: 'reviews', complete: marketingPublishSignals[3].ready, optional: true, detail: marketingPublishSignals[3].ready ? '' : 'No public reviews yet.' },
+    { label: 'Content', step: 'website', complete: marketingPublishSignals[5].ready, detail: marketingPublishSignals[5].ready ? '' : 'Finish your homepage headline and supporting copy.' },
+    { label: 'SEO & Visibility', step: 'seo', complete: marketingPublishSignals[4].ready, detail: marketingPublishSignals[4].ready ? '' : 'Add your search title and description.' },
+  ].sort((a, b) => Number(Boolean(b.required)) - Number(Boolean(a.required)) || Number(a.complete) - Number(b.complete));
+  const finalImprovements = [
+    !publicReviewCount ? { title: 'Add your first review', detail: 'Customer feedback helps build trust.', step: 'reviews', action: 'Go to Reviews' } : null,
+    !publicPortfolioCount ? { title: 'Publish at least one portfolio item', detail: 'Show real work to build confidence.', step: 'gallery', action: 'Go to Portfolio' } : null,
+    !heroContent.headline ? { title: 'Improve your homepage headline', detail: 'A clear headline helps visitors understand your value.', step: 'website', action: 'Go to Content' } : null,
+    !profile.seo_title || !profile.seo_description ? { title: 'Complete your search appearance', detail: 'Add a clear title and description for customers.', step: 'seo', action: 'Go to SEO' } : null,
+    missingRequiredFields.length ? { title: 'Complete your business information', detail: missingRequiredFields.slice(0, 2).join(', '), step: 'profile', action: 'Go to Business Info' } : null,
+  ].filter(Boolean).slice(0, 5);
+  const finalLaunchStatus = !canPublishWebsite
+    ? { label: 'Cannot Publish Yet', detail: websitePublishBlockers[0] || websitePublishGate.reason || 'Complete the required items below before publishing.', tone: 'rose' }
+    : finalReadinessRows.some((item) => !item.complete)
+      ? { label: 'Almost Ready', detail: 'Complete the remaining recommended items, or publish and continue improving later.', tone: 'amber' }
+      : { label: 'Ready to Publish', detail: 'Your website has no required blockers.', tone: 'emerald' };
   const buildAiContext = () => ({
     business_identity: {
       company_name: profile.business_name_public,
@@ -2633,6 +2660,27 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'final' ? (
+            <section data-testid="online-presence-final-review-tab">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div><h2 className="text-2xl font-black text-slate-950">Final Review</h2><p className="mt-1 text-sm text-slate-600">Review everything below before publishing your website.</p></div>
+                <div className={`rounded-xl border px-4 py-3 lg:max-w-md ${finalLaunchStatus.tone === 'rose' ? 'border-rose-200 bg-rose-50' : finalLaunchStatus.tone === 'amber' ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`} data-testid="final-launch-status" role="status"><div className="text-sm font-black text-slate-950">{finalLaunchStatus.label}</div><p className="mt-1 text-xs leading-5 text-slate-600">{finalLaunchStatus.detail}</p></div>
+              </div>
+              <div className="mt-5 grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)_240px]">
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-marketing-readiness"><h3 className="text-base font-black text-slate-950">Marketing Readiness</h3><div className="mt-3 divide-y divide-slate-200" role="list">{finalReadinessRows.map((item) => { const status = item.complete ? 'Complete' : item.required ? 'Required' : item.optional ? 'Optional' : 'Needs Attention'; return <button key={item.label} type="button" onClick={() => goToStep(item.step)} className="flex w-full items-center gap-2 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600" role="listitem" data-testid={`final-readiness-${item.step}`}><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${item.complete ? 'bg-emerald-100 text-emerald-700' : item.required ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{item.complete ? '✓' : '!'}</span><span className="min-w-0 flex-1"><span className="block text-sm font-black text-slate-900">{item.label}</span>{item.detail ? <span className="mt-0.5 block text-xs leading-4 text-slate-500">{item.detail}</span> : null}</span><span className={`text-[10px] font-black ${item.complete ? 'text-emerald-700' : item.required ? 'text-rose-700' : 'text-amber-700'}`}>{status}</span><span aria-hidden="true" className="text-slate-400">›</span></button>; })}</div></div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-impact-improvements"><h3 className="text-base font-black text-slate-950">Highest Impact Improvements</h3><p className="mt-1 text-xs text-slate-500">Optional ways to make your website stronger.</p>{finalImprovements.length ? <div className="mt-3 divide-y divide-slate-200">{finalImprovements.slice(0, 3).map((item) => <div key={item.title} className="py-3"><div className="text-sm font-black text-slate-900">{item.title}</div><p className="mt-1 text-xs leading-4 text-slate-500">{item.detail}</p><button type="button" onClick={() => goToStep(item.step)} className="mt-2 text-xs font-black text-blue-700">{item.action} →</button></div>)}</div> : <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs font-bold text-emerald-800">No additional improvements are needed.</p>}</div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="website-preview-summary-card"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><h3 className="text-base font-black text-slate-950">Website Preview</h3><p className="mt-1 text-xs text-slate-500">This is how your website will look when published.</p></div><div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1" role="tablist" aria-label="Preview size"><button type="button" role="tab" aria-selected={finalPreviewMode === 'desktop'} onClick={() => setFinalPreviewMode('desktop')} data-testid="final-preview-desktop" className={`rounded-md px-3 py-2 text-xs font-black ${finalPreviewMode === 'desktop' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}>Desktop</button><button type="button" role="tab" aria-selected={finalPreviewMode === 'mobile'} onClick={() => setFinalPreviewMode('mobile')} data-testid="final-preview-mobile" className={`rounded-md px-3 py-2 text-xs font-black ${finalPreviewMode === 'mobile' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-600'}`}>Mobile</button></div></div>
+                  <div className={`mx-auto mt-4 overflow-hidden border border-slate-300 bg-white shadow-sm transition-all ${finalPreviewMode === 'mobile' ? 'max-w-[280px] rounded-[28px]' : 'w-full rounded-xl'}`} data-testid={`final-${finalPreviewMode}-preview`} aria-label={`${finalPreviewMode} website preview`}><div className="flex items-center border-b border-white/10 bg-slate-950 px-4 py-3 text-white"><span className="text-[10px] font-black">{websiteBusinessName}</span><span className="ml-auto flex gap-3 text-[8px] text-slate-300">{websitePages.filter((page) => page.is_published).slice(0, finalPreviewMode === 'mobile' ? 1 : 5).map((page) => <span key={page.id}>{page.title || page.page_type}</span>)}</span></div><div className={`relative flex items-center bg-slate-900 p-6 text-white ${finalPreviewMode === 'mobile' ? 'min-h-[360px] justify-center text-center' : 'min-h-[330px]'}`} style={websiteHeroImage ? { backgroundImage: `linear-gradient(rgba(15,23,42,.68),rgba(15,23,42,.68)), url(${websiteHeroImage})`, backgroundSize: 'cover', backgroundPosition: 'center' } : { background: `linear-gradient(135deg, ${websiteLayout.branding?.primary_color || websiteProfile?.branding?.primary_color || '#2563eb'}, #0f172a)` }}><div className={finalPreviewMode === 'mobile' ? 'max-w-[210px]' : 'max-w-md'}><div className={`${finalPreviewMode === 'mobile' ? 'text-2xl' : 'text-3xl'} font-black leading-tight`}>{heroContent.headline || websiteBusinessName}</div><p className="mt-3 text-xs leading-5 text-slate-200">{heroContent.subheadline || profile.bio || 'Your business website preview.'}</p>{heroContent.cta_text ? <span className="mt-4 inline-block rounded-lg px-4 py-2 text-[10px] font-black text-white" style={{ backgroundColor: websiteLayout.branding?.accent_color || websiteProfile?.branding?.accent_color || '#2563eb' }}>{heroContent.cta_text}</span> : null}</div></div><div className="p-5 text-center"><div className="text-sm font-black text-slate-900">Our Services</div>{serviceKeywords.length ? <div className="mt-3 flex flex-wrap justify-center gap-2">{serviceKeywords.slice(0, 4).map((service) => <span key={service} className="rounded-lg bg-slate-50 px-3 py-2 text-[10px] font-bold text-slate-600">{service}</span>)}</div> : <p className="mt-2 text-xs text-slate-500">Your services will appear here once added.</p>}</div></div>
+                  <div className="mt-4 flex flex-col gap-2 rounded-xl bg-blue-50 p-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-blue-900">Preview only. Publishing makes your saved website available at its public URL.</p><a href={websiteFullPreviewUrl(finalPreviewMode)} target="_blank" rel="noreferrer" className="shrink-0 rounded-lg bg-white px-3 py-2 text-center text-xs font-black text-blue-700" data-testid="final-open-full-preview">Open Full Preview</a></div>
+                </div>
+                <aside className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-4 text-center" data-testid="final-ready-summary"><div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full text-xl font-black ${canPublishWebsite ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{canPublishWebsite ? '✓' : '!'}</div><h3 className="mt-3 text-base font-black text-slate-950">Ready to Publish</h3><p className="mt-2 text-xs leading-5 text-slate-600">{canPublishWebsite ? finalImprovements.length ? 'You can publish now and continue improving later.' : 'Your website is ready to go live.' : websitePublishBlockers[0] || websitePublishGate.reason || 'Complete the required items before publishing.'}</p></div><div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-what-next"><h3 className="text-base font-black text-slate-950">What Happens Next</h3><ul className="mt-3 space-y-3 text-xs leading-5 text-slate-600">{['Your website goes live', 'Customers can open the public URL', 'Your public profile becomes accessible', 'You can continue updating content later'].map((item) => <li key={item} className="flex gap-2"><span className="font-black text-emerald-600">✓</span>{item}</li>)}</ul></div><div className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="final-assistant-help"><h3 className="text-base font-black text-slate-950">Need Help?</h3><p className="mt-2 text-xs leading-5 text-slate-600">Ask Project Assistant about any item before publishing.</p><button type="button" onClick={() => requestAiSuggestion('final_website_audit', 'final-website-audit', '')} className="mt-3 w-full rounded-lg border border-blue-200 px-3 py-2 text-xs font-black text-blue-700">Open Project Assistant</button><AiSuggestionCard suggestion={aiSuggestions['final-website-audit']} onAccept={() => dismissAiSuggestion('final-website-audit')} onRegenerate={() => requestAiSuggestion('final_website_audit', 'final-website-audit', '')} onDismiss={() => dismissAiSuggestion('final-website-audit')} /></div></aside>
+              </div>
+              {websitePublishMessage ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900" role="alert">{websitePublishMessage}</div> : null}
+            </section>
+          ) : null}
+
+          {activeTab === 'final' && false ? (
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="online-presence-final-review-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="text-xs font-bold text-slate-500">Step 6 of 7</div>
@@ -2748,6 +2796,8 @@ export default function ContractorPublicPresencePage() {
               <button type="button" onClick={saveContentAndContinue} disabled={websiteBusy || !homePage} data-testid="content-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{websiteBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'seo' ? (
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="seo-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
+            ) : activeTab === 'final' ? (
+              <div className="flex flex-col items-end gap-1"><button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} data-testid="final-publish-website" className="w-full rounded-lg bg-blue-600 px-7 py-2.5 text-sm font-black text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600 sm:w-auto">{websiteBusy ? 'Publishing...' : 'Publish Website'}</button><span className="text-[11px] text-slate-500">{canPublishWebsite ? 'You can continue improving after publishing.' : 'Complete the required items above before publishing.'}</span></div>
             ) : activeTab === 'publish' ? (
               <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
@@ -2755,7 +2805,7 @@ export default function ContractorPublicPresencePage() {
             )}
           </div>
 
-          {!['decision', 'profile', 'brand', 'gallery', 'reviews', 'website', 'seo'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {!['decision', 'profile', 'brand', 'gallery', 'reviews', 'website', 'seo', 'final'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}

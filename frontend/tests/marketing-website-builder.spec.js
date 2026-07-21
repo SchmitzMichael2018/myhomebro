@@ -1018,11 +1018,65 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await setupNav.getByRole('button', { name: /Final Review/ }).click();
   await expect(page.getByTestId('website-preview-summary-card')).toBeVisible();
   await expect(page.getByTestId('online-presence-final-review-tab').getByTestId('public-website-renderer')).toHaveCount(0);
-  await expect(page.getByTestId('final-preview-desktop')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=desktop$/);
-  await expect(page.getByTestId('final-preview-mobile')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=mobile$/);
-  await expect(page.getByTestId('ai-website-audit-card')).toContainText('Project Assistant Website Audit');
-  await page.getByTestId('ai-final-review-suggestions').click();
+  await expect(page.getByTestId('final-preview-desktop')).toHaveAttribute('aria-selected', 'true');
+  await page.getByTestId('final-preview-mobile').click();
+  await expect(page.getByTestId('final-mobile-preview')).toBeVisible();
+  await expect(page.getByTestId('final-open-full-preview')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=mobile$/);
+  await expect(page.getByTestId('final-assistant-help')).toContainText('Need Help?');
+  await page.getByTestId('final-assistant-help').getByRole('button', { name: 'Open Project Assistant' }).click();
   await expect(page.getByTestId('ai-suggestion-final-website-audit')).toContainText('ready to publish');
+});
+
+test('Final Review is a deterministic launch checkpoint with one publish action', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=final', { waitUntil: 'domcontentloaded' });
+  const review = page.getByTestId('online-presence-final-review-tab');
+  await expect(review).toBeVisible();
+  await expect(page.getByTestId('online-presence-setup-nav').getByRole('button', { name: 'Final Review' })).toHaveAttribute('aria-current', 'step');
+  await expect(review).not.toContainText('Step 6 of 7');
+  await expect(review).not.toContainText('Website score');
+  await expect(review).not.toContainText('Publish Checklist');
+  await expect(review).not.toContainText('Publish Anyway');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(page.getByTestId('final-marketing-readiness')).toContainText('Business Information');
+  await expect(page.getByTestId('final-impact-improvements')).toContainText('Highest Impact Improvements');
+  await expect(page.getByTestId('final-ready-summary')).toBeVisible();
+  await expect(page.getByTestId('final-publish-website')).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Continue', exact: true })).toHaveCount(0);
+  await page.getByTestId('final-readiness-reviews').click();
+  await expect(page.getByTestId('public-presence-reviews-tab')).toBeVisible();
+});
+
+test('Final Review disables publishing for real backend blockers', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: false });
+  await page.goto('/app/marketing?tab=final', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('final-launch-status')).toContainText('Cannot Publish Yet');
+  await expect(page.getByTestId('final-publish-website')).toBeDisabled();
+  await expect(page.getByTestId('final-ready-summary')).toContainText('Publishing is part of the Pro Website Builder.');
+});
+
+test('capture Marketing Final Review reference implementation', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=final', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('online-presence-final-review-tab')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-final-review-reference-implementation.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId('final-preview-mobile').click();
+  await expect(page.getByTestId('final-mobile-preview')).toBeVisible();
+  await expect(page.getByTestId('final-publish-website')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+    document.querySelectorAll('*').forEach((element) => {
+      if (element.scrollTop) element.scrollTop = 0;
+    });
+  });
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-final-review-reference-mobile.png'), fullPage: true });
 });
 
 test('Pro contractor can edit Design & Content, open full preview, and publish a snapshot', async ({ page }) => {
