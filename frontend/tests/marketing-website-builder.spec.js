@@ -559,6 +559,28 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
+test('Website Decision uses selectable cards and one progression action', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Website Decision' }).click();
+
+  const step = page.getByTestId('website-decision-step');
+  const noWebsite = page.getByTestId('website-decision-no-website');
+  const existingWebsite = page.getByTestId('website-decision-existing-website');
+  await expect(step).toContainText('Website Decision');
+  await expect(step).not.toContainText('Step 0 of 7');
+  await expect(noWebsite).toHaveAttribute('role', 'radio');
+  await expect(noWebsite).toHaveAttribute('aria-checked', 'true');
+  await expect(existingWebsite).toHaveAttribute('role', 'radio');
+  await existingWebsite.click();
+  await expect(existingWebsite).toHaveAttribute('aria-checked', 'true');
+  await expect(step).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue', exact: true })).toHaveCount(1);
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(existingWebsite).toContainText('MyHomeBro will analyze the existing website');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
 test('Marketing Overview renders the consolidated readiness workspace', async ({ page }) => {
   await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
 

@@ -2123,46 +2123,58 @@ export default function ContractorPublicPresencePage() {
 
           {activeTab === 'decision' ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="website-decision-step">
-              <div className="text-xs font-bold text-slate-500">Step 0 of 7</div>
-              <h2 className="mt-2 text-2xl font-black text-slate-950">Let&apos;s start with your website.</h2>
+              <h2 className="text-2xl font-black text-slate-950">Website Decision</h2>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                This helps us personalize your experience and provide the best recommendations.
+                Choose whether you&apos;d like MyHomeBro to build your website or analyze an existing one.
               </p>
-              <div className="mt-6 grid gap-5 lg:grid-cols-2">
+              <div className="mt-4 grid gap-4 lg:grid-cols-2" role="radiogroup" aria-label="Website choice">
                 <button
                   type="button"
+                  role="radio"
+                  aria-checked={!profile.has_existing_website}
                   onClick={() => {
                     setWebsiteDecisionError('');
                     setProfile((prev) => ({ ...prev, has_existing_website: false, existing_website_url: '' }));
                   }}
                   className={[
-                    'min-h-[260px] rounded-xl border bg-white p-6 text-center shadow-sm transition hover:-translate-y-0.5 hover:shadow-md',
+                    'relative min-h-[230px] rounded-xl border bg-white p-5 text-center shadow-sm transition hover:border-blue-400 hover:shadow-md',
                     !profile.has_existing_website ? 'border-blue-600 ring-2 ring-blue-100' : 'border-slate-200',
                   ].join(' ')}
                   data-testid="website-decision-no-website"
                 >
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-2xl text-blue-600">▣</div>
-                  <div className="mt-5 text-lg font-black text-slate-950">I don&apos;t have a website</div>
+                  <span aria-hidden="true" className={`absolute left-5 top-5 flex h-5 w-5 items-center justify-center rounded-full border-2 ${!profile.has_existing_website ? 'border-blue-600' : 'border-slate-400'}`}>{!profile.has_existing_website ? <span className="h-2.5 w-2.5 rounded-full bg-blue-600" /> : null}</span>
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-blue-100 bg-blue-50 text-2xl text-blue-600">▣</div>
+                  <div className="mt-4 text-lg font-black text-slate-950">I don&apos;t have a website</div>
                   <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-600">
                     We&apos;ll build a beautiful website for you using your business information.
                   </p>
-                  <span className="mt-5 inline-flex rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</span>
                 </button>
                 <div
+                  role="radio"
+                  aria-checked={Boolean(profile.has_existing_website)}
+                  tabIndex={0}
+                  onClick={() => setProfile((prev) => ({ ...prev, has_existing_website: true }))}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setProfile((prev) => ({ ...prev, has_existing_website: true }));
+                    }
+                  }}
                   className={[
-                    'rounded-xl border bg-white p-6 text-center shadow-sm transition',
+                    'relative min-h-[230px] cursor-pointer rounded-xl border bg-white p-5 text-center shadow-sm transition hover:border-blue-400 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-200',
                     profile.has_existing_website ? 'border-blue-600 ring-2 ring-blue-100' : 'border-slate-200',
                   ].join(' ')}
                   data-testid="website-decision-existing-website"
                 >
-                  <button type="button" onClick={() => setProfile((prev) => ({ ...prev, has_existing_website: true }))} className="w-full text-center">
-                    <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-3xl text-slate-400">◎</div>
-                    <div className="mt-5 text-lg font-black text-slate-950">I already have a website</div>
+                  <span aria-hidden="true" className={`absolute left-5 top-5 flex h-5 w-5 items-center justify-center rounded-full border-2 ${profile.has_existing_website ? 'border-blue-600' : 'border-slate-400'}`}>{profile.has_existing_website ? <span className="h-2.5 w-2.5 rounded-full bg-blue-600" /> : null}</span>
+                  <div className="w-full text-center">
+                    <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-100 bg-emerald-50 text-3xl text-emerald-600">◎</div>
+                    <div className="mt-4 text-lg font-black text-slate-950">I already have a website</div>
                     <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-600">
-                      Enter your website and we&apos;ll keep it ready for future analysis and improvements.
+                      Enter its URL and MyHomeBro will analyze the existing website for future improvements.
                     </p>
-                  </button>
-                  <label className="mx-auto mt-5 block max-w-sm text-left">
+                  </div>
+                  <label className="mx-auto mt-4 block max-w-sm text-left" onClick={(event) => event.stopPropagation()}>
                     <span className="text-sm font-bold text-slate-800">Website URL</span>
                     <input
                       value={profile.existing_website_url || ''}
@@ -2793,7 +2805,7 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
-          <div className="mt-5 flex items-center justify-between border-t border-slate-200 pt-4">
+          <div className={`${activeTab === 'decision' ? 'mt-3 pt-3' : 'mt-5 pt-4'} flex items-center justify-between border-t border-slate-200`}>
             <button type="button" onClick={goToPreviousStep} disabled={activeStepIndex === 0} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-40">Back</button>
             {activeTab === 'publish' ? (
               <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
@@ -2802,10 +2814,10 @@ export default function ContractorPublicPresencePage() {
             )}
           </div>
 
-          <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {activeTab !== 'decision' ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
-          </div>
+          </div> : null}
         </main>
       </div>
 
