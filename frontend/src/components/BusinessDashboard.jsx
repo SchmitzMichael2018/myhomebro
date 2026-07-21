@@ -3315,6 +3315,7 @@ export default function BusinessDashboard() {
           summary={payoutSummary || {}}
           exporting={payoutExporting}
           onExport={exportPayoutCsv}
+          onOpenReports={() => setActiveBusinessView("reports-trends")}
         />
       ) : null}
 

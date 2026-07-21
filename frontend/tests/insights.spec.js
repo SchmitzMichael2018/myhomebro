@@ -457,7 +457,7 @@ test("Payouts and Exports view renders clean labels and available export actions
 
   const payoutsView = page.getByTestId("dashboard-view-payouts");
   await expect(payoutsView).toContainText("Outgoing Money Summary");
-  await expect(payoutsView).toContainText("Paid Out");
+  await expect(payoutsView).toContainText("Net Paid Out");
   await expect(payoutsView).toContainText("Ready to Pay");
   await expect(payoutsView).toContainText("Payment Ledger");
   await expect(payoutsView).toContainText("Kitchen Remodel");
@@ -465,6 +465,10 @@ test("Payouts and Exports view renders clean labels and available export actions
   await expect(payoutsView).toContainText("Subcontractor");
   await expect(payoutsView).toContainText("Platform Fees");
   await expect(payoutsView).toContainText("Retained by MyHomeBro");
+  await expect(page.getByTestId("dashboard-payouts-summary")).not.toContainText("$125.000 payments");
+  await expect(page.getByTestId("dashboard-payouts-summary")).toContainText("Period-level pending amount");
+  await expect(page.getByTestId("dashboard-payouts-actions")).not.toContainText("Review Failed Payments");
+  await expect(page.getByTestId("dashboard-payouts-fee-report")).toContainText("View Platform Fee Report");
   await expect(payoutsView).not.toContainText("Paid to Subcontractors");
   await expect(payoutsView).not.toContainText("Revenue Collected");
   await expect(payoutsView).not.toContainText("Outstanding Receivables");
@@ -492,7 +496,7 @@ test("Payouts uses compact honest empty states without unsupported payment types
   await page.getByTestId("dashboard-view-selector-payouts").click();
   const payoutsView = page.getByTestId("dashboard-view-payouts");
   await expect(page.getByTestId("dashboard-payouts-ledger")).toContainText("No outgoing payments in this period.");
-  await expect(page.getByTestId("dashboard-payouts-upcoming")).toContainText("No outgoing payments need attention in this period.");
+  await expect(page.getByTestId("dashboard-payouts-upcoming")).toContainText("No outgoing payments currently require action.");
   await expect(page.getByTestId("dashboard-payouts-fees")).toContainText("No platform or processing fees were recorded in this period.");
   await expect(payoutsView).not.toContainText("Vendor");
   await expect(payoutsView).not.toContainText("Reimbursement");
@@ -752,15 +756,20 @@ test("capture Payouts reference implementation", async ({ page }) => {
   await expect(page.getByTestId("dashboard-payouts-status")).toBeVisible();
   await expect(page.getByTestId("dashboard-payouts-fees")).toContainText("$40.00");
   await expect(page.getByTestId("dashboard-payouts-upcoming")).toContainText("Austin Finish Crew");
+  await expect(page.getByLabel("ready for payout").first()).toHaveText("Ready");
+  await expect(page.getByLabel("ready for payout").first()).toHaveClass(/whitespace-nowrap/);
   await expect(page.getByTestId("dashboard-payouts-export-center")).toBeVisible();
   await expect(page.getByRole("button", { name: "Download CSV" })).toHaveCount(1);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, "insights-payouts-reference-implementation.png"), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-payouts-refined-desktop.png"), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByTestId("dashboard-view-selector-payouts").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
   await expect(page.getByTestId("dashboard-payouts-ledger").locator("table")).toBeHidden();
   await expect(page.getByTestId("dashboard-payouts-ledger").locator("article")).toHaveCount(2);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, "insights-payouts-reference-mobile.png"), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, "insights-payouts-refined-mobile.png"), fullPage: true });
+
+  await page.getByTestId("dashboard-payouts-fee-report").click();
+  await expect(page.getByTestId("dashboard-view-selector-reports-trends")).toHaveAttribute("aria-selected", "true");
 });
