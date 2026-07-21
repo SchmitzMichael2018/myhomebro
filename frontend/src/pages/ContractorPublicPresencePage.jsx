@@ -598,6 +598,8 @@ export default function ContractorPublicPresencePage() {
     is_public: true,
   });
   const [galleryImage, setGalleryImage] = useState(null);
+  const [galleryEditorOpen, setGalleryEditorOpen] = useState(false);
+  const [galleryFilter, setGalleryFilter] = useState('all');
 
   const websiteFeatures = websiteReadiness?.entitlements?.features || {};
   const websiteBuilderGate = websiteFeatures.website_builder || {};
@@ -659,6 +661,15 @@ export default function ContractorPublicPresencePage() {
   const customerTrustBadges = Array.isArray(profile.customer_trust_badges)
     ? profile.customer_trust_badges
     : [];
+  const publicGalleryRows = galleryRows.filter((item) => item.is_public !== false);
+  const hiddenGalleryRows = galleryRows.filter((item) => item.is_public === false);
+  const featuredGalleryRows = galleryRows.filter((item) => item.is_featured);
+  const filteredGalleryRows = galleryRows.filter((item) => {
+    if (galleryFilter === 'public') return item.is_public !== false;
+    if (galleryFilter === 'hidden') return item.is_public === false;
+    if (galleryFilter === 'featured') return item.is_featured;
+    return true;
+  });
   const stepOneReadiness = useMemo(() => {
     const checks = [
       Boolean(profile.business_name_public),
@@ -1417,6 +1428,7 @@ export default function ContractorPublicPresencePage() {
         is_public: true,
       });
       setGalleryImage(null);
+      setGalleryEditorOpen(false);
       const { data } = await api.get('/projects/contractor/gallery/');
       setGalleryRows(normalizeList(data));
       toast.success('Gallery item added.');
@@ -2472,126 +2484,19 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'gallery' ? (
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-gallery-tab">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold text-slate-500">Step 3 of 8</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Portfolio</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Portfolio uses your existing gallery items to showcase real work. Future project-linked portfolio entries will appear here.
-                </p>
-                <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                  Add project type, before/after context, featured visibility, and customer permission notes when available. Keep private work hidden unless the customer approved public use.
+            <section className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-gallery-tab">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-2xl font-black text-slate-950">Portfolio</h2><p className="mt-1 text-sm text-slate-600">Showcase your best work to build trust and win more business.</p></div><button type="button" onClick={() => setGalleryEditorOpen(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-black text-white" data-testid="portfolio-add-project">+ Add Project</button></div>
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="portfolio-summary">{[['Public items', publicGalleryRows.length], ['Hidden items', hiddenGalleryRows.length], ['Featured items', featuredGalleryRows.length], ['Total photos', galleryRows.length]].map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3"><div className="text-xs text-slate-500">{label}</div><div className="mt-1 text-xl font-black text-slate-950">{value}</div></div>)}</div>
+                <div className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  <div className="overflow-x-auto border-b border-slate-200 px-3" data-testid="portfolio-filters"><div className="flex min-w-max gap-1">{[['all', 'All Projects', galleryRows.length], ['public', 'Public', publicGalleryRows.length], ['hidden', 'Hidden', hiddenGalleryRows.length], ['featured', 'Featured', featuredGalleryRows.length]].map(([value, label, count]) => <button key={value} type="button" aria-pressed={galleryFilter === value} onClick={() => setGalleryFilter(value)} className={`border-b-2 px-3 py-3 text-xs font-bold ${galleryFilter === value ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600'}`}>{label} <span className="text-slate-400">{count}</span></button>)}</div></div>
+                  {filteredGalleryRows.length ? <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="portfolio-gallery">{filteredGalleryRows.map((item) => <article key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="relative aspect-[4/3] bg-slate-100">{item.image_url ? <img src={item.image_url} alt={item.title || 'Portfolio project'} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center px-4 text-center text-sm font-bold text-slate-400">{item.title || 'Project photo'}</div>}<div className="absolute left-2 top-2 flex flex-wrap gap-1">{item.is_featured ? <span className="rounded-md bg-amber-50 px-2 py-1 text-[10px] font-black text-amber-800">Featured</span> : null}<span className={`rounded-md px-2 py-1 text-[10px] font-black ${item.is_public === false ? 'bg-slate-900 text-white' : 'bg-emerald-50 text-emerald-800'}`}>{item.is_public === false ? 'Hidden' : 'Public'}</span></div></div><div className="p-3"><h3 className="truncate text-sm font-black text-slate-950">{item.title || 'Untitled project'}</h3><p className="mt-1 text-xs text-slate-500">{item.category || 'Project type not added'}</p><div className="mt-3 flex items-center justify-between"><span className="text-xs text-slate-500">1 photo</span><div className="flex gap-2"><button type="button" onClick={() => toggleGalleryVisibility(item)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-700">{item.is_public === false ? 'Show Publicly' : 'Hide'}</button><button type="button" onClick={() => deleteGalleryItem(item)} className="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-bold text-slate-600" aria-label={`Remove ${item.title || 'portfolio item'}`}>Remove</button></div></div></div></article>)}</div> : <div className="p-6 text-center" data-testid="portfolio-empty-state"><h3 className="text-lg font-black text-slate-950">Show customers your best work</h3><p className="mx-auto mt-2 max-w-md text-sm text-slate-600">Add completed-project photos to build trust and demonstrate the quality of your work.</p><button type="button" onClick={() => setGalleryEditorOpen(true)} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white">Add Your First Project</button><p className="mt-2 text-xs text-slate-500">Start with 3–5 strong projects using clear, high-quality photos.</p></div>}
+                  {galleryRows.length ? <div className="m-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-blue-50 p-3"><div><div className="text-sm font-black text-slate-950">Add more projects to showcase your best work.</div><div className="text-xs text-slate-600">We recommend at least 3–5 strong projects with clear, high-quality photos.</div></div><button type="button" onClick={() => setGalleryEditorOpen(true)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white">+ Add Project</button></div> : null}
                 </div>
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="text-sm font-black text-slate-900">Logo</div>
-                    <div className="mt-4 flex min-h-36 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
-                      {profile.logo_url ? (
-                        <img src={profile.logo_url} alt="Logo" className="max-h-28 object-contain" />
-                      ) : (
-                        <div>
-                          <div className="text-lg font-black uppercase tracking-wide text-slate-950">{profile.business_name_public || 'Your Company Name'}</div>
-                          <div className="mt-1 text-xs font-bold text-slate-500">{profile.primary_trade || 'Contractor'}</div>
-                        </div>
-                      )}
-                    </div>
-                    <label className="mt-3 inline-flex cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
-                      Upload New Logo
-                      <input type="file" className="hidden" onChange={(e) => setLogoFile(e.target.files?.[0] || null)} />
-                    </label>
-                    <button type="button" onClick={() => requestAiSuggestion('logo_generation', 'logo-generation', profile.business_name_public)} disabled={aiBusyTarget === 'logo-generation'} className="ml-2 mt-3 inline-flex rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-60" data-testid="ai-generate-logo">
-                      Generate Professional Logo
-                    </button>
-                    <AiSuggestionCard
-                      suggestion={aiSuggestions['logo-generation']}
-                      onAccept={() => dismissAiSuggestion('logo-generation')}
-                      onRegenerate={() => requestAiSuggestion('logo_generation', 'logo-generation', profile.business_name_public)}
-                      onDismiss={() => dismissAiSuggestion('logo-generation')}
-                    />
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-white p-4">
-                    <div className="text-sm font-black text-slate-900">Hero Image</div>
-                    <div className="mt-4 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                      {profile.hero_image_url || profile.cover_image_url ? <img src={profile.hero_image_url || profile.cover_image_url} alt="Hero" className="h-full w-full object-cover" /> : <span className="text-sm font-bold text-slate-400">Add a strong project photo</span>}
-                    </div>
-                    <label className="mt-3 inline-flex cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
-                      Upload Hero Image
-                      <input type="file" className="hidden" onChange={(e) => setHeroFile(e.target.files?.[0] || null)} />
-                    </label>
-                    <button type="button" onClick={() => requestAiSuggestion('hero_image_generation', 'hero-image-generation', profile.primary_trade)} disabled={aiBusyTarget === 'hero-image-generation'} className="ml-2 mt-3 inline-flex rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-60" data-testid="ai-generate-hero-image">
-                      Generate Hero Image
-                    </button>
-                    <AiSuggestionCard
-                      suggestion={aiSuggestions['hero-image-generation']}
-                      onAccept={() => dismissAiSuggestion('hero-image-generation')}
-                      onRegenerate={() => requestAiSuggestion('hero_image_generation', 'hero-image-generation', profile.primary_trade)}
-                      onDismiss={() => dismissAiSuggestion('hero-image-generation')}
-                    />
-                  </div>
-                </div>
-                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm font-black text-slate-900">Portfolio Photos</div>
-                    <div className="flex gap-2">
-                      <label className="cursor-pointer rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-700">
-                        Upload Photos
-                        <input type="file" className="hidden" data-testid="gallery-image-input" onChange={(e) => setGalleryImage(e.target.files?.[0] || null)} />
-                      </label>
-                      <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Manage Order</button>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-                    {galleryRows.length ? galleryRows.map((item) => (
-                      <div key={item.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-                        {item.image_url ? <img src={item.image_url} alt={item.title || 'Gallery item'} className="h-28 w-full object-cover" /> : <div className="flex h-28 items-center justify-center bg-slate-100 text-xs font-bold text-slate-400">{item.title || 'Project photo'}</div>}
-                        <div className="p-2">
-                          <div className="text-xs font-bold text-slate-700">{item.title || 'Untitled project'}</div>
-                          <div className="mt-1 flex flex-wrap gap-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
-                            <span>{item.category || 'Project type'}</span>
-                            <span>{item.is_featured ? 'Featured' : 'Standard'}</span>
-                            <span>{item.is_public === false ? 'Private' : 'Public'}</span>
-                          </div>
-                        </div>
-                      </div>
-                    )) : (
-                      <div className="rounded-xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500 sm:col-span-2 lg:col-span-5">Upload your best project photos to start the portfolio.</div>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  <div>
-                    <input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Portfolio title" data-testid="gallery-title-input" />
-                    <button type="button" onClick={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-title">Improve title with Project Assistant</button>
-                    <AiSuggestionCard suggestion={aiSuggestions['photo-title']} onAccept={() => acceptAiSuggestion('photo-title', (value) => setGalleryForm((prev) => ({ ...prev, title: value })))} onRegenerate={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} onDismiss={() => dismissAiSuggestion('photo-title')} />
-                  </div>
-                  <div>
-                    <input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Project type" data-testid="gallery-category-input" />
-                    <button type="button" onClick={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-category">Suggest category with Project Assistant</button>
-                    <AiSuggestionCard suggestion={aiSuggestions['photo-category']} onAccept={() => acceptAiSuggestion('photo-category', (value) => setGalleryForm((prev) => ({ ...prev, category: value })))} onRegenerate={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} onDismiss={() => dismissAiSuggestion('photo-category')} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <textarea value={galleryForm.description} onChange={(e) => setGalleryForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Portfolio caption, before/after note, or customer permission note" data-testid="gallery-caption-input" />
-                    <button type="button" onClick={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-photo-caption">Improve caption with Project Assistant</button>
-                    <AiSuggestionCard suggestion={aiSuggestions['photo-caption']} onAccept={() => acceptAiSuggestion('photo-caption', (value) => setGalleryForm((prev) => ({ ...prev, description: value })))} onRegenerate={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} onDismiss={() => dismissAiSuggestion('photo-caption')} />
-                  </div>
-                </div>
-                <button type="button" onClick={addGalleryItem} disabled={galleryBusy} className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">
-                  {galleryBusy ? 'Saving...' : 'Add Portfolio Item'}
-                </button>
               </div>
-              <aside className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-sm font-black text-slate-950">Your Progress</div>
-                  <div className="mt-1 text-xs text-slate-500">Step 2 of 7</div>
-                  <div className="mt-4 space-y-2 text-sm">{ONLINE_PRESENCE_STEPS.map((step, index) => <div key={step.key} className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${index < activeStepIndex ? 'bg-emerald-500' : index === activeStepIndex ? 'bg-blue-600' : 'bg-slate-200'}`} />{step.label}</div>)}</div>
-                </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-sm font-black text-slate-950">Tips for best results</div>
-                  <div className="mt-3 space-y-2 text-sm text-slate-700">
-                    {['Use high quality, well-lit photos', 'Show before & after photos', 'Add captions to tell your story', 'Feature your best work'].map((tip) => <div key={tip} className="flex gap-2"><span className="text-emerald-600">✓</span>{tip}</div>)}
-                  </div>
-                </div>
-              </aside>
+              <aside className="space-y-3"><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-sm font-black text-slate-950">Tips for a strong portfolio</div><div className="mt-3 space-y-2 text-xs text-slate-700">{['Use high-quality, well-lit photos', 'Show before and after where available', 'Add captions that tell the story', 'Get permission before sharing', 'Feature your strongest work'].map((tip) => <div key={tip} className="flex gap-2"><span className="text-emerald-600">✓</span>{tip}</div>)}</div></div><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div className="text-sm font-black text-slate-950">Customer permission</div><p className="mt-2 text-xs leading-5 text-slate-600">Only display work you have permission to share. Avoid customer names, addresses, or identifying details.</p></div></aside>
+
+              {galleryEditorOpen ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4" role="dialog" aria-modal="true" aria-label="Add Project"><div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" data-testid="portfolio-project-editor"><div className="flex items-center justify-between"><div><h3 className="text-xl font-black text-slate-950">Add Project</h3><p className="mt-1 text-sm text-slate-600">Add one real project photo and its public details.</p></div><button type="button" onClick={() => setGalleryEditorOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button></div><div className="mt-4 grid gap-4 md:grid-cols-2"><label className="text-sm font-bold text-slate-800">Project title<input value={galleryForm.title} onChange={(e) => setGalleryForm((prev) => ({ ...prev, title: e.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" data-testid="gallery-title-input" /><button type="button" onClick={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} className="mt-2 text-xs font-bold text-blue-700" data-testid="ai-photo-title">Suggest Title</button><AiSuggestionCard suggestion={aiSuggestions['photo-title']} onAccept={() => acceptAiSuggestion('photo-title', (value) => setGalleryForm((prev) => ({ ...prev, title: value })))} onRegenerate={() => requestAiSuggestion('photo_title', 'photo-title', galleryForm.title)} onDismiss={() => dismissAiSuggestion('photo-title')} /></label><label className="text-sm font-bold text-slate-800">Project type<input value={galleryForm.category} onChange={(e) => setGalleryForm((prev) => ({ ...prev, category: e.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" data-testid="gallery-category-input" /><button type="button" onClick={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} className="mt-2 text-xs font-bold text-blue-700" data-testid="ai-photo-category">Suggest Project Type</button><AiSuggestionCard suggestion={aiSuggestions['photo-category']} onAccept={() => acceptAiSuggestion('photo-category', (value) => setGalleryForm((prev) => ({ ...prev, category: value })))} onRegenerate={() => requestAiSuggestion('photo_category', 'photo-category', galleryForm.category)} onDismiss={() => dismissAiSuggestion('photo-category')} /></label><label className="text-sm font-bold text-slate-800 md:col-span-2">Project description<textarea value={galleryForm.description} onChange={(e) => setGalleryForm((prev) => ({ ...prev, description: e.target.value }))} rows={3} className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Describe the work completed, the customer’s goals, and the final result." data-testid="gallery-caption-input" /><button type="button" onClick={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} className="mt-2 text-xs font-bold text-blue-700" data-testid="ai-photo-caption">Improve Description</button><AiSuggestionCard suggestion={aiSuggestions['photo-caption']} onAccept={() => acceptAiSuggestion('photo-caption', (value) => setGalleryForm((prev) => ({ ...prev, description: value })))} onRegenerate={() => requestAiSuggestion('photo_caption', 'photo-caption', galleryForm.description)} onDismiss={() => dismissAiSuggestion('photo-caption')} /></label><label className="text-sm font-bold text-slate-800 md:col-span-2">Project photo<input type="file" className="mt-1.5 block w-full rounded-lg border border-slate-300 p-2 text-sm" data-testid="gallery-image-input" onChange={(e) => setGalleryImage(e.target.files?.[0] || null)} /></label><label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={galleryForm.is_public} onChange={(e) => setGalleryForm((prev) => ({ ...prev, is_public: e.target.checked }))} />Show this project publicly</label><label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" checked={galleryForm.is_featured} onChange={(e) => setGalleryForm((prev) => ({ ...prev, is_featured: e.target.checked }))} />Feature this project on my website</label></div><div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Only publish photos you have permission to display. Keep customer-identifying details out of titles and descriptions.</div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setGalleryEditorOpen(false)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold">Cancel</button><button type="button" onClick={addGalleryItem} disabled={galleryBusy} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{galleryBusy ? 'Saving...' : 'Save Project'}</button></div></div></div> : null}
             </section>
           ) : null}
 
@@ -2862,6 +2767,8 @@ export default function ContractorPublicPresencePage() {
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="public-presence-save-profile" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'brand' ? (
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="brand-kit-save" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
+            ) : activeTab === 'gallery' ? (
+              <button type="button" onClick={goToNextStep} data-testid="portfolio-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Save & Continue</button>
             ) : activeTab === 'publish' ? (
               <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
@@ -2869,7 +2776,7 @@ export default function ContractorPublicPresencePage() {
             )}
           </div>
 
-          {!['decision', 'profile', 'brand'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {!['decision', 'profile', 'brand', 'gallery'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}

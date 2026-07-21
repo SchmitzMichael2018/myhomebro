@@ -255,9 +255,11 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
           {
             id: 1,
             title: 'Kitchen update',
+            category: 'Kitchen remodel',
             image_url: '',
             description: 'Clean finish work',
             is_public: true,
+            is_featured: true,
           },
         ],
       }),
@@ -706,6 +708,56 @@ test('capture final Brand Kit implementation', async ({ page }) => {
   await page.screenshot({ path: path.join(screenshotDir, 'marketing-brand-kit-final-mobile.png'), fullPage: true });
 });
 
+test('Portfolio is an image-led gallery with a contained project workflow', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  await page.goto('/app/marketing?tab=gallery', { waitUntil: 'domcontentloaded' });
+  const step = page.getByTestId('public-presence-gallery-tab');
+  await expect(step).toBeVisible();
+  await expect(step).toContainText('Showcase your best work to build trust and win more business.');
+  await expect(step).not.toContainText('Step 3 of 8');
+  await expect(step).not.toContainText('Hero Image');
+  await expect(step).not.toContainText('Your Progress');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(page.getByTestId('portfolio-summary')).toContainText('Public items');
+  await expect(page.getByTestId('portfolio-gallery')).toContainText('Kitchen update');
+  await expect(page.getByTestId('portfolio-gallery')).toContainText('Kitchen remodel');
+  await expect(page.getByTestId('portfolio-gallery')).toContainText('Featured');
+  await expect(page.getByTestId('portfolio-gallery')).toContainText('Public');
+  await page.getByRole('button', { name: 'Hidden 0' }).click();
+  await expect(page.getByTestId('portfolio-empty-state')).toBeVisible();
+
+  await page.getByTestId('portfolio-add-project').click();
+  const editor = page.getByTestId('portfolio-project-editor');
+  await expect(editor).toBeVisible();
+  await expect(editor).toContainText('Suggest Title');
+  await expect(editor).toContainText('Suggest Project Type');
+  await expect(editor).toContainText('Improve Description');
+  await editor.getByTestId('gallery-title-input').fill('Bathroom refresh');
+  await editor.getByTestId('gallery-category-input').fill('Bathroom remodel');
+  await editor.getByTestId('gallery-caption-input').fill('Updated fixtures and tile.');
+  await expect(page.getByTestId('public-presence-gallery-tab')).toBeVisible();
+  await editor.getByRole('button', { name: 'Cancel' }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Save & Continue' })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Save & Continue' }).click();
+  await expect(page.getByTestId('public-presence-reviews-tab')).toBeVisible();
+});
+
+test('capture Portfolio reference implementation', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=gallery', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('portfolio-gallery')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-portfolio-reference-implementation.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('portfolio-gallery')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-portfolio-reference-mobile.png'), fullPage: true });
+});
+
 test('Marketing Overview renders the consolidated readiness workspace', async ({ page }) => {
   await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
 
@@ -739,7 +791,7 @@ test('Marketing Overview renders the consolidated readiness workspace', async ({
 
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Portfolio/ }).click();
   await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Portfolio');
-  await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Future project-linked portfolio entries will appear here');
+  await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Showcase your best work');
 });
 
 test('capture Marketing Overview reference implementation', async ({ page }) => {
@@ -777,6 +829,7 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await expect(page.getByTestId('business-description-input')).toHaveValue(/Bright Build Co delivers clean Austin remodels/);
 
   await setupNav.getByRole('button', { name: /Portfolio/ }).click();
+  await page.getByTestId('portfolio-add-project').click();
   await page.getByTestId('ai-photo-title').click();
   await page.getByTestId('ai-accept-photo-title').click();
   await expect(page.getByTestId('gallery-title-input')).toHaveValue('Finished kitchen remodel');
@@ -786,6 +839,7 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await page.getByTestId('ai-photo-category').click();
   await page.getByTestId('ai-accept-photo-category').click();
   await expect(page.getByTestId('gallery-category-input')).toHaveValue('Kitchen remodel');
+  await page.getByTestId('portfolio-project-editor').getByRole('button', { name: 'Close' }).click();
 
   await setupNav.getByRole('button', { name: /Design & Content/ }).click();
   await page.getByTestId('ai-hero-headline').click();
