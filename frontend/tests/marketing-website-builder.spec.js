@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const baseProfile = {
   slug: 'bright-build-co',
@@ -463,9 +465,9 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
 
   await expect(page.getByTestId('online-presence-setup-shell')).toBeVisible();
   await expect(page.getByTestId('marketing-website-builder-tab')).toBeVisible();
-  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Design & Content');
-  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('SEO & Visibility');
-  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Final Review');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Content');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('SEO');
+  await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Review');
   await expect(page.getByTestId('website-builder-design-tab')).toContainText('Developer Override Active');
   await expect(page.getByText('Your website is saved but paused. Choose a plan to reactivate customization.')).toHaveCount(0);
   await expect(page.getByTestId('website-builder-preview-toggle')).toHaveCount(0);
@@ -557,7 +559,7 @@ test('Marketing Website Builder tab loads the new Design & Content step with dev
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
-test('Marketing Overview renders Business Growth Center foundations', async ({ page }) => {
+test('Marketing Overview renders the consolidated readiness workspace', async ({ page }) => {
   await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
 
   await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
@@ -566,22 +568,23 @@ test('Marketing Overview renders Business Growth Center foundations', async ({ p
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Overview');
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Brand Kit');
   await expect(page.getByTestId('online-presence-setup-nav')).toContainText('Portfolio');
-  await expect(page.getByTestId('marketing-health-summary')).toContainText('Website');
-  await expect(page.getByTestId('marketing-health-website')).toContainText('Published');
-  await expect(page.getByTestId('marketing-health-leads')).toContainText('No Recent Activity');
-  await expect(page.getByTestId('marketing-needs-attention')).toContainText('Highest-value marketing actions');
-  await expect(page.getByTestId('marketing-website-status-card')).toContainText('Website Status');
-  await expect(page.getByTestId('marketing-website-status-card')).toContainText('Preview Website');
-  await expect(page.getByTestId('marketing-leads-summary')).toContainText('No active leads');
-  await expect(page.getByTestId('marketing-growth-priorities')).toContainText('What to improve next');
+  await expect(page.getByTestId('marketing-grouped-step-navigation')).toContainText('Build Your Foundation');
+  await expect(page.getByTestId('marketing-grouped-step-navigation')).toContainText('Optimize & Publish');
+  await expect(page.getByTestId('marketing-readiness')).toContainText('Marketing Readiness');
+  await expect(page.getByTestId('marketing-readiness-list').locator('article').first()).toContainText('Highly Recommended');
+  await expect(page.getByTestId('marketing-website-readiness')).toContainText('Website Readiness');
   await expect(page.getByTestId('marketing-inherited-company-facts')).toContainText('Inherited from Company Profile');
-  await expect(page.getByTestId('marketing-inherited-company-facts')).toContainText('Edit this in Company Profile');
-  await expect(page.getByTestId('marketing-public-overrides')).toContainText('Public display name override');
-  await expect(page.getByTestId('marketing-public-overrides')).toContainText('Overrides change how your business appears publicly');
-  await expect(page.getByTestId('marketing-lead-lifecycle')).toContainText('Website / Public Profile / QR -> Lead -> Opportunity -> Estimate -> Agreement -> Project');
-  await expect(page.getByTestId('marketing-stale-website-warning')).toContainText('freshness');
-  await expect(page.getByTestId('marketing-advisor-panel')).toContainText('Marketing Advisor');
-  await expect(page.getByTestId('marketing-advisor-panel')).toContainText('Human approval is required');
+  await expect(page.getByTestId('marketing-inherited-company-facts')).toContainText('Edit Company Profile');
+  await expect(page.getByTestId('marketing-assets')).toContainText('Completed');
+  await expect(page.getByTestId('marketing-completed')).toContainText('QR code');
+  await expect(page.getByTestId('marketing-website-snapshot')).not.toContainText('Preview image unavailable');
+  await expect(page.getByTestId('marketing-quick-actions')).not.toContainText('Copy Public URL');
+  await expect(page.getByTestId('marketing-quick-actions')).not.toContainText('Open Public Profile');
+  await expect(page.getByTestId('marketing-overview-tab')).not.toContainText('Leads');
+  await expect(page.getByTestId('marketing-overview-tab')).not.toContainText('Public Overrides');
+  await expect(page.getByTestId('marketing-advisor-panel')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Preview Website' })).toHaveCount(1);
+  await expect(page.getByTestId('online-presence-setup-shell').getByRole('button', { name: 'Project Assistant' })).toHaveCount(0);
 
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Brand Kit/ }).click();
   await expect(page.getByTestId('marketing-brand-kit-tab')).toContainText('Used on website');
@@ -590,6 +593,27 @@ test('Marketing Overview renders Business Growth Center foundations', async ({ p
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Portfolio/ }).click();
   await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Portfolio');
   await expect(page.getByTestId('public-presence-gallery-tab')).toContainText('Future project-linked portfolio entries will appear here');
+});
+
+test('capture Marketing Overview reference implementation', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true, statusOverride: 'draft' });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('marketing-overview-tab')).toBeVisible();
+  await expect(page.getByTestId('marketing-readiness-list').locator('article').first()).toContainText('Required');
+  await expect(page.getByTestId('marketing-overview-tab')).not.toContainText('Leads');
+  await expect(page.getByTestId('marketing-website-readiness')).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-overview-refined-desktop.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('marketing-readiness-list').locator('article')).toHaveCount(5);
+  await expect(page.getByTestId('marketing-completed')).toContainText('QR code');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-overview-refined-mobile.png'), fullPage: true });
 });
 
 test('Marketing Project Assistant hooks show review-before-apply suggestions', async ({ page }) => {
