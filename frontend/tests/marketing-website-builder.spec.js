@@ -718,13 +718,22 @@ test('Portfolio is an image-led gallery with a contained project workflow', asyn
   await expect(step).not.toContainText('Hero Image');
   await expect(step).not.toContainText('Your Progress');
   await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
-  await expect(page.getByTestId('portfolio-summary')).toContainText('Public items');
+  await expect(page.getByTestId('portfolio-summary')).toContainText('Public Items');
   await expect(page.getByTestId('portfolio-gallery')).toContainText('Kitchen update');
   await expect(page.getByTestId('portfolio-gallery')).toContainText('Kitchen remodel');
   await expect(page.getByTestId('portfolio-gallery')).toContainText('Featured');
   await expect(page.getByTestId('portfolio-gallery')).toContainText('Public');
+  await expect(page.getByTestId('portfolio-gallery')).toContainText('No photo available');
+  await expect(page.getByTestId('portfolio-gallery').getByRole('img', { name: 'No photo available' })).toBeVisible();
+  await expect(page.getByTestId('portfolio-gallery').getByRole('button', { name: /Remove/ })).not.toBeVisible();
+  await page.getByLabel('More actions for Kitchen update').click();
+  await expect(page.getByTestId('portfolio-gallery').getByRole('button', { name: 'Remove Kitchen update' })).toBeVisible();
+  page.once('dialog', (dialog) => dialog.dismiss());
+  await page.getByTestId('portfolio-gallery').getByRole('button', { name: 'Remove Kitchen update' }).click();
+  await expect(page.getByTestId('portfolio-gallery')).toContainText('Kitchen update');
+  await expect(step).toContainText('Add more work to strengthen your portfolio.');
   await page.getByRole('button', { name: 'Hidden 0' }).click();
-  await expect(page.getByTestId('portfolio-empty-state')).toBeVisible();
+  await expect(page.getByTestId('portfolio-filter-empty')).toContainText('No hidden portfolio items yet.');
 
   await page.getByTestId('portfolio-add-project').click();
   const editor = page.getByTestId('portfolio-project-editor');
@@ -743,7 +752,7 @@ test('Portfolio is an image-led gallery with a contained project workflow', asyn
   await expect(page.getByTestId('public-presence-reviews-tab')).toBeVisible();
 });
 
-test('capture Portfolio reference implementation', async ({ page }) => {
+test('capture final Portfolio implementation', async ({ page }) => {
   await mockMarketingPage(page, { pro: false, developmentOverride: true });
   const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
   fs.mkdirSync(screenshotDir, { recursive: true });
@@ -751,11 +760,11 @@ test('capture Portfolio reference implementation', async ({ page }) => {
   await page.goto('/app/marketing?tab=gallery', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('portfolio-gallery')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, 'marketing-portfolio-reference-implementation.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-portfolio-final-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId('portfolio-gallery')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await page.screenshot({ path: path.join(screenshotDir, 'marketing-portfolio-reference-mobile.png'), fullPage: true });
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-portfolio-final-mobile.png'), fullPage: true });
 });
 
 test('Marketing Overview renders the consolidated readiness workspace', async ({ page }) => {
