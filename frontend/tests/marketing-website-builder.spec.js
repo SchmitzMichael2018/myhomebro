@@ -606,6 +606,63 @@ test('capture Marketing Content reference implementation', async ({ page }) => {
   await page.screenshot({ path: path.join(screenshotDir, 'marketing-content-reference-mobile.png'), fullPage: true });
 });
 
+test('SEO and Visibility uses deterministic readiness and supported profile controls', async ({ page }) => {
+  await mockMarketingPage(page, { developmentOverride: true });
+  await page.goto('/app/marketing?tab=seo', { waitUntil: 'domcontentloaded' });
+  const seo = page.getByTestId('online-presence-seo-tab');
+  await expect(seo).toBeVisible();
+  await expect(page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /SEO & Visibility/ })).toHaveAttribute('aria-current', 'step');
+  await expect(seo).not.toContainText(/Step \d+ of \d+/);
+  await expect(seo).not.toContainText('Local business schema coming soon');
+  await expect(seo).not.toContainText('SEO Score');
+  await expect(seo).not.toContainText('Indexed');
+  await expect(seo).not.toContainText('Google');
+  await expect(seo).not.toContainText('Show in Opportunities');
+  await expect(seo).not.toContainText('Allow QR/link sharing');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(page.getByTestId('seo-search-readiness')).toContainText('Search Appearance');
+  await expect(page.getByTestId('seo-search-readiness')).toContainText('Missing search title');
+  await expect(page.getByTestId('seo-search-readiness')).toContainText('Missing primary trade');
+  await expect(page.getByTestId('seo-search-preview')).toContainText('Bright Build Co');
+  await page.getByTestId('seo-title-input').fill('Austin Kitchen Remodeling | Bright Build Co');
+  await expect(page.getByTestId('seo-search-preview')).toContainText('Austin Kitchen Remodeling | Bright Build Co');
+  await page.getByTestId('seo-keywords-input').fill('Austin remodeling');
+  await page.getByTestId('seo-keywords-input').press('Enter');
+  await expect(page.getByTestId('seo-search-phrases')).toContainText('Austin remodeling');
+  await expect(page.getByTestId('seo-search-phrases')).toContainText('Services Customers Search For');
+  await expect(page.getByTestId('seo-local-information')).toContainText('Austin, TX');
+  await expect(page.getByTestId('seo-local-information')).toContainText('Business description');
+  await expect(page.getByTestId('seo-visibility-settings')).toContainText('Public profile visible');
+  await expect(page.getByTestId('seo-visibility-settings')).toContainText('Status');
+  await expect(page.getByTestId('seo-visibility-settings')).not.toContainText('Published —');
+  await expect(page.getByTestId('seo-visibility-settings')).toContainText('Your Public Links');
+  await expect(page.getByTestId('seo-recommendations')).toContainText('Highest Impact Improvements');
+  await expect(page.getByTestId('seo-recommendations')).not.toContainText(/%|more leads|ranking/i);
+  await expect(page.getByTestId('seo-search-tips').locator('li')).toHaveCount(5);
+  await expect(page.getByTestId('seo-publish-readiness')).toContainText('Ready to Publish');
+  await expect(page.getByRole('button', { name: 'Save & Continue' })).toHaveCount(1);
+  await page.getByTestId('seo-save-continue').click();
+  await expect(page.getByTestId('online-presence-final-review-tab')).toBeVisible();
+});
+
+test('capture Marketing SEO reference implementation', async ({ page }) => {
+  await mockMarketingPage(page, { developmentOverride: true });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=seo', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('seo-search-readiness')).toBeVisible();
+  await expect(page.getByTestId('seo-search-preview')).toBeVisible();
+  await expect(page.getByTestId('seo-visibility-settings')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-seo-final-desktop.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('seo-search-preview')).toBeVisible();
+  await expect(page.getByTestId('seo-save-continue')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-seo-final-mobile.png'), fullPage: true });
+});
+
 test('Website Decision uses selectable cards and one progression action', async ({ page }) => {
   await mockMarketingPage(page, { pro: false, developmentOverride: true });
   await page.goto('/app/marketing', { waitUntil: 'domcontentloaded' });
@@ -949,15 +1006,14 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await expect(page.getByTestId('website-builder-hero-subheadline')).toHaveValue(/Premium remodeling/);
 
   await setupNav.getByRole('button', { name: /SEO & Visibility/ }).click();
-  await page.getByTestId('ai-seo-title').click();
+  await page.getByTestId('seo-generate-search-copy').click();
   await page.getByTestId('ai-accept-seo-title').click();
   await expect(page.getByTestId('seo-title-input')).toHaveValue('Bright Build Co | Austin Remodeling Contractor');
-  await page.getByTestId('ai-seo-description').click();
   await page.getByTestId('ai-accept-seo-description').click();
   await expect(page.getByTestId('seo-description-input')).toHaveValue(/Austin remodeling contractor/);
   await page.getByTestId('ai-seo-keywords').click();
   await page.getByTestId('ai-accept-seo-keywords').click();
-  await expect(page.getByTestId('seo-keywords-input')).toHaveValue(/Austin remodeling/);
+  await expect(page.getByTestId('seo-search-phrases')).toContainText('Austin remodeling');
 
   await setupNav.getByRole('button', { name: /Final Review/ }).click();
   await expect(page.getByTestId('website-preview-summary-card')).toBeVisible();

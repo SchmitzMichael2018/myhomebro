@@ -602,6 +602,7 @@ export default function ContractorPublicPresencePage() {
   const [galleryFilter, setGalleryFilter] = useState('all');
   const [reviewFilter, setReviewFilter] = useState('all');
   const [reviewSort, setReviewSort] = useState('newest');
+  const [searchPhraseInput, setSearchPhraseInput] = useState('');
 
   const websiteFeatures = websiteReadiness?.entitlements?.features || {};
   const websiteBuilderGate = websiteFeatures.website_builder || {};
@@ -864,6 +865,33 @@ export default function ContractorPublicPresencePage() {
       ].filter(Boolean)
     ),
   ];
+  const savedSearchPhrases = Array.isArray(profile.specialties) ? profile.specialties : [];
+  const seoReadinessChecks = [
+    { label: 'Search Appearance', ready: Boolean(profile.seo_title && profile.seo_description), detail: !profile.seo_title ? 'Missing search title' : !profile.seo_description ? 'Missing search description' : 'Title and description added' },
+    { label: 'Business Information', ready: Boolean(profile.business_name_public && profile.primary_trade && (profile.city || profile.service_area_text)), detail: !profile.business_name_public ? 'Missing business name' : !profile.primary_trade ? 'Missing primary trade' : !(profile.city || profile.service_area_text) ? 'Missing service area' : 'Core business details added' },
+    { label: 'Public Visibility', ready: Boolean(profile.is_public), detail: profile.is_public ? 'Profile is visible' : 'Profile is in preview mode' },
+    { label: 'Customer Reviews', ready: Boolean(publicReviewCount), detail: publicReviewCount ? 'Public reviews available' : 'No public reviews yet' },
+  ];
+  const seoReadyCount = seoReadinessChecks.filter((item) => item.ready).length;
+  const seoOverallStatus = seoReadyCount === seoReadinessChecks.length ? 'Ready to Publish' : seoReadyCount >= 2 ? 'Almost Ready to Publish' : 'Needs Attention';
+  const seoRecommendations = [
+    !profile.seo_title ? { priority: 'Required', title: 'Add a search title', detail: 'Help customers understand who you are and what you offer.', step: 'seo' } : null,
+    !profile.seo_description ? { priority: 'Required', title: 'Add a search description', detail: 'Summarize your services and service area in plain language.', step: 'seo' } : null,
+    !profile.primary_trade ? { priority: 'Highly Recommended', title: 'Select a primary trade', detail: 'Describe the main type of work your business performs.', step: 'profile' } : null,
+    !(profile.city || profile.service_area_text) ? { priority: 'Highly Recommended', title: 'Add your service area', detail: 'Customers need to know where you work.', step: 'profile' } : null,
+    !profile.is_public ? { priority: 'Required', title: 'Publish your public profile', detail: 'Your profile remains visible only in preview until published.', step: 'seo' } : null,
+    !publicPortfolioCount ? { priority: 'Recommended', title: 'Add public portfolio work', detail: 'Project examples help customers understand your work.', step: 'gallery' } : null,
+    !publicReviewCount ? { priority: 'Recommended', title: 'Add public customer reviews', detail: 'Customer feedback can strengthen trust.', step: 'reviews' } : null,
+  ].filter(Boolean).slice(0, 5);
+  const marketingPublishSignals = [
+    { label: 'Business Information', ready: Boolean(profile.business_name_public && profile.primary_trade && (profile.city || profile.service_area_text)) },
+    { label: 'Brand Kit', ready: missingBrandPreferences.length === 0 },
+    { label: 'Portfolio', ready: publicPortfolioCount > 0 },
+    { label: 'Reviews', ready: publicReviewCount > 0 },
+    { label: 'SEO', ready: Boolean(profile.seo_title && profile.seo_description) },
+    { label: 'Content', ready: Boolean(heroContent.headline && heroContent.subheadline) },
+  ];
+  const firstIncompletePublishSignal = marketingPublishSignals.find((item) => !item.ready);
   const buildAiContext = () => ({
     business_identity: {
       company_name: profile.business_name_public,
@@ -1723,6 +1751,28 @@ export default function ContractorPublicPresencePage() {
     }
   }
 
+  function addSearchPhrases(rawValue) {
+    const additions = String(rawValue || '').split(',').map((item) => item.trim()).filter(Boolean);
+    if (!additions.length) return;
+    setProfile((prev) => ({
+      ...prev,
+      specialties: [...new Set([...(Array.isArray(prev.specialties) ? prev.specialties : []), ...additions])],
+    }));
+    setSearchPhraseInput('');
+  }
+
+  function removeSearchPhrase(phrase) {
+    setProfile((prev) => ({
+      ...prev,
+      specialties: (Array.isArray(prev.specialties) ? prev.specialties : []).filter((item) => item !== phrase),
+    }));
+  }
+
+  async function generateSearchCopy() {
+    await requestAiSuggestion('seo_title', 'seo-title', profile.seo_title || '');
+    await requestAiSuggestion('seo_description', 'seo-description', profile.seo_description || '');
+  }
+
   async function generateProfileCopy(event) {
     event.preventDefault();
     try {
@@ -2564,37 +2614,21 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'seo' ? (
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="online-presence-seo-tab">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold text-slate-500">Step 5 of 7</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">SEO &amp; Visibility</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Optimize your profile so customers can find you online.</p>
-                <div className="mt-5 grid gap-4">
-                  <label className="space-y-1"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-800"><span>Page Title</span><button type="button" onClick={() => requestAiSuggestion('seo_title', 'seo-title', profile.seo_title || '')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-seo-title">AI</button></span><input value={profile.seo_title || ''} onChange={(e) => setProfile((prev) => ({ ...prev, seo_title: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="seo-title-input" /><AiSuggestionCard suggestion={aiSuggestions['seo-title']} onAccept={() => acceptAiSuggestion('seo-title', (value) => setProfile((prev) => ({ ...prev, seo_title: value })))} onRegenerate={() => requestAiSuggestion('seo_title', 'seo-title', profile.seo_title || '')} onDismiss={() => dismissAiSuggestion('seo-title')} /></label>
-                  <label className="space-y-1"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-800"><span>Meta Description</span><button type="button" onClick={() => requestAiSuggestion('seo_description', 'seo-description', profile.seo_description || '')} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-seo-description">AI</button></span><textarea value={profile.seo_description || ''} onChange={(e) => setProfile((prev) => ({ ...prev, seo_description: e.target.value }))} rows={4} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="seo-description-input" /><AiSuggestionCard suggestion={aiSuggestions['seo-description']} onAccept={() => acceptAiSuggestion('seo-description', (value) => setProfile((prev) => ({ ...prev, seo_description: value })))} onRegenerate={() => requestAiSuggestion('seo_description', 'seo-description', profile.seo_description || '')} onDismiss={() => dismissAiSuggestion('seo-description')} /></label>
-                  <label className="space-y-1"><span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-800"><span>Keywords</span><button type="button" onClick={() => requestAiSuggestion('seo_keywords', 'seo-keywords', serviceKeywords.join(', '))} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700" data-testid="ai-seo-keywords">AI</button></span><input value={serviceKeywords.join(', ')} onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="seo-keywords-input" /><AiSuggestionCard suggestion={aiSuggestions['seo-keywords']} onAccept={() => acceptAiSuggestion('seo-keywords', (value) => setProfile((prev) => ({ ...prev, specialties: value.split(',').map((item) => item.trim()).filter(Boolean) })))} onRegenerate={() => requestAiSuggestion('seo_keywords', 'seo-keywords', serviceKeywords.join(', '))} onDismiss={() => dismissAiSuggestion('seo-keywords')} /></label>
-                  <button type="button" onClick={() => requestAiSuggestion('local_business_schema', 'local-business-schema', '')} className="w-fit rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600" data-testid="ai-local-business-schema">Local business schema coming soon</button>
-                  <AiSuggestionCard suggestion={aiSuggestions['local-business-schema']} onAccept={() => dismissAiSuggestion('local-business-schema')} onRegenerate={() => requestAiSuggestion('local_business_schema', 'local-business-schema', '')} onDismiss={() => dismissAiSuggestion('local-business-schema')} />
-                </div>
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  {[
-                    ['allow_public_intake', 'Show in Opportunities', 'Display your profile in customer contractor searches and lead workflows.'],
-                    ['is_public', 'Public profile status', 'Controls whether customers can view your public business profile.'],
-                    ['show_quote_cta', 'Allow QR/link sharing', 'Anyone with your QR code or shared link can open your public profile or website.'],
-                    ['show_reviews', 'Show reviews publicly', 'Display approved reviews on your public profile and website.'],
-                  ].map(([key, label, hint]) => (
-                    <label key={key} className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
-                      <span><span>{label}</span><span className="mt-1 block text-xs font-normal leading-5 text-slate-500">{hint}</span></span>
-                      <input type="checkbox" checked={Boolean(profile[key])} onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))} />
-                    </label>
-                  ))}
-                </div>
-                <button type="button" onClick={saveProfile} disabled={profileBusy} className="mt-5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save SEO & Visibility'}</button>
+            <section className="space-y-4" data-testid="online-presence-seo-tab">
+              <div><h2 className="text-2xl font-black text-slate-950">SEO &amp; Visibility</h2><p className="mt-1 text-sm text-slate-600">Help local customers find your business and understand what you offer.</p></div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="seo-search-readiness"><h3 className="text-base font-black text-slate-950">Search Readiness</h3><p className="mt-1 text-sm font-bold text-blue-700">{seoOverallStatus}</p><p className="mt-1 text-xs text-slate-500">{seoReadyCount === seoReadinessChecks.length ? 'Your supported search setup is complete.' : 'Complete the remaining items below before publishing.'}</p><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{seoReadinessChecks.map((item) => <div key={item.label} className="rounded-xl bg-slate-50 p-3"><div className="flex items-center gap-2"><span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-black ${item.ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>{item.ready ? '✓' : '!'}</span><span className="text-xs font-black text-slate-900">{item.label}</span></div><div className={`mt-2 text-xs font-bold ${item.ready ? 'text-emerald-700' : 'text-amber-800'}`}>{item.ready ? 'Ready' : item.detail}</div></div>)}</div></div>
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]"><div className="space-y-4"><div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="seo-search-appearance"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-black text-slate-950">Search Appearance</h3><p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">Create an optimized search title and description using your business information.</p></div><button type="button" onClick={generateSearchCopy} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white" data-testid="seo-generate-search-copy">Generate Search Copy</button></div><div className="mt-4 space-y-4">
+                  <label className="block text-sm font-bold text-slate-800">Search title<input value={profile.seo_title || ''} onChange={(e) => setProfile((prev) => ({ ...prev, seo_title: e.target.value }))} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="seo-title-input" /><span className="mt-1 block text-right text-[11px] font-normal text-slate-500">{String(profile.seo_title || '').length} characters</span><AiSuggestionCard suggestion={aiSuggestions['seo-title']} onAccept={() => acceptAiSuggestion('seo-title', (value) => setProfile((prev) => ({ ...prev, seo_title: value })))} onRegenerate={() => requestAiSuggestion('seo_title', 'seo-title', profile.seo_title || '')} onDismiss={() => dismissAiSuggestion('seo-title')} /></label>
+                  <label className="block text-sm font-bold text-slate-800">Search description<textarea value={profile.seo_description || ''} onChange={(e) => setProfile((prev) => ({ ...prev, seo_description: e.target.value }))} rows={4} className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="seo-description-input" /><span className="mt-1 block text-right text-[11px] font-normal text-slate-500">{String(profile.seo_description || '').length} characters</span><AiSuggestionCard suggestion={aiSuggestions['seo-description']} onAccept={() => acceptAiSuggestion('seo-description', (value) => setProfile((prev) => ({ ...prev, seo_description: value })))} onRegenerate={() => requestAiSuggestion('seo_description', 'seo-description', profile.seo_description || '')} onDismiss={() => dismissAiSuggestion('seo-description')} /></label>
+                </div></div>
+                <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm" data-testid="seo-search-preview" aria-live="polite"><h3 className="text-lg font-black text-slate-950">Search Preview</h3><p className="mt-1 text-xs text-slate-500">See how your business may appear in search results.</p><div className="mt-4 min-h-56 rounded-xl border border-slate-200 p-5"><div className="text-sm font-bold text-slate-800">{profile.business_name_public || 'Your business'}</div><div className="mt-1 break-all font-mono text-[11px] leading-5 text-emerald-700">{qrData?.public_url || profile.public_url || websiteData.public_url || 'Public URL not available'}</div><div className="mt-3 text-xl font-medium leading-7 text-blue-700">{profile.seo_title || profile.business_name_public || 'Add a search title'}</div><p className="mt-3 text-sm leading-6 text-slate-600">{profile.seo_description || 'Add a search description to explain your services and service area.'}</p></div><p className="mt-3 text-[11px] leading-4 text-slate-500">Preview only. Appearance may vary after publication and indexing.</p></div></div>
+                <div className="rounded-2xl bg-white p-4" data-testid="seo-local-information"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-black text-slate-950">Local Search Information</h3><p className="mt-1 text-xs text-slate-500">Keep the business details customers use to find and contact you accurate.</p></div><button type="button" onClick={() => goToStep('profile')} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700">Edit Business Information</button></div><div className="mt-4 divide-y divide-slate-200">{[['Business name', profile.business_name_public], ['Primary trade', profile.primary_trade], ['City / State', [profile.city, profile.state].filter(Boolean).join(', ')], ['Service area', profile.service_area_text || serviceCitiesText || serviceCountiesText], ['Public phone', profile.show_phone_public === false ? '' : profile.phone_public], ['Profile URL', qrData?.public_url || profile.public_url || websiteData.public_url], ['Business description', profile.bio]].map(([label, value]) => { const hidden = label === 'Public phone' && profile.show_phone_public === false; return <div key={label} className="flex items-center gap-3 py-2.5"><span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-black ${value ? 'bg-emerald-100 text-emerald-700' : hidden ? 'bg-slate-100 text-slate-600' : 'bg-amber-100 text-amber-700'}`}>{value ? '✓' : hidden ? '–' : '!'}</span><div className="min-w-0 flex-1"><div className="text-sm font-black text-slate-900">{label}</div><div className="truncate text-xs text-slate-500">{value || (hidden ? 'Hidden from public view' : 'Not added')}</div></div><span className={`text-xs font-bold ${value ? 'text-emerald-700' : hidden ? 'text-slate-600' : 'text-amber-700'}`}>{value ? 'Complete' : hidden ? 'Hidden' : 'Missing'}</span></div>; })}</div></div>
+                <div className="grid gap-4 lg:grid-cols-2"><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="seo-search-phrases"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-black text-slate-950">Services Customers Search For</h3><p className="mt-1 text-xs text-slate-500">Add phrases that describe your services and where you work.</p></div><button type="button" onClick={() => requestAiSuggestion('seo_keywords', 'seo-keywords', serviceKeywords.join(', '))} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700" data-testid="ai-seo-keywords">Suggest Phrases</button></div><div className="mt-4 flex flex-wrap gap-2">{savedSearchPhrases.map((phrase) => <span key={phrase} className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-800">{phrase}<button type="button" onClick={() => removeSearchPhrase(phrase)} aria-label={`Remove ${phrase}`} className="text-blue-500">×</button></span>)}</div><input value={searchPhraseInput} onChange={(event) => { const value = event.target.value; if (value.includes(',')) addSearchPhrases(value); else setSearchPhraseInput(value); }} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addSearchPhrases(searchPhraseInput); } }} placeholder="Add a service or location phrase" className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" data-testid="seo-keywords-input" /><AiSuggestionCard suggestion={aiSuggestions['seo-keywords']} onAccept={() => acceptAiSuggestion('seo-keywords', (value) => setProfile((prev) => ({ ...prev, specialties: [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))] })))} onRegenerate={() => requestAiSuggestion('seo_keywords', 'seo-keywords', serviceKeywords.join(', '))} onDismiss={() => dismissAiSuggestion('seo-keywords')} /></div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="seo-recommendations"><h3 className="text-base font-black text-slate-950">Highest Impact Improvements</h3><p className="mt-1 text-xs text-slate-500">Complete required items first, then strengthen customer trust.</p>{seoRecommendations.length ? <div className="mt-3 divide-y divide-slate-200">{seoRecommendations.map((item) => <div key={item.title} className="py-3"><div className="flex items-start justify-between gap-3"><div><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${item.priority === 'Required' ? 'bg-rose-50 text-rose-700' : item.priority === 'Highly Recommended' ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'}`}>{item.priority}</span><div className="mt-2 text-sm font-black text-slate-900">{item.title}</div><p className="mt-1 text-xs leading-5 text-slate-500">{item.detail}</p></div>{item.step !== 'seo' ? <button type="button" onClick={() => goToStep(item.step)} className="shrink-0 text-xs font-black text-blue-700">Open</button> : null}</div></div>)}</div> : <div className="mt-3 rounded-xl bg-emerald-50 p-3 text-sm font-bold text-emerald-800">Core search setup is complete.</div>}</div></div>
               </div>
-              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-black text-slate-950">Public Profile Status</div>
-                <div className={`mt-3 rounded-lg px-3 py-2 text-sm font-bold ${profile.is_public ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-800'}`}>{profile.is_public ? 'Ready to Publish' : 'Preview mode'}</div>
-              </aside>
+              <aside className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="seo-visibility-settings"><h3 className="text-base font-black text-slate-950">Visibility Settings</h3><p className="mt-1 text-xs text-slate-500">Choose how customers can access your business.</p>{[['is_public', 'Public profile visible', 'Customers can open your public business profile.'], ['show_reviews', 'Show reviews publicly', 'Approved reviews may appear on your website and profile.']].map(([key, label, hint]) => <label key={key} className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 p-3"><span><span className="block text-sm font-black text-slate-900">{label}</span><span className="mt-1 block text-xs leading-4 text-slate-500">{hint}</span></span><input type="checkbox" checked={Boolean(profile[key])} onChange={(e) => setProfile((prev) => ({ ...prev, [key]: e.target.checked }))} className="h-4 w-4 shrink-0 accent-blue-600" aria-label={label} /></label>)}<div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3 text-xs"><span className="font-bold text-slate-500">Status</span><span className="font-black text-slate-900">{profile.is_public ? 'Published' : 'Preview Only'}</span></div>{qrData?.public_url || profile.public_url || websiteData.public_url ? <div className="mt-4 rounded-xl bg-slate-50 p-3"><div className="text-xs font-black text-slate-900">Your Public Links</div><div className="mt-3 text-[10px] font-bold uppercase tracking-wide text-slate-500">Profile URL</div><div className="mt-1 break-all text-[11px] leading-5 text-slate-600">{qrData?.public_url || profile.public_url || websiteData.public_url}</div><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={copyUrl} className="rounded-lg border border-blue-200 px-3 py-2 text-xs font-bold text-blue-700">Copy</button>{qrData?.qr_svg ? <a href={qrData.qr_svg} download="myhomebro-profile-qr.svg" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">QR</a> : null}<a href={qrData?.public_url || profile.public_url || websiteData.public_url} target="_blank" rel="noreferrer" className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">Open Profile</a></div></div> : null}</div><div className="rounded-2xl bg-white p-3" data-testid="seo-search-tips"><h3 className="text-sm font-black text-slate-950">Search Tips</h3><ul className="mt-2 space-y-1.5 text-xs leading-5 text-slate-600">{['Use clear titles', 'Mention your service area', 'Keep business details updated', 'Add project photos', 'Collect customer reviews'].map((tip) => <li key={tip} className="flex gap-2"><span className="font-black text-emerald-600">✓</span>{tip}</li>)}</ul></div></aside></div>
+              <div className="rounded-2xl bg-slate-50 p-4" data-testid="seo-publish-readiness"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="text-base font-black text-slate-950">Ready to Publish</h3><p className="mt-1 text-xs font-bold text-slate-600">{firstIncompletePublishSignal ? `Finish ${firstIncompletePublishSignal.label} first.` : 'Your supported Marketing setup is ready.'}</p></div><div className="flex flex-wrap gap-2">{marketingPublishSignals.map((item) => <span key={item.label} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-bold ${item.ready ? 'bg-emerald-100 text-emerald-800' : 'bg-white text-slate-600'}`}><span>{item.ready ? '✓' : '!'}</span>{item.label}</span>)}</div></div></div>
             </section>
           ) : null}
 
@@ -2712,6 +2746,8 @@ export default function ContractorPublicPresencePage() {
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="reviews-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'website' ? (
               <button type="button" onClick={saveContentAndContinue} disabled={websiteBusy || !homePage} data-testid="content-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{websiteBusy ? 'Saving...' : 'Save & Continue'}</button>
+            ) : activeTab === 'seo' ? (
+              <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="seo-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'publish' ? (
               <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
@@ -2719,7 +2755,7 @@ export default function ContractorPublicPresencePage() {
             )}
           </div>
 
-          {!['decision', 'profile', 'brand', 'gallery', 'reviews', 'website'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {!['decision', 'profile', 'brand', 'gallery', 'reviews', 'website', 'seo'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}
