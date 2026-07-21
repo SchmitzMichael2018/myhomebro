@@ -21,6 +21,11 @@ const baseProfile = {
   brand_accent_color: '#14b8a6',
 };
 
+const supportedReviews = [
+  { id: 41, customer_name: 'Jordan M.', rating: 5, title: 'Clear and dependable', review_text: 'The work was organized, the communication was clear, and the finished space looks great.', project_type: 'Kitchen remodel', moderation_status: 'approved', is_public: true, submitted_at: '2026-06-18T12:00:00Z' },
+  { id: 42, customer_name: 'Casey R.', rating: 4, title: 'A smooth project', review_text: 'The team kept us updated and handled the final details carefully.', project_type: 'Bathroom remodel', moderation_status: 'approved', is_public: false, submitted_at: '2026-06-10T12:00:00Z' },
+];
+
 function makeWebsitePayload({ pro = false, published = false, developmentOverride = false, statusOverride = '' } = {}) {
   const status = statusOverride || (published ? 'published' : 'draft');
   const pages = [
@@ -184,7 +189,7 @@ function makeWebsitePayload({ pro = false, published = false, developmentOverrid
   };
 }
 
-async function mockMarketingPage(page, { pro = false, developmentOverride = false, statusOverride = '' } = {}) {
+async function mockMarketingPage(page, { pro = false, developmentOverride = false, statusOverride = '', reviews = [] } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -266,11 +271,19 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
     });
   });
 
+  let reviewRows = reviews;
+  await page.route(/\/api\/projects\/contractor\/reviews\/(\d+)\/?$/, async (route) => {
+    const reviewId = Number(route.request().url().match(/reviews\/(\d+)\/?$/)?.[1]);
+    const patch = route.request().postDataJSON();
+    reviewRows = reviewRows.map((review) => review.id === reviewId ? { ...review, ...patch } : review);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reviewRows.find((review) => review.id === reviewId)) });
+  });
+
   await page.route('**/api/projects/contractor/reviews/', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
-      body: JSON.stringify({ results: [] }),
+      body: JSON.stringify({ results: reviewRows }),
     });
   });
 
@@ -765,6 +778,50 @@ test('capture final Portfolio implementation', async ({ page }) => {
   await expect(page.getByTestId('portfolio-gallery')).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: path.join(screenshotDir, 'marketing-portfolio-final-mobile.png'), fullPage: true });
+});
+
+test('Reviews workspace uses supported review data and visibility controls', async ({ page }) => {
+  await mockMarketingPage(page, { developmentOverride: true, reviews: supportedReviews });
+  await page.goto('/app/marketing?tab=reviews', { waitUntil: 'domcontentloaded' });
+  const reviewsStep = page.getByTestId('public-presence-reviews-tab');
+  await expect(reviewsStep).toBeVisible();
+  await expect(page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Reviews/ })).toHaveAttribute('aria-current', 'step');
+  await expect(reviewsStep).not.toContainText(/Step \d+ of \d+/);
+  await expect(reviewsStep).not.toContainText('Your Progress');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(page.getByTestId('reviews-reputation-summary')).toContainText('4.5');
+  await expect(page.getByTestId('reviews-reputation-summary')).toContainText('Public Reviews');
+  await expect(page.getByTestId('reviews-list')).toContainText('Jordan M.');
+  await expect(page.getByTestId('review-card-41')).toContainText('Public');
+  await expect(page.getByTestId('review-card-42')).toContainText('Hidden');
+  await page.getByRole('button', { name: 'Hidden 1' }).click();
+  await expect(page.getByTestId('reviews-list')).toContainText('Casey R.');
+  await expect(page.getByTestId('reviews-list')).not.toContainText('Jordan M.');
+  await page.getByTestId('review-visibility-42').click();
+  await expect(page.getByTestId('review-card-42')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Public 2' }).click();
+  await expect(page.getByTestId('review-card-42')).toContainText('Public');
+  await expect(page.getByTestId('reviews-request-section')).toContainText('Invite completed customers');
+  await expect(page.getByTestId('reviews-public-preview')).toContainText('Jordan M.');
+  await expect(page.getByRole('button', { name: 'Save & Continue' })).toHaveCount(1);
+});
+
+test('Reviews empty state and responsive reference remain honest', async ({ page }) => {
+  await mockMarketingPage(page, { developmentOverride: true });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=reviews', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('reviews-reputation-summary')).toContainText('No rating yet');
+  await expect(page.getByTestId('reviews-empty-state')).toContainText('Start building customer trust');
+  await expect(page.getByTestId('reviews-public-preview')).toContainText('Public reviews will appear here');
+  await expect(page.getByTestId('reviews-request-section')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-reviews-reference-implementation.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('reviews-copy-link')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-reviews-reference-mobile.png'), fullPage: true });
 });
 
 test('Marketing Overview renders the consolidated readiness workspace', async ({ page }) => {

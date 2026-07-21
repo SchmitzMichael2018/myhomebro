@@ -600,6 +600,8 @@ export default function ContractorPublicPresencePage() {
   const [galleryImage, setGalleryImage] = useState(null);
   const [galleryEditorOpen, setGalleryEditorOpen] = useState(false);
   const [galleryFilter, setGalleryFilter] = useState('all');
+  const [reviewFilter, setReviewFilter] = useState('all');
+  const [reviewSort, setReviewSort] = useState('newest');
 
   const websiteFeatures = websiteReadiness?.entitlements?.features || {};
   const websiteBuilderGate = websiteFeatures.website_builder || {};
@@ -670,6 +672,25 @@ export default function ContractorPublicPresencePage() {
     if (galleryFilter === 'featured') return item.is_featured;
     return true;
   });
+  const publicReviews = reviewsRows.filter((review) => review.is_public);
+  const hiddenReviews = reviewsRows.filter((review) => !review.is_public);
+  const averageReviewRating = reviewsRows.length
+    ? reviewsRows.reduce((sum, review) => sum + Number(review.rating || 0), 0) / reviewsRows.length
+    : null;
+  const filteredReviews = [...reviewsRows]
+    .filter((review) => reviewFilter === 'all' || (reviewFilter === 'public' ? review.is_public : !review.is_public))
+    .sort((a, b) => {
+      if (reviewSort === 'highest') return Number(b.rating || 0) - Number(a.rating || 0);
+      if (reviewSort === 'lowest') return Number(a.rating || 0) - Number(b.rating || 0);
+      return new Date(b.submitted_at || b.created_at || 0) - new Date(a.submitted_at || a.created_at || 0);
+    });
+  const reviewReputationStatus = !reviewsRows.length
+    ? 'No public reviews yet'
+    : !publicReviews.length
+      ? 'Building your reputation'
+      : publicReviews.length >= 3 && Number(averageReviewRating || 0) >= 4
+        ? 'Strong customer proof'
+        : 'Building your reputation';
   const stepOneReadiness = useMemo(() => {
     const checks = [
       Boolean(profile.business_name_public),
@@ -2501,65 +2522,18 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'reviews' ? (
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-reviews-tab">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold text-slate-500">Step 4 of 8</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Reviews</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">
-                  Collect customer proof, decide what is published, and feature testimonials where supported. Review request campaigns are future-ready unless enabled in your account.
-                </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <button type="button" onClick={copyUrl} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">Share Review Request Link</button>
-                  <button type="button" className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">Add Testimonial Manually</button>
-                  <button
-                    type="button"
-                    onClick={() => requestAiSuggestion('review_summary', 'review-summary', reviewsRows.map((review) => review.review_text || review.public_comment || '').join('\n'))}
-                    disabled={!reviewsRows.filter((review) => review.is_public).length || aiBusyTarget === 'review-summary'}
-                    className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700 disabled:opacity-50"
-                    data-testid="ai-review-summary"
-                  >
-                    Generate Trust Summary with Project Assistant
-                  </button>
+            <section className="space-y-4" data-testid="public-presence-reviews-tab">
+              <div><h2 className="text-2xl font-black text-slate-950">Reviews</h2><p className="mt-1 text-sm text-slate-600">Build trust by collecting and showcasing customer feedback.</p></div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="reviews-reputation-summary"><h3 className="text-base font-black text-slate-950">Reputation Summary</h3><p className="mt-0.5 text-xs font-bold text-blue-700">{reviewReputationStatus}</p><div className="mt-3 grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-3"><div className="bg-white p-3"><div className="text-xs font-bold text-slate-500">Average Rating</div>{averageReviewRating === null ? <div className="mt-1 text-lg font-black text-slate-950">No rating yet</div> : <><div className="mt-1 flex items-center gap-2"><span className="text-xl font-black text-slate-950">{averageReviewRating.toFixed(1)}</span><span className="text-sm tracking-wide text-amber-500" aria-label={`${averageReviewRating.toFixed(1)} out of 5 stars`}>{'★'.repeat(Math.round(averageReviewRating))}</span></div><div className="mt-0.5 text-xs text-slate-500">Based on {reviewsRows.length} review{reviewsRows.length === 1 ? '' : 's'}</div></>}</div><div className="bg-white p-3"><div className="text-xs font-bold text-slate-500">Public Reviews</div><div className="mt-1 text-xl font-black text-slate-950">{publicReviews.length}</div><div className="mt-0.5 text-xs text-slate-500">Shown on your profile</div></div><div className="bg-white p-3"><div className="text-xs font-bold text-slate-500">Hidden Reviews</div><div className="mt-1 text-xl font-black text-slate-950">{hiddenReviews.length}</div><div className="mt-0.5 text-xs text-slate-500">Not shown publicly</div></div></div></div>
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div className="space-y-4">
+                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" data-testid="reviews-workspace"><div className="border-b border-slate-200 p-4"><div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between"><div><h3 className="text-base font-black text-slate-950">Reviews Workspace</h3><p className="mt-1 text-xs text-slate-500">Choose which customer feedback appears publicly.</p></div><label className="text-xs font-bold text-slate-600">Sort reviews<select value={reviewSort} onChange={(event) => setReviewSort(event.target.value)} className="ml-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700" data-testid="reviews-sort"><option value="newest">Newest</option><option value="highest">Highest Rated</option><option value="lowest">Lowest Rated</option></select></label></div><div className="mt-3 flex gap-2 overflow-x-auto pb-1" data-testid="reviews-filters">{[['all', `All Reviews ${reviewsRows.length}`], ['public', `Public ${publicReviews.length}`], ['hidden', `Hidden ${hiddenReviews.length}`]].map(([key, label]) => <button key={key} type="button" onClick={() => setReviewFilter(key)} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-black ${reviewFilter === key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>{label}</button>)}</div></div>
+                    {reviewsRows.length === 0 ? <div className="px-5 py-10 text-center" data-testid="reviews-empty-state"><h4 className="text-lg font-black text-slate-950">Start building customer trust</h4><p className="mx-auto mt-2 max-w-lg text-sm text-slate-600">Invite a completed customer to leave a review, then choose which reviews appear publicly.</p></div> : filteredReviews.length ? <div className="divide-y divide-slate-200" data-testid="reviews-list">{filteredReviews.map((review) => <article key={review.id} className="p-4" data-testid={`review-card-${review.id}`}><div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h4 className="font-black text-slate-950">{review.customer_name || review.reviewer_name || 'Customer'}</h4><span className={`rounded-full px-2 py-1 text-[10px] font-black ${review.is_public ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{review.is_public ? 'Public' : 'Hidden'}</span></div><div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500"><span className="tracking-wide text-amber-500" aria-label={`${review.rating} out of 5 stars`}>{'★'.repeat(Number(review.rating || 0))}</span>{review.submitted_at || review.created_at ? <span>{new Date(review.submitted_at || review.created_at).toLocaleDateString()}</span> : null}{review.project_type ? <span>{review.project_type}</span> : null}</div></div><button type="button" onClick={() => toggleReviewVisibility(review)} disabled={reviewBusy} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 disabled:opacity-60" data-testid={`review-visibility-${review.id}`}>{review.is_public ? 'Hide from Website' : 'Show on Website'}</button></div>{review.title ? <div className="mt-3 text-sm font-black text-slate-900">{review.title}</div> : null}<p className="mt-2 text-sm leading-6 text-slate-700">{review.review_text || review.public_comment || 'No written feedback was provided.'}</p></article>)}</div> : <div className="p-8 text-center text-sm text-slate-500">No {reviewFilter} reviews.</div>}
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="reviews-request-section"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><h3 className="text-base font-black text-slate-950">Request Reviews</h3><p className="mt-1 text-sm text-slate-600">Invite completed customers to share their experience.</p><p className="mt-1 text-xs text-slate-500">Share your public review link after a project is complete.</p></div><button type="button" onClick={copyUrl} className="self-start rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700" data-testid="reviews-copy-link">Copy Review Link</button></div></div>
                 </div>
-                {!reviewsRows.length ? <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="ai-review-summary-empty">Add or request reviews first to generate a trust summary.</div> : null}
-                <AiSuggestionCard
-                  suggestion={aiSuggestions['review-summary']}
-                  onAccept={() => dismissAiSuggestion('review-summary')}
-                  onRegenerate={() => requestAiSuggestion('review_summary', 'review-summary', reviewsRows.map((review) => review.review_text || review.public_comment || '').join('\n'))}
-                  onDismiss={() => dismissAiSuggestion('review-summary')}
-                />
-                <div className="mt-5 space-y-3">
-                  {reviewsRows.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-500">No reviews have been submitted yet. Share your profile link to start collecting customer feedback.</div>
-                  ) : reviewsRows.map((review) => (
-                    <div key={review.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="font-black text-slate-950">{review.customer_name || review.reviewer_name || 'Customer'}</div>
-                          <div className="mt-1 text-sm text-amber-500">{'★'.repeat(Number(review.rating || 5))}</div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${review.is_public ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
-                            {review.is_public ? 'Published' : (review.moderation_status || review.status || 'Submitted')}
-                          </span>
-                          {review.is_featured ? <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">Featured</span> : null}
-                        </div>
-                      </div>
-                      <p className="mt-3 text-sm leading-6 text-slate-700">{review.review_text || review.public_comment}</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button type="button" onClick={() => toggleReviewVisibility(review)} disabled={reviewBusy} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-60">{review.is_public ? 'Hide Review' : 'Publish Review'}</button>
-                        <button type="button" disabled className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-400">Feature testimonial future-ready</button>
-                        <button type="button" disabled className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-400">Respond future-ready</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <aside className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="reviews-public-preview"><h3 className="text-sm font-black text-slate-950">Public Review Preview</h3><p className="mt-1 text-xs text-slate-500">Preview</p>{publicReviews[0] ? <div className="mt-3 rounded-xl bg-slate-50 p-3"><div className="text-sm tracking-wide text-amber-500">{'★'.repeat(Number(publicReviews[0].rating || 0))}</div><p className="mt-2 text-sm leading-5 text-slate-700">{publicReviews[0].review_text || publicReviews[0].public_comment || 'No written feedback was provided.'}</p><div className="mt-3 text-xs font-black text-slate-900">{publicReviews[0].customer_name || publicReviews[0].reviewer_name || 'Customer'}</div>{publicReviews[0].project_type ? <div className="mt-0.5 text-xs text-slate-500">{publicReviews[0].project_type}</div> : null}</div> : <p className="mt-3 text-sm leading-5 text-slate-600">Public reviews will appear here after you choose one to display.</p>}</div><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="reviews-display-settings"><h3 className="text-sm font-black text-slate-950">Review display settings</h3><label className="mt-3 flex items-center justify-between gap-3 text-sm font-bold text-slate-700"><span>Show reviews on website</span><input type="checkbox" checked={profile.show_reviews !== false} onChange={(event) => setProfile((prev) => ({ ...prev, show_reviews: event.target.checked }))} className="h-4 w-4 accent-blue-600" /></label></div><div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="reviews-guidance"><h3 className="text-sm font-black text-slate-950">Tips for stronger reviews</h3><ul className="mt-3 space-y-2 text-xs leading-5 text-slate-600">{['Ask soon after completion', 'Personalize each request', 'Respond to every review', 'Keep responses professional', 'Never publish customer information'].map((tip) => <li key={tip} className="flex gap-2"><span className="font-black text-emerald-600">✓</span><span>{tip}</span></li>)}</ul></div></aside>
               </div>
-              <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-sm font-black text-slate-950">Your Progress</div>
-                <div className="mt-1 text-xs text-slate-500">Step 3 of 7</div>
-                <div className="mt-4 space-y-2 text-sm">{ONLINE_PRESENCE_STEPS.map((step, index) => <div key={step.key} className="flex items-center gap-2"><span className={`h-3 w-3 rounded-full ${index < activeStepIndex ? 'bg-emerald-500' : index === activeStepIndex ? 'bg-blue-600' : 'bg-slate-200'}`} />{step.label}</div>)}</div>
-              </aside>
             </section>
           ) : null}
 
@@ -2769,6 +2743,8 @@ export default function ContractorPublicPresencePage() {
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="brand-kit-save" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'gallery' ? (
               <button type="button" onClick={goToNextStep} data-testid="portfolio-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Save & Continue</button>
+            ) : activeTab === 'reviews' ? (
+              <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="reviews-save-continue" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
             ) : activeTab === 'publish' ? (
               <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
@@ -2776,7 +2752,7 @@ export default function ContractorPublicPresencePage() {
             )}
           </div>
 
-          {!['decision', 'profile', 'brand', 'gallery'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {!['decision', 'profile', 'brand', 'gallery', 'reviews'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}
