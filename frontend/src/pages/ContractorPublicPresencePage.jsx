@@ -533,6 +533,7 @@ export default function ContractorPublicPresencePage() {
   const [profile, setProfile] = useState(defaultProfile);
   const [profileBusy, setProfileBusy] = useState(false);
   const [websiteDecisionError, setWebsiteDecisionError] = useState('');
+  const [customTradeOpen, setCustomTradeOpen] = useState(false);
   const [logoFile, setLogoFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [heroFile, setHeroFile] = useState(null);
@@ -912,6 +913,12 @@ export default function ContractorPublicPresencePage() {
       void continueFromWebsiteDecision();
       return;
     }
+    const next = ONLINE_PRESENCE_STEPS[Math.min(ONLINE_PRESENCE_STEPS.length - 1, activeStepIndex + 1)];
+    if (next) setActiveTab(next.key);
+  };
+  const saveAndContinueProfile = async () => {
+    const saved = await saveProfile();
+    if (!saved) return;
     const next = ONLINE_PRESENCE_STEPS[Math.min(ONLINE_PRESENCE_STEPS.length - 1, activeStepIndex + 1)];
     if (next) setActiveTab(next.key);
   };
@@ -1313,9 +1320,11 @@ export default function ContractorPublicPresencePage() {
       setQrData(qrRes.data || null);
       await refreshWebsiteBuilder();
       toast.success('Public profile saved.');
+      return true;
     } catch (err) {
       console.error(err);
       toast.error(err?.response?.data?.detail || err?.response?.data?.slug?.[0] || 'Failed to save public profile.');
+      return false;
     } finally {
       setProfileBusy(false);
     }
@@ -1743,7 +1752,7 @@ export default function ContractorPublicPresencePage() {
         onClose={() => setQuickAddPrefill(null)}
       />
       <div className="mhb-online-presence-light-theme overflow-hidden rounded-[28px] border border-slate-200 shadow-sm" data-testid="online-presence-setup-shell">
-        <header className="border-b border-slate-200 bg-white px-5 py-4 lg:px-6 xl:pr-52">
+        <header className="border-b border-slate-200 bg-white py-4 pl-12 pr-5 sm:px-5 lg:px-6 xl:pr-52">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <h1 data-testid="public-presence-title" className="text-xl font-black text-slate-950">
@@ -1784,7 +1793,7 @@ export default function ContractorPublicPresencePage() {
 
         <div className="px-5 py-5 lg:px-6" data-testid="online-presence-setup-nav">
           <div className="flex w-full gap-4 overflow-x-auto rounded-xl border border-slate-200 bg-white p-3" data-testid="marketing-grouped-step-navigation">
-            {[{ label: 'Build Your Foundation', steps: ONLINE_PRESENCE_STEPS.slice(0, 5), offset: 0 }, { label: 'Optimize & Publish', steps: ONLINE_PRESENCE_STEPS.slice(5), offset: 5 }].map((group, groupIndex) => <div key={group.label} className={`min-w-[490px] shrink-0 ${groupIndex ? 'border-l border-slate-200 pl-4' : ''}`}><div className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{group.label}</div><div className="flex gap-2">{group.steps.map((step, localIndex) => {
+            {[{ label: 'Build Your Foundation', steps: ONLINE_PRESENCE_STEPS.slice(0, 5), offset: 0 }, { label: 'Optimize & Publish', steps: ONLINE_PRESENCE_STEPS.slice(5), offset: 5 }].map((group, groupIndex) => <div key={group.label} className={`min-w-max shrink-0 ${groupIndex ? 'border-l border-slate-200 pl-4' : ''}`}><div className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">{group.label}</div><div className="flex gap-2">{group.steps.map((step, localIndex) => {
               const index = group.offset + localIndex;
               const isActive = activeTab === step.key;
               const isComplete = completedStepKeys.has(step.key);
@@ -1797,7 +1806,7 @@ export default function ContractorPublicPresencePage() {
                   aria-label={step.label}
                   aria-current={isActive ? 'step' : undefined}
                   className={[
-                    'flex h-9 min-w-[84px] flex-1 items-center gap-2 rounded-lg border px-2 text-left text-xs font-bold transition',
+                    `flex h-9 items-center gap-1.5 rounded-lg border px-2 text-left text-[11px] font-bold transition ${step.key === 'profile' ? 'min-w-[104px]' : step.key === 'decision' ? 'min-w-[88px]' : 'min-w-[70px]'}`,
                     isActive
                       ? 'border-blue-400 bg-blue-50 text-blue-700 shadow-sm'
                       : isComplete
@@ -2217,41 +2226,44 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'profile' ? (
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_280px]" data-testid="public-presence-profile-tab">
-              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                <div className="text-xs font-bold text-slate-500">Step 1 of 7</div>
-                <h2 className="mt-2 text-2xl font-black text-slate-950">Business Information</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-600">Add your business details and the services you provide.</p>
-                <div className="mt-5 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                  Inherited facts come from Company Profile. Fields below are public presentation overrides and visibility settings for Marketing.
+            <section className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_360px]" data-testid="public-presence-profile-tab">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                <h2 className="text-2xl font-black text-slate-950">Business Information</h2>
+                <p className="mt-1 text-sm leading-6 text-slate-600">Add your public business details and the services you provide.</p>
+                <div className="mt-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="business-information-inherited-copy">
+                  Some details come from your Company Profile. Changes here only affect your public website and profile.
                 </div>
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                <h3 className="mt-4 border-b border-slate-200 pb-2 text-xs font-black uppercase tracking-[0.14em] text-slate-600">Business Details</h3>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Public display name override</span>
+                    <span className="text-sm font-bold text-slate-800">Public business name</span>
                     <input value={profile.business_name_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, business_name_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="C.S.W. Power Solutions" />
                   </label>
                   <label className="space-y-1">
+                    <span className="mb-2 block text-xs font-black uppercase tracking-[0.14em] text-slate-600">Services</span>
                     <span className="text-sm font-bold text-slate-800">Primary trade</span>
                     <select value={profile.primary_trade || ''} onChange={(e) => setProfile((prev) => ({ ...prev, primary_trade: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" data-testid="business-primary-trade-select">
                       <option value="">Select a trade</option>
                       {['Electrical contractor', 'General contractor', 'Kitchen remodeling', 'Bathroom remodeling', 'HVAC', 'Plumbing', 'Roofing', 'Painting', 'Landscaping', profile.primary_trade].filter(Boolean).filter((item, index, arr) => arr.indexOf(item) === index).map((trade) => <option key={trade} value={trade}>{trade}</option>)}
                     </select>
-                    <input value={profile.primary_trade || ''} onChange={(e) => setProfile((prev) => ({ ...prev, primary_trade: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Or add a custom trade" data-testid="business-primary-trade-custom" />
+                    <button type="button" onClick={() => setCustomTradeOpen((open) => !open)} className="text-xs font-bold text-blue-700">+ Add custom trade</button>
+                    {customTradeOpen ? <input value={profile.primary_trade || ''} onChange={(e) => setProfile((prev) => ({ ...prev, primary_trade: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Enter a custom trade" data-testid="business-primary-trade-custom" /> : null}
                   </label>
                   <label className="space-y-1">
                     <span className="text-sm font-bold text-slate-800">Owner / contact name</span>
                     <input value={profile.owner_contact_name || ''} onChange={(e) => setProfile((prev) => ({ ...prev, owner_contact_name: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Owner or office contact" />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Additional trades/services</span>
-                    <input value={workTypesText} onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Lighting, generator installation" />
+                    <span className="text-sm font-bold text-slate-800">Additional trades / services</span>
+                    <input value={workTypesText} onChange={(e) => setProfile((prev) => ({ ...prev, work_types: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Separate services with commas" data-testid="business-additional-services" />
+                    {profile.work_types?.length ? <span className="flex flex-wrap gap-1.5 pt-1">{profile.work_types.map((item) => <span key={item} className="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">{item}</span>)}</span> : null}
                   </label>
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Public phone override</span>
+                    <span className="text-sm font-bold text-slate-800">Public phone</span>
                     <input value={profile.phone_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, phone_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="(210) 504-9796" />
                   </label>
                   <label className="space-y-1">
-                    <span className="text-sm font-bold text-slate-800">Public email override</span>
+                    <span className="text-sm font-bold text-slate-800">Public email</span>
                     <input value={profile.email_public || ''} onChange={(e) => setProfile((prev) => ({ ...prev, email_public: e.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="hello@example.com" />
                   </label>
                   <label className="space-y-1">
@@ -2263,13 +2275,15 @@ export default function ContractorPublicPresencePage() {
                     <input value={specialtiesText} onChange={(e) => setProfile((prev) => ({ ...prev, specialties: e.target.value.split(',').map((item) => item.trim()).filter(Boolean) }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Residential, commercial" />
                   </label>
                   <label className="space-y-1 md:col-span-2">
+                    <span className="mb-2 block border-t border-slate-200 pt-3 text-xs font-black uppercase tracking-[0.14em] text-slate-600">Business Description</span>
                     <span className="flex items-center justify-between gap-3 text-sm font-bold text-slate-800">
                       <span>Business description</span>
                       <button type="button" onClick={() => requestAiSuggestion('business_description', 'business-description', profile.bio)} disabled={aiBusyTarget === 'business-description'} className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-700 disabled:opacity-60" data-testid="ai-generate-business-description">
-                        {aiBusyTarget === 'business-description' ? 'Generating...' : profile.bio ? 'Improve with Project Assistant' : 'Generate Description with Project Assistant'}
+                        {aiBusyTarget === 'business-description' ? 'Generating...' : profile.bio ? 'Improve Description' : 'Generate Description'}
                       </button>
                     </span>
-                    <textarea value={profile.bio || ''} onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))} rows={4} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="What you do, who you serve, and why customers trust you." data-testid="business-description-input" />
+                    <textarea value={profile.bio || ''} onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))} rows={3} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Describe what you do, who you serve, and why customers choose your business." data-testid="business-description-input" />
+                    <span className="block text-right text-xs text-slate-500">{String(profile.bio || '').length} characters</span>
                     <AiSuggestionCard
                       suggestion={aiSuggestions['business-description']}
                       onAccept={() => acceptAiSuggestion('business-description', (value) => setProfile((prev) => ({ ...prev, bio: value })))}
@@ -2278,7 +2292,9 @@ export default function ContractorPublicPresencePage() {
                     />
                   </label>
                 </div>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="mt-4 border-t border-slate-200 pt-4" data-testid="business-public-display-trust">
+                  <h3 className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">Public Display &amp; Trust</h3>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   {[
                     ['show_phone_public', 'Show phone publicly'],
                     ['show_email_public', 'Show email publicly'],
@@ -2290,6 +2306,7 @@ export default function ContractorPublicPresencePage() {
                       <span>{label}</span>
                     </label>
                   ))}
+                  </div>
                 </div>
                 <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-sm font-black text-slate-900">Why customers choose you</div>
@@ -2306,31 +2323,28 @@ export default function ContractorPublicPresencePage() {
                     ))}
                   </div>
                 </div>
-                <div className="mt-5 flex justify-end">
-                  <button type="button" data-testid="public-presence-save-profile" onClick={saveProfile} disabled={profileBusy} className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60">
-                    {profileBusy ? 'Saving...' : 'Save Business Information'}
-                  </button>
-                </div>
               </div>
-              <aside className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-sm font-black text-slate-950">Your Progress</div>
-                  <div className="mt-1 text-xs text-slate-500">Step 1 of 7</div>
-                  <div className="mt-3 rounded-full bg-blue-600 px-3 py-1.5 text-center text-sm font-black text-white" data-testid="business-info-readiness-score">{stepOneReadiness}% complete</div>
-                  <div className="mt-4 space-y-2 text-sm">
-                    {ONLINE_PRESENCE_STEPS.map((step, index) => (
-                      <div key={step.key} className="flex items-center gap-2 text-slate-700">
-                        <span className={`h-3 w-3 rounded-full ${index < activeStepIndex ? 'bg-emerald-500' : index === activeStepIndex ? 'bg-blue-600' : 'bg-slate-200'}`} />
-                        <span>{step.label}</span>
-                      </div>
-                    ))}
+              <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="business-public-profile-preview">
+                <h3 className="text-lg font-black text-slate-950">Public Profile Preview</h3>
+                <p className="mt-1 text-sm text-slate-600">This is how your business appears to customers.</p>
+                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-xl font-black text-blue-700">{String(profile.business_name_public || 'B').charAt(0).toUpperCase()}</div>
+                  <div className="mt-3 text-lg font-black text-slate-950">{profile.business_name_public || 'Add your public business name'}</div>
+                  <div className="mt-1 text-sm text-slate-600">{profile.primary_trade || 'Add a primary trade to complete this preview.'}</div>
+                  {profile.work_types?.length ? <div className="mt-2 text-xs text-slate-500">{profile.work_types.join(' · ')}</div> : null}
+                  <div className="mt-4 space-y-2 text-sm text-slate-700">
+                    {profile.show_phone_public && profile.phone_public ? <div data-testid="business-preview-phone">{profile.phone_public}</div> : null}
+                    {profile.show_email_public && profile.email_public ? <div data-testid="business-preview-email">{profile.email_public}</div> : null}
                   </div>
+                  {profile.bio ? <p className="mt-4 line-clamp-3 text-sm leading-6 text-slate-600">{profile.bio}</p> : null}
+                  {customerTrustBadges.length ? <div className="mt-4 flex flex-wrap justify-center gap-1.5">{customerTrustBadges.map((badge) => <span key={badge} className="rounded-full border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700">{badge}</span>)}</div> : null}
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-sm font-black text-slate-950">Share your profile/website</div>
-                  <div className="mt-2 break-all text-xs text-slate-600">{qrData?.public_url || profile.public_url || '-'}</div>
-                  {qrData?.qr_svg ? <img data-testid="public-presence-qr-image" src={qrData.qr_svg} alt="Public profile QR code" className="mt-4 w-full rounded-xl border border-slate-200 bg-white p-4" /> : null}
+                <div className="mt-4 space-y-2 rounded-xl border border-slate-200 p-3 text-sm">
+                  <div className="flex justify-between"><span>License</span><span className="font-bold">{profile.show_license_public ? 'Shown' : 'Hidden'}</span></div>
+                  <div className="flex justify-between"><span>Quote requests</span><span className="font-bold">{profile.allow_public_intake ? 'Enabled' : 'Disabled'}</span></div>
                 </div>
+                <div className="mt-4 rounded-xl bg-blue-50 p-3"><div className="text-sm text-blue-950">Preview completeness</div><div className="mt-1 text-sm font-black text-blue-700" data-testid="business-info-readiness-score">{stepOneReadiness}% complete</div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${stepOneReadiness}%` }} /></div></div>
+                {(profile.public_url || qrData?.public_url) ? <a href={profile.public_url || qrData?.public_url} target="_blank" rel="noreferrer" className="mt-4 block rounded-lg border border-slate-200 px-3 py-2 text-center text-sm font-bold text-blue-700">Open Public Profile</a> : null}
               </aside>
             </section>
           ) : null}
@@ -2807,14 +2821,16 @@ export default function ContractorPublicPresencePage() {
 
           <div className={`${activeTab === 'decision' ? 'mt-3 pt-3' : 'mt-5 pt-4'} flex items-center justify-between border-t border-slate-200`}>
             <button type="button" onClick={goToPreviousStep} disabled={activeStepIndex === 0} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-40">Back</button>
-            {activeTab === 'publish' ? (
+            {activeTab === 'profile' ? (
+              <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="public-presence-save-profile" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
+            ) : activeTab === 'publish' ? (
               <button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white hover:bg-blue-700 disabled:bg-slate-300">{websiteBusy ? 'Publishing...' : 'Publish'}</button>
             ) : (
               <button type="button" onClick={goToNextStep} data-testid={activeTab === 'decision' ? 'website-decision-continue' : undefined} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</button>
             )}
           </div>
 
-          {activeTab !== 'decision' ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {!['decision', 'profile'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}

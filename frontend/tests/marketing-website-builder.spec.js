@@ -581,6 +581,54 @@ test('Website Decision uses selectable cards and one progression action', async 
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test('Business Information uses a live public preview and saves before continuing', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  await page.goto('/app/marketing?tab=profile', { waitUntil: 'domcontentloaded' });
+
+  const step = page.getByTestId('public-presence-profile-tab');
+  await expect(step).toBeVisible();
+  await expect(step).toContainText('Business Details');
+  await expect(step).toContainText('Services');
+  await expect(step).toContainText('Public Display & Trust');
+  await expect(step).not.toContainText('Step 1 of 7');
+  await expect(step).not.toContainText('Your Progress');
+  await expect(step).not.toContainText('override');
+  await expect(page.getByTestId('public-presence-qr-image')).toHaveCount(0);
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(page.getByTestId('business-information-inherited-copy')).toContainText('Changes here only affect your public website and profile');
+  await expect(page.getByTestId('business-public-profile-preview')).toContainText('Bright Build Co');
+  await expect(page.getByTestId('business-preview-phone')).toContainText('555-111-2222');
+  await expect(page.getByTestId('business-preview-email')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Add custom trade' }).click();
+  await expect(page.getByTestId('business-primary-trade-custom')).toBeVisible();
+  await page.getByTestId('business-primary-trade-custom').fill('Restoration');
+  await expect(page.getByTestId('business-public-profile-preview')).toContainText('Restoration');
+  await page.getByTestId('business-additional-services').fill('Lighting, Ceiling fans');
+  await expect(page.getByTestId('business-public-profile-preview')).toContainText('Lighting');
+
+  await expect(page.getByRole('button', { name: 'Save & Continue' })).toHaveCount(1);
+  await page.getByRole('button', { name: 'Save & Continue' }).click();
+  await expect(page.getByTestId('marketing-brand-kit-tab')).toBeVisible();
+});
+
+test('capture Business Information reference implementation', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false, developmentOverride: true });
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=profile', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('public-presence-profile-tab')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-business-information-reference-implementation.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('business-public-profile-preview')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-business-information-reference-mobile.png'), fullPage: true });
+});
+
 test('Marketing Overview renders the consolidated readiness workspace', async ({ page }) => {
   await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
 
