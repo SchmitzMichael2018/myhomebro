@@ -279,6 +279,11 @@ async function installInsightsRoutes(page, summaryResponse = summaryPayload) {
             subcontractor_display_name: "Taylor Flooring",
             payout_status: "paid",
             payout_amount: "800.00",
+            gross_amount: "840.00",
+            platform_fee: "40.00",
+            net_payout: "800.00",
+            payout_date: "2026-05-16T12:00:00Z",
+            record_type_label: "Subcontractor",
           },
           {
             id: 12,
@@ -288,6 +293,8 @@ async function installInsightsRoutes(page, summaryResponse = summaryPayload) {
             subcontractor_display_name: "Austin Finish Crew",
             payout_status: "ready_for_payout",
             payout_amount: "450.00",
+            payout_date: "2026-05-18T12:00:00Z",
+            record_type_label: "Subcontractor",
           },
         ],
         summary: {
@@ -296,6 +303,7 @@ async function installInsightsRoutes(page, summaryResponse = summaryPayload) {
           total_failed_amount: "0.00",
           total_pending_amount: "125.00",
           record_count: 2,
+          total_platform_fees_retained: "40.00",
         },
       }),
     });
@@ -437,7 +445,7 @@ test("Insights top-level views render independent dashboards", async ({ page }) 
   await expect(page.getByTestId("dashboard-view-financial")).toHaveCount(0);
 
   await page.getByTestId("dashboard-view-selector-payouts").click();
-  await expect(page.getByTestId("dashboard-view-payouts")).toContainText("Payouts");
+  await expect(page.getByTestId("dashboard-view-payouts")).toContainText("Outgoing Money Summary");
   await expect(page.getByTestId("dashboard-report-controls")).toHaveCount(0);
 });
 
@@ -448,17 +456,47 @@ test("Payouts and Exports view renders clean labels and available export actions
   await page.getByTestId("dashboard-view-selector-payouts").click();
 
   const payoutsView = page.getByTestId("dashboard-view-payouts");
-  await expect(payoutsView).toContainText("Paid to Subcontractors");
-  await expect(payoutsView).toContainText("Pending Payouts");
-  await expect(payoutsView).toContainText("Payout Activity");
+  await expect(payoutsView).toContainText("Outgoing Money Summary");
+  await expect(payoutsView).toContainText("Paid Out");
+  await expect(payoutsView).toContainText("Ready to Pay");
+  await expect(payoutsView).toContainText("Payment Ledger");
   await expect(payoutsView).toContainText("Kitchen Remodel");
+  await expect(payoutsView).toContainText("Taylor Flooring");
+  await expect(payoutsView).toContainText("Subcontractor");
+  await expect(payoutsView).toContainText("Platform Fees");
+  await expect(payoutsView).toContainText("Retained by MyHomeBro");
+  await expect(payoutsView).not.toContainText("Paid to Subcontractors");
+  await expect(payoutsView).not.toContainText("Revenue Collected");
+  await expect(payoutsView).not.toContainText("Outstanding Receivables");
   await expect(payoutsView).toContainText("Export Center");
   await expect(page.getByTestId("dashboard-payouts-export")).toContainText("Download CSV");
+  await expect(page.getByRole("button", { name: "Download CSV" })).toHaveCount(1);
   await expect(page.getByTestId("dashboard-payouts-full-history")).toContainText("View Payout History");
 
   const visibleText = await payoutsView.innerText();
   expect(visibleText).not.toMatch(/Ã|Â|ï¿½|�|â|&[a-z]+;/i);
   await expect(page.getByTestId("dashboard-report-controls")).toHaveCount(0);
+});
+
+test("Payouts uses compact honest empty states without unsupported payment types", async ({ page }) => {
+  await installInsightsRoutes(page);
+  await page.route("**/api/projects/payouts/history/**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [], summary: { total_paid_out: "0.00", payout_count: 0 } }),
+    });
+  });
+
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-payouts").click();
+  const payoutsView = page.getByTestId("dashboard-view-payouts");
+  await expect(page.getByTestId("dashboard-payouts-ledger")).toContainText("No outgoing payments in this period.");
+  await expect(page.getByTestId("dashboard-payouts-upcoming")).toContainText("No outgoing payments need attention in this period.");
+  await expect(page.getByTestId("dashboard-payouts-fees")).toContainText("No platform or processing fees were recorded in this period.");
+  await expect(payoutsView).not.toContainText("Vendor");
+  await expect(payoutsView).not.toContainText("Reimbursement");
+  await expect(payoutsView).not.toContainText("Processing Fee");
 });
 
 test("Insights customization persists per active view", async ({ page }) => {
@@ -698,4 +736,31 @@ test("capture refined Reports workspace", async ({ page }) => {
   const revenueExport = page.waitForRequest((request) => request.url().includes("/business-dashboard/export/revenue/"));
   await page.getByRole("button", { name: "Open Revenue report" }).click();
   await revenueExport;
+});
+
+test("capture Payouts reference implementation", async ({ page }) => {
+  await installInsightsRoutes(page);
+  const screenshotDir = path.resolve("../docs/audit-screenshots/insights-redesign");
+  fs.mkdirSync(screenshotDir, { recursive: true });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/app/insights", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-view-selector-payouts").click();
+  await expect(page.getByTestId("dashboard-view-selector-payouts")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("dashboard-payouts-summary")).toContainText("Outgoing Money Summary");
+  await expect(page.getByTestId("dashboard-payouts-ledger")).toBeVisible();
+  await expect(page.getByTestId("dashboard-payouts-status")).toBeVisible();
+  await expect(page.getByTestId("dashboard-payouts-fees")).toContainText("$40.00");
+  await expect(page.getByTestId("dashboard-payouts-upcoming")).toContainText("Austin Finish Crew");
+  await expect(page.getByTestId("dashboard-payouts-export-center")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Download CSV" })).toHaveCount(1);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-payouts-reference-implementation.png"), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("dashboard-view-selector-payouts").evaluate((element) => element.scrollIntoView({ block: "nearest", inline: "center" }));
+  await expect(page.getByTestId("dashboard-payouts-ledger").locator("table")).toBeHidden();
+  await expect(page.getByTestId("dashboard-payouts-ledger").locator("article")).toHaveCount(2);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, "insights-payouts-reference-mobile.png"), fullPage: true });
 });

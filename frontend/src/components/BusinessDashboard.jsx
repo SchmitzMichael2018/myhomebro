@@ -10,6 +10,7 @@ import DashboardSection from "./dashboard/DashboardSection.jsx";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import ContractorInsightsSection from "./dashboard/ContractorInsightsSection.jsx";
 import ReportsLibrary from "./dashboard/ReportsLibrary.jsx";
+import PayoutsWorkspace from "./dashboard/PayoutsWorkspace.jsx";
 import { useWorkspaceProjectFamilyContext } from "../lib/projectFamilyContext.js";
 import {
   ArrowRight,
@@ -3309,152 +3310,12 @@ export default function BusinessDashboard() {
       ) : null}
 
       {activeBusinessView === "payouts" ? (
-        <div data-testid="dashboard-view-payouts" className="space-y-4">
-          <section
-            data-testid="dashboard-payouts-section"
-            className="rounded-xl border border-slate-200 bg-white px-5 py-6 shadow-sm"
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-950">Payouts</h2>
-                <p className="mt-1 text-sm text-slate-600">Subcontractor payout status for the selected date range.</p>
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  data-testid="dashboard-payouts-export"
-                  onClick={exportPayoutCsv}
-                  disabled={payoutExporting}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                >
-                  <Download aria-hidden="true" className="h-4 w-4" />
-                  {payoutExporting ? "Exporting..." : "Download CSV"}
-                </button>
-                <a
-                  data-testid="dashboard-payouts-full-history"
-                  href="/app/payouts/history"
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-800"
-                >
-                  View Payout History
-                  <ExternalLink aria-hidden="true" className="h-4 w-4" />
-                </a>
-              </div>
-            </div>
-
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <LightMetric
-                label="Paid to Subcontractors"
-                value={money(payoutSummary?.total_paid_amount)}
-                sub="Completed subcontractor payouts"
-                tone="good"
-                icon={WalletCards}
-              />
-              <LightMetric
-                label="Pending Payouts"
-                value={money(payoutSummary?.total_ready_amount)}
-                sub="Ready for contractor release"
-                tone="warn"
-                icon={Clock3}
-              />
-              <LightMetric
-                label="Failed Payouts"
-                value={money(payoutSummary?.total_failed_amount)}
-                sub="Needs contractor follow-up"
-                tone="bad"
-                icon={TriangleAlert}
-              />
-              <LightMetric
-                label="Scheduled Payouts"
-                value={money(payoutSummary?.total_pending_amount)}
-                sub="Not ready yet"
-                icon={CalendarDays}
-              />
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-950">Payout Activity</h2>
-                <p className="mt-1 text-sm text-slate-600">Recent subcontractor payout records and status mix.</p>
-              </div>
-              <div className="text-sm font-semibold text-slate-500">
-                {payoutSummary?.record_count ?? payoutRows.length} records
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 lg:grid-cols-[280px_1fr]">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="text-sm font-bold text-slate-950">Status Mix</div>
-                <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="font-black text-slate-950">{int(payoutStatusCounts.ready)}</div>
-                    <div className="text-slate-500">Ready</div>
-                  </div>
-                  <div>
-                    <div className="font-black text-slate-950">{int(payoutStatusCounts.pending)}</div>
-                    <div className="text-slate-500">Pending</div>
-                  </div>
-                  <div>
-                    <div className="font-black text-slate-950">{int(payoutStatusCounts.paid)}</div>
-                    <div className="text-slate-500">Paid</div>
-                  </div>
-                  <div>
-                    <div className="font-black text-slate-950">{int(payoutStatusCounts.failed)}</div>
-                    <div className="text-slate-500">Failed</div>
-                  </div>
-                </div>
-              </div>
-
-              {payoutRows.length === 0 ? (
-                <div className="rounded-lg bg-slate-50 px-5 py-4 text-sm text-slate-600">
-                  <div className="font-bold text-slate-900">No payout activity in this range</div>
-                  <div className="mt-1">Approved subcontractor milestones create payout records here. Open Payout History to review another date range.</div>
-                </div>
-              ) : (
-                <div className="overflow-hidden rounded-lg border border-slate-200">
-                  <div className="divide-y divide-slate-200">
-                    {payoutRows.slice(0, 5).map((row) => (
-                      <a
-                        key={row.id || `${row.agreement_title}-${row.milestone_title}`}
-                        href={row.payout_id ? `/app/payouts/history/${row.payout_id}` : "/app/payouts/history"}
-                        className="grid gap-3 bg-white p-3 text-sm hover:bg-slate-50 md:grid-cols-[1fr_auto_auto] md:items-center"
-                      >
-                        <div className="min-w-0">
-                          <div className="truncate font-bold text-slate-950">{row.agreement_title || "Payout record"}</div>
-                          <div className="mt-1 truncate text-slate-500">{row.milestone_title || row.subcontractor_display_name || "Subcontractor payout"}</div>
-                        </div>
-                        <div className="font-semibold text-slate-700">{money(row.payout_amount || row.amount)}</div>
-                        <div className="rounded-full border border-slate-200 px-2 py-1 text-xs font-bold text-slate-600">
-                          {String(row.payout_status || "pending").replaceAll("_", " ")}
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section data-testid="dashboard-payouts-export-center" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-950">Export Center</h2>
-                <p className="mt-1 text-sm text-slate-600">Download payout records for bookkeeping using the current date range.</p>
-              </div>
-              <button
-                type="button"
-                onClick={exportPayoutCsv}
-                disabled={payoutExporting}
-                className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                <Download aria-hidden="true" className="h-4 w-4" />
-                {payoutExporting ? "Exporting..." : "Download CSV"}
-              </button>
-            </div>
-          </section>
-        </div>
+        <PayoutsWorkspace
+          rows={payoutRows}
+          summary={payoutSummary || {}}
+          exporting={payoutExporting}
+          onExport={exportPayoutCsv}
+        />
       ) : null}
 
       {customizeOpen ? (
