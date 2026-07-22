@@ -919,6 +919,19 @@ export default function ContractorPublicPresencePage() {
     : finalReadinessRows.some((item) => !item.complete)
       ? { label: 'Almost Ready', detail: 'Complete the remaining recommended items, or publish and continue improving later.', tone: 'amber' }
       : { label: 'Ready to Publish', detail: 'Your website has no required blockers.', tone: 'emerald' };
+  const websitePublicUrl = websiteData.public_url || '';
+  const websitePublishedAt = websiteData.published_at || websiteData.last_published_at || websiteReadiness?.published_at || '';
+  const publishBlockerDestinations = websitePublishBlockers.map((blocker) => ({
+    blocker,
+    step: /seo|search|title|description/i.test(blocker) ? 'seo' : /brand/i.test(blocker) ? 'brand' : /portfolio|photo/i.test(blocker) ? 'gallery' : /review/i.test(blocker) ? 'reviews' : 'profile',
+  }));
+  const publishNextActions = [
+    { title: 'Add portfolio work', detail: 'Showcase more completed projects.', step: 'gallery' },
+    { title: 'Request customer reviews', detail: 'Build trust with real feedback.', step: 'reviews' },
+    { title: 'Improve search visibility', detail: 'Help more customers understand your services.', step: 'seo' },
+    { title: 'Keep business information current', detail: 'Review your public business details.', step: 'profile' },
+    { title: 'Update website content', detail: 'Refine your pages and homepage copy.', step: 'website' },
+  ];
   const buildAiContext = () => ({
     business_identity: {
       company_name: profile.business_name_public,
@@ -1775,6 +1788,17 @@ export default function ContractorPublicPresencePage() {
     } catch (err) {
       console.error(err);
       toast.error('Unable to copy URL.');
+    }
+  }
+
+  async function copyWebsiteUrl() {
+    if (!websitePublicUrl) return;
+    try {
+      await navigator.clipboard.writeText(websitePublicUrl);
+      toast.success('Website link copied.');
+    } catch (err) {
+      console.error(err);
+      toast.error('Unable to copy website link.');
     }
   }
 
@@ -2758,6 +2782,27 @@ export default function ContractorPublicPresencePage() {
           ) : null}
 
           {activeTab === 'publish' ? (
+            <section data-testid="online-presence-publish-tab" aria-live="polite">
+              <div><h2 className="text-2xl font-black text-slate-950">Publish</h2><p className="mt-1 text-sm text-slate-600">{websitePublished ? 'Your website is live and ready to share.' : 'Make your website and public profile available to customers.'}</p></div>
+              {!websitePublished ? <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]" data-testid="publish-draft-state">
+                <div className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-start gap-4"><span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-xl ${canPublishWebsite ? 'bg-blue-50 text-blue-700' : 'bg-rose-50 text-rose-700'}`}>↗</span><div><h3 className="text-2xl font-black text-slate-950">{canPublishWebsite ? 'Ready to Go Live' : 'Complete Required Items'}</h3><p className="mt-1 text-sm leading-6 text-slate-600">{canPublishWebsite ? 'Publish your website and make your public profile available to customers.' : 'Finish the required items below before publishing.'}</p></div></div>
+                  {publishBlockerDestinations.length ? <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4" data-testid="publish-blockers"><div className="text-sm font-black text-rose-900">{publishBlockerDestinations.length} required item{publishBlockerDestinations.length === 1 ? '' : 's'} remain</div><div className="mt-2 divide-y divide-rose-200">{publishBlockerDestinations.map((item) => <button key={item.blocker} type="button" onClick={() => goToStep(item.step)} className="flex w-full items-center gap-2 py-2 text-left text-xs font-bold text-rose-800"><span>!</span><span className="flex-1">{item.blocker}</span><span aria-hidden="true">›</span></button>)}</div></div> : null}
+                  <div className="mt-5 rounded-xl border border-slate-200 p-4" data-testid="publication-summary"><h4 className="text-sm font-black text-slate-950">Publication Summary</h4><dl className="mt-3 grid grid-cols-[120px_minmax(0,1fr)] gap-x-3 gap-y-3 text-sm"><dt className="text-slate-500">Website Status</dt><dd className="font-black capitalize text-slate-900">{websiteData.status || 'draft'}</dd><dt className="text-slate-500">Public URL</dt><dd className="min-w-0 break-all font-bold text-slate-700">{websitePublicUrl || 'Available after setup is complete'}</dd><dt className="text-slate-500">Public Profile</dt><dd className="font-black text-slate-900">{profile.is_public ? 'Ready' : 'Not Public'}</dd></dl></div>
+                  {websitePublishMessage ? <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900" role="alert">{websitePublishMessage}</div> : null}
+                  <div className="mt-5 flex flex-col gap-3 sm:flex-row"><a href={websiteFullPreviewUrl('desktop')} target="_blank" rel="noreferrer" className="flex-1 rounded-lg border border-slate-200 px-4 py-3 text-center text-sm font-black text-blue-700" data-testid="publish-preview-website">Preview Website</a><button type="button" disabled={!canPublishWebsite || websiteBusy} onClick={publishWebsite} data-testid="website-builder-publish-button" className="flex-1 rounded-lg bg-blue-600 px-5 py-3 text-sm font-black text-white hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600">{websiteBusy ? 'Publishing...' : 'Publish Website'}</button></div><p className="mt-3 text-center text-xs text-slate-500">{canPublishWebsite ? 'You can continue improving your website after publishing.' : 'Complete the required items above before publishing.'}</p>
+                </div>
+                <div className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="publish-outcomes"><h3 className="text-base font-black text-slate-950">What Happens When You Publish</h3><ul className="mt-4 space-y-3 text-sm leading-5 text-slate-600">{['Your website becomes available at its public URL', 'Customers can open your public profile', 'Approved portfolio work may appear publicly', 'Approved reviews may appear when enabled', 'You can continue updating content later'].map((item) => <li key={item} className="flex gap-2"><span className="font-black text-emerald-600">✓</span>{item}</li>)}</ul></div><div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="publish-assistant-help"><h3 className="text-base font-black text-slate-950">Need Help Before Publishing?</h3><p className="mt-2 text-sm leading-6 text-slate-600">Ask Project Assistant about your website, content, portfolio, reviews, or sharing.</p><button type="button" onClick={() => requestAiSuggestion('final_website_audit', 'publish-website-help', '')} className="mt-4 rounded-lg border border-blue-200 px-4 py-2 text-sm font-black text-blue-700">Open Project Assistant</button><AiSuggestionCard suggestion={aiSuggestions['publish-website-help']} onAccept={() => dismissAiSuggestion('publish-website-help')} onRegenerate={() => requestAiSuggestion('final_website_audit', 'publish-website-help', '')} onDismiss={() => dismissAiSuggestion('publish-website-help')} /></div></div>
+              </div> : <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)]" data-testid="publish-live-state">
+                <div className="space-y-4"><div className="rounded-2xl border border-emerald-200 bg-white p-5"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xl font-black text-emerald-700">✓</span><div><h3 className="text-2xl font-black text-emerald-900">Your Website Is Live</h3><p className="mt-1 text-sm leading-6 text-slate-600">Customers can now visit and share your public website.</p></div></div><div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4" data-testid="public-website-section"><h4 className="text-sm font-black text-slate-950">Your Public Website</h4><div className="mt-2 break-all text-base font-black text-blue-700">{websitePublicUrl}</div><div className="mt-4 flex flex-col gap-2 sm:flex-row"><button type="button" onClick={copyWebsiteUrl} className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-black text-blue-700">Copy Link</button><a href={websitePublicUrl} target="_blank" rel="noreferrer" className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-black text-blue-700">Open Website</a>{qrData?.qr_svg ? <a href={qrData.qr_svg} download="myhomebro-profile-qr.svg" className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-center text-sm font-black text-blue-700">Download Profile QR</a> : null}</div></div></div>
+                  <div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="publish-website-status"><h3 className="text-base font-black text-slate-950">Website Status</h3><dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2 lg:grid-cols-4"><div><dt className="text-slate-500">Website Status</dt><dd className="mt-1 font-black text-emerald-700">Live</dd></div>{websitePublishedAt ? <div><dt className="text-slate-500">Published Date</dt><dd className="mt-1 font-black text-slate-900">{new Date(websitePublishedAt).toLocaleDateString()}</dd></div> : null}<div><dt className="text-slate-500">Public Profile</dt><dd className="mt-1 font-black text-slate-900">{profile.is_public ? 'Visible' : 'Hidden'}</dd></div><div><dt className="text-slate-500">Reviews</dt><dd className="mt-1 font-black text-slate-900">{profile.show_reviews !== false && publicReviewCount ? `Visible (${publicReviewCount})` : 'Hidden'}</dd></div><div><dt className="text-slate-500">Portfolio Items</dt><dd className="mt-1 font-black text-slate-900">{publicPortfolioCount}</dd></div></dl><p className="mt-4 text-xs text-slate-500">You can continue improving your website after publishing.</p></div>
+                </div>
+                <div className="space-y-4"><div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="publish-share-actions"><h3 className="text-base font-black text-slate-950">Share Your Website</h3><div className="mt-4 grid grid-cols-2 gap-2"><button type="button" onClick={copyWebsiteUrl} className="rounded-xl border border-slate-200 p-3 text-xs font-black text-blue-700">Copy Website Link</button>{qrData?.qr_svg ? <a href={qrData.qr_svg} download="myhomebro-profile-qr.svg" className="rounded-xl border border-slate-200 p-3 text-center text-xs font-black text-blue-700">Download Profile QR</a> : null}{profile.public_url ? <a href={profile.public_url} target="_blank" rel="noreferrer" className="rounded-xl border border-slate-200 p-3 text-center text-xs font-black text-blue-700">Open Public Profile</a> : null}</div></div><div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="publish-next-actions"><h3 className="text-base font-black text-slate-950">What to Do Next</h3><div className="mt-3 divide-y divide-slate-200">{publishNextActions.slice(0, 4).map((item) => <button key={item.title} type="button" onClick={() => goToStep(item.step)} className="flex w-full items-center gap-3 py-3 text-left"><span className="min-w-0 flex-1"><span className="block text-sm font-black text-slate-900">{item.title}</span><span className="mt-0.5 block text-xs text-slate-500">{item.detail}</span></span><span aria-hidden="true">›</span></button>)}</div></div><div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="publish-assistant-help"><h3 className="text-base font-black text-slate-950">Need Help Promoting Your Website?</h3><p className="mt-2 text-sm leading-6 text-slate-600">Ask Project Assistant about your website, content, portfolio, reviews, or sharing.</p><button type="button" onClick={() => requestAiSuggestion('final_website_audit', 'publish-website-help', '')} className="mt-4 rounded-lg border border-blue-200 px-4 py-2 text-sm font-black text-blue-700">Open Project Assistant</button></div></div>
+              </div>}
+              <div className="mt-5 flex flex-col gap-3 border-t border-slate-200 pt-4 sm:flex-row sm:items-center sm:justify-between">{websitePublished ? <button type="button" onClick={() => goToStep('overview')} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-black text-slate-700">Manage Marketing</button> : <button type="button" onClick={() => goToStep('final')} className="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-black text-slate-700">Back</button>}{websitePublished && websitePublicUrl ? <a href={websitePublicUrl} target="_blank" rel="noreferrer" className="rounded-lg bg-blue-600 px-5 py-2.5 text-center text-sm font-black text-white">Open Website</a> : null}</div>
+            </section>
+          ) : null}
+
+          {activeTab === 'publish' && false ? (
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="online-presence-publish-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                 {websiteData.status === 'published' ? <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-4xl font-black text-white">✓</div> : <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-3xl font-black text-blue-700">7</div>}
@@ -2782,7 +2827,7 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
-          <div className={`${activeTab === 'decision' ? 'mt-3 pt-3' : 'mt-5 pt-4'} flex items-center justify-between border-t border-slate-200`}>
+          {activeTab !== 'publish' ? <div className={`${activeTab === 'decision' ? 'mt-3 pt-3' : 'mt-5 pt-4'} flex items-center justify-between border-t border-slate-200`}>
             <button type="button" onClick={goToPreviousStep} disabled={activeStepIndex === 0} className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-40">Back</button>
             {activeTab === 'profile' ? (
               <button type="button" onClick={saveAndContinueProfile} disabled={profileBusy} data-testid="public-presence-save-profile" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-60">{profileBusy ? 'Saving...' : 'Save & Continue'}</button>
@@ -2803,9 +2848,9 @@ export default function ContractorPublicPresencePage() {
             ) : (
               <button type="button" onClick={goToNextStep} data-testid={activeTab === 'decision' ? 'website-decision-continue' : undefined} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-bold text-white">Continue</button>
             )}
-          </div>
+          </div> : null}
 
-          {!['decision', 'profile', 'brand', 'gallery', 'reviews', 'website', 'seo', 'final'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
+          {!['decision', 'profile', 'brand', 'gallery', 'reviews', 'website', 'seo', 'final', 'publish'].includes(activeTab) ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900" data-testid="online-presence-leads-handoff">
             Leads from your profile, QR code, and website appear in Opportunities.
             <a href="/app/opportunities?source=website" className="ml-2 font-bold underline">View website leads in Opportunities</a>
           </div> : null}

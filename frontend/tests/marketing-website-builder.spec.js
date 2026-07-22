@@ -189,7 +189,7 @@ function makeWebsitePayload({ pro = false, published = false, developmentOverrid
   };
 }
 
-async function mockMarketingPage(page, { pro = false, developmentOverride = false, statusOverride = '', reviews = [] } = {}) {
+async function mockMarketingPage(page, { pro = false, developmentOverride = false, statusOverride = '', reviews = [], publishFails = false, publishDelay = 0 } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -334,6 +334,11 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
   });
 
   await page.route(/\/api\/projects\/contractor\/website\/publish\/?$/, async (route) => {
+    if (publishDelay) await new Promise((resolve) => setTimeout(resolve, publishDelay));
+    if (publishFails) {
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ detail: 'Website could not be published.' }) });
+      return;
+    }
     if (!pro && !developmentOverride) {
       await route.fulfill({
         status: 400,
@@ -344,7 +349,7 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
     }
     websitePayload = {
       ...websitePayload,
-      website: { ...websitePayload.website, status: 'published' },
+      website: { ...websitePayload.website, status: 'published', published_at: '2026-06-24T12:00:00Z' },
       draft: { ...websitePayload.draft, status: 'published' },
     };
     publicPayload = {
@@ -583,7 +588,7 @@ test('Marketing Content step composes supported pages, styles, copy, and preview
 
   await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('online-presence-setup-nav').getByRole('button', { name: /Publish/ }).click();
-  await expect(page.getByTestId('online-presence-publish-tab')).toContainText('Ready to Publish');
+  await expect(page.getByTestId('online-presence-publish-tab')).toContainText('Ready to Go Live');
   await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
 });
 
@@ -1077,6 +1082,81 @@ test('capture Marketing Final Review reference implementation', async ({ page })
     });
   });
   await page.screenshot({ path: path.join(screenshotDir, 'marketing-final-review-reference-mobile.png'), fullPage: true });
+});
+
+test('Publish draft state has one guarded launch action and honest summary', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true, publishDelay: 250 });
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  const publish = page.getByTestId('online-presence-publish-tab');
+  await expect(publish).toContainText('Ready to Go Live');
+  await expect(publish).not.toContainText('Your Website Is Live');
+  await expect(publish).not.toContainText('Step 7');
+  await expect(page.getByTestId('online-presence-leads-handoff')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Publish Website' })).toHaveCount(1);
+  await expect(page.getByText('Share Your Profile')).toHaveCount(0);
+  await expect(page.getByRole('link', { name: /Open Website|View Your Website/ })).toHaveCount(0);
+  await expect(page.getByTestId('publish-preview-website')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=desktop$/);
+  await expect(page.getByTestId('publication-summary')).toContainText('/websites/bright-build-co');
+  await page.getByTestId('website-builder-publish-button').click();
+  await expect(page.getByTestId('website-builder-publish-button')).toBeDisabled();
+  await expect(page.getByTestId('publish-live-state')).toBeVisible();
+  await expect(page.getByTestId('publish-draft-state')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Publish Website' })).toHaveCount(0);
+});
+
+test('Publish remains in draft and reports API failures', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true, publishFails: true });
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('website-builder-publish-button').click();
+  await expect(page.getByRole('alert')).toContainText('Website could not be published.');
+  await expect(page.getByTestId('publish-draft-state')).toBeVisible();
+  await expect(page.getByTestId('publish-live-state')).toHaveCount(0);
+  await expect(page.getByTestId('website-builder-publish-button')).toBeEnabled();
+});
+
+test('Publish blockers disable the only publish action', async ({ page }) => {
+  await mockMarketingPage(page, { pro: false });
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('publish-draft-state')).toContainText('Complete Required Items');
+  await expect(page.getByTestId('publish-blockers')).toContainText('Publishing is part of the Pro Website Builder.');
+  await expect(page.getByTestId('website-builder-publish-button')).toBeDisabled();
+});
+
+test('Publish live state uses real public status and supported actions', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  const live = page.getByTestId('publish-live-state');
+  await expect(live).toContainText('Your Website Is Live');
+  await expect(page.getByTestId('publish-draft-state')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Publish Website' })).toHaveCount(0);
+  await expect(page.getByTestId('public-website-section')).toContainText('/websites/bright-build-co');
+  await expect(page.getByTestId('public-website-section').getByRole('link', { name: 'Open Website' })).toHaveAttribute('href', '/websites/bright-build-co');
+  await expect(page.getByTestId('publish-share-actions')).toContainText('Download Profile QR');
+  await expect(page.getByTestId('publish-website-status')).toContainText('Portfolio Items');
+  await expect(page.getByTestId('publish-website-status')).not.toContainText('Published Date');
+  await page.getByTestId('publish-next-actions').getByRole('button', { name: /Improve search visibility/ }).click();
+  await expect(page.getByTestId('online-presence-seo-tab')).toBeVisible();
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'Manage Marketing' }).click();
+  await expect(page.getByTestId('marketing-overview-tab')).toBeVisible();
+});
+
+test('capture Marketing Publish draft and live references', async ({ page }) => {
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await mockMarketingPage(page, { pro: true });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('publish-draft-state')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-publish-draft-reference-implementation.png'), fullPage: true });
+  await page.getByTestId('website-builder-publish-button').click();
+  await expect(page.getByTestId('publish-live-state')).toBeVisible();
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-publish-live-reference-implementation.png'), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.evaluate(() => { window.scrollTo(0, 0); document.querySelectorAll('*').forEach((element) => { if (element.scrollTop) element.scrollTop = 0; }); });
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-publish-reference-mobile.png'), fullPage: true });
 });
 
 test('Pro contractor can edit Design & Content, open full preview, and publish a snapshot', async ({ page }) => {
