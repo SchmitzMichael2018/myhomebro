@@ -1325,7 +1325,8 @@ export default function StartWithAIAssistant({
   )
     .trim()
     .toLowerCase();
-  const workspaceRouteSignature = `${workspaceMode}:${normalizedContext?.current_route || ""}`;
+  const workspaceRouteSignature = `${workspaceMode}:${normalizedContext?.active_step || ""}:${normalizedContext?.context_revision || normalizedContext?.current_route || ""}`;
+  const requestRevisionRef = useRef(0);
   const isContextualMode = mode === "dock" || mode === "panel";
   const isFieldAwareDescriptionMode = useMemo(
     () => isTemplateDescriptionMode(normalizedContext),
@@ -1378,6 +1379,7 @@ export default function StartWithAIAssistant({
   }, [contextSignature, normalizedContext]);
 
   useEffect(() => {
+    requestRevisionRef.current += 1;
     setPrompt("");
     setHistory([]);
     setShowStructuredPayload(false);
@@ -1556,6 +1558,8 @@ export default function StartWithAIAssistant({
   }
 
   async function requestOrchestratedPlan(promptText, overrides = {}) {
+    const requestId = ++requestRevisionRef.current;
+    const requestContextRevision = workspaceRouteSignature;
     const requestPayload = {
       input: promptText,
       previousPlan: plan,
@@ -1569,14 +1573,16 @@ export default function StartWithAIAssistant({
     try {
       setIsPlanning(true);
       const { data } = await api.post("/projects/assistant/orchestrate/", requestPayload);
+      if (requestId !== requestRevisionRef.current || requestContextRevision !== workspaceRouteSignature) return null;
       if (!data || data.fallback_to_planner) {
         return fallbackPlan;
       }
       return normalizeStructuredPlanShape(data, fallbackPlan);
     } catch {
+      if (requestId !== requestRevisionRef.current || requestContextRevision !== workspaceRouteSignature) return null;
       return fallbackPlan;
     } finally {
-      setIsPlanning(false);
+      if (requestId === requestRevisionRef.current) setIsPlanning(false);
     }
   }
 
@@ -1671,7 +1677,7 @@ export default function StartWithAIAssistant({
       }
     }
     const nextPlan = await requestOrchestratedPlan(cleanPrompt);
-    applyPlan(nextPlan, cleanPrompt);
+    if (nextPlan) applyPlan(nextPlan, cleanPrompt);
   }
 
   async function useQuickAction(action) {
@@ -1690,7 +1696,7 @@ export default function StartWithAIAssistant({
       if (!quickPrompt) return;
       setPrompt(quickPrompt);
       const nextPlan = await requestOrchestratedPlan(quickPrompt, { previousPlan: null });
-      applyPlan(nextPlan, quickPrompt, { keepPrompt: true });
+      if (nextPlan) applyPlan(nextPlan, quickPrompt, { keepPrompt: true });
       setTimeout(() => inputRef.current?.focus(), 0);
       return;
     }
@@ -1701,7 +1707,7 @@ export default function StartWithAIAssistant({
       preferredIntent: intent,
       previousPlan: null,
     });
-    setPlan(nextPlan);
+    if (nextPlan) setPlan(nextPlan);
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
@@ -1771,7 +1777,7 @@ export default function StartWithAIAssistant({
         setVoiceStatus("transcribing");
         setPrompt(transcript);
         const nextPlan = await requestOrchestratedPlan(transcript);
-        applyPlan(nextPlan, transcript, { keepPrompt: true });
+        if (nextPlan) applyPlan(nextPlan, transcript, { keepPrompt: true });
       };
       recognition.onend = () => {
         setVoiceStatus((current) =>

@@ -182,6 +182,29 @@ function buildCoachingState({
   plan = {},
   isPlanning = false,
 } = {}) {
+  const workspaceMode = safeText(context?.workspace_mode || context?.workspace || context?.page).toLowerCase();
+  if (workspaceMode === "marketing") {
+    const blockers = Array.isArray(context?.readiness?.required_blockers)
+      ? context.readiness.required_blockers.filter(Boolean)
+      : [];
+    const stepLabel = safeText(context?.active_step_label) || "Marketing";
+    const nextStep = safeText(context?.marketing_goal?.next_recommended_step);
+    return blockers.length
+      ? {
+          tone: "attention",
+          title: `${blockers.length} launch ${blockers.length === 1 ? "item" : "items"} to resolve`,
+          message: blockers.slice(0, 2).join(" "),
+          nextStepMessage: `Review the ${stepLabel} guidance, then resolve the required launch items.`,
+        }
+      : {
+          tone: "positive",
+          title: `${stepLabel} context is ready`,
+          message: "Your current Marketing data is loaded for focused guidance.",
+          nextStepMessage: nextStep
+            ? `Review this step, then continue to ${nextStep}.`
+            : "Review this step and choose the next Marketing action.",
+        };
+  }
   const agreement = context?.agreement || {};
   const dLocal = context?.dLocal || {};
   const milestones = Array.isArray(context?.milestones) ? context.milestones : [];

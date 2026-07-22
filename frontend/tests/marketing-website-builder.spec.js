@@ -194,6 +194,24 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
     window.localStorage.setItem('access', 'playwright-access-token');
   });
 
+  await page.route(/\/api\/projects\/assistant\/orchestrate\/?$/, async (route) => {
+    const payload = route.request().postDataJSON();
+    const context = payload.context || {};
+    const target = context.active_step || 'overview';
+    const routeTarget = context.navigation_targets?.[target] || '/app/marketing?tab=overview';
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        intent: 'navigate_app', intent_label: 'Marketing Guidance', summary: `You are working on ${context.active_step_label || 'Overview'}.`,
+        confidence: 'high', confidence_reasoning: 'Uses current Marketing context.', suggestions: ['Review this Marketing step.'],
+        navigation_target: routeTarget, next_action: { type: 'navigate', label: `Go to ${context.active_step_label || 'Overview'}`, action_key: 'navigate_marketing_step' },
+        available_actions: [{ key: 'navigate_marketing_step', label: `Go to ${context.active_step_label || 'Overview'}`, navigation_target: routeTarget }],
+        fallback_to_planner: false, prohibited_actions: context.prohibited_actions || [],
+      }),
+    });
+  });
+
   let websitePayload = makeWebsitePayload({ pro, developmentOverride, statusOverride });
   let publicPayload = null;
 
@@ -1029,7 +1047,83 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await expect(page.getByTestId('final-open-full-preview')).toHaveAttribute('href', /\/app\/marketing\/preview\?mode=mobile$/);
   await expect(page.getByTestId('final-assistant-help')).toContainText('Need Help?');
   await page.getByTestId('final-assistant-help').getByRole('button', { name: 'Open Project Assistant' }).click();
-  await expect(page.getByTestId('ai-suggestion-final-website-audit')).toContainText('ready to publish');
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Project Assistant for Final Review');
+  await expect(page.getByTestId('assistant-desktop-dock')).not.toContainText('agreement');
+});
+
+test('Marketing registers isolated step context and synchronizes browser history', async ({ page }) => {
+  const assistantRequests = [];
+  await mockMarketingPage(page, { pro: true });
+  page.on('request', (request) => {
+    if (/\/api\/projects\/assistant\/orchestrate\/?$/.test(request.url())) assistantRequests.push(request.postDataJSON());
+  });
+  await page.goto('/app/marketing?tab=overview', { waitUntil: 'domcontentloaded' });
+  const nav = page.getByTestId('online-presence-setup-nav');
+  await nav.getByRole('button', { name: 'Brand Kit' }).click();
+  await expect(page).toHaveURL(/\/app\/marketing\?tab=brand$/);
+  await page.getByTestId('assistant-dock-open-button').click();
+  const dock = page.getByTestId('assistant-desktop-dock');
+  await expect(dock).toContainText('Project Assistant for Brand Kit');
+  await page.getByTestId('start-with-ai-input-dock').fill('What should I do next?');
+  await page.getByTestId('start-with-ai-submit-dock').click();
+  await expect.poll(() => assistantRequests.length).toBe(1);
+  expect(assistantRequests[0].context).toMatchObject({ workspace: 'marketing', workspace_mode: 'marketing', active_step: 'brand' });
+  expect(assistantRequests[0].context).not.toHaveProperty('agreement_id');
+  expect(assistantRequests[0].context).not.toHaveProperty('lead_id');
+  await page.evaluate(() => {
+    window.history.pushState({}, '', '/app/marketing?tab=seo');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await expect(page).toHaveURL(/\/app\/marketing\?tab=seo$/);
+  await expect(dock).toContainText('Project Assistant for SEO & Visibility');
+  await expect(page.getByTestId('start-with-ai-input-dock')).toHaveValue('');
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/marketing\?tab=brand$/);
+  await expect(page.getByTestId('marketing-brand-kit-tab')).toBeVisible();
+  await expect(dock).toContainText('Project Assistant for Brand Kit');
+});
+
+test('Marketing mobile launcher uses contextual assistant and separates Quick Capture', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').click();
+  const sheet = page.getByTestId('assistant-mobile-sheet');
+  await expect(sheet).toContainText('Marketing · Publish');
+  await expect(sheet.getByTestId('start-with-ai-assistant')).toBeVisible();
+  await expect(sheet.getByTestId('project-assistant-quick-capture')).toHaveCount(0);
+  await sheet.getByRole('button', { name: 'Open Quick Capture' }).click();
+  await expect(sheet.getByTestId('project-assistant-quick-capture')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+test('capture canonical Marketing Project Assistant evidence', async ({ page }) => {
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing-assistant');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await mockMarketingPage(page, { pro: true, statusOverride: 'published' });
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  for (const [tab, name, title] of [
+    ['overview', 'marketing-assistant-overview-desktop.png', 'Overview'],
+    ['brand', 'marketing-assistant-brand-kit-desktop.png', 'Brand Kit'],
+    ['final', 'marketing-assistant-final-review-desktop.png', 'Final Review'],
+    ['publish', 'marketing-assistant-publish-live-desktop.png', 'Publish'],
+  ]) {
+    await page.goto(`/app/marketing?tab=${tab}`, { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('assistant-dock-open-button').click();
+    await expect(page.getByTestId('assistant-desktop-dock')).toContainText(`Project Assistant for ${title}`);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: path.join(screenshotDir, name), fullPage: false });
+    await page.getByTestId('assistant-desktop-dock-close').click();
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/marketing?tab=brand', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').click();
+  await expect(page.getByTestId('assistant-mobile-sheet')).toContainText('Marketing · Brand Kit');
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.screenshot({ path: path.join(screenshotDir, 'marketing-assistant-mobile.png'), fullPage: false });
 });
 
 test('Final Review is a deterministic launch checkpoint with one publish action', async ({ page }) => {

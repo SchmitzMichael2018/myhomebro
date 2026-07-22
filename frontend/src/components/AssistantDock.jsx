@@ -430,6 +430,23 @@ function buildNavigationAssistContext(workspaceMode = "general") {
   };
 }
 
+const UNRELATED_ENTITY_CONTEXT_KEYS = [
+  "agreement_id", "agreement_summary", "lead_id", "lead_summary", "template_id", "template_summary",
+  "milestone_id", "milestone_summary", "proposal_id", "proposal_summary", "dispute_id", "dispute_summary",
+  "subcontractor_invitation_id", "invitation_id",
+];
+
+function sanitizeContextForWorkspace(context = {}, workspaceMode = "general") {
+  const clean = context && typeof context === "object" ? { ...context } : {};
+  if (workspaceMode === "marketing") {
+    UNRELATED_ENTITY_CONTEXT_KEYS.forEach((key) => delete clean[key]);
+    clean.workspace = "marketing";
+    clean.workspace_mode = "marketing";
+    clean.page = "marketing";
+  }
+  return clean;
+}
+
 export function useAssistantDock() {
   return useContext(AssistantDockContext);
 }
@@ -737,11 +754,17 @@ function DesktopAssistantDock({
   );
 }
 
-function MobileAssistantSheet({ open, onClose }) {
+function MobileAssistantSheet({ open, onClose, context, onAction }) {
+  const [showQuickCapture, setShowQuickCapture] = useState(false);
+  const isMarketing = String(context?.workspace_mode || context?.workspace || context?.page || "") === "marketing";
+  useEffect(() => { setShowQuickCapture(false); }, [context?.context_revision, isMarketing]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 bg-white xl:hidden" data-testid="assistant-mobile-sheet">
-      <ProjectAssistantQuickCapture compact onClose={onClose} />
+    <div className="fixed inset-0 z-50 flex flex-col bg-white xl:hidden" data-testid="assistant-mobile-sheet">
+      {isMarketing && !showQuickCapture ? <>
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><div className="text-xs font-black uppercase tracking-wider text-slate-500">Project Assistant</div><div className="text-sm font-black text-slate-900">Marketing · {context?.active_step_label || "Overview"}</div></div><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button></div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4"><StartWithAIAssistant key={`mobile:${context?.context_revision || context?.current_route || "marketing"}`} mode="panel" context={context} onAction={onAction} onClose={onClose} /><button type="button" onClick={() => setShowQuickCapture(true)} className="mt-4 w-full rounded-lg border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700">Open Quick Capture</button></div>
+      </> : <ProjectAssistantQuickCapture compact onClose={isMarketing ? () => setShowQuickCapture(false) : onClose} />}
     </div>
   );
 }
@@ -804,13 +827,13 @@ export function AssistantDockProvider({ children }) {
     (options = {}) => {
       setOpen(true);
       setMinimized(false);
-      const optionContext = options.context || routeContext;
+      const optionContext = sanitizeContextForWorkspace(options.context || routeContext, routeContext.workspace_mode);
       const pageContextWorkspace = String(
         pageAssistantContext.workspace_mode || pageAssistantContext.page || ""
       );
       const scopedPageAssistantContext =
         pageContextWorkspace === routeContext.workspace_mode ? pageAssistantContext : {};
-      const nextContext = {
+      const nextContext = sanitizeContextForWorkspace({
         ...routeContext,
         ...scopedPageAssistantContext,
         ...optionContext,
@@ -824,7 +847,7 @@ export function AssistantDockProvider({ children }) {
           optionContext.workspace_mode ||
           scopedPageAssistantContext.page ||
           routeContext.page,
-      };
+      }, routeContext.workspace_mode);
       setDockTitle(options.title || copilotLabelForRoute(nextContext.current_route));
       setDockContext(nextContext);
       setDockOnAction(() =>
@@ -839,7 +862,7 @@ export function AssistantDockProvider({ children }) {
   }, []);
 
   const updateAssistantContext = useCallback((context = {}) => {
-    const cleanContext = context && typeof context === "object" ? context : {};
+    const cleanContext = sanitizeContextForWorkspace(context, routeContext.workspace_mode);
     const workspacePage =
       cleanContext.workspace_mode ||
       cleanContext.page ||
@@ -852,7 +875,7 @@ export function AssistantDockProvider({ children }) {
       ...(cleanContext.aiContext || {}),
       page: workspacePage,
     });
-    const nextContext = {
+    const nextContext = sanitizeContextForWorkspace({
       ...routeContext,
       ...cleanContext,
       workspace_mode: workspacePage,
@@ -861,7 +884,10 @@ export function AssistantDockProvider({ children }) {
         cleanContext.workspace_mode ||
         routeContext.page,
       aiContext: mergedAiContext,
-    };
+    }, workspacePage);
+    if (workspacePage === "marketing" && nextContext.active_step_label) {
+      setDockTitle(`Project Assistant for ${nextContext.active_step_label}`);
+    }
     setPageAssistantContext(nextContext);
     setDockContext((prev) => {
       if (!open || !prev) return prev;
@@ -917,7 +943,7 @@ export function AssistantDockProvider({ children }) {
         onClose={closeAssistant}
         onMinimize={minimizeAssistant}
       />
-      <MobileAssistantSheet open={open} onClose={closeAssistant} />
+      <MobileAssistantSheet open={open} onClose={closeAssistant} context={dockContext || routeContext} onAction={dockOnAction ?? pageAssistantOnAction} />
     </AssistantDockContext.Provider>
   );
 }

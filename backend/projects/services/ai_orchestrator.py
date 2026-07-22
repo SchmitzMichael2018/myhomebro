@@ -25,6 +25,29 @@ from projects.services.template_discovery import discover_templates
 ORCHESTRATION_VERSION = "2026-03-27-orchestrator-v1"
 LOW_CONFIDENCE_THRESHOLD = "low"
 
+MARKETING_NAVIGATION_TARGETS = {
+    "overview": "/app/marketing?tab=overview",
+    "decision": "/app/marketing?tab=decision",
+    "profile": "/app/marketing?tab=profile",
+    "brand": "/app/marketing?tab=brand",
+    "gallery": "/app/marketing?tab=gallery",
+    "reviews": "/app/marketing?tab=reviews",
+    "website": "/app/marketing?tab=website",
+    "seo": "/app/marketing?tab=seo",
+    "final": "/app/marketing?tab=final",
+    "publish": "/app/marketing?tab=publish",
+}
+MARKETING_STEP_LABELS = {
+    "overview": "Overview", "decision": "Website Decision", "profile": "Business Information",
+    "brand": "Brand Kit", "gallery": "Portfolio", "reviews": "Reviews", "website": "Content",
+    "seo": "SEO & Visibility", "final": "Final Review", "publish": "Publish",
+}
+MARKETING_PROHIBITED_ACTIONS = {
+    "publish_website", "save_fields", "change_visibility", "send_review_request", "send_customer_message",
+    "create_agreement", "create_proposal", "create_milestone", "create_dispute", "modify_payment_state",
+    "apply_without_review", "navigate_unrelated_workspace",
+}
+
 
 @dataclass
 class OrchestratorRuntimeContext:
@@ -83,7 +106,25 @@ def _normalize_orchestrator_context(context: dict[str, Any]) -> dict[str, Any]:
     lead_summary = _safe_dict(context.get("lead_summary"))
     template_summary = _safe_dict(context.get("template_summary"))
     milestone_summary = _safe_dict(context.get("milestone_summary"))
-    return {
+    workspace = _safe_text(context.get("workspace") or context.get("workspace_mode") or context.get("page")).lower()
+    normalized = {
+        "schema_version": _safe_int(context.get("schema_version"), 1),
+        "workspace": workspace,
+        "workspace_mode": workspace,
+        "active_step": _safe_text(context.get("active_step")).lower(),
+        "active_step_label": _safe_text(context.get("active_step_label")),
+        "context_revision": _safe_text(context.get("context_revision")),
+        "business": _safe_dict(context.get("business")),
+        "website": _safe_dict(context.get("website")),
+        "profile": _safe_dict(context.get("profile")),
+        "portfolio": _safe_dict(context.get("portfolio")),
+        "reviews": _safe_dict(context.get("reviews")),
+        "current_step_data": _safe_dict(context.get("current_step_data")),
+        "readiness": _safe_dict(context.get("readiness")),
+        "marketing_goal": _safe_dict(context.get("marketing_goal")),
+        "supported_actions": [_safe_text(row) for row in _safe_list(context.get("supported_actions")) if _safe_text(row)],
+        "prohibited_actions": [_safe_text(row) for row in _safe_list(context.get("prohibited_actions")) if _safe_text(row)],
+        "navigation_targets": _safe_dict(context.get("navigation_targets")),
         "current_route": _safe_text(context.get("current_route")),
         "agreement_id": _safe_int(context.get("agreement_id")) or None,
         "lead_id": _safe_int(context.get("lead_id")) or None,
@@ -118,6 +159,20 @@ def _normalize_orchestrator_context(context: dict[str, Any]) -> dict[str, Any]:
         "template_query": _safe_text(context.get("template_query")),
         "language": _safe_text(context.get("language") or context.get("locale")),
     }
+    if workspace == "marketing":
+        for key in (
+            "agreement_id", "lead_id", "template_id", "milestone_id", "subcontractor_invitation_id",
+            "agreement_summary", "lead_summary", "template_summary", "milestone_summary",
+        ):
+            normalized[key] = None if key.endswith("_id") else {}
+        normalized["active_step"] = normalized["active_step"] if normalized["active_step"] in MARKETING_NAVIGATION_TARGETS else "overview"
+        normalized["active_step_label"] = MARKETING_STEP_LABELS[normalized["active_step"]]
+        normalized["navigation_targets"] = {
+            key: route for key, route in normalized["navigation_targets"].items()
+            if key in MARKETING_NAVIGATION_TARGETS and route == MARKETING_NAVIGATION_TARGETS[key]
+        } or dict(MARKETING_NAVIGATION_TARGETS)
+        normalized["prohibited_actions"] = sorted(set(normalized["prohibited_actions"]) | MARKETING_PROHIBITED_ACTIONS)
+    return normalized
 
 
 def _serialize_missing_field(key: str, prompt: str, *, blocking: bool = True) -> dict[str, Any]:
@@ -1837,10 +1892,94 @@ def _compose_orchestration_response(
     }
 
 
+def _marketing_target_for_text(text: str, default: str = "overview") -> str:
+    value = _safe_text(text).lower()
+    if any(token in value for token in ("brand", "logo", "color", "tagline")): return "brand"
+    if any(token in value for token in ("portfolio", "project photo", "gallery")): return "gallery"
+    if any(token in value for token in ("review", "rating")): return "reviews"
+    if any(token in value for token in ("seo", "search", "visibility")): return "seo"
+    if any(token in value for token in ("headline", "content", "homepage", "service description")): return "website"
+    if any(token in value for token in ("business", "trade", "service area", "profile field")): return "profile"
+    if any(token in value for token in ("existing website", "website choice", "website decision")): return "decision"
+    if any(token in value for token in ("final review", "ready to publish", "blocker")): return "final"
+    if any(token in value for token in ("publish", "live", "share")): return "publish"
+    return default if default in MARKETING_NAVIGATION_TARGETS else "overview"
+
+
+def _marketing_assistant_specialist(context: dict[str, Any], prompt: str) -> dict[str, Any]:
+    active_step = context.get("active_step") or "overview"
+    active_label = MARKETING_STEP_LABELS.get(active_step, "Overview")
+    readiness = _safe_dict(context.get("readiness"))
+    blockers = [_safe_text(row.get("label") or row.get("detail") or row) if isinstance(row, dict) else _safe_text(row) for row in _safe_list(readiness.get("required_blockers"))]
+    blockers = [row for row in blockers if row]
+    recommendations = _safe_list(readiness.get("recommendations"))
+    first_recommendation = recommendations[0] if recommendations else None
+    recommendation_text = (
+        _safe_text(first_recommendation.get("title") or first_recommendation.get("label") or first_recommendation.get("detail"))
+        if isinstance(first_recommendation, dict) else _safe_text(first_recommendation)
+    )
+    requested_target = _marketing_target_for_text(prompt, active_step)
+    if blockers:
+        target = _marketing_target_for_text(blockers[0], requested_target)
+        summary = f"You're currently working on {active_label}. {len(blockers)} required item{' remains' if len(blockers) == 1 else 's remain'} before publication."
+        suggestions = [f"Required: {blockers[0]}", "Open the related Marketing step to review the required item."]
+    elif recommendation_text:
+        target = _marketing_target_for_text(recommendation_text, requested_target)
+        summary = f"You're currently working on {active_label}. Your next Marketing improvement is {recommendation_text}."
+        suggestions = [recommendation_text, "This is guidance only; review and save any changes yourself."]
+    else:
+        target = requested_target
+        launch_state = _safe_text(_safe_dict(context.get("marketing_goal")).get("launch_state")) or "draft"
+        summary = f"You're currently working on {active_label}. Your Marketing website is {launch_state}."
+        suggestions = ["Review this Marketing step and continue when its current values are accurate."]
+    if active_step == "publish":
+        website = _safe_dict(context.get("website"))
+        summary = (
+            "Your website is live. I can explain the available sharing tools or take you to another Marketing step."
+            if website.get("is_published") else
+            "Your website is still in draft. I can explain publication and blockers, but publishing requires your explicit action on this page."
+        )
+        target = "publish"
+    if active_step == "final":
+        suggestions.append("I cannot publish or bypass blockers; I can take you to the correct Marketing step.")
+    route = MARKETING_NAVIGATION_TARGETS[target]
+    return {
+        "routine_name": "marketing_assistant",
+        "intent": "navigate_app",
+        "recommended_action": {
+            "type": "navigate", "workspace": "marketing", "target": target,
+            "label": f"Go to {MARKETING_STEP_LABELS[target]}", "action_key": "navigate_marketing_step",
+            "navigation_target": route, "route": route, "confirmation_required": False,
+        },
+        "available_actions": [{
+            "key": "navigate_marketing_step", "type": "navigate", "workspace": "marketing", "target": target,
+            "label": f"Go to {MARKETING_STEP_LABELS[target]}", "navigation_target": route, "route": route,
+            "confirmation_required": False,
+        }],
+        "required_missing_fields": [], "warnings": [], "suggestions": suggestions,
+        "handoff_payload": {}, "preview_data": {"marketing": {"active_step": active_step}},
+        "confidence": "high", "confidence_reasoning": "Guidance used canonical Marketing readiness and the active Marketing step.",
+        "source_metadata": {"workspace": "marketing", "active_step": active_step, "context_revision": context.get("context_revision")},
+        "summary": summary,
+    }
+
+
 def orchestrate_user_request(*, contractor: Contractor | None, payload: dict[str, Any]) -> dict[str, Any]:
     normalized_request = _normalize_user_request(payload)
     context = _normalize_orchestrator_context(normalized_request["context"])
     runtime = _load_runtime_context(contractor, context)
+    if context.get("workspace") == "marketing":
+        return _compose_orchestration_response(
+            normalized_request=normalized_request,
+            context=context,
+            runtime=runtime,
+            intent="navigate_app",
+            routine_results=[_marketing_assistant_specialist(context, normalized_request.get("input"))],
+            confidence="high",
+            confidence_reasoning="The Marketing specialist used only canonical Marketing context and allowlisted navigation.",
+            reasoning_source="marketing_deterministic",
+            fallback_to_planner=False,
+        )
     intent = _intent_from_request(normalized_request, context)
     routines = list(INTENT_ROUTINES.get(intent, ["navigation_resume"]))
 

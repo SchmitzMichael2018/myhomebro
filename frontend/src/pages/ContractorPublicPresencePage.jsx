@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
@@ -15,6 +15,7 @@ import {
   ProjectAssistantSection,
 } from '../components/ProjectAssistantExperience.jsx';
 import { StartWithAIEntry } from '../components/StartWithAIAssistant.jsx';
+import { useAssistantDock } from '../components/AssistantDock.jsx';
 import { WorkflowHint } from '../components/WorkflowHint.jsx';
 import {
   buildAssistantHandoffSignature,
@@ -31,6 +32,7 @@ import { ProjectModeBadge } from '../components/projectMode.jsx';
 import { contractorMatchTierClass, contractorMatchTierLabel } from '../lib/contractorMatching.js';
 import ContractorContextualGuideModal, { pickContextualGuide } from '../components/ContractorContextualGuideModal.jsx';
 import { SmartEmptyState, WorkspaceWalkthroughCards } from '../components/guidance/GuidedExperience.jsx';
+import { buildMarketingAssistantContext, isAllowedMarketingNavigation, MARKETING_NAVIGATION_TARGETS } from '../lib/marketingAssistantContext.js';
 
 const ONLINE_PRESENCE_STEPS = [
   { key: 'overview', label: 'Overview', eyebrow: 'Growth Center' },
@@ -536,6 +538,7 @@ const defaultWebsiteReadiness = {
 export default function ContractorPublicPresencePage() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { openAssistant, updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [profile, setProfile] = useState(defaultProfile);
@@ -564,7 +567,7 @@ export default function ContractorPublicPresencePage() {
   const [generateProfilePrompt, setGenerateProfilePrompt] = useState('');
   const [generatingProfile, setGeneratingProfile] = useState(false);
   const [assistantLeadBanner, setAssistantLeadBanner] = useState('');
-  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
+  const assistantHandoff = useMemo(() => getAssistantHandoff(location.state, { targetWorkspace: 'marketing' }), [location.state]);
   const assistantHandoffSignature = useMemo(
     () => buildAssistantHandoffSignature(assistantHandoff),
     [assistantHandoff]
@@ -919,6 +922,19 @@ export default function ContractorPublicPresencePage() {
     : finalReadinessRows.some((item) => !item.complete)
       ? { label: 'Almost Ready', detail: 'Complete the remaining recommended items, or publish and continue improving later.', tone: 'amber' }
       : { label: 'Ready to Publish', detail: 'Your website has no required blockers.', tone: 'emerald' };
+  const marketingAssistantContext = useMemo(() => buildMarketingAssistantContext({
+    activeStep: activeTab,
+    profile,
+    websiteReadiness: { ...websiteReadiness, qr_available: Boolean(qrData?.qr_svg) },
+    galleryRows,
+    reviewsRows,
+    websitePages,
+    heroContent,
+    readinessRows: finalReadinessRows,
+    recommendations: activeTab === 'seo' ? seoRecommendations : finalImprovements,
+    validation: { websiteDecisionError, galleryEditorOpen, galleryForm, galleryImage },
+    brand: { missingPreferences: missingBrandPreferences },
+  }), [activeTab, profile, websiteReadiness, qrData?.qr_svg, galleryRows, reviewsRows, websitePages, heroContent, finalReadinessRows, seoRecommendations, finalImprovements, websiteDecisionError, galleryEditorOpen, galleryForm, galleryImage, missingBrandPreferences]);
   const websitePublicUrl = websiteData.public_url || '';
   const websitePublishedAt = websiteData.published_at || websiteData.last_published_at || websiteReadiness?.published_at || '';
   const publishBlockerDestinations = websitePublishBlockers.map((blocker) => ({
@@ -969,6 +985,10 @@ export default function ContractorPublicPresencePage() {
   });
 
   async function requestAiSuggestion(action, target, currentValue = '', extra = {}) {
+    if (action === 'final_website_audit') {
+      openMarketingAssistant();
+      return;
+    }
     try {
       setAiBusyTarget(target);
       const { data } = await api.post('/projects/contractor/website/ai-assist/', {
@@ -983,13 +1003,15 @@ export default function ContractorPublicPresencePage() {
           target,
           action,
           configured: data?.configured !== false,
-          detail: data?.detail || '',
+          detail: data?.configured === false ? 'Suggestions are temporarily unavailable. You can continue manually.' : data?.detail || '',
           suggested_value: data?.suggested_value || data?.suggestion || '',
           suggestions: Array.isArray(data?.suggestions) ? data.suggestions : [],
         },
       }));
     } catch (err) {
-      const detail = err?.response?.data?.detail || 'Project Assistant is not configured yet.';
+      const detail = [501, 503].includes(Number(err?.response?.status))
+        ? 'Suggestions are temporarily unavailable. You can continue manually.'
+        : err?.response?.data?.detail || 'Suggestions are temporarily unavailable. You can continue manually.';
       setAiSuggestions((prev) => ({
         ...prev,
         [target]: {
@@ -1022,14 +1044,43 @@ export default function ContractorPublicPresencePage() {
     dismissAiSuggestion(target);
   }
 
-  const goToStep = (key) => {
+  const goToStep = useCallback((key, { replace = false } = {}) => {
     if (ONLINE_PRESENCE_STEPS.some((step) => step.key === key)) {
       setActiveTab(key);
+      navigate(MARKETING_NAVIGATION_TARGETS[key], { replace });
     }
-  };
+  }, [navigate]);
+  const marketingAssistantContextSignature = JSON.stringify(marketingAssistantContext);
+  const handleMarketingAssistantAction = useCallback((action = {}) => {
+    const route = action.route || action.navigation_target || action.destination || '';
+    const target = action.target || Object.entries(MARKETING_NAVIGATION_TARGETS).find(([, value]) => value === route)?.[0];
+    const resolvedRoute = target ? MARKETING_NAVIGATION_TARGETS[target] : route;
+    if (!resolvedRoute || !isAllowedMarketingNavigation(resolvedRoute, marketingAssistantContext)) return false;
+    const resolvedTarget = target || Object.entries(MARKETING_NAVIGATION_TARGETS).find(([, value]) => value === resolvedRoute)?.[0];
+    if (!resolvedTarget) return false;
+    goToStep(resolvedTarget);
+    return true;
+  }, [goToStep, marketingAssistantContextSignature]);
+
+  useEffect(() => {
+    if (loading) return undefined;
+    updateAssistantContext(marketingAssistantContext);
+    updateAssistantOnAction(handleMarketingAssistantAction);
+    return () => {
+      updateAssistantOnAction(null);
+    };
+  }, [loading, marketingAssistantContextSignature, handleMarketingAssistantAction, updateAssistantContext, updateAssistantOnAction]);
+
+  const openMarketingAssistant = useCallback(() => {
+    openAssistant({
+      title: `Project Assistant for ${marketingAssistantContext.active_step_label}`,
+      context: marketingAssistantContext,
+      onAction: handleMarketingAssistantAction,
+    });
+  }, [openAssistant, marketingAssistantContextSignature, handleMarketingAssistantAction]);
   const goToPreviousStep = () => {
     const previous = ONLINE_PRESENCE_STEPS[Math.max(0, activeStepIndex - 1)];
-    if (previous) setActiveTab(previous.key);
+    if (previous) goToStep(previous.key);
   };
   const goToNextStep = () => {
     if (activeTab === 'decision') {
@@ -1037,13 +1088,13 @@ export default function ContractorPublicPresencePage() {
       return;
     }
     const next = ONLINE_PRESENCE_STEPS[Math.min(ONLINE_PRESENCE_STEPS.length - 1, activeStepIndex + 1)];
-    if (next) setActiveTab(next.key);
+    if (next) goToStep(next.key);
   };
   const saveAndContinueProfile = async () => {
     const saved = await saveProfile();
     if (!saved) return;
     const next = ONLINE_PRESENCE_STEPS[Math.min(ONLINE_PRESENCE_STEPS.length - 1, activeStepIndex + 1)];
-    if (next) setActiveTab(next.key);
+    if (next) goToStep(next.key);
   };
   const updateHomePageHero = (patch) => {
     if (!homePage) return;
@@ -1073,7 +1124,7 @@ export default function ContractorPublicPresencePage() {
     const saved = await saveHomePageHero();
     if (!saved) return;
     const next = ONLINE_PRESENCE_STEPS[Math.min(ONLINE_PRESENCE_STEPS.length - 1, activeStepIndex + 1)];
-    if (next) setActiveTab(next.key);
+    if (next) goToStep(next.key);
   };
   const setCredential = (key, value) => {
     setProfile((prev) => ({
@@ -1327,13 +1378,15 @@ export default function ContractorPublicPresencePage() {
     const params = new URLSearchParams(location.search || '');
     const tab = params.get('tab');
     if (tab === 'leads') {
-      setActiveTab('profile');
+      goToStep('profile', { replace: true });
       return;
     }
     if (ONLINE_PRESENCE_STEPS.some((item) => item.key === tab)) {
       setActiveTab(tab);
+      return;
     }
-  }, [location.search]);
+    goToStep('overview', { replace: true });
+  }, [location.search, goToStep]);
 
   useEffect(() => {
     if (!assistantHandoffSignature || assistantHandoffSignature === appliedAssistantRef.current) {

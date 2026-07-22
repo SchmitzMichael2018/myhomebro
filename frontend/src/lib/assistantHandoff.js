@@ -106,10 +106,20 @@ function readSessionAssistantHandoff() {
   }
 }
 
-export function writeSessionAssistantHandoff(payload = {}) {
+export function writeSessionAssistantHandoff(payload = {}, metadata = {}) {
   try {
     if (typeof window === "undefined" || !window.sessionStorage) return;
-    window.sessionStorage.setItem(FIRST_PROJECT_HANDOFF_STORAGE_KEY, JSON.stringify(safeObject(payload)));
+    const cleanMetadata = safeObject(metadata);
+    const record = {
+      ...safeObject(payload),
+      assistantHandoffMeta: {
+        source_workspace: String(cleanMetadata.source_workspace || payload?.assistantHandoffMeta?.source_workspace || ''),
+        target_workspace: String(cleanMetadata.target_workspace || payload?.assistantHandoffMeta?.target_workspace || ''),
+        created_at: cleanMetadata.created_at || payload?.assistantHandoffMeta?.created_at || new Date().toISOString(),
+        expires_at: cleanMetadata.expires_at || payload?.assistantHandoffMeta?.expires_at || null,
+      },
+    };
+    window.sessionStorage.setItem(FIRST_PROJECT_HANDOFF_STORAGE_KEY, JSON.stringify(record));
   } catch {
     // ignore storage failures
   }
@@ -131,11 +141,20 @@ export function isBlankAssistantValue(value) {
   return false;
 }
 
-export function getAssistantHandoff(locationState) {
+export function getAssistantHandoff(locationState, options = {}) {
   const storedState = readSessionAssistantHandoff();
-  const state = Object.keys(safeObject(locationState)).length
+  const hasLocationState = Object.keys(safeObject(locationState)).length > 0;
+  const state = hasLocationState
     ? safeObject(locationState)
     : storedState;
+  const metadata = safeObject(state.assistantHandoffMeta);
+  const targetWorkspace = String(options.targetWorkspace || '');
+  const expired = Boolean(metadata.expires_at && new Date(metadata.expires_at).getTime() <= Date.now());
+  const wrongTarget = Boolean(targetWorkspace && metadata.target_workspace !== targetWorkspace);
+  if (expired || wrongTarget || (targetWorkspace && !metadata.target_workspace)) {
+    if (!hasLocationState) clearSessionAssistantHandoff();
+    return { ...HANDOFF_SAFE_DEFAULTS, metadata: {}, rejected: true };
+  }
   return {
     prefillFields: safeObject(state.assistantPrefill),
     draftPayload: safeObject(state.assistantDraftPayload),
@@ -174,6 +193,8 @@ export function getAssistantHandoff(locationState) {
     complianceFlags: Array.isArray(state.assistantComplianceFlags)
       ? state.assistantComplianceFlags
       : [],
+    metadata,
+    rejected: false,
   };
 }
 
