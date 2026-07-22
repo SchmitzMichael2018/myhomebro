@@ -1858,6 +1858,21 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 .fc .fc-event { cursor: pointer; }
 
 @layer components {
+  .mhb-online-presence-light-theme :where(button, a[href], summary, [role="radio"]):focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+
+  .mhb-online-presence-light-theme [data-testid="content-generation"] button,
+  .mhb-online-presence-light-theme [data-testid="content-home-editor"] button,
+  .mhb-online-presence-light-theme [data-testid="final-marketing-readiness"] button,
+  .mhb-online-presence-light-theme [data-testid="public-presence-gallery-tab"] summary,
+  .mhb-online-presence-light-theme [data-testid="public-presence-gallery-tab"] article button {
+    min-height: 2rem;
+    padding-left: .75rem;
+    padding-right: .75rem;
+  }
+
   .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300,
   .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300:hover,
   .mhb-operational-surface button.estimate-workflow-primary.text-slate-950.bg-amber-300:focus-visible,

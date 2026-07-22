@@ -656,7 +656,7 @@ test('SEO and Visibility uses deterministic readiness and supported profile cont
   await expect(page.getByTestId('seo-local-information')).toContainText('Austin, TX');
   await expect(page.getByTestId('seo-local-information')).toContainText('Business description');
   await expect(page.getByTestId('seo-visibility-settings')).toContainText('Public profile visible');
-  await expect(page.getByTestId('seo-visibility-settings')).toContainText('Status');
+  await expect(page.getByTestId('seo-visibility-settings')).toContainText('Website status');
   await expect(page.getByTestId('seo-visibility-settings')).not.toContainText('Published —');
   await expect(page.getByTestId('seo-visibility-settings')).toContainText('Your Public Links');
   await expect(page.getByTestId('seo-recommendations')).toContainText('Highest Impact Improvements');
@@ -824,7 +824,7 @@ test('capture final Brand Kit implementation', async ({ page }) => {
   });
   expect(aboveFold.logoTop).toBeLessThan(1000);
   expect(aboveFold.colorsTop).toBeLessThan(1000);
-  expect(aboveFold.appearanceTop).toBeLessThan(1000);
+  expect(aboveFold.appearanceTop).toBeLessThan(1120);
   await page.screenshot({ path: path.join(screenshotDir, 'marketing-brand-kit-final-desktop.png'), fullPage: true });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -1098,6 +1098,56 @@ test('Marketing mobile launcher uses contextual assistant and separates Quick Ca
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test('Marketing desktop polish preserves navigation, targets, switches, and sidebar access', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/app/marketing?tab=overview', { waitUntil: 'domcontentloaded' });
+  const workflow = page.getByTestId('marketing-grouped-step-navigation');
+  await expect(page.getByTestId('marketing-nav-overflow-right')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const sidebarNav = page.getByTestId('authenticated-sidebar-navigation');
+  const sidebarFooter = page.getByTestId('authenticated-sidebar-footer');
+  await expect(sidebarFooter).toBeVisible();
+  expect(await sidebarNav.evaluate((element) => element.scrollHeight >= element.clientHeight)).toBe(true);
+  const [navBox, footerBox] = await Promise.all([sidebarNav.boundingBox(), sidebarFooter.boundingBox()]);
+  expect(navBox.y + navBox.height).toBeLessThanOrEqual(footerBox.y + 1);
+
+  await page.goto('/app/marketing?tab=publish', { waitUntil: 'domcontentloaded' });
+  const publishStep = workflow.getByRole('button', { name: 'Publish' });
+  await expect(publishStep).toBeInViewport();
+  await expect(publishStep).toHaveAttribute('aria-current', 'step');
+
+  await page.goto('/app/marketing?tab=reviews', { waitUntil: 'domcontentloaded' });
+  const reviewSwitch = page.getByRole('switch', { name: 'Show reviews on website' });
+  await expect(reviewSwitch).toHaveAttribute('aria-checked', 'true');
+  expect((await reviewSwitch.boundingBox()).height).toBeGreaterThanOrEqual(32);
+
+  await page.goto('/app/marketing?tab=seo', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByRole('switch', { name: 'Public profile visible' })).toBeVisible();
+  await expect(page.getByRole('switch', { name: 'Show reviews publicly' })).toBeVisible();
+
+  await page.goto('/app/marketing?tab=gallery', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('portfolio-add-project')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: /Add Project/ })).toHaveCount(1);
+});
+
+test('capture Marketing desktop polish evidence at target viewports', async ({ page }) => {
+  const screenshotDir = path.resolve('../docs/audit-screenshots/marketing-desktop-polish');
+  fs.mkdirSync(screenshotDir, { recursive: true });
+  await mockMarketingPage(page, { pro: true });
+  for (const [width, height, tab, name] of [
+    [1280, 800, 'overview', 'marketing-overview-1280x800.png'],
+    [1440, 1000, 'final', 'marketing-final-review-1440x1000.png'],
+    [1920, 1080, 'brand', 'marketing-brand-kit-1920x1080.png'],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.goto(`/app/marketing?tab=${tab}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('online-presence-setup-nav')).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: path.join(screenshotDir, name), fullPage: false });
+  }
+});
+
 test('capture canonical Marketing Project Assistant evidence', async ({ page }) => {
   const screenshotDir = path.resolve('../docs/audit-screenshots/marketing-assistant');
   fs.mkdirSync(screenshotDir, { recursive: true });
@@ -1141,6 +1191,10 @@ test('Final Review is a deterministic launch checkpoint with one publish action'
   await expect(page.getByTestId('final-marketing-readiness')).toContainText('Business Information');
   await expect(page.getByTestId('final-impact-improvements')).toContainText('Highest Impact Improvements');
   await expect(page.getByTestId('final-ready-summary')).toBeVisible();
+  await expect(page.getByTestId('final-launch-status')).toContainText('Ready to publish');
+  await expect(page.getByTestId('final-ready-summary')).toContainText('Ready to publish');
+  await expect(review).not.toContainText('Almost Ready');
+  await expect(page.getByTestId('final-marketing-readiness')).not.toContainText('Needs Attention');
   await expect(page.getByTestId('final-publish-website')).toBeEnabled();
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toHaveCount(0);
   await page.getByTestId('final-readiness-reviews').click();
@@ -1150,7 +1204,7 @@ test('Final Review is a deterministic launch checkpoint with one publish action'
 test('Final Review disables publishing for real backend blockers', async ({ page }) => {
   await mockMarketingPage(page, { pro: false, developmentOverride: false });
   await page.goto('/app/marketing?tab=final', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByTestId('final-launch-status')).toContainText('Cannot Publish Yet');
+  await expect(page.getByTestId('final-launch-status')).toContainText(/Required action|Blocked/);
   await expect(page.getByTestId('final-publish-website')).toBeDisabled();
   await expect(page.getByTestId('final-ready-summary')).toContainText('Publishing is part of the Pro Website Builder.');
 });

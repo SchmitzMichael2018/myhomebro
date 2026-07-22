@@ -599,7 +599,7 @@ export default function Sidebar({ variant = "desktop" }) {
         </div>
       </div>
 
-      <nav className="mhb-sidebar-nav flex-1 min-h-0 overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar">
+      <nav className="mhb-sidebar-nav min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-5 space-y-7 no-scrollbar" data-testid="authenticated-sidebar-navigation">
         {showRefundContext && !isEmployee && (
           <RefundEscrowModal
             open={refundOpen}
@@ -685,7 +685,7 @@ export default function Sidebar({ variant = "desktop" }) {
         ) : null}
       </nav>
 
-      <div className="mhb-sidebar-footer border-t border-slate-200/90 px-4 py-4">
+      <div className="mhb-sidebar-footer shrink-0 border-t border-slate-200/90 px-4 py-3" data-testid="authenticated-sidebar-footer">
         <button
           onClick={handleLogout}
           data-close-sidebar="1"
@@ -701,7 +701,7 @@ export default function Sidebar({ variant = "desktop" }) {
             href="/legal/terms-of-service/"
             target="_blank"
             rel="noreferrer"
-            className="transition hover:text-slate-700 hover:underline"
+            className="inline-flex min-h-8 items-center transition hover:text-slate-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             Terms of Service
           </a>
@@ -712,7 +712,7 @@ export default function Sidebar({ variant = "desktop" }) {
             href="/legal/privacy-policy/"
             target="_blank"
             rel="noreferrer"
-            className="transition hover:text-slate-700 hover:underline"
+            className="inline-flex min-h-8 items-center transition hover:text-slate-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
           >
             Privacy Policy
           </a>
@@ -728,7 +728,7 @@ export default function Sidebar({ variant = "desktop" }) {
 
   return (
     <aside
-      className="mhb-sidebar-shell hidden h-screen max-w-full flex-shrink-0 overflow-y-auto overflow-x-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
+      className="mhb-sidebar-shell hidden h-screen min-h-0 max-w-full flex-shrink-0 overflow-hidden border-r border-slate-200/90 md:flex md:w-60 md:flex-col lg:w-64"
       style={{
         background: "linear-gradient(180deg, #020b1f 0%, #041633 54%, #061d42 100%)",
       }}
