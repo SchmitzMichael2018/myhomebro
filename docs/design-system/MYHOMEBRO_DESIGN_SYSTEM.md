@@ -37,6 +37,34 @@ The token foundation includes:
 
 Insights is part of the operational system. Recharts axes, grid lines, series, legends, and tooltips must derive their colors from these tokens rather than fixed light values.
 
+## Operational Theme Philosophy
+
+Operational Dark is the canonical contractor workspace appearance. It is a durable product surface for concentrated business work, not a transitional treatment or a derivative of Marketing. Operational Light uses the same hierarchy and semantics, while Marketing remains its own curated-light workspace.
+
+The interface should feel like a calm business operating system. Visual depth comes from small differences in surfaces, borders, and elevation—not saturated backgrounds, glass effects, or decorative hero treatments.
+
+### Surface hierarchy
+
+Use the narrowest semantic layer that describes the content:
+
+1. `surface-app` is the authenticated application background.
+2. `surface-workspace` contains a page or major workspace region.
+3. `surface-workspace-elevated` separates high-level workspace panels.
+4. `surface-card` contains ordinary grouped content.
+5. `surface-card-elevated` supports menus, dialogs, and priority panels.
+6. `surface-interactive` and `surface-interactive-hover` are for clickable cards and rows.
+7. `surface-selected` identifies selected navigation, tabs, or rows with a border or state marker.
+
+Cards use `shadow-card`; menus, dialogs, and priority panels use `shadow-card-elevated`. Interactive elevation is reserved for hoverable surfaces and must not make static cards appear clickable.
+
+### Background treatment
+
+The operational application background may use one very subtle radial illumination and a very-low-opacity engineering grid or contour treatment. Texture must remain fixed, non-animated, subordinate to content, and imperceptible behind dense text. It must never be applied to Marketing, public websites, customer pages, PDFs, or email output.
+
+Do not use large gradients, bright blue page backgrounds, glassmorphism, particles, animation, heavy textures, or marketing-style hero backgrounds. Workspace and card surfaces remain predominantly solid so tables, forms, and charts retain clear contrast.
+
+Chart canvases use the chart background token. Tooltips use elevated surfaces; axes, legends, and grid lines use chart semantic tokens. Bright white chart canvases are not permitted in Operational Dark.
+
 ## Importing Components
 
 Import public primitives from the stable barrel:
@@ -294,7 +322,7 @@ Purpose: show whether a prepared change passed workflow validation before confir
 - Button heights
 - Form and card spacing
 
-The token names are semantic and theme-ready. This task does not implement an Appearance system. A future system should map Follow System, Light, and Dark themes onto these contracts.
+The token names are semantic and are resolved by the authenticated Appearance system for System, Light, and Dark. Operational components must consume these contracts rather than introducing page-specific theme state or hard-coded dark/light branches.
 
 ## Migration Guidance
 

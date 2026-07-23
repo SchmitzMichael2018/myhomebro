@@ -195,6 +195,7 @@ test("capture authenticated appearance visual QA states", async ({ page }) => {
   await page.screenshot({ path: path.join(outputDir, "insights-light.png"), fullPage: false });
   await chooseAppearance(page, "Dark");
   await expect(page.getByRole("tab", { name: "Executive" })).toHaveCSS("color", "rgb(219, 234, 254)");
+  await expect(page.getByRole("tab", { name: "Executive" })).toHaveCSS("background-color", "rgb(13, 36, 64)");
   await page.screenshot({ path: path.join(outputDir, "insights-dark.png"), fullPage: false });
 
   await page.goto("/app/marketing", { waitUntil: "domcontentloaded" });

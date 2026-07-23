@@ -1851,6 +1851,32 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: var(--mhb-text-primary);
 }
 
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-main {
+  background-color: var(--mhb-surface-app) !important;
+  background-image:
+    radial-gradient(circle at 22% -8%, rgb(59 130 246 / 0.075), transparent 34rem),
+    radial-gradient(circle at 88% 14%, rgb(14 165 233 / 0.035), transparent 30rem),
+    repeating-linear-gradient(0deg, rgb(148 197 255 / 0.012) 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(90deg, rgb(148 197 255 / 0.009) 0 1px, transparent 1px 32px) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface {
+  color: var(--mhb-text-primary);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-panel {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-workspace-elevated) !important;
+  box-shadow: var(--mhb-shadow-card-elevated) !important;
+  backdrop-filter: none;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-inner {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+}
+
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-gradient-bg {
   background: var(--mhb-surface-app);
 }
@@ -1939,6 +1965,7 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-das
   border-color: var(--mhb-border-default) !important;
   background-color: color-mix(in srgb, var(--mhb-surface-elevated) 96%, transparent) !important;
   color: var(--mhb-text-primary);
+  box-shadow: var(--mhb-shadow-card-elevated) !important;
 }
 
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-overlay {
@@ -1980,7 +2007,7 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-ove
 }
 
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-main {
-  background: var(--mhb-surface-app) !important;
+  background-color: var(--mhb-surface-app) !important;
 }
 
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-white"],
@@ -2003,6 +2030,140 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-worksp
   background: var(--mhb-surface-elevated) !important;
   color: var(--mhb-text-secondary) !important;
   opacity: 1 !important;
+}
+
+/* Operational refinement: calm, layered depth shared across authenticated workspaces. */
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(
+  section,
+  article,
+  aside,
+  [class*="rounded-xl"],
+  [class*="rounded-2xl"]
+)[class*="border"] {
+  border-color: var(--mhb-border-default);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(
+  .shadow-sm,
+  .shadow-md
+) {
+  box-shadow: var(--mhb-shadow-card);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(
+  .shadow-lg,
+  .shadow-xl,
+  .shadow-2xl
+) {
+  box-shadow: var(--mhb-shadow-card-elevated);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(input, select, textarea) {
+  border-color: var(--mhb-border-default) !important;
+  background-color: var(--mhb-surface-inset) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: inset 0 1px 2px rgb(0 4 14 / 0.24);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(input, select, textarea):focus {
+  border-color: var(--mhb-border-focus) !important;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mhb-border-focus) 22%, transparent);
+  outline: none;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(label, legend) {
+  color: var(--mhb-text-secondary);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface table {
+  border-color: var(--mhb-border-divider);
+  background: var(--mhb-surface-card);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface thead {
+  background: var(--mhb-surface-inset) !important;
+  color: var(--mhb-text-secondary);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(th, td) {
+  border-color: var(--mhb-border-divider) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface tbody tr {
+  border-color: var(--mhb-border-divider) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface tbody tr:hover {
+  background: var(--mhb-table-row-hover) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-sidebar-shell {
+  border-right-color: var(--mhb-border-divider) !important;
+  background: var(--mhb-surface-sidebar);
+  box-shadow: 12px 0 34px rgb(0 4 14 / 0.24), inset -1px 0 0 rgb(255 255 255 / 0.025);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-sidebar-brand {
+  border-bottom-color: var(--mhb-border-divider) !important;
+  background: var(--mhb-surface-sidebar);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-sidebar-item {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: var(--mhb-text-muted) !important;
+  box-shadow: none !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-sidebar-item:hover {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-interactive-hover) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-sidebar-item.is-active {
+  border-color: var(--mhb-border-selected) !important;
+  background: var(--mhb-surface-selected) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: inset 3px 0 0 var(--mhb-border-selected), 0 8px 20px rgb(0 4 14 / 0.2) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-sidebar-item-icon {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-inset) !important;
+  color: var(--mhb-text-muted) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-sidebar-footer {
+  border-top-color: var(--mhb-border-divider) !important;
+  background: var(--mhb-surface-sidebar);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] :is(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  [tabindex]
+):focus-visible {
+  outline: 2px solid var(--mhb-border-focus);
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  html[data-mhb-surface="operational"] :is(
+    button,
+    a[href],
+    input,
+    select,
+    textarea,
+    [aria-selected="true"],
+    [aria-current]
+  ):focus-visible {
+    outline: 2px solid CanvasText;
+  }
 }
 
 /* If a global reset hides buttons inside forms, undo it here for our icon */

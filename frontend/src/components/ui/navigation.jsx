@@ -18,7 +18,7 @@ export function WorkspacePageHeader({
   ...props
 }) {
   return (
-    <header className={cx("space-y-4", className)} {...props}>
+    <header className={cx("space-y-4", theme === "operational" && "border-b border-[var(--mhb-border-divider)] pb-5", className)} {...props}>
       {breadcrumbs.length ? (
         <nav aria-label="Breadcrumb">
           <ol className={cx("flex flex-wrap items-center gap-1 text-sm", theme === "operational" ? "text-[var(--mhb-text-muted)]" : "text-slate-500")}>

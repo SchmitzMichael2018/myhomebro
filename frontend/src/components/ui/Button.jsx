@@ -12,12 +12,12 @@ const variants = {
 };
 
 const operationalVariants = {
-  primary: "border-[var(--mhb-border-strong)] bg-[var(--mhb-interactive-primary)] text-[var(--mhb-text-inverse)] hover:bg-[var(--mhb-interactive-primary-hover)]",
-  secondary: "border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-primary)] hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-interactive-ghost-hover)]",
+  primary: "border-[var(--mhb-border-strong)] bg-[var(--mhb-interactive-primary)] text-[var(--mhb-text-inverse)] shadow-sm hover:bg-[var(--mhb-interactive-primary-hover)] hover:shadow-md",
+  secondary: "border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-primary)] shadow-sm hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-interactive-ghost-hover)]",
   ghost: "border-transparent bg-transparent text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-interactive-ghost-hover)] hover:text-[var(--mhb-text-primary)]",
-  danger: "border-[var(--mhb-status-blocked-border)] bg-[var(--mhb-status-blocked-bg)] text-[var(--mhb-status-blocked-text)]",
+  danger: "border-[var(--mhb-status-blocked-border)] bg-[var(--mhb-status-blocked-bg)] text-[var(--mhb-status-blocked-text)] hover:brightness-110",
   icon: "border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-interactive-ghost-hover)] hover:text-[var(--mhb-text-primary)]",
-  ai: "border-indigo-300/35 bg-indigo-400/20 text-indigo-50 hover:bg-indigo-400/30",
+  ai: "border-indigo-300/35 bg-indigo-400/20 text-indigo-50 shadow-sm hover:border-indigo-200/50 hover:bg-indigo-400/30",
 };
 
 const sizes = {

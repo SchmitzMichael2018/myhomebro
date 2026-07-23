@@ -69,9 +69,15 @@
 
   /* Authenticated operational appearance: light values */
   --mhb-surface-app: #eef3f8;
+  --mhb-surface-workspace: #f3f6fa;
+  --mhb-surface-workspace-elevated: #f8fafc;
   --mhb-surface-header: #f8fafc;
   --mhb-surface-sidebar: #061d42;
   --mhb-surface-card: #ffffff;
+  --mhb-surface-card-elevated: #ffffff;
+  --mhb-surface-interactive: #fbfdff;
+  --mhb-surface-interactive-hover: #f5f8fc;
+  --mhb-surface-selected: #eff6ff;
   --mhb-surface-elevated: #ffffff;
   --mhb-surface-subtle: #f8fafc;
   --mhb-surface-inset: #eef2f7;
@@ -99,6 +105,11 @@
   --mhb-chart-positive: #059669;
   --mhb-chart-negative: #dc2626;
   --mhb-chart-neutral: #2563eb;
+  --mhb-shadow-card: 0 1px 2px rgb(15 23 42 / 0.05), 0 8px 22px rgb(15 23 42 / 0.06);
+  --mhb-shadow-card-elevated: 0 2px 5px rgb(15 23 42 / 0.07), 0 16px 36px rgb(15 23 42 / 0.09);
+  --mhb-shadow-interactive: 0 10px 26px rgb(15 23 42 / 0.1);
+  --mhb-table-row-hover: #f4f7fb;
+  --mhb-table-row-selected: #eff6ff;
 
   /* Canonical status system */
   --mhb-status-complete-bg: #dcfce7;
@@ -136,13 +147,19 @@
 
 html[data-mhb-theme="dark"] {
   color-scheme: dark;
-  --mhb-surface-app: #020617;
-  --mhb-surface-header: #061733;
-  --mhb-surface-sidebar: #03152f;
-  --mhb-surface-card: #061d42;
-  --mhb-surface-elevated: #0b2851;
-  --mhb-surface-subtle: #0f2a4e;
-  --mhb-surface-inset: #041631;
+  --mhb-surface-app: #020713;
+  --mhb-surface-workspace: #061326;
+  --mhb-surface-workspace-elevated: #081a31;
+  --mhb-surface-header: #07162a;
+  --mhb-surface-sidebar: #03142b;
+  --mhb-surface-card: #0a1d35;
+  --mhb-surface-card-elevated: #0d2440;
+  --mhb-surface-interactive: #0d2747;
+  --mhb-surface-interactive-hover: #123254;
+  --mhb-surface-selected: #123a68;
+  --mhb-surface-elevated: #0d2440;
+  --mhb-surface-subtle: #102a49;
+  --mhb-surface-inset: #041225;
   --mhb-surface-overlay: rgb(2 6 23 / 0.72);
   --mhb-text-primary: #f8fbff;
   --mhb-text-secondary: #dbeafe;
@@ -156,17 +173,22 @@ html[data-mhb-theme="dark"] {
   --mhb-border-focus: #7dd3fc;
   --mhb-interactive-primary: #f8fafc;
   --mhb-interactive-primary-hover: #e0f2fe;
-  --mhb-interactive-secondary: rgb(255 255 255 / 0.1);
-  --mhb-interactive-ghost-hover: rgb(255 255 255 / 0.1);
+  --mhb-interactive-secondary: #102d4f;
+  --mhb-interactive-ghost-hover: #123254;
   --mhb-interactive-disabled-bg: rgb(255 255 255 / 0.08);
   --mhb-interactive-disabled-text: rgb(186 230 253 / 0.45);
-  --mhb-chart-background: #061d42;
+  --mhb-chart-background: #081a31;
   --mhb-chart-grid: rgb(186 230 253 / 0.16);
   --mhb-chart-text: #bae6fd;
   --mhb-chart-tooltip: #0b2851;
   --mhb-chart-positive: #34d399;
   --mhb-chart-negative: #fb7185;
   --mhb-chart-neutral: #60a5fa;
+  --mhb-shadow-card: 0 1px 0 rgb(255 255 255 / 0.035) inset, 0 10px 26px rgb(0 4 14 / 0.22);
+  --mhb-shadow-card-elevated: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 18px 44px rgb(0 4 14 / 0.3);
+  --mhb-shadow-interactive: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 16px 34px rgb(0 4 14 / 0.34);
+  --mhb-table-row-hover: #102d4f;
+  --mhb-table-row-selected: #123a68;
 
   --mhb-status-complete-bg: rgb(16 185 129 / 0.16);
   --mhb-status-complete-text: #a7f3d0;
@@ -198,8 +220,14 @@ html[data-mhb-theme="light"] {
 html[data-mhb-surface="curated-light"] {
   color-scheme: light;
   --mhb-surface-app: #f8fafc;
+  --mhb-surface-workspace: #f8fafc;
+  --mhb-surface-workspace-elevated: #ffffff;
   --mhb-surface-header: #ffffff;
   --mhb-surface-card: #ffffff;
+  --mhb-surface-card-elevated: #ffffff;
+  --mhb-surface-interactive: #ffffff;
+  --mhb-surface-interactive-hover: #f8fafc;
+  --mhb-surface-selected: #eff6ff;
   --mhb-surface-elevated: #ffffff;
   --mhb-surface-subtle: #f8fafc;
   --mhb-surface-inset: #f1f5f9;

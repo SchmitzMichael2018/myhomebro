@@ -20,12 +20,14 @@ export function Card({
   return (
     <Component
       className={cx(
-        "rounded-2xl border shadow-sm",
+        "rounded-2xl border",
         theme === "operational"
-          ? "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] text-[var(--mhb-text-primary)]"
-          : "border-slate-200 bg-white",
+          ? "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] text-[var(--mhb-text-primary)] shadow-[var(--mhb-shadow-card)]"
+          : "border-slate-200 bg-white shadow-sm",
         cardPadding[padding] ?? cardPadding.md,
-        interactive && "transition hover:-translate-y-px hover:border-slate-300 hover:shadow-md",
+        interactive && (theme === "operational"
+          ? "bg-[var(--mhb-surface-interactive)] transition hover:-translate-y-px hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-surface-interactive-hover)] hover:shadow-[var(--mhb-shadow-interactive)]"
+          : "transition hover:-translate-y-px hover:border-slate-300 hover:shadow-md"),
         className
       )}
       {...props}
@@ -53,7 +55,7 @@ export function MetricCard({
           <div className={cx("text-sm font-semibold", theme === "operational" ? "text-[var(--mhb-text-secondary)]" : "text-slate-600")}>{label}</div>
           <div className={cx("mt-2 break-words text-2xl font-black tabular-nums", theme === "operational" ? "text-[var(--mhb-text-primary)]" : "text-slate-950")}>{value}</div>
         </div>
-        {Icon ? <span className="rounded-xl bg-blue-50 p-2 text-blue-700"><Icon className="h-5 w-5" aria-hidden="true" /></span> : null}
+        {Icon ? <span className={cx("rounded-xl p-2", theme === "operational" ? "border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-subtle)] text-[var(--mhb-chart-neutral)]" : "bg-blue-50 text-blue-700")}><Icon className="h-5 w-5" aria-hidden="true" /></span> : null}
       </div>
       {description || trend || status ? (
         <div className={cx("mt-3 flex flex-wrap items-center gap-2 text-xs", theme === "operational" ? "text-[var(--mhb-text-muted)]" : "text-slate-500")}>
@@ -81,7 +83,7 @@ export function StatusBadge({ status = "draft", label = "", theme = "default", c
   return (
     <span
       className={cx(
-        "inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-bold",
+        "inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold shadow-[inset_0_1px_0_rgb(255_255_255_/_0.06)]",
         statusClasses[normalized] || statusClasses.draft,
         className
       )}
