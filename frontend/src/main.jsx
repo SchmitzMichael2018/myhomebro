@@ -1,6 +1,7 @@
 // src/main.jsx — load endpoint shim BEFORE anything else
 import "./utils/globalEndpointShim";   // 👈 MUST be first so it patches fetch/XHR
 
+import "./styles/design-tokens.css";   // Shared semantic design-system tokens
 import "./index.css";                  // Tailwind / your global styles
 // ⚠️ removed: import "./styles/mobile.css";
 

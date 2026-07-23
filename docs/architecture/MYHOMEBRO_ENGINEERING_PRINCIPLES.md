@@ -35,6 +35,7 @@ All contributors and coding agents should follow these principles unless a task 
 - Color communicates hierarchy and state; it is not a substitute for labels, icons, or accessible text.
 - Do not pursue cross-workspace color uniformity as a design-system objective.
 - New components should earn their existence through a distinct reusable behavior, not minor visual variation.
+- Use the shared primitives and migration guidance in [MyHomeBro Design System Foundation](../design-system/MYHOMEBRO_DESIGN_SYSTEM.md) when modernizing workspace UI.
 
 ## Operational Theme Principles
 
