@@ -6,6 +6,7 @@ import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { normalizeProjectClass } from "../utils/projectClass.js";
+import { Button, Card, EmptyState, LoadingSkeleton, StatusBadge } from "../components/ui";
 
 function formatDateTime(value) {
   if (!value) return "-";
@@ -178,39 +179,31 @@ export default function ReviewerQueuePage() {
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-white/12 bg-slate-950/45 px-6 py-10 text-center text-sm font-semibold text-sky-100/70 shadow-sm">
-          Loading review queue...
-        </div>
+        <Card theme="operational"><LoadingSkeleton theme="operational" variant="list" label="Loading review queue" /></Card>
       ) : filteredGroups.length === 0 ? (
-        <div
+        <EmptyState
+          theme="operational"
           data-testid="reviewer-queue-empty"
-          className="rounded-2xl border border-dashed border-white/14 bg-slate-950/45 px-6 py-12 text-center shadow-sm"
-        >
-          <div className="text-base font-semibold text-white">
-            No milestones are awaiting your review right now.
-          </div>
-          <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-sky-100/70">
-            New work submissions will appear here so you can approve them quickly or send them back with notes.
-          </div>
-        </div>
+          title="No milestones are awaiting your review right now"
+          description="New work submissions will appear here so you can approve them quickly or send them back with notes."
+        />
       ) : (
         <div className="space-y-6">
           {filteredGroups.map((group) => (
-            <section
+            <Card
+              as="section"
+              theme="operational"
               key={group.agreement_id}
               data-testid={`reviewer-queue-group-${group.agreement_id}`}
-              className="rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm"
             >
-              <div className="border-b border-white/10 pb-3">
+              <div className="border-b border-[var(--mhb-border-divider)] pb-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-lg font-semibold text-white">
+                  <h2 className="text-lg font-semibold text-[var(--mhb-text-primary)]">
                     {group.project_title ||
                       group.agreement_title ||
                       `Agreement #${group.agreement_id}`}
                   </h2>
-                  <span className="inline-flex items-center rounded-full border border-sky-300/35 bg-sky-400/15 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
-                    {group.project_class_label || projectClassLabel(group.project_class)}
-                  </span>
+                  <StatusBadge theme="operational" status="draft" label={group.project_class_label || projectClassLabel(group.project_class)} />
                 </div>
                 <div className="mt-1 text-xs text-sky-100/55">
                   Agreement #{group.agreement_id}
@@ -233,9 +226,7 @@ export default function ReviewerQueuePage() {
                           {milestone.description || "No description provided."}
                         </div>
                       </div>
-                      <span className="inline-flex rounded-full border border-amber-300/35 bg-amber-400/15 px-2 py-0.5 text-xs font-semibold text-amber-100">
-                        {submissionStatusLabel(milestone.work_submission_status)}
-                      </span>
+                      <StatusBadge theme="operational" status="pending" label={submissionStatusLabel(milestone.work_submission_status)} />
                     </div>
 
                     <div className="mt-3 grid gap-3 text-sm text-sky-100/70 md:grid-cols-2 xl:grid-cols-4">
@@ -285,24 +276,29 @@ export default function ReviewerQueuePage() {
                         placeholder="Optional response note"
                       />
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
+                        <Button
+                          theme="operational"
+                          size="sm"
                           data-testid={`reviewer-queue-approve-${milestone.id}`}
                           onClick={() => reviewMilestone(milestone.id, "approve")}
                           disabled={busy[milestone.id]}
-                          className="rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                          loading={busy[milestone.id]}
+                          loadingLabel="Saving..."
                         >
-                          {busy[milestone.id] ? "Saving..." : "Approve"}
-                        </button>
-                        <button
-                          type="button"
+                          Approve
+                        </Button>
+                        <Button
+                          theme="operational"
+                          variant="secondary"
+                          size="sm"
                           data-testid={`reviewer-queue-send-back-${milestone.id}`}
                           onClick={() => reviewMilestone(milestone.id, "send_back")}
                           disabled={busy[milestone.id]}
-                          className="rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-60"
+                          loading={busy[milestone.id]}
+                          loadingLabel="Saving..."
                         >
-                          {busy[milestone.id] ? "Saving..." : "Send Back"}
-                        </button>
+                          Send Back
+                        </Button>
                         {isContractor && milestone.agreement_id ? (
                           <Link
                             to={`/app/agreements/${milestone.agreement_id}`}
@@ -316,7 +312,7 @@ export default function ReviewerQueuePage() {
                   </div>
                 ))}
               </div>
-            </section>
+            </Card>
           ))}
         </div>
       )}

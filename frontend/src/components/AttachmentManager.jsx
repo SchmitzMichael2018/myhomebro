@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
+import { Button } from "./ui/Button.jsx";
+import { Card } from "./ui/surfaces.jsx";
 
 const CATEGORIES = [
   { value: "WARRANTY", label: "Warranty" },
@@ -72,7 +74,7 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
   };
 
   return (
-    <div className="bg-white rounded shadow p-6">
+    <Card>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold">Attachments & Addenda</h3>
       </div>
@@ -131,12 +133,13 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
                   <td className="p-2 border">{new Date(it.uploaded_at).toLocaleString()}</td>
                   {canEdit && (
                     <td className="p-2 border">
-                      <button
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => onDelete(it.id)}
-                        className="px-2 py-1 rounded bg-red-600 text-white hover:bg-red-700"
                       >
                         Delete
-                      </button>
+                      </Button>
                     </td>
                   )}
                 </tr>
@@ -188,16 +191,15 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
             </label>
           </div>
           <div className="md:col-span-2">
-            <button
+            <Button
               type="submit"
               disabled={submitting || !file}
-              className="px-4 py-2 rounded bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-60"
             >
               {submitting ? "Uploading…" : "Upload Attachment"}
-            </button>
+            </Button>
           </div>
         </form>
       )}
-    </div>
+    </Card>
   );
 }

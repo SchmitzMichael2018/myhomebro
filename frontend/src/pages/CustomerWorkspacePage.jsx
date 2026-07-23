@@ -25,6 +25,14 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import {
+  Button,
+  EmptyState as SharedEmptyState,
+  InlineAlert,
+  LoadingSkeleton,
+  MetricCard,
+  StatusBadge,
+} from "../components/ui";
 
 const TABS = [
   "Overview",
@@ -111,21 +119,21 @@ function money(value) {
   return number.toLocaleString(undefined, { style: "currency", currency: "USD" });
 }
 
-function statusBadge(status) {
+function statusSemantic(status) {
   const key = String(status || "").toLowerCase();
   if (["active", "paid", "signed", "converted", "completed"].includes(key)) {
-    return "border-emerald-300/35 bg-emerald-400/12 text-emerald-100";
+    return "complete";
   }
   if (["prospect", "submitted", "pending", "sent", "draft", "open", "new"].includes(key)) {
-    return "border-sky-300/35 bg-sky-400/12 text-sky-100";
+    return key === "draft" ? "draft" : "pending";
   }
   if (["overdue", "unpaid"].includes(key)) {
-    return "border-amber-300/35 bg-amber-400/12 text-amber-100";
+    return "required";
   }
   if (["disputed", "cancelled", "rejected", "declined"].includes(key)) {
-    return "border-rose-300/35 bg-rose-400/12 text-rose-100";
+    return "blocked";
   }
-  return "border-white/15 bg-white/8 text-sky-100/75";
+  return "draft";
 }
 
 function formatAddress(contact = {}) {
@@ -138,41 +146,19 @@ function formatAddress(contact = {}) {
 
 function EmptyState({ title, children, actionLabel, actionNote, icon: Icon = FolderOpen }) {
   return (
-    <div className="rounded-2xl border border-dashed border-white/15 bg-slate-950/35 p-5 text-sm text-sky-100/70">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 font-semibold text-white">
-            <Icon size={17} className="text-sky-200/80" />
-            {title}
-          </div>
-          <p className="mt-1 leading-6">{children}</p>
-          {actionNote ? <p className="mt-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/45">{actionNote}</p> : null}
-        </div>
-        {actionLabel ? (
-          <button
-            type="button"
-            disabled
-            className="inline-flex min-h-[40px] shrink-0 items-center justify-center gap-2 rounded-xl border border-white/12 bg-slate-950/40 px-3 py-2 text-sm font-semibold text-sky-100/55"
-          >
-            {actionLabel}
-          </button>
-        ) : null}
-      </div>
-    </div>
+    <SharedEmptyState
+      theme="operational"
+      title={title}
+      description={children}
+      icon={Icon}
+      secondaryAction={actionLabel ? <Button theme="operational" variant="secondary" disabled>{actionLabel}</Button> : null}
+      tips={actionNote ? [actionNote] : []}
+    />
   );
 }
 
 function SummaryCard({ label, value, sublabel, icon: Icon }) {
-  return (
-    <div className="rounded-2xl border border-white/12 bg-slate-950/50 p-4 shadow-sm" data-testid={`customer-workspace-summary-${label.toLowerCase().replaceAll(" ", "-")}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100/60">{label}</div>
-        {Icon ? <Icon size={17} className="text-sky-200/70" /> : null}
-      </div>
-      <div className="mt-2 text-2xl font-bold tracking-tight text-white">{value}</div>
-      {sublabel ? <div className="mt-1 text-xs text-sky-100/55">{sublabel}</div> : null}
-    </div>
-  );
+  return <MetricCard theme="operational" label={label} value={value} description={sublabel} icon={Icon} data-testid={`customer-workspace-summary-${label.toLowerCase().replaceAll(" ", "-")}`} />;
 }
 
 function PreviewList({ rows, emptyTitle, emptyText, renderRow, testId, actionLabel, actionNote, icon }) {
@@ -203,7 +189,7 @@ function RowCard({ title, subtitle, meta, status, amount, url }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {amount != null ? <span className="text-sm font-bold text-white">{money(amount)}</span> : null}
-          {status ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusBadge(status)}`}>{String(status).replaceAll("_", " ")}</span> : null}
+          {status ? <StatusBadge theme="operational" status={statusSemantic(status)} label={String(status).replaceAll("_", " ")} /> : null}
           {url ? <ArrowRight size={16} className="text-sky-100/55" /> : null}
         </div>
       </div>
@@ -278,7 +264,7 @@ function ProjectAgreementCard({ row, selectionMode, selected, onToggle }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
           {row.total != null ? <span className="text-sm font-bold text-white">{money(row.total)}</span> : null}
-          {row.status ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusBadge(row.status)}`}>{status.replaceAll("_", " ")}</span> : null}
+          {row.status ? <StatusBadge theme="operational" status={statusSemantic(row.status)} label={status.replaceAll("_", " ")} /> : null}
           {actionUrl ? (
             <Link to={actionUrl} className="inline-flex min-h-[38px] items-center justify-center gap-2 rounded-xl border border-white/15 bg-slate-950/45 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15">
               {label} <ArrowRight size={14} />
@@ -686,7 +672,7 @@ function Timeline({ events }) {
                     <Icon size={13} />
                     {meta.label}
                   </span>
-                  {event.status ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusBadge(event.status)}`}>{String(event.status).replaceAll("_", " ")}</span> : null}
+                  {event.status ? <StatusBadge theme="operational" status={statusSemantic(event.status)} label={String(event.status).replaceAll("_", " ")} /> : null}
                 </div>
                 <div className="mt-2 font-semibold text-white">{safeText(event.title, "Customer activity")}</div>
                 {event.description ? <p className="mt-1 text-sm leading-6 text-sky-100/65">{event.description}</p> : null}
@@ -953,37 +939,28 @@ export default function CustomerWorkspacePage() {
       actions={
         workspace ? (
           <div className="flex flex-wrap items-center gap-2">
-            <Link to="/app/customers" className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/20 bg-slate-950/40 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15" data-testid="customer-workspace-back-link">
-              <ArrowLeft size={16} /> Back to Customers
-            </Link>
-            <Link to={`/app/customers/${id}/edit`} className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15">
-              <Edit size={16} /> Edit Customer
-            </Link>
-            <Link to={`/app/agreements/new/wizard?customerId=${id}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50">
-              <Plus size={16} /> New Agreement
-            </Link>
-            <Link to={`/app/intake/new?customerId=${id}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15">
-              <FileText size={16} /> Create Estimate
-            </Link>
-            <Link to={`/app/payments?customerId=${id}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15">
-              <Receipt size={16} /> New Invoice
-            </Link>
-            <button
-              type="button"
-              className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/20 bg-slate-950/60 px-3 py-2 text-sm font-semibold text-sky-100 hover:border-sky-300/40 hover:bg-sky-500/15"
+            <Button as={Link} to="/app/customers" theme="operational" variant="ghost" icon={ArrowLeft} data-testid="customer-workspace-back-link">Back to Customers</Button>
+            <Button as={Link} to={`/app/customers/${id}/edit`} theme="operational" variant="secondary" icon={Edit}>Edit Customer</Button>
+            <Button as={Link} to={`/app/agreements/new/wizard?customerId=${id}`} theme="operational" icon={Plus}>New Agreement</Button>
+            <Button as={Link} to={`/app/intake/new?customerId=${id}`} theme="operational" variant="secondary" icon={FileText}>Create Estimate</Button>
+            <Button as={Link} to={`/app/payments?customerId=${id}`} theme="operational" variant="secondary" icon={Receipt}>New Invoice</Button>
+            <Button
+              theme="operational"
+              variant="secondary"
+              icon={MessageSquare}
               onClick={() => {
                 setActiveTab("Communication");
                 setShowCommunicationForm(true);
               }}
             >
-              <MessageSquare size={16} /> Add Note
-            </button>
+              Add Note
+            </Button>
           </div>
         ) : null
       }
     >
-      {loading ? <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-6 text-sky-100/70">Loading customer workspace...</div> : null}
-      {!loading && error ? <div className="rounded-2xl border border-rose-300/35 bg-rose-400/10 p-6 text-rose-100">{error}</div> : null}
+      {loading ? <LoadingSkeleton theme="operational" variant="workspace" label="Loading customer workspace" /> : null}
+      {!loading && error ? <InlineAlert theme="operational" tone="danger" title="Customer workspace could not be loaded">{error}</InlineAlert> : null}
       {!loading && workspace ? (
         <>
           <nav className="text-sm text-sky-100/65" aria-label="Breadcrumb">
@@ -1002,7 +979,7 @@ export default function CustomerWorkspacePage() {
           <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusBadge(contact.status)}`}>{safeText(contact.status, "active")}</span>
+                <StatusBadge theme="operational" status={statusSemantic(contact.status)} label={safeText(contact.status, "active")} />
                 <span className="text-sm text-sky-100/65">Customer since {formatDate(stats.customer_since)}</span>
               </div>
               <div className="text-sm text-sky-100/60">Last activity {formatDateTime(stats.last_activity)}</div>
@@ -1018,8 +995,8 @@ export default function CustomerWorkspacePage() {
                   onClick={() => setActiveTab(tab)}
                   className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
                     activeTab === tab
-                      ? "border-sky-300/50 bg-sky-400/15 text-white"
-                      : "border-white/12 bg-slate-950/35 text-sky-100/65 hover:border-sky-300/35 hover:text-white"
+                      ? "border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] text-[var(--mhb-text-primary)]"
+                      : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-interactive)] text-[var(--mhb-text-secondary)] hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-surface-interactive-hover)] hover:text-[var(--mhb-text-primary)]"
                   }`}
                 >
                   {tab}

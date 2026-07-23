@@ -1634,31 +1634,31 @@ export default function AgreementList() {
   const PaginationControls = ({ placement = "bottom" }) => (
     <div
       data-testid={`agreement-pagination-${placement}`}
-      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-[#061d42]/80 px-4 py-3 text-sm text-sky-100 shadow-[0_14px_34px_rgba(2,8,23,0.2)] md:flex-row md:items-center md:justify-between"
+      className="flex flex-col gap-3 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 py-3 text-sm text-[var(--mhb-text-secondary)] shadow-[var(--mhb-shadow-card)] md:flex-row md:items-center md:justify-between"
     >
       <div className="font-medium">
-        Showing <span className="font-bold text-white">{pageStart}</span>-
-        <span className="font-bold text-white">{pageEnd}</span> of{" "}
-        <span className="font-bold text-white">{totalCount}</span>
+        Showing <span className="font-bold text-[var(--mhb-text-primary)]">{pageStart}</span>-
+        <span className="font-bold text-[var(--mhb-text-primary)]">{pageEnd}</span> of{" "}
+        <span className="font-bold text-[var(--mhb-text-primary)]">{totalCount}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           onClick={() => setPageNumber((current) => Math.max(1, current - 1))}
           disabled={pageNumber <= 1 || loading}
-          className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 font-semibold text-white transition hover:border-white/30 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45"
+          className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-3 py-2 font-semibold text-[var(--mhb-text-primary)] transition hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-interactive-ghost-hover)] disabled:cursor-not-allowed disabled:opacity-45"
         >
           Previous
         </button>
-        <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sky-100">
-          Page <span className="font-bold text-white">{pageNumber}</span> of{" "}
-          <span className="font-bold text-white">{totalPages}</span>
+        <span className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3 py-2 text-[var(--mhb-text-secondary)]">
+          Page <span className="font-bold text-[var(--mhb-text-primary)]">{pageNumber}</span> of{" "}
+          <span className="font-bold text-[var(--mhb-text-primary)]">{totalPages}</span>
         </span>
         <button
           type="button"
           onClick={() => setPageNumber((current) => Math.min(totalPages, current + 1))}
           disabled={pageNumber >= totalPages || loading}
-          className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 font-semibold text-white transition hover:border-white/30 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-45"
+          className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-3 py-2 font-semibold text-[var(--mhb-text-primary)] transition hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-interactive-ghost-hover)] disabled:cursor-not-allowed disabled:opacity-45"
         >
           Next
         </button>
@@ -1677,7 +1677,7 @@ export default function AgreementList() {
       {/* Header */}
       <div
         data-testid="agreement-list-controls"
-        className="rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_24px_60px_rgba(2,8,23,0.24)] backdrop-blur md:p-5"
+        className="rounded-[24px] border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4 text-[var(--mhb-text-primary)] shadow-[var(--mhb-shadow-card)] md:p-5"
       >
       <div className="flex flex-wrap items-center gap-2.5">
         <input
@@ -1687,7 +1687,7 @@ export default function AgreementList() {
             setPageNumber(1);
           }}
           placeholder="Search by project, customer, type, subtype, email, or ID"
-          className="min-w-[280px] flex-1 rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-medium text-white shadow-sm outline-none transition placeholder:text-sky-100/55 focus:border-sky-300/70 focus:bg-white/15"
+          className="min-w-[280px] flex-1 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-4 py-2.5 text-sm font-medium text-[var(--mhb-text-primary)] shadow-sm outline-none transition placeholder:text-[var(--mhb-text-muted)] focus:border-[var(--mhb-border-focus)] focus:ring-2 focus:ring-[var(--mhb-border-focus)]/25"
         />
 
         <select
@@ -1696,7 +1696,7 @@ export default function AgreementList() {
             setStatusFilter(e.target.value);
             setPageNumber(1);
           }}
-          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
+          className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3.5 py-2.5 text-sm font-medium text-[var(--mhb-text-primary)] shadow-sm"
         >
           <option value="all">All Status</option>
           <option value="draft">draft</option>
@@ -1710,7 +1710,7 @@ export default function AgreementList() {
         <select
           value={projectClassFilter}
           onChange={(e) => updateFilters({ project_class: e.target.value })}
-          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
+          className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3.5 py-2.5 text-sm font-medium text-[var(--mhb-text-primary)] shadow-sm"
           data-testid="agreement-list-project-class-filter"
         >
           <option value="all">All Projects</option>
@@ -1721,7 +1721,7 @@ export default function AgreementList() {
         <select
           value={projectModeFilter}
           onChange={(e) => updateFilters({ project_mode: e.target.value })}
-          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
+          className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3.5 py-2.5 text-sm font-medium text-[var(--mhb-text-primary)] shadow-sm"
           data-testid="agreement-list-project-mode-filter"
         >
           <option value="all">All Modes</option>
@@ -1732,7 +1732,7 @@ export default function AgreementList() {
           ))}
         </select>
 
-        <label className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm">
+        <label className="inline-flex items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3.5 py-2.5 text-sm font-medium text-[var(--mhb-text-primary)] shadow-sm">
           <input
             type="checkbox"
             checked={showArchived}
@@ -1752,7 +1752,7 @@ export default function AgreementList() {
             setPageSize(Number(e.target.value));
             setPageNumber(1);
           }}
-          className="rounded-xl border border-white/15 bg-[#0b2a57] px-3.5 py-2.5 text-sm font-medium text-sky-50 shadow-sm"
+          className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3.5 py-2.5 text-sm font-medium text-[var(--mhb-text-primary)] shadow-sm"
           data-testid="agreement-page-size-select"
         >
           {[10, 20, 50, 100].map((n) => (
@@ -1764,7 +1764,7 @@ export default function AgreementList() {
 
         <button
           onClick={() => load({ force: true, source: "refresh-button" })}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-white/10 text-sky-50 shadow-sm transition hover:border-white/30 hover:bg-white/15"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-secondary)] shadow-sm transition hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-interactive-ghost-hover)]"
           title="Refresh"
         >
           <RefreshCw size={16} />
@@ -1888,7 +1888,7 @@ export default function AgreementList() {
       {/* Table */}
       <div
         data-testid="agreement-list-table-shell"
-        className="min-h-[420px] overflow-x-auto rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)] backdrop-blur"
+        className="min-h-[420px] overflow-x-auto rounded-[24px] border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] text-[var(--mhb-text-primary)] shadow-[var(--mhb-shadow-card)]"
       >
         <table className="w-full min-w-[1160px] table-fixed text-[14px] leading-5">
           <colgroup>
@@ -1903,7 +1903,7 @@ export default function AgreementList() {
             <col className="w-[86px]" />
             <col className="w-[188px]" />
           </colgroup>
-          <thead className="bg-white/[0.07]">
+          <thead className="bg-[var(--mhb-surface-inset)]">
             <tr>
               <th className="px-3 py-3 text-center">
                 <input
@@ -1912,19 +1912,16 @@ export default function AgreementList() {
                   checked={page.length > 0 && page.every((r) => selected.has(r.id))}
                 />
               </th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Primary</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Agreement</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Status</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Escrow</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Progress</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Signatures</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Total</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Invoices</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-sky-100/75">Actions</th>
+              {["Primary", "Agreement", "Status", "Escrow", "Progress", "Signatures"].map((label) => (
+                <th key={label} className="px-3 py-3 text-left text-xs font-semibold uppercase tracking-[0.14em] text-[var(--mhb-text-secondary)]">{label}</th>
+              ))}
+              {["Total", "Invoices", "Actions"].map((label) => (
+                <th key={label} className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-[0.14em] text-[var(--mhb-text-secondary)]">{label}</th>
+              ))}
             </tr>
           </thead>
 
-          <tbody className="divide-y divide-white/10">
+          <tbody className="divide-y divide-[var(--mhb-border-divider)]">
             {loading ? (
               <tr>
                 <td className="px-6 py-14 text-center text-sm text-sky-100/75" colSpan={10}>

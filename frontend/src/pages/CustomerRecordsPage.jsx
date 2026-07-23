@@ -7,6 +7,14 @@ import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
 import { customerHubTabs } from "../components/dashboard/hubTabsConfig.js";
+import {
+  Button,
+  Card,
+  EmptyState,
+  InlineAlert,
+  LoadingSkeleton,
+  StatusBadge,
+} from "../components/ui";
 
 const FILTERS = [
   { key: "", label: "All" },
@@ -46,30 +54,29 @@ function titleCase(value) {
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : "-";
 }
 
-function statusClass(status) {
+function statusSemantic(status) {
   const key = String(status || "").toLowerCase();
   if (["paid", "completed", "closed", "converted", "signed", "released"].includes(key)) {
-    return "border-emerald-300/35 bg-emerald-400/12 text-emerald-100";
+    return "complete";
   }
   if (["sent", "submitted", "pending", "approved", "new", "draft", "routed"].includes(key)) {
-    return "border-sky-300/35 bg-sky-400/12 text-sky-100";
+    return key === "draft" ? "draft" : "pending";
   }
   if (["disputed", "changes_requested", "follow_up", "pending_customer_response"].includes(key)) {
-    return "border-amber-300/35 bg-amber-400/12 text-amber-100";
+    return "recommended";
   }
   if (["cancelled", "canceled", "rejected", "declined", "void"].includes(key)) {
-    return "border-rose-300/35 bg-rose-400/12 text-rose-100";
+    return "blocked";
   }
-  return "border-white/15 bg-white/8 text-sky-100/75";
+  return "draft";
 }
 
-function typeClass(type) {
+function typeSemantic(type) {
   const key = String(type || "").toLowerCase();
-  if (key === "request") return "border-sky-300/35 bg-sky-400/12 text-sky-100";
-  if (key === "opportunity") return "border-indigo-300/35 bg-indigo-400/12 text-indigo-100";
-  if (key === "agreement") return "border-emerald-300/35 bg-emerald-400/12 text-emerald-100";
-  if (key === "payment") return "border-amber-300/35 bg-amber-400/12 text-amber-100";
-  return "border-white/15 bg-white/8 text-sky-100/75";
+  if (key === "opportunity") return "recommended";
+  if (key === "agreement") return "complete";
+  if (key === "request" || key === "payment") return "pending";
+  return "draft";
 }
 
 function buildParams({ activeFilter, search, page }) {
@@ -161,22 +168,20 @@ export default function CustomerRecordsPage() {
       subtitle="A chronological CRM feed of customer requests, opportunities, agreements, payments, and communication."
       variant="operational"
       actions={
-        <button
-          type="button"
+        <Button
+          theme="operational"
+          variant="secondary"
+          icon={RefreshCw}
           onClick={() => setReloadKey((current) => current + 1)}
-          className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-white/16 bg-slate-900/70 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:border-sky-300/35 hover:bg-sky-500/15"
         >
-          <RefreshCw size={16} />
           Refresh
-        </button>
+        </Button>
       }
     >
       <HubTabs tabs={customerHubTabs} />
 
       {loadError ? (
-        <div className="rounded-2xl border border-amber-300/35 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-          {loadError}
-        </div>
+        <InlineAlert theme="operational" tone="warning" title="Customer records could not be loaded">{loadError}</InlineAlert>
       ) : null}
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6" data-testid="customer-records-summary">
@@ -188,10 +193,10 @@ export default function CustomerRecordsPage() {
               type="button"
               onClick={() => setFilter(card.key)}
               data-testid={`customer-records-summary-${card.summaryKey}`}
-              className={`rounded-2xl border p-4 text-left shadow-sm transition ${
+              className={`rounded-2xl border p-4 text-left shadow-[var(--mhb-shadow-card)] transition ${
                 selected
-                  ? "border-sky-300/45 bg-sky-400/15 text-white"
-                  : "border-white/12 bg-slate-950/45 text-sky-100/75 hover:border-sky-300/35 hover:bg-sky-500/10"
+                  ? "border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] text-[var(--mhb-text-primary)]"
+                  : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-interactive)] text-[var(--mhb-text-secondary)] hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-surface-interactive-hover)]"
               }`}
             >
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] opacity-70">{card.label}</div>
@@ -201,7 +206,7 @@ export default function CustomerRecordsPage() {
         })}
       </div>
 
-      <section className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+      <Card theme="operational" padding="sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2" data-testid="customer-records-filter-chips">
             {FILTERS.map((filter) => {
@@ -213,8 +218,8 @@ export default function CustomerRecordsPage() {
                   onClick={() => setFilter(filter.key)}
                   className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
                     selected
-                      ? "border-white/70 bg-white text-slate-950"
-                      : "border-white/12 bg-slate-950/35 text-sky-100/70 hover:border-sky-300/35 hover:text-white"
+                      ? "border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] text-[var(--mhb-text-primary)]"
+                      : "border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-secondary)] hover:border-[var(--mhb-border-strong)] hover:text-[var(--mhb-text-primary)]"
                   }`}
                 >
                   {filter.label}
@@ -226,44 +231,44 @@ export default function CustomerRecordsPage() {
           <form onSubmit={submitSearch} className="flex min-w-0 flex-1 gap-2 lg:max-w-md">
             <label className="relative min-w-0 flex-1">
               <span className="sr-only">Search records</span>
-              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sky-100/45" />
+              <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--mhb-text-muted)]" />
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search customer, email, project, request..."
-                className="min-h-[42px] w-full rounded-xl border border-white/15 bg-slate-950/55 pl-9 pr-3 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/40 focus:border-sky-300/60"
+                className="min-h-[42px] w-full rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] pl-9 pr-3 text-sm font-semibold text-[var(--mhb-text-primary)] outline-none placeholder:text-[var(--mhb-text-muted)] focus:border-[var(--mhb-border-focus)] focus:ring-2 focus:ring-[var(--mhb-border-focus)]/25"
               />
             </label>
-            <button type="submit" className="rounded-xl border border-white/70 bg-white px-4 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50">
-              Search
-            </button>
+            <Button type="submit" theme="operational">Search</Button>
           </form>
         </div>
-      </section>
+      </Card>
 
       <section className="space-y-3" data-testid="customer-records-feed">
         {loading ? (
-          <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-6 text-sky-100/70">Loading customer records...</div>
+          <Card theme="operational"><LoadingSkeleton theme="operational" variant="list" label="Loading customer records" /></Card>
         ) : payload.results.length === 0 ? (
-          <div data-testid="customer-records-empty" className="rounded-2xl border border-dashed border-white/15 bg-slate-950/35 p-8 text-center">
-            <h2 className="text-lg font-semibold text-white">No records match this view</h2>
-            <p className="mt-2 text-sm text-sky-100/65">Clear filters or search for another customer, project, request, or agreement.</p>
-          </div>
+          <EmptyState
+            theme="operational"
+            data-testid="customer-records-empty"
+            title="No records match this view"
+            description="Clear filters or search for another customer, project, request, or agreement."
+          />
         ) : (
           payload.results.map((record) => (
-            <article key={record.id} data-testid={`customer-record-${record.id}`} className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+            <Card as="article" theme="operational" padding="sm" key={record.id} data-testid={`customer-record-${record.id}`}>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${typeClass(record.type)}`}>{titleCase(record.type)}</span>
-                    {record.status ? <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${statusClass(record.status)}`}>{titleCase(record.status)}</span> : null}
-                    {record.needs_attention ? <span className="rounded-full border border-amber-300/35 bg-amber-400/12 px-2.5 py-1 text-xs font-semibold text-amber-100">Needs attention</span> : null}
+                    <StatusBadge theme="operational" status={typeSemantic(record.type)} label={titleCase(record.type)} />
+                    {record.status ? <StatusBadge theme="operational" status={statusSemantic(record.status)} label={titleCase(record.status)} /> : null}
+                    {record.needs_attention ? <StatusBadge theme="operational" status="required" label="Needs attention" /> : null}
                   </div>
-                  <h2 className="mt-3 text-lg font-semibold text-white">{record.title || "Customer record"}</h2>
-                  {record.description ? <p className="mt-1 line-clamp-2 text-sm leading-6 text-sky-100/65">{record.description}</p> : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-sky-100/60">
+                  <h2 className="mt-3 text-lg font-semibold text-[var(--mhb-text-primary)]">{record.title || "Customer record"}</h2>
+                  {record.description ? <p className="mt-1 line-clamp-2 text-sm leading-6 text-[var(--mhb-text-muted)]">{record.description}</p> : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-[var(--mhb-text-muted)]">
                     <span>{formatDate(record.timestamp)}</span>
-                    <Link to={`/app/customers/${record.customer_id}`} className="font-semibold text-sky-100 hover:text-white">
+                    <Link to={`/app/customers/${record.customer_id}`} className="font-semibold text-[var(--mhb-text-link)] hover:underline">
                       {record.customer_name || "Customer"}
                     </Link>
                     {record.customer_email ? <span>{record.customer_email}</span> : null}
@@ -271,45 +276,46 @@ export default function CustomerRecordsPage() {
                   </div>
                 </div>
                 <div className="flex shrink-0 flex-col items-start gap-2 sm:flex-row sm:items-center lg:flex-col lg:items-end">
-                  {record.amount ? <div className="text-base font-bold text-white">{formatMoney(record.amount)}</div> : null}
-                  <Link to={record.url || `/app/customers/${record.customer_id}`} className="inline-flex min-h-[40px] items-center gap-2 rounded-xl border border-white/70 bg-white px-3 py-2 text-sm font-bold text-slate-950 hover:bg-sky-50">
+                  {record.amount ? <div className="text-base font-bold text-[var(--mhb-text-primary)]">{formatMoney(record.amount)}</div> : null}
+                  <Button as={Link} theme="operational" to={record.url || `/app/customers/${record.customer_id}`} icon={ArrowRight} iconPosition="end">
                     {record.primary_action_label || "Open record"}
-                    <ArrowRight size={15} />
-                  </Link>
-                  <Link to={`/app/customers/${record.customer_id}`} className="text-sm font-semibold text-sky-100/75 hover:text-white">
+                  </Button>
+                  <Link to={`/app/customers/${record.customer_id}`} className="text-sm font-semibold text-[var(--mhb-text-link)] hover:underline">
                     Customer workspace
                   </Link>
                 </div>
               </div>
-            </article>
+            </Card>
           ))
         )}
       </section>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-white/12 bg-slate-950/45 px-4 py-3 text-sm text-sky-100/70 sm:flex-row sm:items-center sm:justify-between">
+      <Card theme="operational" padding="sm" className="flex flex-col gap-3 text-sm text-[var(--mhb-text-muted)] sm:flex-row sm:items-center sm:justify-between">
         <div>
           Showing {payload.results.length ? (page - 1) * 20 + 1 : 0}-{Math.min(page * 20, payload.count)} of {payload.count}
         </div>
         <div className="flex items-center gap-2" data-testid="customer-records-pagination">
-          <button
-            type="button"
+          <Button
+            theme="operational"
+            variant="secondary"
+            size="sm"
             onClick={() => goToPage(page - 1)}
             disabled={!payload.previous || loading}
-            className="rounded-xl border border-white/16 bg-slate-900/70 px-3 py-1.5 font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Prev
-          </button>
+          </Button>
           <span>Page {page}</span>
-          <button
-            type="button"
+          <Button
+            theme="operational"
+            variant="secondary"
+            size="sm"
             onClick={() => goToPage(page + 1)}
             disabled={!payload.next || loading}
-            className="rounded-xl border border-white/16 bg-slate-900/70 px-3 py-1.5 font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
           >
             Next
-          </button>
+          </Button>
         </div>
-      </div>
+      </Card>
     </ContractorPageSurface>
   );
 }

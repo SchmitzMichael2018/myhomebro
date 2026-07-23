@@ -7,6 +7,9 @@ import { getSupportTicket, listSupportTickets, replyToSupportTicket } from "../a
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import SupportRequestModal from "../components/SupportRequestModal.jsx";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
+import { Button } from "../components/ui/Button.jsx";
+import { Card } from "../components/ui/surfaces.jsx";
+import { LoadingSkeleton } from "../components/ui/feedback.jsx";
 
 function fmtDate(value) {
   if (!value) return "—";
@@ -263,42 +266,39 @@ export default function SupportTicketsPage() {
       variant="operational"
     >
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+        <Card theme="operational" className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <div className="text-sm font-semibold text-slate-900">Need help?</div>
-            <div className="text-sm text-slate-600">
+            <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">Need help?</div>
+            <div className="text-sm text-[var(--mhb-text-muted)]">
               Open a support ticket, and we’ll send you a confirmation email with a ticket number.
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
-            <button
-              type="button"
+            <Button
               onClick={() => setSupportOpen(true)}
               data-testid="open-support-request-button"
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-800"
             >
               <Ticket size={16} />
               New Support Request
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant="secondary"
               onClick={refresh}
               disabled={refreshing}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw size={16} />
               {refreshing ? "Refreshing..." : "Refresh"}
-            </button>
+            </Button>
           </div>
-        </div>
+        </Card>
 
         {detail ? (
-          <section data-testid="support-ticket-detail" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <Card theme="operational" data-testid="support-ticket-detail">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <div className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Ticket Detail</div>
-                <h2 className="mt-1 text-2xl font-black text-slate-950">{detail.ticket_number}</h2>
-                <p className="mt-1 text-sm text-slate-600">{detail.subject}</p>
+                <h2 className="mt-1 text-2xl font-black text-[var(--mhb-text-primary)]">{detail.ticket_number}</h2>
+                <p className="mt-1 text-sm text-[var(--mhb-text-muted)]">{detail.subject}</p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone={toneForStatus(detail.status)}>{detail.status_display || titleCase(detail.status)}</Badge>
@@ -409,7 +409,7 @@ export default function SupportTicketsPage() {
                 Open Attachment
               </a>
             ) : null}
-          </section>
+          </Card>
         ) : null}
 
         <section className="space-y-3">
@@ -419,9 +419,7 @@ export default function SupportTicketsPage() {
           </div>
 
           {loading || detailLoading ? (
-            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-600 shadow-sm">
-              Loading tickets...
-            </div>
+            <Card theme="operational"><LoadingSkeleton theme="operational" variant="table" label="Loading support tickets" /></Card>
           ) : (
             <TicketTable
               rows={tickets}

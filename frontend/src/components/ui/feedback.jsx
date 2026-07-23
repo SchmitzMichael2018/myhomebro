@@ -11,11 +11,26 @@ const alertTones = {
   danger: { classes: "border-red-200 bg-red-50 text-red-950", icon: AlertCircle },
 };
 
-export function InlineAlert({ tone = "info", title = "", children, actions = null, className = "", ...props }) {
+const operationalAlertTones = {
+  info: "border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] text-[var(--mhb-text-primary)]",
+  success: "border-[var(--mhb-status-complete-border)] bg-[var(--mhb-status-complete-bg)] text-[var(--mhb-status-complete-text)]",
+  warning: "border-[var(--mhb-status-pending-border)] bg-[var(--mhb-status-pending-bg)] text-[var(--mhb-status-pending-text)]",
+  danger: "border-[var(--mhb-status-blocked-border)] bg-[var(--mhb-status-blocked-bg)] text-[var(--mhb-status-blocked-text)]",
+};
+
+export function InlineAlert({ tone = "info", title = "", children, actions = null, theme = "default", className = "", ...props }) {
   const config = alertTones[tone] || alertTones.info;
   const Icon = config.icon;
   return (
-    <div role={tone === "danger" ? "alert" : "status"} className={cx("flex gap-3 rounded-xl border p-4", config.classes, className)} {...props}>
+    <div
+      role={tone === "danger" ? "alert" : "status"}
+      className={cx(
+        "flex gap-3 rounded-xl border p-4",
+        theme === "operational" ? operationalAlertTones[tone] || operationalAlertTones.info : config.classes,
+        className
+      )}
+      {...props}
+    >
       <Icon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         {title ? <div className="font-black">{title}</div> : null}

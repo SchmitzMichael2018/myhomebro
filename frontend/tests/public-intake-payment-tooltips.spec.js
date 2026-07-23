@@ -64,6 +64,10 @@ test("project intake payment preferences explain each option without changing se
   });
 
   await page.goto("/start-project/payment-tooltip-token", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("public-intake-project-snapshot")).toBeVisible();
+  await page.getByTestId("public-intake-project-snapshot-continue").click();
+  await expect(page.getByTestId("public-intake-structured-output-step")).toBeVisible();
+  await page.getByTestId("public-intake-structured-continue").click();
   await expect(page.getByTestId("public-intake-project-details-step")).toBeVisible();
 
   await expect(page.getByText("Payment Preferences")).toBeVisible();

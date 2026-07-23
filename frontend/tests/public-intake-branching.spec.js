@@ -1172,6 +1172,7 @@ test("public intake bedroom extension overrides stale flooring and patio classif
 test("public intake description helper refines the project idea before generating the plan", async ({
   page,
 }) => {
+  let intakeUpdateRequests = 0;
   await page.route("**/api/projects/public-intake/**", async (route) => {
     const requestUrl = route.request().url();
     const method = route.request().method();
@@ -1254,6 +1255,7 @@ test("public intake description helper refines the project idea before generatin
     }
 
     const body = route.request().postDataJSON();
+    intakeUpdateRequests += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json",
@@ -1293,12 +1295,23 @@ test("public intake description helper refines the project idea before generatin
     phone: "555-444-9999",
   });
   await expect(page).toHaveURL(/\/start-project\/landing-token-refine$/);
+  await expect(page.getByTestId("public-intake-main-card")).toBeVisible();
+  await expect(page.getByTestId("public-intake-improve-description-button")).toBeDisabled();
   const originalDescription = "kitchen cabinet replacement with layout and finish choices";
   await page.getByTestId("public-intake-accomplishment-text").fill(originalDescription);
   await expect(page.getByTestId("public-intake-improve-description-button")).toBeVisible();
   await expect(page.getByTestId("public-intake-improve-description-button")).toBeEnabled({ timeout: 15000 });
+  const improveRequestPromise = page.waitForRequest((request) =>
+    request.method() === "POST" && request.url().includes("/public-intake/improve-description/")
+  );
   await page.getByTestId("public-intake-improve-description-button").click();
+  const improveRequest = await improveRequestPromise;
+  expect(improveRequest.postDataJSON()).toMatchObject({
+    token: "landing-token-refine",
+    current_description: originalDescription,
+  });
   await expect(page.getByTestId("public-intake-description-refinement-card")).toBeVisible();
+  expect(intakeUpdateRequests).toBe(0);
   await expect(page.getByTestId("public-intake-description-refinement-card")).toContainText(
     "Here’s a clearer version based on your description."
   );

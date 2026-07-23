@@ -7,6 +7,7 @@ import { useWhoAmI } from "../hooks/useWhoAmI";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import HubTabs from "../components/dashboard/HubTabs.jsx";
 import { teamOrganizationTabs } from "../components/dashboard/hubTabsConfig.js";
+import { Button, EmptyState, InlineAlert, LoadingSkeleton } from "../components/ui";
 
 const ROLE_OPTIONS = [
   { value: "employee_readonly", label: "Read-only", summary: "Can view permitted account information with limited update access." },
@@ -17,7 +18,6 @@ const ROLE_OPTIONS = [
 const operationalPanel = "mhb-operational-panel";
 const operationalCard = "mhb-glass";
 const operationalButton = "mhb-btn";
-const operationalPrimaryButton = "mhb-btn primary";
 const operationalControl = "mhb-operational-control";
 const sectionTitleClass = "text-base font-bold text-white";
 const sectionHelperClass = "mt-1 text-sm text-sky-100/70";
@@ -284,15 +284,18 @@ export default function TeamOverviewPage() {
   }, [capabilityRows.length, invitationSummary.pending, roleRows, summaryCounts.inactiveMembers, summaryCounts.incompleteProfiles]);
 
   if (whoLoading) {
-    return <div className="p-6 text-sm text-gray-500">Loading your profile...</div>;
+    return (
+      <ContractorPageSurface eyebrow="Team" title="Team" subtitle="Loading your organization..." variant="operational">
+        <LoadingSkeleton theme="operational" variant="workspace" label="Loading team profile" />
+      </ContractorPageSurface>
+    );
   }
 
   if (whoError || !isContractor) {
     return (
-      <div className="p-6">
-        <h1 className="mb-2 text-xl font-semibold">Team</h1>
-        <p className="text-sm text-red-500">Only contractors can view team organization.</p>
-      </div>
+      <ContractorPageSurface eyebrow="Team" title="Team" subtitle="Manage your organization." variant="operational">
+        <InlineAlert theme="operational" tone="danger" title="Team is unavailable">Only contractors can view team organization.</InlineAlert>
+      </ContractorPageSurface>
     );
   }
 
@@ -303,23 +306,22 @@ export default function TeamOverviewPage() {
       subtitle="Manage your employees, subcontractors, roles, capabilities, and organization."
       actions={
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
+          <Button
+            theme="operational"
+            icon={Plus}
             onClick={() => navigate("/app/team/members")}
-            className={`${operationalPrimaryButton} inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-black`}
             data-testid="team-overview-add-member"
           >
-            <Plus className="h-4 w-4" aria-hidden="true" />
             Add Team Member
-          </button>
-          <button
-            type="button"
+          </Button>
+          <Button
+            theme="operational"
+            variant="secondary"
             onClick={() => navigate("/app/team/subcontractors")}
-            className={`${operationalButton} inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-bold`}
             data-testid="team-overview-invite-subcontractor"
           >
             Invite Subcontractor
-          </button>
+          </Button>
         </div>
       }
       className="mx-auto max-w-[1180px]"
@@ -391,12 +393,9 @@ export default function TeamOverviewPage() {
           </div>
 
           {loading ? (
-            <div className={loadingTextClass}>Loading team directory...</div>
+            <LoadingSkeleton theme="operational" variant="list" label="Loading team directory" className="mt-4" />
           ) : filteredMembers.length === 0 ? (
-            <div className={`mt-4 ${emptyStateClass}`} data-testid="team-directory-empty">
-              <div className="font-semibold text-white">No team members match this view</div>
-              <div className="mt-1">Clear filters or add team members to build your organization.</div>
-            </div>
+            <EmptyState theme="operational" className="mt-4" data-testid="team-directory-empty" title="No team members match this view" description="Clear filters or add team members to build your organization." />
           ) : (
             <div className="mt-4 grid gap-3" data-testid="team-directory-results">
               {filteredMembers.map((member) => (

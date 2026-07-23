@@ -1,4 +1,5 @@
 import React from "react";
+import { WorkspacePageHeader } from "../ui";
 
 export default function ContractorPageSurface({
   eyebrow,
@@ -47,7 +48,16 @@ export default function ContractorPageSurface({
       <div
         className={`${surfaceBase} ${surfaceClassName}`.trim()}
       >
-        {(title || subtitle || eyebrow || actions) ? (
+        {(title || subtitle || eyebrow || actions) && operational ? (
+          <WorkspacePageHeader
+            theme="operational"
+            eyebrow={eyebrow}
+            title={title}
+            subtitle={subtitle}
+            secondaryActions={actions}
+            className="mb-5 lg:pr-[280px]"
+          />
+        ) : (title || subtitle || eyebrow || actions) ? (
           <div className={headerClass}>
             <div className="min-w-0">
               {eyebrow ? (

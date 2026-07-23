@@ -8,6 +8,8 @@ import { useParams, useNavigate, Link, useLocation } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import DateField from "../components/DateField"; // reliable calendar button
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { Button, Card, InlineAlert, LoadingSkeleton } from "../components/ui";
 
 // --- Helpers ---------------------------------------------------------------
 
@@ -313,18 +315,34 @@ export default function MilestoneDetail() {
   }, [loading, draftLoaded]);
 
   if (loading) {
-    return <div className="p-6 text-center text-gray-500">Loading milestone...</div>;
+    return (
+      <ContractorPageSurface eyebrow="Work" title="Milestone" subtitle="Loading milestone details..." variant="operational" className="max-w-3xl">
+        <LoadingSkeleton theme="operational" variant="form" label="Loading milestone" />
+      </ContractorPageSurface>
+    );
   }
-  if (error || !milestone) return null;
+  if (error || !milestone) {
+    return (
+      <ContractorPageSurface eyebrow="Work" title="Milestone" subtitle="Review milestone scope, dates, amount, and completion state." variant="operational" className="max-w-3xl">
+        <InlineAlert theme="operational" tone="danger" title="Milestone could not be loaded">{error || "The milestone is unavailable."}</InlineAlert>
+      </ContractorPageSurface>
+    );
+  }
 
   const serverAmount = milestone?.amount ?? 0;
   const formAmount = form?.amount === "" ? 0 : Number(form?.amount);
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <ContractorPageSurface
+      eyebrow="Work"
+      title={milestone.title || "Untitled Milestone"}
+      subtitle={`Part of Agreement: ${milestone.agreement_title || `Agreement #${milestone.agreement}`}`}
+      variant="operational"
+      className="max-w-3xl"
+    >
       {/* ✅ Read-only banner */}
       {readOnly && (
-        <div className="mb-4 p-3 rounded bg-slate-50 border border-slate-200 text-slate-700">
+        <div className="mb-4 rounded-xl border border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] p-3 text-[var(--mhb-text-primary)]">
           <div className="text-sm font-semibold">Read-only</div>
           <div className="text-sm mt-1">
             This milestone is view-only because it was opened from an invoice.
@@ -335,35 +353,33 @@ export default function MilestoneDetail() {
 
       {/* Top bar */}
       <div className="mb-4 flex items-center justify-between">
-        <button onClick={goBack} className="text-sm text-blue-600 hover:underline">
+        <button onClick={goBack} className="text-sm font-bold text-[var(--mhb-text-link)] hover:underline">
           ← Back
         </button>
 
         {/* ✅ Hide save controls in read-only */}
         {!readOnly ? (
           <div className="flex items-center gap-2">
-            <button type="button" onClick={saveDraft} className="px-3 py-2 rounded border hover:bg-gray-50">
+            <Button theme="operational" variant="secondary" size="sm" onClick={saveDraft}>
               Save Draft
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              theme="operational"
+              size="sm"
               onClick={saveChanges}
               disabled={!isDirty()}
-              className={`px-3 py-2 rounded text-white ${
-                isDirty() ? "bg-green-600 hover:bg-green-700" : "bg-gray-400 cursor-not-allowed"
-              }`}
             >
               Save Changes
-            </button>
+            </Button>
           </div>
         ) : (
-          <div className="text-xs text-slate-500">Editing disabled</div>
+          <div className="text-xs text-[var(--mhb-text-muted)]">Editing disabled</div>
         )}
       </div>
 
       {/* Draft banner (disabled in readonly) */}
       {!readOnly && (draftLoaded || lastSavedAt) && (
-        <div className="mb-4 p-3 rounded bg-yellow-50 border border-yellow-200 text-yellow-800 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-[var(--mhb-status-pending-border)] bg-[var(--mhb-status-pending-bg)] p-3 text-[var(--mhb-status-pending-text)]">
           <div className="text-sm">
             {draftLoaded ? "Loaded local draft." : "Draft available."}{" "}
             {lastSavedAt && (
@@ -378,26 +394,22 @@ export default function MilestoneDetail() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">{milestone.title || "Untitled Milestone"}</h1>
-        <p className="text-gray-500">
+      <div className="mb-2 text-sm text-[var(--mhb-text-muted)]">
           Part of Agreement:{" "}
-          <Link to={`/agreements/${milestone.agreement}`} className="text-blue-600 font-semibold hover:underline">
+          <Link to={`/agreements/${milestone.agreement}`} className="font-semibold text-[var(--mhb-text-link)] hover:underline">
             {milestone.agreement_title || `Agreement #${milestone.agreement}`}
           </Link>
-        </p>
       </div>
 
       {/* Card */}
-      <div className="bg-white p-6 rounded-xl shadow-md space-y-6">
+      <Card theme="operational" className="space-y-6">
         {/* Amount + Status */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
           <div>
-            <h3 className="font-semibold text-gray-600 text-sm">Server Amount</h3>
-            <p className="text-lg font-bold">{formatCurrency(serverAmount)}</p>
+            <h3 className="text-sm font-semibold text-[var(--mhb-text-secondary)]">Server Amount</h3>
+            <p className="text-lg font-bold text-[var(--mhb-text-primary)]">{formatCurrency(serverAmount)}</p>
             <div className="mt-3">
-              <label className="block text-sm text-gray-600 mb-1">Edit Amount ($)</label>
+              <label className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Edit Amount ($)</label>
               <input
                 ref={amountRef}
                 type="number"
@@ -406,25 +418,23 @@ export default function MilestoneDetail() {
                 value={form.amount === "" ? "" : form.amount}
                 onChange={(e) => handleField("amount", e.target.value)}
                 disabled={readOnly}
-                className={`w-full border rounded px-3 py-2 ${
-                  readOnly ? "bg-gray-50 text-gray-600 cursor-not-allowed" : ""
-                } ${fieldErrors.amount ? "ring-1 ring-red-500" : ""}`}
+                className={`w-full rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 py-2 text-[var(--mhb-text-primary)] ${readOnly ? "cursor-not-allowed opacity-65" : ""} ${fieldErrors.amount ? "ring-2 ring-[var(--mhb-status-blocked-border)]" : ""}`}
                 placeholder="0.00"
                 aria-invalid={!!fieldErrors.amount}
               />
-              {fieldErrors.amount && <div className="text-xs text-red-600 mt-1">{fieldErrors.amount}</div>}
-              <div className="text-xs text-gray-500 mt-1">Preview: {formatCurrency(formAmount)}</div>
+              {fieldErrors.amount && <div role="alert" className="mt-1 text-xs text-[var(--mhb-status-blocked-text)]">{fieldErrors.amount}</div>}
+              <div className="mt-1 text-xs text-[var(--mhb-text-muted)]">Preview: {formatCurrency(formAmount)}</div>
             </div>
           </div>
 
           <div className="text-left sm:text-right">
-            <h3 className="font-semibold text-gray-600 text-sm">Server Status</h3>
+            <h3 className="text-sm font-semibold text-[var(--mhb-text-secondary)]">Server Status</h3>
             <p className={`font-bold ${milestone.completed ? "text-green-600" : "text-yellow-600"}`}>
               {milestone.completed ? "✅ Completed" : "⌛ Incomplete"}
             </p>
 
             <div className="mt-3 sm:inline-block">
-              <label className={`inline-flex items-center gap-2 text-sm ${readOnly ? "text-gray-500" : ""}`}>
+              <label className={`inline-flex items-center gap-2 text-sm text-[var(--mhb-text-secondary)] ${readOnly ? "opacity-65" : ""}`}>
                 <input
                   type="checkbox"
                   checked={!!form.completed}
@@ -438,31 +448,29 @@ export default function MilestoneDetail() {
         </div>
 
         {/* Title & Description */}
-        <div className="border-t pt-4 grid grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 gap-4 border-t border-[var(--mhb-border-divider)] pt-4">
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Title</label>
+            <label className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Title</label>
             <input
               ref={titleRef}
               value={form.title}
               onChange={(e) => handleField("title", e.target.value)}
               disabled={readOnly}
-              className={`w-full border rounded px-3 py-2 ${
-                readOnly ? "bg-gray-50 text-gray-600 cursor-not-allowed" : ""
-              } ${fieldErrors.title ? "ring-1 ring-red-500" : ""}`}
+              className={`w-full rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 py-2 text-[var(--mhb-text-primary)] ${readOnly ? "cursor-not-allowed opacity-65" : ""} ${fieldErrors.title ? "ring-2 ring-[var(--mhb-status-blocked-border)]" : ""}`}
               placeholder="Milestone title"
               aria-invalid={!!fieldErrors.title}
             />
-            {fieldErrors.title && <div className="text-xs text-red-600 mt-1">{fieldErrors.title}</div>}
+            {fieldErrors.title && <div role="alert" className="mt-1 text-xs text-[var(--mhb-status-blocked-text)]">{fieldErrors.title}</div>}
           </div>
 
           <div>
-            <label className="block text-sm text-gray-600 mb-1">Description</label>
+            <label className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Description</label>
             <textarea
               ref={descriptionRef}
               value={form.description}
               onChange={(e) => handleField("description", e.target.value)}
               disabled={readOnly}
-              className={`w-full border rounded px-3 py-2 ${readOnly ? "bg-gray-50 text-gray-600 cursor-not-allowed" : ""}`}
+              className={`w-full rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 py-2 text-[var(--mhb-text-primary)] ${readOnly ? "cursor-not-allowed opacity-65" : ""}`}
               rows={4}
               placeholder="What work is included for this milestone?"
             />
@@ -505,35 +513,29 @@ export default function MilestoneDetail() {
         </div>
 
         {/* Bottom actions */}
-        <div className="flex items-center justify-between border-t pt-4">
+        <div className="flex items-center justify-between border-t border-[var(--mhb-border-divider)] pt-4">
           {!readOnly ? (
-            <button type="button" onClick={saveDraft} className="px-3 py-2 rounded border hover:bg-gray-50">
-              Save Draft
-            </button>
+            <Button theme="operational" variant="secondary" size="sm" onClick={saveDraft}>Save Draft</Button>
           ) : (
-            <div className="text-xs text-gray-500">Read-only</div>
+            <div className="text-xs text-[var(--mhb-text-muted)]">Read-only</div>
           )}
 
           <div className="flex gap-2">
-            <button type="button" onClick={goBack} className="px-3 py-2 rounded border hover:bg-gray-50">
-              Back
-            </button>
+            <Button theme="operational" variant="secondary" size="sm" onClick={goBack}>Back</Button>
 
             {!readOnly ? (
-              <button
-                type="button"
+              <Button
+                theme="operational"
+                size="sm"
                 onClick={saveChanges}
                 disabled={!isDirty()}
-                className={`px-3 py-2 rounded text-white ${
-                  isDirty() ? "bg-green-600 hover:bg-green-700" : "bg-gray-400 cursor-not-allowed"
-                }`}
               >
                 Save Changes
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
-      </div>
-    </div>
+      </Card>
+    </ContractorPageSurface>
   );
 }

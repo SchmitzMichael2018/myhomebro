@@ -10,6 +10,15 @@ import api from "../api";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import HubTabs from "./dashboard/HubTabs.jsx";
 import { customerHubTabs } from "./dashboard/hubTabsConfig.js";
+import {
+  Button,
+  Card,
+  EmptyState,
+  InlineAlert,
+  LoadingSkeleton,
+  MetricCard,
+  StatusBadge as SharedStatusBadge,
+} from "./ui";
 
 function useDebouncedValue(value, delay = 400) {
   const [v, setV] = useState(value);
@@ -21,28 +30,13 @@ function useDebouncedValue(value, delay = 400) {
 }
 
 const StatusBadge = ({ status }) => {
-  const statusStyles = {
-    active: "border border-emerald-300/35 bg-emerald-400/15 text-emerald-100",
-    prospect: "border border-sky-300/35 bg-sky-400/15 text-sky-100",
-    archived: "border border-slate-300/25 bg-slate-400/15 text-sky-100/75",
-    inactive: "border border-slate-300/25 bg-slate-400/15 text-sky-100/75",
-  };
   const key = String(status || "").toLowerCase();
-  return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${
-        statusStyles[key] || "border border-slate-300/25 bg-slate-400/15 text-sky-100/75"
-      }`}
-    >
-      {status || "-"}
-    </span>
-  );
+  const semanticStatus = key === "active" ? "complete" : key === "prospect" ? "pending" : "draft";
+  return <SharedStatusBadge theme="operational" status={semanticStatus} label={status || "-"} />;
 };
 
 const NewBadge = () => (
-  <span className="ml-2 inline-flex items-center rounded-full border border-amber-300/40 bg-amber-400/15 px-2 py-0.5 text-[10px] font-bold text-amber-100">
-    NEW
-  </span>
+  <SharedStatusBadge theme="operational" status="recommended" label="New" className="ml-2 px-2 py-0.5 text-[10px] uppercase" />
 );
 
 const formatPhoneNumber = (phoneStr) => {
@@ -263,12 +257,9 @@ export default function Customers() {
       variant="operational"
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            to={CUSTOMER_NEW_ROUTE}
-            className="inline-flex min-h-[42px] items-center rounded-xl border border-white/70 bg-white px-4 py-2.5 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
-          >
+          <Button as={Link} to={CUSTOMER_NEW_ROUTE} theme="operational">
             + Add New Customer
-          </Link>
+          </Button>
         </div>
       }
     >
@@ -279,25 +270,13 @@ export default function Customers() {
           { label: "Total customers", value: customerSummary.total },
           { label: "Active customers", value: customerSummary.active },
           { label: "Added in last 7 days", value: customerSummary.recent },
-        ].map((item) => (
-          <div
-            key={item.label}
-            className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm"
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-100/60">
-              {item.label}
-            </div>
-            <div className="mt-2 text-2xl font-semibold tracking-tight text-white">
-              {item.value}
-            </div>
-          </div>
-        ))}
+        ].map((item) => <MetricCard key={item.label} theme="operational" label={item.label} value={item.value} />)}
       </div>
 
-      <div className="rounded-2xl border border-white/12 bg-slate-950/45 p-4 shadow-sm">
+      <Card theme="operational" padding="sm">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <input
-            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none placeholder:text-sky-100/45 focus:border-sky-300/60"
+            className="min-h-[42px] rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 py-2 text-sm font-semibold text-[var(--mhb-text-primary)] outline-none placeholder:text-[var(--mhb-text-muted)] focus:border-[var(--mhb-border-focus)] focus:ring-2 focus:ring-[var(--mhb-border-focus)]/25"
             placeholder="Search name, company, email, phone..."
             value={q}
             onChange={(e) => {
@@ -307,7 +286,7 @@ export default function Customers() {
             style={{ minWidth: 260 }}
           />
           <select
-            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
+            className="min-h-[42px] rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 py-2 text-sm font-semibold text-[var(--mhb-text-primary)] outline-none focus:border-[var(--mhb-border-focus)]"
             value={status}
             onChange={(e) => {
               setStatus(e.target.value);
@@ -320,7 +299,7 @@ export default function Customers() {
             <option value="archived">Archived</option>
           </select>
           <select
-            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
+            className="min-h-[42px] rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 py-2 text-sm font-semibold text-[var(--mhb-text-primary)] outline-none focus:border-[var(--mhb-border-focus)]"
             value={ordering}
             onChange={(e) => {
               setOrdering(e.target.value);
@@ -335,7 +314,7 @@ export default function Customers() {
             <option value="-name">Name Z-A (name)</option>
           </select>
           <select
-            className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"
+            className="min-h-[42px] rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 py-2 text-sm font-semibold text-[var(--mhb-text-primary)] outline-none focus:border-[var(--mhb-border-focus)]"
             value={pageSize}
             onChange={(e) => {
               setPageSize(Number(e.target.value));
@@ -349,39 +328,33 @@ export default function Customers() {
           </select>
         </div>
 
-        {loading && <p className="py-10 text-center text-sky-100/65">Loading customers...</p>}
-        {!loading && error && <p className="py-10 text-center text-rose-200">{error}</p>}
+        {loading && <LoadingSkeleton theme="operational" variant="table" label="Loading customers" className="py-6" />}
+        {!loading && error && <InlineAlert theme="operational" tone="danger" title="Customers could not be loaded">{error}</InlineAlert>}
 
         {!loading && !error && customers.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-white/14 bg-slate-950/35 px-6 py-12 text-center">
-            <h3 className="text-lg font-semibold text-white">No customers yet</h3>
-            <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-sky-100/70">
-              Add your first customer to start tracking relationships, job history, and project-ready contact details in one place.
-            </p>
-            <Link
-              to={CUSTOMER_NEW_ROUTE}
-              className="mt-5 inline-flex min-h-[42px] items-center rounded-xl border border-white/70 bg-white px-4 py-2.5 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-sky-50"
-            >
-              + Add Your First Customer
-            </Link>
-          </div>
+          <EmptyState
+            theme="operational"
+            title="No customers yet"
+            description="Add your first customer to start tracking relationships, job history, and project-ready contact details in one place."
+            primaryAction={<Button as={Link} to={CUSTOMER_NEW_ROUTE} theme="operational">+ Add Your First Customer</Button>}
+          />
         )}
 
         {!loading && !error && customers.length > 0 && (
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/35 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-white/8 px-4 py-3">
+          <div className="overflow-hidden rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] shadow-[var(--mhb-shadow-card)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--mhb-border-divider)] bg-[var(--mhb-surface-inset)] px-4 py-3">
               <div>
-                <div className="text-sm font-semibold text-white">Customer directory</div>
-                <div className="text-sm text-sky-100/65">
+                <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">Customer directory</div>
+                <div className="text-sm text-[var(--mhb-text-muted)]">
                   {count} total customer{count === 1 ? "" : "s"} across your account
                 </div>
               </div>
-              <div className="text-xs font-medium uppercase tracking-[0.18em] text-sky-100/60">
+              <div className="text-xs font-medium uppercase tracking-[0.18em] text-[var(--mhb-text-muted)]">
                 Page {page} of {totalPages}
               </div>
             </div>
 
-            <div className="divide-y divide-white/10 md:hidden">
+            <div className="divide-y divide-[var(--mhb-border-divider)] md:hidden">
               {customers.map((customer) => {
                 const cid = String(customer.id ?? customer.uuid ?? customer.pk ?? "");
                 const isNew = newCustomerId && cid && String(newCustomerId) === cid;
@@ -395,7 +368,7 @@ export default function Customers() {
                 return (
                   <div
                     key={`mobile-${customer.id ?? customer.uuid ?? customer.pk ?? `${customer.email}-${customer.phone}`}`}
-                    className="block w-full cursor-pointer px-4 py-4 text-left text-sky-100/78 transition hover:bg-sky-500/10 focus:bg-sky-500/10 focus:outline-none"
+                    className="block w-full cursor-pointer px-4 py-4 text-left text-[var(--mhb-text-secondary)] transition hover:bg-[var(--mhb-table-row-hover)] focus:bg-[var(--mhb-table-row-selected)] focus:outline-none"
                     data-testid={`customer-row-mobile-${cid}`}
                     role="button"
                     tabIndex={0}
@@ -413,46 +386,46 @@ export default function Customers() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="font-semibold text-white">
+                        <div className="font-semibold text-[var(--mhb-text-primary)]">
                           {primary}
                           {isNew ? <NewBadge /> : null}
                         </div>
-                        {hasCompany && secondary ? <div className="text-sm text-sky-100/65">Contact: {secondary}</div> : null}
-                        <div className="mt-1 text-sm text-sky-100/60">{customer.email || "-"}</div>
-                        <div className="mt-1 text-sm text-sky-100/60">{formatPhoneNumber(customer.phone_number || customer.phone)}</div>
+                        {hasCompany && secondary ? <div className="text-sm text-[var(--mhb-text-muted)]">Contact: {secondary}</div> : null}
+                        <div className="mt-1 text-sm text-[var(--mhb-text-muted)]">{customer.email || "-"}</div>
+                        <div className="mt-1 text-sm text-[var(--mhb-text-muted)]">{formatPhoneNumber(customer.phone_number || customer.phone)}</div>
                       </div>
                       <StatusBadge status={customer.status} />
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-2 text-sm">
-                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
-                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Requests</div>
-                        <div className="mt-1 font-semibold text-white">{openRequests}</div>
+                      <div className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-[var(--mhb-text-muted)]">Requests</div>
+                        <div className="mt-1 font-semibold text-[var(--mhb-text-primary)]">{openRequests}</div>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
-                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Active Work</div>
-                        <div className="mt-1 font-semibold text-white">{activeWork}</div>
+                      <div className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-[var(--mhb-text-muted)]">Active Work</div>
+                        <div className="mt-1 font-semibold text-[var(--mhb-text-primary)]">{activeWork}</div>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
-                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Closed Work</div>
-                        <div className="mt-1 font-semibold text-white">{closedWork}</div>
+                      <div className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-[var(--mhb-text-muted)]">Closed Work</div>
+                        <div className="mt-1 font-semibold text-[var(--mhb-text-primary)]">{closedWork}</div>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
-                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Balance</div>
-                        <div className="mt-1 font-semibold text-white">{openBalance}</div>
+                      <div className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-[var(--mhb-text-muted)]">Balance</div>
+                        <div className="mt-1 font-semibold text-[var(--mhb-text-primary)]">{openBalance}</div>
                       </div>
-                      <div className="rounded-xl border border-white/10 bg-slate-950/45 p-3">
-                        <div className="text-xs uppercase tracking-[0.14em] text-sky-100/45">Last Activity</div>
-                        <div className="mt-1 font-semibold text-white">{lastActivity.date}</div>
-                        {lastActivity.label ? <div className="mt-0.5 text-xs text-sky-100/55">{lastActivity.label}</div> : null}
+                      <div className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
+                        <div className="text-xs uppercase tracking-[0.14em] text-[var(--mhb-text-muted)]">Last Activity</div>
+                        <div className="mt-1 font-semibold text-[var(--mhb-text-primary)]">{lastActivity.date}</div>
+                        {lastActivity.label ? <div className="mt-0.5 text-xs text-[var(--mhb-text-muted)]">{lastActivity.label}</div> : null}
                       </div>
                     </div>
                     <div className="mt-4 flex items-center justify-end gap-2">
-                      <span className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/16 bg-slate-900/70 text-sky-100">
+                      <span className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-3 text-sm font-bold text-[var(--mhb-text-primary)]">
                         Open
                       </span>
                       <Link
                         to={customerEditRoute(customer.id)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/16 bg-slate-900/70 text-sky-100"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-secondary)]"
                         aria-label="Edit customer"
                         data-testid={`customer-edit-mobile-${cid}`}
                       >
@@ -465,8 +438,8 @@ export default function Customers() {
             </div>
 
             <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-full divide-y divide-white/10">
-                <thead className="bg-white/8 text-sky-100/75">
+              <table className="min-w-full divide-y divide-[var(--mhb-border-divider)]">
+                <thead className="bg-[var(--mhb-surface-inset)] text-[var(--mhb-text-secondary)]">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Customer</th>
                     <th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider">Status</th>
@@ -480,7 +453,7 @@ export default function Customers() {
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-white/10">
+                <tbody className="divide-y divide-[var(--mhb-border-divider)]">
                   {customers.map((customer) => {
                     const cid = String(customer.id ?? customer.uuid ?? customer.pk ?? "");
                     const isNew = newCustomerId && cid && String(newCustomerId) === cid;
@@ -494,7 +467,7 @@ export default function Customers() {
                     return (
                       <tr
                         key={customer.id ?? customer.uuid ?? customer.pk ?? `${customer.email}-${customer.phone}`}
-                        className="cursor-pointer text-sky-100/78 transition-colors hover:bg-sky-500/10 focus-within:bg-sky-500/10"
+                        className="cursor-pointer text-[var(--mhb-text-secondary)] transition-colors hover:bg-[var(--mhb-table-row-hover)] focus-within:bg-[var(--mhb-table-row-selected)]"
                         data-testid={`customer-row-${cid}`}
                         tabIndex={0}
                         title="Open customer workspace"
@@ -511,23 +484,23 @@ export default function Customers() {
                         }}
                       >
                         <td className="whitespace-nowrap px-6 py-5">
-                          <div className="font-semibold text-white">
+                          <div className="font-semibold text-[var(--mhb-text-primary)]">
                             {primary}
                             {isNew ? <NewBadge /> : null}
                           </div>
 
                           {hasCompany && secondary ? (
-                            <div className="text-sm text-sky-100/65">Contact: {secondary}</div>
+                            <div className="text-sm text-[var(--mhb-text-muted)]">Contact: {secondary}</div>
                           ) : null}
 
-                          <div className="text-sm text-sky-100/60">{customer.email || "-"}</div>
+                          <div className="text-sm text-[var(--mhb-text-muted)]">{customer.email || "-"}</div>
 
-                          <div className="mt-1 flex items-center text-sm text-sky-100/60">
+                          <div className="mt-1 flex items-center text-sm text-[var(--mhb-text-muted)]">
                             <Phone size={12} className="mr-1.5" />{" "}
                             {formatPhoneNumber(customer.phone_number || customer.phone)}
                           </div>
 
-                          <div className="mt-1 flex items-center text-sm text-sky-100/60">
+                          <div className="mt-1 flex items-center text-sm text-[var(--mhb-text-muted)]">
                             <Home size={12} className="mr-1.5" /> {formatAddress(customer)}
                           </div>
                         </td>
@@ -536,28 +509,28 @@ export default function Customers() {
                           <StatusBadge status={customer.status} />
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-white">
+                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-[var(--mhb-text-primary)]">
                           {openRequests}
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-white">
+                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-[var(--mhb-text-primary)]">
                           {activeWork}
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-white">
+                        <td className="whitespace-nowrap px-6 py-5 text-center text-sm font-semibold text-[var(--mhb-text-primary)]">
                           {closedWork}
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-right text-sm font-semibold text-white">
+                        <td className="whitespace-nowrap px-6 py-5 text-right text-sm font-semibold text-[var(--mhb-text-primary)]">
                           {openBalance}
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-sm text-sky-100/60">
+                        <td className="whitespace-nowrap px-6 py-5 text-sm text-[var(--mhb-text-muted)]">
                           <div>{lastActivity.date}</div>
-                          {lastActivity.label ? <div className="mt-1 text-xs text-sky-100/45">{lastActivity.label}</div> : null}
+                          {lastActivity.label ? <div className="mt-1 text-xs text-[var(--mhb-text-muted)]">{lastActivity.label}</div> : null}
                         </td>
 
-                        <td className="whitespace-nowrap px-6 py-5 text-sm text-sky-100/60">
+                        <td className="whitespace-nowrap px-6 py-5 text-sm text-[var(--mhb-text-muted)]">
                           {customer.created_at ? new Date(customer.created_at).toLocaleDateString() : "-"}
                         </td>
 
@@ -565,7 +538,7 @@ export default function Customers() {
                           <div className="flex items-center justify-end gap-3">
                             <Link
                               to={customerEditRoute(customer.id)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-white/16 bg-slate-900/70 text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 hover:text-white"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-secondary)] transition hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-interactive-ghost-hover)] hover:text-[var(--mhb-text-primary)]"
                               data-testid={`customer-edit-${cid}`}
                               title="Edit Customer"
                             >
@@ -592,37 +565,41 @@ export default function Customers() {
               </table>
             </div>
 
-            <div className="flex items-center justify-between border-t border-white/10 bg-white/8 px-4 py-3">
-              <div className="text-sm text-sky-100/65">
+            <div className="flex items-center justify-between border-t border-[var(--mhb-border-divider)] bg-[var(--mhb-surface-inset)] px-4 py-3">
+              <div className="text-sm text-[var(--mhb-text-muted)]">
                 Showing {count === 0 ? 0 : (page - 1) * pageSize + 1}-{Math.min(page * pageSize, count)} of {count}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  className="rounded-xl border border-white/16 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                <Button
+                  theme="operational"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1 || loading}
                   type="button"
                 >
                   &lt; Prev
-                </button>
+                </Button>
 
-                <span className="text-sm text-sky-100/65">
+                <span className="text-sm text-[var(--mhb-text-muted)]">
                   Page {page} of {totalPages}
                 </span>
 
-                <button
-                  className="rounded-xl border border-white/16 bg-slate-900/70 px-3 py-1.5 text-sm font-semibold text-sky-100 transition hover:border-sky-300/35 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                <Button
+                  theme="operational"
+                  variant="secondary"
+                  size="sm"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages || loading}
                   type="button"
                 >
                   Next &gt;
-                </button>
+                </Button>
               </div>
             </div>
           </div>
         )}
-      </div>
+      </Card>
     </ContractorPageSurface>
   );
 }

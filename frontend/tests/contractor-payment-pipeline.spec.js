@@ -428,8 +428,8 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
 
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByText('Work Pipeline')).toBeVisible();
-  await expect(page.getByText('Money Pipeline')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Work Pipeline', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Money Pipeline', exact: true })).toBeVisible();
   await expect(page.getByTestId('dashboard-work-not-started')).toBeVisible();
   await expect(page.getByTestId('dashboard-work-in-progress')).toBeVisible();
   await expect(page.getByTestId('dashboard-work-completed')).toBeVisible();
@@ -437,7 +437,7 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-work-invoiced')).toBeVisible();
   await expect(page.getByText('Quick Actions')).toBeVisible();
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('New Agreement');
-  await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('New Milestone');
+  await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText("Today's Schedule");
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Payment');
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Expense');
   await expect(page.getByTestId('dashboard-money-awaiting-customer')).toBeVisible();
@@ -463,11 +463,13 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.locator('text=/requested changes/i').first()).toBeVisible();
   await expect(page.locator('text=/failed.*follow-up/i').first()).toBeVisible();
 
-  await page.getByTestId('dashboard-work-awaiting-review').click();
+  await page.getByTestId('dashboard-work-awaiting-review').hover();
+  await page.getByTestId('dashboard-work-awaiting-review-view-all').click();
   await expect(page).toHaveURL(/\/app\/milestones/);
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
-  await page.getByTestId('dashboard-money-payment-pending').click();
+  await page.getByTestId('dashboard-money-payment-pending').hover();
+  await page.getByTestId('dashboard-money-payment-pending-view-all').click();
   await expect(page).toHaveURL(/\/app\/payments\?money_status=payment_pending/);
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('dashboard-money-paid')).toContainText('Paid');

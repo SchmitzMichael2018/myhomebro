@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { Button } from "../components/ui/Button.jsx";
+import { Card, MetricCard } from "../components/ui/surfaces.jsx";
 
 function formatMoney(value) {
   const number = Number(value || 0);
@@ -30,21 +32,14 @@ function buildQuery(filters) {
 }
 
 function SummaryCard({ label, value, tone = "slate", testId = null }) {
-  const toneMap = {
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
-    amber: "border-amber-200 bg-amber-50 text-amber-900",
-    blue: "border-sky-200 bg-sky-50 text-sky-900",
-    slate: "border-slate-200 bg-white text-slate-900",
-  };
-
   return (
-    <div
+    <MetricCard
+      theme="operational"
       data-testid={testId || undefined}
-      className={`rounded-xl border p-4 shadow-sm ${toneMap[tone] || toneMap.slate}`}
-    >
-      <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
-    </div>
+      label={label}
+      value={value}
+      status={tone === "emerald" ? "complete" : tone === "amber" ? "pending" : tone === "blue" ? "recommended" : undefined}
+    />
   );
 }
 
@@ -119,20 +114,19 @@ export default function ContractorPayoutHistoryPage() {
       variant="operational"
       contentClassName="mx-auto max-w-7xl"
       actions={
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => navigate("/app/payments")}
-          className="rounded-lg border border-white/20 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-50"
         >
           Payment Records
-        </button>
+        </Button>
       }
     >
       <h1 data-testid="contractor-payout-history-title" className="sr-only">
         Payout History
       </h1>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <Card theme="operational">
         <div className="grid gap-4 md:grid-cols-4">
           <SummaryCard
             label="Total Paid Out"
@@ -158,13 +152,13 @@ export default function ContractorPayoutHistoryPage() {
             testId="payout-history-summary-count"
           />
         </div>
-      </section>
+      </Card>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <Card theme="operational">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Completed Payouts</h2>
-            <div className="mt-1 text-sm text-slate-500">{loading ? "Loading payout history..." : countsLabel}</div>
+            <h2 className="text-lg font-semibold text-[var(--mhb-text-primary)]">Completed Payouts</h2>
+            <div className="mt-1 text-sm text-[var(--mhb-text-muted)]">{loading ? "Loading payout history..." : countsLabel}</div>
           </div>
           <label className="text-sm font-medium text-slate-700">
             Project Class
@@ -281,7 +275,7 @@ export default function ContractorPayoutHistoryPage() {
             </table>
           </div>
         )}
-      </section>
+      </Card>
 
       {selectedRow ? (
         <div

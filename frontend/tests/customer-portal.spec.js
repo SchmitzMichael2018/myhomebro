@@ -4502,10 +4502,17 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-profile-name").fill("Pat Updated");
   await page.getByTestId("customer-profile-phone").fill("512-555-1212");
   await page.getByTestId("customer-profile-address-line1").fill("700 Customer Ln");
+  const profileSaveRequestPromise = page.waitForRequest((request) =>
+    request.method() === "PATCH" &&
+    request.url().includes("/customer-portal/customer-token/profile/")
+  );
   await page.getByRole("button", { name: "Save profile" }).click();
+  const profileSaveRequest = await profileSaveRequestPromise;
+  const profileSavePayload = profileSaveRequest.postDataJSON();
+  await expect(page.getByText("Profile saved.", { exact: true })).toBeVisible();
   await expect(page.getByTestId("customer-profile-phone")).toHaveValue("512-555-1212");
   await expect(page.getByTestId("customer-company-name")).toHaveValue("Austin Rentals Group");
-  expect(savedProfilePayload).toMatchObject({
+  expect(profileSavePayload).toMatchObject({
     account_type: "property_management_company",
     company_name: "Austin Rentals Group",
     company_phone: "512-555-3434",
@@ -4515,6 +4522,7 @@ test("customer portal is reachable from the landing page and loads secure record
     company_license_number: "PM-12345",
     company_notes: "Portfolio onboarding account.",
   });
+  expect(savedProfilePayload).toMatchObject(profileSavePayload);
   await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([
     /Overview/,
     /Maintenance/,

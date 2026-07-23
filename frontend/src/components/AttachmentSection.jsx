@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import api from "../api";
+import { Button } from "./ui/Button.jsx";
+import { InlineAlert } from "./ui/feedback.jsx";
 
 export default function AttachmentSection({ agreementId, onChange }) {
   const [title, setTitle] = useState("");
@@ -220,16 +222,16 @@ export default function AttachmentSection({ agreementId, onChange }) {
         <div className="mt-2 text-gray-600">{file ? file.name : "No file chosen"}</div>
       </div>
 
-      {lastError ? <div className="text-xs text-rose-600">{lastError}</div> : null}
+      {lastError ? <InlineAlert tone="danger">{lastError}</InlineAlert> : null}
 
       <div className="flex gap-2">
         {/* BLUE buttons */}
-        <button className="px-4 py-2 rounded bg-blue-600 text-white" disabled={uploading} onClick={upload}>
+        <Button disabled={uploading} onClick={upload}>
           {uploading ? "Uploading…" : "Upload Attachment"}
-        </button>
-        <button className="px-4 py-2 rounded bg-blue-600 text-white" onClick={load} disabled={loading}>
+        </Button>
+        <Button variant="secondary" onClick={load} disabled={loading}>
           Refresh
-        </button>
+        </Button>
       </div>
 
       <div className="border rounded overflow-x-auto">
@@ -272,13 +274,14 @@ export default function AttachmentSection({ agreementId, onChange }) {
                     </td>
                     <td className="px-3 py-2">
                       {/* RED delete */}
-                      <button
-                        className="px-2 py-1 rounded bg-rose-600 text-white"
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => remove(it.id)}
                         title="Delete attachment"
                       >
                         Delete
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 );

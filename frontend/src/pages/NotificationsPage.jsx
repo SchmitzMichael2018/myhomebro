@@ -6,6 +6,9 @@ import { BellRing, CheckCheck, Filter } from "lucide-react";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import NotificationItem from "../components/NotificationItem.jsx";
 import useNotifications from "../hooks/useNotifications.js";
+import { Button } from "../components/ui/Button.jsx";
+import { EmptyState, LoadingSkeleton } from "../components/ui/feedback.jsx";
+import { Card } from "../components/ui/surfaces.jsx";
 
 const ACTION_NEEDED_CATEGORIES = new Set(["quote_request_received", "milestone_pending_approval"]);
 
@@ -113,16 +116,15 @@ export default function NotificationsPage() {
         subtitle="Keep up with quote requests, approvals, funding updates, and completed work."
         className="max-w-[1320px]"
         actions={
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={handleMarkAllRead}
             disabled={!unreadCount}
-            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             data-testid="notifications-mark-all-read"
           >
             <CheckCheck size={15} />
             Mark all read
-          </button>
+          </Button>
         }
       >
       <div className="flex flex-wrap items-center gap-2" data-testid="notifications-filter-bar">
@@ -169,22 +171,15 @@ export default function NotificationsPage() {
       </div>
 
       {loading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white/90 px-6 py-10 text-center text-sm text-slate-700 shadow-sm">
-          Loading notifications...
-        </div>
+        <Card theme="operational"><LoadingSkeleton theme="operational" variant="list" label="Loading notifications" /></Card>
       ) : filteredNotifications.length === 0 ? (
-        <div
+        <EmptyState
           data-testid="notifications-empty-state"
-          className="rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 px-6 py-12 text-center shadow-sm"
-        >
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400">
-            <BellRing size={20} />
-          </div>
-          <div className="text-base font-semibold text-slate-900">No notifications yet.</div>
-          <div className="mx-auto mt-2 max-w-xl text-sm leading-6 text-slate-700">
-            Notifications will appear here when quotes arrive, agreements get signed, work is approved, and payments move.
-          </div>
-        </div>
+          theme="operational"
+          icon={BellRing}
+          title="No notifications yet"
+          description="Notifications appear here when quotes arrive, agreements are signed, work is approved, and payments move."
+        />
       ) : (
         <div className="space-y-6">
           {groups.today.length > 0 ? (

@@ -130,7 +130,7 @@ test("contractor can reach payout history from payments and filter completed pay
   });
 
   await page.goto("/app/payments", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Payments")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Payments", exact: true })).toBeVisible();
   await page.getByTestId("payments-open-payout-history").click();
 
   await expect(page).toHaveURL(/\/app\/payout-history$/);

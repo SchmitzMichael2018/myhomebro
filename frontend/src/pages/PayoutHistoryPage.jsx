@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import toast from "react-hot-toast";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { Button } from "../components/ui/Button.jsx";
+import { Card, MetricCard } from "../components/ui/surfaces.jsx";
 
 function formatMoney(value) {
   const number = Number(value || 0);
@@ -30,21 +32,14 @@ function buildQuery(filters) {
 }
 
 function SummaryCard({ label, value, tone = "slate", testId = null }) {
-  const toneMap = {
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
-    amber: "border-amber-200 bg-amber-50 text-amber-900",
-    rose: "border-rose-200 bg-rose-50 text-rose-900",
-    slate: "border-slate-200 bg-white text-slate-900",
-  };
-
   return (
-    <div
+    <MetricCard
+      theme="operational"
       data-testid={testId || undefined}
-      className={`rounded-xl border p-4 shadow-sm ${toneMap[tone] || toneMap.slate}`}
-    >
-      <div className="text-xs font-semibold uppercase tracking-wide opacity-70">{label}</div>
-      <div className="mt-1 text-2xl font-bold tabular-nums">{value}</div>
-    </div>
+      label={label}
+      value={value}
+      status={tone === "emerald" ? "complete" : tone === "rose" ? "blocked" : tone === "amber" ? "pending" : undefined}
+    />
   );
 }
 
@@ -123,22 +118,21 @@ export default function PayoutHistoryPage() {
       variant="operational"
       contentClassName="mx-auto max-w-7xl"
       actions={
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           data-testid="payout-history-export"
           onClick={exportCsv}
           disabled={exporting}
-          className="rounded-lg border border-white/20 bg-white px-4 py-2 text-sm font-semibold text-slate-900 hover:bg-sky-50 disabled:opacity-60"
         >
           {exporting ? "Exporting..." : "Export CSV"}
-        </button>
+        </Button>
       }
     >
       <h1 data-testid="payout-history-title" className="sr-only">
         Payout History
       </h1>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <Card theme="operational">
         <div className="grid gap-4 md:grid-cols-4">
           <label className="text-sm font-medium text-slate-700">
             Date From
@@ -190,7 +184,7 @@ export default function PayoutHistoryPage() {
             />
           </label>
         </div>
-      </section>
+      </Card>
 
       <section className="grid gap-4 md:grid-cols-4">
         <SummaryCard
@@ -218,10 +212,10 @@ export default function PayoutHistoryPage() {
         />
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <Card theme="operational">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">Payout Records</h2>
-          <div className="text-sm text-slate-500">
+          <h2 className="text-lg font-semibold text-[var(--mhb-text-primary)]">Payout Records</h2>
+          <div className="text-sm text-[var(--mhb-text-muted)]">
             {summary?.record_count ?? rows.length} records
           </div>
         </div>
@@ -314,7 +308,7 @@ export default function PayoutHistoryPage() {
             </table>
           </div>
         )}
-      </section>
+      </Card>
     </ContractorPageSurface>
   );
 }

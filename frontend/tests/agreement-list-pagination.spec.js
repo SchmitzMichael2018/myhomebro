@@ -147,8 +147,8 @@ test('agreements list uses dark operational styling and paginates results', asyn
   await page.goto('/app/agreements', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Agreements' })).toBeVisible();
-  await expect(page.getByTestId('agreement-list-controls')).toHaveClass(/bg-\[#061d42\]/);
-  await expect(page.getByTestId('agreement-list-table-shell')).toHaveClass(/bg-\[#061d42\]/);
+  await expect(page.getByTestId('agreement-list-controls')).toHaveClass(/bg-\[var\(--mhb-surface-card\)\]/);
+  await expect(page.getByTestId('agreement-list-table-shell')).toHaveClass(/bg-\[var\(--mhb-surface-card\)\]/);
   await expect(page.getByRole('button', { name: /New Agreement/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /Continue Draft/ }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: /Open Workspace/ }).first()).toBeVisible();

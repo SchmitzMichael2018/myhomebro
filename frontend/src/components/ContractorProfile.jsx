@@ -9,6 +9,7 @@ import AccountSettings from "./AccountSettings";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
 import TradeMultiSelect from "./trades/TradeMultiSelect.jsx";
 import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
+import { Card } from "./ui/surfaces.jsx";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -1237,7 +1238,7 @@ export default function ContractorProfile() {
 
   return (
     <div className="flex justify-center">
-      <div className="w-full rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
+      <Card theme="operational" className="w-full">
 
         <ProfileCompletenessBar meData={meData} />
 
@@ -1343,12 +1344,12 @@ export default function ContractorProfile() {
           <div className="flex-1">
             {activeTab === "business" ? (
               <>
-                <h3 className="mb-3 text-lg font-semibold text-slate-900">Business Profile</h3>
+                <h3 className="mb-3 text-lg font-semibold text-[var(--mhb-text-primary)]">Business Profile</h3>
                 {renderBusinessProfileForm()}
               </>
             ) : activeTab === "billing" ? (
               <>
-                <h3 className="mb-3 text-lg font-semibold text-slate-900">Plan &amp; Billing</h3>
+                <h3 className="mb-3 text-lg font-semibold text-[var(--mhb-text-primary)]">Plan &amp; Billing</h3>
                 {renderBilling()}
               </>
             ) : (
@@ -1356,7 +1357,7 @@ export default function ContractorProfile() {
             )}
           </div>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

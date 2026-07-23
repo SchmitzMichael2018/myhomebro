@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { Card, WorkspacePageHeader } from "../components/ui";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
 import ConvertToAgreementPanel from "../components/ConvertToAgreementPanel.jsx";
 import {
@@ -2415,26 +2416,19 @@ export default function ContractorBidsPage() {
       contentClassName="mx-auto max-w-7xl"
     >
       <div className="space-y-6" data-testid="leads-and-bids-page">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-            <ClipboardList size={14} />
-            Opportunity Center
-          </div>
-          <h1 data-testid="contractor-bids-title" className="mt-3 text-3xl font-extrabold tracking-tight text-slate-900">
-            Opportunities
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            Review new leads first, then move into active opportunities and closed work without leaving the same workspace.
-          </p>
-        </div>
-      </div>
+      <WorkspacePageHeader
+        theme="operational"
+        eyebrow="Opportunity Center"
+        title="Opportunities"
+        subtitle="Review new leads first, then move into active opportunities and closed work without leaving the same workspace."
+        data-testid="contractor-bids-title"
+      />
 
-      <section className="rounded-2xl border border-blue-300/15 bg-slate-950/60 p-5 shadow-sm">
+      <Card theme="operational">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">{activeStageLabel}</h2>
-            <div className="mt-1 text-sm text-blue-100/70">
+            <h2 className="text-lg font-semibold text-[var(--mhb-text-primary)]">{activeStageLabel}</h2>
+            <div className="mt-1 text-sm text-[var(--mhb-text-muted)]">
               {loading
                 ? "Loading opportunity workspace..."
                 : `${visibleRows.length} ${activeStageNoun}${visibleRows.length === 1 ? "" : "s"} · ${activeSortLabel}`}
@@ -2454,12 +2448,12 @@ export default function ContractorBidsPage() {
                 }}
                 className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                   activeWorkspaceTab === tab.key
-                    ? "border-blue-300 bg-blue-600 text-white shadow-sm"
-                    : "border-blue-300/20 bg-slate-900/60 text-blue-100 hover:bg-slate-800"
+                    ? "border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] text-[var(--mhb-text-primary)] shadow-sm"
+                    : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-interactive)] text-[var(--mhb-text-secondary)] hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-surface-interactive-hover)]"
                 }`}
               >
                 <span>{tab.label}</span>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${activeWorkspaceTab === tab.key ? "bg-white/15 text-white" : "bg-blue-400/10 text-blue-100"}`}>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${activeWorkspaceTab === tab.key ? "bg-[var(--mhb-interactive-primary)] text-[var(--mhb-text-inverse)]" : "bg-[var(--mhb-surface-inset)] text-[var(--mhb-text-muted)]"}`}>
                   {tab.count}
                 </span>
               </button>
@@ -2688,7 +2682,7 @@ export default function ContractorBidsPage() {
             })}
           </div>
         )}
-      </section>
+      </Card>
 
       {selectedRow ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">

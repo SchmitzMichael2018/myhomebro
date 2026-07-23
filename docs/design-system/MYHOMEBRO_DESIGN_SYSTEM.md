@@ -370,3 +370,15 @@ Migrate one workspace at a time:
 13. Admin
 
 This order establishes high-frequency operational patterns first, then applies them to increasingly specialized and permission-sensitive surfaces.
+
+## Controlled Workspace Migration Notes
+
+The remaining-workspace migration established several implementation rules:
+
+- Use `ContractorPageSurface` as the authenticated operational boundary. Its header reserves room for global Project Assistant and Appearance controls at narrow desktop widths.
+- Pass `theme="operational"` to shared cards, metrics, alerts, loading states, settings sections, navigation, toolbars, and menus inside the authenticated console. These components resolve Dark, Light, and System through semantic tokens.
+- Preserve domain labels and workflow states. Shared status styling must not collapse states such as Funded, Awaiting Review, Payment Pending, Disputed, or Resolved.
+- Keep workflow-heavy surfaces specialized when their behavior warrants it. Agreement Wizard, resolution evidence, expense reserves, customer portal, public intake, and admin operations should adopt shared boundaries and controls without being rebuilt as generic cards or forms.
+- Customer-facing and public surfaces retain their distinct density and visual identity. Reuse accessibility and interaction primitives without applying contractor-console information density.
+- Extend primitives backward-compatibly. The operational variants on `InlineAlert`, `SettingsSection`, `WorkspacePageHeader`, `FilterToolbar`, `WorkspaceStepNavigation`, and `ActionMenu` leave existing default consumers unchanged.
+- Prefer role- or heading-based test selectors with exact names when a shared global surface can legitimately repeat visible terminology.

@@ -3,9 +3,10 @@
 
 import React, { useState } from "react";
 import api from "../api";
+import { Card } from "./ui/surfaces.jsx";
 
 const fieldClass =
-  "form-control block w-full rounded border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500";
+  "form-control block w-full rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-input)] px-3 py-2 text-sm text-[var(--mhb-text-primary)] focus:border-[var(--mhb-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-focus-ring)]";
 
 const labelClass = "block text-sm font-semibold mb-1";
 
@@ -152,9 +153,9 @@ export default function AccountSettings() {
 
   return (
     <div className="mt-6 max-w-3xl">
-      <div className="rounded-lg bg-white p-4 shadow">
-        <h2 className="mb-4 text-lg font-semibold text-gray-800">Account & Login</h2>
-        <p className="mb-4 text-sm text-gray-600">
+      <Card theme="operational">
+        <h2 className="mb-4 text-lg font-semibold text-[var(--mhb-text-primary)]">Account & Login</h2>
+        <p className="mb-4 text-sm text-[var(--mhb-text-muted)]">
           Update the email and password you use to sign in to MyHomeBro.
         </p>
 
@@ -243,7 +244,7 @@ export default function AccountSettings() {
             </button>
           </form>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }

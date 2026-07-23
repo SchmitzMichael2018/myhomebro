@@ -13,6 +13,8 @@ import {
   summarizePaymentRecords,
 } from "../utils/paymentRecords";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import { Button } from "../components/ui/Button.jsx";
+import { Card, MetricCard } from "../components/ui/surfaces.jsx";
 
 function useQuery() {
   const { search } = useLocation();
@@ -285,13 +287,15 @@ export default function Invoices() {
     const rows = groupedRecords?.[recordType]?.[projectClass] || [];
     if (!rows.length) return null;
     return (
-      <section
-        className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      <Card
+        padding="none"
+        theme="operational"
+        className="overflow-hidden"
         data-testid={`payments-section-${recordType}-${projectClass}`}
       >
-        <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
-          <div className="text-sm font-semibold text-slate-900">{title}</div>
-          <div className="mt-1 text-xs text-slate-500">
+        <div className="border-b border-[var(--mhb-border-divider)] bg-[var(--mhb-surface-subtle)] px-4 py-3">
+          <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">{title}</div>
+          <div className="mt-1 text-xs text-[var(--mhb-text-muted)]">
             {rows.length} record{rows.length === 1 ? "" : "s"} •{" "}
             {money(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0))}
           </div>
@@ -299,7 +303,7 @@ export default function Invoices() {
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-[var(--mhb-border-divider)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--mhb-text-muted)]">
                 <th className="px-4 py-3">Record</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Amount</th>
@@ -313,11 +317,11 @@ export default function Invoices() {
                   actionLoadingKey === `resend-${record.recordType}-${record.id}` ||
                   actionLoadingKey === `release-${record.recordType}-${record.id}`;
                 return (
-                  <tr key={`${record.recordType}-${record.id}`} className="border-b border-slate-100 align-top last:border-b-0">
+                  <tr key={`${record.recordType}-${record.id}`} className="border-b border-[var(--mhb-border-divider)] align-top last:border-b-0 hover:bg-[var(--mhb-surface-interactive-hover)]">
                     <td className="px-4 py-3">
-                      <div className="font-semibold text-slate-900">{record.title}</div>
-                      <div className="mt-1 text-xs text-slate-500">{record.subtitle}</div>
-                      <div className="mt-1 text-xs text-slate-400">Updated {prettyDate(record.sortDate)}</div>
+                      <div className="font-semibold text-[var(--mhb-text-primary)]">{record.title}</div>
+                      <div className="mt-1 text-xs text-[var(--mhb-text-secondary)]">{record.subtitle}</div>
+                      <div className="mt-1 text-xs text-[var(--mhb-text-muted)]">Updated {prettyDate(record.sortDate)}</div>
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${toneClasses(record.moneyStatus)}`}>
@@ -399,7 +403,7 @@ export default function Invoices() {
             </tbody>
           </table>
         </div>
-      </section>
+      </Card>
     );
   };
 
@@ -425,21 +429,20 @@ export default function Invoices() {
         </div>
       ) : null}
 
-      <div className="mb-5 flex flex-wrap items-start justify-between gap-3 rounded-[24px] border border-white/10 bg-[#061d42]/95 p-4 shadow-[0_24px_60px_rgba(2,8,23,0.24)] backdrop-blur">
+      <Card theme="operational" className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="mt-2 text-sm text-slate-500">
+          <div className="text-sm text-[var(--mhb-text-muted)]">
             {loading ? "Loading payment records…" : `${totals.count} records • ${money(totals.total)} total`}
           </div>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           data-testid="payments-open-payout-history"
           onClick={() => navigate("/app/payout-history")}
-          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Payout History
-        </button>
-      </div>
+        </Button>
+      </Card>
 
       <div className="mb-5 grid gap-3 md:grid-cols-4">
         <SummaryCard title="Awaiting Customer Approval" summary={summary.awaiting_customer_approval} />
@@ -448,17 +451,17 @@ export default function Invoices() {
         <SummaryCard title="Resolution / Holds" summary={summary.issues} />
       </div>
 
-      <div className="mb-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-[1.5fr_1fr_1fr_1fr_auto]">
+      <Card theme="operational" className="mb-5 grid gap-3 md:grid-cols-[1.5fr_1fr_1fr_1fr_auto]">
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search by agreement, stage, record type, or status…"
-          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+          className="h-10 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-input)] px-3 text-sm text-[var(--mhb-text-primary)] outline-none focus:border-[var(--mhb-border-focus)] focus:ring-2 focus:ring-[var(--mhb-focus-ring)]"
         />
         <select
           value={projectClassFilter}
           onChange={(event) => updateFilters({ project_class: event.target.value })}
-          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+          className="h-10 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-input)] px-3 text-sm text-[var(--mhb-text-primary)] outline-none focus:border-[var(--mhb-border-focus)] focus:ring-2 focus:ring-[var(--mhb-focus-ring)]"
           data-testid="payments-filter-project-class"
         >
           <option value="all">All Projects</option>
@@ -468,7 +471,7 @@ export default function Invoices() {
         <select
           value={resolvedRecordTypeFilter}
           onChange={(event) => updateFilters({ record_type: event.target.value, filter: null })}
-          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+          className="h-10 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-input)] px-3 text-sm text-[var(--mhb-text-primary)] outline-none focus:border-[var(--mhb-border-focus)] focus:ring-2 focus:ring-[var(--mhb-focus-ring)]"
           data-testid="payments-filter-record-type"
         >
           <option value="all">All Records</option>
@@ -478,7 +481,7 @@ export default function Invoices() {
         <select
           value={resolvedMoneyStatusFilter}
           onChange={(event) => updateFilters({ money_status: event.target.value, filter: null })}
-          className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-slate-300"
+          className="h-10 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-input)] px-3 text-sm text-[var(--mhb-text-primary)] outline-none focus:border-[var(--mhb-border-focus)] focus:ring-2 focus:ring-[var(--mhb-focus-ring)]"
           data-testid="payments-filter-money-status"
         >
           <option value="all">All Money Statuses</option>
@@ -487,14 +490,14 @@ export default function Invoices() {
           <option value="paid">Paid</option>
           <option value="issues">Resolution / Holds</option>
         </select>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
           onClick={() => fetchRecords()}
-          className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-800 hover:bg-slate-50"
+          className="h-10"
         >
           Refresh
-        </button>
-      </div>
+        </Button>
+      </Card>
 
       {legacyModeFilter !== "all" ? (
         <div className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
@@ -532,10 +535,11 @@ export default function Invoices() {
 
 function SummaryCard({ title, summary }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</div>
-      <div className="mt-2 text-2xl font-extrabold text-slate-900">{summary?.count || 0}</div>
-      <div className="mt-1 text-sm font-medium text-slate-600">{money(summary?.amount || 0)}</div>
-    </div>
+    <MetricCard
+      theme="operational"
+      label={title}
+      value={summary?.count || 0}
+      description={money(summary?.amount || 0)}
+    />
   );
 }

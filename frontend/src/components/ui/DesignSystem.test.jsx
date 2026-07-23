@@ -14,6 +14,7 @@ import {
   FormField,
   InlineAlert,
   LoadingSkeleton,
+  SettingsSection,
   StatusBadge,
   WorkspacePageHeader,
   WorkspaceStepNavigation,
@@ -155,12 +156,16 @@ describe("MyHomeBro design-system foundation", () => {
 
   it("uses safe alert semantics and AI lifecycle presentation", () => {
     const danger = markup(<InlineAlert tone="danger" title="Could not save">Your work was not changed.</InlineAlert>);
+    const operationalWarning = markup(<InlineAlert theme="operational" tone="warning">Review this record.</InlineAlert>);
+    const operationalSettings = markup(<SettingsSection theme="operational" title="Preferences">Settings</SettingsSection>);
     const unavailable = markup(<AIUnavailableState />);
     const error = markup(<AIErrorState />);
     const review = markup(<AIReviewCard stage="confirm" preview={<p>Prepared change</p>} onConfirm={() => {}} />);
     const receipt = markup(<AIActionReceipt reference="PA-123" details={["Updated draft"]} />);
 
     expect(danger).toContain('role="alert"');
+    expect(operationalWarning).toContain("--mhb-status-pending-bg");
+    expect(operationalSettings).toContain("--mhb-border-divider");
     expect(unavailable).toContain("Project Assistant is unavailable");
     expect(error).toContain("Your work was not changed");
     expect(review).toContain('aria-label="AI action lifecycle"');

@@ -94,13 +94,16 @@ export function StatusBadge({ status = "draft", label = "", theme = "default", c
   );
 }
 
-export function SettingsSection({ title, description = "", actions = null, children, className = "", ...props }) {
+export function SettingsSection({ title, description = "", actions = null, children, theme = "default", className = "", ...props }) {
   return (
-    <Card className={className} {...props}>
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
+    <Card theme={theme} className={className} {...props}>
+      <div className={cx(
+        "flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-start sm:justify-between",
+        theme === "operational" ? "border-[var(--mhb-border-divider)]" : "border-slate-200"
+      )}>
         <div>
-          <h2 className="text-lg font-black text-slate-950">{title}</h2>
-          {description ? <p className="mt-1 text-sm leading-6 text-slate-600">{description}</p> : null}
+          <h2 className={cx("text-lg font-black", theme === "operational" ? "text-[var(--mhb-text-primary)]" : "text-slate-950")}>{title}</h2>
+          {description ? <p className={cx("mt-1 text-sm leading-6", theme === "operational" ? "text-[var(--mhb-text-muted)]" : "text-slate-600")}>{description}</p> : null}
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
       </div>
