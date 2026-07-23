@@ -474,6 +474,8 @@ test("Today's priorities feed prioritizes leads, dedupes actions, and deep-links
 
   const actionItems = page.locator('[data-testid^="dashboard-next-action-item-"]');
   await expect(actionItems.first()).toContainText('New Website Lead');
+  await expect(actionItems.first()).toHaveAttribute('data-priority-tone', 'critical');
+  await expect(actionItems.first()).toHaveCSS('border-left-color', 'rgb(251, 113, 133)');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('Avery Customer requested kitchen remodel.');
   await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('2 minutes');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('Why this matters');

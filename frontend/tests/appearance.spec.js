@@ -182,9 +182,12 @@ test("capture authenticated appearance visual QA states", async ({ page }) => {
 
   await chooseAppearance(page, "Light");
   const dashboardPrimaryAction = page.locator('[data-testid^="dashboard-next-action-button-"]').first();
+  const dashboardPriorityCard = page.locator('[data-testid^="dashboard-next-action-item-"]').first();
   await expect(dashboardPrimaryAction).toBeVisible();
   await expect(dashboardPrimaryAction).toHaveCSS("background-color", "rgb(37, 99, 235)");
   await expect(dashboardPrimaryAction).toHaveCSS("color", "rgb(248, 250, 252)");
+  await expect(dashboardPriorityCard).toHaveAttribute("data-priority-tone", "growth");
+  await expect(dashboardPriorityCard).toHaveCSS("border-left-color", "rgb(5, 150, 105)");
   await page.screenshot({ path: path.join(outputDir, "dashboard-light.png"), fullPage: false });
   await page.getByTestId("assistant-dock-open-button").click();
   await page.screenshot({ path: path.join(outputDir, "assistant-light.png"), fullPage: false });

@@ -2043,6 +2043,10 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-sur
   border-color: var(--mhb-border-default);
 }
 
+html[data-mhb-theme][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid^="dashboard-next-action-item-"] {
+  border-left-color: var(--dashboard-priority-accent) !important;
+}
+
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface :is(
   .shadow-sm,
   .shadow-md

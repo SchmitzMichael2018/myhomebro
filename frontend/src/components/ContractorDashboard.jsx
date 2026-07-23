@@ -74,10 +74,10 @@ const nextActionCategoryStyles = {
   operations: "border-white/20 bg-white/10 text-white",
 };
 const nextActionPriorityStyles = {
-  critical: "border-l-rose-300",
-  today: "border-l-sky-300",
-  soon: "border-l-amber-300",
-  growth: "border-l-emerald-300",
+  critical: "[--dashboard-priority-accent:var(--mhb-priority-critical-accent)]",
+  today: "[--dashboard-priority-accent:var(--mhb-priority-today-accent)]",
+  soon: "[--dashboard-priority-accent:var(--mhb-priority-soon-accent)]",
+  growth: "[--dashboard-priority-accent:var(--mhb-priority-growth-accent)]",
 };
 const growthSuggestions = [
   { key: "improve-website", label: "Improve Website", to: "/app/marketing?tab=website" },
@@ -3884,6 +3884,7 @@ export default function ContractorDashboard() {
                     <article
                       key={item.key}
                       data-testid={`dashboard-next-action-item-${item.key}`}
+                      data-priority-tone={priorityTone}
                       className={`flex min-h-[190px] flex-col justify-between rounded-2xl border border-white/15 border-l-4 bg-white/8 p-4 text-left shadow-sm transition hover:-translate-y-px hover:border-white/30 hover:bg-white/12 ${priorityClass}`}
                     >
                       <div>

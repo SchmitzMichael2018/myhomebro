@@ -110,6 +110,10 @@
   --mhb-shadow-interactive: 0 10px 26px rgb(15 23 42 / 0.1);
   --mhb-table-row-hover: #f4f7fb;
   --mhb-table-row-selected: #eff6ff;
+  --mhb-priority-critical-accent: #e11d48;
+  --mhb-priority-today-accent: #0284c7;
+  --mhb-priority-soon-accent: #d97706;
+  --mhb-priority-growth-accent: #059669;
 
   /* Canonical status system */
   --mhb-status-complete-bg: #dcfce7;
@@ -189,6 +193,10 @@ html[data-mhb-theme="dark"] {
   --mhb-shadow-interactive: 0 1px 0 rgb(255 255 255 / 0.05) inset, 0 16px 34px rgb(0 4 14 / 0.34);
   --mhb-table-row-hover: #102d4f;
   --mhb-table-row-selected: #123a68;
+  --mhb-priority-critical-accent: #fb7185;
+  --mhb-priority-today-accent: #7dd3fc;
+  --mhb-priority-soon-accent: #fbbf24;
+  --mhb-priority-growth-accent: #6ee7b7;
 
   --mhb-status-complete-bg: rgb(16 185 129 / 0.16);
   --mhb-status-complete-text: #a7f3d0;
