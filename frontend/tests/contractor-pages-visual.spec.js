@@ -785,6 +785,12 @@ async function installDashboardMocks(page) {
     await json(route, {
       id: 77,
       created_at: '2026-03-01T10:00:00Z',
+      contractor_onboarding_status: 'complete',
+      onboarding: {
+        status: 'complete',
+        stripe_ready: true,
+        first_value_reached: true,
+      },
       ...contractorMe,
     });
   });
@@ -820,6 +826,17 @@ async function installDashboardMocks(page) {
 
   await page.route('**/api/projects/contractor/public-leads/', async (route) => {
     await json(route, listBody([{ id: 91, status: 'new', full_name: 'Casey Prospect' }]));
+  });
+
+  await page.route('**/api/projects/contractor-opportunities/**', async (route) => {
+    await json(route, listBody([]));
+  });
+
+  await page.route('**/api/projects/contractor-activation-summary/**', async (route) => {
+    await json(route, {
+      should_show_activation_guide: false,
+      guide_sections: {},
+    });
   });
 
   await page.route('**/api/projects/activity-feed/**', async (route) => {
@@ -957,16 +974,90 @@ test('capture business and settings pages for visual QA review', async ({ page }
 });
 
 test('capture contractor dashboard for visual QA review', async ({ page }) => {
-  test.setTimeout(60000);
+  test.setTimeout(120000);
   await fs.mkdir(OUT_DIR, { recursive: true });
   await installDashboardMocks(page);
 
-  await page.goto(dashboardConfig.url, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('heading', { name: 'Dashboard' }).waitFor({ state: 'visible' });
-  await page.getByText('Quick Actions').first().waitFor({ state: 'visible' });
-  await page.getByText('Next Actions').first().waitFor({ state: 'visible' });
+  for (const viewport of [
+    { width: 1280, height: 800 },
+    { width: 1440, height: 1000 },
+    { width: 1920, height: 1080 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(dashboardConfig.url, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('heading', { name: 'Dashboard' }).waitFor({ state: 'visible' });
+    await page.getByText('Quick Actions').first().waitFor({ state: 'visible' });
+    await page.getByText("Today's Priorities").first().waitFor({ state: 'visible' });
 
-  const screenshotPath = path.join(OUT_DIR_REL, dashboardConfig.slug);
-  await page.screenshot({ path: screenshotPath, fullPage: true });
-  console.log(`[visual-qa] captured ${dashboardConfig.label} -> ${screenshotPath}`);
+    const hasHorizontalOverflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+    );
+    expect(hasHorizontalOverflow).toBe(false);
+
+    const screenshotPath = path.join(
+      OUT_DIR_REL,
+      `contractor-dashboard-${viewport.width}x${viewport.height}.png`
+    );
+    await page.screenshot({ path: screenshotPath, fullPage: true });
+    console.log(`[visual-qa] captured ${dashboardConfig.label} -> ${screenshotPath}`);
+  }
+
+  await page.getByTestId('dashboard-money-pipeline').scrollIntoViewIfNeeded();
+  const paymentScreenshotPath = path.join(OUT_DIR_REL, 'contractor-dashboard-payment-issue.png');
+  await page.screenshot({ path: paymentScreenshotPath, fullPage: false });
+  console.log(`[visual-qa] captured Dashboard payment state -> ${paymentScreenshotPath}`);
+
+  await page.unroute('**/api/projects/activity-feed/**');
+  await page.unroute(/\/api\/projects\/agreements\/?$/);
+  await page.unroute(/\/api\/projects\/milestones\/?$/);
+  await page.unroute(/\/api\/projects\/invoices\/?$/);
+  await page.unroute('**/api/projects/contractor/public-leads/');
+  await page.route('**/api/projects/activity-feed/**', async (route) => {
+    await json(route, { results: [], next_best_action: null });
+  });
+  await page.route(/\/api\/projects\/agreements\/?$/, async (route) => {
+    await json(route, listBody([{
+      id: 999,
+      title: 'Completed Project',
+      status: 'completed',
+      signature_is_satisfied: true,
+      is_fully_signed: true,
+      escrow_funded: true,
+    }]));
+  });
+  await page.route(/\/api\/projects\/milestones\/?$/, async (route) => {
+    await json(route, listBody([]));
+  });
+  await page.route(/\/api\/projects\/invoices\/?$/, async (route) => {
+    await json(route, listBody([]));
+  });
+  await page.route('**/api/projects/contractor/public-leads/', async (route) => {
+    await json(route, listBody([]));
+  });
+
+  await page.goto(dashboardConfig.url, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('dashboard-next-actions-empty')).toBeVisible();
+  const emptyScreenshotPath = path.join(OUT_DIR_REL, 'contractor-dashboard-priorities-empty.png');
+  await page.screenshot({ path: emptyScreenshotPath, fullPage: false });
+  console.log(`[visual-qa] captured Dashboard empty priorities -> ${emptyScreenshotPath}`);
+
+  await page.unroute('**/api/projects/contractor-opportunities/**');
+  await page.route('**/api/projects/contractor-opportunities/**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await json(route, listBody([]));
+  });
+  await page.goto(dashboardConfig.url, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('dashboard-bids-loading')).toBeVisible();
+  await page.getByTestId('dashboard-bids-summary').scrollIntoViewIfNeeded();
+  const loadingScreenshotPath = path.join(OUT_DIR_REL, 'contractor-dashboard-loading.png');
+  await page.screenshot({ path: loadingScreenshotPath, fullPage: false });
+  console.log(`[visual-qa] captured Dashboard loading state -> ${loadingScreenshotPath}`);
+  await expect(page.getByTestId('dashboard-bids-loading')).toHaveCount(0);
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.getByTestId('assistant-dock-open-button').click();
+  await expect(page.getByTestId('assistant-dock-open-button')).toHaveAttribute('aria-pressed', 'true');
+  const assistantScreenshotPath = path.join(OUT_DIR_REL, 'contractor-dashboard-assistant-open.png');
+  await page.screenshot({ path: assistantScreenshotPath, fullPage: false });
+  console.log(`[visual-qa] captured Dashboard assistant state -> ${assistantScreenshotPath}`);
 });

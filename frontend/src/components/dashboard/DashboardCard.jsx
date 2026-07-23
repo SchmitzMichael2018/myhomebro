@@ -1,4 +1,5 @@
 import React from "react";
+import { Card } from "../ui/index.js";
 
 export default function DashboardCard({
   children,
@@ -18,11 +19,14 @@ export default function DashboardCard({
       : "border-slate-200 bg-white";
 
   return (
-    <div
+    <Card
+      as="div"
+      padding="none"
+      theme={tone === "premium" || tone === "action" ? "operational" : "default"}
       data-testid={testId}
       className={`mhb-dashboard-card rounded-2xl border p-5 shadow-sm ${toneClass} ${className}`.trim()}
     >
       {children}
-    </div>
+    </Card>
   );
 }

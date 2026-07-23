@@ -19,6 +19,8 @@ import {
 
 Design tokens are loaded once by `main.jsx` from `styles/design-tokens.css`. Components use semantic Tailwind classes today while the variables establish a future theme boundary. New theme work should change semantic tokens rather than fork component behavior.
 
+Shared visual primitives accept `theme="operational"` where a dark operational surface requires compatible text, borders, focus rings, and loading geometry. This changes presentation only; component semantics and behavior remain identical.
+
 ## Existing Components Formalized
 
 ### Modal

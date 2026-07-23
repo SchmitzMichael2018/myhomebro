@@ -11,6 +11,15 @@ const variants = {
   ai: "border-indigo-600 bg-indigo-600 text-white hover:border-indigo-700 hover:bg-indigo-700",
 };
 
+const operationalVariants = {
+  primary: "border-white/20 bg-white text-[#0a2550] hover:border-white/30 hover:bg-sky-50",
+  secondary: "border-white/20 bg-white/10 text-white hover:border-white/30 hover:bg-white/15",
+  ghost: "border-transparent bg-transparent text-sky-100 hover:bg-white/10 hover:text-white",
+  danger: "border-rose-300/40 bg-rose-400/15 text-rose-100 hover:bg-rose-400/25",
+  icon: "border-white/20 bg-white/10 text-sky-100 hover:border-white/30 hover:bg-white/15 hover:text-white",
+  ai: "border-indigo-300/35 bg-indigo-400/20 text-indigo-50 hover:bg-indigo-400/30",
+};
+
 const sizes = {
   sm: "min-h-8 px-3 py-1.5 text-xs",
   md: "min-h-10 px-4 py-2 text-sm",
@@ -24,6 +33,7 @@ export const Button = React.forwardRef(function Button(
     as: Component = "button",
     type = "button",
     variant = "primary",
+    theme = "default",
     size = "md",
     loading = false,
     loadingLabel = "Working...",
@@ -50,7 +60,10 @@ export const Button = React.forwardRef(function Button(
         "inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border font-bold",
         "transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2",
         "disabled:cursor-not-allowed disabled:opacity-55",
-        variants[variant] || variants.primary,
+        theme === "operational"
+          ? operationalVariants[variant] || operationalVariants.primary
+          : variants[variant] || variants.primary,
+        theme === "operational" && "focus-visible:ring-sky-300 focus-visible:ring-offset-[#061d42]",
         iconOnly ? "h-10 w-10 p-0" : sizes[size] || sizes.md,
         className
       )}

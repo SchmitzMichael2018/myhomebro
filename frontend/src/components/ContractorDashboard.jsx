@@ -49,6 +49,14 @@ import {
   getDaysSinceLastLogin,
   recordLoginTimestamp,
 } from "../lib/onboardingState.js";
+import {
+  Button,
+  EmptyState,
+  LoadingSkeleton,
+  MetricCard,
+  StatusBadge,
+  WorkspacePageHeader,
+} from "./ui/index.js";
 
 /* Ensure react-modal knows the root */
 Modal.setAppElement("#root");
@@ -3423,55 +3431,68 @@ export default function ContractorDashboard() {
         className="p-4 shadow-[0_22px_50px_rgba(2,8,23,0.34)] md:p-5"
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Open Opportunities</div>
-            <div className="mt-2 text-2xl font-extrabold text-white">
-              {Number(bidsSnapshotSummary?.open_bids || 0).toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-sky-100/70">Draft + Submitted</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Under Review</div>
-            <div className="mt-2 text-2xl font-extrabold text-white">
-              {Number(bidsSnapshotSummary?.under_review_bids || 0).toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-sky-100/70">Active conversations</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Awarded</div>
-            <div className="mt-2 text-2xl font-extrabold text-white">
-              {Number(bidsSnapshotSummary?.awarded_bids || 0).toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-sky-100/70">Ready to convert</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-white/10 p-4">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-100/75">Not Selected / Declined</div>
-            <div className="mt-2 text-2xl font-extrabold text-white">
-              {Number(bidsSnapshotSummary?.declined_expired_bids || 0).toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-sky-100/70">Closed opportunities</div>
-          </div>
+          <MetricCard
+            theme="operational"
+            label="Open Opportunities"
+            value={Number(bidsSnapshotSummary?.open_bids || 0).toLocaleString()}
+            description="Draft + Submitted"
+            className="!rounded-xl !bg-white/10 !p-4"
+            data-testid="dashboard-opportunity-metric-open"
+          />
+          <MetricCard
+            theme="operational"
+            label="Under Review"
+            value={Number(bidsSnapshotSummary?.under_review_bids || 0).toLocaleString()}
+            description="Active conversations"
+            className="!rounded-xl !bg-white/10 !p-4"
+            data-testid="dashboard-opportunity-metric-review"
+          />
+          <MetricCard
+            theme="operational"
+            label="Awarded"
+            value={Number(bidsSnapshotSummary?.awarded_bids || 0).toLocaleString()}
+            description="Ready to convert"
+            className="!rounded-xl !bg-white/10 !p-4"
+            data-testid="dashboard-opportunity-metric-awarded"
+          />
+          <MetricCard
+            theme="operational"
+            label="Not Selected / Declined"
+            value={Number(bidsSnapshotSummary?.declined_expired_bids || 0).toLocaleString()}
+            description="Closed opportunities"
+            className="!rounded-xl !bg-white/10 !p-4"
+            data-testid="dashboard-opportunity-metric-closed"
+          />
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-white">Recent Opportunities</div>
-            <div className="mt-1 text-sm text-sky-100/75">
-              {bidsSnapshotLoading
-                ? "Loading opportunities snapshot..."
-                : bidsSnapshotRecent.length
+            {bidsSnapshotLoading ? (
+              <LoadingSkeleton
+                theme="operational"
+                rows={1}
+                label="Loading opportunities snapshot"
+                className="mt-2 w-64"
+                data-testid="dashboard-bids-loading"
+              />
+            ) : (
+              <div className="mt-1 text-sm text-sky-100/75">
+                {bidsSnapshotRecent.length
                   ? `${bidsSnapshotRecent.length} recent opportunit${bidsSnapshotRecent.length === 1 ? "y" : "ies"}`
                   : "No opportunities yet. New lead and bid activity will appear here once it lands."}
-            </div>
+              </div>
+            )}
           </div>
-          <button
-            type="button"
+          <Button
+            theme="operational"
+            variant="secondary"
+            size="sm"
             onClick={() => navigate("/app/opportunities")}
-            className="rounded-lg border border-white/25 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
             data-testid="dashboard-bids-view-all"
           >
             View all opportunities
-          </button>
+          </Button>
         </div>
 
         {bidsSnapshotRecent.length > 0 ? (
@@ -3580,8 +3601,8 @@ export default function ContractorDashboard() {
 
   return (
     <PageShell
-      title="Dashboard"
-      subtitle={greetingName ? `Good to see you, ${greetingName}.` : null}
+      title={isEmployee ? "Dashboard" : null}
+      subtitle={isEmployee && greetingName ? `Good to see you, ${greetingName}.` : null}
       showLogo={false}
       compact
       className="mhb-dashboard-shell"
@@ -3590,6 +3611,17 @@ export default function ContractorDashboard() {
       <div
         className="mhb-contractor-dashboard -mx-4 -mb-6 min-h-screen space-y-5 px-4 pb-8 pt-1 md:-mx-6 md:px-6"
       >
+      {!isEmployee ? (
+        <WorkspacePageHeader
+          theme="operational"
+          title="Dashboard"
+          subtitle={greetingName
+            ? `Good to see you, ${greetingName}. Track work, schedules, payments, and priorities in one place.`
+            : "Track work, schedules, payments, and priorities in one place."}
+          data-testid="dashboard-workspace-header"
+          className="rounded-2xl border border-white/10 bg-[#061d42]/95 px-5 py-4 shadow-[0_22px_50px_rgba(2,8,23,0.28)]"
+        />
+      ) : null}
       {!isEmployee ? (
         <ContractorContextualGuideModal
           guide={contextualGuide}
@@ -3614,52 +3646,57 @@ export default function ContractorDashboard() {
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-                  <button
-                    type="button"
+                  <Button
+                    theme="operational"
+                    variant="primary"
                     data-testid="dashboard-quick-action-create-estimate"
                     onClick={openCreateEstimate}
-                    className="inline-flex min-h-[88px] flex-col items-center justify-center gap-2 rounded-2xl border border-amber-200/65 bg-amber-300 px-4 text-center text-sm font-black text-white shadow-[0_18px_36px_rgba(251,191,36,0.22)] transition hover:-translate-y-px hover:bg-amber-200 focus-visible:text-white active:text-white disabled:text-white"
+                    className="!min-h-[88px] !flex-col !rounded-2xl !border-amber-200/65 !bg-amber-300 px-4 text-center text-sm !font-black !text-white shadow-[0_18px_36px_rgba(251,191,36,0.22)] hover:!bg-amber-200"
                   >
                     <ClipboardCheck className="h-5 w-5 text-white" />
                     <span className="text-white">Create Estimate</span>
                     <span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-100">Primary</span>
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    theme="operational"
+                    variant="secondary"
                     data-testid="dashboard-quick-action-new-agreement"
                     onClick={goNewAgreement}
-                    className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                    className="!min-h-[76px] !flex-col !rounded-2xl px-4"
                   >
                     <FilePlus2 className="h-5 w-5" />
                     <span>New Agreement</span>
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    theme="operational"
+                    variant="secondary"
                     data-testid="dashboard-quick-action-todays-schedule"
                     onClick={goTodaySchedule}
-                    className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                    className="!min-h-[76px] !flex-col !rounded-2xl px-4"
                   >
                     <CalendarDays className="h-5 w-5" />
                     <span>Today&apos;s Schedule</span>
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    theme="operational"
+                    variant="secondary"
                     data-testid="dashboard-quick-action-expense"
                     onClick={openNewExpense}
-                    className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                    className="!min-h-[76px] !flex-col !rounded-2xl px-4"
                   >
                     <HandCoins className="h-5 w-5" />
                     <span>Expense</span>
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    theme="operational"
+                    variant="secondary"
                     data-testid="dashboard-quick-action-payment"
                     onClick={goInvoices}
-                    className="inline-flex min-h-[76px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:-translate-y-px hover:border-white/30 hover:bg-white/15"
+                    className="!min-h-[76px] !flex-col !rounded-2xl px-4"
                   >
                     <BadgeDollarSign className="h-5 w-5" />
                     <span>Payment</span>
-                  </button>
+                  </Button>
                 </div>
               </div>
             </DashboardCard>
@@ -3810,17 +3847,21 @@ export default function ContractorDashboard() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white shadow-sm">
-                  {nextActionCards.length ? `${nextActionCards.length} active` : "Caught up"}
-                </span>
+                <StatusBadge
+                  theme="operational"
+                  status={nextActionCards.length ? "pending" : "complete"}
+                  label={nextActionCards.length ? `${nextActionCards.length} active` : "Caught up"}
+                  data-testid="dashboard-priority-count"
+                />
                 {nextActionCards.length > 5 ? (
-                  <button
-                    type="button"
+                  <Button
+                    theme="operational"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setShowAllNextActions((current) => !current)}
-                    className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-semibold text-white hover:bg-white/15"
                   >
                     {showAllNextActions ? "Show fewer" : "View all actions"}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
             </div>
@@ -3847,12 +3888,18 @@ export default function ContractorDashboard() {
                     >
                       <div>
                         <div className="mb-3 flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-black uppercase ${categoryClass}`}>
-                            {categoryLabel}
-                          </span>
-                          <span className="rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-bold uppercase text-sky-100/80">
-                            {nextActionUrgencyLabel(item)}
-                          </span>
+                          <StatusBadge
+                            theme="operational"
+                            status="recommended"
+                            label={categoryLabel}
+                            className={`text-[11px] uppercase ${categoryClass}`}
+                          />
+                          <StatusBadge
+                            theme="operational"
+                            status={priorityTone === "critical" ? "required" : "pending"}
+                            label={nextActionUrgencyLabel(item)}
+                            className="text-[11px] uppercase"
+                          />
                         </div>
                         <div className="text-base font-black text-white">{item.title}</div>
                         <div
@@ -3885,8 +3932,10 @@ export default function ContractorDashboard() {
                         </div>
                       </div>
                       <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
+                        <Button
+                          theme="operational"
+                          variant="primary"
+                          size="sm"
                           data-testid={`dashboard-next-action-button-${item.key}`}
                           onClick={() => {
                             if (typeof item.action === "function") {
@@ -3895,53 +3944,56 @@ export default function ContractorDashboard() {
                             }
                             navigate(item.recommended_url || item.navigationTarget || "/app/dashboard");
                           }}
-                          className="rounded-xl bg-white px-4 py-2 text-xs font-black text-[#0a2550] shadow-sm transition hover:-translate-y-px"
                         >
                           {item.buttonLabel || "Open"}
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          theme="operational"
+                          variant="ghost"
+                          size="sm"
                           data-testid={`dashboard-next-action-snooze-${item.key}`}
                           onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
-                          className="rounded-xl border border-white/18 px-3 py-2 text-xs font-bold text-sky-100 hover:bg-white/10"
                         >
                           Snooze
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          theme="operational"
+                          variant="icon"
                           data-testid={`dashboard-next-action-dismiss-${item.key}`}
                           onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
-                          className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/18 text-sky-100 hover:bg-white/10"
+                          className="ml-auto !h-8 !w-8 !rounded-full"
                           aria-label={`Dismiss ${item.title}`}
                         >
                           <X className="h-4 w-4" aria-hidden="true" />
-                        </button>
+                        </Button>
                       </div>
                     </article>
                   );
                 })}
               </div>
             ) : (
-              <div
+              <EmptyState
                 data-testid="dashboard-next-actions-empty"
-                className="rounded-2xl border border-dashed border-white/20 bg-white/8 p-5 text-sky-100"
-              >
-                <div className="text-lg font-black text-white">Great job!</div>
-                <div className="mt-1 text-sm font-semibold text-sky-100/80">You're all caught up.</div>
-                <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+                theme="operational"
+                title="Great job!"
+                description="You're all caught up."
+                className="!items-stretch !rounded-2xl !bg-white/8 !p-5"
+                primaryAction={(
+                  <div className="grid w-full gap-2 md:grid-cols-2 xl:grid-cols-4">
                   {growthSuggestions.map((suggestion) => (
-                    <button
+                    <Button
                       key={suggestion.key}
-                      type="button"
+                      theme="operational"
+                      variant="secondary"
                       data-testid={`dashboard-growth-suggestion-${suggestion.key}`}
                       onClick={() => navigate(suggestion.to)}
-                      className="rounded-xl border border-white/15 bg-white/8 px-3 py-3 text-sm font-bold text-white hover:bg-white/12"
                     >
                       {suggestion.label}
-                    </button>
+                    </Button>
                   ))}
-                </div>
-              </div>
+                  </div>
+                )}
+              />
             )}
             </DashboardCard>
 
@@ -3986,11 +4038,11 @@ export default function ContractorDashboard() {
                   </div>
                   <div className="grid gap-2.5 md:grid-cols-2">
                     <div data-testid="dashboard-schedule-tomorrow">
-                      <button
-                        type="button"
-                        role="button"
+                      <Button
+                        theme="operational"
+                        variant="secondary"
                         onClick={goAgreementScheduleTomorrow}
-                        className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
+                        className="w-full !justify-between !rounded-xl !px-4 !py-3 text-left"
                       >
                         <div>
                           <div className="text-sm font-semibold text-white">Due Tomorrow</div>
@@ -3999,14 +4051,14 @@ export default function ContractorDashboard() {
                           </div>
                         </div>
                         <ArrowRight className="h-4 w-4 text-sky-100/70" />
-                      </button>
+                      </Button>
                     </div>
                     <div data-testid="dashboard-schedule-week">
-                      <button
-                        type="button"
-                        role="button"
+                      <Button
+                        theme="operational"
+                        variant="secondary"
                         onClick={goAgreementScheduleWeek}
-                        className="flex w-full items-center justify-between rounded-xl border border-white/15 bg-white/8 px-4 py-3 text-left text-white hover:border-white/30 hover:bg-white/12"
+                        className="w-full !justify-between !rounded-xl !px-4 !py-3 text-left"
                       >
                         <div>
                           <div className="text-sm font-semibold text-white">This Week</div>
@@ -4015,24 +4067,24 @@ export default function ContractorDashboard() {
                           </div>
                         </div>
                         <ArrowRight className="h-4 w-4 text-sky-100/70" />
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={goCalendar}
-                  className="flex min-h-[132px] w-full flex-col items-center justify-center gap-3 rounded-xl border border-white/15 bg-white/8 px-4 py-6 text-center hover:border-white/30 hover:bg-white/12"
-                >
-                  <CalendarDays className="h-8 w-8 shrink-0 rounded-2xl border border-sky-300/30 bg-sky-400/10 p-1.5 text-sky-100" />
-                  <div>
-                    <div className="text-sm font-semibold text-white">You have nothing scheduled today.</div>
-                    <div className="mt-1 text-xs font-medium text-sky-100/75">
+                <EmptyState
+                  theme="operational"
+                  icon={CalendarDays}
+                  title="You have nothing scheduled today."
+                  description="Scheduled work and due items will appear here."
+                  className="!min-h-[132px] !rounded-xl !bg-white/8 !px-4 !py-5"
+                  primaryAction={(
+                    <Button theme="operational" variant="secondary" size="sm" onClick={goCalendar}>
                       Schedule Work
-                    </div>
-                  </div>
-                </button>
+                    </Button>
+                  )}
+                  data-testid="dashboard-schedule-empty"
+                />
               )}
             </DashboardCard>
           </DashboardSection>

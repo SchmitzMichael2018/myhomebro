@@ -11,6 +11,7 @@ const cardPadding = {
 export function Card({
   as: Component = "section",
   padding = "md",
+  theme = "default",
   interactive = false,
   className = "",
   children,
@@ -19,7 +20,10 @@ export function Card({
   return (
     <Component
       className={cx(
-        "rounded-2xl border border-slate-200 bg-white shadow-sm",
+        "rounded-2xl border shadow-sm",
+        theme === "operational"
+          ? "border-white/10 bg-[#061d42]/95 text-white"
+          : "border-slate-200 bg-white",
         cardPadding[padding] ?? cardPadding.md,
         interactive && "transition hover:-translate-y-px hover:border-slate-300 hover:shadow-md",
         className
@@ -38,23 +42,24 @@ export function MetricCard({
   trend = "",
   icon: Icon,
   status,
+  theme = "default",
   className = "",
   ...props
 }) {
   return (
-    <Card className={cx("min-w-0", className)} {...props}>
+    <Card theme={theme} className={cx("min-w-0", className)} {...props}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-slate-600">{label}</div>
-          <div className="mt-2 break-words text-2xl font-black tabular-nums text-slate-950">{value}</div>
+          <div className={cx("text-sm font-semibold", theme === "operational" ? "text-sky-100/75" : "text-slate-600")}>{label}</div>
+          <div className={cx("mt-2 break-words text-2xl font-black tabular-nums", theme === "operational" ? "text-white" : "text-slate-950")}>{value}</div>
         </div>
         {Icon ? <span className="rounded-xl bg-blue-50 p-2 text-blue-700"><Icon className="h-5 w-5" aria-hidden="true" /></span> : null}
       </div>
       {description || trend || status ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div className={cx("mt-3 flex flex-wrap items-center gap-2 text-xs", theme === "operational" ? "text-sky-100/70" : "text-slate-500")}>
           {description ? <span>{description}</span> : null}
           {trend ? <span className="font-bold">{trend}</span> : null}
-          {status ? <StatusBadge status={status} /> : null}
+          {status ? <StatusBadge status={status} theme={theme} /> : null}
         </div>
       ) : null}
     </Card>
@@ -71,13 +76,15 @@ const statusClasses = {
   published: "border-teal-200 bg-teal-100 text-teal-800",
 };
 
-export function StatusBadge({ status = "draft", label = "", className = "", ...props }) {
+export function StatusBadge({ status = "draft", label = "", theme = "default", className = "", ...props }) {
   const normalized = String(status || "draft").trim().toLowerCase();
   return (
     <span
       className={cx(
         "inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-bold",
-        statusClasses[normalized] || statusClasses.draft,
+        theme === "operational"
+          ? "border-white/15 bg-white/10 text-white"
+          : statusClasses[normalized] || statusClasses.draft,
         className
       )}
       {...props}

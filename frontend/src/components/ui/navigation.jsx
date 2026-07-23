@@ -13,6 +13,7 @@ export function WorkspacePageHeader({
   primaryAction = null,
   secondaryActions = null,
   onOpenProjectAssistant = null,
+  theme = "default",
   className = "",
   ...props
 }) {
@@ -20,7 +21,7 @@ export function WorkspacePageHeader({
     <header className={cx("space-y-4", className)} {...props}>
       {breadcrumbs.length ? (
         <nav aria-label="Breadcrumb">
-          <ol className="flex flex-wrap items-center gap-1 text-sm text-slate-500">
+          <ol className={cx("flex flex-wrap items-center gap-1 text-sm", theme === "operational" ? "text-sky-100/70" : "text-slate-500")}>
             {breadcrumbs.map((item, index) => (
               <li key={item.label || index} className="flex items-center gap-1">
                 {index ? <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" /> : null}
@@ -33,15 +34,15 @@ export function WorkspacePageHeader({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-2xl font-black tracking-tight text-slate-950 sm:text-3xl">{title}</h1>
-            {status ? <StatusBadge status={status} /> : null}
+            <h1 className={cx("text-2xl font-black tracking-tight sm:text-3xl", theme === "operational" ? "text-white" : "text-slate-950")}>{title}</h1>
+            {status ? <StatusBadge status={status} theme={theme} /> : null}
           </div>
-          {subtitle ? <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">{subtitle}</p> : null}
-          {summary ? <div className="mt-3 text-sm text-slate-700">{summary}</div> : null}
+          {subtitle ? <p className={cx("mt-1 max-w-3xl text-sm leading-6", theme === "operational" ? "text-sky-100/80" : "text-slate-600")}>{subtitle}</p> : null}
+          {summary ? <div className={cx("mt-3 text-sm", theme === "operational" ? "text-sky-100/85" : "text-slate-700")}>{summary}</div> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           {secondaryActions}
-          {onOpenProjectAssistant ? <AIActionButton onClick={onOpenProjectAssistant}>Project Assistant</AIActionButton> : null}
+          {onOpenProjectAssistant ? <AIActionButton theme={theme} onClick={onOpenProjectAssistant}>Project Assistant</AIActionButton> : null}
           {primaryAction}
         </div>
       </div>

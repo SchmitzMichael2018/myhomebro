@@ -46,6 +46,22 @@ describe("MyHomeBro design-system foundation", () => {
     expect(ai).toContain("bg-indigo-600");
   });
 
+  it("supports the operational theme without changing component semantics", () => {
+    const button = markup(<Button theme="operational">Open</Button>);
+    const badge = markup(<StatusBadge theme="operational" status="pending" />);
+    const empty = markup(<EmptyState theme="operational" title="All caught up" />);
+    const loading = markup(<LoadingSkeleton theme="operational" label="Loading dashboard" />);
+    const header = markup(<WorkspacePageHeader theme="operational" title="Dashboard" />);
+
+    expect(button).toContain("bg-white");
+    expect(button).toContain("focus-visible:ring-sky-300");
+    expect(badge).toContain("Pending");
+    expect(badge).toContain("bg-white/10");
+    expect(empty).toContain("bg-[#061d42]/95");
+    expect(loading).toContain("bg-white/12");
+    expect(header).toContain("text-white");
+  });
+
   it("renders intentional loading and empty states", () => {
     const loading = markup(<LoadingSkeleton variant="table" label="Loading agreements" />);
     const empty = markup(<EmptyState title="No agreements" description="Create the first agreement." tips={["Confirm the customer"]} />);

@@ -243,12 +243,17 @@ test('contractor dashboard loads current notification, priority, and pipeline su
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByTestId('dashboard-workspace-header')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Open notifications' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open Project Assistant' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Project Assistant' })).toHaveCount(1);
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Quick Actions');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText("Today's Priorities");
+  await expect(page.getByTestId('dashboard-priority-count')).toBeVisible();
   await expect(page.getByText('Work Pipeline').first()).toBeVisible();
   await expect(page.getByTestId('dashboard-money-pipeline')).toBeVisible();
+  await expect(page.getByTestId('dashboard-opportunity-metric-open')).toBeVisible();
 });
 
 test('contractor dashboard renders current quick actions and workflow entry points', async ({ page }) => {
