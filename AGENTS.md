@@ -1,5 +1,9 @@
 # MyHomeBro Agent Instructions
 
+## Canonical Engineering Principles
+
+Before beginning a task, follow [MyHomeBro Engineering Principles](docs/architecture/MYHOMEBRO_ENGINEERING_PRINCIPLES.md) unless the task explicitly overrides a principle. This file contains the durable product, UX, design-system, AI, security, development, testing, review, and release constitution. The instructions below add repository workflow requirements.
+
 ## Overview
 
 MyHomeBro is a contractor–customer agreement and payment platform.

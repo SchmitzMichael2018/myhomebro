@@ -1,5 +1,7 @@
 # MyHomeBro AI Architecture
 
+This specialized reference is governed by the canonical [MyHomeBro Engineering Principles](architecture/MYHOMEBRO_ENGINEERING_PRINCIPLES.md). Apply both documents to AI work; the engineering principles control the durable product, security, UX, testing, and release expectations.
+
 ## Product Vision
 
 MyHomeBro should be able to generate a professional contractor agreement from a single project description.
