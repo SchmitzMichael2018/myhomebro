@@ -1753,7 +1753,7 @@ export default function BusinessDashboard() {
       eyebrow="Insights"
       title="Insights"
       subtitle="Track revenue, payouts, project health, and risks."
-      variant="light-console"
+      variant="operational"
       className="mhb-insights-workspace"
       contentClassName="space-y-4"
       actions={
@@ -1969,11 +1969,11 @@ export default function BusinessDashboard() {
                       <div className={revenueChart.length >= 5 ? "h-72" : "h-44"} data-testid={revenueChart.length >= 5 ? "insights-trend-full-chart" : "insights-trend-mini-chart"}>
                         <ResponsiveContainer width="100%" height="100%">
                           <AreaChart data={revenueChart}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                            <XAxis dataKey="bucket_label" stroke="#64748b" />
-                            <YAxis tickFormatter={axisMoney} stroke="#64748b" />
+                            <CartesianGrid strokeDasharray="3 3" stroke="var(--mhb-chart-grid)" />
+                            <XAxis dataKey="bucket_label" stroke="var(--mhb-chart-text)" />
+                            <YAxis tickFormatter={axisMoney} stroke="var(--mhb-chart-text)" />
                             <Tooltip formatter={(value) => money(value)} />
-                            <Area type="monotone" dataKey="revenue" stroke="#2563eb" fill="#2563eb" fillOpacity={0.18} />
+                            <Area type="monotone" dataKey="revenue" stroke="var(--mhb-chart-neutral)" fill="var(--mhb-chart-neutral)" fillOpacity={0.18} />
                           </AreaChart>
                         </ResponsiveContainer>
                       </div>
@@ -2102,7 +2102,7 @@ export default function BusinessDashboard() {
                 <h2 className="text-xl font-bold text-slate-950">Business Health</h2>
                 <div className="relative mx-auto mt-5 h-28 w-52 overflow-hidden">
                   <svg viewBox="0 0 200 110" className="h-full w-full" aria-hidden="true">
-                    <path d="M20 96 A80 80 0 0 1 180 96" fill="none" stroke="#e2e8f0" strokeWidth="11" strokeLinecap="round" />
+                    <path d="M20 96 A80 80 0 0 1 180 96" fill="none" stroke="var(--mhb-chart-grid)" strokeWidth="11" strokeLinecap="round" />
                     <path d="M20 96 A80 80 0 0 1 180 96" fill="none" stroke={businessHealth.overall === "At Risk" ? "#dc2626" : businessHealth.overall === "Needs Attention" ? "#d97706" : "#16a34a"} strokeWidth="11" strokeLinecap="round" />
                   </svg>
                   <div className="absolute inset-x-0 bottom-0 text-center text-3xl font-black text-slate-950">{businessHealth.overall || "Insufficient data"}</div>
@@ -2485,7 +2485,7 @@ export default function BusinessDashboard() {
 
           <div className="grid gap-3 xl:grid-cols-[1.45fr_0.75fr]">
             <section data-testid="dashboard-financial-hero" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-bold text-slate-950">Revenue Overview</h2><p className="mt-1 text-sm text-slate-500">Collected revenue for {rangeLabel.toLowerCase()}.</p>
-              {financialTrendChart.length === 0 ? <div data-testid="dashboard-financial-empty" className="mt-4 flex items-center gap-3 rounded-lg bg-slate-50 px-4 py-3"><BarChart3 aria-hidden="true" className="h-6 w-6 shrink-0 text-slate-400" /><div><div className="text-sm font-bold text-slate-900">No completed payments yet</div><div className="mt-0.5 text-sm text-slate-500">Reporting expands as invoices and escrow releases occur.</div></div></div> : financialTrendChart.length === 1 ? <div data-testid="dashboard-financial-current-summary" className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-emerald-50 px-4 py-3"><div className="text-xs font-semibold text-emerald-800">Current Revenue</div><div className="mt-1 text-xl font-black text-emerald-900">{money(financialSummary.gross_revenue_total || snapshot.total_revenue)}</div></div><div className="rounded-lg bg-blue-50 px-4 py-3"><div className="text-xs font-semibold text-blue-800">Current Outstanding</div><div className="mt-1 text-xl font-black text-blue-950">{money(canonicalMetrics.outstanding_receivables?.value)}</div></div><div className="rounded-lg bg-red-50 px-4 py-3"><div className="text-xs font-semibold text-red-700">Current Held</div><div className="mt-1 text-xl font-black text-red-800">{money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value)}</div></div><p className="sm:col-span-3 text-sm text-slate-500">One reporting period available. More periods will add a trend.</p></div> : <div className={`mt-4 ${financialTrendChart.length < 5 ? "h-40" : "h-64"}`} data-testid={financialTrendChart.length < 5 ? "dashboard-financial-mini-trend" : "dashboard-financial-trend-chart"}><ResponsiveContainer width="100%" height="100%"><BarChart data={financialTrendChart}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="bucket_label" tick={{ fontSize: 12 }} /><YAxis tickFormatter={axisMoney} width={70} hide={financialTrendChart.length < 5} /><Tooltip formatter={(value) => money(value)} /><Bar dataKey="gross_revenue" name="Revenue Collected" fill="#2563eb" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div>}
+              {financialTrendChart.length === 0 ? <div data-testid="dashboard-financial-empty" className="mt-4 flex items-center gap-3 rounded-lg bg-slate-50 px-4 py-3"><BarChart3 aria-hidden="true" className="h-6 w-6 shrink-0 text-slate-400" /><div><div className="text-sm font-bold text-slate-900">No completed payments yet</div><div className="mt-0.5 text-sm text-slate-500">Reporting expands as invoices and escrow releases occur.</div></div></div> : financialTrendChart.length === 1 ? <div data-testid="dashboard-financial-current-summary" className="mt-4 grid gap-3 sm:grid-cols-3"><div className="rounded-lg bg-emerald-50 px-4 py-3"><div className="text-xs font-semibold text-emerald-800">Current Revenue</div><div className="mt-1 text-xl font-black text-emerald-900">{money(financialSummary.gross_revenue_total || snapshot.total_revenue)}</div></div><div className="rounded-lg bg-blue-50 px-4 py-3"><div className="text-xs font-semibold text-blue-800">Current Outstanding</div><div className="mt-1 text-xl font-black text-blue-950">{money(canonicalMetrics.outstanding_receivables?.value)}</div></div><div className="rounded-lg bg-red-50 px-4 py-3"><div className="text-xs font-semibold text-red-700">Current Held</div><div className="mt-1 text-xl font-black text-red-800">{money(financialSummary.on_hold_total || canonicalMetrics.held_funds?.value)}</div></div><p className="sm:col-span-3 text-sm text-slate-500">One reporting period available. More periods will add a trend.</p></div> : <div className={`mt-4 ${financialTrendChart.length < 5 ? "h-40" : "h-64"}`} data-testid={financialTrendChart.length < 5 ? "dashboard-financial-mini-trend" : "dashboard-financial-trend-chart"}><ResponsiveContainer width="100%" height="100%"><BarChart data={financialTrendChart}><CartesianGrid stroke="var(--mhb-chart-grid)" strokeDasharray="3 3" vertical={false} /><XAxis dataKey="bucket_label" stroke="var(--mhb-chart-text)" tick={{ fontSize: 12 }} /><YAxis stroke="var(--mhb-chart-text)" tickFormatter={axisMoney} width={70} hide={financialTrendChart.length < 5} /><Tooltip formatter={(value) => money(value)} /><Bar dataKey="gross_revenue" name="Revenue Collected" fill="var(--mhb-chart-neutral)" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div>}
               <button type="button" onClick={() => setActiveBusinessView("reports-trends")} className="mt-4 inline-flex items-center gap-2 text-sm font-bold text-blue-700">View trend analysis <ArrowRight aria-hidden="true" className="h-4 w-4" /></button>
             </section>
 

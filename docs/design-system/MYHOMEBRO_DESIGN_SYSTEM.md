@@ -2,7 +2,40 @@
 
 This document describes the shared UI foundation for gradual workspace modernization. It is governed by [MyHomeBro Engineering Principles](../architecture/MYHOMEBRO_ENGINEERING_PRINCIPLES.md).
 
-The foundation standardizes behavior, semantics, spacing, typography, accessibility, status language, loading, empty states, and Project Assistant presentation. It does not impose one color palette across the platform. Operational workspaces remain intentionally dark; Marketing may remain lighter.
+The foundation standardizes behavior, semantics, spacing, typography, accessibility, status language, loading, empty states, Project Assistant presentation, and authenticated operational appearance. Operational workspaces support dark and light through shared semantics; Marketing remains a curated-light exception.
+
+## Authenticated Appearance
+
+`AppearanceProvider` is mounted once in `AuthenticatedLayout` and exposes:
+
+```jsx
+const { appearance, resolvedTheme, setAppearance } = useAppearance();
+```
+
+Canonical saved values are `system`, `light`, and `dark`. Dark is the default for missing or invalid values. The preference is stored in frontend local storage under `myhomebro.appearance.v1`; there is no compatible profile preference field yet. `system` subscribes to `(prefers-color-scheme: dark)` and keeps `system` stored while `resolvedTheme` changes.
+
+`main.jsx` applies the saved/default value before rendering authenticated `/app` routes to avoid a light-theme flash. The DOM contract is:
+
+```html
+<html data-mhb-appearance="dark" data-mhb-theme="dark" data-mhb-surface="operational">
+```
+
+The authenticated layout uses `data-mhb-surface="curated-light"` for Marketing. This keeps Marketing visually unchanged while preserving the operational preference for Dashboard, Insights, Project Assistant, and other authenticated operational surfaces. Public websites, public intake, customer-facing pages, PDFs, and email templates are not themed by this system.
+
+Do not create page-specific providers, local-storage reads, theme toggles, or hard-coded chart theme branches. Use the shared provider and semantic tokens. New operational components must render in both resolved themes and set native `color-scheme` correctly.
+
+### Semantic appearance tokens
+
+The token foundation includes:
+
+- surfaces: app, header, sidebar, card, elevated, subtle, inset, overlay;
+- text: primary, secondary, muted, inverse, link;
+- borders: default, strong, divider, selected, focus;
+- interactions: primary, primary hover, secondary, ghost hover, disabled;
+- statuses: Complete, Recommended, Required, Blocked, Pending, Draft, Published;
+- charts: background, grid, text, tooltip, positive, negative, neutral.
+
+Insights is part of the operational system. Recharts axes, grid lines, series, legends, and tooltips must derive their colors from these tokens rather than fixed light values.
 
 ## Importing Components
 
@@ -19,7 +52,7 @@ import {
 
 Design tokens are loaded once by `main.jsx` from `styles/design-tokens.css`. Components use semantic Tailwind classes today while the variables establish a future theme boundary. New theme work should change semantic tokens rather than fork component behavior.
 
-Shared visual primitives accept `theme="operational"` where a dark operational surface requires compatible text, borders, focus rings, and loading geometry. This changes presentation only; component semantics and behavior remain identical.
+Shared visual primitives accept `theme="operational"` where an operational surface requires theme-aware text, borders, focus rings, statuses, and loading geometry. This changes presentation only; component semantics and behavior remain identical.
 
 ## Existing Components Formalized
 

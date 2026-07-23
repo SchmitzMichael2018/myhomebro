@@ -67,6 +67,39 @@
   --mhb-ds-ai: #4f46e5;
   --mhb-ds-ai-hover: #4338ca;
 
+  /* Authenticated operational appearance: light values */
+  --mhb-surface-app: #eef3f8;
+  --mhb-surface-header: #f8fafc;
+  --mhb-surface-sidebar: #061d42;
+  --mhb-surface-card: #ffffff;
+  --mhb-surface-elevated: #ffffff;
+  --mhb-surface-subtle: #f8fafc;
+  --mhb-surface-inset: #eef2f7;
+  --mhb-surface-overlay: rgb(15 23 42 / 0.56);
+  --mhb-text-primary: #0f172a;
+  --mhb-text-secondary: #334155;
+  --mhb-text-muted: #64748b;
+  --mhb-text-inverse: #f8fafc;
+  --mhb-text-link: #1d4ed8;
+  --mhb-border-default: #dbe3ec;
+  --mhb-border-strong: #b8c5d3;
+  --mhb-border-divider: #e2e8f0;
+  --mhb-border-selected: #2563eb;
+  --mhb-border-focus: #2563eb;
+  --mhb-interactive-primary: #2563eb;
+  --mhb-interactive-primary-hover: #1d4ed8;
+  --mhb-interactive-secondary: #ffffff;
+  --mhb-interactive-ghost-hover: #e8eef6;
+  --mhb-interactive-disabled-bg: #e2e8f0;
+  --mhb-interactive-disabled-text: #94a3b8;
+  --mhb-chart-background: #ffffff;
+  --mhb-chart-grid: #d9e2ec;
+  --mhb-chart-text: #475569;
+  --mhb-chart-tooltip: #0f172a;
+  --mhb-chart-positive: #059669;
+  --mhb-chart-negative: #dc2626;
+  --mhb-chart-neutral: #2563eb;
+
   /* Canonical status system */
   --mhb-status-complete-bg: #dcfce7;
   --mhb-status-complete-text: #166534;
@@ -99,6 +132,85 @@
   --mhb-card-padding-sm: var(--mhb-space-4);
   --mhb-card-padding-md: var(--mhb-space-5);
   --mhb-card-padding-lg: var(--mhb-space-6);
+}
+
+html[data-mhb-theme="dark"] {
+  color-scheme: dark;
+  --mhb-surface-app: #020617;
+  --mhb-surface-header: #061733;
+  --mhb-surface-sidebar: #03152f;
+  --mhb-surface-card: #061d42;
+  --mhb-surface-elevated: #0b2851;
+  --mhb-surface-subtle: #0f2a4e;
+  --mhb-surface-inset: #041631;
+  --mhb-surface-overlay: rgb(2 6 23 / 0.72);
+  --mhb-text-primary: #f8fbff;
+  --mhb-text-secondary: #dbeafe;
+  --mhb-text-muted: #9fc5e8;
+  --mhb-text-inverse: #0f172a;
+  --mhb-text-link: #7dd3fc;
+  --mhb-border-default: rgb(186 230 253 / 0.16);
+  --mhb-border-strong: rgb(186 230 253 / 0.3);
+  --mhb-border-divider: rgb(186 230 253 / 0.12);
+  --mhb-border-selected: #60a5fa;
+  --mhb-border-focus: #7dd3fc;
+  --mhb-interactive-primary: #f8fafc;
+  --mhb-interactive-primary-hover: #e0f2fe;
+  --mhb-interactive-secondary: rgb(255 255 255 / 0.1);
+  --mhb-interactive-ghost-hover: rgb(255 255 255 / 0.1);
+  --mhb-interactive-disabled-bg: rgb(255 255 255 / 0.08);
+  --mhb-interactive-disabled-text: rgb(186 230 253 / 0.45);
+  --mhb-chart-background: #061d42;
+  --mhb-chart-grid: rgb(186 230 253 / 0.16);
+  --mhb-chart-text: #bae6fd;
+  --mhb-chart-tooltip: #0b2851;
+  --mhb-chart-positive: #34d399;
+  --mhb-chart-negative: #fb7185;
+  --mhb-chart-neutral: #60a5fa;
+
+  --mhb-status-complete-bg: rgb(16 185 129 / 0.16);
+  --mhb-status-complete-text: #a7f3d0;
+  --mhb-status-complete-border: rgb(52 211 153 / 0.32);
+  --mhb-status-recommended-bg: rgb(59 130 246 / 0.18);
+  --mhb-status-recommended-text: #bfdbfe;
+  --mhb-status-recommended-border: rgb(96 165 250 / 0.34);
+  --mhb-status-required-bg: rgb(249 115 22 / 0.16);
+  --mhb-status-required-text: #fed7aa;
+  --mhb-status-required-border: rgb(251 146 60 / 0.34);
+  --mhb-status-blocked-bg: rgb(244 63 94 / 0.16);
+  --mhb-status-blocked-text: #fecdd3;
+  --mhb-status-blocked-border: rgb(251 113 133 / 0.34);
+  --mhb-status-pending-bg: rgb(245 158 11 / 0.16);
+  --mhb-status-pending-text: #fde68a;
+  --mhb-status-pending-border: rgb(251 191 36 / 0.34);
+  --mhb-status-draft-bg: rgb(148 163 184 / 0.14);
+  --mhb-status-draft-text: #cbd5e1;
+  --mhb-status-draft-border: rgb(203 213 225 / 0.24);
+  --mhb-status-published-bg: rgb(20 184 166 / 0.16);
+  --mhb-status-published-text: #99f6e4;
+  --mhb-status-published-border: rgb(45 212 191 / 0.32);
+}
+
+html[data-mhb-theme="light"] {
+  color-scheme: light;
+}
+
+html[data-mhb-surface="curated-light"] {
+  color-scheme: light;
+  --mhb-surface-app: #f8fafc;
+  --mhb-surface-header: #ffffff;
+  --mhb-surface-card: #ffffff;
+  --mhb-surface-elevated: #ffffff;
+  --mhb-surface-subtle: #f8fafc;
+  --mhb-surface-inset: #f1f5f9;
+  --mhb-text-primary: #0f172a;
+  --mhb-text-secondary: #334155;
+  --mhb-text-muted: #64748b;
+  --mhb-text-link: #1d4ed8;
+  --mhb-border-default: #e2e8f0;
+  --mhb-border-strong: #cbd5e1;
+  --mhb-border-divider: #e2e8f0;
+  --mhb-interactive-ghost-hover: #f1f5f9;
 }
 
 @media (prefers-reduced-motion: reduce) {

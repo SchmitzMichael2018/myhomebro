@@ -12,11 +12,11 @@ const variants = {
 };
 
 const operationalVariants = {
-  primary: "border-white/20 bg-white text-[#0a2550] hover:border-white/30 hover:bg-sky-50",
-  secondary: "border-white/20 bg-white/10 text-white hover:border-white/30 hover:bg-white/15",
-  ghost: "border-transparent bg-transparent text-sky-100 hover:bg-white/10 hover:text-white",
-  danger: "border-rose-300/40 bg-rose-400/15 text-rose-100 hover:bg-rose-400/25",
-  icon: "border-white/20 bg-white/10 text-sky-100 hover:border-white/30 hover:bg-white/15 hover:text-white",
+  primary: "border-[var(--mhb-border-strong)] bg-[var(--mhb-interactive-primary)] text-[var(--mhb-text-inverse)] hover:bg-[var(--mhb-interactive-primary-hover)]",
+  secondary: "border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-primary)] hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-interactive-ghost-hover)]",
+  ghost: "border-transparent bg-transparent text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-interactive-ghost-hover)] hover:text-[var(--mhb-text-primary)]",
+  danger: "border-[var(--mhb-status-blocked-border)] bg-[var(--mhb-status-blocked-bg)] text-[var(--mhb-status-blocked-text)]",
+  icon: "border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-interactive-ghost-hover)] hover:text-[var(--mhb-text-primary)]",
   ai: "border-indigo-300/35 bg-indigo-400/20 text-indigo-50 hover:bg-indigo-400/30",
 };
 
@@ -63,7 +63,7 @@ export const Button = React.forwardRef(function Button(
         theme === "operational"
           ? operationalVariants[variant] || operationalVariants.primary
           : variants[variant] || variants.primary,
-        theme === "operational" && "focus-visible:ring-sky-300 focus-visible:ring-offset-[#061d42]",
+        theme === "operational" && "focus-visible:ring-[var(--mhb-border-focus)] focus-visible:ring-offset-[var(--mhb-surface-app)]",
         iconOnly ? "h-10 w-10 p-0" : sizes[size] || sizes.md,
         className
       )}

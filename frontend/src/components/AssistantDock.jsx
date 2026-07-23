@@ -686,7 +686,7 @@ function DesktopAssistantDock({
     >
       <div
         data-testid="assistant-desktop-dock"
-        className={`pointer-events-auto flex h-full border-l border-slate-200 bg-white/95 shadow-2xl backdrop-blur ${
+        className={`mhb-operational-overlay pointer-events-auto flex h-full border-l border-slate-200 bg-white/95 shadow-2xl backdrop-blur ${
           minimized ? "w-20" : "w-[430px]"
         }`}
       >
@@ -760,7 +760,7 @@ function MobileAssistantSheet({ open, onClose, context, onAction }) {
   useEffect(() => { setShowQuickCapture(false); }, [context?.context_revision, isMarketing]);
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-white xl:hidden" data-testid="assistant-mobile-sheet">
+    <div className="mhb-operational-overlay fixed inset-0 z-50 flex flex-col bg-white xl:hidden" data-testid="assistant-mobile-sheet">
       {isMarketing && !showQuickCapture ? <>
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><div className="text-xs font-black uppercase tracking-wider text-slate-500">Project Assistant</div><div className="text-sm font-black text-slate-900">Marketing · {context?.active_step_label || "Overview"}</div></div><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button></div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4"><StartWithAIAssistant key={`mobile:${context?.context_revision || context?.current_route || "marketing"}`} mode="panel" context={context} onAction={onAction} onClose={onClose} /><button type="button" onClick={() => setShowQuickCapture(true)} className="mt-4 w-full rounded-lg border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700">Open Quick Capture</button></div>

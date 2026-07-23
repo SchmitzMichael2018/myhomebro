@@ -1844,6 +1844,167 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   opacity: 1;
 }
 
+/* Authenticated appearance integration. Operational dark remains the baseline;
+   light mode swaps semantic surfaces without changing workspace layout. */
+.mhb-authenticated-main {
+  background-color: var(--mhb-surface-app);
+  color: var(--mhb-text-primary);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-gradient-bg {
+  background: var(--mhb-surface-app);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface {
+  color: var(--mhb-text-primary);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-panel,
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-dashboard-card {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  box-shadow: var(--mhb-elevation-2) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-inner,
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.bg-white, .bg-slate-50, .bg-gray-50) {
+  border-color: var(--mhb-border-default) !important;
+  background-color: var(--mhb-surface-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.bg-slate-100, .bg-gray-100) {
+  background-color: var(--mhb-surface-subtle) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.border-slate-100, .border-slate-200, .border-slate-300, .border-gray-200, .border-gray-300, .border-white\/10, .border-white\/15) {
+  border-color: var(--mhb-border-default) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-white, .text-slate-950, .text-slate-900, .text-gray-900, .text-gray-800) {
+  color: var(--mhb-text-primary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-sky-50, .text-sky-100, .text-slate-800, .text-slate-700, .text-gray-700, .text-gray-600) {
+  color: var(--mhb-text-secondary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [class*="text-sky-100"] {
+  color: var(--mhb-text-secondary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-slate-600, .text-slate-500, .text-slate-400, .text-gray-500, .text-gray-400, .mhb-helper-text) {
+  color: var(--mhb-text-muted) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(input, select, textarea) {
+  border-color: var(--mhb-border-default) !important;
+  background-color: var(--mhb-surface-card) !important;
+  color: var(--mhb-text-primary) !important;
+  color-scheme: light;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface option {
+  background-color: var(--mhb-surface-elevated);
+  color: var(--mhb-text-primary);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard {
+  background: var(--mhb-surface-app);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard::before,
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-dashboard-shell::before,
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-dashboard-shell::after {
+  opacity: 0.08;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] [data-testid="dashboard-workspace-header"] {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-header) !important;
+  box-shadow: var(--mhb-elevation-1) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid^="dashboard-next-action-button-"] {
+  border-color: var(--mhb-interactive-primary) !important;
+  background: var(--mhb-interactive-primary) !important;
+  color: var(--mhb-text-inverse) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid^="dashboard-next-action-button-"]:hover {
+  border-color: var(--mhb-interactive-primary-hover) !important;
+  background: var(--mhb-interactive-primary-hover) !important;
+}
+
+.mhb-operational-overlay {
+  border-color: var(--mhb-border-default) !important;
+  background-color: color-mix(in srgb, var(--mhb-surface-elevated) 96%, transparent) !important;
+  color: var(--mhb-text-primary);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-overlay {
+  border-color: var(--mhb-border-default) !important;
+  background-color: color-mix(in srgb, var(--mhb-surface-elevated) 96%, transparent) !important;
+  color: var(--mhb-text-primary);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-overlay :is(.bg-white, .bg-slate-50, .bg-gray-50) {
+  background-color: var(--mhb-surface-card) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-overlay :is(.border-slate-100, .border-slate-200, .border-slate-300) {
+  border-color: var(--mhb-border-default) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-overlay :is(.text-slate-950, .text-slate-900, .text-slate-800) {
+  color: var(--mhb-text-primary) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-overlay :is(.text-slate-700, .text-slate-600) {
+  color: var(--mhb-text-secondary) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-overlay :is(.text-slate-500, .text-slate-400) {
+  color: var(--mhb-text-muted) !important;
+}
+
+.mhb-insights-workspace .recharts-default-tooltip {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-chart-tooltip) !important;
+  color: var(--mhb-text-inverse) !important;
+}
+
+.mhb-insights-workspace .recharts-cartesian-axis-tick-value,
+.mhb-insights-workspace .recharts-legend-item-text {
+  fill: var(--mhb-chart-text);
+  color: var(--mhb-chart-text) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-main {
+  background: var(--mhb-surface-app) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-white"],
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-slate-50"],
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-gray-50"] {
+  background: var(--mhb-surface-card) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-gradient"] {
+  background: var(--mhb-surface-inset) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="border-slate"],
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="border-gray"] {
+  border-color: var(--mhb-border-default) !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace button[role="tab"]:not([aria-selected="true"]) {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-elevated) !important;
+  color: var(--mhb-text-secondary) !important;
+  opacity: 1 !important;
+}
+
 /* If a global reset hides buttons inside forms, undo it here for our icon */
 .calendar-date-button[disabled] { opacity: .5; cursor: not-allowed; }
 

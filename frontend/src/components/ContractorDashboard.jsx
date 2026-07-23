@@ -3609,7 +3609,7 @@ export default function ContractorDashboard() {
       titleClassName="drop-shadow-none"
     >
       <div
-        className="mhb-contractor-dashboard -mx-4 -mb-6 min-h-screen space-y-5 px-4 pb-8 pt-1 md:-mx-6 md:px-6"
+        className="mhb-contractor-dashboard mhb-operational-surface -mx-4 -mb-6 min-h-screen space-y-5 px-4 pb-8 pt-1 md:-mx-6 md:px-6"
       >
       {!isEmployee ? (
         <WorkspacePageHeader

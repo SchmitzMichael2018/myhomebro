@@ -39,12 +39,12 @@ export function EmptyState({
 }) {
   return (
     <Card theme={theme} className={cx("flex flex-col items-center border-dashed px-6 py-10 text-center", className)} {...props}>
-      {Icon ? <span className={cx("rounded-2xl p-3", theme === "operational" ? "bg-white/10 text-sky-100" : "bg-slate-100 text-slate-600")}><Icon className="h-7 w-7" aria-hidden="true" /></span> : null}
-      <h2 className={cx("mt-4 text-lg font-black", theme === "operational" ? "text-white" : "text-slate-950")}>{title}</h2>
-      {description ? <p className={cx("mt-2 max-w-xl text-sm leading-6", theme === "operational" ? "text-sky-100/75" : "text-slate-600")}>{description}</p> : null}
+      {Icon ? <span className={cx("rounded-2xl p-3", theme === "operational" ? "bg-[var(--mhb-surface-subtle)] text-[var(--mhb-text-secondary)]" : "bg-slate-100 text-slate-600")}><Icon className="h-7 w-7" aria-hidden="true" /></span> : null}
+      <h2 className={cx("mt-4 text-lg font-black", theme === "operational" ? "text-[var(--mhb-text-primary)]" : "text-slate-950")}>{title}</h2>
+      {description ? <p className={cx("mt-2 max-w-xl text-sm leading-6", theme === "operational" ? "text-[var(--mhb-text-muted)]" : "text-slate-600")}>{description}</p> : null}
       {primaryAction || secondaryAction ? <div className="mt-5 flex flex-wrap justify-center gap-2">{primaryAction}{secondaryAction}</div> : null}
       {tips.length ? (
-        <ul className={cx("mt-5 max-w-xl list-disc space-y-1 pl-5 text-left text-sm", theme === "operational" ? "text-sky-100/75" : "text-slate-600")}>
+        <ul className={cx("mt-5 max-w-xl list-disc space-y-1 pl-5 text-left text-sm", theme === "operational" ? "text-[var(--mhb-text-muted)]" : "text-slate-600")}>
           {tips.map((tip, index) => <li key={`${tip}-${index}`}>{tip}</li>)}
         </ul>
       ) : null}
@@ -66,7 +66,7 @@ export function LoadingSkeleton({ variant = "card", rows, label = "Loading conte
   const lines = Number.isInteger(rows) && rows > 0 ? Array.from({ length: rows }, () => "h-4 w-full") : preset;
   return (
     <div role="status" aria-label={label} className={cx("animate-pulse space-y-3", className)} {...props}>
-      {lines.map((classes, index) => <div key={index} className={cx("rounded-lg", theme === "operational" ? "bg-white/12" : "bg-slate-200", classes)} />)}
+      {lines.map((classes, index) => <div key={index} className={cx("rounded-lg", theme === "operational" ? "bg-[var(--mhb-surface-subtle)]" : "bg-slate-200", classes)} />)}
       <span className="sr-only">{label}</span>
     </div>
   );

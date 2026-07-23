@@ -8,6 +8,20 @@ import "./index.css";                  // Tailwind / your global styles
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App.jsx";
+import {
+  applyAppearanceToDocument,
+  DARK_MEDIA_QUERY,
+  readStoredAppearance,
+  resolveAppearance,
+} from "./context/AppearanceContext.jsx";
+
+// Apply the authenticated operational appearance before React renders to avoid
+// flashing the light theme while routes and profile data initialize.
+if (window.location.pathname.startsWith("/app")) {
+  const initialAppearance = readStoredAppearance();
+  const systemDark = window.matchMedia?.(DARK_MEDIA_QUERY)?.matches ?? false;
+  applyAppearanceToDocument(initialAppearance, resolveAppearance(initialAppearance, systemDark));
+}
 
 // Ensure there is a mount node. If #root doesn't exist, create it.
 const mount =

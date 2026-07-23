@@ -39,16 +39,19 @@ All contributors and coding agents should follow these principles unless a task 
 
 ## Operational Theme Principles
 
-- Operational workspaces intentionally use a dark, business-oriented interface. This is a product decision, not technical debt.
+- Authenticated contractor operations use one global Appearance system with canonical values `system`, `light`, and `dark`.
+- Dark is the default when no valid preference is saved. `system` follows the operating-system color preference without replacing the saved `system` value.
+- Operational workspaces share semantic tokens and component behavior in both appearances. Page-specific storage reads, providers, or theme forks are prohibited.
+- Dashboard and Insights are operational workspaces. Operational dark remains the visual baseline; operational light is a restrained, data-oriented alternative.
 - Do not recommend converting operational workspaces to the Marketing appearance.
 - UX reviews of operational pages should focus on component consistency, interaction consistency, spacing, typography, accessibility, Project Assistant consistency, AI consistency, workflow consistency, and shared components.
-- Color-palette discussions are out of scope unless implementing a true Appearance system.
-- A future Appearance system should support Follow System, Light, and Dark modes through shared semantic design tokens.
-- Until such a system exists, preserve the intentional dark operational presentation.
+- Appearance changes must preserve workspace hierarchy, statuses, charts, native-control usability, overlays, and Project Assistant context.
+- Public pages, customer-facing pages, PDFs, and emails are outside the authenticated operational Appearance system unless explicitly migrated.
 
 ## Marketing Principles
 
 - Marketing intentionally uses a lighter presentation because it represents public-facing branding and website creation.
+- Marketing is a curated-light exception inside the authenticated shell. It may change the saved operational preference through the global control, but it must not restyle itself or overwrite that preference.
 - Marketing is the UX benchmark for hierarchy, workflow clarity, accessibility, component quality, and Project Assistant integration, but not necessarily for color palette.
 - Marketing workflows should help contractors publish credible, accurate representations of their businesses without requiring design or marketing expertise.
 - Preview, review, and publication states must be clearly distinguished.

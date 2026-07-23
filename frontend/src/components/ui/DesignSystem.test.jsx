@@ -53,13 +53,13 @@ describe("MyHomeBro design-system foundation", () => {
     const loading = markup(<LoadingSkeleton theme="operational" label="Loading dashboard" />);
     const header = markup(<WorkspacePageHeader theme="operational" title="Dashboard" />);
 
-    expect(button).toContain("bg-white");
-    expect(button).toContain("focus-visible:ring-sky-300");
+    expect(button).toContain("bg-[var(--mhb-interactive-primary)]");
+    expect(button).toContain("focus-visible:ring-[var(--mhb-border-focus)]");
     expect(badge).toContain("Pending");
-    expect(badge).toContain("bg-white/10");
-    expect(empty).toContain("bg-[#061d42]/95");
-    expect(loading).toContain("bg-white/12");
-    expect(header).toContain("text-white");
+    expect(badge).toContain("bg-[var(--mhb-status-pending-bg)]");
+    expect(empty).toContain("bg-[var(--mhb-surface-card)]");
+    expect(loading).toContain("bg-[var(--mhb-surface-subtle)]");
+    expect(header).toContain("text-[var(--mhb-text-primary)]");
   });
 
   it("renders intentional loading and empty states", () => {
