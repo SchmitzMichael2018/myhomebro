@@ -292,6 +292,7 @@ function TabButton({ active, onClick, children, ...rest }) {
     <button
       type="button"
       onClick={onClick}
+      aria-pressed={active}
       {...rest}
       className={`mhb-template-tab rounded-lg px-3 py-2 text-sm font-semibold transition ${
         active
@@ -2337,6 +2338,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                           key={`custom-${tpl.id}`}
                           data-testid={`template-discovery-card-${tpl.id}`}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={() => setSelectedId(tpl.id)}
                           className={`w-full border-b border-slate-200 px-4 py-3 text-left hover:bg-indigo-50 ${
                             isSelected ? "bg-indigo-50" : "bg-white"
@@ -2379,6 +2381,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                           key={`system-${tpl.id}`}
                           data-testid={`template-discovery-card-${tpl.id}`}
                           type="button"
+                          aria-pressed={isSelected}
                           onClick={() => setSelectedId(tpl.id)}
                           className={`w-full border-b border-slate-200 px-4 py-3 text-left hover:bg-indigo-50 ${
                             isSelected ? "bg-indigo-50" : "bg-white"

@@ -15,6 +15,7 @@ export {
   ActionMenu,
 } from "./navigation.jsx";
 export { DataTable } from "./DataTable.jsx";
+export { PaginationControls } from "./PaginationControls.jsx";
 export {
   AISuggestionCard,
   AIReviewCard,

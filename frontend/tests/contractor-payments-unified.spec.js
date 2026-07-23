@@ -35,7 +35,7 @@ const draws = [
   },
 ];
 
-async function mockPaymentsPage(page) {
+async function mockPaymentsPage(page, extraInvoices = []) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
   });
@@ -86,6 +86,7 @@ async function mockPaymentsPage(page) {
             milestone_title: "Tile Demo",
             invoice_number: "INV-73",
           },
+          ...extraInvoices,
         ],
       }),
     });
@@ -131,4 +132,42 @@ test("unified payments page filters invoices and draw requests by project class,
   await expect(page.getByTestId("payments-section-draw_request-commercial")).toContainText("Payment Pending");
   await expect(page.getByText("Mobilization")).toHaveCount(0);
   await expect(page.getByText("Framing")).toBeVisible();
+});
+
+test("payments pagination preserves filters, supports rows per page, and recovers to page one", async ({ page }) => {
+  const extraInvoices = Array.from({ length: 10 }, (_, index) => ({
+    id: 100 + index,
+    amount: `${500 + index}.00`,
+    status: "paid",
+    display_status: "paid",
+    updated_at: `2026-05-${String(20 - index).padStart(2, "0")}T12:00:00Z`,
+    agreement: {
+      id: 500 + index,
+      title: `Pagination Project ${index + 1}`,
+      project_class: "residential",
+      payment_mode: "direct",
+    },
+    milestone_title: `Pagination Milestone ${index + 1}`,
+    invoice_number: `INV-PAGE-${index + 1}`,
+  }));
+  await mockPaymentsPage(page, extraInvoices);
+
+  await page.goto("/app/payments", { waitUntil: "domcontentloaded" });
+  const pagination = page.getByTestId("payments-pagination");
+  await expect(pagination).toContainText("Showing 1-10 of 15 payment records");
+  await pagination.getByRole("button", { name: "Next" }).click();
+  await expect(pagination).toContainText("Showing 11-15 of 15 payment records");
+
+  await page.getByPlaceholder(/Search by agreement/i).fill("Pagination Project 1");
+  await expect(pagination).toContainText("Showing 1-2 of 2 payment records");
+  await expect(pagination).toContainText("Page 1 of 1");
+
+  await page.getByPlaceholder(/Search by agreement/i).fill("");
+  await pagination.getByLabel("Rows per page for payment records").selectOption("25");
+  await expect(pagination).toContainText("Showing 1-15 of 15 payment records");
+  await expect(pagination.getByRole("button", { name: "Next" })).toBeDisabled();
+
+  await page.getByTestId("payments-filter-record-type").selectOption("draw_request");
+  await expect(pagination).toContainText("Showing 1-2 of 2 payment records");
+  await expect(page.getByTestId("payments-section-draw_request-commercial")).toBeVisible();
 });

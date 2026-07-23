@@ -1890,7 +1890,7 @@ export default function AgreementList() {
         data-testid="agreement-list-table-shell"
         className="min-h-[420px] overflow-x-auto rounded-[24px] border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] text-[var(--mhb-text-primary)] shadow-[var(--mhb-shadow-card)]"
       >
-        <table className="w-full min-w-[1160px] table-fixed text-[14px] leading-5">
+        <table className="w-full min-w-[1360px] table-fixed text-[14px] leading-5">
           <colgroup>
             <col className="w-[44px]" />
             <col className="w-[88px]" />

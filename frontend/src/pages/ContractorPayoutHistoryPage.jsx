@@ -5,6 +5,7 @@ import api from "../api";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Card, MetricCard } from "../components/ui/surfaces.jsx";
+import { PaginationControls } from "../components/ui/PaginationControls.jsx";
 
 function formatMoney(value) {
   const number = Number(value || 0);
@@ -53,6 +54,8 @@ export default function ContractorPayoutHistoryPage() {
   const [summary, setSummary] = useState(null);
   const [selectedRow, setSelectedRow] = useState(null);
   const [copiedRefId, setCopiedRefId] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const queryString = useMemo(() => buildQuery(filters), [filters]);
 
@@ -86,6 +89,19 @@ export default function ContractorPayoutHistoryPage() {
   }, [queryString]);
 
   const countsLabel = `${summary?.payout_count ?? rows.length} payout${(summary?.payout_count ?? rows.length) === 1 ? "" : "s"}`;
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+  const paginatedRows = useMemo(
+    () => rows.slice((page - 1) * pageSize, page * pageSize),
+    [page, pageSize, rows]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [queryString]);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
 
   const closeDrawer = () => {
     setSelectedRow(null);
@@ -187,8 +203,9 @@ export default function ContractorPayoutHistoryPage() {
             You haven&apos;t received any payouts yet. Completed payments will appear here once funds are paid out.
           </div>
         ) : (
-          <div className="mt-4 overflow-x-auto">
-            <table className="min-w-full text-sm">
+          <>
+            <div className="mt-4 overflow-x-auto">
+              <table className="min-w-full text-sm">
               <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2">Date</th>
@@ -203,7 +220,7 @@ export default function ContractorPayoutHistoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => (
+                {paginatedRows.map((row) => (
                   <tr
                     key={row.id}
                     data-testid={`payout-history-row-${row.record_id || row.id}`}
@@ -272,8 +289,21 @@ export default function ContractorPayoutHistoryPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>
-          </div>
+              </table>
+            </div>
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              totalItems={rows.length}
+              onPageChange={setPage}
+              onPageSizeChange={(nextSize) => {
+                setPageSize(nextSize);
+                setPage(1);
+              }}
+              label="payouts"
+              testId="payout-history-pagination"
+            />
+          </>
         )}
       </Card>
 

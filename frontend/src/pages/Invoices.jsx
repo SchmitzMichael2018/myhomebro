@@ -15,6 +15,7 @@ import {
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { Button } from "../components/ui/Button.jsx";
 import { Card, MetricCard } from "../components/ui/surfaces.jsx";
+import { PaginationControls } from "../components/ui/PaginationControls.jsx";
 
 function useQuery() {
   const { search } = useLocation();
@@ -101,6 +102,8 @@ export default function Invoices() {
   const [drawRequests, setDrawRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [autoCreateState, setAutoCreateState] = useState({ running: false, error: "" });
   const [actionLoadingKey, setActionLoadingKey] = useState("");
 
@@ -203,12 +206,34 @@ export default function Invoices() {
 
   const summary = useMemo(() => summarizePaymentRecords(filteredRecords), [filteredRecords]);
 
+  const sortedRecords = useMemo(
+    () => [...filteredRecords].sort((a, b) => {
+      const aTime = parseDate(a.sortDate)?.getTime() || 0;
+      const bTime = parseDate(b.sortDate)?.getTime() || 0;
+      return bTime - aTime;
+    }),
+    [filteredRecords]
+  );
+  const totalPages = Math.max(1, Math.ceil(sortedRecords.length / pageSize));
+  const paginatedRecords = useMemo(
+    () => sortedRecords.slice((page - 1) * pageSize, page * pageSize),
+    [page, pageSize, sortedRecords]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, projectClassFilter, resolvedMoneyStatusFilter, resolvedRecordTypeFilter, legacyModeFilter]);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages));
+  }, [totalPages]);
+
   const groupedRecords = useMemo(() => {
     const shape = {
       invoice: { residential: [], commercial: [] },
       draw_request: { residential: [], commercial: [] },
     };
-    for (const record of filteredRecords) {
+    for (const record of paginatedRecords) {
       if (!shape[record.recordType]) continue;
       shape[record.recordType][record.projectClass].push(record);
     }
@@ -222,7 +247,7 @@ export default function Invoices() {
       }
     }
     return shape;
-  }, [filteredRecords]);
+  }, [paginatedRecords]);
 
   const totals = useMemo(() => {
     const count = filteredRecords.length;
@@ -526,6 +551,20 @@ export default function Invoices() {
           <Section title="Commercial Invoices" recordType="invoice" projectClass="commercial" />
           <Section title="Residential Draw Requests" recordType="draw_request" projectClass="residential" />
           <Section title="Commercial Draw Requests" recordType="draw_request" projectClass="commercial" />
+          <Card theme="operational" padding="none" className="overflow-hidden">
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              totalItems={filteredRecords.length}
+              onPageChange={setPage}
+              onPageSizeChange={(nextSize) => {
+                setPageSize(nextSize);
+                setPage(1);
+              }}
+              label="payment records"
+              testId="payments-pagination"
+            />
+          </Card>
         </div>
       )}
     </div>

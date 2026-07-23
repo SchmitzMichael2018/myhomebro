@@ -97,9 +97,9 @@ export default function TradeMultiSelect({
                     type="button"
                     aria-pressed={active}
                     onClick={() => (active ? removeTrade(trade.label) : addTrade(trade.label))}
-                    className={`min-h-11 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    className={`mhb-trade-option min-h-11 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                       active
-                        ? "border-slate-900 bg-slate-900 text-white"
+                        ? "is-selected border-slate-900 bg-slate-900 text-white"
                         : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                     }`}
                   >
@@ -141,9 +141,9 @@ export default function TradeMultiSelect({
                       onClick={() => (active ? removeTrade(trade.label) : addTrade(trade.label))}
                       data-testid={`${testIdPrefix}-option-${toTestId(trade.label)}`}
                       disabled={disabled}
-                      className={`min-h-12 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition ${
+                      className={`mhb-trade-option min-h-12 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition ${
                         active
-                          ? "border-slate-900 bg-slate-900 text-white"
+                          ? "is-selected border-slate-900 bg-slate-900 text-white"
                           : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
                       }`}
                     >
@@ -169,14 +169,14 @@ export default function TradeMultiSelect({
                 <span
                   key={trade}
                   data-testid={`${testIdPrefix}-chip-${toTestId(trade)}`}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+                  className="mhb-trade-chip inline-flex items-center gap-2 rounded-full border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
                 >
                   {trade}
                   <button
                     type="button"
                     aria-label={`Remove ${trade}`}
                     onClick={() => removeTrade(trade)}
-                    className="rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20"
+                    className="mhb-trade-chip-remove rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20"
                   >
                     ×
                   </button>

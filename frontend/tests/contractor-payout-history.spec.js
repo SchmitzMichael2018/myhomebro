@@ -143,6 +143,9 @@ test("contractor can reach payout history from payments and filter completed pay
   await expect(page.getByTestId("payout-history-row-2")).toContainText("Commercial Finish");
   await expect(page.getByTestId("payout-history-row-1")).toContainText("Invoice");
   await expect(page.getByTestId("payout-history-row-2")).toContainText("Draw");
+  await expect(page.getByTestId("payout-history-pagination")).toContainText("Showing 1-2 of 2 payouts");
+  await expect(page.getByTestId("payout-history-pagination").getByRole("button", { name: "Previous" })).toBeDisabled();
+  await expect(page.getByTestId("payout-history-pagination").getByRole("button", { name: "Next" })).toBeDisabled();
   expect(payoutAuthHeader).toContain("Bearer ");
 
   await page.getByTestId("payout-history-row-1").click();

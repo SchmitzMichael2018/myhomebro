@@ -14,6 +14,7 @@ import {
   FormField,
   InlineAlert,
   LoadingSkeleton,
+  PaginationControls,
   SettingsSection,
   StatusBadge,
   WorkspacePageHeader,
@@ -152,6 +153,22 @@ describe("MyHomeBro design-system foundation", () => {
     expect(operational).toContain("bg-[var(--mhb-surface-card)]");
     expect(operational).toContain("bg-[var(--mhb-surface-inset)]");
     expect(operational).toContain("hover:bg-[var(--mhb-table-row-hover)]");
+  });
+
+  it("renders reusable bounded pagination with rows-per-page and boundary states", () => {
+    const pagination = markup(
+      <PaginationControls
+        page={2}
+        pageSize={10}
+        totalItems={23}
+        label="payments"
+      />
+    );
+
+    expect(pagination).toContain('aria-label="payments pagination"');
+    expect(pagination).toContain("Showing 11-20 of 23 payments");
+    expect(pagination).toContain("Page 2 of 3");
+    expect(pagination).toContain('aria-label="Rows per page for payments"');
   });
 
   it("uses safe alert semantics and AI lifecycle presentation", () => {

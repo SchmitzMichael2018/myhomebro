@@ -901,7 +901,7 @@ export default function ContractorProfile() {
 
           <div className="md:col-span-2">
             <label className="block text-sm font-semibold mb-1">Company Logo</label>
-            <input type="file" accept="image/*" onChange={onLogo} />
+            <input className="mhb-file-upload" type="file" accept="image/*" onChange={onLogo} />
             {logoPreview ? (
               <img
                 src={logoPreview}
@@ -1093,7 +1093,7 @@ export default function ContractorProfile() {
             <label className="block text-sm font-semibold mb-1">
               License Document (PDF or image)
             </label>
-            <input type="file" accept=".pdf,image/*" onChange={onLicense} />
+            <input className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onLicense} />
             {licenseUrl ? (
               <a
                 href={licenseUrl}
@@ -1110,7 +1110,7 @@ export default function ContractorProfile() {
             <label className="block text-sm font-semibold mb-1">
               Insurance Certificate (PDF or image)
             </label>
-            <input type="file" accept=".pdf,image/*" onChange={onInsurance} />
+            <input className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onInsurance} />
             {insuranceUrl ? (
               <a
                 href={insuranceUrl}
