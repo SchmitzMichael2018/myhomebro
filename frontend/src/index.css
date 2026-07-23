@@ -1893,9 +1893,128 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-su
 }
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-inner,
-html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.bg-white, .bg-slate-50, .bg-gray-50) {
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.bg-white, .bg-slate-50, .bg-gray-50),
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [class*="bg-white/"] {
   border-color: var(--mhb-border-default) !important;
   background-color: var(--mhb-surface-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-glass {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  color: var(--mhb-text-secondary) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+  backdrop-filter: none;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-toolbar {
+  border-color: var(--mhb-border-strong) !important;
+  background: var(--mhb-surface-workspace-elevated) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+  backdrop-filter: none;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-filter-chip {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-interactive) !important;
+  color: var(--mhb-text-secondary) !important;
+  box-shadow: none !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-filter-chip:hover {
+  border-color: var(--mhb-border-strong) !important;
+  background: var(--mhb-surface-interactive-hover) !important;
+  color: var(--mhb-text-primary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-filter-chip.is-active {
+  border-color: var(--mhb-border-selected) !important;
+  background: var(--mhb-surface-selected) !important;
+  color: var(--mhb-text-link) !important;
+  box-shadow: inset 0 -2px 0 var(--mhb-border-selected) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-btn {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-interactive-secondary) !important;
+  color: var(--mhb-text-primary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-btn.primary {
+  border-color: var(--mhb-interactive-primary) !important;
+  background: var(--mhb-interactive-primary) !important;
+  color: var(--mhb-text-inverse) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-testid="hub-tabs"] {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-testid="hub-tabs"] a:not([aria-current="page"]) {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-interactive) !important;
+  color: var(--mhb-text-secondary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-profile-nav-tab[aria-current="page"] {
+  border-color: var(--mhb-border-selected) !important;
+  background: var(--mhb-surface-selected) !important;
+  color: var(--mhb-text-link) !important;
+  box-shadow: inset 3px 0 0 var(--mhb-border-selected) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-testid="assignments-operations-summary"],
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-testid^="milestone-agreement-group-"],
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-testid^="milestone-agreement-header-"] {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-operational-metric-tone="active_warranties"] {
+  border-color: var(--mhb-status-complete-border) !important;
+  background: var(--mhb-status-complete-bg) !important;
+  color: var(--mhb-status-complete-text) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-operational-metric-tone="open_warranty_requests"],
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-operational-metric-tone="repairs_scheduled"] {
+  border-color: var(--mhb-status-recommended-border) !important;
+  background: var(--mhb-status-recommended-bg) !important;
+  color: var(--mhb-status-recommended-text) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [data-operational-metric-tone="expiring_soon"] {
+  border-color: var(--mhb-status-pending-border) !important;
+  background: var(--mhb-status-pending-bg) !important;
+  color: var(--mhb-status-pending-text) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(
+  [class*="bg-slate-950"],
+  [class*="bg-[#041735]"],
+  [class*="bg-[#061d42]"],
+  [class*="bg-[#071b3a]"],
+  [class*="bg-[#071f46]"],
+  [class*="bg-[#0b2a58]"]
+):not(button):not(a) {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(
+  [class*="bg-[#082a5a]"],
+  [class*="bg-[#0a3168]"]
+) {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  color: var(--mhb-text-primary) !important;
 }
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.bg-slate-100, .bg-gray-100) {
@@ -1910,12 +2029,32 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-su
   color: var(--mhb-text-primary) !important;
 }
 
-html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-sky-50, .text-sky-100, .text-slate-800, .text-slate-700, .text-gray-700, .text-gray-600) {
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [class*="text-white/"] {
+  color: var(--mhb-text-secondary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-sky-50, .text-sky-100, .text-slate-200, .text-slate-800, .text-slate-700, .text-gray-700, .text-gray-600) {
   color: var(--mhb-text-secondary) !important;
 }
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface [class*="text-sky-100"] {
   color: var(--mhb-text-secondary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-sky-200, .text-blue-100, .text-blue-200) {
+  color: var(--mhb-text-link) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-emerald-100, .text-green-100) {
+  color: var(--mhb-status-complete-text) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-amber-100, .text-orange-100) {
+  color: var(--mhb-status-pending-text) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-rose-100, .text-red-100) {
+  color: var(--mhb-status-blocked-text) !important;
 }
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(.text-slate-600, .text-slate-500, .text-slate-400, .text-gray-500, .text-gray-400, .mhb-helper-text) {

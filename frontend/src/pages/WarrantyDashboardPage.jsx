@@ -44,7 +44,10 @@ const operationalPrimaryButton = "mhb-btn primary";
 
 function MetricCard({ label, value, id, icon: Icon }) {
   return (
-    <div className={`rounded-xl border px-4 py-3 ${metricTone[id] || "border-white/10 bg-white/7 text-white"}`}>
+    <div
+      className={`rounded-xl border px-4 py-3 ${metricTone[id] || "border-white/10 bg-white/7 text-white"}`}
+      data-operational-metric-tone={id}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className="text-[11px] font-black uppercase tracking-[0.13em] opacity-70">{label}</div>
         <Icon className="h-4 w-4 opacity-75" />

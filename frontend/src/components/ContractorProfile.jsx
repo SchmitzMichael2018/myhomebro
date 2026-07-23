@@ -1300,7 +1300,8 @@ export default function ContractorProfile() {
               <button
                 type="button"
                 onClick={() => setActiveTab("business")}
-                className={`flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
+                aria-current={activeTab === "business" ? "page" : undefined}
+                className={`mhb-profile-nav-tab flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "business"
                     ? "bg-slate-900 text-white font-semibold shadow-sm"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -1312,7 +1313,8 @@ export default function ContractorProfile() {
               <button
                 type="button"
                 onClick={() => setActiveTab("billing")}
-                className={`flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
+                aria-current={activeTab === "billing" ? "page" : undefined}
+                className={`mhb-profile-nav-tab flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "billing"
                     ? "bg-slate-900 text-white font-semibold shadow-sm"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -1329,7 +1331,8 @@ export default function ContractorProfile() {
               <button
                 type="button"
                 onClick={() => setActiveTab("account")}
-                className={`flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
+                aria-current={activeTab === "account" ? "page" : undefined}
+                className={`mhb-profile-nav-tab flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "account"
                     ? "bg-slate-900 text-white font-semibold shadow-sm"
                     : "bg-slate-100 text-slate-700 hover:bg-slate-200"

@@ -2,7 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
-const OUT_DIR_REL = path.join('test-results', 'visual-qa', 'pages');
+const VISUAL_THEME = process.env.MHB_VISUAL_THEME === 'light' ? 'light' : 'dark';
+const OUT_DIR_REL = path.join('test-results', 'visual-qa', `pages-${VISUAL_THEME}`);
 const OUT_DIR = path.resolve(process.cwd(), OUT_DIR_REL);
 const AGREEMENT_ID = 123;
 const MILESTONE_ID = 501;
@@ -387,7 +388,7 @@ const pageConfigs = [
     slug: 'wizard-step-2.png',
     url: `/app/agreements/${AGREEMENT_ID}/wizard?step=2`,
     waitFor: async (page) => {
-      await page.getByTestId('step2-recurring-summary').waitFor({ state: 'visible' });
+      await page.locator('h1').first().waitFor({ state: 'visible' });
     },
   },
   {
@@ -428,12 +429,41 @@ const pageConfigs = [
       await page.getByRole('heading', { name: 'Assignments' }).waitFor({ state: 'visible' });
     },
   },
+  ...[
+    ['Opportunities Page', 'opportunities-page.png', '/app/opportunities'],
+    ['Estimates Page', 'estimates-page.png', '/app/estimates'],
+    ['Warranties Page', 'warranties-page.png', '/app/warranties'],
+    ['Awaiting Review Page', 'awaiting-review-page.png', '/app/reviewer/queue'],
+    ['Customer Records Page', 'customer-records-page.png', '/app/customers/records'],
+    ['Team Overview Page', 'team-overview-page.png', '/app/team'],
+    ['Payments Page', 'payments-page.png', '/app/payments'],
+    ['Payout History Page', 'payout-history-page.png', '/app/payout-history'],
+    ['Resolution Page', 'resolution-page.png', '/app/disputes'],
+    ['Notifications Page', 'notifications-page.png', '/app/notifications'],
+    ['Support Page', 'support-page.png', '/app/support'],
+    ['Project Assistant Page', 'project-assistant-page.png', '/app/assistant'],
+  ].map(([label, slug, url]) => ({
+    label,
+    slug,
+    url,
+    waitFor: async (page) => {
+      await page.locator('h1').first().waitFor({ state: 'visible' });
+    },
+  })),
   {
     label: 'Customers Page',
     slug: 'customers-page.png',
     url: '/app/customers',
     waitFor: async (page) => {
       await page.getByRole('heading', { name: 'My Customers' }).waitFor({ state: 'visible' });
+    },
+  },
+  {
+    label: 'Customer Workspace',
+    slug: 'customer-workspace-page.png',
+    url: '/app/customers/41',
+    waitFor: async (page) => {
+      await page.locator('h1').first().waitFor({ state: 'visible' });
     },
   },
   {
@@ -449,7 +479,7 @@ const pageConfigs = [
     slug: 'business-dashboard.png',
     url: '/app/business',
     waitFor: async (page) => {
-      await page.getByRole('heading', { name: 'Insights' }).waitFor({ state: 'visible' });
+      await page.getByRole('heading', { name: 'Insights', exact: true }).waitFor({ state: 'visible' });
     },
   },
   {
@@ -469,6 +499,15 @@ const pageConfigs = [
     },
   },
   {
+    label: 'Account Settings',
+    slug: 'account-settings-page.png',
+    url: '/app/profile',
+    waitFor: async (page) => {
+      await page.getByRole('button', { name: /Account & Login/i }).click();
+      await page.getByRole('heading', { name: 'Account & Login' }).waitFor({ state: 'visible' });
+    },
+  },
+  {
     label: 'Stripe Onboarding Page',
     slug: 'stripe-onboarding-page.png',
     url: '/app/onboarding',
@@ -485,8 +524,8 @@ const dashboardConfig = {
 };
 
 const agreementPageConfigs = pageConfigs.slice(0, 6);
-const operationsPageConfigs = pageConfigs.slice(6, 9);
-const businessPageConfigs = pageConfigs.slice(9);
+const operationsPageConfigs = pageConfigs.slice(6, 21);
+const businessPageConfigs = pageConfigs.slice(21);
 
 function json(route, body, status = 200) {
   return route.fulfill({
@@ -898,6 +937,9 @@ async function mergeManifest(partial) {
 
 async function capturePageGroup(page, testInfo, configs) {
   await fs.mkdir(OUT_DIR, { recursive: true });
+  await page.addInitScript((theme) => {
+    window.localStorage.setItem('myhomebro.appearance.v1', theme);
+  }, VISUAL_THEME);
   await installMocks(page);
   page.setDefaultTimeout(15000);
   page.on('pageerror', (error) => {
@@ -976,6 +1018,9 @@ test('capture business and settings pages for visual QA review', async ({ page }
 test('capture contractor dashboard for visual QA review', async ({ page }) => {
   test.setTimeout(120000);
   await fs.mkdir(OUT_DIR, { recursive: true });
+  await page.addInitScript((theme) => {
+    window.localStorage.setItem('myhomebro.appearance.v1', theme);
+  }, VISUAL_THEME);
   await installDashboardMocks(page);
 
   for (const viewport of [
