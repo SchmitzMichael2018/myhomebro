@@ -66,7 +66,7 @@ export function LoadingSkeleton({ variant = "card", rows, label = "Loading conte
   const lines = Number.isInteger(rows) && rows > 0 ? Array.from({ length: rows }, () => "h-4 w-full") : preset;
   return (
     <div role="status" aria-label={label} className={cx("animate-pulse space-y-3", className)} {...props}>
-      {lines.map((classes, index) => <div key={index} className={cx("rounded-lg", theme === "operational" ? "bg-[var(--mhb-surface-subtle)]" : "bg-slate-200", classes)} />)}
+      {lines.map((classes, index) => <div key={index} className={cx("rounded-lg", theme === "operational" ? "bg-[var(--mhb-skeleton)]" : "bg-slate-200", classes)} />)}
       <span className="sr-only">{label}</span>
     </div>
   );

@@ -65,6 +65,23 @@ Do not use large gradients, bright blue page backgrounds, glassmorphism, particl
 
 Chart canvases use the chart background token. Tooltips use elevated surfaces; axes, legends, and grid lines use chart semantic tokens. Bright white chart canvases are not permitted in Operational Dark.
 
+### Operational Light
+
+Operational Light is a first-class contractor appearance, not an inversion of Dark and not a copy of Marketing. It keeps the dark navy sidebar as the application anchor, then moves through a cool gray-blue application background, a lighter workspace, clean neutral cards, elevated menus and dialogs, and clearly bordered interactive surfaces.
+
+- Cards and pipeline rows remain neutral. Domain color belongs in badges, compact icon containers, left rails, and small borders—not full-card pastel fills.
+- Primary actions use controlled MyHomeBro blue. Secondary and ghost actions use neutral surfaces with visible boundaries. Project Assistant actions use the shared AI semantic tokens without introducing a second product identity.
+- Forms use a white control surface, visible blue-gray borders, dark text, readable placeholders, and an explicit focus ring.
+- Tables use a neutral card surface, a distinct inset header, visible dividers, and semantic hover/selection surfaces without default zebra striping.
+- Light chart canvases use a connected near-white surface, blue-gray grid lines, dark labels, and a bordered elevated tooltip.
+- Empty states use neutral inset surfaces. Loading skeletons use the dedicated skeleton token so they remain visible against white cards.
+- Routine activity history remains neutral; success, warning, and critical colors are compact signals rather than alert-sized fills.
+- Today’s Priorities must retain exactly one attached accent rail: Critical rose, Today blue, Soon amber, and Growth green.
+
+Light backgrounds may use extremely soft radial illumination, but not the Dark engineering grid at visible strength. Depth must primarily come from semantic surfaces, borders, restrained shadows, and spacing.
+
+Every Operational Light change requires a Dark regression check. Light compatibility selectors must be scoped to `data-mhb-theme="light"` and `data-mhb-surface="operational"` and must not override semantic rails, chart series, statuses, or Marketing’s curated-light boundary.
+
 ## Importing Components
 
 Import public primitives from the stable barrel:

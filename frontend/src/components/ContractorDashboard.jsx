@@ -1193,6 +1193,7 @@ function PipelineRow({
       <button
         type="button"
         data-testid={testId}
+        data-pipeline-tone={tone}
         aria-expanded={previewOpen}
         aria-controls={`${testId}-preview`}
         onClick={() => setPreviewOpen((current) => !current)}
@@ -1201,24 +1202,24 @@ function PipelineRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             {Icon ? (
-              <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}>
+              <div className={`mhb-pipeline-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}>
                 <Icon className={`h-4 w-4 ${titleClass}`} aria-hidden="true" />
               </div>
             ) : null}
-            <div className={`text-xs font-semibold uppercase tracking-[0.14em] ${titleClass}`}>{title}</div>
+            <div className={`mhb-pipeline-title text-xs font-semibold uppercase tracking-[0.14em] ${titleClass}`}>{title}</div>
           </div>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <div className={`text-xl font-bold leading-none ${titleClass}`}>
+            <div className={`mhb-pipeline-metric text-xl font-bold leading-none ${titleClass}`}>
               {typeof count === "number" ? Number(count).toLocaleString() : "0"}
             </div>
-            <div className={`pb-0.5 text-sm font-medium leading-5 ${descriptionClass}`}>
+            <div className={`mhb-pipeline-description pb-0.5 text-sm font-medium leading-5 ${descriptionClass}`}>
               items
             </div>
-            <div className={`ml-auto text-lg font-semibold leading-none ${titleClass}`}>
+            <div className={`mhb-pipeline-metric ml-auto text-lg font-semibold leading-none ${titleClass}`}>
               {currency(amount)}
             </div>
           </div>
-          <div className={`mt-1 text-xs leading-5 ${descriptionClass}`}>{description}</div>
+          <div className={`mhb-pipeline-description mt-1 text-xs leading-5 ${descriptionClass}`}>{description}</div>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1 pt-0.5">
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/70 opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
@@ -4120,6 +4121,7 @@ export default function ContractorDashboard() {
                     onClick={() => navigate(item.navigation_target || "/app/dashboard")}
                     className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm ${activityAccent(item.severity)}`}
                     data-testid={`dashboard-activity-item-${item.id}`}
+                    data-activity-severity={item.severity || "routine"}
                   >
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div className="min-w-0">

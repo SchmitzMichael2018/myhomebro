@@ -58,7 +58,7 @@ describe("MyHomeBro design-system foundation", () => {
     expect(badge).toContain("Pending");
     expect(badge).toContain("bg-[var(--mhb-status-pending-bg)]");
     expect(empty).toContain("bg-[var(--mhb-surface-card)]");
-    expect(loading).toContain("bg-[var(--mhb-surface-subtle)]");
+    expect(loading).toContain("bg-[var(--mhb-skeleton)]");
     expect(header).toContain("text-[var(--mhb-text-primary)]");
   });
 
@@ -133,6 +133,13 @@ describe("MyHomeBro design-system foundation", () => {
     );
     const loading = markup(<DataTable loading loadingLabel="Loading agreements" />);
     const empty = markup(<DataTable />);
+    const operational = markup(
+      <DataTable
+        theme="operational"
+        columns={[{ key: "name", header: "Customer" }]}
+        rows={[{ id: 1, name: "Taylor Home" }]}
+      />
+    );
 
     expect(table).toContain("<caption");
     expect(table).toContain("Current agreements");
@@ -141,6 +148,9 @@ describe("MyHomeBro design-system foundation", () => {
     expect(table).toContain("Previous");
     expect(loading).toContain("Loading agreements");
     expect(empty).toContain("No records found");
+    expect(operational).toContain("bg-[var(--mhb-surface-card)]");
+    expect(operational).toContain("bg-[var(--mhb-surface-inset)]");
+    expect(operational).toContain("hover:bg-[var(--mhb-table-row-hover)]");
   });
 
   it("uses safe alert semantics and AI lifecycle presentation", () => {

@@ -1997,7 +1997,8 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-ove
 .mhb-insights-workspace .recharts-default-tooltip {
   border-color: var(--mhb-border-default) !important;
   background: var(--mhb-chart-tooltip) !important;
-  color: var(--mhb-text-inverse) !important;
+  color: var(--mhb-chart-tooltip-text) !important;
+  box-shadow: var(--mhb-shadow-card-elevated) !important;
 }
 
 .mhb-insights-workspace .recharts-cartesian-axis-tick-value,
@@ -2168,6 +2169,238 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] :is(
   ):focus-visible {
     outline: 2px solid CanvasText;
   }
+}
+
+/* Operational Light: deliberate neutral hierarchy without changing workspace structure. */
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-authenticated-main {
+  background-color: var(--mhb-surface-app) !important;
+  background-image:
+    radial-gradient(circle at 28% -12%, rgb(255 255 255 / 0.72), transparent 36rem),
+    radial-gradient(circle at 92% 4%, rgb(59 130 246 / 0.035), transparent 30rem) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-panel {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-workspace-elevated) !important;
+  box-shadow: var(--mhb-shadow-card-elevated) !important;
+  backdrop-filter: none;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-inner {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-dashboard-card {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  box-shadow: var(--mhb-shadow-card-elevated) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] [data-testid="dashboard-workspace-header"] {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-header) !important;
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.9) inset, 0 8px 22px rgb(30 52 76 / 0.09) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-sidebar-shell {
+  border-right-color: #183657 !important;
+  background: var(--mhb-surface-sidebar);
+  box-shadow: 10px 0 28px rgb(30 52 76 / 0.16), inset -1px 0 0 rgb(255 255 255 / 0.04);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-sidebar-item {
+  border-color: transparent !important;
+  background: transparent !important;
+  color: #bdd1e7 !important;
+  box-shadow: none !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-sidebar-item:hover {
+  border-color: rgb(148 197 255 / 0.22) !important;
+  background: #0d2b50 !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-sidebar-item.is-active {
+  border-color: #4b91dc !important;
+  background: #123a68 !important;
+  color: #ffffff !important;
+  box-shadow: inset 3px 0 0 #74b4f4, 0 8px 18px rgb(0 8 24 / 0.2) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-sidebar-item-icon {
+  border-color: rgb(148 197 255 / 0.16) !important;
+  background: #071d38 !important;
+  color: #9cc9f2 !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard :is(
+  button[data-testid^="dashboard-work-"],
+  button[data-testid^="dashboard-money-"]
+):not([data-testid$="-view-all"]) {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-interactive) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: 0 1px 1px rgb(15 23 42 / 0.04) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard :is(
+  button[data-testid^="dashboard-work-"],
+  button[data-testid^="dashboard-money-"]
+):not([data-testid$="-view-all"]) :is(.mhb-pipeline-title, .mhb-pipeline-metric) {
+  color: var(--mhb-text-primary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard :is(
+  button[data-testid^="dashboard-work-"],
+  button[data-testid^="dashboard-money-"]
+):not([data-testid$="-view-all"]) .mhb-pipeline-description {
+  color: var(--mhb-text-muted) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard :is(
+  button[data-testid^="dashboard-work-"],
+  button[data-testid^="dashboard-money-"]
+):not([data-testid$="-view-all"]):hover {
+  border-color: var(--mhb-border-strong) !important;
+  background: var(--mhb-surface-interactive-hover) !important;
+  box-shadow: var(--mhb-shadow-interactive) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid^="dashboard-quick-action-"] {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-interactive) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: 0 1px 1px rgb(15 23 42 / 0.04) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid^="dashboard-quick-action-"]:hover {
+  border-color: var(--mhb-border-strong) !important;
+  background: var(--mhb-surface-interactive-hover) !important;
+  box-shadow: var(--mhb-shadow-interactive) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid="dashboard-quick-action-create-estimate"] {
+  border-color: var(--mhb-interactive-primary) !important;
+  background: var(--mhb-interactive-primary) !important;
+  color: #ffffff !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid="dashboard-quick-action-create-estimate"] * {
+  color: #ffffff !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid="dashboard-quick-action-create-estimate"]:hover {
+  border-color: var(--mhb-interactive-primary-hover) !important;
+  background: var(--mhb-interactive-primary-hover) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid^="dashboard-activity-item-"] {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  color: var(--mhb-text-secondary) !important;
+  box-shadow: var(--mhb-shadow-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-testid^="dashboard-activity-item-"]:hover {
+  border-color: var(--mhb-border-strong) !important;
+  background: var(--mhb-surface-interactive-hover) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-activity-severity="critical"] {
+  border-left: 3px solid var(--mhb-priority-critical-accent) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-activity-severity="warning"] {
+  border-left: 3px solid var(--mhb-priority-soon-accent) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard [data-activity-severity="success"] {
+  border-left: 3px solid var(--mhb-priority-growth-accent) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(input, select, textarea) {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-control) !important;
+  color: var(--mhb-text-primary) !important;
+  box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(input, textarea)::placeholder {
+  color: #718096 !important;
+  opacity: 1;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(input, select, textarea):focus {
+  border-color: var(--mhb-border-focus) !important;
+  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.14) !important;
+  outline: none;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(input, select, textarea):disabled {
+  background: var(--mhb-interactive-disabled-bg) !important;
+  color: var(--mhb-interactive-disabled-text) !important;
+  opacity: 1;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface table {
+  border-color: var(--mhb-border-default);
+  background: var(--mhb-surface-card);
+  color: var(--mhb-text-secondary);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface thead {
+  border-color: var(--mhb-border-divider) !important;
+  background: var(--mhb-surface-inset) !important;
+  color: var(--mhb-text-secondary) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface :is(th, td) {
+  border-color: var(--mhb-border-divider) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface tbody tr:hover {
+  background: var(--mhb-table-row-hover) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-insights-workspace {
+  background: var(--mhb-surface-workspace);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-white"] {
+  background: var(--mhb-surface-card) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-slate-50"],
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-gray-50"] {
+  background: var(--mhb-surface-subtle) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-insights-workspace button[role="tab"]:not([aria-selected="true"]) {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  color: var(--mhb-text-secondary) !important;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-insights-workspace button[role="tab"][aria-selected="true"] {
+  border-color: var(--mhb-border-selected) !important;
+  background: var(--mhb-surface-selected) !important;
+  color: var(--mhb-text-link) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-overlay {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card-elevated) !important;
+  color: var(--mhb-text-primary);
+  box-shadow: var(--mhb-shadow-card-elevated) !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-overlay :is(.bg-white, .bg-slate-50, .bg-gray-50) {
+  background: var(--mhb-surface-card) !important;
 }
 
 /* If a global reset hides buttons inside forms, undo it here for our icon */
