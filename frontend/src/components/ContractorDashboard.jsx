@@ -3800,13 +3800,13 @@ export default function ContractorDashboard() {
             <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
               <div>
                 <div className="text-xs font-black uppercase tracking-[0.18em] text-sky-200/75">
-                  Today's Priorities
+                  Operations
                 </div>
                 <div className="mt-1 text-2xl font-black text-white">
-                  AI Operations Manager
+                  Today&apos;s Priorities
                 </div>
                 <div className="mt-1 text-sm text-sky-100/85">
-                  The highest-value actions to win work, prevent delays, and keep money moving.
+                  The highest-value actions to keep work, schedules, and payments moving.
                 </div>
               </div>
               <div className="flex items-center gap-2">

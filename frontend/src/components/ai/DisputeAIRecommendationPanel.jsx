@@ -148,7 +148,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
 
   return (
     <ProjectAssistantPanel
-      subtitle="Resolution Assistant"
+      subtitle="Project Assistant Recommendation"
       summary="Based on the available evidence, this creates review guidance only. Humans decide every outcome."
       testId="dispute-ai-recommendation-panel"
       className="mt-4"

@@ -16,7 +16,7 @@ import {
   getDisputeReadOnlyLabel,
 } from "../lib/disputeStatus.js";
 
-// ✅ NEW: AI Advisor (read-only, evidence-context-based)
+// Project Assistant evidence snapshot (read-only, evidence-context-based)
 import DisputeAIAdvisor from "../components/ai/DisputeAIAdvisor.jsx";
 import DisputeAIRecommendationPanel from "../components/ai/DisputeAIRecommendationPanel.jsx";
 
@@ -1171,7 +1171,7 @@ function DetailsModal({
         </div>
       </div>
 
-      {/* ✅ AI Advisor panel (read-only, evidence-context only) */}
+      {/* Project Assistant panel (read-only, evidence-context only) */}
       <WorkspaceSection title="Project Assistant Resolution Analysis" eyebrow="Advisory Only" testId="resolution-workspace-ai-analysis">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
           Project Assistant may summarize evidence, identify disputed facts, list missing evidence,

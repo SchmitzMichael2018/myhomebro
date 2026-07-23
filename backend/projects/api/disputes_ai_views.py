@@ -30,6 +30,20 @@ def _get_contractor_for_user(user):
     return getattr(user, "contractor_profile", None)
 
 
+def _get_authorized_dispute(request, dispute_id: int):
+    """Return a dispute visible to its contractor owner or platform staff."""
+    Dispute = _get_dispute_model()
+    queryset = Dispute.objects.select_related("agreement")
+
+    if request.user.is_staff or request.user.is_superuser:
+        return queryset.filter(id=dispute_id).first()
+
+    contractor = _get_contractor_for_user(request.user)
+    if contractor is None:
+        return None
+    return queryset.filter(id=dispute_id, agreement__contractor=contractor).first()
+
+
 def _serialize_artifact(a: DisputeAIArtifact, include_payload: bool = False) -> dict:
     data = {
         "id": a.id,
@@ -52,11 +66,8 @@ def _serialize_artifact(a: DisputeAIArtifact, include_payload: bool = False) -> 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def dispute_ai_artifacts(request, dispute_id: int):
-    Dispute = _get_dispute_model()
-
-    try:
-        dispute = Dispute.objects.get(id=dispute_id)
-    except Dispute.DoesNotExist:
+    dispute = _get_authorized_dispute(request, dispute_id)
+    if dispute is None:
         return JsonResponse({"detail": "Dispute not found."}, status=HTTP_404_NOT_FOUND)
 
     artifact_type = (request.GET.get("artifact_type") or "").strip().lower()
@@ -94,11 +105,8 @@ def dispute_ai_recommendation(request, dispute_id: int):
     Returns cached artifacts when available and otherwise generates a fresh
     recommendation directly. AI is included, so no quota or payment gate applies.
     """
-    Dispute = _get_dispute_model()
-
-    try:
-        dispute = Dispute.objects.get(id=dispute_id)
-    except Dispute.DoesNotExist:
+    dispute = _get_authorized_dispute(request, dispute_id)
+    if dispute is None:
         return JsonResponse({"detail": "Dispute not found."}, status=HTTP_404_NOT_FOUND)
 
     try:
@@ -141,7 +149,7 @@ def dispute_ai_recommendation(request, dispute_id: int):
             )
 
     contractor = _get_contractor_for_user(request.user)
-    if not contractor:
+    if not contractor and not (request.user.is_staff or request.user.is_superuser):
         return JsonResponse(
             {"detail": "AI recommendations are available to contractor accounts only."},
             status=HTTP_403_FORBIDDEN,

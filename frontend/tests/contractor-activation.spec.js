@@ -311,7 +311,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByText('Quick Actions').first()).toBeVisible();
-  await expect(page.getByText('AI Operations Manager').first()).toBeVisible();
+  await expect(page.getByText("Today's Priorities").first()).toBeVisible();
   await expect(page.getByText("Today's Schedule").first()).toBeVisible();
   await expect(page.getByText('Work Pipeline').first()).toBeVisible();
   await expect(page.getByText('Money Pipeline').first()).toBeVisible();
@@ -373,7 +373,7 @@ test('dashboard renders operational hierarchy without persistent smart activatio
   await expect(page).toHaveURL(/\/app\/opportunities$/);
 });
 
-test('AI operations manager prioritizes leads, dedupes actions, and deep-links', async ({ page }) => {
+test("Today's priorities feed prioritizes leads, dedupes actions, and deep-links", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mockAuth(page);
   await page.route('**/api/projects/contractor-activation-summary/', async (route) => {
@@ -510,7 +510,7 @@ test('AI operations manager prioritizes leads, dedupes actions, and deep-links',
   await expect(page).toHaveURL(/\/app\/opportunities\?source=website$/);
 });
 
-test('AI operations manager hides snoozed actions and shows growth suggestions when caught up', async ({ page }) => {
+test("Today's priorities feed hides snoozed actions and shows growth suggestions when caught up", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await mockAuth(page);
   await page.route('**/api/projects/contractor-activation-summary/', async (route) => {

@@ -159,10 +159,8 @@ test('agreement AI actions stay available without plan or credit gating', async 
     waitUntil: 'domcontentloaded',
   });
 
-  await page.getByTestId('agreement-project-title-input').fill('AI Access Smoke');
-  await expect(page.getByTestId('agreement-ai-generate-scope-button')).toBeEnabled();
-  await page.locator('textarea[name="description"]').fill(
+  await page.getByTestId('step1-job-description-input').fill(
     'Install new cabinets, counters, and recessed lighting.'
   );
-  await expect(page.getByTestId('agreement-ai-improve-scope-button')).toBeEnabled();
+  await expect(page.getByTestId('step1-find-best-starting-point-button')).toBeEnabled();
 });

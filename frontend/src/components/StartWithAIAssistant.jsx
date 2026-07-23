@@ -1532,7 +1532,7 @@ export default function StartWithAIAssistant({
     ? "Generate Milestones"
     : isFieldAwareExclusionsMode
     ? "Generate Exclusions"
-    : panelConfig.submitButtonLabel || (isContextualMode ? "Ask Assistant" : "Start with AI");
+    : panelConfig.submitButtonLabel || (isContextualMode ? "Ask Project Assistant" : "Open Project Assistant");
 
   useEffect(() => {
     setFieldDraft("");

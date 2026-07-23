@@ -206,14 +206,14 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(page.getByTestId('resolution-workspace-human-decision')).toContainText('Human Decision');
   await expect(page.getByTestId('dispute-ai-advisor')).toBeVisible();
   await expect(page.getByTestId('resolution-workspace-ai-analysis')).toContainText('Project Assistant');
-  await expect(page.getByText('AI Advisor')).toBeVisible();
-  await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Neutral Resolution Assistant');
-  await page.getByRole('button', { name: 'Generate' }).click();
+  await expect(page.getByTestId('dispute-ai-advisor')).toContainText('Project Assistant');
+  await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Project Assistant Recommendation');
+  await page.getByRole('button', { name: 'Generate recommendation' }).click();
   await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 1');
   await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 2');
   await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 3');
   await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('coa_1');
-  await expect(page.getByTestId('dispute-ai-boundary')).toContainText('Recommendation only');
+  await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Recommendation only');
   await expect(page.getByTestId('dispute-ai-missing-evidence')).toContainText('Contractor statement');
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('liable');
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('negligent');

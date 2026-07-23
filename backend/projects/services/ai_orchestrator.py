@@ -1041,7 +1041,7 @@ def _contractor_onboarding_specialist(runtime: OrchestratorRuntimeContext) -> di
             [
                 {"key": "resume_onboarding", "label": "Resume Onboarding", "navigation_target": navigation_target},
                 {"key": "open_first_job", "label": "Start First Agreement", "navigation_target": "/app/agreements/new/wizard?step=1"},
-                {"key": "open_assistant", "label": "Start with AI", "navigation_target": "/app/assistant"},
+                {"key": "open_assistant", "label": "Open Project Assistant", "navigation_target": "/app/assistant"},
             ]
         ),
         "required_missing_fields": (

@@ -140,6 +140,7 @@ from projects.models_subcontractor import (
     SubcontractorQuoteRequestStatus,
 )
 from projects.models_dispute import Dispute, DisputeWorkOrder
+from projects.models_ai_artifacts import DisputeAIArtifact
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.services.project_activity import create_project_activity_event
 from projects.models_customer_refund_request import CustomerRefundRequest
@@ -7190,6 +7191,43 @@ class AIFreeAccessRegressionTests(TestCase):
         self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
 
+    def _create_other_contractor_dispute(self):
+        user_model = get_user_model()
+        other_user = user_model.objects.create_user(
+            email="other-dispute-contractor@example.com",
+            password="testpass123",
+        )
+        other_contractor = Contractor.objects.create(
+            user=other_user,
+            business_name="Other Dispute Contractor",
+        )
+        other_homeowner = Homeowner.objects.create(
+            created_by=other_contractor,
+            full_name="Other Dispute Homeowner",
+            email="other-dispute-homeowner@example.com",
+        )
+        other_project = Project.objects.create(
+            contractor=other_contractor,
+            homeowner=other_homeowner,
+            title="Other Dispute Project",
+        )
+        other_agreement = Agreement.objects.create(
+            project=other_project,
+            contractor=other_contractor,
+            homeowner=other_homeowner,
+            description="Other contractor agreement",
+        )
+        return Dispute.objects.create(
+            agreement=other_agreement,
+            initiator="contractor",
+            reason="Other scope disagreement",
+            description="Private dispute evidence.",
+            created_by=other_user,
+            fee_paid=True,
+            escrow_frozen=True,
+            status="open",
+        )
+
     def test_ai_entitlements_endpoint_returns_included_payload(self):
         response = self.client.get("/api/projects/ai/entitlements/me/")
 
@@ -7605,6 +7643,55 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertEqual(payload["ai_access"], "included")
         self.assertTrue(payload["ai_enabled"])
         self.assertTrue(payload["ai_unlimited"])
+
+    def test_dispute_ai_artifacts_hide_other_contractor_payload(self):
+        other_dispute = self._create_other_contractor_dispute()
+        DisputeAIArtifact.objects.create(
+            dispute=other_dispute,
+            artifact_type=DisputeAIArtifact.ARTIFACT_RECOMMENDATION,
+            version=1,
+            input_digest="private-digest",
+            model_name="test-model",
+            payload={"private": "other contractor evidence"},
+        )
+
+        response = self.client.get(
+            f"/api/projects/disputes/{other_dispute.id}/ai/artifacts/",
+            {"latest": 1, "include_payload": 1},
+        )
+
+        self.assertEqual(response.status_code, 404)
+        self.assertNotIn("private", response.content.decode())
+
+    def test_dispute_ai_cached_recommendation_is_not_shared_across_contractors(self):
+        other_dispute = self._create_other_contractor_dispute()
+
+        with patch(
+            "projects.api.disputes_ai_views.build_dispute_evidence_context"
+        ) as build_context:
+            response = self.client.post(
+                f"/api/projects/disputes/{other_dispute.id}/ai/recommendation/",
+                {"force": False},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 404)
+        build_context.assert_not_called()
+
+    def test_dispute_ai_force_generation_is_not_shared_across_contractors(self):
+        other_dispute = self._create_other_contractor_dispute()
+
+        with patch(
+            "projects.api.disputes_ai_views.generate_dispute_recommendation"
+        ) as generate:
+            response = self.client.post(
+                f"/api/projects/disputes/{other_dispute.id}/ai/recommendation/",
+                {"force": True},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 404)
+        generate.assert_not_called()
 
     def test_legacy_ai_checkout_endpoint_is_removed(self):
         response = self.client.post(

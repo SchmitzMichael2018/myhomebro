@@ -338,8 +338,8 @@ def get_next_best_action(contractor: Contractor | None) -> dict[str, Any]:
     return {
         "action_type": "create_agreement",
         "title": "Create your next agreement",
-        "message": "You are clear to start new work. Build the next agreement or start with AI.",
-        "cta_label": "Start with AI",
+        "message": "You are clear to start new work. Build the next agreement or ask Project Assistant for help.",
+        "cta_label": "Open Project Assistant",
         "navigation_target": "/app/assistant",
         "priority_score": 5,
         "rationale": "No active blockers or pending review items were found.",
