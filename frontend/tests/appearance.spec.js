@@ -224,6 +224,8 @@ test("Light persists across reload and Insights uses the operational light token
   await expect(page.locator("html")).toHaveAttribute("data-mhb-theme", "light");
   await expect(page.getByTestId("operational-background")).toBeVisible();
   await expect(page.getByTestId("operational-background")).toHaveCSS("pointer-events", "none");
+  await expect(page.locator(".mhb-operational-background__grid")).toBeVisible();
+  await expect(page.locator(".mhb-operational-background__terrain")).toBeVisible();
   await expect(page.locator(".mhb-authenticated-main")).toHaveCSS(
     "background-color",
     "rgba(0, 0, 0, 0)"

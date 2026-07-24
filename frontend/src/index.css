@@ -1883,10 +1883,11 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-ba
   --mhb-operational-light-edge: 18%;
   display: block;
   background:
-    radial-gradient(ellipse 34% 42% at var(--mhb-operational-light-edge) 8%, rgb(251 191 36 / 0.34), transparent 72%),
-    radial-gradient(ellipse 78% 68% at 100% 4%, rgb(59 130 246 / 0.35), transparent 70%),
-    radial-gradient(ellipse 34% 48% at 57% 22%, rgb(255 255 255 / 0.88), transparent 76%),
-    linear-gradient(118deg, #fffaf0 0%, #f8fbff 47%, #d9eaff 100%);
+    radial-gradient(ellipse 36% 44% at var(--mhb-operational-light-edge) 8%, rgb(251 191 36 / 0.36), transparent 73%),
+    radial-gradient(ellipse 88% 72% at 100% 4%, rgb(59 130 246 / 0.43), transparent 73%),
+    radial-gradient(ellipse 42% 50% at 53% 20%, rgb(255 255 255 / 0.7), transparent 78%),
+    radial-gradient(ellipse 44% 34% at 47% 18%, rgb(250 204 21 / 0.09), rgb(96 165 250 / 0.1) 58%, transparent 82%),
+    linear-gradient(118deg, #fff8e8 0%, #f4f8ff 43%, #cfe3ff 100%);
 }
 
 .mhb-operational-background__atmosphere,
@@ -1940,10 +1941,11 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-ba
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__atmosphere {
   background:
-    radial-gradient(ellipse 24% 18% at var(--mhb-operational-light-edge) 14%, rgb(245 158 11 / 0.32), transparent 72%),
+    radial-gradient(ellipse 24% 18% at var(--mhb-operational-light-edge) 14%, rgb(245 158 11 / 0.34), transparent 72%),
     linear-gradient(90deg, transparent 14%, rgb(245 158 11 / 0.22) 19%, transparent 38%) 0 16% / 100% 2px no-repeat,
-    linear-gradient(90deg, transparent 18%, rgb(96 165 250 / 0.22) 58%, rgb(37 99 235 / 0.3)) 0 16% / 100% 1px no-repeat,
-    radial-gradient(ellipse 58% 28% at 82% 12%, rgb(147 197 253 / 0.3), transparent 76%);
+    linear-gradient(90deg, transparent 17%, rgb(96 165 250 / 0.25) 52%, rgb(37 99 235 / 0.36)) 0 16% / 100% 1px no-repeat,
+    radial-gradient(ellipse 68% 30% at 78% 12%, rgb(96 165 250 / 0.36), transparent 78%),
+    radial-gradient(ellipse 26% 20% at 49% 17%, rgb(255 255 255 / 0.26), transparent 76%);
 }
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__grid {
@@ -1951,22 +1953,22 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-ba
   left: -20%;
   right: -20%;
   bottom: -28%;
-  opacity: 0.42;
+  opacity: 0.4;
   transform: perspective(540px) rotateX(60deg);
   background-image:
-    radial-gradient(circle, rgb(255 255 255 / 0.95) 0 2px, transparent 2.5px),
+    radial-gradient(circle, rgb(255 255 255 / 0.8) 0 1.75px, transparent 2.25px),
     linear-gradient(rgb(37 99 235 / 0.32) 1px, transparent 1px),
     linear-gradient(90deg, rgb(37 99 235 / 0.28) 1px, transparent 1px);
   background-size: 128px 76px, 64px 38px, 64px 38px;
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, rgb(0 0 0 / 0.82) 58%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 0%, rgb(0 0 0 / 0.82) 58%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgb(0 0 0 / 0.38) 12%, black 32%, rgb(0 0 0 / 0.84) 64%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, rgb(0 0 0 / 0.38) 12%, black 32%, rgb(0 0 0 / 0.84) 64%, transparent 100%);
 }
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__terrain {
-  top: 2%;
-  height: 34vh;
-  opacity: 0.56;
-  filter: none;
+  top: 0;
+  height: 37vh;
+  opacity: 0.66;
+  filter: brightness(0.92) saturate(1.08);
   mix-blend-mode: multiply;
 }
 
@@ -2010,7 +2012,7 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-das
   html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__terrain {
     right: -42%;
     width: 150vw;
-    opacity: 0.24;
+    opacity: 0.28;
   }
 }
 
