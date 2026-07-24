@@ -14,6 +14,7 @@ import {
   FormField,
   InlineAlert,
   LoadingSkeleton,
+  MetricCard,
   PaginationControls,
   SettingsSection,
   StatusBadge,
@@ -62,6 +63,19 @@ describe("MyHomeBro design-system foundation", () => {
     expect(empty).toContain("bg-[var(--mhb-surface-card)]");
     expect(loading).toContain("bg-[var(--mhb-skeleton)]");
     expect(header).toContain("text-[var(--mhb-text-primary)]");
+  });
+
+  it("adds a decorative semantic icon to shared metric cards", () => {
+    const payment = markup(
+      <MetricCard theme="operational" label="Payments" value="$4,200" />
+    );
+    const dispute = markup(
+      <MetricCard theme="operational" label="Open Disputes" value="2" />
+    );
+
+    expect(payment).toContain('data-metric-icon-tone="green"');
+    expect(payment).toContain('aria-hidden="true"');
+    expect(dispute).toContain('data-metric-icon-tone="red"');
   });
 
   it("renders intentional loading and empty states", () => {

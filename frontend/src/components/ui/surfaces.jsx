@@ -1,4 +1,20 @@
 import React from "react";
+import {
+  AlertTriangle,
+  BriefcaseBusiness,
+  CheckCircle2,
+  CircleDollarSign,
+  ClipboardList,
+  FileText,
+  Flag,
+  Handshake,
+  Receipt,
+  ShieldCheck,
+  User,
+  UserMinus,
+  UserPlus,
+  Users,
+} from "lucide-react";
 import { cx, humanizeStatus } from "./designSystemUtils.js";
 
 const cardPadding = {
@@ -48,6 +64,9 @@ export function MetricCard({
   className = "",
   ...props
 }) {
+  const visual = metricVisualFor(label);
+  const MetricIcon = Icon || visual.icon;
+
   return (
     <Card theme={theme} className={cx("min-w-0", className)} {...props}>
       <div className="flex items-start justify-between gap-3">
@@ -55,7 +74,20 @@ export function MetricCard({
           <div className={cx("text-sm font-semibold", theme === "operational" ? "text-[var(--mhb-text-secondary)]" : "text-slate-600")}>{label}</div>
           <div className={cx("mt-2 break-words text-2xl font-black tabular-nums", theme === "operational" ? "text-[var(--mhb-text-primary)]" : "text-slate-950")}>{value}</div>
         </div>
-        {Icon ? <span className={cx("rounded-xl p-2", theme === "operational" ? "border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-subtle)] text-[var(--mhb-chart-neutral)]" : "bg-blue-50 text-blue-700")}><Icon className="h-5 w-5" aria-hidden="true" /></span> : null}
+        {MetricIcon ? (
+          <span
+            className={cx(
+              "rounded-xl border p-2",
+              theme === "operational"
+                ? "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-subtle)]"
+                : "border-current/10 bg-blue-50",
+              metricToneClasses[visual.tone]
+            )}
+            data-metric-icon-tone={visual.tone}
+          >
+            <MetricIcon className="h-5 w-5" aria-hidden="true" />
+          </span>
+        ) : null}
       </div>
       {description || trend || status ? (
         <div className={cx("mt-3 flex flex-wrap items-center gap-2 text-xs", theme === "operational" ? "text-[var(--mhb-text-muted)]" : "text-slate-500")}>
@@ -66,6 +98,39 @@ export function MetricCard({
       ) : null}
     </Card>
   );
+}
+
+const metricToneClasses = {
+  blue: "text-blue-500",
+  green: "text-emerald-500",
+  amber: "text-amber-500",
+  orange: "text-orange-500",
+  purple: "text-violet-500",
+  red: "text-rose-500",
+  gray: "text-slate-500",
+};
+
+export function metricVisualFor(label = "") {
+  const normalized = String(label).trim().toLowerCase();
+
+  if (/subcontract|vendor|partner/.test(normalized)) return { icon: Handshake, tone: "orange" };
+  if (/pending invitation|invite/.test(normalized)) return { icon: UserPlus, tone: "amber" };
+  if (/incomplete profile|profile issue/.test(normalized)) return { icon: AlertTriangle, tone: "purple" };
+  if (/inactive|disabled/.test(normalized)) return { icon: UserMinus, tone: "gray" };
+  if (/active account|verified|complete|paid/.test(normalized)) return { icon: CheckCircle2, tone: "green" };
+  if (/employee|team|workforce|member/.test(normalized)) return { icon: Users, tone: "orange" };
+  if (/payment|payout|revenue|earn|amount|escrow|fund/.test(normalized)) return { icon: CircleDollarSign, tone: "green" };
+  if (/invoice|receipt|expense/.test(normalized)) return { icon: Receipt, tone: "amber" };
+  if (/project|job|work/.test(normalized)) return { icon: BriefcaseBusiness, tone: "blue" };
+  if (/customer|homeowner|client|profile|identity/.test(normalized)) return { icon: User, tone: "purple" };
+  if (/milestone|stage|review/.test(normalized)) return { icon: Flag, tone: "blue" };
+  if (/template|checklist/.test(normalized)) return { icon: ClipboardList, tone: "blue" };
+  if (/warrant|coverage|protection/.test(normalized)) return { icon: ShieldCheck, tone: "green" };
+  if (/dispute|resolution|issue|blocked|overdue|rejected|suspended/.test(normalized)) return { icon: AlertTriangle, tone: "red" };
+  if (/agreement|document|draft|record/.test(normalized)) return { icon: FileText, tone: "blue" };
+  if (/contractor|user|account|listing/.test(normalized)) return { icon: Users, tone: "purple" };
+
+  return { icon: ClipboardList, tone: "blue" };
 }
 
 const statusClasses = {

@@ -97,6 +97,11 @@ test("Dark is the authenticated default and the Appearance menu is unique and ac
   await expect(page.locator("html")).toHaveAttribute("data-mhb-appearance", "dark");
   await expect(page.locator("html")).toHaveAttribute("data-mhb-theme", "dark");
   await expect(page.getByTestId("appearance-menu-trigger")).toHaveCount(1);
+  await expect(page.getByTestId("operational-background")).toBeVisible();
+  await expect(page.getByTestId("operational-background")).toHaveAttribute(
+    "aria-hidden",
+    "true"
+  );
   const darkTokens = await page.locator("html").evaluate((element) => {
     const styles = getComputedStyle(element);
     return {
@@ -123,6 +128,7 @@ test("Light persists across reload and Insights uses the operational light token
 
   await chooseAppearance(page, "Light");
   await expect(page.locator("html")).toHaveAttribute("data-mhb-theme", "light");
+  await expect(page.getByTestId("operational-background")).toBeHidden();
   await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), APPEARANCE_KEY)).toBe("light");
   const lightTokens = await page.locator("html").evaluate((element) => {
     const styles = getComputedStyle(element);
@@ -168,6 +174,7 @@ test("Marketing stays curated light without overwriting the operational preferen
 
   await expect(page.locator("html")).toHaveAttribute("data-mhb-theme", "dark");
   await expect(page.locator("html")).toHaveAttribute("data-mhb-surface", "curated-light");
+  await expect(page.getByTestId("operational-background")).toHaveCount(0);
   await page.getByTestId("appearance-menu-trigger").click();
   await expect(page.getByTestId("appearance-menu")).toContainText("Marketing uses its curated workspace appearance.");
   await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), APPEARANCE_KEY)).toBe("dark");

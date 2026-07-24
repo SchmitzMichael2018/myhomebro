@@ -1851,13 +1851,83 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: var(--mhb-text-primary);
 }
 
-html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-main {
-  background-color: var(--mhb-surface-app) !important;
+.mhb-authenticated-root {
+  position: relative;
+  min-height: 100vh;
+  isolation: isolate;
+}
+
+.mhb-authenticated-content {
+  position: relative;
+  z-index: 1;
+}
+
+.mhb-operational-background {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 62% 34% at 9% -2%, rgb(245 158 11 / 0.13), transparent 72%),
+    radial-gradient(ellipse 72% 54% at 100% 10%, rgb(37 99 235 / 0.16), transparent 68%),
+    linear-gradient(165deg, #020917 0%, #031126 48%, #04152d 100%);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-background {
+  display: block;
+}
+
+.mhb-operational-background__atmosphere,
+.mhb-operational-background__grid,
+.mhb-operational-background__veil {
+  position: absolute;
+  inset: 0;
+}
+
+.mhb-operational-background__atmosphere {
+  background:
+    radial-gradient(ellipse 38% 16% at 14% 8%, rgb(251 191 36 / 0.09), transparent 75%),
+    radial-gradient(ellipse 56% 22% at 80% 13%, rgb(56 189 248 / 0.075), transparent 75%);
+}
+
+.mhb-operational-background__grid {
+  top: 16%;
+  left: -12%;
+  right: -12%;
+  bottom: -34%;
+  opacity: 0.08;
+  transform: perspective(480px) rotateX(62deg);
+  transform-origin: 50% 0;
   background-image:
-    radial-gradient(circle at 22% -8%, rgb(59 130 246 / 0.075), transparent 34rem),
-    radial-gradient(circle at 88% 14%, rgb(14 165 233 / 0.035), transparent 30rem),
-    repeating-linear-gradient(0deg, rgb(148 197 255 / 0.012) 0 1px, transparent 1px 32px),
-    repeating-linear-gradient(90deg, rgb(148 197 255 / 0.009) 0 1px, transparent 1px 32px) !important;
+    linear-gradient(rgb(96 165 250 / 0.16) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(96 165 250 / 0.13) 1px, transparent 1px);
+  background-size: 58px 42px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 18%, rgb(0 0 0 / 0.6) 54%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, black 18%, rgb(0 0 0 / 0.6) 54%, transparent 100%);
+}
+
+.mhb-operational-background__terrain {
+  position: absolute;
+  top: 0;
+  right: -2%;
+  width: min(72vw, 1100px);
+  height: 15vh;
+  min-height: 110px;
+  max-height: 150px;
+  opacity: 0.22;
+}
+
+.mhb-operational-background__veil {
+  background:
+    linear-gradient(to bottom, transparent 0 24%, rgb(2 9 23 / 0.25) 54%, rgb(2 9 23 / 0.56) 100%),
+    radial-gradient(ellipse at center, transparent 20%, rgb(2 9 23 / 0.25) 100%);
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-main {
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface {
