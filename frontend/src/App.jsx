@@ -2,7 +2,7 @@
 // v2026-02-09 — Redirect legacy /customers routes into /app to avoid landing fallback.
 // v2026-02-24 — ✅ Fix /app routing: remove DashboardRouter shadow route so ProtectedRoutes / AgreementWizard render
 
-import React, { useEffect, useRef } from "react";
+import React, { lazy, Suspense, useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { clearExpiredConversations } from "./lib/conversationStorage.js";
 import { Toaster } from "react-hot-toast";
@@ -11,26 +11,27 @@ import { AuthProvider } from "./context/AuthContext";
 import LoginModal from "./components/LoginModal.jsx";
 import SignUpModal from "./components/SignUpModal.jsx";
 
-import ForgotPassword from "./components/ForgotPassword";
-import ResetPassword from "./components/ResetPassword";
-import TeamAccountSetup from "./components/TeamAccountSetup";
+const ForgotPassword = lazy(() => import("./components/ForgotPassword"));
+const ResetPassword = lazy(() => import("./components/ResetPassword"));
+const TeamAccountSetup = lazy(() => import("./components/TeamAccountSetup"));
 
-import AgreementReview from "./pages/AgreementReview.jsx";
-import ProjectDashboardPage from "./pages/ProjectDashboardPage.jsx";
-import CustomerPortalUploadSessionPage from "./pages/CustomerPortalUploadSessionPage.jsx";
-import StripeOnboarding from "./components/Stripe/StripeOnboarding.jsx";
+const AgreementReview = lazy(() => import("./pages/AgreementReview.jsx"));
+const ProjectDashboardPage = lazy(() => import("./pages/ProjectDashboardPage.jsx"));
+const CustomerPortalUploadSessionPage = lazy(() => import("./pages/CustomerPortalUploadSessionPage.jsx"));
+const StripeOnboarding = lazy(() => import("./components/Stripe/StripeOnboarding.jsx"));
 
-import PublicSign from "./components/PublicSign";
-import PublicFund from "./components/PublicFund";
+const PublicSign = lazy(() => import("./components/PublicSign"));
+const PublicFund = lazy(() => import("./components/PublicFund"));
 
-import InvoicePage from "./pages/InvoicePage.jsx";
-import MagicDrawRequest from "./pages/MagicDrawRequest.jsx";
-import MagicInvoice from "./pages/MagicInvoice.jsx";
+const InvoicePage = lazy(() => import("./pages/InvoicePage.jsx"));
+const MagicDrawRequest = lazy(() => import("./pages/MagicDrawRequest.jsx"));
+const MagicInvoice = lazy(() => import("./pages/MagicInvoice.jsx"));
 
 // ✅ App routes live under protectedRoutes() (/app + AuthenticatedLayout + RoleGate)
 import { protectedRoutes } from "./routes/ProtectedRoutes.jsx";
 
-import PublicRoutes from "./routes/PublicRoutes.jsx";
+const PublicRoutes = lazy(() => import("./routes/PublicRoutes.jsx"));
+import RouteLoadingFallback from "./components/RouteLoadingFallback.jsx";
 
 import "./styles/ui.css";
 import "./styles/modal.css";
@@ -52,7 +53,8 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
-        <Routes>
+        <Suspense fallback={<RouteLoadingFallback />}>
+          <Routes>
           {/* ✅ Legacy redirects (pre-/app routing) */}
           <Route path="/customers" element={<Navigate to="/app/customers" replace />} />
           <Route path="/customers/:id/edit" element={<Navigate to="/app/customers/:id/edit" replace />} />
@@ -91,8 +93,9 @@ export default function App() {
           <Route path="/*" element={<PublicRoutes />} />
 
           {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
 
         {/* Global modals */}
         <LoginModal />

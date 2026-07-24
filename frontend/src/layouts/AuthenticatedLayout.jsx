@@ -2,7 +2,7 @@
 // v2026-02-17d — Mobile fix:
 // - Floating hamburger is now a fallback and auto-hides when PageShell registers its own hamburger
 
-import React, { useEffect } from "react";
+import React, { Suspense, useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "../components/Sidebar.jsx";
 import ErrorBoundary from "../components/ErrorBoundary.jsx";
@@ -11,6 +11,7 @@ import { AssistantDockProvider, GlobalCopilotTrigger } from "../components/Assis
 import NotificationBell from "../components/NotificationBell.jsx";
 import AppearanceMenu from "../components/AppearanceMenu.jsx";
 import OperationalBackground from "../components/OperationalBackground.jsx";
+import RouteLoadingFallback from "../components/RouteLoadingFallback.jsx";
 import { AppearanceProvider } from "../context/AppearanceContext.jsx";
 
 export default function AuthenticatedLayout() {
@@ -60,7 +61,9 @@ export default function AuthenticatedLayout() {
                   <div style={{ flex: 1, minHeight: 0 }}>
                     <div className="mhb-content-pad">
                       <ErrorBoundary>
-                        <Outlet />
+                        <Suspense fallback={<RouteLoadingFallback operational />}>
+                          <Outlet />
+                        </Suspense>
                       </ErrorBoundary>
                     </div>
                   </div>

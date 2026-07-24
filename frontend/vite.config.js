@@ -40,12 +40,14 @@ export default defineConfig(({ mode }) => ({
 
     rollupOptions: {
       output: {
-        // Only split out React; don't force a "pdf" chunk if libs aren't present
+        // Keep a small number of stable, domain-shaped vendor chunks. Route
+        // modules remain the primary split boundary.
         manualChunks(id) {
           if (id.includes("node_modules")) {
-            if (id.includes("/react/") || id.includes("react-dom")) return "react";
-            // If you later add jspdf/html2canvas, uncomment:
-            // if (id.includes("jspdf") || id.includes("html2canvas")) return "pdf";
+            if (id.includes("/node_modules/react/") || id.includes("/node_modules/react-dom/")) return "react";
+            if (id.includes("lucide-react") || id.includes("react-icons")) return "icons";
+            if (id.includes("@stripe")) return "stripe";
+            if (id.includes("jspdf") || id.includes("pdfjs-dist")) return "documents";
           }
         },
       },

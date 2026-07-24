@@ -1,85 +1,85 @@
 // src/routes/ProtectedRoutes.jsx
-import React from "react";
+import React, { lazy } from "react";
 import { Route, Navigate, Outlet } from "react-router-dom";
 
 import RequireAuth from "./RequireAuth.jsx";
 import AuthenticatedLayout from "../layouts/AuthenticatedLayout.jsx";
 
-import ContractorDashboard from "../components/ContractorDashboard.jsx";
+const ContractorDashboard = lazy(() => import("../components/ContractorDashboard.jsx"));
 
 /* ✅ Admin */
-import AdminDashboard from "../pages/AdminDashboard.jsx";
-import AdminContractorDirectory from "../pages/admin/AdminContractorDirectory.jsx";
-import AdminMarketplacePage from "../pages/admin/AdminMarketplacePage.jsx";
-import AdminMaintenancePage from "../pages/admin/AdminMaintenancePage.jsx";
-import AdminReimbursementsPage from "../pages/admin/AdminReimbursementsPage.jsx";
-import AdminReviewsPage from "../pages/admin/AdminReviewsPage.jsx";
+const AdminDashboard = lazy(() => import("../pages/AdminDashboard.jsx"));
+const AdminContractorDirectory = lazy(() => import("../pages/admin/AdminContractorDirectory.jsx"));
+const AdminMarketplacePage = lazy(() => import("../pages/admin/AdminMarketplacePage.jsx"));
+const AdminMaintenancePage = lazy(() => import("../pages/admin/AdminMaintenancePage.jsx"));
+const AdminReimbursementsPage = lazy(() => import("../pages/admin/AdminReimbursementsPage.jsx"));
+const AdminReviewsPage = lazy(() => import("../pages/admin/AdminReviewsPage.jsx"));
 
 /* Employee pages */
-import EmployeeDashboard from "../pages/EmployeeDashboard.jsx";
-import EmployeeMilestones from "../pages/EmployeeMilestones.jsx";
-import EmployeeCalendar from "../pages/EmployeeCalendar.jsx";
-import EmployeeProfile from "../pages/EmployeeProfile.jsx";
-import EmployeeAgreements from "../pages/EmployeeAgreements.jsx";
-import SubcontractorAssignedWorkPage from "../pages/SubcontractorAssignedWorkPage.jsx";
+const EmployeeDashboard = lazy(() => import("../pages/EmployeeDashboard.jsx"));
+const EmployeeMilestones = lazy(() => import("../pages/EmployeeMilestones.jsx"));
+const EmployeeCalendar = lazy(() => import("../pages/EmployeeCalendar.jsx"));
+const EmployeeProfile = lazy(() => import("../pages/EmployeeProfile.jsx"));
+const EmployeeAgreements = lazy(() => import("../pages/EmployeeAgreements.jsx"));
+const SubcontractorAssignedWorkPage = lazy(() => import("../pages/SubcontractorAssignedWorkPage.jsx"));
 
 /* Agreements */
-import AgreementWizard from "../components/AgreementWizard.jsx";
-import AgreementEdit from "../components/AgreementEdit.jsx";
-import AgreementDetail from "../pages/AgreementDetail.jsx";
-import AgreementList from "../pages/AgreementList.jsx";
-import ProjectIntakeForm from "../components/intake/ProjectIntakeForm.jsx";
+const AgreementWizard = lazy(() => import("../components/AgreementWizard.jsx"));
+const AgreementEdit = lazy(() => import("../components/AgreementEdit.jsx"));
+const AgreementDetail = lazy(() => import("../pages/AgreementDetail.jsx"));
+const AgreementList = lazy(() => import("../pages/AgreementList.jsx"));
+const ProjectIntakeForm = lazy(() => import("../components/intake/ProjectIntakeForm.jsx"));
 
 /* Milestones */
-import MilestoneList from "../components/MilestoneList.jsx";
-import MilestoneDetail from "../pages/MilestoneDetail.jsx";
+const MilestoneList = lazy(() => import("../components/MilestoneList.jsx"));
+const MilestoneDetail = lazy(() => import("../pages/MilestoneDetail.jsx"));
 
 /* Templates */
-import TemplatesPage from "../pages/TemplatesPage.jsx";
-import AdminTemplatesPage from "../pages/AdminTemplatesPage.jsx";
+const TemplatesPage = lazy(() => import("../pages/TemplatesPage.jsx"));
+const AdminTemplatesPage = lazy(() => import("../pages/AdminTemplatesPage.jsx"));
 
 /* Assignments */
-import AssignmentsPage from "../pages/AssignmentsPage.jsx";
+const AssignmentsPage = lazy(() => import("../pages/AssignmentsPage.jsx"));
 
 /* Invoices */
-import Invoices from "../pages/Invoices.jsx";
-import InvoiceDetail from "../components/InvoiceDetail.jsx";
+const Invoices = lazy(() => import("../pages/Invoices.jsx"));
+const InvoiceDetail = lazy(() => import("../components/InvoiceDetail.jsx"));
 
 /* Customers */
-import Customers from "../components/Customers.jsx";
-import CustomerForm from "../components/CustomerForm.jsx";
-import CustomerEdit from "../components/CustomerEdit.jsx";
-import CustomerWorkspacePage from "../pages/CustomerWorkspacePage.jsx";
+const Customers = lazy(() => import("../components/Customers.jsx"));
+const CustomerForm = lazy(() => import("../components/CustomerForm.jsx"));
+const CustomerEdit = lazy(() => import("../components/CustomerEdit.jsx"));
+const CustomerWorkspacePage = lazy(() => import("../pages/CustomerWorkspacePage.jsx"));
 
 /* Other sections */
-import ProfilePage from "../pages/ProfilePage.jsx";
-import ContractorOnboardingForm from "../components/ContractorOnboardingForm.jsx";
-import EmbeddedStripeOnboarding from "../components/Stripe/EmbeddedStripeOnboarding.jsx";
-import BusinessDashboard from "../components/BusinessDashboard.jsx";
-import Calendar from "../components/Calendar.jsx";
-import Expenses from "../pages/ExpensesPage.jsx";
-import Disputes from "../pages/DisputesPages.jsx";
-import TeamSchedule from "../pages/TeamSchedule.jsx";
-import TeamPage from "../pages/TeamPage.jsx";
-import TeamEmployeeDetailPage from "../pages/TeamEmployeeDetailPage.jsx";
-import TeamOverviewPage from "../pages/TeamOverviewPage.jsx";
-import EstimateAvailabilityPage from "../pages/EstimateAvailabilityPage.jsx";
-import SubcontractorsPage from "../pages/SubcontractorsPage.jsx";
-import ReviewerQueuePage from "../pages/ReviewerQueuePage.jsx";
-import PayoutHistoryPage from "../pages/PayoutHistoryPage.jsx";
-import PayoutDetailPage from "../pages/PayoutDetailPage.jsx";
-import ContractorPayoutHistoryPage from "../pages/ContractorPayoutHistoryPage.jsx";
-import ContractorBidsPage from "../pages/ContractorBidsPage.jsx";
-import EstimatesPage from "../pages/EstimatesPage.jsx";
-import ProposalWorkspacePage from "../pages/ProposalWorkspacePage.jsx";
-import CustomerRecordsPage from "../pages/CustomerRecordsPage.jsx";
-import ContractorPublicPresencePage from "../pages/ContractorPublicPresencePage.jsx";
-import ContractorWebsitePreviewPage from "../pages/ContractorWebsitePreviewPage.jsx";
-import AIAssistantPage from "../pages/AIAssistantPage.jsx";
-import GuidedOnboardingPage from "../pages/GuidedOnboardingPage.jsx";
-import SupportTicketsPage from "../pages/SupportTicketsPage.jsx";
-import NotificationsPage from "../pages/NotificationsPage.jsx";
-import WarrantyDashboardPage from "../pages/WarrantyDashboardPage.jsx";
+const ProfilePage = lazy(() => import("../pages/ProfilePage.jsx"));
+const ContractorOnboardingForm = lazy(() => import("../components/ContractorOnboardingForm.jsx"));
+const EmbeddedStripeOnboarding = lazy(() => import("../components/Stripe/EmbeddedStripeOnboarding.jsx"));
+const BusinessDashboard = lazy(() => import("../components/BusinessDashboard.jsx"));
+const Calendar = lazy(() => import("../components/Calendar.jsx"));
+const Expenses = lazy(() => import("../pages/ExpensesPage.jsx"));
+const Disputes = lazy(() => import("../pages/DisputesPages.jsx"));
+const TeamSchedule = lazy(() => import("../pages/TeamSchedule.jsx"));
+const TeamPage = lazy(() => import("../pages/TeamPage.jsx"));
+const TeamEmployeeDetailPage = lazy(() => import("../pages/TeamEmployeeDetailPage.jsx"));
+const TeamOverviewPage = lazy(() => import("../pages/TeamOverviewPage.jsx"));
+const EstimateAvailabilityPage = lazy(() => import("../pages/EstimateAvailabilityPage.jsx"));
+const SubcontractorsPage = lazy(() => import("../pages/SubcontractorsPage.jsx"));
+const ReviewerQueuePage = lazy(() => import("../pages/ReviewerQueuePage.jsx"));
+const PayoutHistoryPage = lazy(() => import("../pages/PayoutHistoryPage.jsx"));
+const PayoutDetailPage = lazy(() => import("../pages/PayoutDetailPage.jsx"));
+const ContractorPayoutHistoryPage = lazy(() => import("../pages/ContractorPayoutHistoryPage.jsx"));
+const ContractorBidsPage = lazy(() => import("../pages/ContractorBidsPage.jsx"));
+const EstimatesPage = lazy(() => import("../pages/EstimatesPage.jsx"));
+const ProposalWorkspacePage = lazy(() => import("../pages/ProposalWorkspacePage.jsx"));
+const CustomerRecordsPage = lazy(() => import("../pages/CustomerRecordsPage.jsx"));
+const ContractorPublicPresencePage = lazy(() => import("../pages/ContractorPublicPresencePage.jsx"));
+const ContractorWebsitePreviewPage = lazy(() => import("../pages/ContractorWebsitePreviewPage.jsx"));
+const AIAssistantPage = lazy(() => import("../pages/AIAssistantPage.jsx"));
+const GuidedOnboardingPage = lazy(() => import("../pages/GuidedOnboardingPage.jsx"));
+const SupportTicketsPage = lazy(() => import("../pages/SupportTicketsPage.jsx"));
+const NotificationsPage = lazy(() => import("../pages/NotificationsPage.jsx"));
+const WarrantyDashboardPage = lazy(() => import("../pages/WarrantyDashboardPage.jsx"));
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 

@@ -4,38 +4,39 @@
 // v2026-02-09 — add legacy redirects for /customers/* into /app/customers/*
 // Keeps dispute routes and existing public pages.
 
-import React from "react";
+import React, { lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useParams } from "react-router-dom";
+import RouteLoadingFallback from "../components/RouteLoadingFallback.jsx";
 
-import LandingPage from "../components/LandingPage.jsx";
-import LoginForm from "../components/LoginForm.jsx";
-import SignUpForm from "../components/SignUpForm.jsx";
-import ForgotPassword from "../components/ForgotPassword.jsx";
+const LandingPage = lazy(() => import("../components/LandingPage.jsx"));
+const LoginForm = lazy(() => import("../components/LoginForm.jsx"));
+const SignUpForm = lazy(() => import("../components/SignUpForm.jsx"));
+const ForgotPassword = lazy(() => import("../components/ForgotPassword.jsx"));
 
 // Public pages
-import HomeownerSign from "../pages/HomeownerSign.jsx"; // /agreements/sign/:id?token=...
-import PublicIntake from "../pages/PublicIntake.jsx"; // /start-project/:token or legacy /public-intake/:token
-import StartProjectIntake from "../pages/StartProjectIntake.jsx"; // /start-project
-import MagicInvoice from "../pages/MagicInvoice.jsx"; // /invoices/magic/:token
-import MagicDrawRequest from "../pages/MagicDrawRequest.jsx"; // /draws/magic/:token
-import MagicAgreement from "../pages/MagicAgreement.jsx"; // /agreements/magic/:token
-import PublicProfile from "../pages/PublicProfile.jsx"; // /contractors/:slug public view
-import PublicWebsitePage from "../pages/PublicWebsitePage.jsx"; // /websites/:slug public website view
-import LegalPage from "../pages/LegalPage.jsx";
+const HomeownerSign = lazy(() => import("../pages/HomeownerSign.jsx"));
+const PublicIntake = lazy(() => import("../pages/PublicIntake.jsx"));
+const StartProjectIntake = lazy(() => import("../pages/StartProjectIntake.jsx"));
+const MagicInvoice = lazy(() => import("../pages/MagicInvoice.jsx"));
+const MagicDrawRequest = lazy(() => import("../pages/MagicDrawRequest.jsx"));
+const MagicAgreement = lazy(() => import("../pages/MagicAgreement.jsx"));
+const PublicProfile = lazy(() => import("../pages/PublicProfile.jsx"));
+const PublicWebsitePage = lazy(() => import("../pages/PublicWebsitePage.jsx"));
+const LegalPage = lazy(() => import("../pages/LegalPage.jsx"));
 
 // Optional: your /invoice/:token router page
-import InvoicePage from "../pages/InvoicePage.jsx"; // /invoice/:token → redirects to /invoices/magic/:token
+const InvoicePage = lazy(() => import("../pages/InvoicePage.jsx"));
 
 // Public dispute thread + decision
-import PublicDisputeView from "../pages/PublicDisputeView.jsx"; // /disputes/:id?token=...
-import PublicDisputeDecision from "../pages/PublicDisputeDecision.jsx"; // /disputes/:id/decision?token=...
-import SubcontractorInvitationAcceptPage from "../pages/SubcontractorInvitationAcceptPage.jsx";
-import CustomerPortalPage from "../pages/CustomerPortalPage.jsx"; // /portal
-import ContractorClaimPage from "../pages/ContractorClaimPage.jsx";
-import TenantMaintenanceRequestPage from "../pages/TenantMaintenanceRequestPage.jsx";
-import TenantMaintenanceStatusPage from "../pages/TenantMaintenanceStatusPage.jsx";
-import CustomerAccountOnboardingPage from "../pages/CustomerAccountOnboardingPage.jsx";
-import EmailVerifiedPage from "../pages/EmailVerifiedPage.jsx";
+const PublicDisputeView = lazy(() => import("../pages/PublicDisputeView.jsx"));
+const PublicDisputeDecision = lazy(() => import("../pages/PublicDisputeDecision.jsx"));
+const SubcontractorInvitationAcceptPage = lazy(() => import("../pages/SubcontractorInvitationAcceptPage.jsx"));
+const CustomerPortalPage = lazy(() => import("../pages/CustomerPortalPage.jsx"));
+const ContractorClaimPage = lazy(() => import("../pages/ContractorClaimPage.jsx"));
+const TenantMaintenanceRequestPage = lazy(() => import("../pages/TenantMaintenanceRequestPage.jsx"));
+const TenantMaintenanceStatusPage = lazy(() => import("../pages/TenantMaintenanceStatusPage.jsx"));
+const CustomerAccountOnboardingPage = lazy(() => import("../pages/CustomerAccountOnboardingPage.jsx"));
+const EmailVerifiedPage = lazy(() => import("../pages/EmailVerifiedPage.jsx"));
 
 function PortalTokenRedirect() {
   const { token = "" } = useParams();
@@ -44,7 +45,8 @@ function PortalTokenRedirect() {
 
 export default function PublicRoutes() {
   return (
-    <Routes>
+    <Suspense fallback={<RouteLoadingFallback />}>
+      <Routes>
       {/* ✅ Legacy redirects (pre-/app routing) */}
       <Route path="/customers" element={<Navigate to="/app/customers" replace />} />
       <Route path="/customers/new" element={<Navigate to="/app/customers/new" replace />} />
@@ -118,6 +120,7 @@ export default function PublicRoutes() {
 
       {/* catch-all */}
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
