@@ -1,9 +1,9 @@
 import React from "react";
 
 /**
- * Decorative backdrop for authenticated Operational Dark workspaces.
- * Theme and surface selectors own visibility so Light and curated/public
- * experiences never inherit the branded treatment.
+ * Decorative backdrop for authenticated operational workspaces.
+ * Theme and surface selectors provide distinct Dark and Light treatments while
+ * curated and public experiences remain outside the system.
  */
 export default function OperationalBackground() {
   return (

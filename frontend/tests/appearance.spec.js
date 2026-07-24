@@ -183,14 +183,14 @@ test("Operational background remains visible through the authenticated Dark canv
   expect(await backgroundHandle?.evaluate((element) => element.isConnected)).toBe(true);
 
   await chooseAppearance(page, "Light");
-  await expect(page.getByTestId("operational-background")).toBeHidden();
+  await expect(page.getByTestId("operational-background")).toBeVisible();
   await expect(page.locator(".mhb-authenticated-main")).toHaveCSS(
     "background-color",
-    "rgb(228, 234, 241)"
+    "rgba(0, 0, 0, 0)"
   );
   await expect(page.locator(".mhb-mobile-sidebar-shell")).toHaveCSS(
     "background-color",
-    "rgb(248, 250, 252)"
+    "rgba(0, 0, 0, 0)"
   );
 
   await chooseAppearance(page, "Dark");
@@ -199,7 +199,7 @@ test("Operational background remains visible through the authenticated Dark canv
 });
 
 test("Operational background remains mounted while a lazy route loads", async ({ page }) => {
-  await installAuthenticatedAppearanceMocks(page, "dark");
+  await installAuthenticatedAppearanceMocks(page, "light");
   await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
   const backgroundHandle = await page.getByTestId("operational-background").elementHandle();
 
@@ -222,7 +222,12 @@ test("Light persists across reload and Insights uses the operational light token
 
   await chooseAppearance(page, "Light");
   await expect(page.locator("html")).toHaveAttribute("data-mhb-theme", "light");
-  await expect(page.getByTestId("operational-background")).toBeHidden();
+  await expect(page.getByTestId("operational-background")).toBeVisible();
+  await expect(page.getByTestId("operational-background")).toHaveCSS("pointer-events", "none");
+  await expect(page.locator(".mhb-authenticated-main")).toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)"
+  );
   await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), APPEARANCE_KEY)).toBe("light");
   const lightTokens = await page.locator("html").evaluate((element) => {
     const styles = getComputedStyle(element);
@@ -257,9 +262,20 @@ test("System follows OS changes while explicit choices ignore them", async ({ pa
 
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).toHaveAttribute("data-mhb-theme", "light");
+  await expect(page.getByTestId("operational-background")).toBeVisible();
   await chooseAppearance(page, "Dark");
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).toHaveAttribute("data-mhb-theme", "dark");
+});
+
+test("Public and customer routes exclude the operational background", async ({ page }) => {
+  await installAuthenticatedAppearanceMocks(page, "light");
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("operational-background")).toHaveCount(0);
+
+  await page.goto("/portal", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("operational-background")).toHaveCount(0);
 });
 
 test("Marketing stays curated light without overwriting the operational preference", async ({ page }) => {
@@ -289,6 +305,10 @@ test("Project Assistant inherits operational Dark and Light", async ({ page }) =
   await chooseAppearance(page, "Light");
   await page.getByTestId("assistant-dock-open-button").click();
   await expect(page.getByTestId("assistant-desktop-dock")).toHaveCSS("color", "rgb(15, 23, 42)");
+  await expect(page.getByTestId("assistant-desktop-dock")).not.toHaveCSS(
+    "background-color",
+    "rgba(0, 0, 0, 0)"
+  );
 });
 
 test("authenticated header stays contained at supported desktop widths", async ({ page }) => {
@@ -327,6 +347,7 @@ test("capture authenticated appearance visual QA states", async ({ page }) => {
   ]) {
     await page.goto(route.path, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("operational-background")).toBeVisible();
+    await expect(page.locator(".mhb-operational-surface")).toBeVisible();
     await expect(page.locator(".mhb-authenticated-main")).toHaveCSS(
       "background-color",
       "rgba(0, 0, 0, 0)"
@@ -390,6 +411,62 @@ test("capture authenticated appearance visual QA states", async ({ page }) => {
   await page.screenshot({ path: path.join(outputDir, "assistant-light.png"), fullPage: false });
   await page.getByTestId("assistant-desktop-dock-close").click();
 
+  for (const route of [
+    { path: "/app/dashboard", name: "dashboard" },
+    { path: "/app/opportunities", name: "opportunities" },
+    { path: "/app/estimates", name: "estimates" },
+    { path: "/app/team", name: "team" },
+    { path: "/app/payments", name: "payments" },
+    { path: "/app/templates", name: "templates" },
+    { path: "/app/profile", name: "profile" },
+    { path: "/app/business", name: "insights" },
+  ]) {
+    await page.goto(route.path, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("operational-background")).toBeVisible();
+    await expect(page.locator(".mhb-authenticated-main")).toHaveCSS(
+      "background-color",
+      "rgba(0, 0, 0, 0)"
+    );
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 1440, height: 1000 },
+      { width: 1920, height: 1080 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.screenshot({
+        path: path.join(
+          outputDir,
+          `${route.name}-light-${viewport.width}x${viewport.height}.png`
+        ),
+        fullPage: false,
+      });
+    }
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Opportunities", exact: true })).toBeVisible();
+  await expect(page.getByTestId("operational-background")).toBeVisible();
+  expect(await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  )).toBe(false);
+  await page.screenshot({
+    path: path.join(outputDir, "opportunities-light-390x844.png"),
+    fullPage: false,
+  });
+
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.goto("/app/opportunities", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: "Opportunities", exact: true })).toBeVisible();
+  expect(await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  )).toBe(false);
+  await page.screenshot({
+    path: path.join(outputDir, "opportunities-light-768x1024.png"),
+    fullPage: false,
+  });
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/app/business", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Insights", exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(outputDir, "insights-light.png"), fullPage: false });

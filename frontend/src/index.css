@@ -1879,6 +1879,16 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-bac
   display: block;
 }
 
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background {
+  --mhb-operational-light-edge: 18%;
+  display: block;
+  background:
+    radial-gradient(ellipse 34% 42% at var(--mhb-operational-light-edge) 8%, rgb(251 191 36 / 0.34), transparent 72%),
+    radial-gradient(ellipse 78% 68% at 100% 4%, rgb(59 130 246 / 0.35), transparent 70%),
+    radial-gradient(ellipse 34% 48% at 57% 22%, rgb(255 255 255 / 0.88), transparent 76%),
+    linear-gradient(118deg, #fffaf0 0%, #f8fbff 47%, #d9eaff 100%);
+}
+
 .mhb-operational-background__atmosphere,
 .mhb-operational-background__grid,
 .mhb-operational-background__veil {
@@ -1928,6 +1938,44 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-bac
     radial-gradient(ellipse at center, transparent 30%, rgb(2 9 23 / 0.16) 100%);
 }
 
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__atmosphere {
+  background:
+    radial-gradient(ellipse 24% 18% at var(--mhb-operational-light-edge) 14%, rgb(245 158 11 / 0.32), transparent 72%),
+    linear-gradient(90deg, transparent 14%, rgb(245 158 11 / 0.22) 19%, transparent 38%) 0 16% / 100% 2px no-repeat,
+    linear-gradient(90deg, transparent 18%, rgb(96 165 250 / 0.22) 58%, rgb(37 99 235 / 0.3)) 0 16% / 100% 1px no-repeat,
+    radial-gradient(ellipse 58% 28% at 82% 12%, rgb(147 197 253 / 0.3), transparent 76%);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__grid {
+  top: 17%;
+  left: -20%;
+  right: -20%;
+  bottom: -28%;
+  opacity: 0.42;
+  transform: perspective(540px) rotateX(60deg);
+  background-image:
+    radial-gradient(circle, rgb(255 255 255 / 0.95) 0 2px, transparent 2.5px),
+    linear-gradient(rgb(37 99 235 / 0.32) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(37 99 235 / 0.28) 1px, transparent 1px);
+  background-size: 128px 76px, 64px 38px, 64px 38px;
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, rgb(0 0 0 / 0.82) 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 0%, rgb(0 0 0 / 0.82) 58%, transparent 100%);
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__terrain {
+  top: 2%;
+  height: 34vh;
+  opacity: 0.56;
+  filter: none;
+  mix-blend-mode: multiply;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__veil {
+  background:
+    linear-gradient(to bottom, rgb(255 255 255 / 0.05) 0 18%, rgb(255 255 255 / 0.18) 55%, rgb(248 250 252 / 0.3) 100%),
+    radial-gradient(ellipse at 50% 32%, transparent 28%, rgb(255 255 255 / 0.12) 100%);
+}
+
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-main {
   background-color: transparent !important;
   background-image: none !important;
@@ -1943,6 +1991,27 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-contractor-dash
 
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-contractor-dashboard::before {
   content: none;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-mobile-sidebar-shell,
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard {
+  background: transparent !important;
+}
+
+html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-contractor-dashboard::before {
+  content: none;
+}
+
+@media (max-width: 767px) {
+  html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background {
+    --mhb-operational-light-edge: 0%;
+  }
+
+  html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-background__terrain {
+    right: -42%;
+    width: 150vw;
+    opacity: 0.24;
+  }
 }
 
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface {
@@ -2393,10 +2462,8 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] :is(
 
 /* Operational Light: deliberate neutral hierarchy without changing workspace structure. */
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-authenticated-main {
-  background-color: var(--mhb-surface-app) !important;
-  background-image:
-    radial-gradient(circle at 28% -12%, rgb(255 255 255 / 0.72), transparent 36rem),
-    radial-gradient(circle at 92% 4%, rgb(59 130 246 / 0.035), transparent 30rem) !important;
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 html[data-mhb-theme="light"][data-mhb-surface="operational"] .mhb-operational-surface .mhb-operational-panel {
