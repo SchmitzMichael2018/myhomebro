@@ -27,21 +27,38 @@ npx vite build
 
 # 2.5) Publish index.html
 log "Publishing index.html …"
-rsync -av "$FRONTEND_DIR/dist/index.html" "$STATIC_ROOT/index.html"
+rsync -a "$FRONTEND_DIR/dist/index.html" "$STATIC_ROOT/index.html"
 
 
 # 3) Publish assets (hashed -> stable)
 log "Publishing assets to $ASSETS_DIR …"
 mkdir -p "$ASSETS_DIR"
-rsync -av --delete "$FRONTEND_DIR/dist/assets/" "$ASSETS_DIR/"
+ASSET_PUBLISH_START=$SECONDS
+# Safe because Vite emits content-hashed filenames.
+# A content change produces a new filename, so size-only comparison
+# avoids unnecessary copies caused by refreshed modification times.
+# We keep --delete so obsolete hashed bundles are still removed.
+rsync -a --delete --size-only \
+  "$FRONTEND_DIR/dist/assets/" \
+  "$ASSETS_DIR/"
+log "Asset publishing completed in $((SECONDS - ASSET_PUBLISH_START))s"
 
 cd "$ASSETS_DIR"
 JS_HASHED="$(ls -1t index-*.js 2>/dev/null | head -n1 || true)"
 CSS_HASHED="$(ls -1t index-*.css 2>/dev/null | head -n1 || true)"
-[[ -n "$JS_HASHED"  ]] && ln -sf "$JS_HASHED" index.js
-[[ -n "$CSS_HASHED" ]] && ln -sf "$CSS_HASHED" index.css
-log "index.js -> ${JS_HASHED:-missing}"
-log "index.css -> ${CSS_HASHED:-missing}"
+if [[ -z "$JS_HASHED" ]]; then
+  echo "ERROR: No index-*.js bundle found in $ASSETS_DIR" >&2
+  exit 1
+fi
+if [[ -z "$CSS_HASHED" ]]; then
+  echo "ERROR: No index-*.css bundle found in $ASSETS_DIR" >&2
+  exit 1
+fi
+
+ln -sfn "$JS_HASHED" index.js
+ln -sfn "$CSS_HASHED" index.css
+log "index.js -> $JS_HASHED"
+log "index.css -> $CSS_HASHED"
 
 # 4) Reload app
 log "Reloading WSGI…"
