@@ -121,6 +121,100 @@ test("Dark is the authenticated default and the Appearance menu is unique and ac
   await expect(page.getByTestId("appearance-menu-trigger")).toBeFocused();
 });
 
+test("Operational background remains visible through the authenticated Dark canvas", async ({ page }) => {
+  await installAuthenticatedAppearanceMocks(page, "dark");
+  await page.setViewportSize({ width: 1440, height: 1000 });
+
+  const routes = [
+    "/app/dashboard",
+    "/app/estimates",
+    "/app/opportunities",
+    "/app/team",
+    "/app/payments",
+  ];
+
+  for (const route of routes) {
+    await page.goto(route, { waitUntil: "domcontentloaded" });
+    const background = page.getByTestId("operational-background");
+    const canvas = page.locator(".mhb-authenticated-main");
+
+    await expect(background).toBeVisible();
+    await expect(background).toHaveCSS("pointer-events", "none");
+    await expect(background).toHaveCSS("position", "fixed");
+    await expect(canvas).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await expect(canvas).toHaveCSS("background-image", "none");
+    await expect(page.locator(".mhb-mobile-sidebar-shell")).toHaveCSS(
+      "background-color",
+      "rgba(0, 0, 0, 0)"
+    );
+    if (route === "/app/dashboard") {
+      await expect(page.locator(".mhb-contractor-dashboard")).toHaveCSS(
+        "background-image",
+        "none"
+      );
+    }
+
+    const geometry = await background.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+        zIndex: getComputedStyle(element).zIndex,
+      };
+    });
+    expect(geometry).toEqual({
+      top: 0,
+      left: 0,
+      width: 1440,
+      height: 1000,
+      zIndex: "0",
+    });
+    expect(await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+    )).toBe(false);
+  }
+
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  const backgroundHandle = await page.getByTestId("operational-background").elementHandle();
+  await page.locator('a[href="/app/estimates"]').first().click();
+  await expect(page).toHaveURL(/\/app\/estimates$/);
+  expect(await backgroundHandle?.evaluate((element) => element.isConnected)).toBe(true);
+
+  await chooseAppearance(page, "Light");
+  await expect(page.getByTestId("operational-background")).toBeHidden();
+  await expect(page.locator(".mhb-authenticated-main")).toHaveCSS(
+    "background-color",
+    "rgb(228, 234, 241)"
+  );
+  await expect(page.locator(".mhb-mobile-sidebar-shell")).toHaveCSS(
+    "background-color",
+    "rgb(248, 250, 252)"
+  );
+
+  await chooseAppearance(page, "Dark");
+  await page.goto("/app/marketing", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("operational-background")).toHaveCount(0);
+});
+
+test("Operational background remains mounted while a lazy route loads", async ({ page }) => {
+  await installAuthenticatedAppearanceMocks(page, "dark");
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  const backgroundHandle = await page.getByTestId("operational-background").elementHandle();
+
+  await page.route("**/src/pages/EstimatesPage.jsx*", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 750));
+    await route.continue();
+  });
+  await page.locator('a[href="/app/estimates"]').first().click();
+
+  await expect(page.getByLabel("Loading workspace")).toBeVisible();
+  await expect(page.getByTestId("operational-background")).toBeVisible();
+  expect(await backgroundHandle?.evaluate((element) => element.isConnected)).toBe(true);
+  await expect(page).toHaveURL(/\/app\/estimates$/);
+});
+
 test("Light persists across reload and Insights uses the operational light tokens", async ({ page }) => {
   await installAuthenticatedAppearanceMocks(page);
   await page.goto("/app/business", { waitUntil: "domcontentloaded" });
@@ -224,6 +318,36 @@ test("capture authenticated appearance visual QA states", async ({ page }) => {
   await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
   await page.screenshot({ path: path.join(outputDir, "dashboard-dark.png"), fullPage: false });
+  for (const route of [
+    { path: "/app/dashboard", name: "dashboard" },
+    { path: "/app/estimates", name: "estimates" },
+    { path: "/app/opportunities", name: "opportunities" },
+    { path: "/app/team", name: "team" },
+    { path: "/app/payments", name: "payments" },
+  ]) {
+    await page.goto(route.path, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("operational-background")).toBeVisible();
+    await expect(page.locator(".mhb-authenticated-main")).toHaveCSS(
+      "background-color",
+      "rgba(0, 0, 0, 0)"
+    );
+    for (const viewport of [
+      { width: 1280, height: 800 },
+      { width: 1440, height: 1000 },
+      { width: 1920, height: 1080 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.screenshot({
+        path: path.join(
+          outputDir,
+          `${route.name}-dark-${viewport.width}x${viewport.height}.png`
+        ),
+        fullPage: false,
+      });
+    }
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
   await page.getByTestId("appearance-menu-trigger").click();
   await page.screenshot({ path: path.join(outputDir, "appearance-menu-dark.png"), fullPage: false });
   await page.keyboard.press("Escape");

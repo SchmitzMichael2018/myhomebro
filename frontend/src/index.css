@@ -1930,6 +1930,18 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-m
   background-image: none !important;
 }
 
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-mobile-sidebar-shell {
+  background-color: transparent !important;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-contractor-dashboard {
+  background: transparent;
+}
+
+html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-contractor-dashboard::before {
+  content: none;
+}
+
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-surface {
   color: var(--mhb-text-primary);
 }
@@ -2214,10 +2226,6 @@ html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-operational-ove
 .mhb-insights-workspace .recharts-legend-item-text {
   fill: var(--mhb-chart-text);
   color: var(--mhb-chart-text) !important;
-}
-
-html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-authenticated-main {
-  background-color: var(--mhb-surface-app) !important;
 }
 
 html[data-mhb-theme="dark"][data-mhb-surface="operational"] .mhb-insights-workspace [class*="bg-white"],

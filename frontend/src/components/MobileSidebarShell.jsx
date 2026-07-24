@@ -119,7 +119,7 @@ export default function MobileSidebarShell({ sidebar, children }) {
 
   return (
     <MobileSidebarContext.Provider value={ctx}>
-      <div className="min-h-screen bg-slate-50">
+      <div className="mhb-mobile-sidebar-shell min-h-screen bg-slate-50">
         {/* ✅ Floating hamburger fallback (mobile only, only if header did NOT register one) */}
         {!headerHamburgerPresent ? (
           <button
