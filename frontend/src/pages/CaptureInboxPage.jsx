@@ -1,15 +1,20 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import toast from "react-hot-toast";
 
+import { archiveCapture } from "../api/captures.js";
 import {
+  Button,
   Card,
   EmptyState,
   FilterToolbar,
   InlineAlert,
   LoadingSkeleton,
+  MetricCard,
   StatusBadge,
   WorkspacePageHeader,
 } from "../components/ui";
-import { useCaptures } from "../hooks/useCaptures.js";
+import { useCaptures, useCaptureSummary } from "../hooks/useCaptures.js";
 import {
   captureFlags,
   isCaptureInboxEnabled,
@@ -18,13 +23,10 @@ import {
 const STATUS_OPTIONS = [
   ["", "All statuses"],
   ["saved", "Saved"],
-  ["processing", "Processing"],
-  ["ready_for_review", "Ready for review"],
-  ["needs_information", "Needs information"],
-  ["possible_duplicate", "Possible duplicate"],
-  ["failed", "Failed"],
+  ["ready_for_review", "Needs Review"],
   ["applied", "Applied"],
   ["archived", "Archived"],
+  ["failed", "Failed"],
 ];
 
 const TYPE_OPTIONS = [
@@ -58,6 +60,7 @@ export function CaptureInboxFeatureGate({
 }
 
 export function CaptureInboxContent() {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState({
     status: "",
     type: "",
@@ -65,9 +68,23 @@ export function CaptureInboxContent() {
     page: 1,
   });
   const captures = useCaptures(filters);
+  const metrics = useCaptureSummary();
 
   function updateFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value, page: 1 }));
+  }
+
+  async function archive(capture) {
+    try {
+      await archiveCapture(capture.id, {
+        expected_version: capture.version,
+        reason: "Archived from Capture Inbox",
+      });
+      toast.success("Capture archived.");
+      await Promise.all([captures.reload(), metrics.reload()]);
+    } catch (requestError) {
+      toast.error(requestError?.response?.data?.detail || "Capture could not be archived.");
+    }
   }
 
   return (
@@ -80,6 +97,24 @@ export function CaptureInboxContent() {
         title="Capture Inbox"
         subtitle="Review saved information and its current processing status."
       />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6" data-testid="capture-summary">
+        {[
+          ["Pending", metrics.summary.pending],
+          ["Needs Review", metrics.summary.needs_review],
+          ["Applied", metrics.summary.applied],
+          ["Failed", metrics.summary.failed],
+          ["Archived", metrics.summary.archived],
+          ["Today", metrics.summary.today],
+        ].map(([label, value]) => (
+          <MetricCard
+            key={label}
+            theme="operational"
+            label={label}
+            value={metrics.loading ? "—" : value || 0}
+          />
+        ))}
+      </div>
 
       <FilterToolbar
         theme="operational"
@@ -162,9 +197,16 @@ export function CaptureInboxContent() {
                       capture.capture_type}
                   </div>
                   <div className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
-                    {capture.raw_text_payload?.text ||
+                    {capture.raw_text_payload?.name ||
+                      capture.raw_text_payload?.title ||
+                      capture.raw_text_payload?.text ||
                       capture.raw_text_payload?.transcript ||
-                      "No text captured"}
+                      capture.artifacts?.[0]?.original_filename ||
+                      "Saved Capture"}
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--mhb-text-muted)]">
+                    {new Date(capture.created_at).toLocaleString()} ·{" "}
+                    {capture.captured_by_name || "Unknown creator"}
                   </div>
                 </div>
                 <StatusBadge
@@ -174,6 +216,28 @@ export function CaptureInboxContent() {
                     capture.status
                   }
                 />
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    theme="operational"
+                    onClick={() => navigate(`/app/capture/${capture.id}`)}
+                  >
+                    Open
+                  </Button>
+                  {capture.status !== "archived" ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      theme="operational"
+                      onClick={() => archive(capture)}
+                    >
+                      Archive
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             </Card>
           ))}

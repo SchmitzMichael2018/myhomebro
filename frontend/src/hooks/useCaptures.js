@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
-import { listCaptures } from "../api/captures.js";
+import {
+  getCapture,
+  getCaptureSummary,
+  listCaptures,
+} from "../api/captures.js";
 
 export function useCaptures(filters = {}, { enabled = true } = {}) {
   const [data, setData] = useState({
@@ -46,5 +50,72 @@ export function useCaptures(filters = {}, { enabled = true } = {}) {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    if (!enabled || typeof window === "undefined") return undefined;
+    const onSaved = () => reload();
+    window.addEventListener("mhb:capture-saved", onSaved);
+    return () => window.removeEventListener("mhb:capture-saved", onSaved);
+  }, [enabled, reload]);
+
   return { ...data, loading, error, reload };
+}
+
+export function useCaptureSummary({ enabled = true } = {}) {
+  const [summary, setSummary] = useState({
+    pending: 0,
+    needs_review: 0,
+    applied: 0,
+    failed: 0,
+    archived: 0,
+    today: 0,
+  });
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState("");
+
+  const reload = useCallback(async () => {
+    if (!enabled) return;
+    setLoading(true);
+    setError("");
+    try {
+      setSummary((await getCaptureSummary()) || {});
+    } catch (requestError) {
+      setError(
+        requestError?.response?.data?.detail ||
+          "Capture summary could not be loaded."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { summary, loading, error, reload };
+}
+
+export function useCapture(captureId, { enabled = true } = {}) {
+  const [capture, setCapture] = useState(null);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState("");
+
+  const reload = useCallback(async () => {
+    if (!enabled || !captureId) return;
+    setLoading(true);
+    setError("");
+    try {
+      setCapture(await getCapture(captureId));
+    } catch (requestError) {
+      setError(requestError?.response?.data?.detail || "Capture could not be loaded.");
+    } finally {
+      setLoading(false);
+    }
+  }, [captureId, enabled]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { capture, loading, error, reload };
 }

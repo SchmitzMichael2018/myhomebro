@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Capture, CaptureEvent
+from projects.models import Capture, CaptureArtifact, CaptureEvent
 from projects.serializers.capture import (
     CaptureApplicationSerializer,
     CaptureCreateSerializer,
@@ -68,6 +71,26 @@ def _capture_for_user(request, capture_id):
     return capture
 
 
+def _visible_captures(user, contractor):
+    queryset = Capture.objects.filter(contractor=contractor)
+    subaccount = get_subaccount_for_user(user)
+    if subaccount and subaccount.role != subaccount.ROLE_EMPLOYEE_SUPERVISOR:
+        queryset = queryset.filter(captured_by=user)
+    return queryset
+
+
+def _validate_photo(upload):
+    if not upload:
+        return "Choose a photo to save."
+    mime_type = str(getattr(upload, "content_type", "") or "").lower()
+    if not mime_type.startswith("image/"):
+        return "Capture photos must be image files."
+    max_bytes = int(getattr(settings, "CAPTURE_MAX_PHOTO_SIZE_MB", 10)) * 1024 * 1024
+    if int(getattr(upload, "size", 0) or 0) > max_bytes:
+        return f"Capture photos must be {max_bytes // (1024 * 1024)} MB or smaller."
+    return ""
+
+
 class CaptureListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -77,10 +100,7 @@ class CaptureListCreateView(APIView):
         contractor = get_contractor_for_user(request.user)
         if contractor is None:
             return Response({"detail": "Contractor account required."}, status=status.HTTP_403_FORBIDDEN)
-        queryset = Capture.objects.select_related("captured_by").filter(contractor=contractor)
-        subaccount = get_subaccount_for_user(request.user)
-        if subaccount and subaccount.role != subaccount.ROLE_EMPLOYEE_SUPERVISOR:
-            queryset = queryset.filter(captured_by=request.user)
+        queryset = _visible_captures(request.user, contractor).select_related("captured_by")
         capture_status = str(request.query_params.get("status") or "").strip()
         capture_type = str(request.query_params.get("type") or "").strip()
         search = str(request.query_params.get("search") or "").strip()
@@ -104,18 +124,93 @@ class CaptureListCreateView(APIView):
         if not can_create_capture(request.user):
             return Response({"detail": "You do not have permission to create Captures."}, status=status.HTTP_403_FORBIDDEN)
         contractor = get_contractor_for_user(request.user)
-        serializer = CaptureCreateSerializer(data=request.data)
+        upload = request.FILES.get("file")
+        serializer = CaptureCreateSerializer(
+            data=request.data,
+            context={"has_file": bool(upload)},
+        )
         serializer.is_valid(raise_exception=True)
+        if serializer.validated_data["capture_type"] == Capture.TYPE_PHOTO:
+            photo_error = _validate_photo(upload)
+            if photo_error:
+                return Response({"detail": photo_error}, status=status.HTTP_400_BAD_REQUEST)
+        elif upload:
+            return Response(
+                {"detail": "File uploads are only supported for photo Captures."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         with transaction.atomic():
-            capture = serializer.save(contractor=contractor, captured_by=request.user)
+            capture = serializer.save(
+                contractor=contractor,
+                captured_by=request.user,
+                status=Capture.STATUS_SAVED,
+                processing_engine="",
+            )
+            if upload:
+                digest = hashlib.sha256()
+                for chunk in upload.chunks():
+                    digest.update(chunk)
+                upload.seek(0)
+                CaptureArtifact.objects.create(
+                    capture=capture,
+                    artifact_type=CaptureArtifact.TYPE_PHOTO,
+                    file=upload,
+                    original_filename=str(upload.name or "")[:255],
+                    mime_type=str(upload.content_type or "")[:120],
+                    file_size=upload.size or 0,
+                    file_sha256=digest.hexdigest(),
+                    uploaded_by=request.user,
+                )
             CaptureEvent.objects.create(
                 capture=capture,
                 event_type="created",
                 to_status=capture.status,
                 actor=request.user,
-                metadata={"version": capture.version},
+                metadata={
+                    "version": capture.version,
+                    "capture_method": capture.capture_method,
+                    "artifact_count": 1 if upload else 0,
+                },
             )
+        capture = _capture_for_user(request, capture.id)
         return Response(CaptureSerializer(capture).data, status=status.HTTP_201_CREATED)
+
+
+class CaptureSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not _foundation_enabled():
+            return _disabled_response()
+        contractor = get_contractor_for_user(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor account required."}, status=status.HTTP_403_FORBIDDEN)
+        queryset = _visible_captures(request.user, contractor)
+        counts = {
+            row["status"]: row["count"]
+            for row in queryset.values("status").annotate(count=Count("id"))
+        }
+        today = timezone.localdate()
+        return Response(
+            {
+                "pending": sum(
+                    counts.get(value, 0)
+                    for value in (
+                        Capture.STATUS_DRAFT,
+                        Capture.STATUS_SAVED,
+                        Capture.STATUS_PROCESSING,
+                        Capture.STATUS_NEEDS_INFORMATION,
+                        Capture.STATUS_POSSIBLE_DUPLICATE,
+                    )
+                ),
+                "needs_review": counts.get(Capture.STATUS_READY_FOR_REVIEW, 0),
+                "applied": counts.get(Capture.STATUS_APPLIED, 0),
+                "failed": counts.get(Capture.STATUS_FAILED, 0)
+                + counts.get(Capture.STATUS_APPLY_FAILED, 0),
+                "archived": counts.get(Capture.STATUS_ARCHIVED, 0),
+                "today": queryset.filter(original_captured_at__date=today).count(),
+            }
+        )
 
 
 class CaptureDetailView(APIView):

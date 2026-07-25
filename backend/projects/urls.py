@@ -232,6 +232,7 @@ from .views.capture import (
     CaptureListCreateView,
     CaptureReceiptView,
     CaptureRetryView,
+    CaptureSummaryView,
 )
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
@@ -480,6 +481,7 @@ agreements_router.register(
 
 urlpatterns = [
     path("captures/", CaptureListCreateView.as_view(), name="capture-list-create"),
+    path("captures/summary/", CaptureSummaryView.as_view(), name="capture-summary"),
     path("captures/<uuid:capture_id>/", CaptureDetailView.as_view(), name="capture-detail"),
     path("captures/<uuid:capture_id>/archive/", CaptureArchiveView.as_view(), name="capture-archive"),
     path("captures/<uuid:capture_id>/retry/", CaptureRetryView.as_view(), name="capture-retry"),

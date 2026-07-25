@@ -124,7 +124,17 @@ class CaptureSerializer(serializers.ModelSerializer):
     def validate_raw_text_payload(self, value):
         if not isinstance(value, dict):
             raise serializers.ValidationError("Raw text payload must be an object.")
-        allowed = {"text", "transcript", "language", "input_metadata"}
+        allowed = {
+            "name",
+            "phone",
+            "email",
+            "title",
+            "text",
+            "notes",
+            "transcript",
+            "language",
+            "input_metadata",
+        }
         unknown = set(value) - allowed
         if unknown:
             raise serializers.ValidationError(f"Unsupported raw text fields: {', '.join(sorted(unknown))}.")
@@ -152,6 +162,31 @@ class CaptureCreateSerializer(CaptureSerializer):
             "proposed_destination",
             "audit_metadata",
         )
+
+    def validate(self, attrs):
+        capture_type = attrs.get("capture_type")
+        payload = attrs.get("raw_text_payload") or {}
+        supported_types = {
+            Capture.TYPE_QUICK_LEAD,
+            Capture.TYPE_QUICK_NOTE,
+            Capture.TYPE_PHOTO,
+        }
+        if capture_type not in supported_types:
+            raise serializers.ValidationError({"capture_type": "This Capture type is not available yet."})
+        if capture_type == Capture.TYPE_QUICK_LEAD:
+            if not str(payload.get("name") or "").strip():
+                raise serializers.ValidationError({"raw_text_payload": "Name is required."})
+            if not str(payload.get("text") or payload.get("transcript") or "").strip():
+                raise serializers.ValidationError(
+                    {"raw_text_payload": "Add what you discussed by voice or text."}
+                )
+        if capture_type == Capture.TYPE_QUICK_NOTE and not str(
+            payload.get("text") or payload.get("transcript") or ""
+        ).strip():
+            raise serializers.ValidationError({"raw_text_payload": "Note is required."})
+        if capture_type == Capture.TYPE_PHOTO and not self.context.get("has_file"):
+            raise serializers.ValidationError({"file": "Choose a photo to save."})
+        return attrs
 
 
 class CapturePatchSerializer(serializers.Serializer):

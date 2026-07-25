@@ -17,6 +17,22 @@ export async function createCapture(payload) {
   return response.data;
 }
 
+export async function createPhotoCapture(file) {
+  const form = new FormData();
+  form.append("capture_type", "photo");
+  form.append("capture_method", "camera");
+  form.append("file", file);
+  const response = await api.post("/projects/captures/", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return response.data;
+}
+
+export async function getCaptureSummary() {
+  const response = await api.get("/projects/captures/summary/");
+  return response.data;
+}
+
 export async function updateCapture(captureId, payload) {
   const response = await api.patch(
     `/projects/captures/${encodeURIComponent(captureId)}/`,

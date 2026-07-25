@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -203,6 +204,112 @@ class CaptureFoundationTests(TestCase):
         )
         self.assertEqual(archived.status_code, 200)
         self.assertEqual(archived.data["status"], Capture.STATUS_ARCHIVED)
+
+    def test_quick_lead_save_creates_only_saved_capture(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/projects/captures/",
+            {
+                "capture_type": "quick_lead",
+                "capture_method": "typed",
+                "raw_text_payload": {
+                    "name": "John",
+                    "phone": "281-555-0100",
+                    "text": "Needs a deck",
+                    "notes": "",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        created = Capture.objects.get(pk=response.data["id"])
+        self.assertEqual(created.status, Capture.STATUS_SAVED)
+        self.assertEqual(created.raw_text_payload["name"], "John")
+        self.assertEqual(created.processing_engine, "")
+        self.assertEqual(created.applications.count(), 0)
+        self.assertEqual(created.events.get().to_status, Capture.STATUS_SAVED)
+
+    def test_quick_note_voice_save_preserves_transcript_and_language(self):
+        self.client.force_authenticate(self.owner)
+        response = self.client.post(
+            "/api/projects/captures/",
+            {
+                "capture_type": "quick_note",
+                "capture_method": "voice_transcript",
+                "raw_text_payload": {
+                    "title": "Deck",
+                    "text": "Remember the cedar sample",
+                    "transcript": "Remember the cedar sample",
+                    "language": "en-US",
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["status"], Capture.STATUS_SAVED)
+        self.assertEqual(response.data["raw_text_payload"]["language"], "en-US")
+
+    def test_photo_save_atomically_creates_artifact(self):
+        self.client.force_authenticate(self.owner)
+        photo = SimpleUploadedFile("job-site.jpg", b"fake-image-bytes", content_type="image/jpeg")
+        response = self.client.post(
+            "/api/projects/captures/",
+            {
+                "capture_type": "photo",
+                "capture_method": "camera",
+                "file": photo,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 201, response.data)
+        created = Capture.objects.get(pk=response.data["id"])
+        artifact = created.artifacts.get()
+        self.assertEqual(created.status, Capture.STATUS_SAVED)
+        self.assertEqual(artifact.original_filename, "job-site.jpg")
+        self.assertEqual(artifact.mime_type, "image/jpeg")
+        self.assertTrue(artifact.file_sha256)
+
+    def test_photo_rejects_non_image_without_creating_capture(self):
+        self.client.force_authenticate(self.owner)
+        before = Capture.objects.count()
+        response = self.client.post(
+            "/api/projects/captures/",
+            {
+                "capture_type": "photo",
+                "capture_method": "file_upload",
+                "file": SimpleUploadedFile("notes.txt", b"no", content_type="text/plain"),
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(Capture.objects.count(), before)
+
+    def test_summary_counts_only_visible_company_captures(self):
+        Capture.objects.create(
+            contractor=self.contractor,
+            captured_by=self.owner,
+            capture_type=Capture.TYPE_QUICK_NOTE,
+            status=Capture.STATUS_READY_FOR_REVIEW,
+        )
+        Capture.objects.create(
+            contractor=self.contractor,
+            captured_by=self.owner,
+            capture_type=Capture.TYPE_QUICK_NOTE,
+            status=Capture.STATUS_FAILED,
+        )
+        Capture.objects.create(
+            contractor=self.other_contractor,
+            captured_by=self.other_owner,
+            capture_type=Capture.TYPE_QUICK_NOTE,
+            status=Capture.STATUS_APPLIED,
+        )
+        self.client.force_authenticate(self.owner)
+        response = self.client.get("/api/projects/captures/summary/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["pending"], 1)
+        self.assertEqual(response.data["needs_review"], 1)
+        self.assertEqual(response.data["failed"], 1)
+        self.assertEqual(response.data["applied"], 0)
 
     def test_feature_flag_is_disabled_by_default(self):
         self.client.force_authenticate(self.owner)

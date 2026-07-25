@@ -13,6 +13,8 @@ import AppearanceMenu from "../components/AppearanceMenu.jsx";
 import OperationalBackground from "../components/OperationalBackground.jsx";
 import RouteLoadingFallback from "../components/RouteLoadingFallback.jsx";
 import { AppearanceProvider } from "../context/AppearanceContext.jsx";
+import CaptureLauncher from "../components/capture/CaptureLauncher.jsx";
+import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
 
 export default function AuthenticatedLayout() {
   const location = useLocation();
@@ -38,6 +40,7 @@ export default function AuthenticatedLayout() {
             <AssistantDockProvider>
               <div className="pointer-events-none fixed right-4 top-4 z-40">
                 <div className="pointer-events-auto flex items-center gap-2">
+                  {isCaptureInboxEnabled() ? <CaptureLauncher /> : null}
                   <GlobalCopilotTrigger />
                   <AppearanceMenu />
                   <NotificationBell />

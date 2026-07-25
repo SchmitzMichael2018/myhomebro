@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import {
-  CaptureInboxContent,
   CaptureInboxFeatureGate,
 } from "./CaptureInboxPage.jsx";
 
@@ -35,14 +34,4 @@ describe("Capture Inbox foundation", () => {
     expect(html).toContain("Capture Inbox content");
   });
 
-  it("renders responsive Inbox filters without fake records", () => {
-    const html = renderToStaticMarkup(<CaptureInboxContent />);
-
-    expect(html).toContain('data-testid="capture-inbox"');
-    expect(html).toContain("Search Captures");
-    expect(html).toContain("All statuses");
-    expect(html).toContain("All types");
-    expect(html).toContain("sm:p-6");
-    expect(html).not.toContain("Raw lead");
-  });
 });

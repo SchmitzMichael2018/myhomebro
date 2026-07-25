@@ -81,6 +81,7 @@ const SupportTicketsPage = lazy(() => import("../pages/SupportTicketsPage.jsx"))
 const NotificationsPage = lazy(() => import("../pages/NotificationsPage.jsx"));
 const WarrantyDashboardPage = lazy(() => import("../pages/WarrantyDashboardPage.jsx"));
 const CaptureInboxPage = lazy(() => import("../pages/CaptureInboxPage.jsx"));
+const CaptureDetailPage = lazy(() => import("../pages/CaptureDetailPage.jsx"));
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
@@ -158,14 +159,17 @@ export function protectedRoutes() {
           element={<RoleGate allow={["contractor", "contractor_owner", "subaccount"]} />}
         >
           <Route path="reviewer/queue" element={<ReviewerQueuePage />} />
+          {isCaptureInboxEnabled() ? (
+            <>
+              <Route path="capture" element={<CaptureInboxPage />} />
+              <Route path="capture/:captureId" element={<CaptureDetailPage />} />
+            </>
+          ) : null}
         </Route>
 
         <Route element={<RoleGate allow={["contractor", "contractor_owner"]} />}>
           <Route path="dashboard" element={<ContractorDashboard />} />
           <Route path="assistant" element={<AIAssistantPage />} />
-          {isCaptureInboxEnabled() ? (
-            <Route path="capture" element={<CaptureInboxPage />} />
-          ) : null}
           <Route path="support" element={<SupportTicketsPage />} />
           <Route path="support/:ticketNumber" element={<SupportTicketsPage />} />
           <Route path="payouts/history" element={<PayoutHistoryPage />} />
