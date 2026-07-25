@@ -504,6 +504,11 @@ if not DEBUG:
 
 ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = get_bool("ACCOUNTS_REQUIRE_EMAIL_VERIFICATION", default=False)
 
+# Capture foundation is deployed dark and enabled deliberately after migration
+# and preflight. The Inbox has its own release switch.
+CAPTURE_FOUNDATION_ENABLED = get_bool("CAPTURE_FOUNDATION_ENABLED", default=False)
+CAPTURE_INBOX_ENABLED = get_bool("CAPTURE_INBOX_ENABLED", default=False)
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging

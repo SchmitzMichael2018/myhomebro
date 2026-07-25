@@ -80,8 +80,10 @@ const GuidedOnboardingPage = lazy(() => import("../pages/GuidedOnboardingPage.js
 const SupportTicketsPage = lazy(() => import("../pages/SupportTicketsPage.jsx"));
 const NotificationsPage = lazy(() => import("../pages/NotificationsPage.jsx"));
 const WarrantyDashboardPage = lazy(() => import("../pages/WarrantyDashboardPage.jsx"));
+const CaptureInboxPage = lazy(() => import("../pages/CaptureInboxPage.jsx"));
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
+import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
 
 function AppHomeRedirect() {
   const { data: identity, loading } = useWhoAmI();
@@ -161,6 +163,9 @@ export function protectedRoutes() {
         <Route element={<RoleGate allow={["contractor", "contractor_owner"]} />}>
           <Route path="dashboard" element={<ContractorDashboard />} />
           <Route path="assistant" element={<AIAssistantPage />} />
+          {isCaptureInboxEnabled() ? (
+            <Route path="capture" element={<CaptureInboxPage />} />
+          ) : null}
           <Route path="support" element={<SupportTicketsPage />} />
           <Route path="support/:ticketNumber" element={<SupportTicketsPage />} />
           <Route path="payouts/history" element={<PayoutHistoryPage />} />

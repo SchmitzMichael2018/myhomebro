@@ -3238,3 +3238,4 @@ from .models_compliance import (
 )  # noqa: E402,F401
 from .models_support import SupportMessage, SupportTicket, SupportTicketMessage  # noqa: E402,F401
 from .models_maintenance import MaintenanceWorkOrder, MaintenanceWorkOrderAttachment  # noqa: E402,F401
+from .models_capture import Capture, CaptureApplication, CaptureArtifact, CaptureEvent  # noqa: E402,F401

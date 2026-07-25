@@ -226,6 +226,13 @@ from .views.business_dashboard import (
     ContractorInsightsGoalsAPIView,
     ContractorInsightsPreferenceAPIView,
 )
+from .views.capture import (
+    CaptureArchiveView,
+    CaptureDetailView,
+    CaptureListCreateView,
+    CaptureReceiptView,
+    CaptureRetryView,
+)
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
 from .views.subcontractor_invitations import (
@@ -472,6 +479,11 @@ agreements_router.register(
 )
 
 urlpatterns = [
+    path("captures/", CaptureListCreateView.as_view(), name="capture-list-create"),
+    path("captures/<uuid:capture_id>/", CaptureDetailView.as_view(), name="capture-detail"),
+    path("captures/<uuid:capture_id>/archive/", CaptureArchiveView.as_view(), name="capture-archive"),
+    path("captures/<uuid:capture_id>/retry/", CaptureRetryView.as_view(), name="capture-retry"),
+    path("captures/<uuid:capture_id>/receipt/", CaptureReceiptView.as_view(), name="capture-receipt"),
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
     path("warranty/dashboard/", WarrantyDashboardView.as_view(), name="warranty-dashboard"),
     path("customer-portal/<str:token>/warranty-requests/", CustomerWarrantyRequestView.as_view(), name="customer-portal-warranty-requests"),
