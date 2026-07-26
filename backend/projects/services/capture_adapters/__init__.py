@@ -14,6 +14,11 @@ from .warranty_document import WarrantyDocumentAdapter
 from .warranty_evidence import WarrantyEvidenceAdapter
 from .warranty_record import WarrantyRecordAdapter
 from .warranty_request import WarrantyRequestAdapter
+from .measurement_adjustments import MeasurementAdjustmentsAdapter
+from .measurement_attachment import MeasurementAttachmentAdapter
+from .measurement_calculations import MeasurementCalculationsAdapter
+from .measurement_entries import MeasurementEntriesAdapter
+from .measurement_session import MeasurementSessionAdapter
 
 ADAPTERS = {
     "customer": CustomerAdapter(),
@@ -32,4 +37,9 @@ ADAPTERS = {
     "warranty_document": WarrantyDocumentAdapter(),
     "warranty_request": WarrantyRequestAdapter(),
     "warranty_evidence": WarrantyEvidenceAdapter(),
+    "measurement_session": MeasurementSessionAdapter(),
+    "measurement_entries": MeasurementEntriesAdapter(),
+    "measurement_adjustments": MeasurementAdjustmentsAdapter(),
+    "measurement_calculations": MeasurementCalculationsAdapter(),
+    "measurement_attachment": MeasurementAttachmentAdapter(),
 }

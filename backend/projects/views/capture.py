@@ -213,6 +213,7 @@ D2_CAPTURE_TYPES = {
     Capture.TYPE_WARRANTY_DOCUMENT,
     Capture.TYPE_WARRANTY_CONCERN,
 }
+MEASUREMENT_CAPTURE_TYPES = {Capture.TYPE_MEASUREMENT}
 
 
 def _d2_enabled(capture_type):
@@ -220,6 +221,8 @@ def _d2_enabled(capture_type):
         return bool(getattr(settings, "CAPTURE_EQUIPMENT_ENABLED", False))
     if capture_type in {Capture.TYPE_WARRANTY_DOCUMENT, Capture.TYPE_WARRANTY_CONCERN}:
         return bool(getattr(settings, "CAPTURE_WARRANTY_ENABLED", False))
+    if capture_type == Capture.TYPE_MEASUREMENT:
+        return bool(getattr(settings, "CAPTURE_MEASUREMENT_ENABLED", False))
     return True
 
 
@@ -399,14 +402,14 @@ class CaptureListCreateView(APIView):
         uploads = request.FILES.getlist("files") or request.FILES.getlist("file")
         upload = uploads[0] if uploads else None
         capture_type = str(request.data.get("capture_type") or "")
-        if capture_type in D2_CAPTURE_TYPES and not _d2_enabled(capture_type):
+        if capture_type in D2_CAPTURE_TYPES | MEASUREMENT_CAPTURE_TYPES and not _d2_enabled(capture_type):
             return Response(
                 {"detail": "This Capture workflow is not enabled."},
                 status=status.HTTP_404_NOT_FOUND,
             )
         project = None
         milestone = None
-        if capture_type in PROJECT_CAPTURE_TYPES | D2_CAPTURE_TYPES:
+        if capture_type in PROJECT_CAPTURE_TYPES | D2_CAPTURE_TYPES | MEASUREMENT_CAPTURE_TYPES:
             project = Project.objects.filter(
                 contractor=contractor, pk=request.data.get("project_id")
             ).first()
@@ -439,7 +442,7 @@ class CaptureListCreateView(APIView):
             photo_error = _validate_photo(upload)
             if photo_error:
                 return Response({"detail": photo_error}, status=status.HTTP_400_BAD_REQUEST)
-        elif capture_type in PROJECT_CAPTURE_TYPES | D2_CAPTURE_TYPES:
+        elif capture_type in PROJECT_CAPTURE_TYPES | D2_CAPTURE_TYPES | MEASUREMENT_CAPTURE_TYPES:
             for row in uploads:
                 upload_error = _validate_project_upload(row, capture_type)
                 if upload_error:

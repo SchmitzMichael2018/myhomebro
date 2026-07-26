@@ -59,6 +59,7 @@ const TYPE_OPTIONS = [
   ["equipment", "Equipment"],
   ["warranty_document", "Warranty Document"],
   ["warranty_concern", "Warranty Concern"],
+  ["measurement", "Measure a Space"],
 ];
 
 const SORT_OPTIONS = [

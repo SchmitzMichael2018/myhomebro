@@ -10,6 +10,7 @@ import {
   Mic,
   Receipt,
   Square,
+  Ruler,
   UserRound,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -24,9 +25,11 @@ import { createVoiceService } from "../../lib/voiceService.js";
 import { useWhoAmI } from "../../hooks/useWhoAmI.js";
 import { Button, FormField, InlineAlert, Modal } from "../ui";
 import ProjectAssistantSmartCapture from "../ProjectAssistantSmartCapture.jsx";
+import MeasurementCaptureForm from "./MeasurementCaptureForm.jsx";
 
 const EQUIPMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_EQUIPMENT_ENABLED || "").toLowerCase() === "true";
 const WARRANTY_ENABLED = String(import.meta.env.VITE_CAPTURE_WARRANTY_ENABLED || "").toLowerCase() === "true";
+const MEASUREMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_MEASUREMENT_ENABLED || "").toLowerCase() === "true";
 
 const ACTIONS = [
   { key: "lead", label: "I met someone", icon: UserRound },
@@ -38,6 +41,7 @@ const ACTIONS = [
   { key: "issue", label: "Document an issue", icon: AlertTriangle },
   { key: "communication", label: "Log a communication", icon: MessageSquare },
   { key: "document", label: "Add a project document", icon: FileText },
+  ...(MEASUREMENT_ENABLED ? [{ key: "measurement", label: "Measure a Space", icon: Ruler }] : []),
   ...(EQUIPMENT_ENABLED ? [{ key: "equipment", label: "Add Equipment", icon: Camera }] : []),
   ...(WARRANTY_ENABLED ? [
     { key: "warranty_document", label: "Save Warranty Information", icon: FileText },
@@ -650,11 +654,13 @@ export default function CaptureLauncher() {
   const { data: identity, loading } = useWhoAmI();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("");
+  const [context, setContext] = useState({});
 
   useEffect(() => {
     function openCapture(event) {
       const requested = String(event.detail?.mode || "");
       if (ACTIONS.some((action) => action.key === requested)) {
+        setContext(event.detail || {});
         setMode(requested);
         setOpen(true);
       }
@@ -666,6 +672,7 @@ export default function CaptureLauncher() {
   function close() {
     setOpen(false);
     setMode("");
+    setContext({});
   }
 
   function saved(capture) {
@@ -727,6 +734,7 @@ export default function CaptureLauncher() {
         {mode === "note" ? <QuickNoteForm onSaved={saved} onCancel={close} /> : null}
         {mode === "photo" ? <PhotoForm onSaved={saved} onCancel={close} /> : null}
         {mode === "receipt" ? <ProjectAssistantSmartCapture compact /> : null}
+        {mode === "measurement" ? <MeasurementCaptureForm onSaved={saved} onCancel={close} initialProjectId={context.projectId || ""} /> : null}
         {PROJECT_CAPTURE_CONFIG[mode] ? (
           <ProjectCaptureForm captureType={mode} onSaved={saved} onCancel={close} />
         ) : null}

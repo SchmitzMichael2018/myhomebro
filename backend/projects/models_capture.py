@@ -27,6 +27,7 @@ class Capture(models.Model):
     TYPE_EQUIPMENT = "equipment"
     TYPE_WARRANTY_DOCUMENT = "warranty_document"
     TYPE_WARRANTY_CONCERN = "warranty_concern"
+    TYPE_MEASUREMENT = "measurement"
     TYPE_CHOICES = (
         (TYPE_QUICK_LEAD, "Quick Lead"),
         (TYPE_QUICK_NOTE, "Quick Note"),
@@ -41,6 +42,7 @@ class Capture(models.Model):
         (TYPE_EQUIPMENT, "Equipment"),
         (TYPE_WARRANTY_DOCUMENT, "Warranty Document"),
         (TYPE_WARRANTY_CONCERN, "Warranty Concern"),
+        (TYPE_MEASUREMENT, "Measurement"),
     )
 
     STATUS_DRAFT = "draft"

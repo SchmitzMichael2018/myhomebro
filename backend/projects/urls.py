@@ -251,6 +251,7 @@ from .views.capture_qr import (
     CaptureQrAssetQrView,
     PublicCaptureQrView,
 )
+from .views.measurement import MeasurementSessionDetailView
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
 from .views.subcontractor_invitations import (
@@ -512,6 +513,7 @@ urlpatterns = [
     path("captures/<uuid:capture_id>/apply/", CaptureApplyView.as_view(), name="capture-apply"),
     path("captures/<uuid:capture_id>/duplicates/", CaptureDuplicatesView.as_view(), name="capture-duplicates"),
     path("captures/<uuid:capture_id>/receipt/", CaptureReceiptView.as_view(), name="capture-receipt"),
+    path("measurements/<int:session_id>/", MeasurementSessionDetailView.as_view(), name="measurement-session-detail"),
     path("capture-qr-assets/", CaptureQrAssetListView.as_view(), name="capture-qr-assets"),
     path("capture-qr-assets/<uuid:asset_id>/", CaptureQrAssetDetailView.as_view(), name="capture-qr-asset"),
     path("capture-qr-assets/<uuid:asset_id>/qr/", CaptureQrAssetQrView.as_view(), name="capture-qr-image"),

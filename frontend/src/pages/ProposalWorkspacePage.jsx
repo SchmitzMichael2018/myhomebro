@@ -2545,6 +2545,16 @@ export default function ProposalWorkspacePage() {
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="proposal-mobile-capture-actions">
               <button type="button" onClick={() => setActive("photos")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800"><Camera size={16} /> Take Photo</button>
               <button type="button" onClick={() => setActive("measurements")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"><Ruler size={16} /> Add Measurement</button>
+              {String(import.meta.env.VITE_CAPTURE_MEASUREMENT_ENABLED || "").toLowerCase() === "true" ? (
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", { detail: { mode: "measurement", projectId: proposal?.project_id || proposal?.project?.id } }))}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm font-bold text-sky-900"
+                  data-testid="estimate-measure-space"
+                >
+                  <Ruler size={16} /> Measure a Space
+                </button>
+              ) : null}
               <button type="button" onClick={() => patchDraft("site_visit_notes", `${draft.site_visit_notes || ""}${draft.site_visit_notes ? "\n" : ""}`)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800"><StickyNote size={16} /> Quick Note</button>
               <button type="button" disabled className="rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm font-bold text-sky-100/38">Voice Note</button>
               <button type="button" onClick={() => setActive("documents")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/14 bg-white/8 px-3 py-2 text-sm font-bold text-white hover:bg-white/12"><FileUp size={16} /> Attach File</button>

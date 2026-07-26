@@ -44,6 +44,10 @@ SUPPORTED_DESTINATIONS = {
     Capture.TYPE_WARRANTY_CONCERN: {
         "warranty_request", "warranty_evidence", "project_activity", "follow_up",
     },
+    Capture.TYPE_MEASUREMENT: {
+        "measurement_session", "measurement_entries", "measurement_adjustments",
+        "measurement_calculations", "measurement_attachment", "project_activity",
+    },
 }
 
 
@@ -140,11 +144,16 @@ def _validate_request(capture, payload, *, require_confirmation=False):
         "equipment_record": 0,
         "warranty_record": 0,
         "warranty_request": 0,
+        "measurement_session": 0,
         "communication_log": 0,
         "project_attachment": 1,
         "equipment_attachment": 1,
         "warranty_document": 1,
         "warranty_evidence": 1,
+        "measurement_entries": 1,
+        "measurement_adjustments": 2,
+        "measurement_calculations": 3,
+        "measurement_attachment": 4,
         "opportunity": 1,
         "project_activity": 2,
         "follow_up": 3,

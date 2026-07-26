@@ -49,6 +49,7 @@ const LABELS = {
   equipment: "Equipment",
   warranty_document: "Warranty Document",
   warranty_concern: "Warranty Concern",
+  measurement: "Measure a Space",
 };
 
 const PROJECT_CAPTURE_TYPES = [
@@ -59,6 +60,7 @@ const PROJECT_CAPTURE_TYPES = [
   "document",
 ];
 const D2_CAPTURE_TYPES = ["equipment", "warranty_document", "warranty_concern"];
+const MEASUREMENT_CAPTURE_TYPES = ["measurement"];
 
 const STATUS_TONES = {
   saved: "draft",
@@ -233,7 +235,7 @@ export default function CaptureDetailPage() {
 
   function applicationPayload({ confirmed = false, idempotencyKey } = {}) {
     const isLead = capture.capture_type === "quick_lead";
-    const isProjectCapture = [...PROJECT_CAPTURE_TYPES, ...D2_CAPTURE_TYPES].includes(capture.capture_type);
+    const isProjectCapture = [...PROJECT_CAPTURE_TYPES, ...D2_CAPTURE_TYPES, ...MEASUREMENT_CAPTURE_TYPES].includes(capture.capture_type);
     const destinations = isLead
       ? ["customer", "opportunity"]
       : isProjectCapture
@@ -332,7 +334,7 @@ export default function CaptureDetailPage() {
   }
 
   const raw = capture.raw_text_payload || {};
-  const processable = ["quick_lead", "quick_note", ...PROJECT_CAPTURE_TYPES, ...D2_CAPTURE_TYPES].includes(capture.capture_type);
+  const processable = ["quick_lead", "quick_note", ...PROJECT_CAPTURE_TYPES, ...D2_CAPTURE_TYPES, ...MEASUREMENT_CAPTURE_TYPES].includes(capture.capture_type);
   const editable = reviewEnabled && processable && [
     "ready_for_review", "needs_information", "possible_duplicate", "failed",
   ].includes(capture.status) && Boolean(draft);
@@ -465,6 +467,28 @@ export default function CaptureDetailPage() {
                     )}
                   </FormField>
                 </>
+              ) : capture.capture_type === "measurement" ? (
+                <div className="grid gap-3" data-testid="measurement-review">
+                  <InlineAlert theme="operational" tone="info">
+                    Review every source and verification label. The server recomputes all results and does not modify the estimate.
+                  </InlineAlert>
+                  <div className="rounded-xl border border-[var(--mhb-border-default)] p-3">
+                    <strong>{draft.room?.name || "Unnamed area"}</strong>
+                    <div className="text-sm text-[var(--mhb-text-muted)]">{String(draft.purpose || "").replaceAll("_", " ")} · {String(draft.guided_profile || "").replaceAll("_", " ")}</div>
+                  </div>
+                  {(draft.entries || []).map((entry) => (
+                    <div key={entry.client_key} className="rounded-xl border border-[var(--mhb-border-default)] p-3">
+                      <div className="flex flex-wrap justify-between gap-2"><strong>{entry.label}</strong><span className="text-xs font-bold">{String(entry.verification_status).replaceAll("_", " ")}</span></div>
+                      <div>{entry.raw_value}</div>
+                      <div className="text-xs text-[var(--mhb-text-muted)]">{String(entry.source_method).replaceAll("_", " ")}</div>
+                    </div>
+                  ))}
+                  {(draft.calculations || []).map((result) => (
+                    <div key={result.result_type} className="rounded-xl bg-[var(--mhb-surface-inset)] p-3">
+                      <strong>{result.label}:</strong> {result.display_value} {String(result.display_unit).replaceAll("_", " ")}
+                    </div>
+                  ))}
+                </div>
               ) : D2_CAPTURE_TYPES.includes(capture.capture_type) ? (
                 <>
                   <ValueRow label="Project ID" value={draft.project_id} />

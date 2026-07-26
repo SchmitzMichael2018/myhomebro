@@ -212,6 +212,7 @@ class CaptureCreateSerializer(CaptureSerializer):
             Capture.TYPE_EQUIPMENT,
             Capture.TYPE_WARRANTY_DOCUMENT,
             Capture.TYPE_WARRANTY_CONCERN,
+            Capture.TYPE_MEASUREMENT,
         }
         if capture_type not in supported_types:
             raise serializers.ValidationError({"capture_type": "This Capture type is not available yet."})
@@ -237,6 +238,7 @@ class CaptureCreateSerializer(CaptureSerializer):
             Capture.TYPE_EQUIPMENT,
             Capture.TYPE_WARRANTY_DOCUMENT,
             Capture.TYPE_WARRANTY_CONCERN,
+            Capture.TYPE_MEASUREMENT,
         }
         if capture_type in project_types and not self.context.get("project"):
             raise serializers.ValidationError({"project_id": "Select a project."})

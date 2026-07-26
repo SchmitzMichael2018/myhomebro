@@ -194,3 +194,8 @@ export async function getCaptureReceipt(captureId) {
   );
   return response.data;
 }
+
+export async function getMeasurementSession(sessionId) {
+  const response = await api.get(`/projects/measurements/${encodeURIComponent(sessionId)}/`);
+  return response.data;
+}

@@ -3305,3 +3305,12 @@ from .models_capture_warranty import (  # noqa: E402,F401
     WarrantyCaptureChange,
     WarrantyCaptureDocument,
 )
+from .models_measurement import (  # noqa: E402,F401
+    MeasurementAdjustment,
+    MeasurementAnnotation,
+    MeasurementAttachment,
+    MeasurementCalculatedResult,
+    MeasurementEntry,
+    MeasurementEvent,
+    MeasurementSession,
+)

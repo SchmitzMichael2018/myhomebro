@@ -16,6 +16,11 @@ from projects.services.capture_lifecycle import (
     transition_capture,
 )
 from projects.services.customer_accounts import normalize_customer_phone
+from projects.services.measurement_calculations import (
+    MeasurementCalculationError,
+    calculate_measurement_session,
+    parse_measurement,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -43,7 +48,7 @@ D2_CAPTURE_TYPES = {
 }
 SUPPORTED_TYPES = {
     Capture.TYPE_QUICK_LEAD, Capture.TYPE_QUICK_NOTE,
-    *PROJECT_CAPTURE_TYPES, *D2_CAPTURE_TYPES,
+    *PROJECT_CAPTURE_TYPES, *D2_CAPTURE_TYPES, Capture.TYPE_MEASUREMENT,
 }
 DESTINATIONS = {
     "unassigned_note",
@@ -67,6 +72,10 @@ D2_DESTINATIONS = {
     "equipment_record", "equipment_attachment", "warranty_record",
     "warranty_document", "warranty_request", "project_activity",
     "project_attachment", "warranty_evidence", "follow_up",
+}
+MEASUREMENT_DESTINATIONS = {
+    "measurement_session", "measurement_entries", "measurement_adjustments",
+    "measurement_calculations", "measurement_attachment", "project_activity",
 }
 
 
@@ -269,9 +278,176 @@ def build_warranty_equipment_draft(capture):
     return base
 
 
+def build_measurement_draft(capture):
+    raw = capture.raw_text_payload or {}
+    metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+    entries = metadata.get("entries") if isinstance(metadata.get("entries"), list) else []
+    missing = []
+    if not metadata.get("room_name"):
+        missing.append("room.name")
+    if not entries:
+        missing.append("entries")
+    return {
+        "schema_version": "measurement.v1",
+        "project_id": capture.project_id,
+        "estimate_id": metadata.get("estimate_id") or None,
+        "room": {
+            "name": _text(metadata.get("room_name"), 160),
+            "type": _text(metadata.get("room_type") or "general_room", 80),
+        },
+        "purpose": _text(metadata.get("purpose") or "general_room", 40),
+        "guided_profile": _text(metadata.get("guided_profile") or "rectangular_room", 40),
+        "default_unit_system": "us_customary",
+        "entries": entries,
+        "adjustments": metadata.get("adjustments") if isinstance(metadata.get("adjustments"), list) else [],
+        "annotations": metadata.get("annotations") if isinstance(metadata.get("annotations"), list) else [],
+        "calculations": [],
+        "tolerance_profile": _text(metadata.get("tolerance_profile") or "general_construction", 40),
+        "override_reason": _text(metadata.get("override_reason"), 500),
+        "notes": _text(raw.get("text") or raw.get("transcript"), 5000),
+        "proposed_destinations": [
+            "measurement_session", "measurement_entries",
+            "measurement_adjustments", "measurement_calculations",
+            *(["measurement_attachment"] if capture.artifacts.exists() else []),
+            "project_activity",
+        ],
+        "missing_fields": missing,
+        "uncertainties": [],
+        "warnings": ["Measurements remain unconfirmed until explicitly verified."],
+    }
+
+
 def validate_structured_draft(capture_type, value):
     if not isinstance(value, dict):
         raise CaptureSchemaError("Structured draft must be an object.")
+    if capture_type == Capture.TYPE_MEASUREMENT:
+        allowed = {
+            "schema_version", "project_id", "estimate_id", "room", "purpose",
+            "guided_profile", "default_unit_system", "entries", "adjustments",
+            "annotations", "calculations", "tolerance_profile", "override_reason",
+            "notes", "proposed_destinations", "missing_fields", "uncertainties", "warnings",
+        }
+        if set(value) - allowed:
+            raise CaptureSchemaError("Measurement draft contains unsupported fields.")
+        if value.get("schema_version") != "measurement.v1" or not value.get("project_id"):
+            raise CaptureSchemaError("Measurement project and schema version are required.")
+        purposes = {row[0] for row in __import__("projects.models", fromlist=["MeasurementSession"]).MeasurementSession.PURPOSE_CHOICES}
+        profiles = {"rectangular_room", "wall", "opening", "linear_run", "rectangular_volume"}
+        if value.get("purpose") not in purposes or value.get("guided_profile") not in profiles:
+            raise CaptureSchemaError("Measurement purpose or guided profile is invalid.")
+        room = value.get("room")
+        if not isinstance(room, dict) or set(room) - {"name", "type"}:
+            raise CaptureSchemaError("Measurement room fields are invalid.")
+        raw_entries = value.get("entries")
+        if not isinstance(raw_entries, list) or len(raw_entries) > 200:
+            raise CaptureSchemaError("Measurement entries are invalid.")
+        entries = []
+        client_keys = set()
+        dimension_types = {row[0] for row in __import__("projects.models", fromlist=["MeasurementEntry"]).MeasurementEntry.DIMENSION_CHOICES}
+        source_methods = {row[0] for row in __import__("projects.models", fromlist=["MeasurementEntry"]).MeasurementEntry.SOURCE_CHOICES}
+        statuses = {row[0] for row in __import__("projects.models", fromlist=["MeasurementEntry"]).MeasurementEntry.VERIFICATION_CHOICES}
+        for index, raw_entry in enumerate(raw_entries):
+            entry_allowed = {
+                "client_key", "reading_group", "label", "dimension_type", "raw_value",
+                "normalized_value", "display_unit", "source_method",
+                "normalized_unit", "tolerance_profile",
+                "verification_status", "confidence", "tool_description", "notes",
+                "selected_for_calculation", "selection_method",
+                "direction",
+            }
+            if not isinstance(raw_entry, dict) or set(raw_entry) - entry_allowed:
+                raise CaptureSchemaError("Measurement entry fields are invalid.")
+            key = _text(raw_entry.get("client_key") or f"entry-{index + 1}", 80)
+            if key in client_keys:
+                raise CaptureSchemaError("Measurement entry keys must be unique.")
+            client_keys.add(key)
+            dimension = raw_entry.get("dimension_type")
+            source = raw_entry.get("source_method")
+            verification = raw_entry.get("verification_status")
+            if dimension not in dimension_types or source not in source_methods or verification not in statuses:
+                raise CaptureSchemaError("Measurement entry classification is invalid.")
+            if source == "photo_reference" and verification in {"verified", "confirmed"}:
+                raise CaptureSchemaError("Photo-reference measurements must remain estimated.")
+            try:
+                normalized, normalized_unit = parse_measurement(raw_entry.get("raw_value"), dimension)
+            except MeasurementCalculationError as exc:
+                raise CaptureSchemaError(str(exc)) from exc
+            confidence = raw_entry.get("confidence")
+            if confidence is not None and not 0 <= Decimal(str(confidence)) <= 1:
+                raise CaptureSchemaError("Measurement confidence must be between zero and one.")
+            entries.append({
+                "client_key": key,
+                "reading_group": _text(raw_entry.get("reading_group"), 80),
+                "label": _text(raw_entry.get("label"), 160),
+                "dimension_type": dimension,
+                "raw_value": _text(raw_entry.get("raw_value"), 160),
+                "normalized_value": str(normalized),
+                "normalized_unit": normalized_unit,
+                "display_unit": _text(raw_entry.get("display_unit") or "feet_inches", 32),
+                "source_method": source,
+                "verification_status": verification,
+                "confidence": confidence,
+                "tool_description": _text(raw_entry.get("tool_description"), 255),
+                "notes": _text(raw_entry.get("notes"), 1000),
+                "selected_for_calculation": bool(raw_entry.get("selected_for_calculation", True)),
+                "selection_method": _text(raw_entry.get("selection_method"), 24),
+                "direction": _text(raw_entry.get("direction"), 8),
+                "tolerance_profile": value.get("tolerance_profile"),
+            })
+        adjustments = []
+        for index, row in enumerate(value.get("adjustments") or []):
+            if not isinstance(row, dict) or set(row) - {"client_key", "label", "adjustment_type", "source_entry_keys", "notes"}:
+                raise CaptureSchemaError("Measurement adjustment fields are invalid.")
+            if row.get("adjustment_type") not in {"addition", "exclusion", "unmeasured"}:
+                raise CaptureSchemaError("Measurement adjustment type is invalid.")
+            source_keys = row.get("source_entry_keys")
+            if not isinstance(source_keys, list) or any(key not in client_keys for key in source_keys):
+                raise CaptureSchemaError("Measurement adjustment sources are invalid.")
+            adjustments.append({
+                "client_key": _text(row.get("client_key") or f"adjustment-{index + 1}", 80),
+                "label": _text(row.get("label"), 160),
+                "adjustment_type": row["adjustment_type"],
+                "source_entry_keys": source_keys,
+                "notes": _text(row.get("notes"), 1000),
+            })
+        annotations = value.get("annotations") or []
+        if not isinstance(annotations, list) or any(
+            not isinstance(row, dict) or set(row) - {"artifact_id", "label", "line", "entry_client_key", "known_reference_value"}
+            for row in annotations
+        ):
+            raise CaptureSchemaError("Measurement annotations are invalid.")
+        calculations, calculation_warnings, adjustments = calculate_measurement_session(
+            value["guided_profile"], entries, adjustments,
+        )
+        submitted_calculations = value.get("calculations") or []
+        if submitted_calculations and submitted_calculations != calculations:
+            raise CaptureSchemaError("Measurement calculations must match the server result.")
+        destinations = value.get("proposed_destinations") or []
+        if not isinstance(destinations, list) or any(row not in MEASUREMENT_DESTINATIONS for row in destinations):
+            raise CaptureSchemaError("Measurement destinations are invalid.")
+        required = {"measurement_session", "measurement_entries", "measurement_calculations", "project_activity"}
+        if not required.issubset(destinations):
+            raise CaptureSchemaError("Required measurement destinations cannot be removed.")
+        missing = []
+        if not _text(room.get("name"), 160):
+            missing.append("room.name")
+        if not entries:
+            missing.append("entries")
+        return {
+            **{key: deepcopy(value.get(key)) for key in (
+                "schema_version", "project_id", "estimate_id", "purpose", "guided_profile",
+                "default_unit_system", "tolerance_profile", "override_reason", "notes",
+            )},
+            "room": {"name": _text(room.get("name"), 160), "type": _text(room.get("type"), 80)},
+            "entries": entries, "adjustments": adjustments, "annotations": annotations,
+            "calculations": calculations,
+            "proposed_destinations": list(dict.fromkeys(destinations)),
+            "missing_fields": missing,
+            "uncertainties": _bounded_list(value.get("uncertainties", [])),
+            "warnings": list(dict.fromkeys([
+                *_bounded_list(value.get("warnings", [])), *calculation_warnings,
+            ])),
+        }
     if capture_type in D2_CAPTURE_TYPES:
         common = {
             "schema_version", "project_id", "property_id", "equipment_id",
@@ -742,6 +918,8 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
         if processing.capture_type == Capture.TYPE_QUICK_NOTE
         else build_warranty_equipment_draft(processing)
         if processing.capture_type in D2_CAPTURE_TYPES
+        else build_measurement_draft(processing)
+        if processing.capture_type == Capture.TYPE_MEASUREMENT
         else build_project_capture_draft(processing)
     )
     candidates = find_duplicate_candidates(processing)
