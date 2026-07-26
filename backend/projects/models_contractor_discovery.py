@@ -590,6 +590,20 @@ class ContractorOpportunity(models.Model):
         blank=True,
         related_name="contractor_opportunities",
     )
+    customer = models.ForeignKey(
+        "projects.Homeowner",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="originating_contractor_opportunities",
+    )
+    origin_capture = models.ForeignKey(
+        "projects.Capture",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_opportunities",
+    )
     converted_agreement = models.ForeignKey(
         "projects.Agreement",
         on_delete=models.SET_NULL,

@@ -42,7 +42,7 @@ def can_review_capture(user, capture: Capture) -> bool:
 
 
 def can_apply_capture(user, capture: Capture) -> bool:
-    return can_review_capture(user, capture)
+    return _same_contractor(user, capture) and (_is_owner(user) or _is_supervisor(user))
 
 
 def can_archive_capture(user, capture: Capture) -> bool:

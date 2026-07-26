@@ -12,7 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Capture, CaptureArtifact, CaptureEvent
+from projects.models import Capture, CaptureApplication, CaptureArtifact, CaptureEvent
 from projects.serializers.capture import (
     CaptureApplicationSerializer,
     CaptureCreateSerializer,
@@ -25,6 +25,13 @@ from projects.services.capture_lifecycle import (
     archive_capture,
     check_expected_version,
 )
+from projects.services.capture_application import (
+    CaptureApplicationError,
+    CaptureIdempotencyConflict,
+    application_response,
+    apply_capture,
+    preview_application,
+)
 from projects.services.capture_processing import (
     CaptureProcessingError,
     CaptureSchemaError,
@@ -36,6 +43,7 @@ from projects.services.capture_processing import (
 )
 from projects.services.capture_permissions import (
     can_archive_capture,
+    can_apply_capture,
     can_create_capture,
     can_review_capture,
     can_view_company_capture,
@@ -64,6 +72,17 @@ def _review_enabled():
 def _review_disabled_response():
     return Response(
         {"detail": "Capture review is not enabled.", "code": "capture_review_disabled"},
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
+def _application_enabled():
+    return _review_enabled() and bool(getattr(settings, "CAPTURE_APPLICATION_ENABLED", False))
+
+
+def _application_disabled_response():
+    return Response(
+        {"detail": "Capture application is not enabled.", "code": "capture_application_disabled"},
         status=status.HTTP_404_NOT_FOUND,
     )
 
@@ -242,6 +261,7 @@ class CaptureSummaryView(APIView):
                         Capture.STATUS_DRAFT,
                         Capture.STATUS_SAVED,
                         Capture.STATUS_PROCESSING,
+                        Capture.STATUS_APPLYING,
                     )
                 ),
                 "needs_review": sum(
@@ -477,6 +497,95 @@ class CaptureDuplicatesView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response({"capture_id": str(capture.id), "duplicate_candidates": find_duplicate_candidates(capture)})
+
+
+class CaptureApplicationPreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, capture_id):
+        if not _application_enabled():
+            return _application_disabled_response()
+        capture = _capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_apply_capture(request.user, capture):
+            return Response(
+                {"detail": "You do not have permission to apply this Capture."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        try:
+            preview = preview_application(
+                capture,
+                actor=request.user,
+                expected_version=request.data.get("expected_version"),
+                payload=request.data,
+            )
+        except CaptureVersionConflict as exc:
+            return _review_error_response(exc, capture)
+        except (CaptureApplicationError, TypeError, ValueError) as exc:
+            return Response(
+                {"detail": str(exc), "code": getattr(exc, "code", "capture_application_error")},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(preview)
+
+
+class CaptureApplyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, capture_id):
+        if not _application_enabled():
+            return _application_disabled_response()
+        capture = _capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_apply_capture(request.user, capture):
+            return Response(
+                {"detail": "You do not have permission to apply this Capture."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        allowed = {
+            "expected_version", "idempotency_key", "destinations",
+            "adapter_versions", "application_options", "confirmed",
+        }
+        unknown = set(request.data) - allowed
+        if unknown:
+            return Response(
+                {"detail": f"Unsupported application fields: {', '.join(sorted(unknown))}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            capture, application, replayed = apply_capture(
+                capture,
+                actor=request.user,
+                expected_version=request.data.get("expected_version"),
+                idempotency_key=request.data.get("idempotency_key"),
+                payload=request.data,
+            )
+        except CaptureVersionConflict as exc:
+            return _review_error_response(exc, capture)
+        except CaptureIdempotencyConflict as exc:
+            return Response(
+                {"detail": str(exc), "code": exc.code},
+                status=status.HTTP_409_CONFLICT,
+            )
+        except (CaptureApplicationError, TypeError, ValueError) as exc:
+            return Response(
+                {"detail": str(exc), "code": getattr(exc, "code", "capture_application_error")},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        payload = {
+            "capture": CaptureSerializer(capture).data,
+            **application_response(capture, application),
+            "idempotent_replay": replayed,
+        }
+        if application.status == CaptureApplication.STATUS_FAILED:
+            payload.update({
+                "detail": "The application failed safely. No partial records were kept.",
+                "code": application.failure_code or "capture_application_failed",
+            })
+            return Response(payload, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+        return Response(payload)
 
 
 class CaptureReceiptView(APIView):

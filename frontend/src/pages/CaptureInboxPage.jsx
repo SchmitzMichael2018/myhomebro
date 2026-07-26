@@ -29,7 +29,9 @@ const STATUS_OPTIONS = [
   ["needs_information", "Needs Information"],
   ["possible_duplicate", "Possible Duplicate"],
   ["approved", "Approved"],
+  ["applying", "Applying"],
   ["applied", "Applied"],
+  ["apply_failed", "Apply Failed"],
   ["archived", "Archived"],
   ["failed", "Failed"],
 ];
@@ -123,7 +125,10 @@ export function CaptureInboxContent() {
       ready_for_review: "Review",
       needs_information: "Complete information",
       possible_duplicate: "Resolve duplicate",
-      approved: "View approved draft",
+      approved: "Apply",
+      applying: "Applying…",
+      applied: "View receipt",
+      apply_failed: "Review failure / Retry application",
       failed: "Retry",
     }[capture.status] || "Open";
   }
@@ -264,7 +269,7 @@ export function CaptureInboxContent() {
                     variant={reviewEnabled ? "primary" : "secondary"}
                     theme="operational"
                     loading={workingId === capture.id}
-                    disabled={capture.status === "processing"}
+                    disabled={["processing", "applying"].includes(capture.status)}
                     onClick={() =>
                       reviewEnabled
                         ? primary(capture)

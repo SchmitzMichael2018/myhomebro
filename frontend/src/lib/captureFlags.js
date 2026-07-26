@@ -8,6 +8,7 @@ export const captureFlags = Object.freeze({
   foundation: envFlag("VITE_CAPTURE_FOUNDATION_ENABLED"),
   inbox: envFlag("VITE_CAPTURE_INBOX_ENABLED"),
   review: envFlag("VITE_CAPTURE_REVIEW_ENABLED"),
+  application: envFlag("VITE_CAPTURE_APPLICATION_ENABLED"),
 });
 
 export function isCaptureInboxEnabled(flags = captureFlags) {
@@ -16,4 +17,8 @@ export function isCaptureInboxEnabled(flags = captureFlags) {
 
 export function isCaptureReviewEnabled(flags = captureFlags) {
   return Boolean(isCaptureInboxEnabled(flags) && flags.review);
+}
+
+export function isCaptureApplicationEnabled(flags = captureFlags) {
+  return Boolean(isCaptureReviewEnabled(flags) && flags.application);
 }

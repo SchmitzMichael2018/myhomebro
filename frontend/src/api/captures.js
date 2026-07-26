@@ -88,6 +88,29 @@ export async function getCaptureDuplicates(captureId) {
   return response.data;
 }
 
+export async function previewCaptureApplication(captureId, payload) {
+  const response = await api.post(
+    `/projects/captures/${encodeURIComponent(captureId)}/application-preview/`,
+    payload
+  );
+  return response.data;
+}
+
+export async function applyCapture(captureId, payload) {
+  const response = await api.post(
+    `/projects/captures/${encodeURIComponent(captureId)}/apply/`,
+    payload
+  );
+  return response.data;
+}
+
+export async function listCaptureCustomers() {
+  const response = await api.get("/projects/homeowners/", {
+    params: { page_size: 100, ordering: "full_name" },
+  });
+  return Array.isArray(response.data) ? response.data : response.data?.results || [];
+}
+
 export async function getCaptureReceipt(captureId) {
   const response = await api.get(
     `/projects/captures/${encodeURIComponent(captureId)}/receipt/`

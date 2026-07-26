@@ -1139,7 +1139,17 @@ class Homeowner(models.Model):
         help_text="Optional company name for subcontractor / GC customers.",
     )
 
-    email = models.EmailField(db_index=True)
+    email = models.EmailField(blank=True, default="", db_index=True)
+    normalized_email = models.CharField(max_length=254, blank=True, default="", db_index=True)
+    normalized_phone = models.CharField(max_length=32, blank=True, default="", db_index=True)
+    contact_information_needed = models.BooleanField(default=False, db_index=True)
+    origin_capture = models.ForeignKey(
+        "projects.Capture",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_customers",
+    )
     phone_number = models.CharField(max_length=20, blank=True, default="")
     account_type = models.CharField(
         max_length=40,
@@ -1188,10 +1198,20 @@ class Homeowner(models.Model):
         ordering = ["full_name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["created_by", "email"],
+                fields=["created_by", "normalized_email"],
+                condition=~models.Q(normalized_email=""),
                 name="uniq_homeowner_email_per_contractor",
             )
         ]
+
+    def save(self, *args, **kwargs):
+        import re
+
+        self.email = str(self.email or "").strip().lower()
+        self.normalized_email = self.email
+        self.normalized_phone = re.sub(r"\D+", "", str(self.phone_number or ""))
+        self.contact_information_needed = not bool(self.normalized_email or self.normalized_phone)
+        return super().save(*args, **kwargs)
 
     def __str__(self):
         company = (self.company_name or "").strip()
@@ -1244,6 +1264,20 @@ class CustomerCommunicationLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     visibility = models.CharField(max_length=32, choices=VISIBILITY_CHOICES, default=VISIBILITY_INTERNAL_ONLY, db_index=True)
+    origin_capture = models.ForeignKey(
+        "projects.Capture",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_communication_logs",
+    )
+    opportunity = models.ForeignKey(
+        "projects.ContractorOpportunity",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="communication_logs",
+    )
 
     class Meta:
         ordering = ["-occurred_at", "-id"]

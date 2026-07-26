@@ -229,6 +229,8 @@ from .views.business_dashboard import (
 from .views.capture import (
     CaptureArchiveView,
     CaptureApproveView,
+    CaptureApplicationPreviewView,
+    CaptureApplyView,
     CaptureDetailView,
     CaptureDuplicatesView,
     CaptureListCreateView,
@@ -492,6 +494,8 @@ urlpatterns = [
     path("captures/<uuid:capture_id>/retry/", CaptureRetryView.as_view(), name="capture-retry"),
     path("captures/<uuid:capture_id>/review/", CaptureReviewView.as_view(), name="capture-review"),
     path("captures/<uuid:capture_id>/approve/", CaptureApproveView.as_view(), name="capture-approve"),
+    path("captures/<uuid:capture_id>/application-preview/", CaptureApplicationPreviewView.as_view(), name="capture-application-preview"),
+    path("captures/<uuid:capture_id>/apply/", CaptureApplyView.as_view(), name="capture-apply"),
     path("captures/<uuid:capture_id>/duplicates/", CaptureDuplicatesView.as_view(), name="capture-duplicates"),
     path("captures/<uuid:capture_id>/receipt/", CaptureReceiptView.as_view(), name="capture-receipt"),
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
