@@ -252,6 +252,14 @@ from .views.capture_qr import (
     PublicCaptureQrView,
 )
 from .views.measurement import MeasurementSessionDetailView
+from .views.takeoff import (
+    MaterialLibraryDetailView,
+    MaterialLibraryListCreateView,
+    TakeoffActionView,
+    TakeoffDetailView,
+    TakeoffEstimatePreviewView,
+    TakeoffListCreateView,
+)
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
 from .views.subcontractor_invitations import (
@@ -514,6 +522,12 @@ urlpatterns = [
     path("captures/<uuid:capture_id>/duplicates/", CaptureDuplicatesView.as_view(), name="capture-duplicates"),
     path("captures/<uuid:capture_id>/receipt/", CaptureReceiptView.as_view(), name="capture-receipt"),
     path("measurements/<int:session_id>/", MeasurementSessionDetailView.as_view(), name="measurement-session-detail"),
+    path("materials/", MaterialLibraryListCreateView.as_view(), name="material-library"),
+    path("materials/<int:material_id>/", MaterialLibraryDetailView.as_view(), name="material-library-detail"),
+    path("takeoffs/", TakeoffListCreateView.as_view(), name="takeoff-list-create"),
+    path("takeoffs/<int:session_id>/", TakeoffDetailView.as_view(), name="takeoff-detail"),
+    path("takeoffs/<int:session_id>/estimate-preview/", TakeoffEstimatePreviewView.as_view(), name="takeoff-estimate-preview"),
+    path("takeoffs/<int:session_id>/<str:action>/", TakeoffActionView.as_view(), name="takeoff-action"),
     path("capture-qr-assets/", CaptureQrAssetListView.as_view(), name="capture-qr-assets"),
     path("capture-qr-assets/<uuid:asset_id>/", CaptureQrAssetDetailView.as_view(), name="capture-qr-asset"),
     path("capture-qr-assets/<uuid:asset_id>/qr/", CaptureQrAssetQrView.as_view(), name="capture-qr-image"),

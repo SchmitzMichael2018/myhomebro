@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { getMeasurementSession } from "../api/captures.js";
 import { InlineAlert } from "../components/ui";
+import CreateTakeoffModal from "../components/takeoff/CreateTakeoffModal.jsx";
 
 function friendly(value) {
   return String(value || "").replaceAll("_", " ");
@@ -13,6 +14,8 @@ export default function MeasurementSessionPage() {
   const { sessionId } = useParams();
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
+  const [takeoffOpen, setTakeoffOpen] = useState(false);
+  const takeoffEnabled = String(import.meta.env.VITE_TAKEOFF_ENABLED || "").toLowerCase() === "true";
 
   useEffect(() => {
     getMeasurementSession(sessionId).then(setSession).catch((reason) => setError(reason?.response?.data?.detail || "Measurement session could not be loaded."));
@@ -28,6 +31,7 @@ export default function MeasurementSessionPage() {
         <div className="text-xs font-bold uppercase tracking-widest text-[var(--mhb-text-muted)]">Measurement session</div>
         <h1 className="mt-1 text-2xl font-bold">{session.room_name}</h1>
         <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{session.project_title} · {friendly(session.purpose)} · Version {session.version}</p>
+        {takeoffEnabled ? <button type="button" onClick={() => setTakeoffOpen(true)} className="mt-3 min-h-11 rounded-xl bg-[var(--mhb-interaction-primary)] px-4 font-bold text-white" data-testid="create-takeoff">Create Takeoff</button> : null}
       </header>
       <InlineAlert theme="operational" tone={session.status === "confirmed" ? "success" : "warning"}>
         Status: {friendly(session.status)}. Calculations cannot be more reliable than their least-trusted input.
@@ -67,6 +71,7 @@ export default function MeasurementSessionPage() {
           <ol className="grid gap-2 text-sm">{session.events.map((event) => <li key={event.id}><strong>{friendly(event.event_type)}</strong> · v{event.session_version} · {event.actor_name} · {new Date(event.created_at).toLocaleString()}</li>)}</ol>
         </section>
       </div>
+      {takeoffEnabled ? <CreateTakeoffModal measurement={session} visible={takeoffOpen} onClose={() => setTakeoffOpen(false)} /> : null}
     </main>
   );
 }

@@ -84,6 +84,7 @@ const CaptureInboxPage = lazy(() => import("../pages/CaptureInboxPage.jsx"));
 const CaptureDetailPage = lazy(() => import("../pages/CaptureDetailPage.jsx"));
 const CaptureQrManagementPage = lazy(() => import("../pages/CaptureQrManagementPage.jsx"));
 const MeasurementSessionPage = lazy(() => import("../pages/MeasurementSessionPage.jsx"));
+const TakeoffSessionPage = lazy(() => import("../pages/TakeoffSessionPage.jsx"));
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import { isCaptureInboxEnabled, isCaptureQrEnabled } from "../lib/captureFlags.js";
@@ -167,6 +168,7 @@ export function protectedRoutes() {
               {isCaptureQrEnabled() ? <Route path="capture/qr" element={<CaptureQrManagementPage />} /> : null}
               <Route path="capture/:captureId" element={<CaptureDetailPage />} />
               <Route path="measurements/:sessionId" element={<MeasurementSessionPage />} />
+              <Route path="takeoffs/:takeoffId" element={<TakeoffSessionPage />} />
             </>
           ) : null}
         </Route>

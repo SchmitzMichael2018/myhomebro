@@ -3314,3 +3314,11 @@ from .models_measurement import (  # noqa: E402,F401
     MeasurementEvent,
     MeasurementSession,
 )
+from .models_takeoff import (  # noqa: E402,F401
+    MaterialAssembly,
+    MaterialAssemblyItem,
+    MaterialLibraryItem,
+    TakeoffEvent,
+    TakeoffItem,
+    TakeoffSession,
+)

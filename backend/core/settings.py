@@ -516,6 +516,9 @@ CAPTURE_PROJECT_MAX_FILES = int(get_env_var("CAPTURE_PROJECT_MAX_FILES", "10") o
 CAPTURE_EQUIPMENT_ENABLED = get_env_var("CAPTURE_EQUIPMENT_ENABLED", "false").lower() == "true"
 CAPTURE_WARRANTY_ENABLED = get_env_var("CAPTURE_WARRANTY_ENABLED", "false").lower() == "true"
 CAPTURE_MEASUREMENT_ENABLED = get_env_var("CAPTURE_MEASUREMENT_ENABLED", "false").lower() == "true"
+TAKEOFF_ENABLED = get_env_var("TAKEOFF_ENABLED", "false").lower() == "true"
+TAKEOFF_ESTIMATE_HANDOFF_ENABLED = get_env_var("TAKEOFF_ESTIMATE_HANDOFF_ENABLED", "false").lower() == "true"
+TAKEOFF_PRICE_STALE_DAYS = int(get_env_var("TAKEOFF_PRICE_STALE_DAYS", "90"))
 CAPTURE_QR_ENABLED = get_bool("CAPTURE_QR_ENABLED", default=False)
 CAPTURE_QR_PUBLIC_ENABLED = get_bool("CAPTURE_QR_PUBLIC_ENABLED", default=False)
 CAPTURE_QR_MAX_PHOTOS = int(get_env_var("CAPTURE_QR_MAX_PHOTOS", "3") or 3)

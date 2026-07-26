@@ -199,3 +199,38 @@ export async function getMeasurementSession(sessionId) {
   const response = await api.get(`/projects/measurements/${encodeURIComponent(sessionId)}/`);
   return response.data;
 }
+
+export async function listMaterials() {
+  const response = await api.get("/projects/materials/", { params: { active: "true" } });
+  return response.data?.results || [];
+}
+
+export async function createMaterial(payload) {
+  const response = await api.post("/projects/materials/", payload);
+  return response.data;
+}
+
+export async function createTakeoff(payload) {
+  const response = await api.post("/projects/takeoffs/", payload);
+  return response.data;
+}
+
+export async function getTakeoff(takeoffId) {
+  const response = await api.get(`/projects/takeoffs/${encodeURIComponent(takeoffId)}/`);
+  return response.data;
+}
+
+export async function updateTakeoff(takeoffId, payload) {
+  const response = await api.patch(`/projects/takeoffs/${encodeURIComponent(takeoffId)}/`, payload);
+  return response.data;
+}
+
+export async function actOnTakeoff(takeoffId, action, payload) {
+  const response = await api.post(`/projects/takeoffs/${encodeURIComponent(takeoffId)}/${action}/`, payload);
+  return response.data;
+}
+
+export async function previewTakeoffEstimate(takeoffId) {
+  const response = await api.post(`/projects/takeoffs/${encodeURIComponent(takeoffId)}/estimate-preview/`, {});
+  return response.data;
+}
