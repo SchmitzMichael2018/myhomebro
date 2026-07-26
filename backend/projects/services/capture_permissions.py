@@ -1,6 +1,14 @@
 from __future__ import annotations
 
-from projects.models import Capture, CaptureArtifact, ContractorSubAccount
+from django.db import models
+
+from projects.models import (
+    AgreementAssignment,
+    Capture,
+    CaptureArtifact,
+    ContractorSubAccount,
+    MilestoneAssignment,
+)
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 
 
@@ -74,3 +82,40 @@ def can_manage_qr_assets(user) -> bool:
 
 def can_view_qr_analytics(user) -> bool:
     return can_manage_qr_assets(user)
+
+
+def can_create_project_capture(user, project, milestone=None) -> bool:
+    contractor = get_contractor_for_user(user)
+    if not contractor or contractor.pk != project.contractor_id:
+        return False
+    if _is_owner(user) or _is_supervisor(user):
+        return True
+    subaccount = _active_subaccount(user)
+    if not subaccount or subaccount.role != ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES:
+        return False
+    agreement = getattr(project, "agreement", None)
+    if agreement and AgreementAssignment.objects.filter(
+        agreement=agreement, subaccount=subaccount
+    ).exists():
+        return True
+    if milestone and MilestoneAssignment.objects.filter(
+        milestone=milestone, subaccount=subaccount
+    ).exists():
+        return True
+    return False
+
+
+def visible_project_capture_projects(user):
+    contractor = get_contractor_for_user(user)
+    if not contractor:
+        return None
+    queryset = contractor.projects.select_related("homeowner").all()
+    if _is_owner(user) or _is_supervisor(user):
+        return queryset
+    subaccount = _active_subaccount(user)
+    if not subaccount or subaccount.role != ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES:
+        return queryset.none()
+    return queryset.filter(
+        models.Q(agreement__subaccount_assignments__subaccount=subaccount)
+        | models.Q(agreement__milestones__subaccount_assignment__subaccount=subaccount)
+    ).distinct()

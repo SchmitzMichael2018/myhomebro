@@ -19,12 +19,22 @@ class Capture(models.Model):
     TYPE_PHOTO = "photo"
     TYPE_RECEIPT = "receipt"
     TYPE_OPPORTUNITY = "opportunity"
+    TYPE_PROJECT_UPDATE = "project_update"
+    TYPE_PROGRESS_PHOTO = "progress_photo"
+    TYPE_ISSUE = "issue"
+    TYPE_COMMUNICATION = "communication"
+    TYPE_DOCUMENT = "document"
     TYPE_CHOICES = (
         (TYPE_QUICK_LEAD, "Quick Lead"),
         (TYPE_QUICK_NOTE, "Quick Note"),
         (TYPE_PHOTO, "Photo"),
         (TYPE_RECEIPT, "Receipt"),
         (TYPE_OPPORTUNITY, "Opportunity"),
+        (TYPE_PROJECT_UPDATE, "Project Update"),
+        (TYPE_PROGRESS_PHOTO, "Progress Photo"),
+        (TYPE_ISSUE, "Issue"),
+        (TYPE_COMMUNICATION, "Communication"),
+        (TYPE_DOCUMENT, "Document"),
     )
 
     STATUS_DRAFT = "draft"

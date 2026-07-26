@@ -1,3 +1,4 @@
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from projects.models import CustomerCommunicationLog
@@ -15,6 +16,8 @@ class FollowUpAdapter(CaptureDestinationAdapter):
         due_at = parse_datetime(str(value)) if value else None
         if value and due_at is None:
             raise CaptureAdapterError("Approved follow-up date is invalid.")
+        if due_at is not None and timezone.is_naive(due_at):
+            due_at = timezone.make_aware(due_at)
         return due_at
 
     def validate(self, context):
@@ -22,6 +25,8 @@ class FollowUpAdapter(CaptureDestinationAdapter):
             raise CaptureAdapterError("Follow-up was not explicitly selected.")
         if self._due_at(context) is None:
             raise CaptureAdapterError("An approved follow-up date is required.")
+        if context.records.get("customer") is None and context.capture.project_id:
+            context.records["customer"] = context.capture.project.homeowner
         if context.records.get("customer") is None:
             raise CaptureAdapterError("A customer is required for the follow-up.")
 
@@ -50,6 +55,7 @@ class FollowUpAdapter(CaptureDestinationAdapter):
                 contractor=context.capture.contractor,
                 customer=context.records["customer"],
                 opportunity=context.records.get("opportunity"),
+                project=context.capture.project if context.capture.project_id else None,
                 communication_type=CustomerCommunicationLog.TYPE_INTERNAL_NOTE,
                 direction=CustomerCommunicationLog.DIRECTION_INTERNAL,
                 visibility=CustomerCommunicationLog.VISIBILITY_INTERNAL_ONLY,

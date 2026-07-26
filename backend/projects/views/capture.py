@@ -18,7 +18,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from projects.models import Capture, CaptureApplication, CaptureArtifact, CaptureEvent
+from projects.models import (
+    Capture,
+    CaptureApplication,
+    CaptureArtifact,
+    CaptureEvent,
+    Milestone,
+    MilestoneAssignment,
+    Project,
+)
 from projects.serializers.capture import (
     CaptureApplicationSerializer,
     CaptureArtifactSerializer,
@@ -53,8 +61,10 @@ from projects.services.capture_permissions import (
     can_archive_capture,
     can_apply_capture,
     can_create_capture,
+    can_create_project_capture,
     can_review_capture,
     can_view_company_capture,
+    visible_project_capture_projects,
 )
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 
@@ -191,6 +201,69 @@ def _validate_photo(upload):
     return ""
 
 
+PROJECT_CAPTURE_TYPES = {
+    Capture.TYPE_PROJECT_UPDATE,
+    Capture.TYPE_PROGRESS_PHOTO,
+    Capture.TYPE_ISSUE,
+    Capture.TYPE_COMMUNICATION,
+    Capture.TYPE_DOCUMENT,
+}
+
+
+def _validate_project_upload(upload, capture_type):
+    photo_types = {Capture.TYPE_PROJECT_UPDATE, Capture.TYPE_PROGRESS_PHOTO}
+    if capture_type in photo_types:
+        return _validate_photo(upload)
+    allowed = {
+        "application/pdf",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "text/plain",
+    }
+    mime_type = str(getattr(upload, "content_type", "") or "").lower()
+    if mime_type not in allowed:
+        return "Project documents must be PDF, image, or plain-text files."
+    max_bytes = int(getattr(settings, "CAPTURE_MAX_DOCUMENT_SIZE_MB", 15)) * 1024 * 1024
+    if int(getattr(upload, "size", 0) or 0) > max_bytes:
+        return f"Project documents must be {max_bytes // (1024 * 1024)} MB or smaller."
+    return ""
+
+
+class CaptureProjectOptionsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not _foundation_enabled():
+            return _disabled_response()
+        projects = visible_project_capture_projects(request.user)
+        if projects is None:
+            return Response({"detail": "Contractor account required."}, status=403)
+        subaccount = get_subaccount_for_user(request.user)
+        rows = []
+        for project in projects.order_by("-updated_at", "-id")[:100]:
+            milestones = Milestone.objects.filter(agreement__project=project).order_by("order", "id")
+            if subaccount and subaccount.role != subaccount.ROLE_EMPLOYEE_SUPERVISOR:
+                has_project_assignment = project.agreement.subaccount_assignments.filter(
+                    subaccount=subaccount
+                ).exists() if hasattr(project, "agreement") else False
+                if not has_project_assignment:
+                    milestones = milestones.filter(
+                        subaccount_assignment__subaccount=subaccount
+                    )
+            rows.append({
+                "id": project.id,
+                "title": project.title,
+                "number": project.number,
+                "customer_name": getattr(project.homeowner, "full_name", ""),
+                "milestones": [
+                    {"id": row.id, "title": row.title, "completed": row.completed}
+                    for row in milestones
+                ],
+            })
+        return Response({"results": rows})
+
+
 class CaptureListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -299,16 +372,51 @@ class CaptureListCreateView(APIView):
         if not can_create_capture(request.user):
             return Response({"detail": "You do not have permission to create Captures."}, status=status.HTTP_403_FORBIDDEN)
         contractor = get_contractor_for_user(request.user)
-        upload = request.FILES.get("file")
+        uploads = request.FILES.getlist("files") or request.FILES.getlist("file")
+        upload = uploads[0] if uploads else None
+        capture_type = str(request.data.get("capture_type") or "")
+        project = None
+        milestone = None
+        if capture_type in PROJECT_CAPTURE_TYPES:
+            project = Project.objects.filter(
+                contractor=contractor, pk=request.data.get("project_id")
+            ).first()
+            if project and request.data.get("milestone_id"):
+                milestone = Milestone.objects.filter(
+                    pk=request.data.get("milestone_id"),
+                    agreement__project=project,
+                ).first()
+                if not milestone:
+                    return Response(
+                        {"detail": "The selected milestone is unavailable."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            if not project or not can_create_project_capture(request.user, project, milestone):
+                return Response(
+                    {"detail": "The selected project is unavailable."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            if len(uploads) > int(getattr(settings, "CAPTURE_PROJECT_MAX_FILES", 10)):
+                return Response(
+                    {"detail": "Choose no more than 10 files."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         serializer = CaptureCreateSerializer(
             data=request.data,
-            context={"has_file": bool(upload)},
+            context={"has_file": bool(upload), "project": project},
         )
         serializer.is_valid(raise_exception=True)
         if serializer.validated_data["capture_type"] == Capture.TYPE_PHOTO:
             photo_error = _validate_photo(upload)
             if photo_error:
                 return Response({"detail": photo_error}, status=status.HTTP_400_BAD_REQUEST)
+        elif capture_type in PROJECT_CAPTURE_TYPES:
+            for row in uploads:
+                upload_error = _validate_project_upload(row, capture_type)
+                if upload_error:
+                    return Response(
+                        {"detail": upload_error}, status=status.HTTP_400_BAD_REQUEST
+                    )
         elif upload:
             return Response(
                 {"detail": "File uploads are only supported for photo Captures."},
@@ -320,15 +428,22 @@ class CaptureListCreateView(APIView):
                 captured_by=request.user,
                 status=Capture.STATUS_SAVED,
                 processing_engine="",
+                project=project,
+                milestone=milestone,
+                customer=project.homeowner if project else None,
             )
-            if upload:
+            for upload in uploads:
                 digest = hashlib.sha256()
                 for chunk in upload.chunks():
                     digest.update(chunk)
                 upload.seek(0)
                 CaptureArtifact.objects.create(
                     capture=capture,
-                    artifact_type=CaptureArtifact.TYPE_PHOTO,
+                    artifact_type=(
+                        CaptureArtifact.TYPE_DOCUMENT
+                        if capture_type == Capture.TYPE_DOCUMENT
+                        else CaptureArtifact.TYPE_PHOTO
+                    ),
                     file=upload,
                     original_filename=str(upload.name or "")[:255],
                     mime_type=str(upload.content_type or "")[:120],
@@ -344,7 +459,7 @@ class CaptureListCreateView(APIView):
                 metadata={
                     "version": capture.version,
                     "capture_method": capture.capture_method,
-                    "artifact_count": 1 if upload else 0,
+                    "artifact_count": len(uploads),
                 },
             )
         capture = _capture_for_user(request, capture.id)

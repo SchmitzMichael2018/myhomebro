@@ -74,12 +74,31 @@ async function installMocks(page) {
       body: JSON.stringify(captureRow()),
     })
   );
+  await page.route('**/api/projects/captures/project-options/', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        results: [{
+          id: 41,
+          number: 'PRJ-0041',
+          title: 'Flooring installation',
+          customer_name: 'Casey Customer',
+          milestones: [{ id: 51, title: 'Install flooring', completed: false }],
+        }],
+      }),
+    })
+  );
   await page.route(/\/api\/projects\/captures\/?(?:\?.*)?$/, async (route) => {
     if (route.request().method() === 'POST') {
       const contentType = route.request().headers()['content-type'] || '';
+      const multipartBody = route.request().postData() || '';
+      const multipartType = multipartBody.match(
+        /name="capture_type"\r?\n\r?\n([^\r\n]+)/
+      )?.[1];
       const body = contentType.includes('application/json')
         ? route.request().postDataJSON()
-        : { capture_type: 'photo' };
+        : { capture_type: multipartType || 'photo', multipartBody };
       requests.push(body);
       return route.fulfill({
         status: 201,
@@ -177,6 +196,29 @@ test('Photo capture uploads an image and receipt opens existing Smart Capture', 
   await page.getByTestId('capture-action-receipt').click();
   await expect(page.getByTestId('project-assistant-smart-capture')).toBeVisible();
   await expect(page.getByTestId('smart-capture-type-receipt')).toBeVisible();
+});
+
+test('Project Capture requires project context and saves a Project Update for review', async ({ page }) => {
+  const requests = await installMocks(page);
+  await page.goto('/app/capture');
+  await page.getByTestId('global-capture-trigger').click();
+  const launcher = page.getByTestId('capture-launcher');
+  await expect(launcher.getByRole('button', { name: 'Project update' })).toBeVisible();
+  await expect(launcher.getByRole('button', { name: 'Progress photos' })).toBeVisible();
+  await expect(launcher.getByRole('button', { name: 'Document an issue' })).toBeVisible();
+  await expect(launcher.getByRole('button', { name: 'Log a communication' })).toBeVisible();
+  await expect(launcher.getByRole('button', { name: 'Add a project document' })).toBeVisible();
+
+  await page.getByTestId('capture-action-project_update').click();
+  await page.getByLabel('Project').selectOption('41');
+  await page.getByLabel('Milestone').selectOption('51');
+  await page.getByLabel('What work was completed?').fill('Installed flooring in the living room.');
+  await expect(page.getByText(/does not complete a milestone/i)).toBeVisible();
+  await page.getByRole('button', { name: 'Save for review' }).click();
+
+  expect(requests).toHaveLength(1);
+  expect(requests[0].capture_type).toBe('project_update');
+  expect(requests[0].multipartBody).toContain('Installed flooring in the living room.');
 });
 
 test('Inbox renders metrics, row actions, and Capture detail', async ({ page }) => {

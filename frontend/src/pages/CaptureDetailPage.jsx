@@ -41,7 +41,20 @@ const LABELS = {
   photo: "Photo",
   receipt: "Receipt",
   opportunity: "Opportunity",
+  project_update: "Project Update",
+  progress_photo: "Progress Photo",
+  issue: "Issue",
+  communication: "Communication",
+  document: "Document",
 };
+
+const PROJECT_CAPTURE_TYPES = [
+  "project_update",
+  "progress_photo",
+  "issue",
+  "communication",
+  "document",
+];
 
 const STATUS_TONES = {
   saved: "draft",
@@ -216,8 +229,11 @@ export default function CaptureDetailPage() {
 
   function applicationPayload({ confirmed = false, idempotencyKey } = {}) {
     const isLead = capture.capture_type === "quick_lead";
+    const isProjectCapture = PROJECT_CAPTURE_TYPES.includes(capture.capture_type);
     const destinations = isLead
       ? ["customer", "opportunity"]
+      : isProjectCapture
+      ? (draft?.proposed_destinations || []).filter((value) => value !== "follow_up")
       : [noteDestination];
     if (includeFollowUp) destinations.push("follow_up");
     const duplicate = capture.approved_snapshot?.review_decisions?.duplicate;
@@ -309,7 +325,7 @@ export default function CaptureDetailPage() {
   }
 
   const raw = capture.raw_text_payload || {};
-  const processable = ["quick_lead", "quick_note"].includes(capture.capture_type);
+  const processable = ["quick_lead", "quick_note", ...PROJECT_CAPTURE_TYPES].includes(capture.capture_type);
   const editable = reviewEnabled && processable && [
     "ready_for_review", "needs_information", "possible_duplicate", "failed",
   ].includes(capture.status) && Boolean(draft);
@@ -380,6 +396,8 @@ export default function CaptureDetailPage() {
           <ValueRow label="Text" value={raw.text} />
           <ValueRow label="Transcript" value={raw.transcript} />
           <ValueRow label="Notes" value={raw.notes} />
+          <ValueRow label="Project" value={capture.project_title} />
+          <ValueRow label="Milestone" value={capture.milestone_title} />
           <ValueRow label="Capture method" value={capture.capture_method?.replaceAll("_", " ")} />
           <ValueRow label="Creator" value={capture.captured_by_name || "Unknown creator"} />
         </dl>
@@ -428,7 +446,7 @@ export default function CaptureDetailPage() {
                     <TextField label="Location" value={draft.opportunity?.location_text} onChange={(value) => update(["opportunity", "location_text"], value)} />
                   </div>
                 </>
-              ) : (
+              ) : capture.capture_type === "quick_note" ? (
                 <>
                   <TextField label="Title" value={draft.title} onChange={(value) => update(["title"], value)} />
                   <TextField label="Note" required multiline value={draft.body} onChange={(value) => update(["body"], value)} />
@@ -440,11 +458,84 @@ export default function CaptureDetailPage() {
                     )}
                   </FormField>
                 </>
+              ) : (
+                <>
+                  <ValueRow label="Project" value={draft.project?.title} />
+                  <ValueRow label="Milestone" value={draft.milestone?.title} />
+                  <TextField label="Title" value={draft.title} onChange={(value) => update(["title"], value)} />
+                  <TextField
+                    label={capture.capture_type === "issue" ? "Issue details" : capture.capture_type === "communication" ? "Communication summary" : "Project update"}
+                    required={["project_update", "issue", "communication"].includes(capture.capture_type)}
+                    multiline
+                    value={draft.body}
+                    onChange={(value) => update(["body"], value)}
+                  />
+                  {capture.capture_type === "issue" ? (
+                    <FormField label="Issue classification" required helperText="Confirm this classification before approval.">
+                      {(props) => (
+                        <select {...props} value={draft.issue_classification} onChange={(event) => update(["issue_classification"], event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+                          <option value="project_issue">Project issue</option>
+                          <option value="punch_item">Punch item</option>
+                          <option value="customer_concern">Customer concern</option>
+                          <option value="potential_warranty">Potential warranty</option>
+                          <option value="potential_change_request">Potential change request</option>
+                          <option value="internal_note">Internal note</option>
+                        </select>
+                      )}
+                    </FormField>
+                  ) : null}
+                  {capture.capture_type === "communication" ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <FormField label="Communication type" required>
+                        {(props) => (
+                          <select {...props} value={draft.communication_type} onChange={(event) => update(["communication_type"], event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+                            <option value="phone_call">Phone call</option>
+                            <option value="in_person">On-site discussion</option>
+                            <option value="email">Email summary</option>
+                            <option value="sms">Text message</option>
+                            <option value="other">Other</option>
+                          </select>
+                        )}
+                      </FormField>
+                      <FormField label="Direction" required>
+                        {(props) => (
+                          <select {...props} value={draft.communication_direction} onChange={(event) => update(["communication_direction"], event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+                            <option value="internal">Internal</option>
+                            <option value="inbound">Customer to company</option>
+                            <option value="outbound">Company to customer</option>
+                          </select>
+                        )}
+                      </FormField>
+                    </div>
+                  ) : null}
+                  {["project_update", "progress_photo", "document"].includes(capture.capture_type) ? (
+                    <label className="flex min-h-11 items-start gap-3 text-sm font-bold">
+                      <input type="checkbox" className="mt-1" checked={Boolean(draft.customer_visible)} onChange={(event) => update(["customer_visible"], event.target.checked)} />
+                      Visible in the Customer Portal after application
+                    </label>
+                  ) : null}
+                </>
               )}
               <label className="flex min-h-11 items-center gap-3 text-sm font-bold">
                 <input type="checkbox" checked={Boolean(draft.follow_up?.suggested)} onChange={(event) => update(["follow_up", "suggested"], event.target.checked)} />
-                Suggest a follow-up for Phase B.3 review
+                Suggest a follow-up
               </label>
+              {draft.follow_up?.suggested ? (
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField label="Follow-up subject" value={draft.follow_up?.subject} onChange={(value) => update(["follow_up", "subject"], value)} />
+                  <FormField label="Follow-up due" required>
+                    {(props) => (
+                      <input
+                        {...props}
+                        type="datetime-local"
+                        value={draft.follow_up?.due_at || ""}
+                        onChange={(event) => update(["follow_up", "due_at"], event.target.value)}
+                        className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"
+                      />
+                    )}
+                  </FormField>
+                </div>
+              ) : null}
             </fieldset>
           </Card>
         </>
@@ -614,7 +705,9 @@ export default function CaptureDetailPage() {
                 ))}
               </div>
               <p className="mt-4 text-xs text-[var(--mhb-text-muted)]">
-                No notifications, estimates, agreements, projects, or payments were created.
+                {PROJECT_CAPTURE_TYPES.includes(capture.capture_type)
+                  ? "No milestone was completed and no warranty, dispute, agreement, estimate, or payment record was changed."
+                  : "No notifications, estimates, agreements, projects, or payments were created."}
               </p>
             </>
           ) : (

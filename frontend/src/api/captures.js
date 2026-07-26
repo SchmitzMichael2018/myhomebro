@@ -77,6 +77,23 @@ export async function createCapture(payload) {
   return response.data;
 }
 
+export async function getCaptureProjectOptions() {
+  const response = await api.get("/projects/captures/project-options/");
+  return response.data?.results || [];
+}
+
+export async function createProjectCapture(payload, files = []) {
+  const form = new FormData();
+  form.append("capture_type", payload.capture_type);
+  form.append("capture_method", payload.capture_method || "typed");
+  form.append("project_id", String(payload.project_id));
+  if (payload.milestone_id) form.append("milestone_id", String(payload.milestone_id));
+  form.append("raw_text_payload", JSON.stringify(payload.raw_text_payload || {}));
+  files.forEach((file) => form.append("files", file));
+  const response = await api.post("/projects/captures/", form);
+  return response.data;
+}
+
 export async function createPhotoCapture(file) {
   const form = new FormData();
   form.append("capture_type", "photo");

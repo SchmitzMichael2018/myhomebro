@@ -29,7 +29,14 @@ class CaptureSchemaError(CaptureLifecycleError):
     code = "invalid_capture_review"
 
 
-SUPPORTED_TYPES = {Capture.TYPE_QUICK_LEAD, Capture.TYPE_QUICK_NOTE}
+PROJECT_CAPTURE_TYPES = {
+    Capture.TYPE_PROJECT_UPDATE,
+    Capture.TYPE_PROGRESS_PHOTO,
+    Capture.TYPE_ISSUE,
+    Capture.TYPE_COMMUNICATION,
+    Capture.TYPE_DOCUMENT,
+}
+SUPPORTED_TYPES = {Capture.TYPE_QUICK_LEAD, Capture.TYPE_QUICK_NOTE, *PROJECT_CAPTURE_TYPES}
 DESTINATIONS = {
     "unassigned_note",
     "customer_note",
@@ -38,6 +45,14 @@ DESTINATIONS = {
     "follow_up",
 }
 DUPLICATE_DECISIONS = {"link_existing", "create_separate", "not_same_person"}
+PROJECT_DESTINATIONS = {
+    "project_note",
+    "project_activity",
+    "project_attachment",
+    "project_issue",
+    "communication_log",
+    "follow_up",
+}
 
 
 def _text(value, limit=2000):
@@ -103,9 +118,166 @@ def build_quick_note_draft(raw):
     }
 
 
+def build_project_capture_draft(capture):
+    raw = capture.raw_text_payload or {}
+    metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+    body = _text(raw.get("text") or raw.get("transcript"), 5000)
+    title = _text(raw.get("title"), 200)
+    project = capture.project
+    milestone = capture.milestone
+    destinations = {
+        Capture.TYPE_PROJECT_UPDATE: ["project_activity", "project_note"],
+        Capture.TYPE_PROGRESS_PHOTO: ["project_attachment", "project_activity"],
+        Capture.TYPE_ISSUE: ["project_issue", "project_activity"],
+        Capture.TYPE_COMMUNICATION: ["communication_log", "project_activity"],
+        Capture.TYPE_DOCUMENT: ["project_attachment", "project_activity"],
+    }[capture.capture_type]
+    if capture.capture_type == Capture.TYPE_PROJECT_UPDATE and capture.artifacts.exists():
+        destinations.append("project_attachment")
+    missing = []
+    if capture.capture_type in {
+        Capture.TYPE_PROJECT_UPDATE,
+        Capture.TYPE_ISSUE,
+        Capture.TYPE_COMMUNICATION,
+    } and not body:
+        missing.append("body")
+    if capture.capture_type == Capture.TYPE_ISSUE and not metadata.get("issue_classification"):
+        missing.append("issue_classification")
+    return {
+        "schema_version": f"{capture.capture_type}.v1",
+        "project": {"id": project.id, "title": _text(project.title, 255)},
+        "milestone": (
+            {"id": milestone.id, "title": _text(milestone.title, 255)}
+            if milestone else None
+        ),
+        "title": title or {
+            Capture.TYPE_PROJECT_UPDATE: "Project update",
+            Capture.TYPE_PROGRESS_PHOTO: "Progress photos",
+            Capture.TYPE_ISSUE: "Project issue",
+            Capture.TYPE_COMMUNICATION: "Customer communication",
+            Capture.TYPE_DOCUMENT: "Project document",
+        }[capture.capture_type],
+        "body": body,
+        "issue_classification": _text(metadata.get("issue_classification"), 40),
+        "communication_type": _text(metadata.get("communication_type"), 32),
+        "communication_direction": _text(
+            metadata.get("communication_direction") or "internal", 16
+        ),
+        "customer_visible": bool(metadata.get("customer_visible", False)),
+        "customer_communication": {
+            "suggested": False,
+            "draft": "",
+        },
+        "follow_up": _follow_up(),
+        "proposed_destinations": destinations,
+        "missing_fields": missing,
+        "uncertainties": [],
+        "warnings": [
+            "Milestone completion is never changed by Project Capture."
+        ],
+    }
+
+
 def validate_structured_draft(capture_type, value):
     if not isinstance(value, dict):
         raise CaptureSchemaError("Structured draft must be an object.")
+    if capture_type in PROJECT_CAPTURE_TYPES:
+        allowed = {
+            "schema_version", "project", "milestone", "title", "body",
+            "issue_classification", "communication_type", "communication_direction",
+            "customer_visible", "customer_communication", "follow_up",
+            "proposed_destinations", "missing_fields", "uncertainties", "warnings",
+        }
+        unknown = set(value) - allowed
+        if unknown:
+            raise CaptureSchemaError(
+                f"Unsupported Project Capture fields: {', '.join(sorted(unknown))}."
+            )
+        if value.get("schema_version") != f"{capture_type}.v1":
+            raise CaptureSchemaError(
+                f"Project Capture schema_version must remain {capture_type}.v1."
+            )
+        project = value.get("project")
+        milestone = value.get("milestone")
+        if not isinstance(project, dict) or set(project) - {"id", "title"} or not project.get("id"):
+            raise CaptureSchemaError("Project association is required.")
+        if milestone is not None and (
+            not isinstance(milestone, dict)
+            or set(milestone) - {"id", "title"}
+            or not milestone.get("id")
+        ):
+            raise CaptureSchemaError("Milestone association is invalid.")
+        destinations = value.get("proposed_destinations", [])
+        if (
+            not isinstance(destinations, list)
+            or any(item not in PROJECT_DESTINATIONS for item in destinations)
+        ):
+            raise CaptureSchemaError("Project Capture destinations are invalid.")
+        required = {
+            Capture.TYPE_PROJECT_UPDATE: {"project_activity", "project_note"},
+            Capture.TYPE_PROGRESS_PHOTO: {"project_attachment", "project_activity"},
+            Capture.TYPE_ISSUE: {"project_issue", "project_activity"},
+            Capture.TYPE_COMMUNICATION: {"communication_log", "project_activity"},
+            Capture.TYPE_DOCUMENT: {"project_attachment", "project_activity"},
+        }[capture_type]
+        if not required.issubset(set(destinations)):
+            raise CaptureSchemaError("Required Project Capture destinations cannot be removed.")
+        body = _text(value.get("body"), 5000)
+        classification = _text(value.get("issue_classification"), 40)
+        if capture_type == Capture.TYPE_ISSUE and classification not in {
+            "project_issue", "punch_item", "customer_concern", "potential_warranty",
+            "potential_change_request", "internal_note",
+        }:
+            raise CaptureSchemaError("Choose a valid issue classification.")
+        communication_type = _text(value.get("communication_type"), 32)
+        if capture_type == Capture.TYPE_COMMUNICATION and communication_type not in {
+            "phone_call", "email", "sms", "in_person", "other",
+        }:
+            raise CaptureSchemaError("Choose a valid communication type.")
+        direction = _text(value.get("communication_direction") or "internal", 16)
+        if direction not in {"internal", "inbound", "outbound"}:
+            raise CaptureSchemaError("Communication direction is invalid.")
+        customer_communication = value.get("customer_communication") or {}
+        if not isinstance(customer_communication, dict) or set(customer_communication) - {
+            "suggested", "draft"
+        }:
+            raise CaptureSchemaError("Customer communication suggestion is invalid.")
+        missing = []
+        if capture_type in {
+            Capture.TYPE_PROJECT_UPDATE,
+            Capture.TYPE_ISSUE,
+            Capture.TYPE_COMMUNICATION,
+        } and not body:
+            missing.append("body")
+        return {
+            "schema_version": f"{capture_type}.v1",
+            "project": {
+                "id": project["id"],
+                "title": _text(project.get("title"), 255),
+            },
+            "milestone": (
+                {
+                    "id": milestone["id"],
+                    "title": _text(milestone.get("title"), 255),
+                }
+                if milestone else None
+            ),
+            "title": _text(value.get("title"), 255),
+            "body": body,
+            "issue_classification": classification,
+            "communication_type": communication_type,
+            "communication_direction": direction,
+            "customer_visible": bool(value.get("customer_visible", False)),
+            "customer_communication": {
+                "suggested": bool(customer_communication.get("suggested", False)),
+                "draft": _text(customer_communication.get("draft"), 2000),
+            },
+            "follow_up": _follow_up(value.get("follow_up")),
+            "proposed_destinations": list(dict.fromkeys(destinations))[:8],
+            "missing_fields": missing,
+            "uncertainties": _bounded_list(value.get("uncertainties", [])),
+            "warnings": _bounded_list(value.get("warnings", [])),
+        }
     if capture_type == Capture.TYPE_QUICK_LEAD:
         allowed = {
             "schema_version", "person", "opportunity", "follow_up",
@@ -179,7 +351,7 @@ def validate_structured_draft(capture_type, value):
             "uncertainties": _bounded_list(value.get("uncertainties", [])),
             "warnings": _bounded_list(value.get("warnings", [])),
         }
-    raise CaptureProcessingError("Only Quick Lead and Quick Note Captures can be reviewed.")
+    raise CaptureProcessingError("This Capture type cannot be reviewed.")
 
 
 def _mask_email(value):
@@ -257,7 +429,7 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
     if mode not in {"deterministic", "provider", "manual"}:
         raise CaptureProcessingError("Processing mode is invalid.")
     if capture.capture_type not in SUPPORTED_TYPES:
-        raise CaptureProcessingError("Only Quick Lead and Quick Note Captures can be processed.")
+        raise CaptureProcessingError("This Capture type cannot be processed.")
     if capture.status not in {Capture.STATUS_SAVED, Capture.STATUS_FAILED}:
         raise CaptureProcessingError("This Capture is not ready to process.")
     processing = transition_capture(
@@ -284,6 +456,17 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
                 capture_version=processing.version,
                 capture_type=processing.capture_type,
                 raw_payload=deepcopy(raw),
+                project_context=(
+                    {
+                        "id": processing.project_id,
+                        "title": processing.project.title,
+                        "milestone_id": processing.milestone_id,
+                        "milestone_title": (
+                            processing.milestone.title if processing.milestone_id else ""
+                        ),
+                    }
+                    if processing.project_id else None
+                ),
             )
             provider_draft = validate_structured_draft(processing.capture_type, provider_draft)
         except Exception:
@@ -318,6 +501,8 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
         build_quick_lead_draft(raw)
         if processing.capture_type == Capture.TYPE_QUICK_LEAD
         else build_quick_note_draft(raw)
+        if processing.capture_type == Capture.TYPE_QUICK_NOTE
+        else build_project_capture_draft(processing)
     )
     candidates = find_duplicate_candidates(processing)
     required_duplicate = any(

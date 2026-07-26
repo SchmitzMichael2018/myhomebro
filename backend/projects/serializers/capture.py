@@ -80,6 +80,8 @@ class CaptureSerializer(serializers.ModelSerializer):
     milestone_id = serializers.IntegerField(read_only=True)
     qr_asset_id = serializers.UUIDField(read_only=True)
     qr_asset_label = serializers.CharField(source="qr_asset.label", read_only=True)
+    project_title = serializers.CharField(source="project.title", read_only=True)
+    milestone_title = serializers.CharField(source="milestone.title", read_only=True)
     artifacts = CaptureArtifactSerializer(many=True, read_only=True)
     events = CaptureEventSerializer(many=True, read_only=True)
 
@@ -101,6 +103,8 @@ class CaptureSerializer(serializers.ModelSerializer):
             "milestone_id",
             "qr_asset_id",
             "qr_asset_label",
+            "project_title",
+            "milestone_title",
             "raw_text_payload",
             "structured_draft",
             "review_decisions",
@@ -200,6 +204,11 @@ class CaptureCreateSerializer(CaptureSerializer):
             Capture.TYPE_QUICK_LEAD,
             Capture.TYPE_QUICK_NOTE,
             Capture.TYPE_PHOTO,
+            Capture.TYPE_PROJECT_UPDATE,
+            Capture.TYPE_PROGRESS_PHOTO,
+            Capture.TYPE_ISSUE,
+            Capture.TYPE_COMMUNICATION,
+            Capture.TYPE_DOCUMENT,
         }
         if capture_type not in supported_types:
             raise serializers.ValidationError({"capture_type": "This Capture type is not available yet."})
@@ -216,6 +225,42 @@ class CaptureCreateSerializer(CaptureSerializer):
             raise serializers.ValidationError({"raw_text_payload": "Note is required."})
         if capture_type == Capture.TYPE_PHOTO and not self.context.get("has_file"):
             raise serializers.ValidationError({"file": "Choose a photo to save."})
+        project_types = {
+            Capture.TYPE_PROJECT_UPDATE,
+            Capture.TYPE_PROGRESS_PHOTO,
+            Capture.TYPE_ISSUE,
+            Capture.TYPE_COMMUNICATION,
+            Capture.TYPE_DOCUMENT,
+        }
+        if capture_type in project_types and not self.context.get("project"):
+            raise serializers.ValidationError({"project_id": "Select a project."})
+        body = str(payload.get("text") or payload.get("transcript") or "").strip()
+        if capture_type in {
+            Capture.TYPE_PROJECT_UPDATE,
+            Capture.TYPE_ISSUE,
+            Capture.TYPE_COMMUNICATION,
+        } and not body:
+            raise serializers.ValidationError({"raw_text_payload": "Add the project details."})
+        if capture_type == Capture.TYPE_PROGRESS_PHOTO and not self.context.get("has_file"):
+            raise serializers.ValidationError({"files": "Choose at least one progress photo."})
+        if capture_type == Capture.TYPE_DOCUMENT and not self.context.get("has_file"):
+            raise serializers.ValidationError({"files": "Choose a document."})
+        metadata = payload.get("input_metadata") or {}
+        if not isinstance(metadata, dict):
+            raise serializers.ValidationError({"raw_text_payload": "Input metadata must be an object."})
+        if capture_type == Capture.TYPE_ISSUE and metadata.get("issue_classification") not in {
+            "project_issue", "punch_item", "customer_concern", "potential_warranty",
+            "potential_change_request", "internal_note",
+        }:
+            raise serializers.ValidationError(
+                {"raw_text_payload": "Choose the issue classification yourself."}
+            )
+        if capture_type == Capture.TYPE_COMMUNICATION and metadata.get("communication_type") not in {
+            "phone_call", "email", "sms", "in_person", "other",
+        }:
+            raise serializers.ValidationError(
+                {"raw_text_payload": "Choose a communication type."}
+            )
         return attrs
 
 

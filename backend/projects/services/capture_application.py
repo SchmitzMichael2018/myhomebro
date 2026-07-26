@@ -30,6 +30,13 @@ ALLOWED_OPTIONS = {"duplicate_resolution", "include_follow_up", "customer_id"}
 SUPPORTED_DESTINATIONS = {
     Capture.TYPE_QUICK_LEAD: {"customer", "opportunity", "follow_up"},
     Capture.TYPE_QUICK_NOTE: {"unassigned_note", "customer_note", "follow_up"},
+    Capture.TYPE_PROJECT_UPDATE: {
+        "project_note", "project_activity", "project_attachment", "follow_up",
+    },
+    Capture.TYPE_PROGRESS_PHOTO: {"project_attachment", "project_activity"},
+    Capture.TYPE_ISSUE: {"project_issue", "project_activity", "follow_up"},
+    Capture.TYPE_COMMUNICATION: {"communication_log", "project_activity", "follow_up"},
+    Capture.TYPE_DOCUMENT: {"project_attachment", "project_activity"},
 }
 
 
@@ -59,12 +66,23 @@ def _validate_request(capture, payload, *, require_confirmation=False):
     if capture.capture_type == Capture.TYPE_QUICK_LEAD:
         if not {"customer", "opportunity"}.issubset(selected):
             raise CaptureApplicationError("Quick Lead application requires Customer and Opportunity.")
-    else:
+    elif capture.capture_type == Capture.TYPE_QUICK_NOTE:
         note_destinations = selected & {"unassigned_note", "customer_note"}
         if len(note_destinations) != 1:
             raise CaptureApplicationError("Choose either unassigned note or customer note.")
         if "follow_up" in selected and "customer_note" not in selected:
             raise CaptureApplicationError("A follow-up requires a Customer note destination.")
+    else:
+        approved_destinations = set(
+            (snapshot.get("structured_draft") or {}).get("proposed_destinations") or []
+        )
+        required = approved_destinations - {"follow_up"}
+        if not required.issubset(selected):
+            raise CaptureApplicationError(
+                "All approved Project Capture records must be included."
+            )
+        if "follow_up" in selected and not capture.project_id:
+            raise CaptureApplicationError("A project is required for the follow-up.")
     options = payload.get("application_options") or {}
     if not isinstance(options, dict) or set(options) - ALLOWED_OPTIONS:
         raise CaptureApplicationError("Application options contain unsupported fields.")
@@ -101,7 +119,18 @@ def _validate_request(capture, payload, *, require_confirmation=False):
     )
     if required_duplicate and not approved_decision:
         raise CaptureApplicationError("Resolve the required customer duplicate before applying.")
-    order = {"customer": 0, "customer_note": 0, "unassigned_note": 0, "opportunity": 1, "follow_up": 2}
+    order = {
+        "customer": 0,
+        "customer_note": 0,
+        "unassigned_note": 0,
+        "project_note": 0,
+        "project_issue": 0,
+        "communication_log": 0,
+        "project_attachment": 1,
+        "opportunity": 1,
+        "project_activity": 2,
+        "follow_up": 3,
+    }
     destinations = sorted(destinations, key=lambda value: order[value])
     return destinations, versions, options, snapshot
 

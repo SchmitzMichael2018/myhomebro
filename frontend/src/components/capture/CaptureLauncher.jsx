@@ -1,8 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   Camera,
   ClipboardPenLine,
+  FileText,
+  Images,
   Lightbulb,
+  MessageSquare,
   Mic,
   Receipt,
   Square,
@@ -10,7 +14,12 @@ import {
 } from "lucide-react";
 import toast from "react-hot-toast";
 
-import { createCapture, createPhotoCapture } from "../../api/captures.js";
+import {
+  createCapture,
+  createPhotoCapture,
+  createProjectCapture,
+  getCaptureProjectOptions,
+} from "../../api/captures.js";
 import { createVoiceService } from "../../lib/voiceService.js";
 import { useWhoAmI } from "../../hooks/useWhoAmI.js";
 import { Button, FormField, InlineAlert, Modal } from "../ui";
@@ -21,6 +30,11 @@ const ACTIONS = [
   { key: "note", label: "I need to remember something", icon: ClipboardPenLine },
   { key: "photo", label: "Save a photo", icon: Camera },
   { key: "receipt", label: "Capture a receipt", icon: Receipt },
+  { key: "project_update", label: "Project update", icon: ClipboardPenLine },
+  { key: "progress_photo", label: "Progress photos", icon: Images },
+  { key: "issue", label: "Document an issue", icon: AlertTriangle },
+  { key: "communication", label: "Log a communication", icon: MessageSquare },
+  { key: "document", label: "Add a project document", icon: FileText },
 ];
 
 function VoiceInput({ value, onChange, onVoiceUsed, label }) {
@@ -310,6 +324,261 @@ function PhotoForm({ onSaved, onCancel }) {
   );
 }
 
+const PROJECT_CAPTURE_CONFIG = {
+  project_update: {
+    title: "Project update",
+    textLabel: "What work was completed?",
+    files: "optional_photos",
+  },
+  progress_photo: {
+    title: "Progress photos",
+    textLabel: "Description",
+    files: "required_photos",
+  },
+  issue: {
+    title: "Document an issue",
+    textLabel: "What needs attention?",
+  },
+  communication: {
+    title: "Log a communication",
+    textLabel: "What was discussed?",
+  },
+  document: {
+    title: "Add a project document",
+    textLabel: "Description",
+    files: "required_document",
+  },
+};
+
+function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
+  const config = PROJECT_CAPTURE_CONFIG[captureType];
+  const [projects, setProjects] = useState([]);
+  const [projectId, setProjectId] = useState("");
+  const [milestoneId, setMilestoneId] = useState("");
+  const [title, setTitle] = useState("");
+  const [text, setText] = useState("");
+  const [files, setFiles] = useState([]);
+  const [customerVisible, setCustomerVisible] = useState(false);
+  const [issueClassification, setIssueClassification] = useState("project_issue");
+  const [communicationType, setCommunicationType] = useState("phone_call");
+  const [communicationDirection, setCommunicationDirection] = useState("internal");
+  const [voiceLanguage, setVoiceLanguage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getCaptureProjectOptions()
+      .then(setProjects)
+      .catch(() => setError("Available projects could not be loaded."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const project = projects.find((row) => String(row.id) === String(projectId));
+  const requiresText = ["project_update", "issue", "communication"].includes(captureType);
+  const requiresFiles = ["progress_photo", "document"].includes(captureType);
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const capture = await createProjectCapture(
+        {
+          capture_type: captureType,
+          capture_method: voiceLanguage ? "voice_transcript" : files.length ? "file_upload" : "typed",
+          project_id: projectId,
+          milestone_id: milestoneId || null,
+          raw_text_payload: {
+            title,
+            text,
+            transcript: voiceLanguage ? text : "",
+            language: voiceLanguage,
+            input_metadata: {
+              customer_visible: customerVisible,
+              issue_classification: captureType === "issue" ? issueClassification : "",
+              communication_type: captureType === "communication" ? communicationType : "",
+              communication_direction: captureType === "communication"
+                ? communicationDirection
+                : "",
+            },
+          },
+        },
+        files
+      );
+      onSaved(capture);
+    } catch (requestError) {
+      const payload = requestError?.response?.data;
+      setError(
+        payload?.detail ||
+        payload?.raw_text_payload ||
+        payload?.project_id ||
+        "The project information could not be saved."
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="grid gap-4" data-testid={`capture-${captureType}`}>
+      <FormField label="Project" required>
+        {(fieldProps) => (
+          <select
+            {...fieldProps}
+            data-autofocus
+            value={projectId}
+            disabled={loading}
+            onChange={(event) => {
+              setProjectId(event.target.value);
+              setMilestoneId("");
+            }}
+            className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"
+          >
+            <option value="">{loading ? "Loading projects…" : "Select a project"}</option>
+            {projects.map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.number} · {row.title}
+              </option>
+            ))}
+          </select>
+        )}
+      </FormField>
+      <FormField label="Milestone" helperText="Optional">
+        {(fieldProps) => (
+          <select
+            {...fieldProps}
+            value={milestoneId}
+            disabled={!project}
+            onChange={(event) => setMilestoneId(event.target.value)}
+            className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"
+          >
+            <option value="">No milestone</option>
+            {(project?.milestones || []).map((row) => (
+              <option key={row.id} value={row.id}>
+                {row.title}{row.completed ? " (completed)" : ""}
+              </option>
+            ))}
+          </select>
+        )}
+      </FormField>
+      <FormField label="Title" helperText="Optional">
+        {(fieldProps) => (
+          <input
+            {...fieldProps}
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"
+          />
+        )}
+      </FormField>
+      {requiresText ? (
+        <VoiceInput
+          label={config.textLabel}
+          value={text}
+          onChange={setText}
+          onVoiceUsed={setVoiceLanguage}
+        />
+      ) : (
+        <FormField label={config.textLabel} helperText="Optional">
+          {(fieldProps) => (
+            <textarea
+              {...fieldProps}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              rows={3}
+              className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3 py-2"
+            />
+          )}
+        </FormField>
+      )}
+      {captureType === "issue" ? (
+        <FormField label="Issue classification" required helperText="You confirm this classification. Project Assistant does not choose it automatically.">
+          {(fieldProps) => (
+            <select {...fieldProps} value={issueClassification} onChange={(event) => setIssueClassification(event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+              <option value="project_issue">Project issue</option>
+              <option value="punch_item">Punch item</option>
+              <option value="customer_concern">Customer concern</option>
+              <option value="potential_warranty">Potential warranty</option>
+              <option value="potential_change_request">Potential change request</option>
+              <option value="internal_note">Internal note</option>
+            </select>
+          )}
+        </FormField>
+      ) : null}
+      {captureType === "communication" ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label="Communication type" required>
+            {(fieldProps) => (
+              <select {...fieldProps} value={communicationType} onChange={(event) => setCommunicationType(event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+                <option value="phone_call">Phone call</option>
+                <option value="in_person">On-site discussion</option>
+                <option value="email">Email summary</option>
+                <option value="sms">Text message</option>
+                <option value="other">Crew conversation / Other</option>
+              </select>
+            )}
+          </FormField>
+          <FormField label="Direction" required>
+            {(fieldProps) => (
+              <select {...fieldProps} value={communicationDirection} onChange={(event) => setCommunicationDirection(event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+                <option value="internal">Internal</option>
+                <option value="inbound">Customer to company</option>
+                <option value="outbound">Company to customer</option>
+              </select>
+            )}
+          </FormField>
+        </div>
+      ) : null}
+      {config.files ? (
+        <FormField
+          label={config.files === "required_document" ? "Document" : "Photos"}
+          required={requiresFiles}
+          helperText={config.files === "optional_photos" ? "Optional" : "Up to 10 files"}
+        >
+          {(fieldProps) => (
+            <input
+              {...fieldProps}
+              type="file"
+              multiple={config.files !== "required_document"}
+              accept={config.files === "required_document" ? ".pdf,.jpg,.jpeg,.png,.webp,.txt" : "image/*"}
+              capture={config.files === "required_document" ? undefined : "environment"}
+              onChange={(event) => setFiles(Array.from(event.target.files || []))}
+              className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3"
+            />
+          )}
+        </FormField>
+      ) : null}
+      {["project_update", "progress_photo", "document"].includes(captureType) ? (
+        <label className="flex min-h-11 items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            checked={customerVisible}
+            onChange={(event) => setCustomerVisible(event.target.checked)}
+            className="mt-1"
+          />
+          Make the applied update and files visible in the Customer Portal
+        </label>
+      ) : null}
+      <InlineAlert theme="operational" tone="info">
+        This saves a Capture for review. It does not complete a milestone or publish anything yet.
+      </InlineAlert>
+      {error ? <InlineAlert theme="operational" tone="danger">{String(error)}</InlineAlert> : null}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variant="secondary" theme="operational" onClick={onCancel}>Cancel</Button>
+        <Button
+          type="submit"
+          theme="operational"
+          loading={busy}
+          disabled={!projectId || (requiresText && !text.trim()) || (requiresFiles && !files.length)}
+        >
+          Save for review
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export default function CaptureLauncher() {
   const { data: identity, loading } = useWhoAmI();
   const [open, setOpen] = useState(false);
@@ -379,6 +648,9 @@ export default function CaptureLauncher() {
         {mode === "note" ? <QuickNoteForm onSaved={saved} onCancel={close} /> : null}
         {mode === "photo" ? <PhotoForm onSaved={saved} onCancel={close} /> : null}
         {mode === "receipt" ? <ProjectAssistantSmartCapture compact /> : null}
+        {PROJECT_CAPTURE_CONFIG[mode] ? (
+          <ProjectCaptureForm captureType={mode} onSaved={saved} onCancel={close} />
+        ) : null}
       </Modal>
     </>
   );

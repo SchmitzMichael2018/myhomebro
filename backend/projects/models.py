@@ -1286,6 +1286,13 @@ class CustomerCommunicationLog(models.Model):
         blank=True,
         related_name="communication_logs",
     )
+    project = models.ForeignKey(
+        "projects.Project",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="communication_logs",
+    )
 
     class Meta:
         ordering = ["-occurred_at", "-id"]
@@ -3282,3 +3289,9 @@ from .models_support import SupportMessage, SupportTicket, SupportTicketMessage 
 from .models_maintenance import MaintenanceWorkOrder, MaintenanceWorkOrderAttachment  # noqa: E402,F401
 from .models_capture import Capture, CaptureApplication, CaptureArtifact, CaptureEvent  # noqa: E402,F401
 from .models_capture_qr import CaptureQrAsset, CaptureQrEvent, CaptureQrSubmission  # noqa: E402,F401
+from .models_project_capture import (  # noqa: E402,F401
+    ProjectCaptureActivity,
+    ProjectCaptureAttachment,
+    ProjectCaptureIssue,
+    ProjectCaptureNote,
+)

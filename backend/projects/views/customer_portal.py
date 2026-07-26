@@ -44,6 +44,8 @@ from projects.models import (
     MilestoneComment,
     Notification,
     Project,
+    ProjectCaptureActivity,
+    ProjectCaptureAttachment,
     ProjectAssistantSmartCaptureSession,
     PublicContractorLead,
 )
@@ -3694,6 +3696,26 @@ def _documents(email: str, request=None) -> list[dict]:
                     "agreement_id": agreement.id,
                 }
             )
+        for attachment in ProjectCaptureAttachment.objects.select_related(
+            "artifact"
+        ).filter(
+            project=agreement.project,
+            customer_visible=True,
+            kind=ProjectCaptureAttachment.KIND_DOCUMENT,
+        ).order_by("-created_at", "-id"):
+            artifact = attachment.artifact
+            rows.append(
+                {
+                    "id": f"project-capture-document-{attachment.id}",
+                    "title": _safe_text(attachment.title) or "Project document",
+                    "type_label": "Project Document",
+                    "project_title": agreement_title,
+                    "filename": _safe_text(artifact.original_filename),
+                    "date": _safe_dt(attachment.created_at),
+                    "url": _safe_text(getattr(artifact.file, "url", "")),
+                    "agreement_id": agreement.id,
+                }
+            )
 
     invoices = Invoice.objects.select_related("agreement", "agreement__project", "agreement__homeowner").filter(
         Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email)
@@ -4375,6 +4397,26 @@ def _project_photo_rows(agreement) -> list[dict]:
                 or _safe_text(getattr(getattr(attachment, "uploaded_by", None), "email", "")),
             }
         )
+    for attachment in ProjectCaptureAttachment.objects.select_related(
+        "artifact", "created_by"
+    ).filter(
+        project=agreement.project,
+        customer_visible=True,
+        kind=ProjectCaptureAttachment.KIND_PHOTO,
+    ).order_by("-created_at", "-id"):
+        artifact = attachment.artifact
+        rows.append(
+            {
+                "id": str(attachment.id),
+                "title": _safe_text(attachment.title) or "Progress photo",
+                "category": "PROGRESS",
+                "url": _safe_text(getattr(artifact.file, "url", "")),
+                "uploaded_at": _safe_dt(attachment.created_at),
+                "uploaded_by": _safe_text(
+                    getattr(attachment.created_by, "get_full_name", lambda: "")()
+                ) or _safe_text(getattr(attachment.created_by, "email", "")),
+            }
+        )
     return rows
 
 
@@ -4546,6 +4588,21 @@ def _project_activity(agreement, milestone_rows, payment_summary, invoice_rows, 
         return []
 
     activity = []
+    for row in ProjectCaptureActivity.objects.filter(
+        project=agreement.project,
+        customer_visible=True,
+    ).order_by("-created_at", "-id")[:20]:
+        activity.append(
+            {
+                "id": f"project-capture-{row.id}",
+                "category": row.activity_type,
+                "title": _safe_text(row.title) or "Project update",
+                "body": _safe_text(row.body),
+                "tone": "slate",
+                "created_at": _safe_dt(row.created_at),
+                "link": "",
+            }
+        )
     if getattr(agreement, "signed_at_homeowner", None):
         activity.append(
             {

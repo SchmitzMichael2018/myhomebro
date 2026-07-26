@@ -51,6 +51,11 @@ const TYPE_OPTIONS = [
   ["quick_note", "Quick Note"],
   ["photo", "Photo"],
   ["receipt", "Receipt"],
+  ["project_update", "Project Update"],
+  ["progress_photo", "Progress Photo"],
+  ["issue", "Issue"],
+  ["communication", "Communication"],
+  ["document", "Document"],
 ];
 
 const SORT_OPTIONS = [
