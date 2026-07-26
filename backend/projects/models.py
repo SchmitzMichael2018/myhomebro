@@ -1962,6 +1962,11 @@ class AgreementWarranty(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+    customer_visible = models.BooleanField(default=False)
+    origin_capture = models.OneToOneField(
+        "projects.Capture", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="warranty_record",
+    )
 
     class Meta:
         ordering = ["-start_date", "-created_at", "-id"]
@@ -3294,4 +3299,9 @@ from .models_project_capture import (  # noqa: E402,F401
     ProjectCaptureAttachment,
     ProjectCaptureIssue,
     ProjectCaptureNote,
+)
+from .models_capture_warranty import (  # noqa: E402,F401
+    EquipmentCaptureAttachment,
+    WarrantyCaptureChange,
+    WarrantyCaptureDocument,
 )

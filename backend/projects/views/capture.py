@@ -208,6 +208,19 @@ PROJECT_CAPTURE_TYPES = {
     Capture.TYPE_COMMUNICATION,
     Capture.TYPE_DOCUMENT,
 }
+D2_CAPTURE_TYPES = {
+    Capture.TYPE_EQUIPMENT,
+    Capture.TYPE_WARRANTY_DOCUMENT,
+    Capture.TYPE_WARRANTY_CONCERN,
+}
+
+
+def _d2_enabled(capture_type):
+    if capture_type == Capture.TYPE_EQUIPMENT:
+        return bool(getattr(settings, "CAPTURE_EQUIPMENT_ENABLED", False))
+    if capture_type in {Capture.TYPE_WARRANTY_DOCUMENT, Capture.TYPE_WARRANTY_CONCERN}:
+        return bool(getattr(settings, "CAPTURE_WARRANTY_ENABLED", False))
+    return True
 
 
 def _validate_project_upload(upload, capture_type):
@@ -227,6 +240,17 @@ def _validate_project_upload(upload, capture_type):
     max_bytes = int(getattr(settings, "CAPTURE_MAX_DOCUMENT_SIZE_MB", 15)) * 1024 * 1024
     if int(getattr(upload, "size", 0) or 0) > max_bytes:
         return f"Project documents must be {max_bytes // (1024 * 1024)} MB or smaller."
+    header = upload.read(12)
+    upload.seek(0)
+    signatures = {
+        "application/pdf": header.startswith(b"%PDF-"),
+        "image/jpeg": header.startswith(b"\xff\xd8\xff"),
+        "image/png": header.startswith(b"\x89PNG\r\n\x1a\n"),
+        "image/webp": header.startswith(b"RIFF") and header[8:12] == b"WEBP",
+        "text/plain": True,
+    }
+    if not signatures.get(mime_type, False):
+        return "The file contents do not match the selected file type."
     return ""
 
 
@@ -375,9 +399,14 @@ class CaptureListCreateView(APIView):
         uploads = request.FILES.getlist("files") or request.FILES.getlist("file")
         upload = uploads[0] if uploads else None
         capture_type = str(request.data.get("capture_type") or "")
+        if capture_type in D2_CAPTURE_TYPES and not _d2_enabled(capture_type):
+            return Response(
+                {"detail": "This Capture workflow is not enabled."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         project = None
         milestone = None
-        if capture_type in PROJECT_CAPTURE_TYPES:
+        if capture_type in PROJECT_CAPTURE_TYPES | D2_CAPTURE_TYPES:
             project = Project.objects.filter(
                 contractor=contractor, pk=request.data.get("project_id")
             ).first()
@@ -410,7 +439,7 @@ class CaptureListCreateView(APIView):
             photo_error = _validate_photo(upload)
             if photo_error:
                 return Response({"detail": photo_error}, status=status.HTTP_400_BAD_REQUEST)
-        elif capture_type in PROJECT_CAPTURE_TYPES:
+        elif capture_type in PROJECT_CAPTURE_TYPES | D2_CAPTURE_TYPES:
             for row in uploads:
                 upload_error = _validate_project_upload(row, capture_type)
                 if upload_error:
@@ -441,7 +470,9 @@ class CaptureListCreateView(APIView):
                     capture=capture,
                     artifact_type=(
                         CaptureArtifact.TYPE_DOCUMENT
-                        if capture_type == Capture.TYPE_DOCUMENT
+                        if capture_type in {
+                            Capture.TYPE_DOCUMENT, Capture.TYPE_WARRANTY_DOCUMENT,
+                        } or not str(upload.content_type or "").startswith("image/")
                         else CaptureArtifact.TYPE_PHOTO
                     ),
                     file=upload,
@@ -543,6 +574,8 @@ class CaptureDetailView(APIView):
         capture = _core_capture_for_user(request, capture_id)
         if capture is None:
             return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not _d2_enabled(capture.capture_type):
+            return Response({"detail": "This Capture workflow is not enabled."}, status=404)
         payload = CaptureSerializer(capture, context={"request": request}).data
         payload["artifacts"] = []
         payload["events"] = []
@@ -685,6 +718,8 @@ class CaptureProcessView(APIView):
         capture = _capture_for_user(request, capture_id)
         if capture is None:
             return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not _d2_enabled(capture.capture_type):
+            return Response({"detail": "This Capture workflow is not enabled."}, status=404)
         if not can_review_capture(request.user, capture):
             return Response({"detail": "You do not have permission to process this Capture."}, status=status.HTTP_403_FORBIDDEN)
         try:
@@ -781,9 +816,9 @@ class CaptureDuplicatesView(APIView):
             return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
         if not can_review_capture(request.user, capture):
             return Response({"detail": "You do not have permission to review duplicates."}, status=status.HTTP_403_FORBIDDEN)
-        if capture.capture_type != Capture.TYPE_QUICK_LEAD:
+        if capture.capture_type not in {Capture.TYPE_QUICK_LEAD, Capture.TYPE_EQUIPMENT}:
             return Response(
-                {"detail": "Duplicate search is supported only for Quick Lead Captures."},
+                {"detail": "Duplicate search is not supported for this Capture type."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         return Response({"capture_id": str(capture.id), "duplicate_candidates": find_duplicate_candidates(capture)})
@@ -798,6 +833,8 @@ class CaptureApplicationPreviewView(APIView):
         capture = _capture_for_user(request, capture_id)
         if capture is None:
             return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not _d2_enabled(capture.capture_type):
+            return Response({"detail": "This Capture workflow is not enabled."}, status=404)
         if not can_apply_capture(request.user, capture):
             return Response(
                 {"detail": "You do not have permission to apply this Capture."},
@@ -829,6 +866,8 @@ class CaptureApplyView(APIView):
         capture = _capture_for_user(request, capture_id)
         if capture is None:
             return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not _d2_enabled(capture.capture_type):
+            return Response({"detail": "This Capture workflow is not enabled."}, status=404)
         if not can_apply_capture(request.user, capture):
             return Response(
                 {"detail": "You do not have permission to apply this Capture."},

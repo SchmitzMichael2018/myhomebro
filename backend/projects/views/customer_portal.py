@@ -4925,10 +4925,33 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
                     for request_row in row.requests.select_related("work_order", "work_order__assigned_user").prefetch_related("evidence").order_by("-created_at", "-id")[:10]
                 ],
             }
-            for row in AgreementWarranty.objects.filter(agreement=agreement, status="active").order_by("-end_date", "-id")
+            for row in AgreementWarranty.objects.filter(
+                agreement=agreement, status="active"
+            ).filter(
+                Q(origin_capture__isnull=True) | Q(customer_visible=True)
+            ).order_by("-end_date", "-id")
         ]
     except Exception:
         warranty_rows = []
+
+    equipment_rows = [
+        {
+            "id": row.id,
+            "name": _safe_text(row.name),
+            "category": _safe_text(row.asset_type),
+            "manufacturer": _safe_text(row.manufacturer),
+            "model_number": _safe_text(row.model_number),
+            "serial_number": (
+                f"••••{_safe_text(row.serial_number)[-4:]}"
+                if _safe_text(row.serial_number) else ""
+            ),
+            "installation_date": _safe_dt(row.installation_date),
+            "maintenance_notes": _safe_text(row.maintenance_notes),
+        }
+        for row in project.contractor.assets.filter(
+            project=project, customer=project.homeowner, customer_visible=True
+        ).order_by("-updated_at", "-id")
+    ]
 
     return {
         "project": {
@@ -4996,6 +5019,7 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
             "warranties": warranty_rows,
         },
         "warranties": warranty_rows,
+        "equipment": equipment_rows,
         "notifications": activity_rows,
         "review": _portal_review_state(agreement, _safe_text(getattr(getattr(agreement, "homeowner", None), "email", ""))),
     }

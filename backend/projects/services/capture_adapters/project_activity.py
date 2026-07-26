@@ -42,7 +42,7 @@ class ProjectActivityAdapter(CaptureDestinationAdapter):
                 "milestone": context.capture.milestone,
                 "activity_type": context.capture.capture_type,
                 "title": str(draft.get("title") or "Project activity")[:255],
-                "body": str(draft.get("body") or ""),
+                "body": str(draft.get("body") or draft.get("description") or ""),
                 "customer_visible": bool(draft.get("customer_visible", False)),
                 "actor": context.actor,
                 "metadata": {

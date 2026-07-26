@@ -26,7 +26,9 @@ class CaptureIdempotencyConflict(CaptureApplicationError):
     code = "capture_idempotency_conflict"
 
 
-ALLOWED_OPTIONS = {"duplicate_resolution", "include_follow_up", "customer_id"}
+ALLOWED_OPTIONS = {
+    "duplicate_resolution", "include_follow_up", "customer_id", "equipment_id",
+}
 SUPPORTED_DESTINATIONS = {
     Capture.TYPE_QUICK_LEAD: {"customer", "opportunity", "follow_up"},
     Capture.TYPE_QUICK_NOTE: {"unassigned_note", "customer_note", "follow_up"},
@@ -37,6 +39,11 @@ SUPPORTED_DESTINATIONS = {
     Capture.TYPE_ISSUE: {"project_issue", "project_activity", "follow_up"},
     Capture.TYPE_COMMUNICATION: {"communication_log", "project_activity", "follow_up"},
     Capture.TYPE_DOCUMENT: {"project_attachment", "project_activity"},
+    Capture.TYPE_EQUIPMENT: {"equipment_record", "equipment_attachment"},
+    Capture.TYPE_WARRANTY_DOCUMENT: {"warranty_record", "warranty_document"},
+    Capture.TYPE_WARRANTY_CONCERN: {
+        "warranty_request", "warranty_evidence", "project_activity", "follow_up",
+    },
 }
 
 
@@ -99,20 +106,25 @@ def _validate_request(capture, payload, *, require_confirmation=False):
     requested_resolution = options.get("duplicate_resolution")
     if requested_resolution is not None:
         if not isinstance(requested_resolution, dict) or set(requested_resolution) - {
-            "action", "customer_id"
+            "action", "customer_id", "equipment_id"
         }:
             raise CaptureApplicationError("Duplicate resolution fields are invalid.")
         mapping = {
             "link": "link_existing",
             "create_separate": "create_separate",
             "not_same_person": "not_same_person",
+            "not_same_item": "not_same_item",
         }
         if not approved_decision or mapping.get(requested_resolution.get("action")) != approved_decision.get("decision"):
             raise CaptureApplicationError("Duplicate resolution does not match the approved review.")
-        if approved_decision.get("decision") == "link_existing" and str(
-            requested_resolution.get("customer_id")
-        ) != str(approved_decision.get("candidate_id")):
-            raise CaptureApplicationError("Selected customer does not match the approved duplicate decision.")
+        if approved_decision.get("decision") == "link_existing":
+            selected_id = (
+                requested_resolution.get("equipment_id")
+                if capture.capture_type == Capture.TYPE_EQUIPMENT
+                else requested_resolution.get("customer_id")
+            )
+            if str(selected_id) != str(approved_decision.get("candidate_id")):
+                raise CaptureApplicationError("Selected record does not match the approved duplicate decision.")
     required_duplicate = any(
         row.get("match_strength") in {"exact", "strong"}
         for row in capture.duplicate_candidates or []
@@ -125,8 +137,14 @@ def _validate_request(capture, payload, *, require_confirmation=False):
         "unassigned_note": 0,
         "project_note": 0,
         "project_issue": 0,
+        "equipment_record": 0,
+        "warranty_record": 0,
+        "warranty_request": 0,
         "communication_log": 0,
         "project_attachment": 1,
+        "equipment_attachment": 1,
+        "warranty_document": 1,
+        "warranty_evidence": 1,
         "opportunity": 1,
         "project_activity": 2,
         "follow_up": 3,

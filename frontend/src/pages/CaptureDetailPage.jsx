@@ -46,6 +46,9 @@ const LABELS = {
   issue: "Issue",
   communication: "Communication",
   document: "Document",
+  equipment: "Equipment",
+  warranty_document: "Warranty Document",
+  warranty_concern: "Warranty Concern",
 };
 
 const PROJECT_CAPTURE_TYPES = [
@@ -55,6 +58,7 @@ const PROJECT_CAPTURE_TYPES = [
   "communication",
   "document",
 ];
+const D2_CAPTURE_TYPES = ["equipment", "warranty_document", "warranty_concern"];
 
 const STATUS_TONES = {
   saved: "draft",
@@ -229,7 +233,7 @@ export default function CaptureDetailPage() {
 
   function applicationPayload({ confirmed = false, idempotencyKey } = {}) {
     const isLead = capture.capture_type === "quick_lead";
-    const isProjectCapture = PROJECT_CAPTURE_TYPES.includes(capture.capture_type);
+    const isProjectCapture = [...PROJECT_CAPTURE_TYPES, ...D2_CAPTURE_TYPES].includes(capture.capture_type);
     const destinations = isLead
       ? ["customer", "opportunity"]
       : isProjectCapture
@@ -254,8 +258,11 @@ export default function CaptureDetailPage() {
                   link_existing: "link",
                   create_separate: "create_separate",
                   not_same_person: "not_same_person",
+                  not_same_item: "not_same_item",
                 }[duplicate.decision],
-                customer_id: duplicate.candidate_id,
+                ...(capture.capture_type === "equipment"
+                  ? { equipment_id: duplicate.candidate_id }
+                  : { customer_id: duplicate.candidate_id }),
               },
             }
           : {}),
@@ -325,7 +332,7 @@ export default function CaptureDetailPage() {
   }
 
   const raw = capture.raw_text_payload || {};
-  const processable = ["quick_lead", "quick_note", ...PROJECT_CAPTURE_TYPES].includes(capture.capture_type);
+  const processable = ["quick_lead", "quick_note", ...PROJECT_CAPTURE_TYPES, ...D2_CAPTURE_TYPES].includes(capture.capture_type);
   const editable = reviewEnabled && processable && [
     "ready_for_review", "needs_information", "possible_duplicate", "failed",
   ].includes(capture.status) && Boolean(draft);
@@ -458,6 +465,43 @@ export default function CaptureDetailPage() {
                     )}
                   </FormField>
                 </>
+              ) : D2_CAPTURE_TYPES.includes(capture.capture_type) ? (
+                <>
+                  <ValueRow label="Project ID" value={draft.project_id} />
+                  <ValueRow label="Field confidence" value={Object.entries(draft.field_confidence || {}).map(([field, confidence]) => `${field}: ${confidence}`).join(", ")} />
+                  {capture.capture_type === "equipment" ? (
+                    <>
+                      {["category", "manufacturer", "model", "serial_number", "installation_date"].map((field) => (
+                        <TextField key={field} label={field.replaceAll("_", " ")} required={field === "category"} value={draft.equipment?.[field]} onChange={(value) => update(["equipment", field], value)} />
+                      ))}
+                      <TextField label="Description" multiline value={draft.equipment?.description} onChange={(value) => update(["equipment", "description"], value)} />
+                      <TextField label="Maintenance notes" multiline value={draft.maintenance?.notes} onChange={(value) => update(["maintenance", "notes"], value)} />
+                    </>
+                  ) : capture.capture_type === "warranty_document" ? (
+                    <>
+                      {["manufacturer", "product_name", "model", "serial_number", "purchase_date", "installation_date", "start_date", "expiration_date", "duration_text", "parts_coverage", "labor_coverage", "workmanship_coverage"].map((field) => (
+                        <TextField key={field} label={field.replaceAll("_", " ")} multiline={field.endsWith("coverage")} value={draft.warranty?.[field]} onChange={(value) => update(["warranty", field], value)} />
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      <TextField label="Title" required value={draft.title} onChange={(value) => update(["title"], value)} />
+                      <TextField label="Description" required multiline value={draft.description} onChange={(value) => update(["description"], value)} />
+                      <FormField label="Urgency" required>
+                        {(props) => <select {...props} value={draft.urgency} onChange={(event) => update(["urgency"], event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option><option value="critical">Critical</option></select>}
+                      </FormField>
+                      <TextField label="Customer-visible summary" multiline value={draft.customer_summary} onChange={(value) => update(["customer_summary"], value)} />
+                      <TextField label="Internal notes" multiline value={draft.internal_notes} onChange={(value) => update(["internal_notes"], value)} />
+                      <InlineAlert theme="operational" tone="info">Warranty review requested. Coverage is not yet determined.</InlineAlert>
+                    </>
+                  )}
+                  {capture.capture_type !== "warranty_concern" ? (
+                    <label className="flex min-h-11 items-start gap-3 text-sm font-bold">
+                      <input type="checkbox" className="mt-1" checked={Boolean(draft.customer_visible)} onChange={(event) => update(["customer_visible"], event.target.checked)} />
+                      Visible in the Customer Portal after application
+                    </label>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <ValueRow label="Project" value={draft.project?.title} />
@@ -553,15 +597,15 @@ export default function CaptureDetailPage() {
                 {editable ? (
                   <label className="mt-2 flex items-center gap-2 text-sm">
                     <input type="radio" name="duplicate-decision" checked={duplicateDecision?.decision === "link_existing" && String(duplicateDecision?.candidate_id) === String(candidate.candidate_id)} onChange={() => setDuplicateDecision({ decision: "link_existing", candidate_id: candidate.candidate_id })} />
-                    Link to this existing customer later
+                    Link to this existing {capture.capture_type === "equipment" ? "equipment" : "customer"} later
                   </label>
                 ) : null}
               </div>
             ))}
             {editable ? (
               <div className="grid gap-2 text-sm">
-                <label className="flex items-center gap-2"><input type="radio" name="duplicate-decision" checked={duplicateDecision?.decision === "create_separate"} onChange={() => setDuplicateDecision({ decision: "create_separate", candidate_id: null })} />Create a separate customer later</label>
-                <label className="flex items-center gap-2"><input type="radio" name="duplicate-decision" checked={duplicateDecision?.decision === "not_same_person"} onChange={() => setDuplicateDecision({ decision: "not_same_person", candidate_id: null })} />Not the same person</label>
+                <label className="flex items-center gap-2"><input type="radio" name="duplicate-decision" checked={duplicateDecision?.decision === "create_separate"} onChange={() => setDuplicateDecision({ decision: "create_separate", candidate_id: null })} />Create a separate {capture.capture_type === "equipment" ? "equipment record" : "customer"} later</label>
+                <label className="flex items-center gap-2"><input type="radio" name="duplicate-decision" checked={duplicateDecision?.decision === (capture.capture_type === "equipment" ? "not_same_item" : "not_same_person")} onChange={() => setDuplicateDecision({ decision: capture.capture_type === "equipment" ? "not_same_item" : "not_same_person", candidate_id: null })} />Not the same {capture.capture_type === "equipment" ? "item" : "person"}</label>
               </div>
             ) : null}
           </div>

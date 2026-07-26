@@ -56,6 +56,9 @@ const TYPE_OPTIONS = [
   ["issue", "Issue"],
   ["communication", "Communication"],
   ["document", "Document"],
+  ["equipment", "Equipment"],
+  ["warranty_document", "Warranty Document"],
+  ["warranty_concern", "Warranty Concern"],
 ];
 
 const SORT_OPTIONS = [

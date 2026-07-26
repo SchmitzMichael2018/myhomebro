@@ -210,6 +210,12 @@ class ContractorAsset(models.Model):
     )
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True)
     notes = models.TextField(blank=True, default="")
+    maintenance_notes = models.TextField(blank=True, default="")
+    customer_visible = models.BooleanField(default=False)
+    origin_capture = models.OneToOneField(
+        "projects.Capture", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="equipment_record",
+    )
     source_capture = models.ForeignKey(
         ProjectAssistantSmartCaptureSession,
         on_delete=models.SET_NULL,

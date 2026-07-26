@@ -36,7 +36,15 @@ PROJECT_CAPTURE_TYPES = {
     Capture.TYPE_COMMUNICATION,
     Capture.TYPE_DOCUMENT,
 }
-SUPPORTED_TYPES = {Capture.TYPE_QUICK_LEAD, Capture.TYPE_QUICK_NOTE, *PROJECT_CAPTURE_TYPES}
+D2_CAPTURE_TYPES = {
+    Capture.TYPE_EQUIPMENT,
+    Capture.TYPE_WARRANTY_DOCUMENT,
+    Capture.TYPE_WARRANTY_CONCERN,
+}
+SUPPORTED_TYPES = {
+    Capture.TYPE_QUICK_LEAD, Capture.TYPE_QUICK_NOTE,
+    *PROJECT_CAPTURE_TYPES, *D2_CAPTURE_TYPES,
+}
 DESTINATIONS = {
     "unassigned_note",
     "customer_note",
@@ -44,7 +52,9 @@ DESTINATIONS = {
     "opportunity_note",
     "follow_up",
 }
-DUPLICATE_DECISIONS = {"link_existing", "create_separate", "not_same_person"}
+DUPLICATE_DECISIONS = {
+    "link_existing", "create_separate", "not_same_person", "not_same_item",
+}
 PROJECT_DESTINATIONS = {
     "project_note",
     "project_activity",
@@ -52,6 +62,11 @@ PROJECT_DESTINATIONS = {
     "project_issue",
     "communication_log",
     "follow_up",
+}
+D2_DESTINATIONS = {
+    "equipment_record", "equipment_attachment", "warranty_record",
+    "warranty_document", "warranty_request", "project_activity",
+    "project_attachment", "warranty_evidence", "follow_up",
 }
 
 
@@ -178,9 +193,166 @@ def build_project_capture_draft(capture):
     }
 
 
+def build_warranty_equipment_draft(capture):
+    raw = capture.raw_text_payload or {}
+    metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+    project = capture.project
+    base = {
+        "schema_version": f"{capture.capture_type}.v1",
+        "project_id": project.id,
+        "property_id": metadata.get("property_id") or None,
+        "equipment_id": metadata.get("equipment_id") or None,
+        "customer_visible": bool(metadata.get("customer_visible", False)),
+        "field_confidence": (
+            metadata.get("field_confidence")
+            if isinstance(metadata.get("field_confidence"), dict) else {}
+        ),
+        "missing_fields": [],
+        "uncertainties": _bounded_list(metadata.get("uncertainties", [])),
+        "warnings": ["Coverage is not approved or denied by Capture."],
+    }
+    if capture.capture_type == Capture.TYPE_EQUIPMENT:
+        equipment = {
+            "category": _text(metadata.get("category"), 80),
+            "manufacturer": _text(metadata.get("manufacturer"), 200),
+            "model": _text(metadata.get("model"), 200),
+            "serial_number": _text(metadata.get("serial_number"), 200),
+            "installation_date": metadata.get("installation_date") or None,
+            "description": _text(raw.get("text") or metadata.get("description"), 2000),
+        }
+        base.update({
+            "equipment": equipment,
+            "maintenance": {
+                "notes": _text(metadata.get("maintenance_notes"), 2000),
+                "recommended": bool(metadata.get("maintenance_recommended", False)),
+            },
+            "duplicate_decision": metadata.get("duplicate_decision") or "",
+            "duplicate_equipment_id": metadata.get("duplicate_equipment_id") or None,
+            "proposed_destinations": ["equipment_record", "equipment_attachment"],
+        })
+        if not equipment["category"]:
+            base["missing_fields"].append("equipment.category")
+    elif capture.capture_type == Capture.TYPE_WARRANTY_DOCUMENT:
+        warranty = {
+            key: _text(metadata.get(key), 1000) if key.endswith("coverage") or key == "duration_text"
+            else metadata.get(key) or None if key.endswith("_date")
+            else _text(metadata.get(key), 255)
+            for key in (
+                "manufacturer", "product_name", "model", "serial_number",
+                "purchase_date", "installation_date", "start_date",
+                "expiration_date", "duration_text", "parts_coverage",
+                "labor_coverage", "workmanship_coverage",
+            )
+        }
+        base.update({
+            "warranty": warranty,
+            "update_warranty_id": metadata.get("update_warranty_id") or None,
+            "explicit_update": bool(metadata.get("explicit_update", False)),
+            "proposed_destinations": ["warranty_record", "warranty_document"],
+        })
+    else:
+        base.update({
+            "title": _text(raw.get("title") or "Potential warranty concern", 255),
+            "description": _text(raw.get("text"), 5000),
+            "date_first_noticed": metadata.get("date_first_noticed") or None,
+            "urgency": _text(metadata.get("urgency") or "normal", 20),
+            "customer_summary": _text(metadata.get("customer_summary"), 2000),
+            "internal_notes": _text(metadata.get("internal_notes"), 2000),
+            "suggested_destination": "warranty_request",
+            "follow_up": _follow_up(),
+            "proposed_destinations": [
+                "warranty_request", "warranty_evidence", "project_activity",
+            ],
+        })
+        if not base["description"]:
+            base["missing_fields"].append("description")
+    return base
+
+
 def validate_structured_draft(capture_type, value):
     if not isinstance(value, dict):
         raise CaptureSchemaError("Structured draft must be an object.")
+    if capture_type in D2_CAPTURE_TYPES:
+        common = {
+            "schema_version", "project_id", "property_id", "equipment_id",
+            "customer_visible", "missing_fields", "uncertainties", "warnings",
+            "proposed_destinations", "field_confidence",
+        }
+        specific = {
+            Capture.TYPE_EQUIPMENT: {
+                "equipment", "maintenance", "duplicate_decision",
+                "duplicate_equipment_id",
+            },
+            Capture.TYPE_WARRANTY_DOCUMENT: {
+                "warranty", "update_warranty_id", "explicit_update",
+            },
+            Capture.TYPE_WARRANTY_CONCERN: {
+                "title", "description", "date_first_noticed", "urgency",
+                "customer_summary", "internal_notes", "suggested_destination",
+                "follow_up",
+            },
+        }[capture_type]
+        unknown = set(value) - common - specific
+        if unknown:
+            raise CaptureSchemaError(f"Unsupported fields: {', '.join(sorted(unknown))}.")
+        if value.get("schema_version") != f"{capture_type}.v1":
+            raise CaptureSchemaError("Capture schema version is invalid.")
+        if not value.get("project_id"):
+            raise CaptureSchemaError("Project context is required.")
+        destinations = value.get("proposed_destinations") or []
+        if not isinstance(destinations, list) or any(x not in D2_DESTINATIONS for x in destinations):
+            raise CaptureSchemaError("Capture destinations are invalid.")
+        result = deepcopy(value)
+        result["customer_visible"] = bool(value.get("customer_visible", False))
+        confidence = value.get("field_confidence") or {}
+        if not isinstance(confidence, dict) or any(
+            str(level) not in {"low", "medium", "high", "unknown"}
+            for level in confidence.values()
+        ):
+            raise CaptureSchemaError("Field confidence values are invalid.")
+        result["field_confidence"] = {
+            _text(field, 80): str(level) for field, level in list(confidence.items())[:30]
+        }
+        result["missing_fields"] = _bounded_list(value.get("missing_fields", []))
+        result["uncertainties"] = _bounded_list(value.get("uncertainties", []))
+        result["warnings"] = _bounded_list(value.get("warnings", []))
+        result["proposed_destinations"] = list(dict.fromkeys(destinations))
+        if capture_type == Capture.TYPE_EQUIPMENT:
+            equipment = value.get("equipment")
+            maintenance = value.get("maintenance")
+            if not isinstance(equipment, dict) or set(equipment) - {
+                "category", "manufacturer", "model", "serial_number",
+                "installation_date", "description",
+            }:
+                raise CaptureSchemaError("Equipment fields are invalid.")
+            if not isinstance(maintenance, dict) or set(maintenance) - {"notes", "recommended"}:
+                raise CaptureSchemaError("Maintenance fields are invalid.")
+            decision = value.get("duplicate_decision") or ""
+            if decision not in {"", "link_existing", "create_separate", "not_same_item"}:
+                raise CaptureSchemaError("Equipment duplicate decision is invalid.")
+        elif capture_type == Capture.TYPE_WARRANTY_DOCUMENT:
+            warranty = value.get("warranty")
+            allowed = {
+                "manufacturer", "product_name", "model", "serial_number",
+                "purchase_date", "installation_date", "start_date",
+                "expiration_date", "duration_text", "parts_coverage",
+                "labor_coverage", "workmanship_coverage",
+            }
+            if not isinstance(warranty, dict) or set(warranty) - allowed:
+                raise CaptureSchemaError("Warranty fields are invalid.")
+            if warranty.get("start_date") and warranty.get("expiration_date") and (
+                str(warranty["expiration_date"]) < str(warranty["start_date"])
+            ):
+                raise CaptureSchemaError("Warranty expiration cannot precede its start date.")
+            if value.get("update_warranty_id") and not value.get("explicit_update"):
+                raise CaptureSchemaError("Updating a warranty requires explicit selection.")
+        else:
+            if value.get("urgency") not in {"low", "normal", "high", "critical"}:
+                raise CaptureSchemaError("Warranty concern urgency is invalid.")
+            if value.get("suggested_destination") != "warranty_request":
+                raise CaptureSchemaError("Warranty concerns must remain review requests.")
+            result["follow_up"] = _follow_up(value.get("follow_up"))
+        return result
     if capture_type in PROJECT_CAPTURE_TYPES:
         allowed = {
             "schema_version", "project", "milestone", "title", "body",
@@ -368,6 +540,53 @@ def _mask_phone(value):
 
 
 def find_duplicate_candidates(capture):
+    if capture.capture_type == Capture.TYPE_WARRANTY_DOCUMENT:
+        from projects.models import WarrantyCaptureDocument
+        hashes = list(
+            capture.artifacts.exclude(file_sha256="").values_list("file_sha256", flat=True)
+        )
+        rows = WarrantyCaptureDocument.objects.filter(
+            warranty__contractor=capture.contractor,
+            artifact__file_sha256__in=hashes,
+        ).select_related("warranty")[:8]
+        return [
+            {
+                "candidate_id": row.warranty_id,
+                "display_name": _text(row.warranty.title, 200),
+                "reason": "The same source file was previously captured",
+                "match_strength": "advisory",
+            }
+            for row in rows
+        ]
+    if capture.capture_type == Capture.TYPE_EQUIPMENT:
+        from projects.models import ContractorAsset
+        raw = capture.raw_text_payload or {}
+        metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+        serial = _text(metadata.get("serial_number"), 200)
+        manufacturer = _text(metadata.get("manufacturer"), 200)
+        model = _text(metadata.get("model"), 200)
+        rows = ContractorAsset.objects.filter(contractor=capture.contractor)
+        matches = []
+        for row in rows[:250]:
+            strength = reason = ""
+            if serial and row.serial_number and row.serial_number.casefold() == serial.casefold():
+                strength, reason = "exact", "Exact serial number match"
+            elif (
+                manufacturer and model
+                and row.manufacturer.casefold() == manufacturer.casefold()
+                and row.model_number.casefold() == model.casefold()
+                and (not row.project_id or row.project_id == capture.project_id)
+            ):
+                strength, reason = "strong", "Same manufacturer and model"
+            if reason:
+                matches.append({
+                    "candidate_id": row.id,
+                    "display_name": _text(row.name, 200),
+                    "masked_serial": f"***{row.serial_number[-4:]}" if row.serial_number else "",
+                    "reason": reason,
+                    "match_strength": strength,
+                })
+        return matches[:8]
     if capture.capture_type != Capture.TYPE_QUICK_LEAD:
         return []
     raw = capture.raw_text_payload or {}
@@ -469,6 +688,25 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
                 ),
             )
             provider_draft = validate_structured_draft(processing.capture_type, provider_draft)
+            if processing.capture_type in D2_CAPTURE_TYPES:
+                from projects.models import AIUsageLedger
+                AIUsageLedger.objects.create(
+                    contractor=processing.contractor,
+                    user=actor,
+                    feature=(
+                        AIUsageLedger.FEATURE_SMART_CAPTURE_EQUIPMENT
+                        if processing.capture_type == Capture.TYPE_EQUIPMENT
+                        else AIUsageLedger.FEATURE_SMART_CAPTURE_WARRANTY
+                    ),
+                    provider="capture_review_bridge",
+                    source_type="capture",
+                    source_id=str(processing.id),
+                    success=True,
+                    metadata={
+                        "schema_version": provider_draft.get("schema_version"),
+                        "bounded_output": True,
+                    },
+                )
         except Exception:
             processing.status = Capture.STATUS_FAILED
             processing.failure_details = {
@@ -502,6 +740,8 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
         if processing.capture_type == Capture.TYPE_QUICK_LEAD
         else build_quick_note_draft(raw)
         if processing.capture_type == Capture.TYPE_QUICK_NOTE
+        else build_warranty_equipment_draft(processing)
+        if processing.capture_type in D2_CAPTURE_TYPES
         else build_project_capture_draft(processing)
     )
     candidates = find_duplicate_candidates(processing)

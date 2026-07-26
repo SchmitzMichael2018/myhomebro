@@ -209,6 +209,9 @@ class CaptureCreateSerializer(CaptureSerializer):
             Capture.TYPE_ISSUE,
             Capture.TYPE_COMMUNICATION,
             Capture.TYPE_DOCUMENT,
+            Capture.TYPE_EQUIPMENT,
+            Capture.TYPE_WARRANTY_DOCUMENT,
+            Capture.TYPE_WARRANTY_CONCERN,
         }
         if capture_type not in supported_types:
             raise serializers.ValidationError({"capture_type": "This Capture type is not available yet."})
@@ -231,6 +234,9 @@ class CaptureCreateSerializer(CaptureSerializer):
             Capture.TYPE_ISSUE,
             Capture.TYPE_COMMUNICATION,
             Capture.TYPE_DOCUMENT,
+            Capture.TYPE_EQUIPMENT,
+            Capture.TYPE_WARRANTY_DOCUMENT,
+            Capture.TYPE_WARRANTY_CONCERN,
         }
         if capture_type in project_types and not self.context.get("project"):
             raise serializers.ValidationError({"project_id": "Select a project."})
@@ -245,6 +251,12 @@ class CaptureCreateSerializer(CaptureSerializer):
             raise serializers.ValidationError({"files": "Choose at least one progress photo."})
         if capture_type == Capture.TYPE_DOCUMENT and not self.context.get("has_file"):
             raise serializers.ValidationError({"files": "Choose a document."})
+        if capture_type in {
+            Capture.TYPE_EQUIPMENT,
+            Capture.TYPE_WARRANTY_DOCUMENT,
+            Capture.TYPE_WARRANTY_CONCERN,
+        } and not self.context.get("has_file"):
+            raise serializers.ValidationError({"files": "Choose at least one source file."})
         metadata = payload.get("input_metadata") or {}
         if not isinstance(metadata, dict):
             raise serializers.ValidationError({"raw_text_payload": "Input metadata must be an object."})

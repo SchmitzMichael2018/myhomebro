@@ -25,6 +25,9 @@ import { useWhoAmI } from "../../hooks/useWhoAmI.js";
 import { Button, FormField, InlineAlert, Modal } from "../ui";
 import ProjectAssistantSmartCapture from "../ProjectAssistantSmartCapture.jsx";
 
+const EQUIPMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_EQUIPMENT_ENABLED || "").toLowerCase() === "true";
+const WARRANTY_ENABLED = String(import.meta.env.VITE_CAPTURE_WARRANTY_ENABLED || "").toLowerCase() === "true";
+
 const ACTIONS = [
   { key: "lead", label: "I met someone", icon: UserRound },
   { key: "note", label: "I need to remember something", icon: ClipboardPenLine },
@@ -35,6 +38,11 @@ const ACTIONS = [
   { key: "issue", label: "Document an issue", icon: AlertTriangle },
   { key: "communication", label: "Log a communication", icon: MessageSquare },
   { key: "document", label: "Add a project document", icon: FileText },
+  ...(EQUIPMENT_ENABLED ? [{ key: "equipment", label: "Add Equipment", icon: Camera }] : []),
+  ...(WARRANTY_ENABLED ? [
+    { key: "warranty_document", label: "Save Warranty Information", icon: FileText },
+    { key: "warranty_concern", label: "Report Warranty Concern", icon: AlertTriangle },
+  ] : []),
 ];
 
 function VoiceInput({ value, onChange, onVoiceUsed, label }) {
@@ -348,6 +356,21 @@ const PROJECT_CAPTURE_CONFIG = {
     textLabel: "Description",
     files: "required_document",
   },
+  equipment: {
+    title: "Add Equipment",
+    textLabel: "Equipment description",
+    files: "required_source",
+  },
+  warranty_document: {
+    title: "Save Warranty Information",
+    textLabel: "Warranty notes",
+    files: "required_source",
+  },
+  warranty_concern: {
+    title: "Report Warranty Concern",
+    textLabel: "Describe the potential warranty concern",
+    files: "required_source",
+  },
 };
 
 function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
@@ -362,6 +385,10 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
   const [issueClassification, setIssueClassification] = useState("project_issue");
   const [communicationType, setCommunicationType] = useState("phone_call");
   const [communicationDirection, setCommunicationDirection] = useState("internal");
+  const [details, setDetails] = useState({
+    category: "", manufacturer: "", model: "", serial_number: "",
+    installation_date: "", start_date: "", expiration_date: "", urgency: "normal",
+  });
   const [voiceLanguage, setVoiceLanguage] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -375,8 +402,9 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
   }, []);
 
   const project = projects.find((row) => String(row.id) === String(projectId));
-  const requiresText = ["project_update", "issue", "communication"].includes(captureType);
-  const requiresFiles = ["progress_photo", "document"].includes(captureType);
+  const requiresText = ["project_update", "issue", "communication", "warranty_concern"].includes(captureType);
+  const requiresFiles = ["progress_photo", "document", "equipment", "warranty_document", "warranty_concern"].includes(captureType);
+  const isD2 = ["equipment", "warranty_document", "warranty_concern"].includes(captureType);
 
   async function submit(event) {
     event.preventDefault();
@@ -401,6 +429,7 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
               communication_direction: captureType === "communication"
                 ? communicationDirection
                 : "",
+              ...details,
             },
           },
         },
@@ -530,9 +559,45 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
           </FormField>
         </div>
       ) : null}
+      {["equipment", "warranty_document"].includes(captureType) ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {captureType === "equipment" ? (
+            <FormField label="Equipment category" required>
+              {(fieldProps) => <input {...fieldProps} value={details.category} onChange={(event) => setDetails((value) => ({ ...value, category: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3" />}
+            </FormField>
+          ) : null}
+          {["manufacturer", "model", "serial_number"].map((field) => (
+            <FormField key={field} label={field === "serial_number" ? "Serial number" : field[0].toUpperCase() + field.slice(1)} helperText="Editable during review">
+              {(fieldProps) => <input {...fieldProps} value={details[field]} onChange={(event) => setDetails((value) => ({ ...value, [field]: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3" />}
+            </FormField>
+          ))}
+          <FormField label="Installation date" helperText="Optional">
+            {(fieldProps) => <input {...fieldProps} type="date" value={details.installation_date} onChange={(event) => setDetails((value) => ({ ...value, installation_date: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3" />}
+          </FormField>
+        </div>
+      ) : null}
+      {captureType === "warranty_document" ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {["start_date", "expiration_date"].map((field) => (
+            <FormField key={field} label={field === "start_date" ? "Warranty start" : "Warranty expiration"} helperText="Optional">
+              {(fieldProps) => <input {...fieldProps} type="date" value={details[field]} onChange={(event) => setDetails((value) => ({ ...value, [field]: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3" />}
+            </FormField>
+          ))}
+        </div>
+      ) : null}
+      {captureType === "warranty_concern" ? (
+        <FormField label="Urgency" required>
+          {(fieldProps) => (
+            <select {...fieldProps} value={details.urgency} onChange={(event) => setDetails((value) => ({ ...value, urgency: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+              <option value="low">Low</option><option value="normal">Normal</option>
+              <option value="high">High</option><option value="critical">Critical</option>
+            </select>
+          )}
+        </FormField>
+      ) : null}
       {config.files ? (
         <FormField
-          label={config.files === "required_document" ? "Document" : "Photos"}
+          label={["required_document", "required_source"].includes(config.files) ? "Photos or documents" : "Photos"}
           required={requiresFiles}
           helperText={config.files === "optional_photos" ? "Optional" : "Up to 10 files"}
         >
@@ -541,15 +606,15 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
               {...fieldProps}
               type="file"
               multiple={config.files !== "required_document"}
-              accept={config.files === "required_document" ? ".pdf,.jpg,.jpeg,.png,.webp,.txt" : "image/*"}
-              capture={config.files === "required_document" ? undefined : "environment"}
+              accept={["required_document", "required_source"].includes(config.files) ? ".pdf,.jpg,.jpeg,.png,.webp,.txt" : "image/*"}
+              capture={["required_document", "required_source"].includes(config.files) ? undefined : "environment"}
               onChange={(event) => setFiles(Array.from(event.target.files || []))}
               className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3"
             />
           )}
         </FormField>
       ) : null}
-      {["project_update", "progress_photo", "document"].includes(captureType) ? (
+      {["project_update", "progress_photo", "document", "equipment", "warranty_document"].includes(captureType) ? (
         <label className="flex min-h-11 items-start gap-3 text-sm">
           <input
             type="checkbox"
@@ -561,7 +626,9 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
         </label>
       ) : null}
       <InlineAlert theme="operational" tone="info">
-        This saves a Capture for review. It does not complete a milestone or publish anything yet.
+        {isD2
+          ? "This saves a review draft. It does not decide warranty coverage, authorize repair, or publish anything."
+          : "This saves a Capture for review. It does not complete a milestone or publish anything yet."}
       </InlineAlert>
       {error ? <InlineAlert theme="operational" tone="danger">{String(error)}</InlineAlert> : null}
       <div className="flex justify-end gap-2">
@@ -570,7 +637,7 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
           type="submit"
           theme="operational"
           loading={busy}
-          disabled={!projectId || (requiresText && !text.trim()) || (requiresFiles && !files.length)}
+          disabled={!projectId || (requiresText && !text.trim()) || (requiresFiles && !files.length) || (captureType === "equipment" && !details.category.trim())}
         >
           Save for review
         </Button>
@@ -583,6 +650,18 @@ export default function CaptureLauncher() {
   const { data: identity, loading } = useWhoAmI();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState("");
+
+  useEffect(() => {
+    function openCapture(event) {
+      const requested = String(event.detail?.mode || "");
+      if (ACTIONS.some((action) => action.key === requested)) {
+        setMode(requested);
+        setOpen(true);
+      }
+    }
+    window.addEventListener("mhb:open-capture", openCapture);
+    return () => window.removeEventListener("mhb:open-capture", openCapture);
+  }, []);
 
   function close() {
     setOpen(false);

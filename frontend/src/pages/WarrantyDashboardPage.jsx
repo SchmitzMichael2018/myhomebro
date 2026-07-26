@@ -336,6 +336,13 @@ export default function WarrantyDashboardPage() {
       title="Warranties"
       subtitle="Track active coverage, customer warranty requests, advisory reviews, and repair work orders after project completion."
       actions={
+        <div className="flex flex-wrap gap-2">
+          {String(import.meta.env.VITE_CAPTURE_WARRANTY_ENABLED || "").toLowerCase() === "true" ? (
+            <>
+              <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", { detail: { mode: "warranty_document" } }))} className={`${operationalButton} rounded-lg px-4 py-2 text-sm font-semibold`}>Capture Warranty Document</button>
+              <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", { detail: { mode: "warranty_concern" } }))} className={`${operationalButton} rounded-lg px-4 py-2 text-sm font-semibold`}>Report Concern</button>
+            </>
+          ) : null}
           <button
             type="button"
             onClick={load}
@@ -344,6 +351,7 @@ export default function WarrantyDashboardPage() {
             <RefreshCw className="h-4 w-4" />
             Refresh
           </button>
+        </div>
       }
       className="mx-auto max-w-[1180px]"
       contentClassName="space-y-4"

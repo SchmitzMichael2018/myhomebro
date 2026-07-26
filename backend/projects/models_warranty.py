@@ -96,6 +96,10 @@ class WarrantyRequest(models.Model):
     closed_at = models.DateTimeField(null=True, blank=True)
     escalated_dispute_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
     source_context = models.JSONField(default=dict, blank=True)
+    origin_capture = models.OneToOneField(
+        "projects.Capture", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="warranty_request",
+    )
 
     class Meta:
         ordering = ["-created_at", "-id"]

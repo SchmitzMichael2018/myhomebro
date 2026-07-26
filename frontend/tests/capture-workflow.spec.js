@@ -208,6 +208,9 @@ test('Project Capture requires project context and saves a Project Update for re
   await expect(launcher.getByRole('button', { name: 'Document an issue' })).toBeVisible();
   await expect(launcher.getByRole('button', { name: 'Log a communication' })).toBeVisible();
   await expect(launcher.getByRole('button', { name: 'Add a project document' })).toBeVisible();
+  await expect(launcher.getByRole('button', { name: 'Add Equipment' })).toHaveCount(0);
+  await expect(launcher.getByRole('button', { name: 'Save Warranty Information' })).toHaveCount(0);
+  await expect(launcher.getByRole('button', { name: 'Report Warranty Concern' })).toHaveCount(0);
 
   await page.getByTestId('capture-action-project_update').click();
   await page.getByLabel('Project').selectOption('41');
