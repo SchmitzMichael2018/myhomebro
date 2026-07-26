@@ -24,11 +24,20 @@ from projects.services.capture_lifecycle import (
     CaptureVersionConflict,
     archive_capture,
     check_expected_version,
-    retry_capture,
+)
+from projects.services.capture_processing import (
+    CaptureProcessingError,
+    CaptureSchemaError,
+    approve_review,
+    find_duplicate_candidates,
+    process_capture,
+    review_envelope,
+    update_review,
 )
 from projects.services.capture_permissions import (
     can_archive_capture,
     can_create_capture,
+    can_review_capture,
     can_view_company_capture,
 )
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
@@ -48,11 +57,45 @@ def _disabled_response():
     return Response({"detail": "Capture foundation is not enabled."}, status=status.HTTP_404_NOT_FOUND)
 
 
+def _review_enabled():
+    return _foundation_enabled() and bool(getattr(settings, "CAPTURE_REVIEW_ENABLED", False))
+
+
+def _review_disabled_response():
+    return Response(
+        {"detail": "Capture review is not enabled.", "code": "capture_review_disabled"},
+        status=status.HTTP_404_NOT_FOUND,
+    )
+
+
 def _lifecycle_error_response(exc):
     response_status = status.HTTP_409_CONFLICT if isinstance(exc, CaptureVersionConflict) else status.HTTP_400_BAD_REQUEST
     return Response(
         {"detail": str(exc), "code": exc.code},
         status=response_status,
+    )
+
+
+def _review_response(capture):
+    return {
+        "capture": CaptureSerializer(capture).data,
+        "review": review_envelope(capture),
+    }
+
+
+def _review_error_response(exc, capture=None):
+    response = {
+        "detail": str(exc),
+        "code": getattr(exc, "code", "capture_processing_error"),
+    }
+    if isinstance(exc, CaptureVersionConflict) and capture is not None:
+        capture.refresh_from_db()
+        response.update(_review_response(capture))
+    return Response(
+        response,
+        status=status.HTTP_409_CONFLICT
+        if isinstance(exc, CaptureVersionConflict)
+        else status.HTTP_400_BAD_REQUEST,
     )
 
 
@@ -199,11 +242,16 @@ class CaptureSummaryView(APIView):
                         Capture.STATUS_DRAFT,
                         Capture.STATUS_SAVED,
                         Capture.STATUS_PROCESSING,
+                    )
+                ),
+                "needs_review": sum(
+                    counts.get(value, 0)
+                    for value in (
+                        Capture.STATUS_READY_FOR_REVIEW,
                         Capture.STATUS_NEEDS_INFORMATION,
                         Capture.STATUS_POSSIBLE_DUPLICATE,
                     )
                 ),
-                "needs_review": counts.get(Capture.STATUS_READY_FOR_REVIEW, 0),
                 "applied": counts.get(Capture.STATUS_APPLIED, 0),
                 "failed": counts.get(Capture.STATUS_FAILED, 0)
                 + counts.get(Capture.STATUS_APPLY_FAILED, 0),
@@ -296,15 +344,111 @@ class CaptureRetryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, capture_id):
-        if not _foundation_enabled():
-            return _disabled_response()
+        if not _review_enabled():
+            return _review_disabled_response()
         capture = _capture_for_user(request, capture_id)
         if capture is None:
             return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
-        if capture.captured_by_id != request.user.id:
-            return Response({"detail": "Only the Capture author can retry this Capture."}, status=status.HTTP_403_FORBIDDEN)
+        if not can_review_capture(request.user, capture):
+            return Response({"detail": "You do not have permission to retry this Capture."}, status=status.HTTP_403_FORBIDDEN)
         try:
-            capture = retry_capture(
+            capture = process_capture(
+                capture,
+                actor=request.user,
+                expected_version=request.data.get("expected_version"),
+                mode=str(request.data.get("mode") or "deterministic"),
+                is_retry=True,
+            )
+        except (CaptureLifecycleError, TypeError, ValueError) as exc:
+            if not isinstance(exc, CaptureLifecycleError):
+                exc = CaptureVersionConflict("A valid expected_version is required.")
+            return _review_error_response(exc, capture)
+        return Response(_review_response(capture))
+
+
+class CaptureProcessView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, capture_id):
+        if not _review_enabled():
+            return _review_disabled_response()
+        capture = _capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_review_capture(request.user, capture):
+            return Response({"detail": "You do not have permission to process this Capture."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            capture = process_capture(
+                capture,
+                actor=request.user,
+                expected_version=request.data.get("expected_version"),
+                mode=str(request.data.get("mode") or "deterministic"),
+            )
+        except (CaptureLifecycleError, TypeError, ValueError) as exc:
+            if not isinstance(exc, CaptureLifecycleError):
+                exc = CaptureVersionConflict("A valid expected_version is required.")
+            return _review_error_response(exc, capture)
+        response_status = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if capture.status == Capture.STATUS_FAILED
+            else status.HTTP_200_OK
+        )
+        payload = _review_response(capture)
+        if capture.status == Capture.STATUS_FAILED:
+            payload.update({
+                "detail": "Project Assistant preparation is temporarily unavailable. Manual review remains available.",
+                "code": "capture_processing_unavailable",
+                "capture_saved": True,
+            })
+        return Response(payload, status=response_status)
+
+
+class CaptureReviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, capture_id):
+        if not _review_enabled():
+            return _review_disabled_response()
+        capture = _capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_review_capture(request.user, capture):
+            return Response({"detail": "You do not have permission to review this Capture."}, status=status.HTTP_403_FORBIDDEN)
+        allowed = {"expected_version", "structured_draft", "duplicate_decision"}
+        unknown = set(request.data) - allowed
+        if unknown:
+            return Response(
+                {"detail": f"Unsupported review fields: {', '.join(sorted(unknown))}.", "code": "invalid_capture_review"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        try:
+            capture = update_review(
+                capture,
+                actor=request.user,
+                expected_version=request.data.get("expected_version"),
+                draft=request.data.get("structured_draft"),
+                duplicate_decision=request.data.get("duplicate_decision"),
+            )
+        except (CaptureLifecycleError, TypeError, ValueError) as exc:
+            if not isinstance(exc, CaptureLifecycleError):
+                exc = CaptureVersionConflict("A valid expected_version is required.")
+            return _review_error_response(exc, capture)
+        return Response(_review_response(capture))
+
+
+class CaptureApproveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, capture_id):
+        if not _review_enabled():
+            return _review_disabled_response()
+        capture = _capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_review_capture(request.user, capture):
+            return Response({"detail": "You do not have permission to approve this Capture."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            capture = approve_review(
                 capture,
                 actor=request.user,
                 expected_version=request.data.get("expected_version"),
@@ -312,8 +456,27 @@ class CaptureRetryView(APIView):
         except (CaptureLifecycleError, TypeError, ValueError) as exc:
             if not isinstance(exc, CaptureLifecycleError):
                 exc = CaptureVersionConflict("A valid expected_version is required.")
-            return _lifecycle_error_response(exc)
-        return Response(CaptureSerializer(capture).data)
+            return _review_error_response(exc, capture)
+        return Response(_review_response(capture))
+
+
+class CaptureDuplicatesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, capture_id):
+        if not _review_enabled():
+            return _review_disabled_response()
+        capture = _capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        if not can_review_capture(request.user, capture):
+            return Response({"detail": "You do not have permission to review duplicates."}, status=status.HTTP_403_FORBIDDEN)
+        if capture.capture_type != Capture.TYPE_QUICK_LEAD:
+            return Response(
+                {"detail": "Duplicate search is supported only for Quick Lead Captures."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({"capture_id": str(capture.id), "duplicate_candidates": find_duplicate_candidates(capture)})
 
 
 class CaptureReceiptView(APIView):

@@ -37,10 +37,12 @@ ALLOWED_TRANSITIONS = {
     Capture.STATUS_NEEDS_INFORMATION: {
         Capture.STATUS_SAVED,
         Capture.STATUS_PROCESSING,
+        Capture.STATUS_APPROVED,
         Capture.STATUS_ARCHIVED,
     },
     Capture.STATUS_POSSIBLE_DUPLICATE: {
         Capture.STATUS_READY_FOR_REVIEW,
+        Capture.STATUS_APPROVED,
         Capture.STATUS_ARCHIVED,
     },
     Capture.STATUS_APPROVED: {Capture.STATUS_APPLYING},

@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
-import { archiveCapture } from "../api/captures.js";
+import { archiveCapture, processCapture, retryCapture } from "../api/captures.js";
 import {
   Button,
   Card,
@@ -18,12 +18,17 @@ import { useCaptures, useCaptureSummary } from "../hooks/useCaptures.js";
 import {
   captureFlags,
   isCaptureInboxEnabled,
+  isCaptureReviewEnabled,
 } from "../lib/captureFlags.js";
 
 const STATUS_OPTIONS = [
   ["", "All statuses"],
   ["saved", "Saved"],
+  ["processing", "Processing"],
   ["ready_for_review", "Needs Review"],
+  ["needs_information", "Needs Information"],
+  ["possible_duplicate", "Possible Duplicate"],
+  ["approved", "Approved"],
   ["applied", "Applied"],
   ["archived", "Archived"],
   ["failed", "Failed"],
@@ -45,6 +50,7 @@ const STATUS_BADGES = {
   ready_for_review: "required",
   needs_information: "required",
   possible_duplicate: "required",
+  approved: "complete",
   failed: "blocked",
   apply_failed: "blocked",
   applied: "complete",
@@ -69,6 +75,8 @@ export function CaptureInboxContent() {
   });
   const captures = useCaptures(filters);
   const metrics = useCaptureSummary();
+  const reviewEnabled = isCaptureReviewEnabled();
+  const [workingId, setWorkingId] = useState("");
 
   function updateFilter(key, value) {
     setFilters((current) => ({ ...current, [key]: value, page: 1 }));
@@ -85,6 +93,39 @@ export function CaptureInboxContent() {
     } catch (requestError) {
       toast.error(requestError?.response?.data?.detail || "Capture could not be archived.");
     }
+  }
+
+  async function primary(capture) {
+    if (!["saved", "failed"].includes(capture.status)) {
+      navigate(`/app/capture/${capture.id}`);
+      return;
+    }
+    setWorkingId(capture.id);
+    try {
+      const action = capture.status === "failed" ? retryCapture : processCapture;
+      await action(capture.id, { expected_version: capture.version });
+      navigate(`/app/capture/${capture.id}`);
+    } catch (requestError) {
+      if (requestError?.response?.data?.capture_saved) {
+        navigate(`/app/capture/${capture.id}`);
+      } else {
+        toast.error(requestError?.response?.data?.detail || "Capture could not be processed.");
+      }
+    } finally {
+      setWorkingId("");
+    }
+  }
+
+  function actionLabel(capture) {
+    return {
+      saved: "Process",
+      processing: "Processing…",
+      ready_for_review: "Review",
+      needs_information: "Complete information",
+      possible_duplicate: "Resolve duplicate",
+      approved: "View approved draft",
+      failed: "Retry",
+    }[capture.status] || "Open";
   }
 
   return (
@@ -220,11 +261,17 @@ export function CaptureInboxContent() {
                   <Button
                     type="button"
                     size="sm"
-                    variant="secondary"
+                    variant={reviewEnabled ? "primary" : "secondary"}
                     theme="operational"
-                    onClick={() => navigate(`/app/capture/${capture.id}`)}
+                    loading={workingId === capture.id}
+                    disabled={capture.status === "processing"}
+                    onClick={() =>
+                      reviewEnabled
+                        ? primary(capture)
+                        : navigate(`/app/capture/${capture.id}`)
+                    }
                   >
-                    Open
+                    {reviewEnabled ? actionLabel(capture) : "Open"}
                   </Button>
                   {capture.status !== "archived" ? (
                     <Button

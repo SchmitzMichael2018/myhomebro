@@ -36,7 +36,9 @@ def can_view_company_capture(user, capture: Capture) -> bool:
 
 
 def can_review_capture(user, capture: Capture) -> bool:
-    return _same_contractor(user, capture) and (_is_owner(user) or _is_supervisor(user))
+    return _same_contractor(user, capture) and (
+        _is_owner(user) or _is_supervisor(user) or capture.captured_by_id == user.id
+    )
 
 
 def can_apply_capture(user, capture: Capture) -> bool:

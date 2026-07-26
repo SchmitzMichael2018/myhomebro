@@ -129,8 +129,8 @@ class CaptureFoundationTests(TestCase):
     def test_permission_policy_is_contractor_and_role_scoped(self):
         self.assertTrue(can_create_capture(self.employee))
         self.assertTrue(can_view_company_capture(self.employee, self.capture))
-        self.assertFalse(can_review_capture(self.employee, self.capture))
-        self.assertFalse(can_apply_capture(self.employee, self.capture))
+        self.assertTrue(can_review_capture(self.employee, self.capture))
+        self.assertTrue(can_apply_capture(self.employee, self.capture))
         self.assertTrue(can_review_capture(self.supervisor, self.capture))
         self.assertTrue(can_apply_capture(self.owner, self.capture))
         self.assertTrue(can_archive_capture(self.employee, self.capture))

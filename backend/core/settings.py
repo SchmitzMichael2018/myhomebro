@@ -507,6 +507,7 @@ ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = get_bool("ACCOUNTS_REQUIRE_EMAIL_VERIFICAT
 # Capture foundation is deployed dark and enabled deliberately after migration
 # and preflight. The Inbox has its own release switch.
 CAPTURE_FOUNDATION_ENABLED = get_bool("CAPTURE_FOUNDATION_ENABLED", default=False)
+CAPTURE_REVIEW_ENABLED = get_bool("CAPTURE_REVIEW_ENABLED", default=False)
 CAPTURE_INBOX_ENABLED = get_bool("CAPTURE_INBOX_ENABLED", default=False)
 CAPTURE_MAX_PHOTO_SIZE_MB = int(get_env_var("CAPTURE_MAX_PHOTO_SIZE_MB", "10") or 10)
 

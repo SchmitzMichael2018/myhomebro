@@ -98,6 +98,16 @@ class Capture(models.Model):
     )
     raw_text_payload = models.JSONField(default=dict, blank=True)
     structured_draft = models.JSONField(default=dict, blank=True)
+    review_decisions = models.JSONField(default=dict, blank=True)
+    approved_snapshot = models.JSONField(default=dict, blank=True)
+    approved_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_captures",
+    )
     confidence = models.JSONField(default=dict, blank=True)
     duplicate_candidates = models.JSONField(default=list, blank=True)
     failure_details = models.JSONField(default=dict, blank=True)
@@ -116,6 +126,19 @@ class Capture(models.Model):
             models.Index(fields=["contractor", "capture_type", "-created_at"], name="capture_inbox_type_idx"),
             models.Index(fields=["contractor", "captured_by", "-created_at"], name="capture_actor_idx"),
         ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            existing = Capture.objects.filter(pk=self.pk).only(
+                "approved_snapshot", "approved_at", "approved_by_id"
+            ).first()
+            if existing and existing.approved_snapshot and (
+                existing.approved_snapshot != self.approved_snapshot
+                or existing.approved_at != self.approved_at
+                or existing.approved_by_id != self.approved_by_id
+            ):
+                raise ValidationError("Approved Capture snapshots are immutable.")
+        return super().save(*args, **kwargs)
 
 
 class CaptureArtifact(models.Model):

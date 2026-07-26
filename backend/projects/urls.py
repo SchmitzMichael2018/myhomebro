@@ -228,9 +228,13 @@ from .views.business_dashboard import (
 )
 from .views.capture import (
     CaptureArchiveView,
+    CaptureApproveView,
     CaptureDetailView,
+    CaptureDuplicatesView,
     CaptureListCreateView,
+    CaptureProcessView,
     CaptureReceiptView,
+    CaptureReviewView,
     CaptureRetryView,
     CaptureSummaryView,
 )
@@ -484,7 +488,11 @@ urlpatterns = [
     path("captures/summary/", CaptureSummaryView.as_view(), name="capture-summary"),
     path("captures/<uuid:capture_id>/", CaptureDetailView.as_view(), name="capture-detail"),
     path("captures/<uuid:capture_id>/archive/", CaptureArchiveView.as_view(), name="capture-archive"),
+    path("captures/<uuid:capture_id>/process/", CaptureProcessView.as_view(), name="capture-process"),
     path("captures/<uuid:capture_id>/retry/", CaptureRetryView.as_view(), name="capture-retry"),
+    path("captures/<uuid:capture_id>/review/", CaptureReviewView.as_view(), name="capture-review"),
+    path("captures/<uuid:capture_id>/approve/", CaptureApproveView.as_view(), name="capture-approve"),
+    path("captures/<uuid:capture_id>/duplicates/", CaptureDuplicatesView.as_view(), name="capture-duplicates"),
     path("captures/<uuid:capture_id>/receipt/", CaptureReceiptView.as_view(), name="capture-receipt"),
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
     path("warranty/dashboard/", WarrantyDashboardView.as_view(), name="warranty-dashboard"),

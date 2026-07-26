@@ -57,6 +57,37 @@ export async function retryCapture(captureId, payload) {
   return response.data;
 }
 
+export async function processCapture(captureId, payload) {
+  const response = await api.post(
+    `/projects/captures/${encodeURIComponent(captureId)}/process/`,
+    payload
+  );
+  return response.data;
+}
+
+export async function updateCaptureReview(captureId, payload) {
+  const response = await api.patch(
+    `/projects/captures/${encodeURIComponent(captureId)}/review/`,
+    payload
+  );
+  return response.data;
+}
+
+export async function approveCaptureReview(captureId, payload) {
+  const response = await api.post(
+    `/projects/captures/${encodeURIComponent(captureId)}/approve/`,
+    payload
+  );
+  return response.data;
+}
+
+export async function getCaptureDuplicates(captureId) {
+  const response = await api.get(
+    `/projects/captures/${encodeURIComponent(captureId)}/duplicates/`
+  );
+  return response.data;
+}
+
 export async function getCaptureReceipt(captureId) {
   const response = await api.get(
     `/projects/captures/${encodeURIComponent(captureId)}/receipt/`
