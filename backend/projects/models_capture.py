@@ -96,6 +96,13 @@ class Capture(models.Model):
     milestone = models.ForeignKey(
         "projects.Milestone", on_delete=models.SET_NULL, null=True, blank=True, related_name="captures"
     )
+    qr_asset = models.ForeignKey(
+        "projects.CaptureQrAsset",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="captures",
+    )
     raw_text_payload = models.JSONField(default=dict, blank=True)
     structured_draft = models.JSONField(default=dict, blank=True)
     review_decisions = models.JSONField(default=dict, blank=True)

@@ -242,6 +242,14 @@ from .views.capture import (
     CaptureSummaryView,
     CaptureTimelineView,
 )
+from .views.capture_qr import (
+    CaptureQrAssetActionView,
+    CaptureQrAssetAnalyticsView,
+    CaptureQrAssetDetailView,
+    CaptureQrAssetListView,
+    CaptureQrAssetQrView,
+    PublicCaptureQrView,
+)
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
 from .views.subcontractor_invitations import (
@@ -502,6 +510,12 @@ urlpatterns = [
     path("captures/<uuid:capture_id>/apply/", CaptureApplyView.as_view(), name="capture-apply"),
     path("captures/<uuid:capture_id>/duplicates/", CaptureDuplicatesView.as_view(), name="capture-duplicates"),
     path("captures/<uuid:capture_id>/receipt/", CaptureReceiptView.as_view(), name="capture-receipt"),
+    path("capture-qr-assets/", CaptureQrAssetListView.as_view(), name="capture-qr-assets"),
+    path("capture-qr-assets/<uuid:asset_id>/", CaptureQrAssetDetailView.as_view(), name="capture-qr-asset"),
+    path("capture-qr-assets/<uuid:asset_id>/qr/", CaptureQrAssetQrView.as_view(), name="capture-qr-image"),
+    path("capture-qr-assets/<uuid:asset_id>/analytics/", CaptureQrAssetAnalyticsView.as_view(), name="capture-qr-analytics"),
+    path("capture-qr-assets/<uuid:asset_id>/<str:action>/", CaptureQrAssetActionView.as_view(), name="capture-qr-action"),
+    path("public/capture-qr/<str:token>/", PublicCaptureQrView.as_view(), name="public-capture-qr"),
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
     path("warranty/dashboard/", WarrantyDashboardView.as_view(), name="warranty-dashboard"),
     path("customer-portal/<str:token>/warranty-requests/", CustomerWarrantyRequestView.as_view(), name="customer-portal-warranty-requests"),

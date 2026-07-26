@@ -66,3 +66,11 @@ def can_delete_capture_artifact(user, artifact: CaptureArtifact) -> bool:
     }:
         return False
     return _is_owner(user) or _is_supervisor(user) or artifact.uploaded_by_id == user.id
+
+
+def can_manage_qr_assets(user) -> bool:
+    return bool(user and user.is_authenticated and _is_owner(user))
+
+
+def can_view_qr_analytics(user) -> bool:
+    return can_manage_qr_assets(user)

@@ -37,6 +37,7 @@ const TenantMaintenanceRequestPage = lazy(() => import("../pages/TenantMaintenan
 const TenantMaintenanceStatusPage = lazy(() => import("../pages/TenantMaintenanceStatusPage.jsx"));
 const CustomerAccountOnboardingPage = lazy(() => import("../pages/CustomerAccountOnboardingPage.jsx"));
 const EmailVerifiedPage = lazy(() => import("../pages/EmailVerifiedPage.jsx"));
+const PublicCaptureQrPage = lazy(() => import("../pages/PublicCaptureQrPage.jsx"));
 
 function PortalTokenRedirect() {
   const { token = "" } = useParams();
@@ -79,6 +80,7 @@ export default function PublicRoutes() {
       {/* Public intake */}
       <Route path="/start-project" element={<StartProjectIntake />} />
       <Route path="/start-project/:token" element={<PublicIntake />} />
+      <Route path="/c/:token" element={<PublicCaptureQrPage />} />
 
       {/* Legacy public intake route kept for older emailed links */}
       <Route path="/public-intake/:token" element={<PublicIntake />} />

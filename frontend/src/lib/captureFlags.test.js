@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { isCaptureApplicationEnabled, isCaptureReviewEnabled } from "./captureFlags.js";
+import {
+  isCaptureApplicationEnabled,
+  isCaptureQrEnabled,
+  isCaptureReviewEnabled,
+} from "./captureFlags.js";
 
 describe("Capture review feature flag", () => {
   it("requires foundation, Inbox, and review flags", () => {
@@ -16,5 +20,11 @@ describe("Capture review feature flag", () => {
     expect(isCaptureApplicationEnabled({
       foundation: true, inbox: true, review: true, application: true,
     })).toBe(true);
+  });
+
+  it("requires foundation, inbox, and QR flags for QR management", () => {
+    expect(isCaptureQrEnabled({ foundation: true, inbox: true, qr: true })).toBe(true);
+    expect(isCaptureQrEnabled({ foundation: true, inbox: false, qr: true })).toBe(false);
+    expect(isCaptureQrEnabled({ foundation: true, inbox: true, qr: false })).toBe(false);
   });
 });

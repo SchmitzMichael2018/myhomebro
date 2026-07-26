@@ -82,9 +82,10 @@ const NotificationsPage = lazy(() => import("../pages/NotificationsPage.jsx"));
 const WarrantyDashboardPage = lazy(() => import("../pages/WarrantyDashboardPage.jsx"));
 const CaptureInboxPage = lazy(() => import("../pages/CaptureInboxPage.jsx"));
 const CaptureDetailPage = lazy(() => import("../pages/CaptureDetailPage.jsx"));
+const CaptureQrManagementPage = lazy(() => import("../pages/CaptureQrManagementPage.jsx"));
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
-import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
+import { isCaptureInboxEnabled, isCaptureQrEnabled } from "../lib/captureFlags.js";
 
 function AppHomeRedirect() {
   const { data: identity, loading } = useWhoAmI();
@@ -162,6 +163,7 @@ export function protectedRoutes() {
           {isCaptureInboxEnabled() ? (
             <>
               <Route path="capture" element={<CaptureInboxPage />} />
+              {isCaptureQrEnabled() ? <Route path="capture/qr" element={<CaptureQrManagementPage />} /> : null}
               <Route path="capture/:captureId" element={<CaptureDetailPage />} />
             </>
           ) : null}

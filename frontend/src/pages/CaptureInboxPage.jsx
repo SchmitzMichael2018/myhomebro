@@ -18,6 +18,7 @@ import { useCaptures, useCaptureSummary } from "../hooks/useCaptures.js";
 import {
   captureFlags,
   isCaptureInboxEnabled,
+  isCaptureQrEnabled,
   isCaptureReviewEnabled,
 } from "../lib/captureFlags.js";
 
@@ -198,6 +199,11 @@ export function CaptureInboxContent() {
         theme="operational"
         title="Capture Inbox"
         subtitle="Review saved information and its current processing status."
+        secondaryActions={isCaptureQrEnabled() ? (
+          <Button theme="operational" variant="secondary" onClick={() => navigate("/app/capture/qr")}>
+            Manage QR
+          </Button>
+        ) : null}
       />
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6" data-testid="capture-summary">
@@ -360,8 +366,10 @@ export function CaptureInboxContent() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-black text-slate-950 dark:text-slate-100">
-                    {TYPE_OPTIONS.find(([value]) => value === capture.capture_type)?.[1] ||
-                      capture.capture_type}
+                    {capture.source_category === "qr"
+                      ? "Public QR Lead"
+                      : TYPE_OPTIONS.find(([value]) => value === capture.capture_type)?.[1] ||
+                        capture.capture_type}
                   </div>
                   <div className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
                     {capture.raw_text_payload?.name ||
@@ -375,6 +383,17 @@ export function CaptureInboxContent() {
                     {new Date(capture.created_at).toLocaleString()} ·{" "}
                     {capture.captured_by_name || "Unknown creator"}
                   </div>
+                  {capture.source_category === "qr" ? (
+                    <div className="mt-1 text-xs font-semibold text-[var(--mhb-text-secondary)]">
+                      QR · {capture.qr_asset_label || capture.source_detail}
+                      {capture.attribution_metadata?.campaign
+                        ? ` · ${capture.attribution_metadata.campaign}`
+                        : ""}
+                      {capture.artifacts?.length
+                        ? ` · ${capture.artifacts.length} photo${capture.artifacts.length === 1 ? "" : "s"}`
+                        : ""}
+                    </div>
+                  ) : null}
                 </div>
                 <StatusBadge
                   status={STATUS_BADGES[capture.status] || "pending"}

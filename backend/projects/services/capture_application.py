@@ -287,6 +287,9 @@ def apply_capture(capture, *, actor, expected_version, idempotency_key, payload)
         "duplicate_decision": (snapshot.get("review_decisions") or {}).get("duplicate"),
         "follow_up_included": bool(options.get("include_follow_up")),
         "warnings": list(dict.fromkeys(context.warnings)),
+        "attribution": deepcopy(locked.attribution_metadata or {}),
+        "source_category": locked.source_category,
+        "source_detail": locked.source_detail,
         "idempotency_reference": safe_key_reference,
         "final_status": "applied",
     }

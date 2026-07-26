@@ -511,6 +511,16 @@ CAPTURE_REVIEW_ENABLED = get_bool("CAPTURE_REVIEW_ENABLED", default=False)
 CAPTURE_APPLICATION_ENABLED = get_bool("CAPTURE_APPLICATION_ENABLED", default=False)
 CAPTURE_INBOX_ENABLED = get_bool("CAPTURE_INBOX_ENABLED", default=False)
 CAPTURE_MAX_PHOTO_SIZE_MB = int(get_env_var("CAPTURE_MAX_PHOTO_SIZE_MB", "10") or 10)
+CAPTURE_QR_ENABLED = get_bool("CAPTURE_QR_ENABLED", default=False)
+CAPTURE_QR_PUBLIC_ENABLED = get_bool("CAPTURE_QR_PUBLIC_ENABLED", default=False)
+CAPTURE_QR_MAX_PHOTOS = int(get_env_var("CAPTURE_QR_MAX_PHOTOS", "3") or 3)
+CAPTURE_QR_MAX_PHOTO_SIZE_MB = int(get_env_var("CAPTURE_QR_MAX_PHOTO_SIZE_MB", "8") or 8)
+CAPTURE_QR_MIN_COMPLETION_SECONDS = int(get_env_var("CAPTURE_QR_MIN_COMPLETION_SECONDS", "2") or 2)
+
+REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
+    "capture_qr_public": get_env_var("CAPTURE_QR_PUBLIC_RATE", "30/hour"),
+    "capture_qr_token": get_env_var("CAPTURE_QR_TOKEN_RATE", "15/hour"),
+})
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -78,6 +78,8 @@ class CaptureSerializer(serializers.ModelSerializer):
     project_id = serializers.IntegerField(read_only=True)
     agreement_id = serializers.IntegerField(read_only=True)
     milestone_id = serializers.IntegerField(read_only=True)
+    qr_asset_id = serializers.UUIDField(read_only=True)
+    qr_asset_label = serializers.CharField(source="qr_asset.label", read_only=True)
     artifacts = CaptureArtifactSerializer(many=True, read_only=True)
     events = CaptureEventSerializer(many=True, read_only=True)
 
@@ -97,6 +99,8 @@ class CaptureSerializer(serializers.ModelSerializer):
             "project_id",
             "agreement_id",
             "milestone_id",
+            "qr_asset_id",
+            "qr_asset_label",
             "raw_text_payload",
             "structured_draft",
             "review_decisions",

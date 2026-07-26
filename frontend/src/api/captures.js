@@ -5,6 +5,52 @@ export async function listCaptures(params = {}) {
   return response.data;
 }
 
+export async function listCaptureQrAssets() {
+  const response = await api.get("/projects/capture-qr-assets/");
+  return response.data;
+}
+
+export async function createCaptureQrAsset(payload) {
+  const response = await api.post("/projects/capture-qr-assets/", payload);
+  return response.data;
+}
+
+export async function updateCaptureQrAsset(assetId, payload) {
+  const response = await api.patch(`/projects/capture-qr-assets/${assetId}/`, payload);
+  return response.data;
+}
+
+export async function actOnCaptureQrAsset(assetId, action) {
+  const response = await api.post(`/projects/capture-qr-assets/${assetId}/${action}/`);
+  return response.data;
+}
+
+export async function getCaptureQrAnalytics(assetId) {
+  const response = await api.get(`/projects/capture-qr-assets/${assetId}/analytics/`);
+  return response.data;
+}
+
+export async function downloadCaptureQr(assetId) {
+  const response = await api.get(`/projects/capture-qr-assets/${assetId}/qr/`, {
+    responseType: "blob",
+  });
+  return response.data;
+}
+
+export async function getPublicCaptureQr(token) {
+  const response = await api.get(`/projects/public/capture-qr/${encodeURIComponent(token)}/`);
+  return response.data;
+}
+
+export async function submitPublicCaptureQr(token, payload, options = {}) {
+  const response = await api.post(
+    `/projects/public/capture-qr/${encodeURIComponent(token)}/`,
+    payload,
+    options
+  );
+  return response.data;
+}
+
 export async function getCapture(captureId) {
   const response = await api.get(
     `/projects/captures/${encodeURIComponent(captureId)}/`

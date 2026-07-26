@@ -823,6 +823,14 @@ class PublicContractorLead(models.Model):
         related_name="source_public_leads",
     )
     converted_at = models.DateTimeField(null=True, blank=True)
+    origin_capture = models.OneToOneField(
+        "projects.Capture", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="compatibility_public_lead",
+    )
+    qr_asset = models.ForeignKey(
+        "projects.CaptureQrAsset", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="public_leads",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -3273,3 +3281,4 @@ from .models_compliance import (
 from .models_support import SupportMessage, SupportTicket, SupportTicketMessage  # noqa: E402,F401
 from .models_maintenance import MaintenanceWorkOrder, MaintenanceWorkOrderAttachment  # noqa: E402,F401
 from .models_capture import Capture, CaptureApplication, CaptureArtifact, CaptureEvent  # noqa: E402,F401
+from .models_capture_qr import CaptureQrAsset, CaptureQrEvent, CaptureQrSubmission  # noqa: E402,F401
