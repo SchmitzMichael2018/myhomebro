@@ -228,6 +228,7 @@ from .views.business_dashboard import (
 )
 from .views.capture import (
     CaptureArchiveView,
+    CaptureArtifactListView,
     CaptureApproveView,
     CaptureApplicationPreviewView,
     CaptureApplyView,
@@ -239,6 +240,7 @@ from .views.capture import (
     CaptureReviewView,
     CaptureRetryView,
     CaptureSummaryView,
+    CaptureTimelineView,
 )
 from .views.contractor_operations import ContractorOperationsDashboardView
 from .views.expense_requests import ExpenseRequestViewSet
@@ -489,6 +491,8 @@ urlpatterns = [
     path("captures/", CaptureListCreateView.as_view(), name="capture-list-create"),
     path("captures/summary/", CaptureSummaryView.as_view(), name="capture-summary"),
     path("captures/<uuid:capture_id>/", CaptureDetailView.as_view(), name="capture-detail"),
+    path("captures/<uuid:capture_id>/timeline/", CaptureTimelineView.as_view(), name="capture-timeline"),
+    path("captures/<uuid:capture_id>/artifacts/", CaptureArtifactListView.as_view(), name="capture-artifacts"),
     path("captures/<uuid:capture_id>/archive/", CaptureArchiveView.as_view(), name="capture-archive"),
     path("captures/<uuid:capture_id>/process/", CaptureProcessView.as_view(), name="capture-process"),
     path("captures/<uuid:capture_id>/retry/", CaptureRetryView.as_view(), name="capture-retry"),

@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import (
+    Case, Count, IntegerField, Prefetch, Q, TextField, Value, When,
+)
+from django.db.models.fields.json import KeyTextTransform
+from django.db.models.functions import Coalesce, Lower
+from django.utils.dateparse import parse_date
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.pagination import CursorPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -15,7 +21,9 @@ from rest_framework.views import APIView
 from projects.models import Capture, CaptureApplication, CaptureArtifact, CaptureEvent
 from projects.serializers.capture import (
     CaptureApplicationSerializer,
+    CaptureArtifactSerializer,
     CaptureCreateSerializer,
+    CaptureEventSerializer,
     CapturePatchSerializer,
     CaptureSerializer,
 )
@@ -51,10 +59,28 @@ from projects.services.capture_permissions import (
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 
 
-class CapturePagination(PageNumberPagination):
+logger = logging.getLogger(__name__)
+
+
+class CapturePagination(CursorPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
+    ordering = ("-original_captured_at", "-created_at", "-id")
+
+    def paginate_queryset(self, queryset, request, view=None):
+        self.total_count = queryset.count()
+        return super().paginate_queryset(queryset, request, view=view)
+
+    def get_paginated_response(self, data):
+        return Response(
+            {
+                "count": self.total_count,
+                "next": self.get_next_link(),
+                "previous": self.get_previous_link(),
+                "results": data,
+            }
+        )
 
 
 def _foundation_enabled():
@@ -133,6 +159,18 @@ def _capture_for_user(request, capture_id):
     return capture
 
 
+def _core_capture_for_user(request, capture_id):
+    contractor = get_contractor_for_user(request.user)
+    if contractor is None:
+        return None
+    capture = Capture.objects.select_related("captured_by").filter(
+        contractor=contractor, pk=capture_id
+    ).first()
+    if capture is None or not can_view_company_capture(request.user, capture):
+        return None
+    return capture
+
+
 def _visible_captures(user, contractor):
     queryset = Capture.objects.filter(contractor=contractor)
     subaccount = get_subaccount_for_user(user)
@@ -162,23 +200,98 @@ class CaptureListCreateView(APIView):
         contractor = get_contractor_for_user(request.user)
         if contractor is None:
             return Response({"detail": "Contractor account required."}, status=status.HTTP_403_FORBIDDEN)
-        queryset = _visible_captures(request.user, contractor).select_related("captured_by")
+        queryset = (
+            _visible_captures(request.user, contractor)
+            .select_related("captured_by")
+            .prefetch_related(
+                "artifacts",
+                Prefetch("events", queryset=CaptureEvent.objects.select_related("actor")),
+            )
+        )
         capture_status = str(request.query_params.get("status") or "").strip()
         capture_type = str(request.query_params.get("type") or "").strip()
         search = str(request.query_params.get("search") or "").strip()
+        creator = str(request.query_params.get("creator") or "").strip()
+        date_from = parse_date(str(request.query_params.get("date_from") or ""))
+        date_to = parse_date(str(request.query_params.get("date_to") or ""))
+        has_duplicates = str(request.query_params.get("has_duplicates") or "").lower() == "true"
+        has_follow_up = str(request.query_params.get("has_follow_up") or "").lower() == "true"
+        sort = str(request.query_params.get("sort") or "newest").strip()
+        status_groups = {
+            "pending": (
+                Capture.STATUS_DRAFT, Capture.STATUS_SAVED,
+                Capture.STATUS_PROCESSING, Capture.STATUS_APPLYING,
+            ),
+            "needs_review": (
+                Capture.STATUS_READY_FOR_REVIEW, Capture.STATUS_NEEDS_INFORMATION,
+                Capture.STATUS_POSSIBLE_DUPLICATE,
+            ),
+            "failed": (Capture.STATUS_FAILED, Capture.STATUS_APPLY_FAILED),
+        }
         if capture_status:
-            queryset = queryset.filter(status=capture_status)
+            queryset = queryset.filter(
+                status__in=status_groups.get(capture_status, (capture_status,))
+            )
         if capture_type:
             queryset = queryset.filter(capture_type=capture_type)
         if search:
             queryset = queryset.filter(
                 Q(raw_text_payload__icontains=search)
+                | Q(structured_draft__icontains=search)
                 | Q(source_detail__icontains=search)
                 | Q(proposed_destination__icontains=search)
+                | Q(status__icontains=search)
+                | Q(capture_type__icontains=search)
+                | Q(captured_by__email__icontains=search)
+                | Q(captured_by__first_name__icontains=search)
+                | Q(captured_by__last_name__icontains=search)
+            )
+        if creator:
+            queryset = queryset.filter(captured_by_id=creator)
+        if date_from:
+            queryset = queryset.filter(original_captured_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(original_captured_at__date__lte=date_to)
+        if has_duplicates:
+            queryset = queryset.exclude(duplicate_candidates=[])
+        if has_follow_up:
+            queryset = queryset.filter(
+                Q(structured_draft__follow_up__suggested=True)
+                | Q(approved_snapshot__structured_draft__follow_up__suggested=True)
             )
         paginator = CapturePagination()
+        if sort == "oldest":
+            paginator.ordering = ("original_captured_at", "created_at", "id")
+        elif sort == "updated":
+            paginator.ordering = ("-updated_at", "-id")
+        elif sort == "attention":
+            queryset = queryset.annotate(
+                attention_rank=Case(
+                    When(status__in=status_groups["failed"], then=Value(0)),
+                    When(status__in=status_groups["needs_review"], then=Value(1)),
+                    When(status=Capture.STATUS_APPROVED, then=Value(2)),
+                    default=Value(3),
+                    output_field=IntegerField(),
+                )
+            )
+            paginator.ordering = ("attention_rank", "-updated_at", "-id")
+        elif sort == "alphabetical":
+            queryset = queryset.annotate(
+                capture_name=Lower(
+                    Coalesce(
+                        KeyTextTransform("title", "raw_text_payload"),
+                        KeyTextTransform("name", "raw_text_payload"),
+                        KeyTextTransform("text", "raw_text_payload"),
+                        Value(""),
+                        output_field=TextField(),
+                    )
+                )
+            )
+            paginator.ordering = ("capture_name", "-original_captured_at", "-id")
         page = paginator.paginate_queryset(queryset, request)
-        return paginator.get_paginated_response(CaptureSerializer(page, many=True).data)
+        return paginator.get_paginated_response(
+            CaptureSerializer(page, many=True, context={"request": request}).data
+        )
 
     def post(self, request):
         if not _foundation_enabled():
@@ -253,6 +366,26 @@ class CaptureSummaryView(APIView):
             for row in queryset.values("status").annotate(count=Count("id"))
         }
         today = timezone.localdate()
+        creators = []
+        for actor in (
+            queryset.exclude(captured_by=None)
+            .values_list(
+                "captured_by_id",
+                "captured_by__first_name",
+                "captured_by__last_name",
+                "captured_by__email",
+            )
+            .order_by(
+                "captured_by_id",
+                "captured_by__first_name",
+                "captured_by__last_name",
+                "captured_by__email",
+            )
+            .distinct()
+        ):
+            actor_id, first_name, last_name, email = actor
+            name = f"{first_name} {last_name}".strip() or email or "Team member"
+            creators.append({"id": actor_id, "name": name})
         return Response(
             {
                 "pending": sum(
@@ -272,11 +405,16 @@ class CaptureSummaryView(APIView):
                         Capture.STATUS_POSSIBLE_DUPLICATE,
                     )
                 ),
+                "approved": counts.get(Capture.STATUS_APPROVED, 0),
                 "applied": counts.get(Capture.STATUS_APPLIED, 0),
+                "applied_today": queryset.filter(
+                    status=Capture.STATUS_APPLIED, updated_at__date=today
+                ).count(),
                 "failed": counts.get(Capture.STATUS_FAILED, 0)
                 + counts.get(Capture.STATUS_APPLY_FAILED, 0),
                 "archived": counts.get(Capture.STATUS_ARCHIVED, 0),
                 "today": queryset.filter(original_captured_at__date=today).count(),
+                "creators": sorted(creators, key=lambda row: row["name"].lower()),
             }
         )
 
@@ -287,10 +425,13 @@ class CaptureDetailView(APIView):
     def get(self, request, capture_id):
         if not _foundation_enabled():
             return _disabled_response()
-        capture = _capture_for_user(request, capture_id)
+        capture = _core_capture_for_user(request, capture_id)
         if capture is None:
             return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
-        return Response(CaptureSerializer(capture).data)
+        payload = CaptureSerializer(capture, context={"request": request}).data
+        payload["artifacts"] = []
+        payload["events"] = []
+        return Response(payload)
 
     def patch(self, request, capture_id):
         if not _foundation_enabled():
@@ -333,6 +474,40 @@ class CaptureDetailView(APIView):
         except CaptureLifecycleError as exc:
             return _lifecycle_error_response(exc)
         return Response(CaptureSerializer(locked).data)
+
+
+class CaptureTimelineView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, capture_id):
+        if not _foundation_enabled():
+            return _disabled_response()
+        capture = _core_capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        events = capture.events.select_related("actor").all()
+        return Response({"results": CaptureEventSerializer(events, many=True).data})
+
+
+class CaptureArtifactListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, capture_id):
+        if not _foundation_enabled():
+            return _disabled_response()
+        capture = _core_capture_for_user(request, capture_id)
+        if capture is None:
+            return Response({"detail": "Capture not found."}, status=status.HTTP_404_NOT_FOUND)
+        artifacts = capture.artifacts.filter(
+            retention_state=CaptureArtifact.RETENTION_ACTIVE
+        )
+        return Response(
+            {
+                "results": CaptureArtifactSerializer(
+                    artifacts, many=True, context={"request": request}
+                ).data
+            }
+        )
 
 
 class CaptureArchiveView(APIView):

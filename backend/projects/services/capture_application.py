@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import time
 from copy import deepcopy
 
 from django.db import transaction
@@ -11,6 +13,9 @@ from projects.services.capture_adapters import ADAPTERS
 from projects.services.capture_adapters.base import AdapterContext, CaptureAdapterError
 from projects.services.capture_lifecycle import CaptureVersionConflict, check_expected_version
 from projects.services.capture_permissions import can_apply_capture
+
+
+logger = logging.getLogger(__name__)
 
 
 class CaptureApplicationError(ValueError):
@@ -162,6 +167,7 @@ def preview_application(capture, *, actor, expected_version, payload):
 
 @transaction.atomic
 def apply_capture(capture, *, actor, expected_version, idempotency_key, payload):
+    started_at = time.monotonic()
     locked = Capture.objects.select_for_update().get(pk=capture.pk)
     if not can_apply_capture(actor, locked):
         raise CaptureApplicationError("You do not have permission to apply this Capture.")
@@ -246,7 +252,22 @@ def apply_capture(capture, *, actor, expected_version, idempotency_key, payload)
             to_status=Capture.STATUS_APPLY_FAILED,
             actor=actor,
             reason="Capture application failed safely",
-            metadata={"application_id": str(application.id), "failure_code": application.failure_code},
+            metadata={
+                "application_id": str(application.id),
+                "failure_code": application.failure_code,
+                "apply_duration_ms": round((time.monotonic() - started_at) * 1000),
+                "application_count": locked.applications.count(),
+                "failure_count": locked.applications.filter(
+                    status=CaptureApplication.STATUS_FAILED
+                ).count(),
+            },
+        )
+        logger.warning(
+            "capture_application_failed capture_id=%s application_id=%s failure_code=%s duration_ms=%s",
+            locked.id,
+            application.id,
+            application.failure_code,
+            round((time.monotonic() - started_at) * 1000),
         )
         return locked, application, False
     applied_at = timezone.now()
@@ -286,7 +307,21 @@ def apply_capture(capture, *, actor, expected_version, idempotency_key, payload)
         from_status=Capture.STATUS_APPLYING,
         to_status=Capture.STATUS_APPLIED,
         actor=actor,
-        metadata={"application_id": str(application.id), "destinations": destinations},
+        metadata={
+            "application_id": str(application.id),
+            "destinations": destinations,
+            "apply_duration_ms": round((time.monotonic() - started_at) * 1000),
+            "application_count": locked.applications.count(),
+            "failure_count": locked.applications.filter(
+                status=CaptureApplication.STATUS_FAILED
+            ).count(),
+        },
+    )
+    logger.info(
+        "capture_application_completed capture_id=%s application_id=%s duration_ms=%s",
+        locked.id,
+        application.id,
+        round((time.monotonic() - started_at) * 1000),
     )
     return locked, application, False
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, FileImage } from "lucide-react";
+import { ArrowLeft, Copy, Download, FileImage } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
@@ -25,7 +25,11 @@ import {
   StatusBadge,
   WorkspacePageHeader,
 } from "../components/ui";
-import { useCapture } from "../hooks/useCaptures.js";
+import {
+  useCapture,
+  useCaptureArtifacts,
+  useCaptureTimeline,
+} from "../hooks/useCaptures.js";
 import {
   isCaptureApplicationEnabled,
   isCaptureReviewEnabled,
@@ -51,6 +55,21 @@ const STATUS_TONES = {
   apply_failed: "blocked",
   archived: "complete",
   failed: "blocked",
+};
+
+const EVENT_LABELS = {
+  created: "Created",
+  draft_prepared: "Processed",
+  draft_updated: "Edited",
+  review_updated: "Edited",
+  duplicate_resolved: "Duplicate resolved",
+  draft_approved: "Approved",
+  application_started: "Application started",
+  application_completed: "Applied",
+  application_failed: "Application failed",
+  processing_failed: "Processing failed",
+  retry_started: "Retry started",
+  archived: "Archived",
 };
 
 function ValueRow({ label, value }) {
@@ -89,6 +108,10 @@ export default function CaptureDetailPage() {
   const navigate = useNavigate();
   const { openAssistant } = useAssistantDock();
   const { capture, loading, error, reload } = useCapture(captureId);
+  const [timelineEnabled, setTimelineEnabled] = useState(false);
+  const [artifactsEnabled, setArtifactsEnabled] = useState(false);
+  const timeline = useCaptureTimeline(captureId, { enabled: timelineEnabled });
+  const artifacts = useCaptureArtifacts(captureId, { enabled: artifactsEnabled });
   const [draft, setDraft] = useState(null);
   const [duplicateDecision, setDuplicateDecision] = useState(null);
   const [busy, setBusy] = useState("");
@@ -101,6 +124,15 @@ export default function CaptureDetailPage() {
   const [customers, setCustomers] = useState([]);
   const reviewEnabled = isCaptureReviewEnabled();
   const applicationEnabled = isCaptureApplicationEnabled();
+
+  async function copyText(value, label) {
+    try {
+      await navigator.clipboard.writeText(String(value || ""));
+      toast.success(`${label} copied.`);
+    } catch {
+      toast.error(`${label} could not be copied. Select the text and copy it manually.`);
+    }
+  }
 
   useEffect(() => {
     if (!capture) return;
@@ -262,7 +294,18 @@ export default function CaptureDetailPage() {
     return <div className="mx-auto w-full max-w-6xl p-4"><LoadingSkeleton theme="operational" variant="workspace" label="Loading Capture" /></div>;
   }
   if (error || !capture) {
-    return <div className="mx-auto w-full max-w-6xl p-4"><InlineAlert theme="operational" tone="danger">{error || "Capture not found."}</InlineAlert></div>;
+    return (
+      <div className="mx-auto grid w-full max-w-6xl gap-3 p-4">
+        <InlineAlert theme="operational" tone="danger">
+          {navigator.onLine
+            ? error || "Capture not found or is no longer available."
+            : "You appear to be offline. Reconnect, then try again."}
+        </InlineAlert>
+        <div>
+          <Button theme="operational" onClick={reload}>Try again</Button>
+        </div>
+      </div>
+    );
   }
 
   const raw = capture.raw_text_payload || {};
@@ -340,15 +383,17 @@ export default function CaptureDetailPage() {
           <ValueRow label="Capture method" value={capture.capture_method?.replaceAll("_", " ")} />
           <ValueRow label="Creator" value={capture.captured_by_name || "Unknown creator"} />
         </dl>
-        {capture.artifacts?.length ? (
-          <div className="mt-4 grid gap-2">
-            {capture.artifacts.map((artifact) => (
-              <div key={artifact.id} className="flex min-w-0 items-center gap-3 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
-                <FileImage className="h-5 w-5 shrink-0" aria-hidden="true" />
-                <span className="truncate text-sm font-bold">{artifact.original_filename || "Artifact"}</span>
-              </div>
-            ))}
-          </div>
+        {raw.transcript ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            theme="operational"
+            startIcon={<Copy aria-hidden="true" />}
+            onClick={() => copyText(raw.transcript, "Transcript")}
+          >
+            Copy transcript
+          </Button>
         ) : null}
       </Card>
 
@@ -579,15 +624,113 @@ export default function CaptureDetailPage() {
       ) : null}
 
       <Card theme="operational" padding="md">
-        <h2 className="text-lg font-black">History and Timeline</h2>
-        <ol className="mt-3 grid gap-3">
-          {(capture.events || []).map((event) => (
-            <li key={event.id} className="border-l-2 border-[var(--mhb-border-selected)] pl-3">
-              <div className="text-sm font-bold">{event.event_type?.replaceAll("_", " ")}</div>
-              <div className="text-xs text-[var(--mhb-text-muted)]">{new Date(event.created_at).toLocaleString()}{event.to_status ? ` · ${event.to_status.replaceAll("_", " ")}` : ""}</div>
-            </li>
-          ))}
-        </ol>
+        <details
+          onToggle={(event) => {
+            if (event.currentTarget.open) setArtifactsEnabled(true);
+          }}
+        >
+          <summary className="flex min-h-11 cursor-pointer items-center text-lg font-black">
+            Artifacts
+          </summary>
+          {artifacts.loading ? (
+            <LoadingSkeleton theme="operational" variant="list" label="Loading Capture files" />
+          ) : null}
+          {artifacts.error ? (
+            <InlineAlert theme="operational" tone="danger">
+              {artifacts.error} <button type="button" className="underline" onClick={artifacts.reload}>Try again</button>
+            </InlineAlert>
+          ) : null}
+          {!artifacts.loading && !artifacts.error && !artifacts.results.length ? (
+            <p className="py-3 text-sm text-[var(--mhb-text-muted)]">No files are attached.</p>
+          ) : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {artifacts.results.map((artifact) => {
+              const ocr = artifact.sanitization_metadata?.ocr_text || "";
+              return (
+                <div key={artifact.id} className="min-w-0 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
+                  {artifact.mime_type?.startsWith("image/") && artifact.download_url ? (
+                    <img
+                      src={artifact.download_url}
+                      alt={artifact.original_filename || "Capture image"}
+                      loading="lazy"
+                      className="mb-3 aspect-video w-full rounded-lg object-cover"
+                    />
+                  ) : <FileImage className="mb-3 h-8 w-8" aria-hidden="true" />}
+                  <div className="truncate text-sm font-bold">{artifact.original_filename || "Artifact"}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {artifact.download_url ? (
+                      <a
+                        href={artifact.download_url}
+                        download
+                        className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-[var(--mhb-border-default)] px-3 text-sm font-bold"
+                      >
+                        <Download className="h-4 w-4" aria-hidden="true" /> Download
+                      </a>
+                    ) : null}
+                    {ocr ? (
+                      <Button size="sm" variant="secondary" theme="operational" onClick={() => copyText(ocr, "OCR text")}>
+                        Copy OCR
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      </Card>
+
+      <Card theme="operational" padding="md">
+        <details
+          onToggle={(event) => {
+            if (event.currentTarget.open) setTimelineEnabled(true);
+          }}
+        >
+          <summary className="flex min-h-11 cursor-pointer items-center text-lg font-black">
+            History and Timeline
+          </summary>
+          {timeline.loading ? (
+            <LoadingSkeleton theme="operational" variant="list" label="Loading Capture history" />
+          ) : null}
+          {timeline.error ? (
+            <InlineAlert theme="operational" tone="danger">
+              {timeline.error} <button type="button" className="underline" onClick={timeline.reload}>Try again</button>
+            </InlineAlert>
+          ) : null}
+          <ol className="mt-3 grid gap-3" aria-label="Capture timeline">
+            {timeline.results.map((event) => (
+              <li key={event.id} className="border-l-2 border-[var(--mhb-border-selected)] pl-3">
+                <div className="text-sm font-bold">
+                  {EVENT_LABELS[event.event_type] || event.event_type?.replaceAll("_", " ")}
+                </div>
+                <div className="text-xs text-[var(--mhb-text-muted)]">
+                  {event.actor_name || "System"} · {new Date(event.created_at).toLocaleString()}
+                  {event.to_status ? ` · ${event.to_status.replaceAll("_", " ")}` : ""}
+                </div>
+                {event.reason ? <p className="mt-1 text-sm">{event.reason}</p> : null}
+              </li>
+            ))}
+          </ol>
+        </details>
+      </Card>
+
+      <Card theme="operational" padding="md">
+        <details>
+          <summary className="flex min-h-11 cursor-pointer items-center text-lg font-black">
+            Metadata
+          </summary>
+          <dl className="mt-3">
+            <ValueRow label="Capture ID" value={capture.id} />
+            <ValueRow label="Version" value={capture.version} />
+            <ValueRow label="Source" value={capture.source_detail || capture.source_category} />
+            <ValueRow label="Processing engine" value={capture.processing_engine} />
+            <ValueRow label="Retry count" value={capture.retry_count} />
+            <ValueRow
+              label="Last updated"
+              value={capture.updated_at ? new Date(capture.updated_at).toLocaleString() : ""}
+            />
+          </dl>
+        </details>
       </Card>
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--mhb-border-default)] bg-[var(--mhb-surface-elevated)]/95 p-3 shadow-lg backdrop-blur sm:left-auto sm:right-4 sm:bottom-4 sm:rounded-2xl sm:border" data-testid="capture-sticky-actions">

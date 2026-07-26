@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 
 import {
+  getCaptureArtifacts,
   getCapture,
   getCaptureSummary,
+  getCaptureTimeline,
   listCaptures,
 } from "../api/captures.js";
 
@@ -19,7 +21,13 @@ export function useCaptures(filters = {}, { enabled = true } = {}) {
   const status = filters.status || "";
   const type = filters.type || "";
   const search = filters.search || "";
-  const page = filters.page || 1;
+  const cursor = filters.cursor || "";
+  const creator = filters.creator || "";
+  const dateFrom = filters.date_from || "";
+  const dateTo = filters.date_to || "";
+  const hasDuplicates = filters.has_duplicates || "";
+  const hasFollowUp = filters.has_follow_up || "";
+  const sort = filters.sort || "newest";
 
   const reload = useCallback(async () => {
     if (!enabled) {
@@ -29,7 +37,18 @@ export function useCaptures(filters = {}, { enabled = true } = {}) {
     setLoading(true);
     setError("");
     try {
-      const result = await listCaptures({ status, type, search, page });
+      const result = await listCaptures({
+        status,
+        type,
+        search,
+        cursor: cursor || undefined,
+        creator: creator || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        has_duplicates: hasDuplicates || undefined,
+        has_follow_up: hasFollowUp || undefined,
+        sort,
+      });
       setData({
         count: result?.count || 0,
         next: result?.next || null,
@@ -44,7 +63,10 @@ export function useCaptures(filters = {}, { enabled = true } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [enabled, page, search, status, type]);
+  }, [
+    cursor, creator, dateFrom, dateTo, enabled, hasDuplicates,
+    hasFollowUp, search, sort, status, type,
+  ]);
 
   useEffect(() => {
     reload();
@@ -118,4 +140,45 @@ export function useCapture(captureId, { enabled = true } = {}) {
   }, [reload]);
 
   return { capture, loading, error, reload };
+}
+
+function useCaptureSection(captureId, loader, fallbackMessage, { enabled = true } = {}) {
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState("");
+
+  const reload = useCallback(async () => {
+    if (!enabled || !captureId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const response = await loader(captureId);
+      setResults(Array.isArray(response?.results) ? response.results : []);
+    } catch (requestError) {
+      setError(requestError?.response?.data?.detail || fallbackMessage);
+    } finally {
+      setLoading(false);
+    }
+  }, [captureId, enabled, fallbackMessage, loader]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return { results, loading, error, reload };
+}
+
+export function useCaptureTimeline(captureId, options) {
+  return useCaptureSection(
+    captureId, getCaptureTimeline, "Capture history could not be loaded.", options
+  );
+}
+
+export function useCaptureArtifacts(captureId, options) {
+  return useCaptureSection(
+    captureId, getCaptureArtifacts, "Capture files could not be loaded.", options
+  );
 }

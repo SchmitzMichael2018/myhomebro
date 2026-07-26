@@ -4,6 +4,8 @@ from projects.models import Capture, CaptureApplication, CaptureArtifact, Captur
 
 
 class CaptureArtifactSerializer(serializers.ModelSerializer):
+    download_url = serializers.SerializerMethodField()
+
     class Meta:
         model = CaptureArtifact
         fields = (
@@ -18,10 +20,20 @@ class CaptureArtifactSerializer(serializers.ModelSerializer):
             "sanitization_metadata",
             "deleted_at",
             "created_at",
+            "download_url",
         )
+
+    def get_download_url(self, obj):
+        if obj.retention_state != obj.RETENTION_ACTIVE or not obj.file:
+            return ""
+        request = self.context.get("request")
+        url = obj.file.url
+        return request.build_absolute_uri(url) if request else url
 
 
 class CaptureEventSerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+
     class Meta:
         model = CaptureEvent
         fields = (
@@ -30,10 +42,16 @@ class CaptureEventSerializer(serializers.ModelSerializer):
             "from_status",
             "to_status",
             "actor_id",
+            "actor_name",
             "reason",
             "metadata",
             "created_at",
         )
+
+    def get_actor_name(self, obj):
+        if not obj.actor:
+            return "System"
+        return obj.actor.get_full_name() or obj.actor.email or "Team member"
 
 
 class CaptureApplicationSerializer(serializers.ModelSerializer):

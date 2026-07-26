@@ -12,6 +12,20 @@ export async function getCapture(captureId) {
   return response.data;
 }
 
+export async function getCaptureTimeline(captureId) {
+  const response = await api.get(
+    `/projects/captures/${encodeURIComponent(captureId)}/timeline/`
+  );
+  return response.data;
+}
+
+export async function getCaptureArtifacts(captureId) {
+  const response = await api.get(
+    `/projects/captures/${encodeURIComponent(captureId)}/artifacts/`
+  );
+  return response.data;
+}
+
 export async function createCapture(payload) {
   const response = await api.post("/projects/captures/", payload);
   return response.data;

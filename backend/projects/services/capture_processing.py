@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 from difflib import SequenceMatcher
+import logging
+import time
 
 from django.conf import settings
 from django.db import transaction
@@ -14,6 +16,9 @@ from projects.services.capture_lifecycle import (
     transition_capture,
 )
 from projects.services.customer_accounts import normalize_customer_phone
+
+
+logger = logging.getLogger(__name__)
 
 
 class CaptureProcessingError(CaptureLifecycleError):
@@ -248,6 +253,7 @@ def review_envelope(capture):
 
 @transaction.atomic
 def process_capture(capture, *, actor, expected_version, mode="deterministic", is_retry=False):
+    started_at = time.monotonic()
     if mode not in {"deterministic", "provider", "manual"}:
         raise CaptureProcessingError("Processing mode is invalid.")
     if capture.capture_type not in SUPPORTED_TYPES:
@@ -294,7 +300,18 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
                 capture=processing, event_type="processing_failed",
                 from_status=Capture.STATUS_PROCESSING, to_status=Capture.STATUS_FAILED,
                 actor=actor, reason="Provider unavailable",
-                metadata={"capture_saved": True, "manual_review_available": True},
+                metadata={
+                    "capture_saved": True,
+                    "manual_review_available": True,
+                    "processing_duration_ms": round((time.monotonic() - started_at) * 1000),
+                    "retry_count": processing.retry_count,
+                },
+            )
+            logger.warning(
+                "capture_processing_failed capture_id=%s retry_count=%s duration_ms=%s",
+                processing.id,
+                processing.retry_count,
+                round((time.monotonic() - started_at) * 1000),
             )
             return processing
     draft = provider_draft or (
@@ -329,7 +346,19 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
     CaptureEvent.objects.create(
         capture=processing, event_type="draft_prepared",
         from_status=Capture.STATUS_PROCESSING, to_status=target, actor=actor,
-        metadata={"schema_version": draft["schema_version"], "mode": mode},
+        metadata={
+            "schema_version": draft["schema_version"],
+            "mode": mode,
+            "processing_duration_ms": round((time.monotonic() - started_at) * 1000),
+            "retry_count": processing.retry_count,
+        },
+    )
+    logger.info(
+        "capture_processing_completed capture_id=%s status=%s retry_count=%s duration_ms=%s",
+        processing.id,
+        target,
+        processing.retry_count,
+        round((time.monotonic() - started_at) * 1000),
     )
     return processing
 
