@@ -1,0 +1,16 @@
+{
+  "notice": "Synthetic parser fixtures only. These are not observed STABILA LD 530 BT output.",
+  "fixtures": [
+    { "raw": "12.345", "decimal_separator": "period", "expected_status": "valid", "expected_unit": "" },
+    { "raw": "12,345", "decimal_separator": "comma", "expected_status": "valid", "expected_unit": "" },
+    { "raw": "12.345 m", "decimal_separator": "period", "expected_status": "valid", "expected_unit": "meters" },
+    { "raw": "12,345 m", "decimal_separator": "comma", "expected_status": "valid", "expected_unit": "meters" },
+    { "raw": "3.45 ft", "decimal_separator": "period", "expected_status": "valid", "expected_unit": "feet" },
+    { "raw": "3' 5 1/2\"", "decimal_separator": "period", "expected_status": "valid", "expected_unit": "inches" },
+    { "raw": "41.5 in", "decimal_separator": "period", "expected_status": "valid", "expected_unit": "inches" },
+    { "raw": "12,345", "decimal_separator": "auto", "expected_status": "ambiguous", "expected_unit": "" },
+    { "raw": "12 m 13 m", "decimal_separator": "period", "expected_status": "ambiguous", "expected_unit": "" },
+    { "raw": "ERROR", "decimal_separator": "period", "expected_status": "invalid", "expected_unit": "" }
+  ]
+}
+
