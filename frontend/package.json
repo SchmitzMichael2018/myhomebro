@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext .js,.jsx",
+    "format:check": "prettier --check \"src/**/*.{js,jsx}\" \"tests/**/*.{js,jsx}\" \"*.{js,json}\"",
     "format": "prettier --write .",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --project=chromium --headed",

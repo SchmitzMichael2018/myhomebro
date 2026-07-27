@@ -75,7 +75,7 @@ export default function AgreementMilestoneStep({ step1Data, onBack, onSubmit, dr
       setLastSavedAt(null);
       setLoadedFromDraft(false);
     }
-  }, [draftKey, step1Data]);
+  }, [draftAgreementKey, step1Data]);
 
   const onDragEnd = (result) => {
     if (!result.destination) return;
@@ -127,7 +127,9 @@ export default function AgreementMilestoneStep({ step1Data, onBack, onSubmit, dr
       writeStep2MilestoneDraft(draftAgreementKey, { milestones, lastSavedAt: ts });
       setLastSavedAt(ts);
       setLoadedFromDraft(true);
-    } catch {}
+    } catch {
+      // Draft persistence is best-effort; the editable form remains usable.
+    }
   }, [draftAgreementKey, milestones]);
 
   const clearDraft = useCallback(() => {

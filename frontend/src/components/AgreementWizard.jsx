@@ -2390,6 +2390,7 @@ export default function AgreementWizard() {
             isEdit={!!agreementId}
             agreementId={agreementId}
             dLocal={dLocal}
+            emptyStep1Draft={buildEmptyDLocal(resolvedProjectFamily)}
             setDLocal={setDLocal}
             people={people}
             peopleLoadedOnce={peopleLoadedOnce}

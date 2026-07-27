@@ -5,7 +5,6 @@ import globals from 'globals';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import jsxA11y from 'eslint-plugin-jsx-a11y';
-import prettier from 'eslint-plugin-prettier';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import prettierConfig from 'eslint-config-prettier';
 
@@ -29,6 +28,17 @@ export default [
 
   // 2. Base ESLint recommended rules
   js.configs.recommended,
+
+  // Node scripts use the web-compatible globals provided by current Node.
+  {
+    files: ['scripts/**/*.{js,mjs}', 'tests/**/*.mjs'],
+    languageOptions: {
+      globals: {
+        ...globals.node,
+        ...globals['shared-node-browser'],
+      },
+    },
+  },
 
   // 3. Main configuration for JS/JSX files
   {
@@ -57,7 +67,6 @@ export default [
       react,
       'react-hooks': reactHooks,
       'jsx-a11y': jsxA11y,
-      prettier,
       'react-refresh': reactRefresh,
     },
 
@@ -78,13 +87,6 @@ export default [
         { allowConstantExport: true },
       ],
 
-      // This integrates Prettier rules.
-      'prettier/prettier': ['warn', {
-        singleQuote: true,
-        semi: true,
-        trailingComma: 'es5',
-        printWidth: 80,
-      }],
     },
   },
   

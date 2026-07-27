@@ -42,6 +42,7 @@ import { WorkflowHint } from '../components/WorkflowHint.jsx';
 import ContractorPageSurface from '../components/dashboard/ContractorPageSurface.jsx';
 import { normalizeProjectClass } from '../utils/projectClass.js';
 import { getAgreementDetailHint } from '../lib/workflowHints.js';
+import { isDisputeTerminal } from '../lib/disputeStatus.js';
 import {
   ProjectModeBadge,
   projectModeLabel,

@@ -1423,7 +1423,9 @@ export default function StartWithAIAssistant({
     return () => {
       try {
         recognitionRef.current?.stop?.();
-      } catch {}
+      } catch {
+        // The browser may reject stopping an already-closed recognition session.
+      }
     };
   }, []);
 
@@ -1680,7 +1682,7 @@ export default function StartWithAIAssistant({
     if (nextPlan) applyPlan(nextPlan, cleanPrompt);
   }
 
-  async function useQuickAction(action) {
+  async function handleQuickAction(action) {
     const actionKey = safeActionKey(action?.actionKey || action?.action_key);
     if (actionKey && typeof onAction === "function") {
       const handled = await onAction({
@@ -1752,7 +1754,9 @@ export default function StartWithAIAssistant({
     if (voiceStatus === "listening") {
       try {
         recognitionRef.current?.stop?.();
-      } catch {}
+      } catch {
+        // Continue the state transition if the browser already stopped recognition.
+      }
       setVoiceStatus("transcribing");
       return;
     }
@@ -2062,7 +2066,7 @@ export default function StartWithAIAssistant({
               <button
                 key={action.intent || action.label}
                 type="button"
-                onClick={() => useQuickAction(action)}
+                onClick={() => handleQuickAction(action)}
                 className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-900 hover:text-slate-900"
               >
                 {action.label}

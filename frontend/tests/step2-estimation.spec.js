@@ -1761,7 +1761,8 @@ test('step 2 reset work plan warns and blocks protected milestone activity', asy
   await expect(resetModal).toContainText('subcontractor activity');
 });
 
-if (false) {
+test.skip('legacy AI milestone replacement scenario', async ({ page }) => {
+  const milestoneState = { items: [] };
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
     waitUntil: 'domcontentloaded',
   });
@@ -1916,7 +1917,7 @@ if (false) {
   ]) {
     await expect(page.getByText(title, { exact: true })).toBeVisible();
   }
-}
+});
 
 test('step 2 estimate fallback messaging renders for template-only low-confidence estimates', async ({
   page,

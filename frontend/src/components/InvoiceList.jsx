@@ -236,7 +236,9 @@ async function copyToClipboard(text) {
       await navigator.clipboard.writeText(value);
       return true;
     }
-  } catch {}
+  } catch {
+    // Fall through to the DOM-based clipboard compatibility path.
+  }
 
   try {
     const ta = document.createElement("textarea");
@@ -324,6 +326,10 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
     const list = Array.isArray(initialData) ? initialData : [];
     return list.map(normalizeInvoice).filter((x) => x.id != null);
   }, [initialData]);
+  const hasDirectPayInvoices = useMemo(
+    () => normalized.some((invoice) => isDirectPayMode(invoice.paymentMode)),
+    [normalized]
+  );
 
   const agreements = useMemo(() => {
     const map = new Map();
@@ -655,7 +661,7 @@ export default function InvoiceList({ initialData = [], loadingOverride = false,
             )}
           </div>
 
-          {isDirectPay ? (
+          {hasDirectPayInvoices ? (
             <div
               data-testid={stripeGuidanceBannerTestId}
               className={`mt-3 rounded-xl border px-4 py-3 text-sm ${

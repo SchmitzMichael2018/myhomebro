@@ -1723,6 +1723,7 @@ export default function Step1Details({
   isEdit,
   agreementId,
   dLocal,
+  emptyStep1Draft,
   stripeOnboardingState,
   setDLocal,
   people,
@@ -4939,6 +4940,7 @@ export default function Step1Details({
         .replace(/\s+/g, " ")
         .trim();
 
+    let refineData = {};
     try {
       const templateProbeRes = await api.post("/projects/templates/recommend/", {
         project_title: "",
@@ -5058,6 +5060,7 @@ export default function Step1Details({
       };
 
       const refineRes = await api.post(`/projects/agreements/ai/description/`, refinePayload);
+      refineData = refineRes?.data || {};
       refinedDescription = extractAiScopeText(refineRes?.data || {});
 
       if (!refinedDescription) {
@@ -5229,8 +5232,8 @@ export default function Step1Details({
           message:
             "We generated a project draft from your description, but no saved template closely matches this work.",
         });
-        fallbackResult.classification = refineRes?.data?.classification || {};
-        fallbackResult._model = refineRes?.data?._model || "";
+        fallbackResult.classification = refineData.classification || {};
+        fallbackResult._model = refineData._model || "";
         setAiSetupResult(fallbackResult);
         setAiNoTemplateDraftNotice(true);
         setAiDraftReviewPending(true);
@@ -5402,7 +5405,7 @@ export default function Step1Details({
       onResetWizardForNewAgreement();
     }
 
-    const blankStep1 = buildEmptyDLocal(resolvedProjectFamily);
+    const blankStep1 = emptyStep1Draft;
 
     setDLocal((prev) => ({
       ...blankStep1,
