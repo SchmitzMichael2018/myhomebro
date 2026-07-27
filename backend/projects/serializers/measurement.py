@@ -85,6 +85,7 @@ class MeasurementSessionSerializer(serializers.ModelSerializer):
     captured_by_name = serializers.SerializerMethodField()
     source_capture_id = serializers.UUIDField(read_only=True)
     plan_documents = serializers.SerializerMethodField()
+    photo_documents = serializers.SerializerMethodField()
 
     class Meta:
         model = MeasurementSession
@@ -94,7 +95,7 @@ class MeasurementSessionSerializer(serializers.ModelSerializer):
             "default_unit_system", "status", "notes", "captured_by_name",
             "measured_at", "source_capture_id", "version", "confirmed_at",
             "created_at", "updated_at", "entries", "adjustments",
-            "calculated_results", "attachments", "events", "plan_documents",
+            "calculated_results", "attachments", "events", "plan_documents", "photo_documents",
         )
 
     def get_captured_by_name(self, obj):
@@ -113,4 +114,12 @@ class MeasurementSessionSerializer(serializers.ModelSerializer):
                 "version": row.version,
             }
             for row in obj.plan_documents.filter(status="active")
+        ]
+
+    def get_photo_documents(self, obj):
+        if not getattr(settings, "MEASUREMENT_PHOTO_ASSISTED_ENABLED", False):
+            return []
+        return [
+            {"id": row.id, "artifact_id": str(row.artifact_id), "original_filename": row.original_filename, "status": row.status, "version": row.version}
+            for row in obj.photo_documents.filter(status="active")
         ]

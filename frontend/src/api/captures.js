@@ -251,6 +251,44 @@ export async function actOnPlanAnnotation(annotationId, action, payload = {}) {
   return response.data;
 }
 
+export async function createPhotoMeasurementDocument(sessionId, file) {
+  const form = new FormData();
+  form.append("measurement_session", String(sessionId));
+  form.append("file", file);
+  const response = await api.post("/projects/measurement-photo-documents/", form);
+  return response.data;
+}
+
+export async function createPhotoMeasurementDocumentFromArtifact(sessionId, artifactId) {
+  const response = await api.post("/projects/measurement-photo-documents/", { measurement_session: sessionId, artifact_id: artifactId });
+  return response.data;
+}
+
+export async function getPhotoMeasurementDocument(documentId) {
+  const response = await api.get(`/projects/measurement-photo-documents/${encodeURIComponent(documentId)}/`);
+  return response.data;
+}
+
+export async function getPhotoMeasurementImage(documentId) {
+  const response = await api.get(`/projects/measurement-photo-documents/${encodeURIComponent(documentId)}/image/`, { responseType: "blob" });
+  return response.data;
+}
+
+export async function createPhotoMeasurementCalibration(documentId, payload) {
+  const response = await api.post(`/projects/measurement-photo-documents/${encodeURIComponent(documentId)}/calibrations/`, payload);
+  return response.data;
+}
+
+export async function createPhotoMeasurementAnnotation(documentId, payload) {
+  const response = await api.post(`/projects/measurement-photo-documents/${encodeURIComponent(documentId)}/annotations/`, payload);
+  return response.data;
+}
+
+export async function actOnPhotoMeasurementAnnotation(annotationId, action, payload = {}) {
+  const response = await api.post(`/projects/measurement-photo-annotations/${encodeURIComponent(annotationId)}/${action}/`, payload);
+  return response.data;
+}
+
 export async function listMaterials() {
   const response = await api.get("/projects/materials/", { params: { active: "true" } });
   return response.data?.results || [];

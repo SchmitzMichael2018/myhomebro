@@ -3327,3 +3327,8 @@ from .models_measurement_plan import (  # noqa: E402,F401
     PlanMeasurementCalibration,
     PlanMeasurementDocument,
 )
+from .models_measurement_photo import (  # noqa: E402,F401
+    PhotoMeasurementAnnotation,
+    PhotoMeasurementCalibration,
+    PhotoMeasurementDocument,
+)

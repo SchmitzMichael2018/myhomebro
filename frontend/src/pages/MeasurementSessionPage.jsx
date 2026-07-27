@@ -5,6 +5,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createPlanDocument,
   createPlanDocumentFromArtifact,
+  createPhotoMeasurementDocument,
+  createPhotoMeasurementDocumentFromArtifact,
   getCaptureArtifacts,
   getMeasurementSession,
 } from "../api/captures.js";
@@ -23,8 +25,10 @@ export default function MeasurementSessionPage() {
   const [takeoffOpen, setTakeoffOpen] = useState(false);
   const [planBusy, setPlanBusy] = useState(false);
   const [availablePlans, setAvailablePlans] = useState([]);
+  const [availablePhotos, setAvailablePhotos] = useState([]);
   const takeoffEnabled = String(import.meta.env.VITE_TAKEOFF_ENABLED || "").toLowerCase() === "true";
   const pdfMeasurementEnabled = String(import.meta.env.VITE_MEASUREMENT_PDF_ENABLED || "").toLowerCase() === "true";
+  const photoMeasurementEnabled = String(import.meta.env.VITE_MEASUREMENT_PHOTO_ASSISTED_ENABLED || "").toLowerCase() === "true";
 
   useEffect(() => {
     if (!pdfMeasurementEnabled || !session?.source_capture_id) return;
@@ -33,6 +37,14 @@ export default function MeasurementSessionPage() {
       .then((rows) => setAvailablePlans((Array.isArray(rows) ? rows : rows?.results || []).filter((item) => item.mime_type === "application/pdf" && !associated.has(String(item.id)))))
       .catch(() => setAvailablePlans([]));
   }, [pdfMeasurementEnabled, session?.source_capture_id]);
+
+  useEffect(() => {
+    if (!photoMeasurementEnabled || !session?.source_capture_id) return;
+    const associated = new Set((session.photo_documents || []).map((item) => String(item.artifact_id)));
+    getCaptureArtifacts(session.source_capture_id)
+      .then((rows) => setAvailablePhotos((Array.isArray(rows) ? rows : rows?.results || []).filter((item) => ["image/jpeg", "image/png", "image/webp"].includes(item.mime_type) && !associated.has(String(item.id)))))
+      .catch(() => setAvailablePhotos([]));
+  }, [photoMeasurementEnabled, session?.source_capture_id]);
 
   async function uploadPlan(event) {
     const file = event.target.files?.[0];
@@ -63,6 +75,21 @@ export default function MeasurementSessionPage() {
     }
   }
 
+  async function openPhoto(file, artifactId) {
+    setPlanBusy(true);
+    setError("");
+    try {
+      const document = artifactId
+        ? await createPhotoMeasurementDocumentFromArtifact(sessionId, artifactId)
+        : await createPhotoMeasurementDocument(sessionId, file);
+      navigate(`/app/measurements/${sessionId}/photos/${document.id}`);
+    } catch (reason) {
+      setError(reason?.response?.data?.detail || Object.values(reason?.response?.data || {})?.[0] || "The photo could not be prepared.");
+    } finally {
+      setPlanBusy(false);
+    }
+  }
+
   useEffect(() => {
     getMeasurementSession(sessionId).then(setSession).catch((reason) => setError(reason?.response?.data?.detail || "Measurement session could not be loaded."));
   }, [sessionId]);
@@ -79,6 +106,7 @@ export default function MeasurementSessionPage() {
         <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{session.project_title} · {friendly(session.purpose)} · Version {session.version}</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {pdfMeasurementEnabled ? <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 font-bold"><FileUp size={18} />{planBusy ? "Uploading…" : "Measure from Plan"}<input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={planBusy} onChange={uploadPlan} data-testid="measure-from-plan-input" /></label> : null}
+          {photoMeasurementEnabled ? <><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 font-bold"><Camera size={18} />Take Photo<input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" disabled={planBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) openPhoto(file); event.target.value = ""; }} data-testid="measure-from-camera-input" /></label><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 font-bold"><FileUp size={18} />Upload Photo<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={planBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) openPhoto(file); event.target.value = ""; }} data-testid="measure-from-photo-input" /></label></> : null}
           {takeoffEnabled ? <button type="button" onClick={() => setTakeoffOpen(true)} className="min-h-11 rounded-xl bg-[var(--mhb-interaction-primary)] px-4 font-bold text-white" data-testid="create-takeoff">Create Takeoff</button> : null}
         </div>
       </header>
@@ -94,6 +122,8 @@ export default function MeasurementSessionPage() {
           <h2 className="mb-3 text-lg font-bold">Available PDF artifacts</h2>
           <div className="grid gap-2 sm:grid-cols-2">{availablePlans.map((artifact) => <button key={artifact.id} type="button" disabled={planBusy} onClick={() => selectPlanArtifact(artifact.id)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 text-left font-bold text-blue-400 disabled:opacity-60">Measure {artifact.original_filename}</button>)}</div>
         </section> : null}
+        {photoMeasurementEnabled && session.photo_documents?.length ? <section className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4 lg:col-span-2"><h2 className="mb-3 text-lg font-bold">Photo measurements</h2><div className="grid gap-2 sm:grid-cols-2">{session.photo_documents.map((document) => <Link key={document.id} to={`/app/measurements/${sessionId}/photos/${document.id}`} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 font-bold text-blue-400">{document.original_filename}</Link>)}</div></section> : null}
+        {photoMeasurementEnabled && availablePhotos.length ? <section className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4 lg:col-span-2"><h2 className="mb-3 text-lg font-bold">Available photo artifacts</h2><div className="grid gap-2 sm:grid-cols-2">{availablePhotos.map((artifact) => <button key={artifact.id} type="button" disabled={planBusy} onClick={() => openPhoto(null, artifact.id)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 text-left font-bold text-blue-400">Measure {artifact.original_filename}</button>)}</div></section> : null}
         <section className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4">
           <h2 className="mb-3 flex items-center gap-2 text-lg font-bold"><Ruler size={19} /> Readings</h2>
           <div className="grid gap-3">

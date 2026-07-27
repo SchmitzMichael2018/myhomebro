@@ -23,6 +23,7 @@ class MeasurementSessionDetailView(APIView):
                 "entries__measured_by", "adjustments", "calculated_results",
                 "attachments__artifact", "attachments__annotations", "events__actor",
                 "plan_documents",
+                "photo_documents",
             ),
             pk=session_id,
         )

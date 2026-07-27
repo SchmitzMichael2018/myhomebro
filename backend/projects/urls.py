@@ -261,6 +261,15 @@ from .views.measurement_plan import (
     PlanDocumentFileView,
     PlanDocumentListCreateView,
 )
+from .views.measurement_photo import (
+    PhotoAnnotationActionView,
+    PhotoAnnotationCreateView,
+    PhotoCalibrationCreateView,
+    PhotoCalibrationInvalidateView,
+    PhotoDocumentDetailView,
+    PhotoDocumentImageView,
+    PhotoDocumentListCreateView,
+)
 from .views.takeoff import (
     MaterialLibraryDetailView,
     MaterialLibraryListCreateView,
@@ -538,6 +547,13 @@ urlpatterns = [
     path("measurement-plan-calibrations/<int:calibration_id>/invalidate/", PlanCalibrationInvalidateView.as_view(), name="measurement-plan-calibration-invalidate"),
     path("measurement-plan-documents/<int:document_id>/annotations/", PlanAnnotationCreateView.as_view(), name="measurement-plan-annotation-create"),
     path("measurement-plan-annotations/<int:annotation_id>/<str:action>/", PlanAnnotationActionView.as_view(), name="measurement-plan-annotation-action"),
+    path("measurement-photo-documents/", PhotoDocumentListCreateView.as_view(), name="measurement-photo-document-list"),
+    path("measurement-photo-documents/<int:document_id>/", PhotoDocumentDetailView.as_view(), name="measurement-photo-document-detail"),
+    path("measurement-photo-documents/<int:document_id>/image/", PhotoDocumentImageView.as_view(), name="measurement-photo-document-image"),
+    path("measurement-photo-documents/<int:document_id>/calibrations/", PhotoCalibrationCreateView.as_view(), name="measurement-photo-calibration-create"),
+    path("measurement-photo-calibrations/<int:calibration_id>/invalidate/", PhotoCalibrationInvalidateView.as_view(), name="measurement-photo-calibration-invalidate"),
+    path("measurement-photo-documents/<int:document_id>/annotations/", PhotoAnnotationCreateView.as_view(), name="measurement-photo-annotation-create"),
+    path("measurement-photo-annotations/<int:annotation_id>/<str:action>/", PhotoAnnotationActionView.as_view(), name="measurement-photo-annotation-action"),
     path("materials/", MaterialLibraryListCreateView.as_view(), name="material-library"),
     path("materials/<int:material_id>/", MaterialLibraryDetailView.as_view(), name="material-library-detail"),
     path("takeoffs/", TakeoffListCreateView.as_view(), name="takeoff-list-create"),

@@ -86,6 +86,7 @@ const CaptureQrManagementPage = lazy(() => import("../pages/CaptureQrManagementP
 const MeasurementSessionPage = lazy(() => import("../pages/MeasurementSessionPage.jsx"));
 const TakeoffSessionPage = lazy(() => import("../pages/TakeoffSessionPage.jsx"));
 const PlanMeasurementWorkspacePage = lazy(() => import("../pages/PlanMeasurementWorkspacePage.jsx"));
+const PhotoMeasurementWorkspacePage = lazy(() => import("../pages/PhotoMeasurementWorkspacePage.jsx"));
 
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import { isCaptureInboxEnabled, isCaptureQrEnabled } from "../lib/captureFlags.js";
@@ -171,6 +172,9 @@ export function protectedRoutes() {
               <Route path="measurements/:sessionId" element={<MeasurementSessionPage />} />
               {String(import.meta.env.VITE_MEASUREMENT_PDF_ENABLED || "").toLowerCase() === "true" ? (
                 <Route path="measurements/:sessionId/plans/:documentId" element={<PlanMeasurementWorkspacePage />} />
+              ) : null}
+              {String(import.meta.env.VITE_MEASUREMENT_PHOTO_ASSISTED_ENABLED || "").toLowerCase() === "true" ? (
+                <Route path="measurements/:sessionId/photos/:documentId" element={<PhotoMeasurementWorkspacePage />} />
               ) : null}
               <Route path="takeoffs/:takeoffId" element={<TakeoffSessionPage />} />
             </>
