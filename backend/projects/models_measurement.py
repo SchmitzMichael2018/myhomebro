@@ -54,7 +54,7 @@ class MeasurementEntry(models.Model):
     SOURCE_CHOICES = [
         (value, value.replace("_", " ").title()) for value in (
             "tape_measure", "manual_entry", "voice_transcript", "laser_manual_entry",
-            "photo_reference", "existing_plan", "other",
+            "photo_reference", "existing_plan", "pdf_plan", "other",
         )
     ]
     VERIFICATION_CHOICES = [
@@ -74,6 +74,7 @@ class MeasurementEntry(models.Model):
     verification_status = models.CharField(max_length=24, choices=VERIFICATION_CHOICES, default="needs_verification")
     confidence = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True)
     tool_description = models.CharField(max_length=255, blank=True, default="")
+    source_metadata = models.JSONField(default=dict, blank=True)
     reference_entry = models.ForeignKey("self", on_delete=models.SET_NULL, null=True, blank=True, related_name="referenced_entries")
     selected_for_calculation = models.BooleanField(default=True)
     selection_method = models.CharField(max_length=24, blank=True, default="")

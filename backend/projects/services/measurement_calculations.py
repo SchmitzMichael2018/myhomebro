@@ -172,6 +172,11 @@ def _result(result_type, label, value, unit, formula, entries, adjustments=None)
         "lineage": {
             "formula": formula,
             "inputs": {entry["client_key"]: str(entry["normalized_value"]) for entry in entries},
+            "sources": {
+                entry["client_key"]: entry.get("source_metadata", {})
+                for entry in entries
+                if entry.get("source_metadata")
+            },
         },
     }
 

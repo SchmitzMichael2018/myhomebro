@@ -187,5 +187,6 @@ def calculate_takeoff_item(
             "formula": "takeoff.coverage_and_package.v1",
             "measured_quantity": str(measured),
             "measurement_unit": EXPECTED_COVERAGE_UNITS[profile],
+            "measurement_lineage": getattr(measurement_result, "lineage", {}),
         },
     }

@@ -1,8 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { ArrowLeft, Camera, Ruler } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { ArrowLeft, Camera, FileUp, Ruler } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { getMeasurementSession } from "../api/captures.js";
+import {
+  createPlanDocument,
+  createPlanDocumentFromArtifact,
+  getCaptureArtifacts,
+  getMeasurementSession,
+} from "../api/captures.js";
 import { InlineAlert } from "../components/ui";
 import CreateTakeoffModal from "../components/takeoff/CreateTakeoffModal.jsx";
 
@@ -12,10 +17,51 @@ function friendly(value) {
 
 export default function MeasurementSessionPage() {
   const { sessionId } = useParams();
+  const navigate = useNavigate();
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
   const [takeoffOpen, setTakeoffOpen] = useState(false);
+  const [planBusy, setPlanBusy] = useState(false);
+  const [availablePlans, setAvailablePlans] = useState([]);
   const takeoffEnabled = String(import.meta.env.VITE_TAKEOFF_ENABLED || "").toLowerCase() === "true";
+  const pdfMeasurementEnabled = String(import.meta.env.VITE_MEASUREMENT_PDF_ENABLED || "").toLowerCase() === "true";
+
+  useEffect(() => {
+    if (!pdfMeasurementEnabled || !session?.source_capture_id) return;
+    const associated = new Set((session.plan_documents || []).map((item) => String(item.artifact_id)));
+    getCaptureArtifacts(session.source_capture_id)
+      .then((rows) => setAvailablePlans((Array.isArray(rows) ? rows : rows?.results || []).filter((item) => item.mime_type === "application/pdf" && !associated.has(String(item.id)))))
+      .catch(() => setAvailablePlans([]));
+  }, [pdfMeasurementEnabled, session?.source_capture_id]);
+
+  async function uploadPlan(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setPlanBusy(true);
+    setError("");
+    try {
+      const document = await createPlanDocument(sessionId, file);
+      navigate(`/app/measurements/${sessionId}/plans/${document.id}`);
+    } catch (reason) {
+      setError(reason?.response?.data?.detail || Object.values(reason?.response?.data || {})?.[0] || "The PDF could not be uploaded.");
+    } finally {
+      setPlanBusy(false);
+      event.target.value = "";
+    }
+  }
+
+  async function selectPlanArtifact(artifactId) {
+    setPlanBusy(true);
+    setError("");
+    try {
+      const document = await createPlanDocumentFromArtifact(sessionId, artifactId);
+      navigate(`/app/measurements/${sessionId}/plans/${document.id}`);
+    } catch (reason) {
+      setError(reason?.response?.data?.detail || Object.values(reason?.response?.data || {})?.[0] || "The PDF could not be selected.");
+    } finally {
+      setPlanBusy(false);
+    }
+  }
 
   useEffect(() => {
     getMeasurementSession(sessionId).then(setSession).catch((reason) => setError(reason?.response?.data?.detail || "Measurement session could not be loaded."));
@@ -31,12 +77,23 @@ export default function MeasurementSessionPage() {
         <div className="text-xs font-bold uppercase tracking-widest text-[var(--mhb-text-muted)]">Measurement session</div>
         <h1 className="mt-1 text-2xl font-bold">{session.room_name}</h1>
         <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{session.project_title} · {friendly(session.purpose)} · Version {session.version}</p>
-        {takeoffEnabled ? <button type="button" onClick={() => setTakeoffOpen(true)} className="mt-3 min-h-11 rounded-xl bg-[var(--mhb-interaction-primary)] px-4 font-bold text-white" data-testid="create-takeoff">Create Takeoff</button> : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {pdfMeasurementEnabled ? <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 font-bold"><FileUp size={18} />{planBusy ? "Uploading…" : "Measure from Plan"}<input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={planBusy} onChange={uploadPlan} data-testid="measure-from-plan-input" /></label> : null}
+          {takeoffEnabled ? <button type="button" onClick={() => setTakeoffOpen(true)} className="min-h-11 rounded-xl bg-[var(--mhb-interaction-primary)] px-4 font-bold text-white" data-testid="create-takeoff">Create Takeoff</button> : null}
+        </div>
       </header>
       <InlineAlert theme="operational" tone={session.status === "confirmed" ? "success" : "warning"}>
         Status: {friendly(session.status)}. Calculations cannot be more reliable than their least-trusted input.
       </InlineAlert>
       <div className="mt-5 grid min-w-0 gap-5 lg:grid-cols-2">
+        {pdfMeasurementEnabled && session.plan_documents?.length ? <section className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4 lg:col-span-2">
+          <h2 className="mb-3 flex items-center gap-2 text-lg font-bold"><FileUp size={19} /> Plans</h2>
+          <div className="grid gap-2 sm:grid-cols-2">{session.plan_documents.map((document) => <Link key={document.id} to={`/app/measurements/${sessionId}/plans/${document.id}`} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 font-bold text-blue-400">{document.original_filename} · {document.page_count} page(s)</Link>)}</div>
+        </section> : null}
+        {pdfMeasurementEnabled && availablePlans.length ? <section className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4 lg:col-span-2">
+          <h2 className="mb-3 text-lg font-bold">Available PDF artifacts</h2>
+          <div className="grid gap-2 sm:grid-cols-2">{availablePlans.map((artifact) => <button key={artifact.id} type="button" disabled={planBusy} onClick={() => selectPlanArtifact(artifact.id)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 text-left font-bold text-blue-400 disabled:opacity-60">Measure {artifact.original_filename}</button>)}</div>
+        </section> : null}
         <section className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4">
           <h2 className="mb-3 flex items-center gap-2 text-lg font-bold"><Ruler size={19} /> Readings</h2>
           <div className="grid gap-3">

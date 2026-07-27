@@ -200,6 +200,57 @@ export async function getMeasurementSession(sessionId) {
   return response.data;
 }
 
+export async function listPlanDocuments(sessionId) {
+  const response = await api.get("/projects/measurement-plan-documents/", {
+    params: { measurement_session: sessionId },
+  });
+  return response.data;
+}
+
+export async function createPlanDocument(sessionId, file) {
+  const form = new FormData();
+  form.append("measurement_session", String(sessionId));
+  form.append("file", file);
+  const response = await api.post("/projects/measurement-plan-documents/", form);
+  return response.data;
+}
+
+export async function createPlanDocumentFromArtifact(sessionId, artifactId) {
+  const response = await api.post("/projects/measurement-plan-documents/", {
+    measurement_session: sessionId,
+    artifact_id: artifactId,
+  });
+  return response.data;
+}
+
+export async function getPlanDocument(documentId) {
+  const response = await api.get(`/projects/measurement-plan-documents/${encodeURIComponent(documentId)}/`);
+  return response.data;
+}
+
+export async function getPlanPdfData(documentId) {
+  const response = await api.get(
+    `/projects/measurement-plan-documents/${encodeURIComponent(documentId)}/file/`,
+    { responseType: "arraybuffer" }
+  );
+  return response.data;
+}
+
+export async function createPlanCalibration(documentId, payload) {
+  const response = await api.post(`/projects/measurement-plan-documents/${encodeURIComponent(documentId)}/calibrations/`, payload);
+  return response.data;
+}
+
+export async function createPlanAnnotation(documentId, payload) {
+  const response = await api.post(`/projects/measurement-plan-documents/${encodeURIComponent(documentId)}/annotations/`, payload);
+  return response.data;
+}
+
+export async function actOnPlanAnnotation(annotationId, action, payload = {}) {
+  const response = await api.post(`/projects/measurement-plan-annotations/${encodeURIComponent(annotationId)}/${action}/`, payload);
+  return response.data;
+}
+
 export async function listMaterials() {
   const response = await api.get("/projects/materials/", { params: { active: "true" } });
   return response.data?.results || [];
