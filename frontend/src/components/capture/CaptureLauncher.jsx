@@ -11,6 +11,7 @@ import {
   Receipt,
   Square,
   Ruler,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import toast from "react-hot-toast";
@@ -26,12 +27,14 @@ import { useWhoAmI } from "../../hooks/useWhoAmI.js";
 import { Button, FormField, InlineAlert, Modal } from "../ui";
 import ProjectAssistantSmartCapture from "../ProjectAssistantSmartCapture.jsx";
 import MeasurementCaptureForm from "./MeasurementCaptureForm.jsx";
+import ConversationalCapture from "./ConversationalCapture.jsx";
 
 const EQUIPMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_EQUIPMENT_ENABLED || "").toLowerCase() === "true";
 const WARRANTY_ENABLED = String(import.meta.env.VITE_CAPTURE_WARRANTY_ENABLED || "").toLowerCase() === "true";
 const MEASUREMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_MEASUREMENT_ENABLED || "").toLowerCase() === "true";
 const FIELD_FINDINGS_ENABLED = String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
 const CHANGE_REQUEST_ENABLED = String(import.meta.env.VITE_CAPTURE_CHANGE_REQUEST_ENABLED || "").toLowerCase() === "true";
+const CONVERSATIONAL_ENABLED = String(import.meta.env.VITE_CAPTURE_CONVERSATIONAL_ENABLED || "").toLowerCase() === "true";
 
 const ACTIONS = [
   { key: "lead", label: "I met someone", icon: UserRound },
@@ -746,6 +749,7 @@ export default function CaptureLauncher() {
       const requested = String(event.detail?.mode || "");
       if (
         ACTIONS.some((action) => action.key === requested)
+        || (CONVERSATIONAL_ENABLED && requested === "conversational")
         || (FIELD_FINDINGS_ENABLED && ["punch_item", "site_condition"].includes(requested))
         || (CHANGE_REQUEST_ENABLED && requested === "change_request")
       ) {
@@ -771,6 +775,8 @@ export default function CaptureLauncher() {
   }
 
   const title =
+    (mode === "conversational" ? "What happened?" : "")
+    ||
     ACTIONS.find((action) => action.key === mode)?.label
     || PROJECT_CAPTURE_CONFIG[mode]?.title
     || "Capture";
@@ -803,6 +809,22 @@ export default function CaptureLauncher() {
       >
         {!mode ? (
           <div className="grid gap-3" data-testid="capture-launcher-actions">
+            {CONVERSATIONAL_ENABLED ? (
+              <button
+                type="button"
+                onClick={() => setMode("conversational")}
+                className="flex min-h-16 items-center gap-3 rounded-xl border border-blue-500/50 bg-blue-500/10 px-4 text-left font-bold text-[var(--mhb-text-primary)] hover:bg-blue-500/15 focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
+                data-testid="capture-action-conversational"
+              >
+                <Sparkles className="h-5 w-5 text-blue-500" aria-hidden="true" />
+                <span>
+                  <span className="block">What happened?</span>
+                  <span className="mt-1 block text-sm font-normal text-[var(--mhb-text-secondary)]">
+                    Describe it and Project Assistant will suggest the right Capture.
+                  </span>
+                </span>
+              </button>
+            ) : null}
             {ACTIONS.map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -821,11 +843,35 @@ export default function CaptureLauncher() {
             </div>
           </div>
         ) : null}
+        {mode === "conversational" ? (
+          <ConversationalCapture
+            context={context}
+            onSaved={saved}
+            onCancel={close}
+            onChooseExplicit={() => setMode("")}
+            onHandoff={(handoff) => {
+              setContext((current) => ({
+                ...current,
+                projectId: handoff.project_id || current.projectId,
+                milestoneId: handoff.milestone_id || current.milestoneId,
+                agreementId: handoff.agreement_id || current.agreementId,
+                dimensions: handoff.dimensions || null,
+              }));
+              setMode({
+                quick_lead: "lead",
+                manual_measurement: "measurement",
+                equipment: "equipment",
+                warranty_document: "warranty_document",
+                warranty_concern: "warranty_concern",
+              }[handoff.profile_key] || "");
+            }}
+          />
+        ) : null}
         {mode === "lead" ? <QuickLeadForm onSaved={saved} onCancel={close} /> : null}
         {mode === "note" ? <QuickNoteForm onSaved={saved} onCancel={close} /> : null}
         {mode === "photo" ? <PhotoForm onSaved={saved} onCancel={close} /> : null}
         {mode === "receipt" ? <ProjectAssistantSmartCapture compact /> : null}
-        {mode === "measurement" ? <MeasurementCaptureForm onSaved={saved} onCancel={close} initialProjectId={context.projectId || ""} /> : null}
+        {mode === "measurement" ? <MeasurementCaptureForm onSaved={saved} onCancel={close} initialProjectId={context.projectId || ""} initialDimensions={context.dimensions || null} /> : null}
         {PROJECT_CAPTURE_CONFIG[mode] ? (
           <ProjectCaptureForm
             captureType={PROJECT_CAPTURE_CONFIG[mode].captureType || mode}

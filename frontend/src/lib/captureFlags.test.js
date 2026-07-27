@@ -6,6 +6,7 @@ import {
   isCaptureReviewEnabled,
   isCaptureFieldFindingsEnabled,
   isCaptureChangeRequestEnabled,
+  isCaptureConversationalEnabled,
 } from "./captureFlags.js";
 
 describe("Capture review feature flag", () => {
@@ -46,6 +47,18 @@ describe("Capture review feature flag", () => {
     expect(isCaptureApplicationEnabled({
       foundation: true, inbox: true, review: true, application: true,
     })).toBe(true);
+  });
+
+  it("keeps conversational Capture independently gated behind review", () => {
+    expect(isCaptureConversationalEnabled({
+      foundation: true, inbox: true, review: true, conversational: true,
+    })).toBe(true);
+    expect(isCaptureConversationalEnabled({
+      foundation: true, inbox: true, review: false, conversational: true,
+    })).toBe(false);
+    expect(isCaptureConversationalEnabled({
+      foundation: true, inbox: true, review: true, conversational: false,
+    })).toBe(false);
   });
 
   it("requires foundation, inbox, and QR flags for QR management", () => {

@@ -245,6 +245,13 @@ from .views.capture import (
     CustomerChangeIntakeStatusView,
     CustomerChangeIntakeView,
 )
+from .views.capture_conversational import (
+    CaptureConversationalConfirmView,
+    CaptureConversationalCancelView,
+    CaptureConversationalFollowUpView,
+    CaptureConversationalRouteView,
+    CaptureProfileListView,
+)
 from .views.capture_qr import (
     CaptureQrAssetActionView,
     CaptureQrAssetAnalyticsView,
@@ -529,6 +536,11 @@ urlpatterns = [
     path("captures/", CaptureListCreateView.as_view(), name="capture-list-create"),
     path("captures/summary/", CaptureSummaryView.as_view(), name="capture-summary"),
     path("captures/project-options/", CaptureProjectOptionsView.as_view(), name="capture-project-options"),
+    path("captures/profiles/", CaptureProfileListView.as_view(), name="capture-profile-list"),
+    path("captures/conversational/route/", CaptureConversationalRouteView.as_view(), name="capture-conversational-route"),
+    path("captures/conversational/follow-up/", CaptureConversationalFollowUpView.as_view(), name="capture-conversational-follow-up"),
+    path("captures/conversational/confirm/", CaptureConversationalConfirmView.as_view(), name="capture-conversational-confirm"),
+    path("captures/conversational/cancel/", CaptureConversationalCancelView.as_view(), name="capture-conversational-cancel"),
     path("captures/customer-change-intake/", CustomerChangeIntakeView.as_view(), name="customer-change-intake"),
     path("captures/customer-change-intake/<uuid:capture_id>/", CustomerChangeIntakeStatusView.as_view(), name="customer-change-intake-status"),
     path("captures/<uuid:capture_id>/", CaptureDetailView.as_view(), name="capture-detail"),

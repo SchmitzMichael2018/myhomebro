@@ -518,6 +518,8 @@ CAPTURE_WARRANTY_ENABLED = get_env_var("CAPTURE_WARRANTY_ENABLED", "false").lowe
 CAPTURE_MEASUREMENT_ENABLED = get_env_var("CAPTURE_MEASUREMENT_ENABLED", "false").lower() == "true"
 CAPTURE_FIELD_FINDINGS_ENABLED = get_bool("CAPTURE_FIELD_FINDINGS_ENABLED", default=False)
 CAPTURE_CHANGE_REQUEST_ENABLED = get_bool("CAPTURE_CHANGE_REQUEST_ENABLED", default=False)
+CAPTURE_PROFILE_REGISTRY_ENABLED = get_bool("CAPTURE_PROFILE_REGISTRY_ENABLED", default=False)
+CAPTURE_CONVERSATIONAL_ENABLED = get_bool("CAPTURE_CONVERSATIONAL_ENABLED", default=False)
 TAKEOFF_ENABLED = get_env_var("TAKEOFF_ENABLED", "false").lower() == "true"
 MEASUREMENT_PDF_ENABLED = get_bool("MEASUREMENT_PDF_ENABLED", default=False)
 MEASUREMENT_PDF_MAX_BYTES = int(get_env_var("MEASUREMENT_PDF_MAX_BYTES", str(25 * 1024 * 1024)))
@@ -545,6 +547,7 @@ CAPTURE_QR_MIN_COMPLETION_SECONDS = int(get_env_var("CAPTURE_QR_MIN_COMPLETION_S
 REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
     "capture_qr_public": get_env_var("CAPTURE_QR_PUBLIC_RATE", "30/hour"),
     "capture_qr_token": get_env_var("CAPTURE_QR_TOKEN_RATE", "15/hour"),
+    "capture_conversational": get_env_var("CAPTURE_CONVERSATIONAL_RATE", "60/hour"),
 })
 
 

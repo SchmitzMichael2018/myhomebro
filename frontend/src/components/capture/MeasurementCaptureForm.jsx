@@ -28,12 +28,17 @@ export default function MeasurementCaptureForm({
   onSaved,
   onCancel,
   initialProjectId = '',
+  initialDimensions = null,
 }) {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState(initialProjectId);
   const [roomName, setRoomName] = useState('');
   const [purpose, setPurpose] = useState('general_room');
-  const [measurement, setMeasurement] = useState(createManualMeasurement);
+  const [measurement, setMeasurement] = useState(() => ({
+    ...createManualMeasurement(),
+    ...(initialDimensions?.length ? { length: initialDimensions.length } : {}),
+    ...(initialDimensions?.width ? { width: initialDimensions.width } : {}),
+  }));
   const [preview, setPreview] = useState(null);
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);

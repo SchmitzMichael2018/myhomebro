@@ -329,3 +329,68 @@ class CaptureApplication(models.Model):
         if self.receipt_payload:
             raise ValidationError("Capture application receipts are immutable.")
         return super().delete(*args, **kwargs)
+
+
+class CaptureRoutingAttempt(models.Model):
+    STATUS_OPEN = "open"
+    STATUS_NEEDS_INFORMATION = "needs_information"
+    STATUS_SUGGESTED = "suggested"
+    STATUS_UNSUPPORTED = "unsupported"
+    STATUS_CONFIRMED = "confirmed"
+    STATUS_HANDED_OFF = "handed_off"
+    STATUS_CANCELLED = "cancelled"
+    STATUS_CHOICES = (
+        (STATUS_OPEN, "Open"),
+        (STATUS_NEEDS_INFORMATION, "Needs Information"),
+        (STATUS_SUGGESTED, "Suggested"),
+        (STATUS_UNSUPPORTED, "Unsupported"),
+        (STATUS_CONFIRMED, "Confirmed"),
+        (STATUS_HANDED_OFF, "Handed Off"),
+        (STATUS_CANCELLED, "Cancelled"),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    contractor = models.ForeignKey(
+        "projects.Contractor", on_delete=models.CASCADE, related_name="capture_routing_attempts"
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="capture_routing_attempts",
+    )
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)
+    orchestration_version = models.CharField(max_length=32, default="capture-routing.v1")
+    raw_user_text = models.TextField(blank=True, default="")
+    capture_method = models.CharField(max_length=32, choices=Capture.METHOD_CHOICES, default=Capture.METHOD_TYPED)
+    context_payload = models.JSONField(default=dict, blank=True)
+    artifact_metadata = models.JSONField(default=list, blank=True)
+    routing_result = models.JSONField(default=dict, blank=True)
+    follow_up_answers = models.JSONField(default=list, blank=True)
+    audit_events = models.JSONField(default=list, blank=True)
+    selected_profile = models.CharField(max_length=64, blank=True, default="")
+    selected_context = models.JSONField(default=dict, blank=True)
+    classifier_source = models.CharField(max_length=32, blank=True, default="")
+    classifier_version = models.CharField(max_length=32, blank=True, default="")
+    fallback_reason = models.CharField(max_length=120, blank=True, default="")
+    follow_up_rounds = models.PositiveSmallIntegerField(default=0)
+    version = models.PositiveIntegerField(default=1)
+    capture = models.OneToOneField(
+        Capture,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="routing_attempt",
+    )
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["contractor", "actor", "-created_at"],
+                name="capture_route_actor_idx",
+            )
+        ]

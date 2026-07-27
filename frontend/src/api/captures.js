@@ -82,6 +82,38 @@ export async function getCaptureProjectOptions() {
   return response.data?.results || [];
 }
 
+export async function getCaptureProfiles(params = {}) {
+  const response = await api.get("/projects/captures/profiles/", { params });
+  return response.data;
+}
+
+export async function routeConversationalCapture(payload) {
+  const response = await api.post("/projects/captures/conversational/route/", payload);
+  return response.data;
+}
+
+export async function followUpConversationalCapture(payload) {
+  const response = await api.post("/projects/captures/conversational/follow-up/", payload);
+  return response.data;
+}
+
+export async function confirmConversationalCapture(payload, files = []) {
+  const form = new FormData();
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") {
+      form.append(key, String(value));
+    }
+  });
+  files.forEach((file) => form.append("files", file));
+  const response = await api.post("/projects/captures/conversational/confirm/", form);
+  return response.data;
+}
+
+export async function cancelConversationalCapture(payload) {
+  const response = await api.post("/projects/captures/conversational/cancel/", payload);
+  return response.data;
+}
+
 export async function createProjectCapture(payload, files = []) {
   const form = new FormData();
   form.append("capture_type", payload.capture_type);

@@ -13,6 +13,8 @@ import { Button, Card, InlineAlert, LoadingSkeleton } from "../components/ui";
 
 const FIELD_FINDINGS_ENABLED =
   String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
+const CONVERSATIONAL_ENABLED =
+  String(import.meta.env.VITE_CAPTURE_CONVERSATIONAL_ENABLED || "").toLowerCase() === "true";
 
 // --- Helpers ---------------------------------------------------------------
 
@@ -380,17 +382,33 @@ export default function MilestoneDetail() {
         )}
       </div>
 
-      {!readOnly && FIELD_FINDINGS_ENABLED ? (
+      {!readOnly && (FIELD_FINDINGS_ENABLED || CONVERSATIONAL_ENABLED) ? (
         <Card theme="operational" padding="md" className="mb-4">
           <h2 className="text-sm font-bold">Field findings</h2>
           <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
             Save observations for review without changing this milestone.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
+            {CONVERSATIONAL_ENABLED ? (
+              <Button
+                type="button"
+                theme="operational"
+                data-testid="milestone-conversational-capture"
+                onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+                  detail: {
+                    mode: "conversational",
+                    projectId: milestone.project_id || milestone.project,
+                    milestoneId: milestone.id,
+                  },
+                }))}
+              >
+                Capture field update
+              </Button>
+            ) : null}
             {[
               ["punch_item", "Add Punch Items"],
               ["site_condition", "Record Site Condition"],
-            ].map(([mode, label]) => (
+            ].filter(() => FIELD_FINDINGS_ENABLED).map(([mode, label]) => (
               <Button
                 key={mode}
                 type="button"

@@ -9,6 +9,8 @@ const FIELD_FINDINGS_ENABLED =
   String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
 const CHANGE_REQUEST_ENABLED =
   String(import.meta.env.VITE_CAPTURE_CHANGE_REQUEST_ENABLED || "").toLowerCase() === "true";
+const CONVERSATIONAL_ENABLED =
+  String(import.meta.env.VITE_CAPTURE_CONVERSATIONAL_ENABLED || "").toLowerCase() === "true";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -69,6 +71,18 @@ export default function ProjectDetail() {
             Field capture
           </h2>
           <div className="mt-3 flex flex-wrap gap-3">
+            {CONVERSATIONAL_ENABLED ? (
+              <button
+                type="button"
+                data-testid="project-conversational-capture"
+                onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+                  detail: { mode: "conversational", projectId: project.id },
+                }))}
+                className="min-h-11 rounded-lg bg-blue-600 px-4 font-semibold text-white"
+              >
+                Capture what happened
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
