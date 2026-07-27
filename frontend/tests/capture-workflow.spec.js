@@ -89,6 +89,57 @@ async function installMocks(page) {
       }),
     })
   );
+  const conversationalProfiles = [{
+    profile_key: 'quick_note',
+    display_name: 'Note',
+    description: 'Save a private note for review.',
+    group: 'General',
+    required_context: [],
+    destination_key: 'unassigned_note',
+    handoff_required: false,
+    what_happens_next: 'Creates a private Capture draft for the existing review workflow.',
+    consequence_boundary: 'Does not notify a customer or authorize work.',
+  }];
+  await page.route('**/api/projects/captures/profiles/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ registry_version: 'capture-profiles.v1', profiles: conversationalProfiles }),
+    })
+  );
+  await page.route('**/api/projects/captures/conversational/route/', (route) =>
+    route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        attempt_id: '33333333-3333-4333-8333-333333333333',
+        version: 2,
+        status: 'suggested',
+        summary: 'Project Assistant suggests Note.',
+        recommended_profile: 'quick_note',
+        candidate_contexts: [],
+        recommended_context: {},
+        missing_information: [],
+        follow_up_questions: [],
+        unsupported_intent: '',
+        fallback_used: true,
+        candidate_profiles: [{
+          ...conversationalProfiles[0],
+          destination: 'unassigned_note',
+          confidence_category: 'high',
+          evidence: ['Description includes "note to self".'],
+          warnings: [],
+        }],
+      }),
+    })
+  );
+  await page.route('**/api/projects/captures/conversational/confirm/', (route) =>
+    route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'created', capture: captureRow({ capture_type: 'quick_note' }) }),
+    })
+  );
   await page.route(/\/api\/projects\/captures\/?(?:\?.*)?$/, async (route) => {
     if (route.request().method() === 'POST') {
       const contentType = route.request().headers()['content-type'] || '';
@@ -261,3 +312,29 @@ test('mobile launcher is full-height, keyboard-safe, and has no horizontal overf
   await page.keyboard.press('Escape');
   await expect(launcher).toHaveCount(0);
 });
+
+for (const viewport of [
+  { name: '320px mobile', width: 320, height: 720 },
+  { name: '375px mobile', width: 375, height: 812 },
+  { name: 'tablet', width: 768, height: 900 },
+  { name: 'desktop', width: 1280, height: 900 },
+]) {
+  test(`conversational Capture review remains usable at ${viewport.name}`, async ({ page }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await installMocks(page);
+    await page.goto('/app/capture');
+    await page.getByTestId('global-capture-trigger').click();
+    await page.getByTestId('capture-action-conversational').click();
+    await page.getByTestId('conversational-text').fill('Note to self: confirm cabinet delivery.');
+    await page.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(page.getByTestId('conversational-profile-quick_note')).toBeVisible();
+    await page.getByRole('button', { name: 'Review selection' }).click();
+    await expect(page.getByTestId('conversational-final-confirmation')).toContainText('Does not notify a customer');
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+    );
+    expect(overflow).toBeFalsy();
+    await page.getByTestId('conversational-confirm-create').click();
+    await expect(page.getByTestId('capture-launcher')).toHaveCount(0);
+  });
+}

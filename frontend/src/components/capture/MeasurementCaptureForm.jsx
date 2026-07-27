@@ -29,6 +29,8 @@ export default function MeasurementCaptureForm({
   onCancel,
   initialProjectId = '',
   initialDimensions = null,
+  initialSourceText = '',
+  initialFiles = [],
 }) {
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState(initialProjectId);
@@ -40,7 +42,7 @@ export default function MeasurementCaptureForm({
     ...(initialDimensions?.width ? { width: initialDimensions.width } : {}),
   }));
   const [preview, setPreview] = useState(null);
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState(initialFiles);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const handlePreview = useCallback(setPreview, []);
@@ -70,7 +72,7 @@ export default function MeasurementCaptureForm({
           capture_method: 'typed',
           project_id: Number(projectId),
           raw_text_payload: {
-            text: `Manual ${measurement.profile.replaceAll('_', ' ')} measurement`,
+            text: initialSourceText || `Manual ${measurement.profile.replaceAll('_', ' ')} measurement`,
             input_metadata: {
               room_name: roomName,
               room_type: 'general_room',
@@ -85,6 +87,7 @@ export default function MeasurementCaptureForm({
               entries: preview.entries,
               adjustments: preview.adjustments,
               annotations: [],
+              conversational_source_text: initialSourceText,
             },
           },
         },

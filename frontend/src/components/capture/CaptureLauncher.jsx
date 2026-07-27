@@ -18,6 +18,7 @@ import toast from "react-hot-toast";
 
 import {
   createCapture,
+  completeConversationalHandoff,
   createPhotoCapture,
   createProjectCapture,
   getCaptureProjectOptions,
@@ -116,13 +117,13 @@ function VoiceInput({ value, onChange, onVoiceUsed, label }) {
   );
 }
 
-function QuickLeadForm({ onSaved, onCancel }) {
+function QuickLeadForm({ onSaved, onCancel, initialText = "" }) {
   const [form, setForm] = useState({
     name: "",
     phone: "",
     email: "",
-    text: "",
-    notes: "",
+    text: initialText,
+    notes: initialText ? "Suggested from conversational Capture. Review before saving." : "",
   });
   const [voiceLanguage, setVoiceLanguage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -401,15 +402,15 @@ const PROJECT_CAPTURE_CONFIG = {
   },
 };
 
-function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", initialMilestoneId = "", onSaved, onCancel }) {
+function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", initialMilestoneId = "", initialText = "", initialFiles = [], onSaved, onCancel }) {
   const config = PROJECT_CAPTURE_CONFIG[profile || captureType];
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState(String(initialProjectId || ""));
   const [milestoneId, setMilestoneId] = useState(String(initialMilestoneId || ""));
   const [agreementId, setAgreementId] = useState("");
   const [title, setTitle] = useState("");
-  const [text, setText] = useState("");
-  const [files, setFiles] = useState([]);
+  const [text, setText] = useState(initialText);
+  const [files, setFiles] = useState(initialFiles);
   const [customerVisible, setCustomerVisible] = useState(false);
   const [issueClassification, setIssueClassification] = useState(profile || "project_issue");
   const [communicationType, setCommunicationType] = useState("phone_call");
@@ -768,7 +769,17 @@ export default function CaptureLauncher() {
     setContext({});
   }
 
-  function saved(capture) {
+  async function saved(capture) {
+    if (context.routingAttemptId && capture?.id) {
+      try {
+        await completeConversationalHandoff({
+          attempt_id: context.routingAttemptId,
+          capture_id: capture.id,
+        });
+      } catch {
+        toast.error("Capture saved, but its conversational routing link needs review.");
+      }
+    }
     window.dispatchEvent(new CustomEvent("mhb:capture-saved", { detail: capture }));
     toast.success("Capture saved.");
     close();
@@ -856,6 +867,9 @@ export default function CaptureLauncher() {
                 milestoneId: handoff.milestone_id || current.milestoneId,
                 agreementId: handoff.agreement_id || current.agreementId,
                 dimensions: handoff.dimensions || null,
+                sourceText: handoff.source_text || current.sourceText || "",
+                files: handoff.files || current.files || [],
+                routingAttemptId: handoff.routing_attempt_id || "",
               }));
               setMode({
                 quick_lead: "lead",
@@ -867,17 +881,19 @@ export default function CaptureLauncher() {
             }}
           />
         ) : null}
-        {mode === "lead" ? <QuickLeadForm onSaved={saved} onCancel={close} /> : null}
+        {mode === "lead" ? <QuickLeadForm onSaved={saved} onCancel={close} initialText={context.sourceText || ""} /> : null}
         {mode === "note" ? <QuickNoteForm onSaved={saved} onCancel={close} /> : null}
         {mode === "photo" ? <PhotoForm onSaved={saved} onCancel={close} /> : null}
         {mode === "receipt" ? <ProjectAssistantSmartCapture compact /> : null}
-        {mode === "measurement" ? <MeasurementCaptureForm onSaved={saved} onCancel={close} initialProjectId={context.projectId || ""} initialDimensions={context.dimensions || null} /> : null}
+        {mode === "measurement" ? <MeasurementCaptureForm onSaved={saved} onCancel={close} initialProjectId={context.projectId || ""} initialDimensions={context.dimensions || null} initialSourceText={context.sourceText || ""} initialFiles={context.files || []} /> : null}
         {PROJECT_CAPTURE_CONFIG[mode] ? (
           <ProjectCaptureForm
             captureType={PROJECT_CAPTURE_CONFIG[mode].captureType || mode}
             profile={PROJECT_CAPTURE_CONFIG[mode].profile || ""}
             initialProjectId={context.projectId || ""}
             initialMilestoneId={context.milestoneId || ""}
+            initialText={context.sourceText || ""}
+            initialFiles={context.files || []}
             onSaved={saved}
             onCancel={close}
           />

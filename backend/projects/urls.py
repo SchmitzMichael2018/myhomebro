@@ -248,6 +248,8 @@ from .views.capture import (
 from .views.capture_conversational import (
     CaptureConversationalConfirmView,
     CaptureConversationalCancelView,
+    CaptureConversationalContextSearchView,
+    CaptureConversationalCompleteHandoffView,
     CaptureConversationalFollowUpView,
     CaptureConversationalRouteView,
     CaptureProfileListView,
@@ -541,6 +543,8 @@ urlpatterns = [
     path("captures/conversational/follow-up/", CaptureConversationalFollowUpView.as_view(), name="capture-conversational-follow-up"),
     path("captures/conversational/confirm/", CaptureConversationalConfirmView.as_view(), name="capture-conversational-confirm"),
     path("captures/conversational/cancel/", CaptureConversationalCancelView.as_view(), name="capture-conversational-cancel"),
+    path("captures/conversational/contexts/", CaptureConversationalContextSearchView.as_view(), name="capture-conversational-contexts"),
+    path("captures/conversational/complete-handoff/", CaptureConversationalCompleteHandoffView.as_view(), name="capture-conversational-complete-handoff"),
     path("captures/customer-change-intake/", CustomerChangeIntakeView.as_view(), name="customer-change-intake"),
     path("captures/customer-change-intake/<uuid:capture_id>/", CustomerChangeIntakeStatusView.as_view(), name="customer-change-intake-status"),
     path("captures/<uuid:capture_id>/", CaptureDetailView.as_view(), name="capture-detail"),

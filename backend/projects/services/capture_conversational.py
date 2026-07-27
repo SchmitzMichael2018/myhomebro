@@ -24,6 +24,7 @@ UNSUPPORTED_TERMS = {
     "bluetooth laser": "Bluetooth laser routing is not available.",
 }
 KEYWORDS = {
+    "photo": ("photo attached", "take a photo", "site photo"),
     "change_request": ("add work", "remove work", "change order", "customer wants", "recessed lighting", "substitute"),
     "site_condition": ("found water", "water damage", "behind the wall", "unexpected condition", "discovered"),
     "punch_item": ("punch", "touch up", "still needs", "sticking", "walkthrough"),
@@ -34,6 +35,7 @@ KEYWORDS = {
     "progress_photo": ("progress photo", "before photo", "after photo"),
     "project_update": ("project update", "completed today", "work completed", "finished"),
     "communication": ("called", "emailed", "texted", "spoke with", "met with"),
+    "document": ("project document", "document attached", "pdf attached"),
     "issue": ("issue", "problem", "damage", "broken", "missing"),
     "quick_lead": ("new lead", "wants an estimate", "met ", "potential customer"),
     "quick_note": ("remember", "note to self", "reminder"),
@@ -116,14 +118,76 @@ def _context_candidates(user, text, current_project):
 
 def _candidate(profile, confidence, evidence):
     return {
+        **profile.public_dict(),
         "profile_key": profile.profile_key,
-        "display_name": profile.display_name,
-        "description": profile.description,
         "destination": profile.destination_key or "Private Capture artifact",
         "confidence_category": confidence,
         "evidence": evidence[:4],
         "warnings": [profile.non_effects] if profile.non_effects else [],
         "handoff_required": profile.handoff_required,
+    }
+
+
+def _question(key, question_type, prompt, *, context_type="", max_length=None):
+    return {
+        "question_key": key,
+        "type": question_type,
+        "prompt": prompt,
+        "label": prompt,
+        "help_text": (
+            "Only records you are authorized to use will be shown."
+            if context_type else ""
+        ),
+        "required": True,
+        "allowed_values": [],
+        "context_type": context_type,
+        "validation": {"max_length": max_length} if max_length else {},
+        "max_length": max_length,
+        "sensitive": False,
+    }
+
+
+def deterministic_candidates(text, available_profile_keys, artifact_metadata=None):
+    """Pure deterministic classifier used by routing and the offline evaluation harness."""
+    normalized = str(text or "").casefold()
+    unsupported = next(
+        (message for phrase, message in UNSUPPORTED_TERMS.items() if phrase in normalized),
+        "",
+    )
+    if unsupported:
+        return {"unsupported": unsupported, "ordered": [], "scores": {}, "evidence": {}}
+    allowed = set(available_profile_keys)
+    scores = {}
+    evidence = {}
+    for key, terms in KEYWORDS.items():
+        if key not in allowed:
+            continue
+        matches = [term for term in terms if term in normalized]
+        if matches:
+            scores[key] = len(matches) * 3
+            evidence[key] = [f'Description includes "{term.strip()}".' for term in matches[:3]]
+    artifacts = artifact_metadata or []
+    image_count = sum(
+        1 for row in artifacts if str(row.get("mime_type", "")).startswith("image/")
+    )
+    pdf_count = sum(1 for row in artifacts if row.get("mime_type") == "application/pdf")
+    if image_count:
+        for key in ("photo", "progress_photo", "issue", "equipment", "warranty_concern"):
+            if key in allowed:
+                scores[key] = scores.get(key, 0) + 1
+                evidence.setdefault(key, []).append("Image evidence is attached.")
+    if pdf_count and "document" in allowed:
+        scores["document"] = scores.get("document", 0) + 2
+        evidence.setdefault("document", []).append("A PDF is attached.")
+    ordered = sorted(
+        scores,
+        key=lambda key: (-scores[key], PROFILE_MAP[key].priority),
+    )
+    return {
+        "unsupported": "",
+        "ordered": ordered,
+        "scores": scores,
+        "evidence": evidence,
     }
 
 
@@ -136,10 +200,10 @@ def route_attempt(attempt, *, explicit_profile=""):
         user=attempt.actor, project=project, milestone=milestone, agreement=agreement
     )
     available_map = {row.profile_key: row for row in available}
-    unsupported = next(
-        (message for phrase, message in UNSUPPORTED_TERMS.items() if phrase in text.casefold()),
-        "",
+    classified = deterministic_candidates(
+        text, available_map, attempt.artifact_metadata or []
     )
+    unsupported = classified["unsupported"]
     if unsupported:
         result = {
             "schema_version": SCHEMA_VERSION,
@@ -158,26 +222,9 @@ def route_attempt(attempt, *, explicit_profile=""):
         }
         source, version, fallback = "deterministic", "routing-rules.v1", ""
     else:
-        scores = {}
-        evidence = {}
-        for key, terms in KEYWORDS.items():
-            if key not in available_map:
-                continue
-            matches = [term for term in terms if term in text.casefold()]
-            if matches:
-                scores[key] = len(matches) * 3
-                evidence[key] = [f'Description includes "{term.strip()}".' for term in matches[:3]]
+        scores = classified["scores"]
+        evidence = classified["evidence"]
         artifacts = attempt.artifact_metadata or []
-        image_count = sum(1 for row in artifacts if str(row.get("mime_type", "")).startswith("image/"))
-        pdf_count = sum(1 for row in artifacts if row.get("mime_type") == "application/pdf")
-        if image_count:
-            for key in ("photo", "progress_photo", "issue", "equipment", "warranty_concern"):
-                if key in available_map:
-                    scores[key] = scores.get(key, 0) + 1
-                    evidence.setdefault(key, []).append("Image evidence is attached.")
-        if pdf_count and "document" in available_map:
-            scores["document"] = scores.get("document", 0) + 2
-            evidence.setdefault("document", []).append("A PDF is attached.")
         if explicit_profile:
             if explicit_profile not in available_map:
                 raise ConversationalCaptureError(
@@ -186,7 +233,9 @@ def route_attempt(attempt, *, explicit_profile=""):
                 )
             scores[explicit_profile] = 100
             evidence[explicit_profile] = ["You selected this Capture profile."]
-        ordered = sorted(scores, key=lambda key: (-scores[key], available_map[key].priority))
+        ordered = classified["ordered"]
+        if explicit_profile:
+            ordered = [explicit_profile, *[key for key in ordered if key != explicit_profile]]
         candidates = []
         for key in ordered[:MAX_CANDIDATES]:
             confidence = "high" if scores[key] >= 6 else "medium" if scores[key] >= 3 else "low"
@@ -195,40 +244,30 @@ def route_attempt(attempt, *, explicit_profile=""):
         questions = []
         if not text and not artifacts:
             missing.append("description_or_artifact")
-            questions.append({
-                "question_key": "description",
-                "type": "text",
-                "label": "What happened?",
-                "required": True,
-            })
+            questions.append(_question(
+                "description", "long_text", "What happened?", max_length=5000
+            ))
         if not candidates:
             missing.append("capture_profile")
-            questions.append({
-                "question_key": "profile",
-                "type": "profile_choice",
-                "label": "Which kind of Capture do you want to create?",
-                "required": True,
-            })
+            questions.append(_question(
+                "profile", "profile_select", "Which kind of Capture do you want to create?"
+            ))
         elif len(candidates) > 1 and candidates[0]["confidence_category"] == candidates[1]["confidence_category"]:
             missing.append("capture_profile")
-            questions.append({
-                "question_key": "profile",
-                "type": "profile_choice",
-                "label": "More than one workflow fits. Which should Project Assistant prepare?",
-                "required": True,
-            })
+            questions.append(_question(
+                "profile", "profile_select",
+                "More than one workflow fits. Which should Project Assistant prepare?",
+            ))
         recommended = candidates[0]["profile_key"] if candidates and "capture_profile" not in missing else ""
         recommended_profile = available_map.get(recommended)
         if recommended_profile:
             for required in recommended_profile.required_context:
                 if not {"project": project, "agreement": agreement, "milestone": milestone}.get(required):
                     missing.append(f"{required}_id")
-                    questions.append({
-                        "question_key": required,
-                        "type": "context_choice",
-                        "label": f"Which {required} is this for?",
-                        "required": True,
-                    })
+                    questions.append(_question(
+                        required, f"{required}_select",
+                        f"Which {required} is this for?", context_type=required,
+                    ))
         result = {
             "schema_version": SCHEMA_VERSION,
             "status": "needs_information" if missing else "suggested",
@@ -252,7 +291,11 @@ def route_attempt(attempt, *, explicit_profile=""):
             ],
         }
         source, version, fallback = "deterministic", "routing-rules.v1", "provider_not_configured"
-        provider = getattr(settings, "CAPTURE_ROUTING_PROVIDER", None)
+        provider = (
+            getattr(settings, "CAPTURE_ROUTING_PROVIDER", None)
+            if getattr(settings, "CAPTURE_CONVERSATIONAL_PROVIDER_ENABLED", False)
+            else None
+        )
         if callable(provider) and not explicit_profile:
             try:
                 proposed = provider(
@@ -260,9 +303,17 @@ def route_attempt(attempt, *, explicit_profile=""):
                     text=text[:5000],
                     available_profiles=[row.profile_key for row in available],
                     context={
-                        "project_id": getattr(project, "id", None),
-                        "agreement_id": getattr(agreement, "id", None),
+                        "has_project_context": bool(project),
+                        "has_agreement_context": bool(agreement),
+                        "has_milestone_context": bool(milestone),
                         "artifact_mime_types": [row.get("mime_type", "") for row in artifacts[:10]],
+                    },
+                    policy={
+                        "content_is_untrusted": True,
+                        "tools_allowed": False,
+                        "actions_allowed": False,
+                        "must_use_available_profiles": True,
+                        "confirmation_required": True,
                     },
                 )
                 key = proposed.get("recommended_profile") if isinstance(proposed, dict) else ""

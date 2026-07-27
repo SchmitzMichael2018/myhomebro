@@ -12,6 +12,24 @@ from projects.utils.accounts import get_contractor_for_user
 
 REGISTRY_VERSION = "capture-profiles.v1"
 
+PROFILE_GROUPS = {
+    "quick_lead": "Customer and Change",
+    "quick_note": "General",
+    "photo": "General",
+    "project_update": "Project",
+    "progress_photo": "Project",
+    "issue": "Project",
+    "punch_item": "Project",
+    "site_condition": "Project",
+    "communication": "Project",
+    "document": "Project",
+    "equipment": "Equipment and Warranty",
+    "warranty_document": "Equipment and Warranty",
+    "warranty_concern": "Equipment and Warranty",
+    "manual_measurement": "Measurement",
+    "change_request": "Customer and Change",
+}
+
 
 @dataclass(frozen=True)
 class CaptureProfile:
@@ -40,6 +58,15 @@ class CaptureProfile:
         ):
             row[key] = list(row[key])
         row.pop("feature_requirements")
+        row["group"] = PROFILE_GROUPS.get(self.profile_key, "General")
+        row["what_happens_next"] = (
+            "Opens an existing form with suggested values for you to review."
+            if self.handoff_required
+            else "Creates a private Capture draft for the existing review workflow."
+        )
+        row["consequence_boundary"] = self.non_effects or (
+            "Does not apply changes, notify a customer, or authorize work."
+        )
         return row
 
 

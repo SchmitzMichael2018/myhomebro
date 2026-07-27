@@ -71,6 +71,10 @@ export class BrowserVoiceService {
     return Boolean(this.recognitionCtor() || this.synthesis());
   }
 
+  canListen() {
+    return Boolean(this.recognitionCtor());
+  }
+
   isListening() {
     return this.listening;
   }

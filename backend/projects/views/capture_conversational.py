@@ -11,7 +11,14 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
-from projects.models import Capture, CaptureArtifact, CaptureEvent, CaptureRoutingAttempt
+from projects.models import (
+    Agreement,
+    Capture,
+    CaptureArtifact,
+    CaptureEvent,
+    CaptureRoutingAttempt,
+    Milestone,
+)
 from projects.serializers.capture import CaptureCreateSerializer, CaptureSerializer
 from projects.services.capture_conversational import (
     MAX_FOLLOW_UP_ROUNDS,
@@ -22,6 +29,7 @@ from projects.services.capture_conversational import (
     route_attempt,
 )
 from projects.services.capture_profiles import PROFILE_MAP, registry_response, resolve_profiles
+from projects.services.capture_permissions import visible_project_capture_projects
 from projects.utils.accounts import get_contractor_for_user
 from projects.views.capture import _validate_project_upload
 
@@ -97,10 +105,33 @@ class FollowUpSerializer(serializers.Serializer):
             if set(row) - {"question_key", "value"}:
                 raise serializers.ValidationError("Follow-up answer contains unsupported fields.")
             key = str(row.get("question_key") or "")
-            if key not in {"description", "profile", "project", "agreement", "milestone"}:
+            if key not in {
+                "description", "profile", "project", "agreement", "milestone",
+                "customer", "equipment", "verification", "area",
+            }:
                 raise serializers.ValidationError("Follow-up question is invalid.")
-            result.append({"question_key": key, "value": str(row.get("value") or "")[:500]})
+            raw_value = row.get("value")
+            value = (
+                [str(item)[:120] for item in raw_value[:10]]
+                if isinstance(raw_value, list)
+                else str(raw_value or "")[:500]
+            )
+            result.append({"question_key": key, "value": value})
         return result
+
+
+class ContextSearchSerializer(serializers.Serializer):
+    context_type = serializers.ChoiceField(
+        choices=("project", "agreement", "milestone")
+    )
+    q = serializers.CharField(required=False, allow_blank=True, max_length=100, default="")
+    project_id = serializers.IntegerField(required=False)
+
+    def validate_q(self, value):
+        value = value.strip()
+        if value and len(value) < 2:
+            raise serializers.ValidationError("Enter at least 2 characters.")
+        return value
 
 
 class ConfirmSerializer(serializers.Serializer):
@@ -116,6 +147,11 @@ class ConfirmSerializer(serializers.Serializer):
 class CancelSerializer(serializers.Serializer):
     attempt_id = serializers.UUIDField()
     expected_version = serializers.IntegerField(min_value=1)
+
+
+class CompleteHandoffSerializer(serializers.Serializer):
+    attempt_id = serializers.UUIDField()
+    capture_id = serializers.UUIDField()
 
 
 def _attempt_for(request, attempt_id):
@@ -148,6 +184,75 @@ class CaptureProfileListView(APIView):
         return Response(registry_response(
             user=request.user, project=project, milestone=milestone, agreement=agreement
         ))
+
+
+class CaptureConversationalContextSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "capture_conversational"
+
+    def get(self, request):
+        if not _enabled():
+            return _disabled()
+        serializer = ContextSearchSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        projects = visible_project_capture_projects(request.user)
+        contractor = get_contractor_for_user(request.user)
+        if projects is None or not contractor:
+            return Response({"results": []})
+        query = data["q"]
+        context_type = data["context_type"]
+        project_id = data.get("project_id")
+        rows = []
+        if context_type == "project":
+            queryset = projects.select_related("homeowner").order_by("-updated_at", "-id")
+            if query:
+                queryset = queryset.filter(title__icontains=query)
+            for project in queryset[:10]:
+                rows.append({
+                    "context_type": "project",
+                    "id": project.id,
+                    "display_name": project.title or f"Project #{project.id}",
+                    "secondary_text": f"{project.number} · {project.get_status_display()}",
+                    "project_id": project.id,
+                })
+        elif context_type == "agreement":
+            queryset = Agreement.objects.select_related("project").filter(
+                contractor=contractor, project__in=projects
+            ).order_by("-project__updated_at", "-id")
+            if project_id:
+                queryset = queryset.filter(project_id=project_id)
+            if query:
+                queryset = queryset.filter(project__title__icontains=query)
+            for agreement in queryset[:10]:
+                rows.append({
+                    "context_type": "agreement",
+                    "id": agreement.id,
+                    "display_name": agreement.project.title or f"Agreement #{agreement.id}",
+                    "secondary_text": (
+                        f"Agreement #{agreement.id} · {agreement.get_status_display()}"
+                    ),
+                    "project_id": agreement.project_id,
+                })
+        else:
+            queryset = Milestone.objects.select_related("agreement__project").filter(
+                agreement__contractor=contractor,
+                agreement__project__in=projects,
+            ).order_by("order", "id")
+            if project_id:
+                queryset = queryset.filter(agreement__project_id=project_id)
+            if query:
+                queryset = queryset.filter(title__icontains=query)
+            for milestone in queryset[:10]:
+                rows.append({
+                    "context_type": "milestone",
+                    "id": milestone.id,
+                    "display_name": milestone.title or f"Milestone #{milestone.id}",
+                    "secondary_text": milestone.agreement.project.title,
+                    "project_id": milestone.agreement.project_id,
+                })
+        return Response({"results": rows})
 
 
 class CaptureConversationalRouteView(APIView):
@@ -341,6 +446,9 @@ class CaptureConversationalConfirmView(APIView):
             "milestone_id": getattr(milestone, "id", None),
             "agreement_id": getattr(agreement, "id", None),
             "dimensions": parse_dimensions(attempt.raw_user_text),
+            "source_text": attempt.raw_user_text,
+            "artifact_metadata": attempt.artifact_metadata,
+            "routing_attempt_id": str(attempt.id),
         }
         if profile.handoff_required:
             attempt.status = CaptureRoutingAttempt.STATUS_HANDED_OFF
@@ -476,3 +584,35 @@ class CaptureConversationalCancelView(APIView):
         append_audit(attempt, "routing_cancelled")
         attempt.save()
         return Response({"status": "cancelled", "version": attempt.version})
+
+
+class CaptureConversationalCompleteHandoffView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "capture_conversational"
+
+    def post(self, request):
+        if not _enabled():
+            return _disabled()
+        serializer = CompleteHandoffSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        attempt = _attempt_for(request, data["attempt_id"])
+        contractor = get_contractor_for_user(request.user)
+        if not attempt or attempt.status != CaptureRoutingAttempt.STATUS_HANDED_OFF:
+            return Response({"detail": "Routing attempt not found."}, status=404)
+        capture = Capture.objects.filter(
+            pk=data["capture_id"],
+            contractor=contractor,
+            captured_by=request.user,
+        ).first()
+        if not capture:
+            return Response({"detail": "Capture not found."}, status=404)
+        if attempt.capture_id and attempt.capture_id != capture.id:
+            return Response({"detail": "The routing handoff is already complete."}, status=409)
+        attempt.capture = capture
+        attempt.status = CaptureRoutingAttempt.STATUS_CONFIRMED
+        attempt.version += 1
+        append_audit(attempt, "structured_handoff_completed", {"capture_id": str(capture.id)})
+        attempt.save()
+        return Response({"status": "completed", "version": attempt.version})

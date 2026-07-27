@@ -87,6 +87,11 @@ export async function getCaptureProfiles(params = {}) {
   return response.data;
 }
 
+export async function searchConversationalContexts(params = {}) {
+  const response = await api.get("/projects/captures/conversational/contexts/", { params });
+  return response.data?.results || [];
+}
+
 export async function routeConversationalCapture(payload) {
   const response = await api.post("/projects/captures/conversational/route/", payload);
   return response.data;
@@ -111,6 +116,14 @@ export async function confirmConversationalCapture(payload, files = []) {
 
 export async function cancelConversationalCapture(payload) {
   const response = await api.post("/projects/captures/conversational/cancel/", payload);
+  return response.data;
+}
+
+export async function completeConversationalHandoff(payload) {
+  const response = await api.post(
+    "/projects/captures/conversational/complete-handoff/",
+    payload
+  );
   return response.data;
 }
 
