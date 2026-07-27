@@ -44,6 +44,7 @@ class ProjectIssueAdapter(CaptureDestinationAdapter):
         draft = project_draft(context)
         issue, _ = ProjectCaptureIssue.objects.get_or_create(
             origin_capture=context.capture,
+            child_key="legacy",
             defaults={
                 "project": context.capture.project,
                 "milestone": context.capture.milestone,

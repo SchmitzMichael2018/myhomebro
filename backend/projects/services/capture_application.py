@@ -8,7 +8,7 @@ from copy import deepcopy
 from django.db import transaction
 from django.utils import timezone
 
-from projects.models import Capture, CaptureApplication, CaptureEvent
+from projects.models import Capture, CaptureApplication, CaptureEvent, ProjectCaptureIssue
 from projects.services.capture_adapters import ADAPTERS
 from projects.services.capture_adapters.base import AdapterContext, CaptureAdapterError
 from projects.services.capture_lifecycle import CaptureVersionConflict, check_expected_version
@@ -24,6 +24,203 @@ class CaptureApplicationError(ValueError):
 
 class CaptureIdempotencyConflict(CaptureApplicationError):
     code = "capture_idempotency_conflict"
+
+
+def _field_findings_snapshot(capture):
+    snapshot = capture.approved_snapshot or {}
+    draft = snapshot.get("structured_draft") or {}
+    return snapshot, draft if draft.get("schema_version") == "field-findings.v1" else None
+
+
+def _selected_findings(capture, payload):
+    snapshot, draft = _field_findings_snapshot(capture)
+    if not draft:
+        return None, None
+    keys = payload.get("selected_child_keys")
+    if not isinstance(keys, list) or not keys or len(keys) != len(set(keys)):
+        raise CaptureApplicationError("Select one or more unique field findings.")
+    rows = {row.get("child_key"): row for row in draft.get("findings") or []}
+    if any(key not in rows for key in keys):
+        raise CaptureApplicationError("A selected field finding is unavailable.")
+    selected = [rows[key] for key in keys]
+    for row in selected:
+        if row.get("review_status") != "approved":
+            raise CaptureApplicationError("Only approved field findings can be applied.")
+        if row.get("missing_fields"):
+            raise CaptureApplicationError("Resolve required field finding information.")
+        duplicates = row.get("duplicate_candidates") or []
+        if duplicates and not row.get("duplicate_decision"):
+            raise CaptureApplicationError("Resolve the field finding duplicate suggestion.")
+    return snapshot, selected
+
+
+def preview_field_findings(capture, *, actor, expected_version, payload):
+    if _field_findings_snapshot(capture)[1] is None:
+        return None
+    if not can_apply_capture(actor, capture):
+        raise CaptureApplicationError("You do not have permission to apply this Capture.")
+    check_expected_version(capture, expected_version)
+    snapshot, rows = _selected_findings(capture, payload)
+    if rows is None:
+        return None
+    records = []
+    for row in rows:
+        decision = row.get("duplicate_decision") or {}
+        records.append({
+            "child_key": row["child_key"],
+            "action": "link" if decision.get("decision") == "link_existing" else "create",
+            "record_type": "project_issue",
+            "label": row["title"],
+            "fields": {
+                "project": capture.project.title,
+                "milestone": getattr(capture.milestone, "title", ""),
+                "classification": row["classification"],
+                "location": row.get("location") or row.get("room_or_area"),
+                "description": row["description"],
+            },
+            "warnings": row.get("warnings") or [],
+        })
+    return {
+        "capture_id": str(capture.id),
+        "capture_version": capture.version,
+        "approved_schema_version": snapshot.get("schema_version"),
+        "records": records,
+        "warnings": list(dict.fromkeys(
+            warning for row in rows for warning in (row.get("warnings") or [])
+        )),
+        "permission": {"allowed": True},
+        "valid": True,
+        "adapter_versions": {"project_issue": ADAPTERS["project_issue"].version},
+        "selected_child_keys": [row["child_key"] for row in rows],
+    }
+
+
+def apply_field_findings(capture, *, actor, expected_version, idempotency_key, payload):
+    if _field_findings_snapshot(capture)[1] is None:
+        return None
+    if payload.get("confirmed") is not True:
+        raise CaptureApplicationError("Confirm that the approved Issues should be created or linked.")
+    key = str(idempotency_key or "").strip()
+    if not key or len(key) > 120:
+        raise CaptureApplicationError("A valid idempotency key is required.")
+    locked = Capture.objects.select_for_update().get(pk=capture.pk)
+    check_expected_version(locked, expected_version)
+    snapshot, rows = _selected_findings(locked, payload)
+    if rows is None:
+        return None
+    request_snapshot = {
+        "approved_capture_version": snapshot.get("capture_version"),
+        "approved_schema_version": snapshot.get("schema_version"),
+        "selected_child_keys": [row["child_key"] for row in rows],
+    }
+    existing = CaptureApplication.objects.filter(capture=locked, idempotency_key=key).first()
+    if existing:
+        if existing.request_snapshot != request_snapshot:
+            raise CaptureIdempotencyConflict(
+                "This idempotency key was already used for a different field-finding selection."
+            )
+        return locked, existing, True
+    application = CaptureApplication.objects.create(
+        capture=locked, adapter="project_issue_children", adapter_version="1",
+        idempotency_key=key, actor=actor, capture_version=snapshot.get("capture_version") or locked.version,
+        request_snapshot=request_snapshot,
+    )
+    created, linked, failures = [], [], []
+    for row in rows:
+        decision = row.get("duplicate_decision") or {}
+        try:
+            with transaction.atomic():
+                if decision.get("decision") == "link_existing":
+                    issue = ProjectCaptureIssue.objects.filter(
+                        pk=decision.get("candidate_id"),
+                        project=locked.project,
+                        project__contractor=locked.contractor,
+                    ).first()
+                    if not issue:
+                        raise CaptureApplicationError("The approved duplicate Issue is unavailable.")
+                    linked.append({
+                        "type": "project_issue", "id": str(issue.id), "label": issue.title,
+                        "child_key": row["child_key"], "url": f"/app/projects/{locked.project_id}",
+                    })
+                    result = "linked"
+                else:
+                    issue, was_created = ProjectCaptureIssue.objects.get_or_create(
+                        origin_capture=locked,
+                        child_key=row["child_key"],
+                        defaults={
+                            "project": locked.project, "milestone": locked.milestone,
+                            "classification": row["classification"], "title": row["title"][:255],
+                            "description": row["description"], "created_by": actor,
+                        },
+                    )
+                    if not was_created:
+                        result = "replayed"
+                    else:
+                        result = "created"
+                    created.append({
+                        "type": "project_issue", "id": str(issue.id), "label": issue.title,
+                        "child_key": row["child_key"], "url": f"/app/projects/{locked.project_id}",
+                    })
+                CaptureEvent.objects.create(
+                    capture=locked, event_type=f"field_finding_{result}", actor=actor,
+                    metadata={
+                        "child_key": row["child_key"], "destination": "project_issue",
+                        "adapter_version": "1",
+                    },
+                )
+        except Exception as exc:
+            failures.append({
+                "child_key": row["child_key"],
+                "code": getattr(exc, "code", "field_finding_apply_failed"),
+            })
+            CaptureEvent.objects.create(
+                capture=locked, event_type="field_finding_failed", actor=actor,
+                reason="Field finding application failed safely",
+                metadata={"child_key": row["child_key"]},
+            )
+    applied_at = timezone.now()
+    receipt = {
+        "application_id": str(application.id), "capture_id": str(locked.id),
+        "approved_capture_version": application.capture_version,
+        "approved_schema_version": snapshot.get("schema_version"),
+        "adapters": ["project_issue"], "adapter_versions": {"project_issue": "1"},
+        "selected_child_keys": request_snapshot["selected_child_keys"],
+        "applied_by": {"id": actor.id, "email": getattr(actor, "email", "")},
+        "applied_at": applied_at.isoformat(), "created_records": created,
+        "linked_records": linked, "failed_children": failures,
+        "warnings": [], "final_status": "partial" if failures else "applied",
+    }
+    application.status = (
+        CaptureApplication.STATUS_FAILED if failures and not (created or linked)
+        else CaptureApplication.STATUS_COMPLETED
+    )
+    application.created_records = created
+    application.executed_at = applied_at
+    application.receipt_payload = receipt
+    application.failure_code = "field_finding_partial_failure" if failures else ""
+    application.save(update_fields=[
+        "status", "created_records", "executed_at", "receipt_payload", "failure_code",
+    ])
+    approved_keys = {
+        row.get("child_key") for row in (snapshot.get("structured_draft") or {}).get("findings", [])
+        if row.get("review_status") == "approved"
+    }
+    applied_keys = {
+        record.get("child_key")
+        for app in locked.applications.filter(status=CaptureApplication.STATUS_COMPLETED)
+        for record in ((app.receipt_payload or {}).get("created_records", []) + (app.receipt_payload or {}).get("linked_records", []))
+    }
+    locked.status = Capture.STATUS_APPLIED if approved_keys.issubset(applied_keys) else Capture.STATUS_APPROVED
+    locked.version += 1
+    locked.save(update_fields=["status", "version", "updated_at"])
+    CaptureEvent.objects.create(
+        capture=locked, event_type="field_findings_application_completed", actor=actor,
+        metadata={
+            "application_id": str(application.id), "created_count": len(created),
+            "linked_count": len(linked), "failed_count": len(failures),
+        },
+    )
+    return locked, application, False
 
 
 ALLOWED_OPTIONS = {
@@ -191,6 +388,11 @@ def _application_envelope(capture, application):
 
 
 def preview_application(capture, *, actor, expected_version, payload):
+    field_preview = preview_field_findings(
+        capture, actor=actor, expected_version=expected_version, payload=payload
+    )
+    if field_preview is not None:
+        return field_preview
     if not can_apply_capture(actor, capture):
         raise CaptureApplicationError("You do not have permission to apply this Capture.")
     check_expected_version(capture, expected_version)
@@ -223,6 +425,12 @@ def preview_application(capture, *, actor, expected_version, payload):
 
 @transaction.atomic
 def apply_capture(capture, *, actor, expected_version, idempotency_key, payload):
+    field_result = apply_field_findings(
+        capture, actor=actor, expected_version=expected_version,
+        idempotency_key=idempotency_key, payload=payload,
+    )
+    if field_result is not None:
+        return field_result
     started_at = time.monotonic()
     locked = Capture.objects.select_for_update().get(pk=capture.pk)
     if not can_apply_capture(actor, locked):

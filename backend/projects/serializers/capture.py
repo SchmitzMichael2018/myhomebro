@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.conf import settings
 
 from projects.models import Capture, CaptureApplication, CaptureArtifact, CaptureEvent
 
@@ -168,6 +169,7 @@ class CaptureSerializer(serializers.ModelSerializer):
             "transcript",
             "language",
             "input_metadata",
+            "capture_profile",
         }
         unknown = set(value) - allowed
         if unknown:
@@ -264,11 +266,25 @@ class CaptureCreateSerializer(CaptureSerializer):
             raise serializers.ValidationError({"raw_text_payload": "Input metadata must be an object."})
         if capture_type == Capture.TYPE_ISSUE and metadata.get("issue_classification") not in {
             "project_issue", "punch_item", "customer_concern", "potential_warranty",
-            "potential_change_request", "internal_note",
+            "potential_change_request", "internal_note", "site_condition",
         }:
             raise serializers.ValidationError(
                 {"raw_text_payload": "Choose the issue classification yourself."}
             )
+        profile = payload.get("capture_profile") or metadata.get("capture_profile")
+        if profile:
+            if profile not in {"punch_item", "site_condition"}:
+                raise serializers.ValidationError(
+                    {"raw_text_payload": "Choose a supported field-finding profile."}
+                )
+            if not getattr(settings, "CAPTURE_FIELD_FINDINGS_ENABLED", False):
+                raise serializers.ValidationError(
+                    {"raw_text_payload": "Project Field Findings is not enabled."}
+                )
+            if capture_type != Capture.TYPE_ISSUE or metadata.get("issue_classification") != profile:
+                raise serializers.ValidationError(
+                    {"raw_text_payload": "Field findings must use the matching Issue classification."}
+                )
         if capture_type == Capture.TYPE_COMMUNICATION and metadata.get("communication_type") not in {
             "phone_call", "email", "sms", "in_person", "other",
         }:

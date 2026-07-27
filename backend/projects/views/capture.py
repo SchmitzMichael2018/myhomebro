@@ -288,7 +288,25 @@ class CaptureProjectOptionsView(APIView):
                     for row in milestones
                 ],
             })
-        return Response({"results": rows})
+        can_manage = not subaccount or subaccount.role == subaccount.ROLE_EMPLOYEE_SUPERVISOR
+        return Response({
+            "results": rows,
+            "capabilities": {
+                "field_findings_enabled": bool(
+                    getattr(settings, "CAPTURE_FIELD_FINDINGS_ENABLED", False)
+                ),
+                "allowed_profiles": (
+                    ["punch_item", "site_condition"]
+                    if getattr(settings, "CAPTURE_FIELD_FINDINGS_ENABLED", False) and rows
+                    else []
+                ),
+                "can_create": bool(rows),
+                "can_review": can_manage,
+                "can_apply": can_manage,
+                "project_context_available": bool(rows),
+                "milestone_context_available": any(row["milestones"] for row in rows),
+            },
+        })
 
 
 class CaptureListCreateView(APIView):
@@ -878,7 +896,7 @@ class CaptureApplyView(APIView):
             )
         allowed = {
             "expected_version", "idempotency_key", "destinations",
-            "adapter_versions", "application_options", "confirmed",
+            "adapter_versions", "application_options", "confirmed", "selected_child_keys",
         }
         unknown = set(request.data) - allowed
         if unknown:

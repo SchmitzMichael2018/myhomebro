@@ -4,6 +4,7 @@ import {
   isCaptureApplicationEnabled,
   isCaptureQrEnabled,
   isCaptureReviewEnabled,
+  isCaptureFieldFindingsEnabled,
 } from "./captureFlags.js";
 
 describe("Capture review feature flag", () => {
@@ -11,6 +12,18 @@ describe("Capture review feature flag", () => {
     expect(isCaptureReviewEnabled({ foundation: true, inbox: true, review: false })).toBe(false);
     expect(isCaptureReviewEnabled({ foundation: true, inbox: false, review: true })).toBe(false);
     expect(isCaptureReviewEnabled({ foundation: true, inbox: true, review: true })).toBe(true);
+  });
+
+  it("requires review and the independent field-findings flag", () => {
+    expect(isCaptureFieldFindingsEnabled({
+      foundation: true, inbox: true, review: true, fieldFindings: false,
+    })).toBe(false);
+    expect(isCaptureFieldFindingsEnabled({
+      foundation: true, inbox: true, review: true, fieldFindings: true,
+    })).toBe(true);
+    expect(isCaptureFieldFindingsEnabled({
+      foundation: true, inbox: false, review: true, fieldFindings: true,
+    })).toBe(false);
   });
 
   it("requires the complete Capture flag chain for application", () => {

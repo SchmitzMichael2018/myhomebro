@@ -138,6 +138,7 @@ class ProjectCaptureIssue(models.Model):
     CLASS_POTENTIAL_WARRANTY = "potential_warranty"
     CLASS_POTENTIAL_CHANGE_REQUEST = "potential_change_request"
     CLASS_INTERNAL_NOTE = "internal_note"
+    CLASS_SITE_CONDITION = "site_condition"
     CLASSIFICATION_CHOICES = (
         (CLASS_PROJECT_ISSUE, "Project issue"),
         (CLASS_PUNCH_ITEM, "Punch item"),
@@ -145,6 +146,7 @@ class ProjectCaptureIssue(models.Model):
         (CLASS_POTENTIAL_WARRANTY, "Potential warranty"),
         (CLASS_POTENTIAL_CHANGE_REQUEST, "Potential change request"),
         (CLASS_INTERNAL_NOTE, "Internal note"),
+        (CLASS_SITE_CONDITION, "Site condition"),
     )
     STATUS_OPEN = "open"
     STATUS_RESOLVED = "resolved"
@@ -172,9 +174,10 @@ class ProjectCaptureIssue(models.Model):
         null=True,
         related_name="project_capture_issues",
     )
-    origin_capture = models.OneToOneField(
-        "projects.Capture", on_delete=models.PROTECT, related_name="created_project_issue"
+    origin_capture = models.ForeignKey(
+        "projects.Capture", on_delete=models.PROTECT, related_name="created_project_issues"
     )
+    child_key = models.CharField(max_length=80, default="legacy", db_index=True)
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -183,4 +186,10 @@ class ProjectCaptureIssue(models.Model):
         indexes = [
             models.Index(fields=["project", "status", "-created_at"]),
             models.Index(fields=["project", "classification"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["origin_capture", "child_key"],
+                name="uniq_capture_issue_child_key",
+            )
         ]

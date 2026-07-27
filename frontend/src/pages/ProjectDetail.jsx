@@ -5,6 +5,9 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 
+const FIELD_FINDINGS_ENABLED =
+  String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -59,6 +62,46 @@ export default function ProjectDetail() {
       </div>
       
       <div className="bg-white rounded-xl shadow-lg p-6 space-y-6">
+        <section aria-labelledby="project-field-actions" className="border-b pb-6">
+          <h2 id="project-field-actions" className="text-sm font-semibold text-gray-600">
+            Field capture
+          </h2>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+                detail: { mode: "issue", projectId: project.id },
+              }))}
+              className="min-h-11 rounded-lg border border-gray-300 px-4 font-semibold text-gray-800"
+            >
+              Document an Issue
+            </button>
+            {FIELD_FINDINGS_ENABLED ? (
+              <>
+                <button
+                  type="button"
+                  data-testid="project-add-punch-items"
+                  onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+                    detail: { mode: "punch_item", projectId: project.id },
+                  }))}
+                  className="min-h-11 rounded-lg bg-blue-600 px-4 font-semibold text-white"
+                >
+                  Add Punch Items
+                </button>
+                <button
+                  type="button"
+                  data-testid="project-record-site-condition"
+                  onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+                    detail: { mode: "site_condition", projectId: project.id },
+                  }))}
+                  className="min-h-11 rounded-lg border border-gray-300 px-4 font-semibold text-gray-800"
+                >
+                  Record Site Condition
+                </button>
+              </>
+            ) : null}
+          </div>
+        </section>
         <div>
           <h3 className="font-semibold text-gray-600 text-sm">Description</h3>
           <p className="text-gray-800 mt-1">{project.description || "No description provided."}</p>

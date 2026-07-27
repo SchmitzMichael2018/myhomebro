@@ -10,7 +10,12 @@ export const captureFlags = Object.freeze({
   review: envFlag("VITE_CAPTURE_REVIEW_ENABLED"),
   application: envFlag("VITE_CAPTURE_APPLICATION_ENABLED"),
   qr: envFlag("VITE_CAPTURE_QR_ENABLED"),
+  fieldFindings: envFlag("VITE_CAPTURE_FIELD_FINDINGS_ENABLED"),
 });
+
+export function isCaptureFieldFindingsEnabled(flags = captureFlags) {
+  return Boolean(isCaptureReviewEnabled(flags) && flags.fieldFindings);
+}
 
 export function isCaptureInboxEnabled(flags = captureFlags) {
   return Boolean(flags.foundation && flags.inbox);

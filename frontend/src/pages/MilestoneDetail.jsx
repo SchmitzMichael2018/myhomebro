@@ -11,6 +11,9 @@ import DateField from "../components/DateField"; // reliable calendar button
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { Button, Card, InlineAlert, LoadingSkeleton } from "../components/ui";
 
+const FIELD_FINDINGS_ENABLED =
+  String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
+
 // --- Helpers ---------------------------------------------------------------
 
 const formatCurrency = (amount) => {
@@ -376,6 +379,38 @@ export default function MilestoneDetail() {
           <div className="text-xs text-[var(--mhb-text-muted)]">Editing disabled</div>
         )}
       </div>
+
+      {!readOnly && FIELD_FINDINGS_ENABLED ? (
+        <Card theme="operational" padding="md" className="mb-4">
+          <h2 className="text-sm font-bold">Field findings</h2>
+          <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
+            Save observations for review without changing this milestone.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[
+              ["punch_item", "Add Punch Items"],
+              ["site_condition", "Record Site Condition"],
+            ].map(([mode, label]) => (
+              <Button
+                key={mode}
+                type="button"
+                variant={mode === "punch_item" ? "primary" : "secondary"}
+                theme="operational"
+                data-testid={`milestone-${mode.replaceAll("_", "-")}`}
+                onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+                  detail: {
+                    mode,
+                    projectId: milestone.project_id || milestone.project,
+                    milestoneId: milestone.id,
+                  },
+                }))}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       {/* Draft banner (disabled in readonly) */}
       {!readOnly && (draftLoaded || lastSavedAt) && (

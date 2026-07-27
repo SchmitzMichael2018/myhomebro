@@ -141,6 +141,7 @@ export default function CaptureDetailPage() {
   const [noteDestination, setNoteDestination] = useState("unassigned_note");
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [customers, setCustomers] = useState([]);
+  const [selectedFindingKeys, setSelectedFindingKeys] = useState([]);
   const reviewEnabled = isCaptureReviewEnabled();
   const applicationEnabled = isCaptureApplicationEnabled();
 
@@ -171,6 +172,11 @@ export default function CaptureDetailPage() {
     }
     setApplicationPreview(null);
     setApplicationConfirmed(false);
+    setSelectedFindingKeys(
+      (approvedDraft?.findings || capture.structured_draft?.findings || [])
+        .filter((row) => row.review_status === "approved")
+        .map((row) => row.child_key)
+    );
   }, [capture]);
 
   useEffect(() => {
@@ -190,12 +196,23 @@ export default function CaptureDetailPage() {
     const required = candidates.some((row) =>
       ["exact", "strong"].includes(row.match_strength)
     ) && !duplicateDecision;
+    const findings = draft?.schema_version === "field-findings.v1" ? draft.findings || [] : [];
+    const pendingFindings = findings.filter((row) => row.review_status === "pending");
+    const approvedFindings = findings.filter((row) => row.review_status === "approved");
+    const unresolvedFindingDuplicates = approvedFindings.filter(
+      (row) => row.duplicate_candidates?.length && !row.duplicate_decision
+    );
     return {
       missing: draft?.missing_fields || [],
       uncertainties: draft?.uncertainties || [],
       warnings: draft?.warnings || [],
       duplicateRequired: required,
-      canApprove: Boolean(draft) && !(draft?.missing_fields || []).length && !required,
+      canApprove: Boolean(draft)
+        && !(draft?.missing_fields || []).length
+        && !required
+        && !pendingFindings.length
+        && !unresolvedFindingDuplicates.length
+        && (!findings.length || approvedFindings.length > 0),
     };
   }, [capture, draft, duplicateDecision]);
 
@@ -234,6 +251,7 @@ export default function CaptureDetailPage() {
   }
 
   function applicationPayload({ confirmed = false, idempotencyKey } = {}) {
+    const isFieldFindings = draft?.schema_version === "field-findings.v1";
     const isLead = capture.capture_type === "quick_lead";
     const isProjectCapture = [...PROJECT_CAPTURE_TYPES, ...D2_CAPTURE_TYPES, ...MEASUREMENT_CAPTURE_TYPES].includes(capture.capture_type);
     const destinations = isLead
@@ -270,6 +288,7 @@ export default function CaptureDetailPage() {
           : {}),
       },
       confirmed,
+      ...(isFieldFindings ? { selected_child_keys: selectedFindingKeys } : {}),
     };
   }
 
@@ -467,6 +486,106 @@ export default function CaptureDetailPage() {
                     )}
                   </FormField>
                 </>
+              ) : draft.schema_version === "field-findings.v1" ? (
+                <div className="grid gap-4" data-testid="field-findings-review" aria-live="polite">
+                  <InlineAlert theme="operational" tone="info">
+                    These are observations for internal review. They do not assign work, change a schedule, or determine safety, code, structural, mold, fault, or warranty status.
+                  </InlineAlert>
+                  {(draft.findings || []).map((finding, index) => (
+                    <section
+                      key={finding.child_key}
+                      aria-labelledby={`finding-title-${finding.child_key}`}
+                      className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-4"
+                      data-testid={`field-finding-${finding.child_key}`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <h3 id={`finding-title-${finding.child_key}`} className="font-black">
+                            Finding {index + 1}: {finding.title || "Untitled finding"}
+                          </h3>
+                          <p className="text-xs font-bold uppercase tracking-wide text-[var(--mhb-text-muted)]">
+                            {finding.profile.replaceAll("_", " ")} · {finding.review_status}
+                          </p>
+                        </div>
+                        <select
+                          aria-label={`Review decision for finding ${index + 1}`}
+                          value={finding.review_status}
+                          onChange={(event) => update(["findings", index, "review_status"], event.target.value)}
+                          className="min-h-11 rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-3"
+                        >
+                          <option value="pending">Needs review</option>
+                          <option value="approved">Approve</option>
+                          <option value="excluded">Exclude</option>
+                          <option value="rejected">Reject</option>
+                        </select>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <TextField label="Title" required value={finding.title} onChange={(value) => update(["findings", index, "title"], value)} />
+                        <TextField label="Location" value={finding.location} onChange={(value) => update(["findings", index, "location"], value)} />
+                        <div className="sm:col-span-2">
+                          <TextField label="Description" required multiline value={finding.description} onChange={(value) => update(["findings", index, "description"], value)} />
+                        </div>
+                        <FormField label="Suggested severity">
+                          {(props) => (
+                            <select {...props} value={finding.severity || ""} onChange={(event) => update(["findings", index, "severity"], event.target.value)} className="min-h-11 rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-3">
+                              <option value="">Not set</option><option value="low">Low</option>
+                              <option value="medium">Medium</option><option value="high">High</option>
+                            </select>
+                          )}
+                        </FormField>
+                        <ValueRow label="Confidence" value={Object.entries(finding.confidence || {}).map(([key, value]) => `${key}: ${value}`).join(", ")} />
+                      </div>
+                      {finding.warnings?.length ? <InlineAlert theme="operational" tone="warning">{finding.warnings.join(" ")}</InlineAlert> : null}
+                      {finding.duplicate_candidates?.length ? (
+                        <div className="mt-3 rounded-lg border border-[var(--mhb-status-pending-border)] p-3" role="group" aria-label={`Duplicate review for finding ${index + 1}`}>
+                          <strong className="text-sm">Possible duplicate found</strong>
+                          {finding.duplicate_candidates.map((candidate) => (
+                            <label key={candidate.candidate_id} className="mt-2 flex min-h-11 items-start gap-2 text-sm">
+                              <input
+                                type="radio"
+                                className="mt-1"
+                                name={`finding-duplicate-${finding.child_key}`}
+                                checked={finding.duplicate_decision?.decision === "link_existing" && finding.duplicate_decision?.candidate_id === candidate.candidate_id}
+                                onChange={() => update(["findings", index, "duplicate_decision"], {
+                                  decision: "link_existing", candidate_id: candidate.candidate_id,
+                                })}
+                              />
+                              Link to {candidate.title} ({candidate.reason})
+                            </label>
+                          ))}
+                          {[
+                            ["create_separate", "Create a separate Issue"],
+                            ["not_same", "Not the same Issue"],
+                          ].map(([decision, label]) => (
+                            <label key={decision} className="flex min-h-11 items-center gap-2 text-sm">
+                              <input
+                                type="radio"
+                                name={`finding-duplicate-${finding.child_key}`}
+                                checked={finding.duplicate_decision?.decision === decision}
+                                onChange={() => update(["findings", index, "duplicate_decision"], {
+                                  decision, candidate_id: null,
+                                })}
+                              />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
+                      ) : null}
+                    </section>
+                  ))}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    theme="operational"
+                    disabled={(draft.findings || []).some((row) => row.missing_fields?.length || row.duplicate_candidates?.length)}
+                    onClick={() => setDraft((current) => ({
+                      ...current,
+                      findings: current.findings.map((row) => ({ ...row, review_status: "approved" })),
+                    }))}
+                  >
+                    Approve all valid findings
+                  </Button>
+                </div>
               ) : capture.capture_type === "measurement" ? (
                 <div className="grid gap-3" data-testid="measurement-review">
                   <InlineAlert theme="operational" tone="info">
@@ -584,11 +703,11 @@ export default function CaptureDetailPage() {
                   ) : null}
                 </>
               )}
-              <label className="flex min-h-11 items-center gap-3 text-sm font-bold">
+              {draft.schema_version !== "field-findings.v1" ? <label className="flex min-h-11 items-center gap-3 text-sm font-bold">
                 <input type="checkbox" checked={Boolean(draft.follow_up?.suggested)} onChange={(event) => update(["follow_up", "suggested"], event.target.checked)} />
                 Suggest a follow-up
-              </label>
-              {draft.follow_up?.suggested ? (
+              </label> : null}
+              {draft.schema_version !== "field-findings.v1" && draft.follow_up?.suggested ? (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <TextField label="Follow-up subject" value={draft.follow_up?.subject} onChange={(value) => update(["follow_up", "subject"], value)} />
                   <FormField label="Follow-up due" required>
@@ -642,6 +761,26 @@ export default function CaptureDetailPage() {
           <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
             Preview the exact records before anything is created or linked.
           </p>
+          {draft?.schema_version === "field-findings.v1" ? (
+            <fieldset className="mt-4 grid gap-2">
+              <legend className="text-sm font-bold">Select approved findings to apply</legend>
+              {(draft.findings || []).filter((row) => row.review_status === "approved").map((finding) => (
+                <label key={finding.child_key} className="flex min-h-11 items-center gap-3 rounded-lg border border-[var(--mhb-border-default)] px-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedFindingKeys.includes(finding.child_key)}
+                    onChange={(event) => {
+                      setSelectedFindingKeys((current) => event.target.checked
+                        ? [...new Set([...current, finding.child_key])]
+                        : current.filter((key) => key !== finding.child_key));
+                      setApplicationPreview(null);
+                    }}
+                  />
+                  <span><strong>{finding.title}</strong><span className="block text-xs text-[var(--mhb-text-muted)]">{finding.location || finding.room_or_area || "Location not specified"}</span></span>
+                </label>
+              ))}
+            </fieldset>
+          ) : null}
 
           {capture.capture_type === "quick_note" ? (
             <fieldset className="mt-4 grid gap-3">
@@ -918,7 +1057,10 @@ export default function CaptureDetailPage() {
               variant={applicationPreview ? "secondary" : "primary"}
               theme="operational"
               loading={busy === "preview-application"}
-              disabled={capture.capture_type === "quick_note" && noteDestination === "customer_note" && !selectedCustomerId}
+              disabled={
+                (capture.capture_type === "quick_note" && noteDestination === "customer_note" && !selectedCustomerId)
+                || (draft?.schema_version === "field-findings.v1" && !selectedFindingKeys.length)
+              }
               onClick={previewApplication}
             >
               {capture.status === "apply_failed" ? "Preview retry" : "Preview application"}
@@ -928,7 +1070,7 @@ export default function CaptureDetailPage() {
             <Button
               theme="operational"
               loading={busy === "apply-application"}
-              disabled={!applicationConfirmed}
+              disabled={!applicationConfirmed || (draft?.schema_version === "field-findings.v1" && !selectedFindingKeys.length)}
               onClick={applyApprovedDraft}
             >
               {capture.status === "apply_failed" ? "Retry application" : "Apply approved draft"}

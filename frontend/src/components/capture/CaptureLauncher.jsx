@@ -30,6 +30,7 @@ import MeasurementCaptureForm from "./MeasurementCaptureForm.jsx";
 const EQUIPMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_EQUIPMENT_ENABLED || "").toLowerCase() === "true";
 const WARRANTY_ENABLED = String(import.meta.env.VITE_CAPTURE_WARRANTY_ENABLED || "").toLowerCase() === "true";
 const MEASUREMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_MEASUREMENT_ENABLED || "").toLowerCase() === "true";
+const FIELD_FINDINGS_ENABLED = String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
 
 const ACTIONS = [
   { key: "lead", label: "I met someone", icon: UserRound },
@@ -351,6 +352,18 @@ const PROJECT_CAPTURE_CONFIG = {
     title: "Document an issue",
     textLabel: "What needs attention?",
   },
+  punch_item: {
+    title: "Add Punch Items",
+    textLabel: "List each closeout item on its own line",
+    captureType: "issue",
+    profile: "punch_item",
+  },
+  site_condition: {
+    title: "Record Site Condition",
+    textLabel: "Describe each observed condition on its own line",
+    captureType: "issue",
+    profile: "site_condition",
+  },
   communication: {
     title: "Log a communication",
     textLabel: "What was discussed?",
@@ -377,16 +390,16 @@ const PROJECT_CAPTURE_CONFIG = {
   },
 };
 
-function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
-  const config = PROJECT_CAPTURE_CONFIG[captureType];
+function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", initialMilestoneId = "", onSaved, onCancel }) {
+  const config = PROJECT_CAPTURE_CONFIG[profile || captureType];
   const [projects, setProjects] = useState([]);
-  const [projectId, setProjectId] = useState("");
-  const [milestoneId, setMilestoneId] = useState("");
+  const [projectId, setProjectId] = useState(String(initialProjectId || ""));
+  const [milestoneId, setMilestoneId] = useState(String(initialMilestoneId || ""));
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [files, setFiles] = useState([]);
   const [customerVisible, setCustomerVisible] = useState(false);
-  const [issueClassification, setIssueClassification] = useState("project_issue");
+  const [issueClassification, setIssueClassification] = useState(profile || "project_issue");
   const [communicationType, setCommunicationType] = useState("phone_call");
   const [communicationDirection, setCommunicationDirection] = useState("internal");
   const [details, setDetails] = useState({
@@ -426,9 +439,11 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
             text,
             transcript: voiceLanguage ? text : "",
             language: voiceLanguage,
+            capture_profile: profile,
             input_metadata: {
               customer_visible: customerVisible,
               issue_classification: captureType === "issue" ? issueClassification : "",
+              capture_profile: profile,
               communication_type: captureType === "communication" ? communicationType : "",
               communication_direction: captureType === "communication"
                 ? communicationDirection
@@ -525,7 +540,7 @@ function ProjectCaptureForm({ captureType, onSaved, onCancel }) {
           )}
         </FormField>
       )}
-      {captureType === "issue" ? (
+      {captureType === "issue" && !profile ? (
         <FormField label="Issue classification" required helperText="You confirm this classification. Project Assistant does not choose it automatically.">
           {(fieldProps) => (
             <select {...fieldProps} value={issueClassification} onChange={(event) => setIssueClassification(event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
@@ -659,7 +674,10 @@ export default function CaptureLauncher() {
   useEffect(() => {
     function openCapture(event) {
       const requested = String(event.detail?.mode || "");
-      if (ACTIONS.some((action) => action.key === requested)) {
+      if (
+        ACTIONS.some((action) => action.key === requested)
+        || (FIELD_FINDINGS_ENABLED && ["punch_item", "site_condition"].includes(requested))
+      ) {
         setContext(event.detail || {});
         setMode(requested);
         setOpen(true);
@@ -682,7 +700,9 @@ export default function CaptureLauncher() {
   }
 
   const title =
-    ACTIONS.find((action) => action.key === mode)?.label || "Capture";
+    ACTIONS.find((action) => action.key === mode)?.label
+    || PROJECT_CAPTURE_CONFIG[mode]?.title
+    || "Capture";
   const role = String(identity?.type || identity?.role || "").toLowerCase();
 
   if (loading || !["contractor", "contractor_owner", "subaccount"].includes(role)) {
@@ -736,7 +756,14 @@ export default function CaptureLauncher() {
         {mode === "receipt" ? <ProjectAssistantSmartCapture compact /> : null}
         {mode === "measurement" ? <MeasurementCaptureForm onSaved={saved} onCancel={close} initialProjectId={context.projectId || ""} /> : null}
         {PROJECT_CAPTURE_CONFIG[mode] ? (
-          <ProjectCaptureForm captureType={mode} onSaved={saved} onCancel={close} />
+          <ProjectCaptureForm
+            captureType={PROJECT_CAPTURE_CONFIG[mode].captureType || mode}
+            profile={PROJECT_CAPTURE_CONFIG[mode].profile || ""}
+            initialProjectId={context.projectId || ""}
+            initialMilestoneId={context.milestoneId || ""}
+            onSaved={saved}
+            onCancel={close}
+          />
         ) : null}
       </Modal>
     </>

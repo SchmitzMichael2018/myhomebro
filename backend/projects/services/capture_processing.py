@@ -9,7 +9,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from projects.models import Capture, CaptureEvent, Homeowner
+from projects.models import Capture, CaptureEvent, Homeowner, ProjectCaptureIssue
 from projects.services.capture_lifecycle import (
     CaptureLifecycleError,
     check_expected_version,
@@ -58,7 +58,7 @@ DESTINATIONS = {
     "follow_up",
 }
 DUPLICATE_DECISIONS = {
-    "link_existing", "create_separate", "not_same_person", "not_same_item",
+    "link_existing", "create_separate", "not_same_person", "not_same_item", "not_same",
 }
 PROJECT_DESTINATIONS = {
     "project_note",
@@ -77,6 +77,232 @@ MEASUREMENT_DESTINATIONS = {
     "measurement_session", "measurement_entries", "measurement_adjustments",
     "measurement_calculations", "measurement_attachment", "project_activity",
 }
+
+FIELD_FINDING_PROFILES = {"punch_item", "site_condition"}
+FIELD_FINDING_SEVERITIES = {"", "low", "medium", "high"}
+FIELD_FINDING_DECISIONS = {"pending", "approved", "rejected", "excluded"}
+MAX_FIELD_FINDINGS = 25
+
+
+def is_field_findings_capture(capture):
+    raw = capture.raw_text_payload or {}
+    profile = raw.get("capture_profile") or (raw.get("input_metadata") or {}).get("capture_profile")
+    return (
+        capture.capture_type == Capture.TYPE_ISSUE
+        and profile in FIELD_FINDING_PROFILES
+    )
+
+
+def _field_finding_key(index):
+    return f"finding-{index + 1}"
+
+
+def _field_finding_duplicates(capture, finding):
+    needle = " ".join(filter(None, [
+        finding.get("title"), finding.get("description"),
+        finding.get("location"), finding.get("room_or_area"),
+    ])).casefold()
+    candidates = []
+    for issue in ProjectCaptureIssue.objects.filter(
+        project=capture.project,
+        status=ProjectCaptureIssue.STATUS_OPEN,
+        classification=finding.get("classification"),
+    ).order_by("-created_at")[:50]:
+        haystack = f"{issue.title} {issue.description}".casefold()
+        similarity = SequenceMatcher(None, needle, haystack).ratio() if needle and haystack else 0
+        if similarity >= 0.72:
+            candidates.append({
+                "candidate_id": str(issue.id),
+                "title": _text(issue.title, 255),
+                "reason": "Similar open Issue in this project",
+                "match_strength": "strong" if similarity >= 0.88 else "advisory",
+                "similarity": round(similarity, 3),
+            })
+    return candidates[:8]
+
+
+def build_field_findings_draft(capture):
+    if not getattr(settings, "CAPTURE_FIELD_FINDINGS_ENABLED", False):
+        raise CaptureProcessingError("Project Field Findings is not enabled.")
+    raw = capture.raw_text_payload or {}
+    metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+    profile = raw.get("capture_profile") or metadata.get("capture_profile")
+    if profile not in FIELD_FINDING_PROFILES:
+        raise CaptureSchemaError("Choose a supported field-finding profile.")
+    supplied = metadata.get("findings") if isinstance(metadata.get("findings"), list) else None
+    if supplied is None:
+        text = _text(raw.get("text") or raw.get("transcript"), 5000)
+        parts = [part.strip(" -•\t") for part in text.splitlines() if part.strip()]
+        supplied = [{"title": part, "description": part} for part in parts[:MAX_FIELD_FINDINGS]]
+    findings = []
+    artifact_ids = [str(value) for value in capture.artifacts.values_list("id", flat=True)]
+    for index, row in enumerate(supplied[:MAX_FIELD_FINDINGS]):
+        if not isinstance(row, dict):
+            continue
+        finding_profile = row.get("profile") or profile
+        findings.append({
+            "child_key": _text(row.get("child_key") or _field_finding_key(index), 80),
+            "profile": finding_profile,
+            "classification": finding_profile,
+            "title": _text(row.get("title"), 255),
+            "description": _text(row.get("description") or row.get("title"), 5000),
+            "location": _text(row.get("location"), 255),
+            "room_or_area": _text(row.get("room_or_area"), 255),
+            "observed_at": _text(row.get("observed_at"), 40),
+            "trade": _text(row.get("trade"), 80),
+            "severity": _text(row.get("severity"), 20),
+            "blocking_status": _text(row.get("blocking_status"), 40),
+            "suggested_responsible_party": _text(row.get("suggested_responsible_party"), 255),
+            "suggested_due_date": _text(row.get("suggested_due_date"), 40),
+            "artifact_ids": row.get("artifact_ids") if isinstance(row.get("artifact_ids"), list) else artifact_ids,
+            "confidence": row.get("confidence") if isinstance(row.get("confidence"), dict) else {},
+            "warnings": _bounded_list(row.get("warnings", [])),
+            "source_evidence": _bounded_list(row.get("source_evidence", [])),
+            "missing_fields": [],
+            "duplicate_candidates": [],
+            "review_status": "pending",
+            "application_status": "pending",
+            "duplicate_decision": None,
+        })
+    for finding in findings:
+        finding["duplicate_candidates"] = _field_finding_duplicates(capture, finding)
+    return validate_field_findings_draft(capture, {
+        "schema_version": "field-findings.v1",
+        "capture_profile": profile,
+        "project_id": capture.project_id,
+        "milestone_id": capture.milestone_id,
+        "summary": _text(raw.get("title") or "Project field findings", 255),
+        "findings": findings,
+        "proposed_destinations": ["project_issue"],
+        "missing_fields": [],
+        "uncertainties": [],
+        "warnings": [
+            "Findings are observations, not safety, code, structural, mold, fault, or warranty determinations."
+        ],
+    })
+
+
+def validate_field_findings_draft(capture, value):
+    allowed = {
+        "schema_version", "capture_profile", "project_id", "milestone_id", "summary",
+        "findings", "proposed_destinations", "missing_fields", "uncertainties", "warnings",
+    }
+    if set(value) - allowed or value.get("schema_version") != "field-findings.v1":
+        raise CaptureSchemaError("Field Findings schema is invalid.")
+    if value.get("capture_profile") not in FIELD_FINDING_PROFILES:
+        raise CaptureSchemaError("Field Findings profile is invalid.")
+    if str(value.get("project_id")) != str(capture.project_id):
+        raise CaptureSchemaError("Field Findings project cannot be changed.")
+    if value.get("milestone_id") and str(value.get("milestone_id")) != str(capture.milestone_id):
+        raise CaptureSchemaError("Field Findings milestone cannot be changed.")
+    rows = value.get("findings")
+    if not isinstance(rows, list) or not rows or len(rows) > MAX_FIELD_FINDINGS:
+        raise CaptureSchemaError("Field Findings must contain between 1 and 25 findings.")
+    artifact_ids = {str(item) for item in capture.artifacts.values_list("id", flat=True)}
+    keys = set()
+    validated = []
+    row_allowed = {
+        "child_key", "profile", "classification", "title", "description", "location",
+        "room_or_area", "observed_at", "trade", "severity", "blocking_status",
+        "suggested_responsible_party", "suggested_due_date", "artifact_ids", "confidence",
+        "warnings", "source_evidence", "missing_fields", "duplicate_candidates",
+        "review_status", "application_status", "duplicate_decision",
+    }
+    for row in rows:
+        if not isinstance(row, dict) or set(row) - row_allowed:
+            raise CaptureSchemaError("A field finding contains unsupported fields.")
+        key = _text(row.get("child_key"), 80)
+        if not key or key in keys:
+            raise CaptureSchemaError("Field finding child keys must be present and unique.")
+        keys.add(key)
+        profile = row.get("profile")
+        if profile not in FIELD_FINDING_PROFILES or row.get("classification") != profile:
+            raise CaptureSchemaError("Field finding profile and classification are invalid.")
+        selected_artifacts = [str(item) for item in (row.get("artifact_ids") or [])]
+        if len(selected_artifacts) > 50 or any(item not in artifact_ids for item in selected_artifacts):
+            raise CaptureSchemaError("Field finding artifacts must belong to this Capture.")
+        severity = _text(row.get("severity"), 20)
+        if severity not in FIELD_FINDING_SEVERITIES:
+            raise CaptureSchemaError("Field finding severity is invalid.")
+        review_status = row.get("review_status") or "pending"
+        if review_status not in FIELD_FINDING_DECISIONS:
+            raise CaptureSchemaError("Field finding review status is invalid.")
+        duplicate_decision = row.get("duplicate_decision")
+        if duplicate_decision is not None and (
+            not isinstance(duplicate_decision, dict)
+            or set(duplicate_decision) - {"decision", "candidate_id"}
+            or duplicate_decision.get("decision") not in {"link_existing", "create_separate", "not_same"}
+        ):
+            raise CaptureSchemaError("Field finding duplicate decision is invalid.")
+        title = _text(row.get("title"), 255)
+        description = _text(row.get("description"), 5000)
+        missing = []
+        if not title:
+            missing.append("title")
+        if not description:
+            missing.append("description")
+        raw_candidates = row.get("duplicate_candidates") or []
+        candidates = []
+        for candidate in raw_candidates[:8]:
+            if not isinstance(candidate, dict) or set(candidate) - {
+                "candidate_id", "title", "reason", "match_strength", "similarity"
+            }:
+                raise CaptureSchemaError("Field finding duplicate candidates are invalid.")
+            issue = ProjectCaptureIssue.objects.filter(
+                pk=candidate.get("candidate_id"),
+                project=capture.project,
+                project__contractor=capture.contractor,
+                status=ProjectCaptureIssue.STATUS_OPEN,
+            ).first()
+            if not issue:
+                raise CaptureSchemaError("A field finding duplicate candidate is unavailable.")
+            candidates.append({
+                "candidate_id": str(issue.id),
+                "title": _text(issue.title, 255),
+                "reason": _text(candidate.get("reason"), 255),
+                "match_strength": (
+                    candidate.get("match_strength")
+                    if candidate.get("match_strength") in {"strong", "advisory"}
+                    else "advisory"
+                ),
+                "similarity": candidate.get("similarity"),
+            })
+        validated.append({
+            **{key_name: _text(row.get(key_name), limit) for key_name, limit in (
+                ("location", 255), ("room_or_area", 255), ("observed_at", 40),
+                ("trade", 80), ("blocking_status", 40),
+                ("suggested_responsible_party", 255), ("suggested_due_date", 40),
+            )},
+            "child_key": key, "profile": profile, "classification": profile,
+            "title": title, "description": description, "severity": severity,
+            "artifact_ids": selected_artifacts,
+            "confidence": deepcopy(row.get("confidence") or {}),
+            "warnings": _bounded_list(row.get("warnings", [])),
+            "source_evidence": _bounded_list(row.get("source_evidence", [])),
+            "missing_fields": missing,
+            "duplicate_candidates": candidates,
+            "review_status": review_status,
+            "application_status": _text(row.get("application_status") or "pending", 20),
+            "duplicate_decision": deepcopy(duplicate_decision),
+        })
+    unresolved = [
+        f"{row['child_key']}.{field}"
+        for row in validated
+        if row["review_status"] not in {"rejected", "excluded"}
+        for field in row["missing_fields"]
+    ]
+    return {
+        "schema_version": "field-findings.v1",
+        "capture_profile": value["capture_profile"],
+        "project_id": capture.project_id,
+        "milestone_id": capture.milestone_id,
+        "summary": _text(value.get("summary"), 255),
+        "findings": validated,
+        "proposed_destinations": ["project_issue"],
+        "missing_fields": unresolved,
+        "uncertainties": _bounded_list(value.get("uncertainties", [])),
+        "warnings": _bounded_list(value.get("warnings", [])),
+    }
 
 
 def _text(value, limit=2000):
@@ -143,6 +369,8 @@ def build_quick_note_draft(raw):
 
 
 def build_project_capture_draft(capture):
+    if is_field_findings_capture(capture):
+        return build_field_findings_draft(capture)
     raw = capture.raw_text_payload or {}
     metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
     body = _text(raw.get("text") or raw.get("transcript"), 5000)
@@ -317,7 +545,7 @@ def build_measurement_draft(capture):
     }
 
 
-def validate_structured_draft(capture_type, value):
+def validate_structured_draft(capture_type, value, *, capture=None):
     if not isinstance(value, dict):
         raise CaptureSchemaError("Structured draft must be an object.")
     if capture_type == Capture.TYPE_MEASUREMENT:
@@ -530,6 +758,12 @@ def validate_structured_draft(capture_type, value):
             result["follow_up"] = _follow_up(value.get("follow_up"))
         return result
     if capture_type in PROJECT_CAPTURE_TYPES:
+        if capture_type == Capture.TYPE_ISSUE and value.get("schema_version") == "field-findings.v1":
+            if capture is None:
+                raise CaptureSchemaError("Field Findings validation requires Capture context.")
+            if not getattr(settings, "CAPTURE_FIELD_FINDINGS_ENABLED", False):
+                raise CaptureSchemaError("Project Field Findings is not enabled.")
+            return validate_field_findings_draft(capture, value)
         allowed = {
             "schema_version", "project", "milestone", "title", "body",
             "issue_classification", "communication_type", "communication_direction",
@@ -803,6 +1037,13 @@ def review_envelope(capture):
         row.get("match_strength") in {"exact", "strong"} for row in candidates
     ) and not decision
     missing = draft.get("missing_fields", []) if isinstance(draft, dict) else []
+    findings = draft.get("findings", []) if draft.get("schema_version") == "field-findings.v1" else []
+    pending_findings = [row for row in findings if row.get("review_status") == "pending"]
+    approved_findings = [row for row in findings if row.get("review_status") == "approved"]
+    unresolved_finding_duplicates = [
+        row for row in approved_findings
+        if row.get("duplicate_candidates") and not row.get("duplicate_decision")
+    ]
     return {
         "schema_version": draft.get("schema_version", ""),
         "structured_draft": draft,
@@ -812,7 +1053,19 @@ def review_envelope(capture):
         "duplicate_candidates": candidates,
         "duplicate_decision": decision,
         "duplicate_decision_required": decision_required,
-        "can_approve": bool(draft) and not missing and not decision_required,
+        "can_approve": (
+            bool(draft) and not missing and not decision_required
+            and not pending_findings and not unresolved_finding_duplicates
+            and (not findings or bool(approved_findings))
+        ),
+        "field_findings": {
+            "count": len(findings),
+            "approved_count": len(approved_findings),
+            "pending_count": len(pending_findings),
+            "excluded_count": len([
+                row for row in findings if row.get("review_status") in {"rejected", "excluded"}
+            ]),
+        } if findings else None,
         "approved_snapshot": capture.approved_snapshot or {},
         "workspace": "capture_review",
     }
@@ -863,7 +1116,9 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
                     if processing.project_id else None
                 ),
             )
-            provider_draft = validate_structured_draft(processing.capture_type, provider_draft)
+            provider_draft = validate_structured_draft(
+                processing.capture_type, provider_draft, capture=processing
+            )
             if processing.capture_type in D2_CAPTURE_TYPES:
                 from projects.models import AIUsageLedger
                 AIUsageLedger.objects.create(
@@ -932,7 +1187,9 @@ def process_capture(capture, *, actor, expected_version, mode="deterministic", i
         target = Capture.STATUS_POSSIBLE_DUPLICATE
     else:
         target = Capture.STATUS_READY_FOR_REVIEW
-    processing.structured_draft = validate_structured_draft(processing.capture_type, draft)
+    processing.structured_draft = validate_structured_draft(
+        processing.capture_type, draft, capture=processing
+    )
     processing.duplicate_candidates = candidates
     processing.processing_engine = (
         "manual" if mode == "manual"
@@ -977,7 +1234,7 @@ def update_review(capture, *, actor, expected_version, draft, duplicate_decision
         Capture.STATUS_POSSIBLE_DUPLICATE, Capture.STATUS_FAILED,
     }:
         raise CaptureProcessingError("This Capture is not editable.")
-    validated = validate_structured_draft(locked.capture_type, draft)
+    validated = validate_structured_draft(locked.capture_type, draft, capture=locked)
     decisions = deepcopy(locked.review_decisions or {})
     if duplicate_decision is not None:
         if not isinstance(duplicate_decision, dict) or set(duplicate_decision) - {
@@ -1016,7 +1273,17 @@ def update_review(capture, *, actor, expected_version, draft, duplicate_decision
     CaptureEvent.objects.create(
         capture=locked, event_type="review_updated", from_status=old_status,
         to_status=locked.status, actor=actor,
-        metadata={"schema_version": validated["schema_version"], "duplicate_decision_recorded": bool(duplicate_decision)},
+        metadata={
+            "schema_version": validated["schema_version"],
+            "duplicate_decision_recorded": bool(duplicate_decision),
+            "finding_decisions": (
+                {
+                    row["child_key"]: row["review_status"]
+                    for row in validated.get("findings", [])
+                }
+                if validated.get("schema_version") == "field-findings.v1" else {}
+            ),
+        },
     )
     return locked
 
