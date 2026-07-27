@@ -12,7 +12,19 @@ import prettierConfig from 'eslint-config-prettier';
 export default [
   // 1. Global ignores
   {
-    ignores: ['dist', 'node_modules', 'build', '.next', '.parcel-cache'],
+    ignores: [
+      'dist',
+      'node_modules',
+      'build',
+      'coverage',
+      'artifacts',
+      'playwright-report',
+      'test-results',
+      '.next',
+      '.parcel-cache',
+      'sw.js',
+      'workbox-*.js',
+    ],
   },
 
   // 2. Base ESLint recommended rules
