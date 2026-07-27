@@ -73,7 +73,7 @@ function evictIfNeeded(keyBeingWritten, incomingBytes) {
       let savedAt = "";
       try {
         savedAt = JSON.parse(raw)?.savedAt || "";
-      } catch {}
+      } catch { /* Invalid metadata sorts as an undated legacy entry. */ }
       entries.push({ key: k, savedAt, size: byteSize(raw) });
     } catch {
       entries.push({ key: k, savedAt: "", size: 0 });
@@ -89,7 +89,7 @@ function evictIfNeeded(keyBeingWritten, incomingBytes) {
     try {
       localStorage.removeItem(entry.key);
       totalBytes -= entry.size;
-    } catch {}
+    } catch { /* Quota cleanup is best-effort for entries removed concurrently. */ }
   }
 }
 
@@ -137,7 +137,7 @@ export function loadConversation(type, participantId) {
     }
     return record;
   } catch {
-    try { localStorage.removeItem(key); } catch {}
+    try { localStorage.removeItem(key); } catch { /* Corrupt local data may already be unavailable. */ }
     return null;
   }
 }
@@ -146,7 +146,7 @@ export function clearConversation(type, participantId) {
   if (!participantId) return;
   try {
     localStorage.removeItem(conversationKey(type, participantId));
-  } catch {}
+  } catch { /* Conversation deletion is best-effort in restricted storage contexts. */ }
 }
 
 export function clearExpiredConversations() {
@@ -161,7 +161,7 @@ export function clearExpiredConversations() {
         localStorage.removeItem(key);
       }
     } catch {
-      try { localStorage.removeItem(key); } catch {}
+      try { localStorage.removeItem(key); } catch { /* Corrupt local data may already be unavailable. */ }
     }
   }
 }
@@ -182,7 +182,7 @@ export function getStorageStats() {
           oldestSavedAt = record.savedAt;
         }
       }
-    } catch {}
+    } catch { /* Skip malformed legacy conversation entries. */ }
   }
 
   return { count: keys.length, oldestSavedAt, totalSizeBytes };
@@ -199,7 +199,7 @@ export function saveDisputeConversation(disputeId, participantId, role, state) {
   try {
     const raw = localStorage.getItem(key);
     if (raw) existing = JSON.parse(raw);
-  } catch {}
+  } catch { /* Invalid saved state falls back to a new bounded record. */ }
 
   const currentVersion = typeof existing?.version === "number" ? existing.version : 0;
 
@@ -218,7 +218,7 @@ export function saveDisputeConversation(disputeId, participantId, role, state) {
 
   try {
     localStorage.setItem(key, JSON.stringify(record));
-  } catch {}
+  } catch { /* Local conversation persistence is best-effort. */ }
 }
 
 export function loadDisputeConversation(disputeId, participantId) {
@@ -260,7 +260,7 @@ export function appendDisputeMessage(disputeId, participantId, role, message) {
 
   try {
     localStorage.setItem(disputeKey(disputeId, participantId), JSON.stringify(updated));
-  } catch {}
+  } catch { /* Local dispute-thread persistence is best-effort. */ }
 }
 
 export function markDisputeResolved(disputeId, participantId) {
@@ -282,7 +282,7 @@ export function markDisputeResolved(disputeId, participantId) {
 
   try {
     localStorage.setItem(disputeKey(disputeId, participantId), JSON.stringify(updated));
-  } catch {}
+  } catch { /* Local dispute-thread persistence is best-effort. */ }
 }
 
 export function getDisputeConversations(participantId) {
@@ -303,7 +303,7 @@ export function getDisputeConversations(participantId) {
       ) {
         results.push(record);
       }
-    } catch {}
+    } catch { /* Skip malformed legacy dispute entries. */ }
   }
 
   return results.sort((a, b) => {

@@ -42,7 +42,7 @@ export default function ProfileDangerZone() {
         try {
           localStorage.removeItem("access");
           localStorage.removeItem("refresh");
-        } catch {}
+        } catch { /* Continue logout when browser storage is unavailable. */ }
         onLogout?.();
         navigate("/signin", { replace: true });
         return;

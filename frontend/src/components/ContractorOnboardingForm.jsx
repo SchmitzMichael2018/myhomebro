@@ -712,7 +712,7 @@ export default function ContractorOnboardingForm() {
                         onClick={() =>
                           setBusinessDetails((current) => ({
                             ...current,
-                            [item.key]: !Boolean(current[item.key]),
+                            [item.key]: !current[item.key],
                           }))
                         }
                         className={`rounded-2xl border p-4 text-left transition ${
@@ -756,7 +756,7 @@ export default function ContractorOnboardingForm() {
                         onClick={() =>
                           setBusinessDetails((current) => ({
                             ...current,
-                            [item.key]: !Boolean(current[item.key]),
+                            [item.key]: !current[item.key],
                           }))
                         }
                         className={`rounded-2xl border p-4 text-left transition ${

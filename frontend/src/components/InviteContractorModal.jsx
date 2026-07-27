@@ -73,7 +73,7 @@ export default function InviteContractorModal({
       let data = null;
       try {
         data = await res.json();
-      } catch {}
+      } catch { /* Non-JSON error responses use the status-based fallback below. */ }
 
       if (!res.ok) {
         const msg =

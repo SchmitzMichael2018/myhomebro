@@ -583,7 +583,7 @@ export default function AssignmentsPage() {
       try {
         const stA = await fetchAgreementAssignmentStatus(agreementId);
         setAgreementAssignees((prev) => ({ ...prev, [agreementId]: stA?.assigned_subaccounts || [] }));
-      } catch {}
+      } catch { /* Assignment refresh is best-effort after the primary update succeeds. */ }
       return true;
     } catch (e) {
       console.error(e);
@@ -609,7 +609,7 @@ export default function AssignmentsPage() {
       try {
         const stA = await fetchAgreementAssignmentStatus(agreementId);
         setAgreementAssignees((prev) => ({ ...prev, [agreementId]: stA?.assigned_subaccounts || [] }));
-      } catch {}
+      } catch { /* Assignment refresh is best-effort after the primary update succeeds. */ }
       return true;
     } catch (e) {
       console.error(e);
@@ -658,7 +658,7 @@ export default function AssignmentsPage() {
       try {
         const st = await fetchMilestoneAssignmentStatus(m.id);
         newOverrides[m.id] = st?.override_subaccount || null;
-      } catch {}
+      } catch { /* Preserve the existing override when refresh fails. */ }
     }
     setMilestoneOverrides(newOverrides);
   }

@@ -35,7 +35,7 @@ export default function SignUpModal() {
     return () => {
       try {
         delete window.mhbOpenSignup;
-      } catch {}
+      } catch { /* The compatibility callback may already be non-configurable. */ }
       window.removeEventListener("mhb:open-signup", onEvt);
     };
   }, [openSignup]);

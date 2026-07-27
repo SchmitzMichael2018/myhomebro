@@ -84,21 +84,21 @@ async function _loadPeople({ signal, params } = {}) {
     const { data } = await api.get("/customers/", { signal, params });
     const list = sortPeople(pickArray(data).map(normalizeCustomer).filter(Boolean));
     if (list.length) return list;
-  } catch {}
+  } catch { /* Try the next compatible customer endpoint. */ }
 
   // 2) /api/projects/customers/
   try {
     const { data } = await api.get("/projects/customers/", { signal, params });
     const list = sortPeople(pickArray(data).map(normalizeCustomer).filter(Boolean));
     if (list.length) return list;
-  } catch {}
+  } catch { /* Try the next compatible customer endpoint. */ }
 
   // 3) /api/projects/homeowners/
   try {
     const { data } = await api.get("/projects/homeowners/", { signal, params });
     const list = sortPeople(pickArray(data).map(normalizeHomeowner).filter(Boolean));
     if (list.length) return list;
-  } catch {}
+  } catch { /* Try the final compatible homeowner endpoint. */ }
 
   return [];
 }

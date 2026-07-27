@@ -84,28 +84,28 @@ export async function loadHomeowners(api, { force = false, signal } = {}) {
       const { data } = await api.get("/customers/", cfg);
       const list = pickArray(data).map(normalizeCustomer).filter(Boolean);
       if (list.length) return (cache = sortPeople(list), last = Date.now(), cache);
-    } catch {}
+    } catch { /* Try the next compatible customer endpoint. */ }
 
     // 2) alias homeowners
     try {
       const { data } = await api.get("/homeowners/", cfg);
       const list = pickArray(data).map(normalizeHomeowner).filter(Boolean);
       if (list.length) return (cache = sortPeople(list), last = Date.now(), cache);
-    } catch {}
+    } catch { /* Try the next compatible homeowner endpoint. */ }
 
     // 3) projects/customers
     try {
       const { data } = await api.get("/projects/customers/", cfg);
       const list = pickArray(data).map(normalizeCustomer).filter(Boolean);
       if (list.length) return (cache = sortPeople(list), last = Date.now(), cache);
-    } catch {}
+    } catch { /* Try the next compatible customer endpoint. */ }
 
     // 4) projects/homeowners
     try {
       const { data } = await api.get("/projects/homeowners/", cfg);
       const list = pickArray(data).map(normalizeHomeowner).filter(Boolean);
       return (cache = sortPeople(list), last = Date.now(), cache);
-    } catch {}
+    } catch { /* Preserve the prior cache if every compatible endpoint fails. */ }
 
     return (cache = [], last = Date.now(), cache);
   })().finally(() => { inflight = null; });

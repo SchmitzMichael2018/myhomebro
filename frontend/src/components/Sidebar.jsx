@@ -195,12 +195,12 @@ export default function Sidebar({ variant = "desktop" }) {
     try {
       localStorage.removeItem("access");
       localStorage.removeItem("refresh");
-    } catch {}
+    } catch { /* Continue logout when browser storage is unavailable. */ }
     try {
       if (api?.defaults?.headers?.common) {
         delete api.defaults.headers.common.Authorization;
       }
-    } catch {}
+    } catch { /* Continue logout if the shared authorization header is already absent. */ }
     navigate("/", { replace: true });
   }, [navigate]);
 
@@ -441,7 +441,7 @@ export default function Sidebar({ variant = "desktop" }) {
           setCloseoutStatus(status);
           setShowCloseoutModal(true);
         }
-      } catch {}
+      } catch { /* Closeout eligibility is advisory; leave the modal closed on failure. */ }
     };
 
     window.addEventListener("mhb:invoice_paid", onInvoicePaid);

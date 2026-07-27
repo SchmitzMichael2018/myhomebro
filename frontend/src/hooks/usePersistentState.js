@@ -36,7 +36,7 @@ export default function usePersistentState(key, initialValue) {
     if (isBrowser) {
       try {
         window.localStorage.removeItem(key);
-      } catch {}
+      } catch { /* Storage cleanup is best-effort in restricted browser contexts. */ }
     }
     setValue(initialValue);
   }, [isBrowser, initialValue, key]);

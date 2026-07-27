@@ -81,11 +81,11 @@ function safeGet(key) {
 function safeSet(key, val) {
   try {
     currentStorage().setItem(key, val);
-  } catch {}
+  } catch { /* Legacy storage may be unavailable; active auth does not use this module. */ }
 }
 function safeRemove(key) {
-  try { window.localStorage.removeItem(key); } catch {}
-  try { window.sessionStorage.removeItem(key); } catch {}
+  try { window.localStorage.removeItem(key); } catch { /* Legacy best-effort cleanup. */ }
+  try { window.sessionStorage.removeItem(key); } catch { /* Legacy best-effort cleanup. */ }
 }
 
 /* ====================== Public token helpers ====================== */
@@ -124,7 +124,7 @@ export function willExpireWithinSeconds(expSeconds, within = 60) {
 /* ===================== Broadcast + multi-tab sync ===================== */
 
 function broadcastAuthChange() {
-  try { window.dispatchEvent(new CustomEvent(AUTH_CHANGED_EVENT)); } catch {}
+  try { window.dispatchEvent(new CustomEvent(AUTH_CHANGED_EVENT)); } catch { /* Legacy event compatibility. */ }
 }
 export function onAuthChange(handler) {
   if (typeof handler !== "function") return () => {};
@@ -219,7 +219,7 @@ export async function registerContractor({ email, password, first_name = "", las
 
 export function logout(redirectTo = "/") {
   clearSession();
-  try { window.location.href = redirectTo; } catch {}
+  try { window.location.href = redirectTo; } catch { /* Navigation can be unavailable outside a browser. */ }
 }
 
 /* ======================== Refresh (singleton) ======================== */

@@ -2,6 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
+// Replaced review/publish tabs remain dormant pending isolated markup removal.
+const SHOW_LEGACY_PRESENCE_TABS = false;
+
 import api from '../api';
 import Modal from '../components/Modal.jsx';
 import ContractorPageSurface from '../components/dashboard/ContractorPageSurface.jsx';
@@ -2792,7 +2795,7 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
-          {activeTab === 'final' && false ? (
+          {activeTab === 'final' && SHOW_LEGACY_PRESENCE_TABS ? (
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="online-presence-final-review-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="text-xs font-bold text-slate-500">Step 6 of 7</div>
@@ -2890,7 +2893,7 @@ export default function ContractorPublicPresencePage() {
             </section>
           ) : null}
 
-          {activeTab === 'publish' && false ? (
+          {activeTab === 'publish' && SHOW_LEGACY_PRESENCE_TABS ? (
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]" data-testid="online-presence-publish-tab">
               <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
                 {websiteData.status === 'published' ? <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-500 text-4xl font-black text-white">✓</div> : <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-blue-100 text-3xl font-black text-blue-700">7</div>}

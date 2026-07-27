@@ -911,7 +911,7 @@ async function mergeManifest(partial) {
   try {
     const existing = await fs.readFile(manifestPath, 'utf8');
     manifest = JSON.parse(existing);
-  } catch {}
+  } catch { /* A missing or malformed prior manifest starts a fresh capture manifest. */ }
 
   const capturedMap = new Map((manifest.captured || []).map((item) => [item.label, item]));
   const failedMap = new Map((manifest.failed || []).map((item) => [item.label, item]));

@@ -204,7 +204,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
             <Section title="Neutral Case Summary" testId="dispute-ai-neutral-summary">
               <div style={{ fontSize: 13, lineHeight: 1.5 }}>{overview.neutral_summary}</div>
 
-              {!!overview.timeline?.length ? (
+              {overview.timeline?.length ? (
                 <div style={{ marginTop: 12 }} data-testid="dispute-ai-timeline">
                   <div style={{ fontWeight: 800, marginBottom: 6 }}>Timeline</div>
                   <div style={{ display: "grid", gap: 8 }}>
@@ -218,7 +218,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
                 </div>
               ) : null}
 
-              {!!overview.main_issues?.length ? (
+              {overview.main_issues?.length ? (
                 <div style={{ marginTop: 10 }}>
                   <div style={{ fontWeight: 700, marginBottom: 6 }}>Main issues</div>
                   <BulletList items={overview.main_issues} />
@@ -306,7 +306,7 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
           {draft ? (
             <Section title="Human Approval Notes" testId="dispute-ai-human-approval">
               <div style={{ fontWeight: 800, marginBottom: 8 }}>{draft.title}</div>
-              {!!draft.terms?.length ? (
+              {draft.terms?.length ? (
                 <ol style={{ margin: 0, paddingLeft: 18 }}>
                   {draft.terms.map((term, idx) => (
                     <li key={idx} style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 6 }}>{term}</li>

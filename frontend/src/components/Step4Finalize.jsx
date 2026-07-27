@@ -847,7 +847,7 @@ export default function Step4Finalize({
     } catch {
       try {
         await api.post(`/projects/agreements/${agreementId}/mark_previewed`);
-      } catch {}
+      } catch { /* Preview telemetry must not block agreement review. */ }
     }
     setLocalPdfViewed(true);
     onPreviewViewed();
@@ -921,7 +921,7 @@ export default function Step4Finalize({
     window.setTimeout(() => {
       try {
         URL.revokeObjectURL(blobUrl);
-      } catch {}
+      } catch { /* Object URL cleanup is best-effort. */ }
     }, 60000);
   };
 
@@ -937,7 +937,7 @@ export default function Step4Finalize({
     window.setTimeout(() => {
       try {
         URL.revokeObjectURL(blobUrl);
-      } catch {}
+      } catch { /* Object URL cleanup is best-effort. */ }
     }, 60000);
   };
 
@@ -1023,7 +1023,7 @@ export default function Step4Finalize({
     if (el) {
       try {
         el.scrollIntoView({ behavior: "smooth", block: "start" });
-      } catch {}
+      } catch { /* Older browsers may not support smooth scrolling options. */ }
     }
     setSignaturesFlash(true);
     const timer = window.setTimeout(() => setSignaturesFlash(false), 1400);
@@ -1664,7 +1664,7 @@ export default function Step4Finalize({
             try {
               await navigator.clipboard.writeText(data.view_url);
               toast.success("Link copied to clipboard.");
-            } catch {}
+            } catch { /* Clipboard availability does not affect the generated link. */ }
           }
           setResendingFinal(false);
           return;

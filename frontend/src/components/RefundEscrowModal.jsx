@@ -132,7 +132,7 @@ export default function RefundEscrowModal({
     // Abort any previous in-flight request
     try {
       abortRef.current?.abort?.();
-    } catch {}
+    } catch { /* Aborting an already-settled request is harmless. */ }
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -173,7 +173,7 @@ export default function RefundEscrowModal({
     return () => {
       try {
         controller.abort();
-      } catch {}
+      } catch { /* Aborting an already-settled request is harmless. */ }
     };
     // IMPORTANT: do NOT depend on preselectedMilestoneIds (often recreated each render)
     // eslint-disable-next-line react-hooks/exhaustive-deps

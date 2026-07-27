@@ -83,7 +83,7 @@ export default function AcceptInvitePage({ apiBaseUrl = "/api" }) {
         let data = null;
         try {
           data = await res.json();
-        } catch {}
+        } catch { /* Non-JSON error responses use the status-based fallback below. */ }
         const msg =
           data?.detail ||
           data?.error ||

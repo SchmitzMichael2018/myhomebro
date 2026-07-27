@@ -972,7 +972,7 @@ export default function ContractorProfile() {
                 onClick={() =>
                   setForm((current) => ({
                     ...current,
-                    [item.key]: !Boolean(current[item.key]),
+                    [item.key]: !current[item.key],
                   }))
                 }
                 className={`rounded-2xl border p-4 text-left transition ${

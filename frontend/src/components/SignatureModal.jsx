@@ -112,7 +112,7 @@ export default function SignatureModal({
     if (pad) {
       try {
         pad.off();
-      } catch {}
+      } catch { /* Signature-pad teardown is best-effort during unmount. */ }
       ref.current = null;
     }
   }, []);
@@ -128,7 +128,7 @@ export default function SignatureModal({
     pad.onEnd = () => {
       try {
         if (!pad.isEmpty()) setHasDrawn(true);
-      } catch {}
+      } catch { /* Ignore transient signature-pad reads before initialization. */ }
     };
     padRef.current = pad;
     return pad;
@@ -161,16 +161,16 @@ export default function SignatureModal({
     try {
       pad.clear();
       if (data && data.length) pad.fromData(data);
-    } catch {}
+    } catch { /* Invalid cached stroke data is discarded by leaving the pad empty. */ }
   }, []);
 
   const clearAllPads = useCallback(() => {
     try {
       sigPadRef.current?.clear();
-    } catch {}
+    } catch { /* Clearing an unavailable signature pad is harmless. */ }
     try {
       fsPadRef.current?.clear();
-    } catch {}
+    } catch { /* Clearing an unavailable fullscreen pad is harmless. */ }
     setHasDrawn(false);
   }, []);
 
@@ -199,7 +199,7 @@ export default function SignatureModal({
     if (sigPreview) {
       try {
         URL.revokeObjectURL(sigPreview);
-      } catch {}
+      } catch { /* Object URL cleanup is best-effort. */ }
     }
     setSigPreview(null);
     setHasDrawn(false);
@@ -258,7 +258,7 @@ export default function SignatureModal({
           fsPad.fromData(data);
           setHasDrawn(true);
         }
-      } catch {}
+      } catch { /* Ignore transient signature-pad reads before initialization. */ }
     }, 80);
 
     return () => clearTimeout(t);
@@ -274,7 +274,7 @@ export default function SignatureModal({
         main.fromData(data);
         setHasDrawn(true);
       }
-    } catch {}
+    } catch { /* Ignore transient signature-pad reads while leaving fullscreen. */ }
     setSignFullscreen(false);
     setTimeout(() => {
       if (sigPadRef.current && canvasRef.current && canvasWrapRef.current) {
@@ -492,7 +492,7 @@ export default function SignatureModal({
                         if (sigPreview) {
                           try {
                             URL.revokeObjectURL(sigPreview);
-                          } catch {}
+                          } catch { /* Object URL cleanup is best-effort. */ }
                         }
                         setSigPreview(null);
                         return;
@@ -505,7 +505,7 @@ export default function SignatureModal({
                       if (sigPreview) {
                         try {
                           URL.revokeObjectURL(sigPreview);
-                        } catch {}
+                        } catch { /* Object URL cleanup is best-effort. */ }
                       }
                       setSigPreview(URL.createObjectURL(f));
                     }}

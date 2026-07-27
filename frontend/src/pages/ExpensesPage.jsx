@@ -738,7 +738,7 @@ export default function ExpensesPage() {
   const persistInternalNotes = useCallback((id, notes) => {
     try {
       localStorage.setItem(`mhb_expense_request_notes_${id}`, JSON.stringify(notes));
-    } catch {}
+    } catch { /* Expense-note drafts remain best-effort browser state. */ }
   }, []);
 
   const addInternalNote = () => {

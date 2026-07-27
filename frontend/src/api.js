@@ -98,7 +98,7 @@ function remapAny(url) {
       const rebuilt = remapRelativePath(u.pathname + u.search + u.hash);
       return u.origin + rebuilt;
     }
-  } catch {}
+  } catch { /* Fall back to relative-path normalization for malformed URLs. */ }
   return remapRelativePath(url);
 }
 
@@ -187,7 +187,7 @@ function inferRememberFromStorage() {
   try {
     if (localStorage.getItem(TOK.refresh)) return true;
     if (sessionStorage.getItem(TOK.refresh)) return false;
-  } catch {}
+  } catch { /* Storage may be unavailable; memory authentication remains authoritative. */ }
   return true;
 }
 
@@ -231,7 +231,7 @@ export function setAuthToken(access, refresh = null, remember = true) {
     sessionStorage.removeItem(TOK.legacyAccessToken);
     sessionStorage.removeItem(TOK.legacyToken);
     sessionStorage.removeItem(TOK.legacyAccessTokenCamel);
-  } catch {}
+  } catch { /* Storage cleanup is best-effort across restricted browser contexts. */ }
   applyAuthHeader(access);
 }
 
@@ -253,7 +253,7 @@ export function clearAuth(redirect = false) {
     sessionStorage.removeItem(TOK.legacyAccessToken);
     sessionStorage.removeItem(TOK.legacyToken);
     sessionStorage.removeItem(TOK.legacyAccessTokenCamel);
-  } catch {}
+  } catch { /* Storage cleanup is best-effort across restricted browser contexts. */ }
   applyAuthHeader(null);
   clearPwaDrafts().catch(() => {});
 

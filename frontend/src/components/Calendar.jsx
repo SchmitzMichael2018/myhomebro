@@ -207,7 +207,7 @@ export default function Calendar() {
           }
         }
         assigneeByMilestoneId = map;
-      } catch {}
+      } catch { /* Assignment enrichment is optional; retain the calendar response. */ }
 
       const visibleMilestones = milestones.filter((m) => !isPlannedCalendarMilestone(m));
 
@@ -388,7 +388,7 @@ export default function Calendar() {
           arg.el.title = arg.event.extendedProps?.tooltip || "";
           try {
             arg.el.style.cursor = "pointer";
-          } catch {}
+          } catch { /* Third-party calendar elements may reject direct style changes. */ }
         }}
         datesSet={(arg) => setActiveViewType(arg.view.type)}
         eventDisplay="block"

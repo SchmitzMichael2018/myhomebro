@@ -64,7 +64,7 @@
           const newUrl = rewrite(input.url);
           if (newUrl !== input.url) input = new RequestCtor(newUrl, input);
         }
-      } catch {}
+      } catch { /* Preserve the original Request if compatibility rewriting fails. */ }
       return origFetch(input, init);
     };
     window.__MYHOMEBRO_FETCH_SHIM__ = true;
@@ -74,7 +74,7 @@
   if (window.XMLHttpRequest && !window.__MYHOMEBRO_XHR_SHIM__) {
     const OrigOpen = XMLHttpRequest.prototype.open;
     XMLHttpRequest.prototype.open = function (method, url, async, user, password) {
-      try { url = rewrite(url); } catch {}
+      try { url = rewrite(url); } catch { /* Preserve the original XHR URL on rewrite failure. */ }
       return OrigOpen.call(this, method, url, async, user, password);
     };
     window.__MYHOMEBRO_XHR_SHIM__ = true;

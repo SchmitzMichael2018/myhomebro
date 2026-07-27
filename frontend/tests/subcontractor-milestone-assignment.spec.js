@@ -919,17 +919,6 @@ test('agreement detail shows ready, paid, and failed subcontractor payout states
         payout_ready_for_payout_at: '2026-03-24T15:00:00Z',
       },
     },
-    subcontractor_payout_orchestration: {
-      payout_state: 'ready',
-      safe_summary: 'Ready for contractor release.',
-      payment_release_mode: 'manual_release',
-      payment_release_mode_label: 'Manual Release',
-      can_manual_release: true,
-      can_auto_release: false,
-      blocking_reasons_labels: [],
-      payout_amount: '1500.00',
-      payout_ready_for_payout_at: '2026-03-24T15:00:00Z',
-    },
   };
 
   await page.route('**/api/projects/whoami/', async (route) => {

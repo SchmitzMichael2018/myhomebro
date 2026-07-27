@@ -66,7 +66,7 @@ export default function LoginModal() {
         url.hash || ""
       }`;
       window.history.replaceState({}, "", cleaned);
-    } catch {}
+    } catch { /* History replacement is optional in restricted browser contexts. */ }
   };
 
   const acceptInviteIfPresent = async (token) => {
@@ -123,7 +123,7 @@ export default function LoginModal() {
     return () => {
       try {
         delete window.mhbOpenLogin;
-      } catch {}
+      } catch { /* The compatibility callback may already be non-configurable. */ }
       window.removeEventListener("mhb:open-login", onEvt);
     };
   }, [openLoginForAudience]);
@@ -202,7 +202,7 @@ export default function LoginModal() {
       localStorage.removeItem("refresh");
       sessionStorage.removeItem("access");
       sessionStorage.removeItem("refresh");
-    } catch {}
+    } catch { /* Storage cleanup is best-effort before the normal auth flow continues. */ }
 
     const payload = {
       email: String(email || "").trim().toLowerCase(),

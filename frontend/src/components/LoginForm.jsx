@@ -54,7 +54,7 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
       sp.delete("invite");
       const nextSearch = sp.toString() ? `?${sp.toString()}` : "";
       navigate(`${location.pathname}${nextSearch}`, { replace: true });
-    } catch {}
+    } catch { /* Ignore malformed return parameters and preserve the current route. */ }
   };
 
   const acceptInviteIfPresent = async (token) => {

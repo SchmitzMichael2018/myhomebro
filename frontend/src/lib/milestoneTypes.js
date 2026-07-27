@@ -78,7 +78,7 @@ function normalizeToken(value) {
   return String(value || "")
     .trim()
     .toLowerCase()
-    .replace(/[\/-]+/g, " ")
+    .replace(/[/-]+/g, " ")
     .replace(/\s+/g, "_");
 }
 

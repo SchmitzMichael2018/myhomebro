@@ -1141,7 +1141,7 @@ test('agreement wizard step 1 address search uses Google Places autocomplete pat
 test('agreement wizard step 1 shows a recommended fallback when AI/template matching is unavailable', async ({
   page,
 }) => {
-  const agreement = {
+  let agreement = {
     id: AGREEMENT_ID,
     agreement_id: AGREEMENT_ID,
     project_title: 'Draft Agreement',

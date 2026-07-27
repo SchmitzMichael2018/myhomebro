@@ -13,6 +13,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import toast from 'react-hot-toast';
+
+// The legacy detail panel is retained but intentionally dormant.
+const SHOW_LEGACY_AGREEMENT_DETAIL_PANEL = false;
 import api, {
   approveDrawRequest,
   createAgreementDrawRequest,
@@ -4922,7 +4925,7 @@ export default function AgreementDetail({
           </section>
         ) : null}
 
-        {false ? (
+        {SHOW_LEGACY_AGREEMENT_DETAIL_PANEL ? (
           <details
             className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
             data-testid="agreement-sms-automation"

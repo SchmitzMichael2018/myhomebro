@@ -178,7 +178,7 @@ export function toAgreementPayload(draft, { removeEmptyMilestones = true, omitNu
       // eslint-disable-next-line no-console
       console.debug("[agreements] payload", payload);
     }
-  } catch {}
+  } catch { /* Debug serialization must never affect agreement requests. */ }
 
   return payload;
 }

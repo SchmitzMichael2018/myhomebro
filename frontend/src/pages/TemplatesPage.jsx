@@ -1712,7 +1712,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
     try {
       setVisibilitySaving("publish");
-      const nextIsPublished = !Boolean(selectedDetail?.is_published);
+      const nextIsPublished = !selectedDetail?.is_published;
       const { data } = await api.patch(`/projects/templates/${selectedDetail.id}/`, {
         is_published: nextIsPublished,
       });

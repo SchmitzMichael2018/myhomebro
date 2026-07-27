@@ -35,7 +35,7 @@ const shallowEqual = (a, b) => {
 
 const pickForm = (m) => ({
   title: m?.title || "",
-  amount: (m?.amount ?? "") === null ? "" : m?.amount ?? "",
+  amount: m?.amount ?? "",
   description: m?.description || "",
   start_date: m?.start_date || "",
   completion_date: m?.completion_date || "",
@@ -106,7 +106,7 @@ export default function MilestoneDetail() {
         setFieldErrors({});
         try {
           // optional: do not delete drafts automatically, but do not show them either
-        } catch {}
+        } catch { /* Legacy draft cleanup is intentionally deferred. */ }
         return;
       }
 
@@ -212,7 +212,7 @@ export default function MilestoneDetail() {
     if (readOnly) return;
     try {
       localStorage.removeItem(draftKey);
-    } catch {}
+    } catch { /* Continue clearing the visible draft when storage is unavailable. */ }
     if (milestone) {
       setForm(pickForm(milestone));
       setLastSavedAt(null);
@@ -283,7 +283,7 @@ export default function MilestoneDetail() {
       setForm(pickForm(data));
       try {
         localStorage.removeItem(draftKey);
-      } catch {}
+      } catch { /* Continue clearing the visible draft when storage is unavailable. */ }
       setLastSavedAt(null);
       setDraftLoaded(false);
       setFieldErrors({});
@@ -306,7 +306,7 @@ export default function MilestoneDetail() {
         localStorage.setItem(draftKey, JSON.stringify({ form, lastSavedAt: ts }));
         setLastSavedAt(ts);
         setDraftLoaded(true);
-      } catch {}
+      } catch { /* Draft persistence is best-effort; server data remains authoritative. */ }
     }
     navigate(-1);
   };

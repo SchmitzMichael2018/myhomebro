@@ -23,6 +23,9 @@ import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { labelForTemplateMilestoneType } from "../lib/milestoneTypes.js";
+
+// Superseded Step 2 panels remain dormant until their markup is removed separately.
+const SHOW_LEGACY_STEP2_PANELS = false;
 import { normalizeProjectClass } from "../utils/projectClass.js";
 import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 import {
@@ -5085,7 +5088,7 @@ export default function Step2Milestones({
       el.focus?.({ preventScroll: true });
       try {
         el.select?.();
-      } catch {}
+      } catch { /* Selection is an optional focus enhancement. */ }
       if (typeof document !== "undefined" && document.activeElement !== el && attempt < 5) {
         window.setTimeout(() => focusTargetTotal(attempt + 1), 50);
       }
@@ -5703,7 +5706,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {false && recurringSummary ? (
+      {SHOW_LEGACY_STEP2_PANELS && recurringSummary ? (
         <div
           data-testid="step2-recurring-summary"
           className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3"
@@ -5743,7 +5746,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {false && (
+      {SHOW_LEGACY_STEP2_PANELS && (
         <StartWithAIEntry
         className=""
         testId="milestones-ai-entry"
@@ -5774,7 +5777,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {false && hasPlanningDetails ? (
+      {SHOW_LEGACY_STEP2_PANELS && hasPlanningDetails ? (
         <details className="mb-3 rounded-2xl border border-slate-200 bg-white shadow-sm">
           <summary className="cursor-pointer list-none px-4 py-3">
             <div className="flex items-center justify-between gap-3">
@@ -5837,7 +5840,7 @@ export default function Step2Milestones({
         </details>
       ) : null}
 
-      {false && showAssistantMilestoneSuggestions ? (
+      {SHOW_LEGACY_STEP2_PANELS && showAssistantMilestoneSuggestions ? (
         <div
           data-testid="assistant-suggested-milestones"
           className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-4"
@@ -6428,7 +6431,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {false && estimatePreview ? (
+      {SHOW_LEGACY_STEP2_PANELS && estimatePreview ? (
         <details
           className="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm"
           data-testid="step2-estimate-guidance-details"
@@ -6516,7 +6519,7 @@ export default function Step2Milestones({
         </details>
       ) : null}
 
-      {false && suggestedPlan ? (
+      {SHOW_LEGACY_STEP2_PANELS && suggestedPlan ? (
         <section
           className="rounded-2xl border border-emerald-200 bg-emerald-50/60 shadow-sm"
           data-testid="step2-suggested-plan-card"
@@ -6769,7 +6772,7 @@ export default function Step2Milestones({
         </section>
       ) : null}
 
-      {false && estimatePreview ? (
+      {SHOW_LEGACY_STEP2_PANELS && estimatePreview ? (
         <section
           className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 shadow-sm"
           data-testid="step2-estimate-panel"
@@ -7066,7 +7069,7 @@ export default function Step2Milestones({
         }}
       />
 
-      {false && aiPreview ? (
+      {SHOW_LEGACY_STEP2_PANELS && aiPreview ? (
         <div className="mb-6 rounded-lg border bg-indigo-50 p-4">
           <h4 className="mb-2 font-semibold">Project Assistant Suggested Scope</h4>
           <p className="mb-3 whitespace-pre-wrap text-sm">{aiPreview.scope_text}</p>
@@ -7936,7 +7939,7 @@ export default function Step2Milestones({
         </div>
       </section>
 
-      {false && (
+      {SHOW_LEGACY_STEP2_PANELS && (
         <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100">
       <div className="mb-4">
         <h4 className="text-base font-semibold text-slate-950">
@@ -8284,7 +8287,7 @@ export default function Step2Milestones({
       </section>
       )}
 
-      {false && (
+      {SHOW_LEGACY_STEP2_PANELS && (
       <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100">
       <div className="mb-4">
         <h4 className="text-base font-semibold text-slate-950">
@@ -8762,7 +8765,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {false && saveTemplateOpen ? (
+      {SHOW_LEGACY_STEP2_PANELS && saveTemplateOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-5 shadow-xl">
             <div className="flex items-start justify-between gap-3">

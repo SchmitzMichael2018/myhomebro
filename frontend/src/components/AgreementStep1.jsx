@@ -9,7 +9,7 @@ function initFrom(initialData = {}) {
   try {
     const raw = localStorage.getItem(DRAFT_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch { /* Ignore invalid legacy draft data and use the safe initial state. */ }
   return {
     projectName: initialData.projectName || '',
     homeownerId: initialData.homeownerId || '',
@@ -37,7 +37,7 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
 
   useEffect(() => {
     const t = setTimeout(() => {
-      try { localStorage.setItem(DRAFT_KEY, JSON.stringify(formData)); } catch {}
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify(formData)); } catch { /* Draft persistence is best-effort. */ }
     }, 800);
     return () => clearTimeout(t);
   }, [formData]);
@@ -93,7 +93,7 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
   };
 
   const discardDraft = () => {
-    try { localStorage.removeItem(DRAFT_KEY); } catch {}
+    try { localStorage.removeItem(DRAFT_KEY); } catch { /* Continue resetting if storage is unavailable. */ }
     setFormData(initFrom(initialData));
     setErrors({});
     toast('Draft cleared.');

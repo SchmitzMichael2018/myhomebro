@@ -22,7 +22,7 @@ api.interceptors.request.use((config) => {
       const { access } = JSON.parse(raw);
       if (access) config.headers.Authorization = `Bearer ${access}`;
     }
-  } catch {}
+  } catch { /* A missing browser storage API means no persisted bearer token is available. */ }
   return config;
 });
 

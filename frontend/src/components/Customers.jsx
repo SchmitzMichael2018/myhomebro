@@ -170,7 +170,7 @@ export default function Customers() {
       sp.delete("new_customer_id");
       const nextSearch = sp.toString() ? `?${sp.toString()}` : "";
       navigate(`${location.pathname}${nextSearch}`, { replace: true });
-    } catch {}
+    } catch { /* Ignore malformed legacy search parameters and preserve the current route. */ }
   }, [location.pathname, location.search, navigate]);
 
   const fetchCustomers = useCallback(async () => {

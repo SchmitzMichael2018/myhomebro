@@ -61,8 +61,8 @@ function normalizeStep1FieldValue(value) {
   if (!raw) return "";
   const cleaned = raw
     .replace(/\s*\(new\)\s*$/i, "")
-    .replace(/^[\-–—•\s]+/, "")
-    .replace(/[\s\-–—•]+$/, "")
+    .replace(/^[-–—•\s]+/, "")
+    .replace(/[\s–—•-]+$/, "")
     .trim();
   if (!cleaned) return "";
   if (/^\d+$/.test(cleaned)) return "";

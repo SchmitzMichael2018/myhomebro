@@ -21,6 +21,9 @@ import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
 import RefundEscrowModal from "./RefundEscrowModal";
 
+// Retained for a later operational-board migration; intentionally not rendered.
+const SHOW_LEGACY_MILESTONE_TABLE = false;
+
 /* ---------------- Utilities ---------------- */
 const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== "") ?? "";
 
@@ -1183,7 +1186,7 @@ export default function MilestoneList() {
       </div>
 
       {/* Legacy table retained temporarily during operational board migration. */}
-      {false ? (
+      {SHOW_LEGACY_MILESTONE_TABLE ? (
       <div className="hidden overflow-hidden rounded-[24px] border border-white/10 bg-[#061d42]/95 shadow-[0_24px_60px_rgba(2,8,23,0.28)] backdrop-blur" aria-hidden="true">
         <div className="overflow-x-auto">
           <table className="min-w-[860px] w-full text-sm">

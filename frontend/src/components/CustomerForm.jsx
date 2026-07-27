@@ -166,7 +166,7 @@ export default function CustomerForm(){
         toast.error("Please finish contractor onboarding to add customers.");
         try {
           window.dispatchEvent(new CustomEvent("mhb:onboardingRequired", { detail: { source: "homeowners:create" } }));
-        } catch {}
+        } catch { /* The onboarding event is advisory; route fallback remains available. */ }
         // Your onboarding routes are public (/onboarding, /onboarding/profile)
         window.location.assign("/onboarding");
         return;

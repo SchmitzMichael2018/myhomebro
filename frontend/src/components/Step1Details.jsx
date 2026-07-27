@@ -12,6 +12,9 @@ import api from "../api";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 
+// Superseded Step 1 panels remain dormant until their markup is removed separately.
+const SHOW_LEGACY_STEP1_PANELS = false;
+
 import SaveTemplateModal from "./step1/SaveTemplateModal.jsx";
 import TemplateImprovementPrompt from "./TemplateImprovementPrompt.jsx";
 import TemplateSearchSection from "./step1/TemplateSearchSection.jsx";
@@ -377,7 +380,7 @@ const CLASSIFICATION_PREFIX_PATTERNS = [
 function normalizeClassificationLabel(value, { maxWords = 8, maxLength = 60 } = {}) {
   const raw = safeTrim(value);
   if (!raw) return "";
-  const cleaned = raw.replace(/\s*\(new\)\s*$/i, "").replace(/^[\-–—•\s]+/, "").replace(/[\s\-–—•]+$/, "").trim();
+  const cleaned = raw.replace(/\s*\(new\)\s*$/i, "").replace(/^[-–—•\s]+/, "").replace(/[\s–—•-]+$/, "").trim();
   if (!cleaned) return "";
   const lower = cleaned.toLowerCase();
   if (CLASSIFICATION_PREFIX_PATTERNS.some((pattern) => pattern.test(cleaned))) return "";
@@ -973,8 +976,8 @@ function normalizeStep1FieldValue(value) {
   if (!raw) return "";
   const cleaned = raw
     .replace(/\s*\(new\)\s*$/i, "")
-    .replace(/^[\-–—•\s]+/, "")
-    .replace(/[\s\-–—•]+$/, "")
+    .replace(/^[-–—•\s]+/, "")
+    .replace(/[\s–—•-]+$/, "")
     .trim();
   if (!cleaned) return "";
   if (/^\d+$/.test(cleaned)) return "";
@@ -6389,7 +6392,7 @@ export default function Step1Details({
                     ) : null}
                   </div>
                 </div>
-              ) : (false && (aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation" || noTemplateMatch) && !shouldShowTemplateBrowserSection && startMode !== "manual") ? (
+              ) : (SHOW_LEGACY_STEP1_PANELS && (aiSetupResult?.kind === "no_template" || aiSetupResult?.kind === "fallback_recommendation" || noTemplateMatch) && !shouldShowTemplateBrowserSection && startMode !== "manual") ? (
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="max-w-3xl">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
@@ -6806,7 +6809,7 @@ export default function Step1Details({
         ) : null}
 
 
-        {false && startMode === "ai" && aiSetupResult?.kind === "description_only" ? (
+      {SHOW_LEGACY_STEP1_PANELS && startMode === "ai" && aiSetupResult?.kind === "description_only" ? (
           <section
             data-testid="step1-ai-setup-result"
             className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm"

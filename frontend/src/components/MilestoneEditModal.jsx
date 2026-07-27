@@ -719,7 +719,7 @@ export default function MilestoneEditModal({
         setUploading(false);
         return;
       }
-    } catch {}
+    } catch { /* Validation below handles unsupported or invalid date values. */ }
 
     try {
       const fd = new FormData();
@@ -1358,7 +1358,7 @@ export default function MilestoneEditModal({
             </section>
           ) : null}
 
-          {Boolean(currentMilestone?.is_rework) ? (
+          {currentMilestone?.is_rework ? (
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm">
               <div className="flex items-center justify-between gap-3">
                 <div className="font-semibold text-amber-800">Rework Milestone</div>

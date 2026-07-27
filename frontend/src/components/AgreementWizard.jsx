@@ -132,8 +132,8 @@ function normalizeWizardStep1Value(value) {
   if (!raw) return "";
   const cleaned = raw
     .replace(/\s*\(new\)\s*$/i, "")
-    .replace(/^[\-–—•\s]+/, "")
-    .replace(/[\s\-–—•]+$/, "")
+    .replace(/^[-–—•\s]+/, "")
+    .replace(/[\s–—•-]+$/, "")
     .trim();
   if (!cleaned) return "";
   if (/^\d+$/.test(cleaned)) return "";
@@ -810,7 +810,7 @@ export default function AgreementWizard() {
     } catch {
       try {
         await api.post(`/projects/agreements/${agreementId}/mark_previewed`);
-      } catch {}
+      } catch { /* Preview telemetry must not block agreement review. */ }
     }
     setAgreement((prev) => (prev ? { ...prev, pdf_viewed: true } : prev));
   }, [agreementId, setAgreement]);
@@ -882,7 +882,7 @@ export default function AgreementWizard() {
       window.setTimeout(() => {
         try {
           URL.revokeObjectURL(blobUrl);
-        } catch {}
+        } catch { /* Object URL cleanup is best-effort. */ }
       }, 60000);
     } catch (err) {
       toast.error(err?.message || "Unable to open the agreement PDF.");
