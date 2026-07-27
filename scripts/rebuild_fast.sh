@@ -25,6 +25,14 @@ log "Building frontend with Vite (no installs)…"
 cd "$FRONTEND_DIR"
 npx vite build
 
+# Publish public PWA metadata and branding assets. The root-scoped worker itself
+# is served by Django from dist/sw.js with Service-Worker-Allowed: /.
+for PWA_ASSET in manifest.webmanifest offline.html favicon.ico favicon-192x192.png favicon-512x512.png apple-touch-icon.png pwa-maskable-512x512.png; do
+  if [[ -f "$FRONTEND_DIR/dist/$PWA_ASSET" ]]; then
+    rsync -a "$FRONTEND_DIR/dist/$PWA_ASSET" "$STATIC_ROOT/$PWA_ASSET"
+  fi
+done
+
 # 2.5) Publish index.html
 log "Publishing index.html …"
 rsync -a "$FRONTEND_DIR/dist/index.html" "$STATIC_ROOT/index.html"

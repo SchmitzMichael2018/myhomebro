@@ -9,6 +9,7 @@
 console.log("api.js v2026-02-18-refresh-queue-fix");
 
 import axios from "axios";
+import { clearPwaDrafts } from "./lib/pwaDrafts.js";
 import { getApiBaseUrl } from "./lib/runtimeConfig";
 
 // Canonical keys
@@ -254,6 +255,7 @@ export function clearAuth(redirect = false) {
     sessionStorage.removeItem(TOK.legacyAccessTokenCamel);
   } catch {}
   applyAuthHeader(null);
+  clearPwaDrafts().catch(() => {});
 
   if (redirect && typeof window !== "undefined") {
     if (window.location.pathname !== "/") {

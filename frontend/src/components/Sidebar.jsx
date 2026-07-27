@@ -7,6 +7,7 @@ import React, { createContext, useCallback, useContext, useMemo, useState, useEf
 import { createPortal } from "react-dom";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
+import { clearPwaDrafts } from "../lib/pwaDrafts.js";
 import toast from "react-hot-toast";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import RefundEscrowModal from "./RefundEscrowModal";
@@ -189,7 +190,8 @@ export default function Sidebar({ variant = "desktop" }) {
   const reviewQueueCount = Number(data?.review_queue_count || 0);
   const attentionCounts = data?.attention_counts || {};
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    await clearPwaDrafts().catch(() => {});
     try {
       localStorage.removeItem("access");
       localStorage.removeItem("refresh");

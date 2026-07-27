@@ -25,7 +25,7 @@ from projects.views.notifications import (
 )
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
-from .views_frontend import spa as spa_index
+from .views_frontend import pwa_asset, spa as spa_index
 
 try:
     from payments.return_views import stripe_return, ok as stripe_ok  # type: ignore
@@ -164,6 +164,9 @@ urlpatterns = [
 
     # Favicon
     path("favicon.ico", favicon, name="favicon"),
+    path("sw.js", pwa_asset, {"filename": "sw.js"}, name="pwa-service-worker"),
+    path("manifest.webmanifest", pwa_asset, {"filename": "manifest.webmanifest"}, name="pwa-manifest"),
+    path("offline.html", pwa_asset, {"filename": "offline.html"}, name="pwa-offline"),
 
     # Legal pages
     path("legal/terms-of-service/", TermsOfServiceView.as_view(), name="terms-of-service"),

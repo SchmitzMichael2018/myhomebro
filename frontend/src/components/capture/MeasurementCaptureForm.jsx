@@ -5,6 +5,15 @@ import {
   getCaptureProjectOptions,
 } from '../../api/captures.js';
 import { Button, InlineAlert } from '../ui';
+import { Card } from '../ui';
+import { useWhoAmI } from '../../hooks/useWhoAmI.js';
+import { PWA_FLAGS } from '../../lib/pwaFlags.js';
+import {
+  deletePwaDraft,
+  draftIdentity,
+  loadPwaDraft,
+  savePwaDraft,
+} from '../../lib/pwaDrafts.js';
 import ManualMeasurementEditor, {
   createManualMeasurement,
 } from './ManualMeasurementEditor.jsx';
@@ -32,6 +41,8 @@ export default function MeasurementCaptureForm({
   initialSourceText = '',
   initialFiles = [],
 }) {
+  const { data: identityData } = useWhoAmI();
+  const identity = draftIdentity(identityData || {});
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState(initialProjectId);
   const [roomName, setRoomName] = useState('');
@@ -45,6 +56,7 @@ export default function MeasurementCaptureForm({
   const [files, setFiles] = useState(initialFiles);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [restorableDraft, setRestorableDraft] = useState(null);
   const handlePreview = useCallback(setPreview, []);
 
   useEffect(() => {
@@ -56,6 +68,52 @@ export default function MeasurementCaptureForm({
         )
       );
   }, []);
+
+  const draftContextKey = `manual-measurement:${initialProjectId || 'unassigned'}`;
+
+  useEffect(() => {
+    if (!PWA_FLAGS.offlineDrafts || !identity) return;
+    loadPwaDraft({
+      identity,
+      draftType: 'manual_measurement',
+      contextKey: draftContextKey,
+    }).then(setRestorableDraft).catch(() => {});
+  }, [draftContextKey, identity?.contractorId, identity?.userId]);
+
+  useEffect(() => {
+    if (!PWA_FLAGS.offlineDrafts || !identity || (!roomName && !projectId)) return undefined;
+    const timer = setTimeout(() => {
+      savePwaDraft({
+        identity,
+        draftType: 'manual_measurement',
+        contextKey: draftContextKey,
+        sourceText: initialSourceText,
+        values: { projectId, roomName, purpose, measurement },
+        artifactReferences: files,
+      }).catch(() => {});
+    }, 750);
+    return () => clearTimeout(timer);
+  }, [draftContextKey, files, identity?.contractorId, identity?.userId, initialSourceText, measurement, projectId, purpose, roomName]);
+
+  async function discardDraft() {
+    if (identity) {
+      await deletePwaDraft({
+        identity,
+        draftType: 'manual_measurement',
+        contextKey: draftContextKey,
+      }).catch(() => {});
+    }
+    setRestorableDraft(null);
+  }
+
+  function restoreDraft() {
+    const values = restorableDraft?.values || {};
+    setProjectId(values.projectId || initialProjectId);
+    setRoomName(values.roomName || '');
+    setPurpose(values.purpose || 'general_room');
+    if (values.measurement) setMeasurement(values.measurement);
+    setRestorableDraft(null);
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -93,6 +151,7 @@ export default function MeasurementCaptureForm({
         },
         files
       );
+      await discardDraft();
       onSaved(capture);
     } catch (reason) {
       setError(
@@ -109,6 +168,7 @@ export default function MeasurementCaptureForm({
       onSubmit={submit}
       className="grid min-w-0 gap-4 pb-20 sm:pb-0"
       data-testid="measurement-capture-form"
+      data-pwa-unsaved={roomName || projectId ? "true" : "false"}
     >
       <div>
         <h2 className="text-xl font-bold">Enter Measurements</h2>
@@ -117,6 +177,19 @@ export default function MeasurementCaptureForm({
           available after review.
         </p>
       </div>
+      {restorableDraft ? (
+        <Card theme="operational" padding="sm">
+          <h3 className="font-bold">Local measurement draft available</h3>
+          <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
+            Last updated {new Date(restorableDraft.updatedAt).toLocaleString()}. Review restored dimensions before requesting a server preview.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" size="sm" theme="operational" onClick={restoreDraft}>Restore</Button>
+            <Button type="button" size="sm" variant="secondary" theme="operational" onClick={discardDraft}>Discard</Button>
+            <Button type="button" size="sm" variant="ghost" theme="operational" onClick={() => setRestorableDraft(null)}>Continue without restoring</Button>
+          </div>
+        </Card>
+      ) : null}
       <label className="grid gap-1 text-sm font-semibold">
         Project
         <select
@@ -184,7 +257,10 @@ export default function MeasurementCaptureForm({
           type="button"
           variant="secondary"
           theme="operational"
-          onClick={onCancel}
+          onClick={async () => {
+            await discardDraft();
+            onCancel();
+          }}
         >
           Cancel
         </Button>

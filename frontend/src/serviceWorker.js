@@ -1,18 +1,14 @@
-// src/serviceWorker.js
-// Always unregister – prevents SW retry loops & stale caches
-export function register() {}
+// Backward-compatible PWA lifecycle facade.
+// New code uses pwaLifecycle directly; legacy callers remain safe during rollout.
+import { PWA_FLAGS } from "./lib/pwaFlags.js";
+import { disablePwa, registerPwa } from "./lib/pwaLifecycle.js";
+
+export function register(callbacks) {
+  if (!PWA_FLAGS.enabled) return null;
+  return registerPwa(callbacks);
+}
 
 export function unregister() {
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations()
-      .then((regs) => regs.forEach((r) => r.unregister()))
-      .catch(() => {});
-
-    // optional but helpful: clear any old runtime caches
-    if (window.caches?.keys) {
-      caches.keys()
-        .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
-        .catch(() => {});
-    }
-  }
+  if (PWA_FLAGS.enabled) return Promise.resolve();
+  return disablePwa();
 }

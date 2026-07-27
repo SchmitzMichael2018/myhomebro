@@ -2950,3 +2950,14 @@ html[data-mhb-theme="light"][data-mhb-surface="operational"] [data-testid="estim
     color: inherit !important;
   }
 }
+@media (display-mode: standalone) {
+  .mhb-authenticated-root {
+    min-height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .mhb-authenticated-main {
+    height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom)) !important;
+  }
+}

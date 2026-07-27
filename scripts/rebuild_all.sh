@@ -54,6 +54,12 @@ fi
 # Vite build
 npx vite build
 
+for PWA_ASSET in manifest.webmanifest offline.html favicon.ico favicon-192x192.png favicon-512x512.png apple-touch-icon.png pwa-maskable-512x512.png; do
+  if [[ -f "$FRONTEND_DIR/dist/$PWA_ASSET" ]]; then
+    rsync -a "$FRONTEND_DIR/dist/$PWA_ASSET" "$STATIC_ROOT/$PWA_ASSET"
+  fi
+done
+
 # ── 5) Publish assets to STATIC_ROOT/assets
 log "Publishing built assets to $ASSETS_DIR …"
 mkdir -p "$ASSETS_DIR"

@@ -3,6 +3,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import api, { getAccessToken, setTokens, clearAuth } from "../api";
+import { clearPwaDrafts } from "../lib/pwaDrafts.js";
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -49,6 +50,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = async () => {
+    await clearPwaDrafts().catch(() => {});
     // clearAuth already clears tokens; we do NOT touch axios.defaults here.
     clearAuth(true);
     setUser(null);

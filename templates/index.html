@@ -5,6 +5,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>MyHomeBro - Secure Escrow Payments</title>
+    <meta name="theme-color" content="#07182f" />
+    <meta name="application-name" content="MyHomeBro" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="manifest" href="/manifest.webmanifest" />
 
     <!-- Icons (served by WhiteNoise at /static/...) -->
     <link rel="icon" type="image/png" href="{% static 'favicon-192x192.png' %}" />
@@ -22,6 +27,8 @@
       object-src 'none';
       base-uri 'self';
       form-action 'self';
+      worker-src 'self';
+      manifest-src 'self';
     " />
 
     {% vite_entry_css as vite_css_href %}

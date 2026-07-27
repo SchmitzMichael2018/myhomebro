@@ -10,6 +10,14 @@ import {
   searchConversationalContexts,
 } from "../../api/captures.js";
 import { createVoiceService } from "../../lib/voiceService.js";
+import { useWhoAmI } from "../../hooks/useWhoAmI.js";
+import { PWA_FLAGS } from "../../lib/pwaFlags.js";
+import {
+  deletePwaDraft,
+  draftIdentity,
+  loadPwaDraft,
+  savePwaDraft,
+} from "../../lib/pwaDrafts.js";
 import { Button, Card, FormField, InlineAlert } from "../ui";
 import {
   CONVERSATIONAL_CAPTURE_STATES as STATES,
@@ -119,6 +127,12 @@ export default function ConversationalCapture({
   onChooseExplicit,
 }) {
   const voice = useMemo(() => createVoiceService(), []);
+  const { data: identityData } = useWhoAmI();
+  const identity = useMemo(() => draftIdentity(identityData || {}), [identityData]);
+  const draftContextKey = useMemo(
+    () => `conversational:${context.projectId || "global"}:${context.milestoneId || ""}`,
+    [context.milestoneId, context.projectId]
+  );
   const requestSequence = useRef(0);
   const [stage, setStage] = useState(STATES.COMPOSING);
   const [text, setText] = useState(context.sourceText || "");
@@ -141,12 +155,59 @@ export default function ConversationalCapture({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [restorableDraft, setRestorableDraft] = useState(null);
 
   function transition(next) {
     if (canTransitionConversationalCapture(stage, next)) setStage(next);
   }
 
   useEffect(() => () => voice.cancelListening(), [voice]);
+
+  useEffect(() => {
+    if (!PWA_FLAGS.offlineDrafts || !identity) return;
+    loadPwaDraft({
+      identity,
+      draftType: "conversational_capture",
+      contextKey: draftContextKey,
+    }).then((draft) => {
+      if (draft?.sourceText && !text.trim()) setRestorableDraft(draft);
+    }).catch(() => {});
+  }, [draftContextKey, identity]);
+
+  useEffect(() => {
+    if (!PWA_FLAGS.offlineDrafts || !identity || !text.trim()) return undefined;
+    const timer = setTimeout(() => {
+      savePwaDraft({
+        identity,
+        draftType: "conversational_capture",
+        contextKey: draftContextKey,
+        sourceText: text,
+        values: { selectedContext, selectedProfile },
+        artifactReferences: files,
+      }).catch(() => {});
+    }, 750);
+    return () => clearTimeout(timer);
+  }, [draftContextKey, files, identity, selectedContext, selectedProfile, text]);
+
+  async function discardLocalDraft() {
+    if (identity) {
+      await deletePwaDraft({
+        identity,
+        draftType: "conversational_capture",
+        contextKey: draftContextKey,
+      }).catch(() => {});
+    }
+    setRestorableDraft(null);
+  }
+
+  function restoreLocalDraft() {
+    if (!restorableDraft) return;
+    setText(restorableDraft.sourceText || "");
+    setSelectedContext(restorableDraft.values?.selectedContext || selectedContext);
+    setSelectedProfile(restorableDraft.values?.selectedProfile || "");
+    setRestorableDraft(null);
+    setAnnouncement("Local conversational Capture draft restored. Review it before submitting.");
+  }
 
   useEffect(() => {
     getCaptureProfiles(selectedContext)
@@ -313,8 +374,10 @@ export default function ConversationalCapture({
       );
       if (response.status === "handoff") {
         setStage(STATES.HANDING_OFF);
+        await discardLocalDraft();
         onHandoff({ ...response.handoff, files });
       } else {
+        await discardLocalDraft();
         onSaved(response.capture);
       }
     } catch (reason) {
@@ -343,6 +406,7 @@ export default function ConversationalCapture({
         // No Capture exists before confirmation; local close remains safe.
       }
     }
+    await discardLocalDraft();
     onCancel();
   }
 
@@ -366,7 +430,7 @@ export default function ConversationalCapture({
 
   if (stage === STATES.CONFIRMING || stage === STATES.CREATING) {
     return (
-      <div className="grid gap-4" data-testid="conversational-final-confirmation">
+      <div className="grid gap-4" data-testid="conversational-final-confirmation" data-pwa-unsaved="true">
         <div className="sr-only" aria-live="polite">{announcement}</div>
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--mhb-text-muted)]">Review</p>
@@ -399,7 +463,7 @@ export default function ConversationalCapture({
   if (result) {
     const questions = result.follow_up_questions || [];
     return (
-      <div className="grid gap-4" data-testid="conversational-capture-confirmation">
+      <div className="grid gap-4" data-testid="conversational-capture-confirmation" data-pwa-unsaved="true">
         <div className="sr-only" aria-live="polite">{announcement}</div>
         <InlineAlert theme="operational" tone={stage === STATES.UNSUPPORTED ? "warning" : "info"}>
           {result.summary}
@@ -494,11 +558,24 @@ export default function ConversationalCapture({
   }
 
   return (
-    <div className="grid gap-4" data-testid="conversational-capture">
+    <div className="grid gap-4" data-testid="conversational-capture" data-pwa-unsaved={text.trim() || files.length ? "true" : "false"}>
       <div className="sr-only" aria-live="polite">{announcement}</div>
       <InlineAlert theme="operational" tone="info">
         Describe what happened. Project Assistant suggests an existing workflow; you review every choice before anything is created.
       </InlineAlert>
+      {restorableDraft ? (
+        <Card theme="operational" padding="sm">
+          <h3 className="font-bold">Local draft available</h3>
+          <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
+            Last updated {new Date(restorableDraft.updatedAt).toLocaleString()}. Attached files are not stored and must be selected again.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button type="button" size="sm" theme="operational" onClick={restoreLocalDraft}>Restore</Button>
+            <Button type="button" size="sm" variant="secondary" theme="operational" onClick={discardLocalDraft}>Discard</Button>
+            <Button type="button" size="sm" variant="ghost" theme="operational" onClick={() => setRestorableDraft(null)}>Continue without restoring</Button>
+          </div>
+        </Card>
+      ) : null}
       {selectedContext.project_id ? <Card theme="operational" padding="sm">Current project: {contextLabels.project || `Project #${selectedContext.project_id}`}</Card> : null}
       <FormField label="What happened?" helperText="Private to your company unless a reviewed workflow says otherwise." required>
         {(fieldProps) => <textarea {...fieldProps} autoFocus rows={7} value={text} onChange={(event) => setText(event.target.value)} className="min-h-40 w-full resize-y rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 text-base" data-testid="conversational-text" />}
