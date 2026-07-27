@@ -163,17 +163,17 @@ export default function AgreementStep1({ onNext, initialData = {}, allHomeowners
         <div className="sm:col-start-2 sm:col-span-2">
           <div className="flex items-center">
             <input id="useCustomerAddress" name="useCustomerAddress" type="checkbox" checked={formData.useCustomerAddress} onChange={handleChange} className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" />
-            <label htmlFor="useCustomerAddress" className="ml-3 block text-sm font-medium text-gray-800">Project address is the same as customer's home address</label>
+            <label htmlFor="useCustomerAddress" className="ml-3 block text-sm font-medium text-gray-800">Project address is the same as customer&apos;s home address</label>
           </div>
         </div>
       </div>
 
       {!formData.useCustomerAddress && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t">
-          <label className="sm:text-right text-sm font-medium text-gray-700 self-start pt-2">Project Address</label>
+          <label htmlFor="mhb-agreementstep1-173" className="sm:text-right text-sm font-medium text-gray-700 self-start pt-2">Project Address</label>
           <div className="sm:col-span-2 space-y-4">
             <div>
-              <input name="project_street_address" placeholder="Street Address" value={formData.project_street_address} onChange={handleChange} className={`form-input ${errors.project_street_address ? 'ring-1 ring-red-500' : ''}`} />
+              <input id="mhb-agreementstep1-173" name="project_street_address" placeholder="Street Address" value={formData.project_street_address} onChange={handleChange} className={`form-input ${errors.project_street_address ? 'ring-1 ring-red-500' : ''}`} />
               {errors.project_street_address && <p className="text-xs text-red-600 mt-1">{errors.project_street_address}</p>}
             </div>
             <input name="project_address_line_2" placeholder="Address Line 2 (Optional)" value={formData.project_address_line_2} onChange={handleChange} className="form-input" />

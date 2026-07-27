@@ -2526,8 +2526,8 @@ export default function Step4Finalize({
                   </div>
                 </div>
                 <div className="space-y-2 mt-2">
-                  <label className="block text-xs font-semibold text-gray-700">Type Your Full Legal Name</label>
-                  <input
+                  <label htmlFor="mhb-step4finalize-2529" className="block text-xs font-semibold text-gray-700">Type Your Full Legal Name</label>
+                  <input id="mhb-step4finalize-2529"
                     type="text"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={typedName}
@@ -2797,6 +2797,6 @@ export default function Step4Finalize({
     </div>
   );
 }
-
+
 
 

@@ -100,8 +100,8 @@ export default function AgreementReview() {
           <div className="font-semibold mb-2">Share via Email (optional)</div>
           <form onSubmit={sendEmail} className="space-y-3">
             <div>
-              <label className="block text-sm font-medium">To</label>
-              <input
+              <label htmlFor="mhb-agreementreview-103" className="block text-sm font-medium">To</label>
+              <input id="mhb-agreementreview-103"
                 type="email"
                 name="to"
                 value={emailForm.to}
@@ -111,8 +111,8 @@ export default function AgreementReview() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium">Subject</label>
-              <input
+              <label htmlFor="mhb-agreementreview-114" className="block text-sm font-medium">Subject</label>
+              <input id="mhb-agreementreview-114"
                 name="subject"
                 value={emailForm.subject}
                 onChange={handleEmailChange}
@@ -120,8 +120,8 @@ export default function AgreementReview() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium">Message</label>
-              <textarea
+              <label htmlFor="mhb-agreementreview-123" className="block text-sm font-medium">Message</label>
+              <textarea id="mhb-agreementreview-123"
                 name="message"
                 value={emailForm.message}
                 onChange={handleEmailChange}

@@ -221,20 +221,20 @@ export default function AgreementMilestoneStep({ step1Data, onBack, onSubmit, dr
 
                       <div className="flex gap-4 items-end">
                         <div>
-                          <label className="block text-sm font-semibold">Days</label>
-                          <select value={m.days} onChange={(e)=>setField(idx,"days",e.target.value)} className="p-2 border rounded">
+                          <label htmlFor={`milestone-${idx}-days`} className="block text-sm font-semibold">Days</label>
+                          <select id={`milestone-${idx}-days`} value={m.days} onChange={(e)=>setField(idx,"days",e.target.value)} className="p-2 border rounded">
                             {daysOptions.map(d=><option key={d} value={d}>{d}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold">Hours</label>
-                          <select value={m.hours} onChange={(e)=>setField(idx,"hours",e.target.value)} className="p-2 border rounded">
+                          <label htmlFor={`milestone-${idx}-hours`} className="block text-sm font-semibold">Hours</label>
+                          <select id={`milestone-${idx}-hours`} value={m.hours} onChange={(e)=>setField(idx,"hours",e.target.value)} className="p-2 border rounded">
                             {hoursOptions.map(h=><option key={h} value={h}>{h}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold">Minutes</label>
-                          <select value={m.minutes} onChange={(e)=>setField(idx,"minutes",e.target.value)} className="p-2 border rounded">
+                          <label htmlFor={`milestone-${idx}-minutes`} className="block text-sm font-semibold">Minutes</label>
+                          <select id={`milestone-${idx}-minutes`} value={m.minutes} onChange={(e)=>setField(idx,"minutes",e.target.value)} className="p-2 border rounded">
                             {minutesOptions.map(mm=><option key={mm} value={mm}>{mm.toString().padStart(2,"0")}</option>)}
                           </select>
                         </div>

@@ -263,14 +263,10 @@ export default function LoginModal() {
   return (
     <div
       className="mhb-modal-overlay"
-      role="dialog"
-      aria-modal="true"
       data-testid="login-modal"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
     >
-      <div className="mhb-modal-card" style={{ maxWidth: 520 }}>
+      <button type="button" aria-label="Close login dialog" className="absolute inset-0" onClick={close} />
+      <div className="mhb-modal-card" style={{ maxWidth: 520 }} role="dialog" aria-modal="true">
         <div className="mhb-modal-header" style={{ justifyContent: "center" }}>
           <div style={{ display: "grid", placeItems: "center", width: "100%" }}>
             <div

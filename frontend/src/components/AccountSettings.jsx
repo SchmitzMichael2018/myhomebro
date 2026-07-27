@@ -167,8 +167,8 @@ export default function AccountSettings() {
 
           <form onSubmit={handleEmailSubmit} className="space-y-4">
             <div>
-              <label className={labelClass}>New Email Address</label>
-              <input
+              <label htmlFor="mhb-accountsettings-170" className={labelClass}>New Email Address</label>
+              <input id="mhb-accountsettings-170"
                 type="email"
                 className={fieldClass}
                 value={newEmail}
@@ -177,8 +177,8 @@ export default function AccountSettings() {
             </div>
 
             <div>
-              <label className={labelClass}>Confirm New Email Address</label>
-              <input
+              <label htmlFor="mhb-accountsettings-180" className={labelClass}>Confirm New Email Address</label>
+              <input id="mhb-accountsettings-180"
                 type="email"
                 className={fieldClass}
                 value={confirmNewEmail}

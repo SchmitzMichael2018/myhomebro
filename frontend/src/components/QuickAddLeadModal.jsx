@@ -248,10 +248,10 @@ export default function QuickAddLeadModal({
 
                   <div data-testid="manual-lead-form" className="space-y-4">
                     <div>
-                      <label className="mb-1 block text-sm font-semibold text-slate-800">
+                      <label htmlFor="mhb-quickaddleadmodal-251" className="mb-1 block text-sm font-semibold text-slate-800">
                         Homeowner name
                       </label>
-                      <input
+                      <input id="mhb-quickaddleadmodal-251"
                         ref={nameInputRef}
                         data-testid="quick-add-lead-name"
                         value={form.full_name}
@@ -273,10 +273,10 @@ export default function QuickAddLeadModal({
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-sm font-semibold text-slate-800">
+                      <label htmlFor="mhb-quickaddleadmodal-276" className="mb-1 block text-sm font-semibold text-slate-800">
                         Phone
                       </label>
-                      <input
+                      <input id="mhb-quickaddleadmodal-276"
                         ref={phoneInputRef}
                         data-testid="quick-add-lead-phone"
                         value={form.phone}
@@ -320,10 +320,10 @@ export default function QuickAddLeadModal({
                           >
                             <div className="space-y-4 px-4 py-4">
                               <div>
-                                <label className="mb-1 block text-sm font-semibold text-slate-800">
+                                <label htmlFor="mhb-quickaddleadmodal-323" className="mb-1 block text-sm font-semibold text-slate-800">
                                   Email
                                 </label>
-                                <input
+                                <input id="mhb-quickaddleadmodal-323"
                                   data-testid="quick-add-lead-email"
                                   value={form.email}
                                   onChange={(e) => updateField('email', e.target.value)}
@@ -338,10 +338,10 @@ export default function QuickAddLeadModal({
                               </div>
 
                               <div>
-                                <label className="mb-1 block text-sm font-semibold text-slate-800">
+                                <label htmlFor="mhb-quickaddleadmodal-341" className="mb-1 block text-sm font-semibold text-slate-800">
                                   Address
                                 </label>
-                                <input
+                                <input id="mhb-quickaddleadmodal-341"
                                   data-testid="quick-add-lead-address"
                                   value={form.project_address}
                                   onChange={(e) => updateField('project_address', e.target.value)}
@@ -352,10 +352,10 @@ export default function QuickAddLeadModal({
                               </div>
 
                               <div>
-                                <label className="mb-1 block text-sm font-semibold text-slate-800">
+                                <label htmlFor="mhb-quickaddleadmodal-355" className="mb-1 block text-sm font-semibold text-slate-800">
                                   Project
                                 </label>
-                                <input
+                                <input id="mhb-quickaddleadmodal-355"
                                   data-testid="quick-add-lead-project"
                                   value={form.project}
                                   onChange={(e) => updateField('project', e.target.value)}
@@ -365,10 +365,10 @@ export default function QuickAddLeadModal({
                               </div>
 
                               <div>
-                                <label className="mb-1 block text-sm font-semibold text-slate-800">
+                                <label htmlFor="mhb-quickaddleadmodal-368" className="mb-1 block text-sm font-semibold text-slate-800">
                                   Notes
                                 </label>
-                                <textarea
+                                <textarea id="mhb-quickaddleadmodal-368"
                                   data-testid="quick-add-lead-notes"
                                   value={form.notes}
                                   onChange={(e) => updateField('notes', e.target.value)}

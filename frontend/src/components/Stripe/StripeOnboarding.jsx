@@ -343,8 +343,8 @@ export default function StripeOnboarding() {
           />
 
           <div className="mt-4">
-            <label className="block text-sm font-semibold text-slate-900">Business name</label>
-            <input
+            <label htmlFor="mhb-stripeonboarding-346" className="block text-sm font-semibold text-slate-900">Business name</label>
+            <input id="mhb-stripeonboarding-346"
               type="text"
               value={form.business_name}
               onChange={(e) => setForm((current) => ({ ...current, business_name: e.target.value }))}
@@ -372,8 +372,8 @@ export default function StripeOnboarding() {
         >
           <div className="grid gap-4 md:grid-cols-4">
             <div>
-              <label className="block text-sm font-semibold text-slate-900">City</label>
-              <input
+              <label htmlFor="mhb-stripeonboarding-375" className="block text-sm font-semibold text-slate-900">City</label>
+              <input id="mhb-stripeonboarding-375"
                 type="text"
                 value={form.city}
                 onChange={(e) => setForm((current) => ({ ...current, city: e.target.value }))}
@@ -383,8 +383,8 @@ export default function StripeOnboarding() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-900">State</label>
-              <select
+              <label htmlFor="mhb-stripeonboarding-386" className="block text-sm font-semibold text-slate-900">State</label>
+              <select id="mhb-stripeonboarding-386"
                 value={form.state}
                 onChange={(e) => setForm((current) => ({ ...current, state: e.target.value }))}
                 data-testid="contractor-onboarding-state"
@@ -399,8 +399,8 @@ export default function StripeOnboarding() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-900">ZIP</label>
-              <input
+              <label htmlFor="mhb-stripeonboarding-402" className="block text-sm font-semibold text-slate-900">ZIP</label>
+              <input id="mhb-stripeonboarding-402"
                 type="text"
                 value={form.zip}
                 onChange={(e) => setForm((current) => ({ ...current, zip: e.target.value }))}
@@ -410,8 +410,8 @@ export default function StripeOnboarding() {
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-900">Service Range (miles)</label>
-              <select
+              <label htmlFor="mhb-stripeonboarding-413" className="block text-sm font-semibold text-slate-900">Service Range (miles)</label>
+              <select id="mhb-stripeonboarding-413"
                 value={String(form.service_radius_miles || 25)}
                 onChange={(e) =>
                   setForm((current) => ({

@@ -13,20 +13,12 @@ export default function PdfPreviewModal({ open, onClose, fileUrl, title = "Previ
 
   if (!open) return null;
 
-  const handleBackdrop = (e) => {
-    if (e.target.dataset?.backdrop === "1") onClose?.();
-  };
-
   return (
     <div
-      data-backdrop="1"
-      onClick={handleBackdrop}
       className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={title}
     >
-      <div className="w-full max-w-6xl h-[80vh] bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col">
+      <button type="button" aria-label="Close PDF preview" className="absolute inset-0" onClick={onClose} />
+      <div className="relative w-full max-w-6xl h-[80vh] bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col" role="dialog" aria-modal="true" aria-label={title}>
         <div className="flex items-center justify-between px-4 py-2 border-b">
           <div className="text-sm font-medium">{title}</div>
           <div className="flex items-center gap-3">

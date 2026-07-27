@@ -630,8 +630,8 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
       </div>
 
       <div>
-        <label className="block text-sm text-slate-600 mb-1">Proposal type</label>
-        <select
+        <label htmlFor="mhb-disputespages-633" className="block text-sm text-slate-600 mb-1">Proposal type</label>
+        <select id="mhb-disputespages-633"
           className="w-full border rounded px-3 py-2"
           value={ptype}
           onChange={(e) => setPtype(e.target.value)}
@@ -648,8 +648,8 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
       {(ptype === "partial_refund" || ptype === "full_refund" || ptype === "split_release") && (
         <div className="grid md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Refund amount (USD)</label>
-            <input
+            <label htmlFor="mhb-disputespages-651" className="block text-sm text-slate-600 mb-1">Refund amount (USD)</label>
+            <input id="mhb-disputespages-651"
               type="number"
               step="0.01"
               min="0"
@@ -668,8 +668,8 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
 
           {ptype === "split_release" ? (
             <div>
-              <label className="block text-sm text-slate-600 mb-1">Release amount (USD)</label>
-              <input
+              <label htmlFor="mhb-disputespages-671" className="block text-sm text-slate-600 mb-1">Release amount (USD)</label>
+              <input id="mhb-disputespages-671"
                 type="number"
                 step="0.01"
                 min="0"
@@ -688,8 +688,8 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
 
       {ptype === "rework" && (
         <div>
-          <label className="block text-sm text-slate-600 mb-1">Rework by</label>
-          <input
+          <label htmlFor="mhb-disputespages-691" className="block text-sm text-slate-600 mb-1">Rework by</label>
+          <input id="mhb-disputespages-691"
             type="date"
             className="w-full border rounded px-3 py-2"
             value={reworkBy}
@@ -700,8 +700,8 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
       )}
 
       <div>
-        <label className="block text-sm text-slate-600 mb-1">Notes (optional)</label>
-        <textarea
+        <label htmlFor="mhb-disputespages-703" className="block text-sm text-slate-600 mb-1">Notes (optional)</label>
+        <textarea id="mhb-disputespages-703"
           className="w-full border rounded px-3 py-2"
           rows={5}
           value={notes}
@@ -1371,8 +1371,8 @@ function ResolveModal({ open, dispute, onClose, onResolved }) {
   return (
     <ModalShell title={`Record Human Resolution - Case #${dispute.id}`} onClose={onClose}>
       <div>
-        <label className="block text-sm text-slate-600 mb-1">Resolution Option</label>
-        <select
+        <label htmlFor="mhb-disputespages-1374" className="block text-sm text-slate-600 mb-1">Resolution Option</label>
+        <select id="mhb-disputespages-1374"
           className="w-full border rounded px-3 py-2"
           value={resolutionType}
           onChange={(e) => setResolutionType(e.target.value)}
@@ -1389,8 +1389,8 @@ function ResolveModal({ open, dispute, onClose, onResolved }) {
       {resolutionType === "partial_resolution" ? (
         <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Approved Amount</label>
-            <input
+            <label htmlFor="mhb-disputespages-1392" className="block text-sm text-slate-600 mb-1">Approved Amount</label>
+            <input id="mhb-disputespages-1392"
               className="w-full border rounded px-3 py-2"
               value={approvedAmount}
               onChange={(e) => setApprovedAmount(e.target.value)}
@@ -1399,8 +1399,8 @@ function ResolveModal({ open, dispute, onClose, onResolved }) {
             />
           </div>
           <div>
-            <label className="block text-sm text-slate-600 mb-1">Disputed Remainder</label>
-            <input
+            <label htmlFor="mhb-disputespages-1402" className="block text-sm text-slate-600 mb-1">Disputed Remainder</label>
+            <input id="mhb-disputespages-1402"
               className="w-full border rounded px-3 py-2"
               value={disputedRemainder}
               onChange={(e) => setDisputedRemainder(e.target.value)}
@@ -1416,8 +1416,8 @@ function ResolveModal({ open, dispute, onClose, onResolved }) {
       </div>
 
       <div>
-        <label className="block text-sm text-slate-600 mb-1">Resolution Notes</label>
-        <textarea
+        <label htmlFor="mhb-disputespages-1419" className="block text-sm text-slate-600 mb-1">Resolution Notes</label>
+        <textarea id="mhb-disputespages-1419"
           className="w-full border rounded px-3 py-2"
           rows={5}
           value={notes}

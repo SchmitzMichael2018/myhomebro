@@ -992,10 +992,10 @@ export default function SubcontractorsPage() {
               </div>
               <div className="mt-3 grid gap-3 md:grid-cols-2">
                 <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <label htmlFor="mhb-subcontractorspage-995" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Agreed Pay
                   </label>
-                  <input
+                  <input id="mhb-subcontractorspage-995"
                     data-testid="subcontractor-assignment-agreed-pay"
                     type="number"
                     min="0.01"
@@ -1009,10 +1009,10 @@ export default function SubcontractorsPage() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <label htmlFor="mhb-subcontractorspage-1012" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
                     Payment Release Mode
                   </label>
-                  <select
+                  <select id="mhb-subcontractorspage-1012"
                     data-testid="subcontractor-assignment-payment-release-mode"
                     value={assignForm.payment_release_mode}
                     onChange={(e) =>

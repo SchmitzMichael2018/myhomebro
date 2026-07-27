@@ -5984,10 +5984,10 @@ export default function Step1Details({
 
             <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
               <div>
-                <label className="mb-1 block text-sm font-medium text-slate-900">
+                <label htmlFor="mhb-step1details-5987" className="mb-1 block text-sm font-medium text-slate-900">
                   Job description <span className="mhb-required-badge ml-1">Required</span>
                 </label>
-                <input
+                <input id="mhb-step1details-5987"
                   ref={step1JobDescriptionInputRef}
                   value={step1ResetChooserPrompt}
                   onChange={(e) => {
@@ -6464,7 +6464,7 @@ export default function Step1Details({
                         Review Project Details
                       </div>
                       <div className="mt-1 text-sm text-slate-600">
-                        We've created a starting point. Review the editable details when you're ready.
+                        We&apos;ve created a starting point. Review the editable details when you&apos;re ready.
                       </div>
                       <button
                         type="button"
@@ -6515,10 +6515,10 @@ export default function Step1Details({
 
               <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-slate-900">
+                  <label htmlFor="mhb-step1details-6518" className="mb-1 block text-sm font-medium text-slate-900">
                     Job description <span className="mhb-required-badge ml-1">Required</span>
                   </label>
-                  <input
+                  <input id="mhb-step1details-6518"
                     ref={step1JobDescriptionInputRef}
                     value={step1JobDescriptionPrompt}
                     onChange={(e) => {
@@ -7394,10 +7394,10 @@ export default function Step1Details({
 
                     <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label htmlFor="mhb-step1details-7397" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                           Frequency
                         </label>
-                        <select
+                        <select id="mhb-step1details-7397"
                           data-testid="maintenance-frequency-select"
                           value={recurrencePattern}
                           disabled={locked}
@@ -7414,10 +7414,10 @@ export default function Step1Details({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label htmlFor="mhb-step1details-7417" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                           Interval
                         </label>
-                        <input
+                        <input id="mhb-step1details-7417"
                           data-testid="maintenance-interval-input"
                           type="number"
                           min="1"
@@ -7438,10 +7438,10 @@ export default function Step1Details({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label htmlFor="mhb-step1details-7441" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                           Start Date
                         </label>
-                        <input
+                        <input id="mhb-step1details-7441"
                           data-testid="maintenance-start-date-input"
                           type="date"
                           value={recurrenceStartDate}
@@ -7454,10 +7454,10 @@ export default function Step1Details({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label htmlFor="mhb-step1details-7457" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                           End Date
                         </label>
-                        <input
+                        <input id="mhb-step1details-7457"
                           type="date"
                           value={recurrenceEndDate}
                           disabled={locked}
@@ -7469,10 +7469,10 @@ export default function Step1Details({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label htmlFor="mhb-step1details-7472" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                           Maintenance Status
                         </label>
-                        <select
+                        <select id="mhb-step1details-7472"
                           value={maintenanceStatus}
                           disabled={locked}
                           onChange={(e) =>
@@ -7488,10 +7488,10 @@ export default function Step1Details({
                       </div>
 
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                        <label htmlFor="mhb-step1details-7491" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                           Summary Label
                         </label>
-                        <input
+                        <input id="mhb-step1details-7491"
                           type="text"
                           value={recurringSummaryLabel}
                           disabled={locked}
@@ -7525,10 +7525,10 @@ export default function Step1Details({
                     </div>
 
                     <div className="mt-3">
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      <label htmlFor="mhb-step1details-7528" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                         Service Window Notes
                       </label>
-                      <textarea
+                      <textarea id="mhb-step1details-7528"
                         value={dLocal?.service_window_notes || ""}
                         disabled={locked}
                         onChange={(e) =>
@@ -7742,7 +7742,7 @@ export default function Step1Details({
                 <div>
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <label className="block text-sm font-medium text-slate-900">Subtype</label>
+                      <label htmlFor="mhb-step1details-7745" className="block text-sm font-medium text-slate-900">Subtype</label>
                       {getAiSuggestedIndicator("project_subtype") ? (
                         <span
                           data-testid="agreement-project-subtype-ai-indicator"
@@ -7762,7 +7762,7 @@ export default function Step1Details({
                       </button>
                     ) : null}
                   </div>
-                    <select
+                    <select id="mhb-step1details-7745"
                       data-testid="agreement-project-subtype-select"
                       className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 disabled:bg-slate-100 disabled:text-slate-500"
                       name="project_subtype"
@@ -7795,7 +7795,7 @@ export default function Step1Details({
 
               <div>
                 <div className="mb-1 flex items-center gap-2">
-                  <label className="block text-sm font-medium text-slate-900">Project Title</label>
+                  <label htmlFor="mhb-step1details-7798" className="block text-sm font-medium text-slate-900">Project Title</label>
                   {getAiSuggestedIndicator("project_title") ? (
                     <span
                       data-testid="agreement-project-title-ai-indicator"
@@ -7805,7 +7805,7 @@ export default function Step1Details({
                     </span>
                   ) : null}
                 </div>
-                  <input
+                  <input id="mhb-step1details-7798"
                     data-testid="agreement-project-title-input"
                     ref={projectTitleFieldRef}
                     className={`w-full rounded-lg bg-white px-3 py-2 text-sm text-slate-900 ${
@@ -7828,10 +7828,10 @@ export default function Step1Details({
               </div>
 
               <div data-testid="agreement-project-start-date-field" className="md:max-w-xs">
-                <label className="mb-1 block text-sm font-medium text-slate-900">
+                <label htmlFor="mhb-step1details-7831" className="mb-1 block text-sm font-medium text-slate-900">
                   Project Start Date
                 </label>
-                <input
+                <input id="mhb-step1details-7831"
                   data-testid="agreement-project-start-date-input"
                   type="date"
                   name="project_start_date"
@@ -7847,10 +7847,10 @@ export default function Step1Details({
 
               {normalizePaymentMode(dLocal?.payment_mode) === "escrow" ? (
                 <div data-testid="agreement-incidentals-reserve-field" className="md:max-w-sm">
-                  <label className="mb-1 block text-sm font-medium text-slate-900">
+                  <label htmlFor="mhb-step1details-7850" className="mb-1 block text-sm font-medium text-slate-900">
                     Incidentals Reserve
                   </label>
-                  <input
+                  <input id="mhb-step1details-7850"
                     data-testid="agreement-incidentals-reserve-input"
                     type="number"
                     min="0"
@@ -8196,10 +8196,10 @@ export default function Step1Details({
 
                 {isCommercialProject && paymentStructure === "progress" ? (
                   <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
+                    <label htmlFor="mhb-step1details-8199" className="block text-xs font-semibold uppercase tracking-wide text-slate-600">
                       Retainage %
                     </label>
-                    <input
+                    <input id="mhb-step1details-8199"
                       type="number"
                       min="0"
                       max="100"

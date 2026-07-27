@@ -730,8 +730,8 @@ export default function ContractorProfile() {
         {/* Name & Email */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-semibold mb-1">Full Name</label>
-            <input
+            <label htmlFor="mhb-contractorprofile-733" className="block text-sm font-semibold mb-1">Full Name</label>
+            <input id="mhb-contractorprofile-733"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.full_name}
               onChange={onChange("full_name")}
@@ -740,8 +740,8 @@ export default function ContractorProfile() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1">Email Address</label>
-            <input
+            <label htmlFor="mhb-contractorprofile-743" className="block text-sm font-semibold mb-1">Email Address</label>
+            <input id="mhb-contractorprofile-743"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.email}
               onChange={onChange("email")}
@@ -753,8 +753,8 @@ export default function ContractorProfile() {
         {/* Business, Phone */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div>
-            <label className="block text-sm font-semibold mb-1">Business Name</label>
-            <input
+            <label htmlFor="mhb-contractorprofile-756" className="block text-sm font-semibold mb-1">Business Name</label>
+            <input id="mhb-contractorprofile-756"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.business_name}
               onChange={onChange("business_name")}
@@ -763,8 +763,8 @@ export default function ContractorProfile() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1">Phone</label>
-            <input
+            <label htmlFor="mhb-contractorprofile-766" className="block text-sm font-semibold mb-1">Phone</label>
+            <input id="mhb-contractorprofile-766"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.phone}
               onChange={onChange("phone")}
@@ -775,11 +775,12 @@ export default function ContractorProfile() {
 
         {/* ✅ Address Search (Google helper) */}
         <div className="mt-4">
-          <label className="block text-sm font-semibold mb-1">
+          <label htmlFor="mhb-contractorprofile-778" className="block text-sm font-semibold mb-1">
             Address Search
           </label>
 
           <AddressAutocomplete
+            inputId="mhb-contractorprofile-778"
             value={businessAddrSearch || ""}
             onChangeText={(text) => {
               setBusinessAddrSearch(text);
@@ -822,10 +823,10 @@ export default function ContractorProfile() {
         {/* ✅ Persisted address fields (always visible, always saved) */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
           <div className="md:col-span-2">
-            <label className="block text-sm font-semibold mb-1">
+            <label htmlFor="mhb-contractorprofile-825" className="block text-sm font-semibold mb-1">
               Street Address <span className="text-red-600">*</span>
             </label>
-            <input
+            <input id="mhb-contractorprofile-825"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.address || ""}
               onChange={onChange("address")}
@@ -835,10 +836,10 @@ export default function ContractorProfile() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1">
+            <label htmlFor="mhb-contractorprofile-838" className="block text-sm font-semibold mb-1">
               City <span className="text-red-600">*</span>
             </label>
-            <input
+            <input id="mhb-contractorprofile-838"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.city}
               onChange={onChange("city")}
@@ -847,10 +848,10 @@ export default function ContractorProfile() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1">
+            <label htmlFor="mhb-contractorprofile-850" className="block text-sm font-semibold mb-1">
               State <span className="text-red-600">*</span>
             </label>
-            <select
+            <select id="mhb-contractorprofile-850"
               className="w-full h-10 rounded border border-slate-300 px-3 bg-white"
               value={form.state || ""}
               onChange={onChange("state")}
@@ -867,10 +868,10 @@ export default function ContractorProfile() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
           <div>
-            <label className="block text-sm font-semibold mb-1">
+            <label htmlFor="mhb-contractorprofile-870" className="block text-sm font-semibold mb-1">
               Zip Code <span className="text-red-600">*</span>
             </label>
-            <input
+            <input id="mhb-contractorprofile-870"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.zip || ""}
               onChange={onChange("zip")}
@@ -880,8 +881,8 @@ export default function ContractorProfile() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1">Service Range (miles)</label>
-            <select
+            <label htmlFor="mhb-contractorprofile-883" className="block text-sm font-semibold mb-1">Service Range (miles)</label>
+            <select id="mhb-contractorprofile-883"
               className="w-full h-10 rounded border border-slate-300 px-3 bg-white"
               value={String(form.service_radius_miles || 25)}
               onChange={(e) =>
@@ -900,8 +901,8 @@ export default function ContractorProfile() {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm font-semibold mb-1">Company Logo</label>
-            <input className="mhb-file-upload" type="file" accept="image/*" onChange={onLogo} />
+            <label htmlFor="mhb-contractorprofile-903" className="block text-sm font-semibold mb-1">Company Logo</label>
+            <input id="mhb-contractorprofile-903" className="mhb-file-upload" type="file" accept="image/*" onChange={onLogo} />
             {logoPreview ? (
               <img
                 src={logoPreview}
@@ -1068,8 +1069,8 @@ export default function ContractorProfile() {
         {/* License fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
           <div>
-            <label className="block text-sm font-semibold mb-1">License Number</label>
-            <input
+            <label htmlFor="mhb-contractorprofile-1071" className="block text-sm font-semibold mb-1">License Number</label>
+            <input id="mhb-contractorprofile-1071"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.license_number}
               onChange={onChange("license_number")}
@@ -1077,8 +1078,8 @@ export default function ContractorProfile() {
             />
           </div>
           <div>
-            <label className="block text-sm font-semibold mb-1">License Expiration Date</label>
-            <input
+            <label htmlFor="mhb-contractorprofile-1080" className="block text-sm font-semibold mb-1">License Expiration Date</label>
+            <input id="mhb-contractorprofile-1080"
               type="date"
               className="w-full h-10 rounded border border-slate-300 px-3"
               value={form.license_expiration_date || ""}
@@ -1090,10 +1091,10 @@ export default function ContractorProfile() {
         {/* License & Insurance file uploads */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div>
-            <label className="block text-sm font-semibold mb-1">
+            <label htmlFor="mhb-contractorprofile-1093" className="block text-sm font-semibold mb-1">
               License Document (PDF or image)
             </label>
-            <input className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onLicense} />
+            <input id="mhb-contractorprofile-1093" className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onLicense} />
             {licenseUrl ? (
               <a
                 href={licenseUrl}
@@ -1107,10 +1108,10 @@ export default function ContractorProfile() {
           </div>
 
           <div>
-            <label className="block text-sm font-semibold mb-1">
+            <label htmlFor="mhb-contractorprofile-1110" className="block text-sm font-semibold mb-1">
               Insurance Certificate (PDF or image)
             </label>
-            <input className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onInsurance} />
+            <input id="mhb-contractorprofile-1110" className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onInsurance} />
             {insuranceUrl ? (
               <a
                 href={insuranceUrl}

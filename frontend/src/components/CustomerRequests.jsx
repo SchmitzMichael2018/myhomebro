@@ -2636,7 +2636,7 @@ I need help installing shelves and patching drywall.`}
                 />
               </label>
               <p className="mt-3 text-sm leading-6 text-amber-50/85">
-                Tell us what's going on in your own words. MyHomeBro can help organize it before you submit.
+                Tell us what&apos;s going on in your own words. MyHomeBro can help organize it before you submit.
               </p>
               <div className="mt-4 rounded-2xl border border-sky-300/25 bg-sky-400/10 p-4" data-testid="customer-request-ai-helper">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2892,10 +2892,11 @@ I need help installing shelves and patching drywall.`}
           </div>
           {shouldShowRequestAddressFields ? (
           <div data-testid="customer-request-address-fields" className="space-y-3 rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
-            <label className="block text-sm font-medium text-slate-200">
+            <label htmlFor="mhb-customerrequests-2895" className="block text-sm font-medium text-slate-200">
               Address search
               <div className="mt-1">
                 <AddressAutocomplete
+                  inputId="mhb-customerrequests-2895"
                   value={form.address_line1}
                   onChangeText={(value) => update("address_line1", value)}
                   onSelect={(address) => {
@@ -2920,7 +2921,7 @@ I need help installing shelves and patching drywall.`}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm font-medium text-slate-200">
                 City
-                <input
+                <input id="mhb-customerrequests-2895"
                   value={form.city}
                   onChange={(event) => update("city", event.target.value)}
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"

@@ -2167,7 +2167,7 @@ export default function AdminDashboard() {
             <div className="mt-6 rounded-2xl border border-black/10 bg-white/70 p-5 shadow-sm">
               <h2 className="text-lg font-extrabold text-slate-900">Support</h2>
               <div className="mt-4 text-sm font-extrabold text-slate-900">Password Reset</div>
-              <div className="mt-1 text-sm text-slate-700">Send a password reset email using Django's standard reset flow.</div>
+              <div className="mt-1 text-sm text-slate-700">Send a password reset email using Django&apos;s standard reset flow.</div>
 
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <input

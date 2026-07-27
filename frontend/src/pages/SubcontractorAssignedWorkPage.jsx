@@ -623,10 +623,11 @@ export default function SubcontractorAssignedWorkPage() {
                           <div className="mt-3 space-y-3">
                             <div className="grid gap-3 md:grid-cols-2">
                               <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                <label htmlFor={`quote-${milestone.id}-amount`} className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                                   Quoted Amount
                                 </label>
                                 <input
+                                  id={`quote-${milestone.id}-amount`}
                                   type="number"
                                   min="0.01"
                                   step="0.01"
@@ -645,10 +646,11 @@ export default function SubcontractorAssignedWorkPage() {
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                <label htmlFor={`quote-${milestone.id}-start`} className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                                   Estimated Start
                                 </label>
                                 <input
+                                  id={`quote-${milestone.id}-start`}
                                   type="date"
                                   value={quoteDrafts[milestone.id]?.estimated_start_date || ""}
                                   onChange={(e) =>
@@ -664,10 +666,11 @@ export default function SubcontractorAssignedWorkPage() {
                                 />
                               </div>
                               <div>
-                                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                <label htmlFor={`quote-${milestone.id}-completion`} className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                                   Estimated Completion
                                 </label>
                                 <input
+                                  id={`quote-${milestone.id}-completion`}
                                   type="date"
                                   value={quoteDrafts[milestone.id]?.estimated_completion_date || ""}
                                   onChange={(e) =>
@@ -685,10 +688,11 @@ export default function SubcontractorAssignedWorkPage() {
                             </div>
 
                             <div>
-                              <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              <label htmlFor={`quote-${milestone.id}-message`} className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                                 Optional message
                               </label>
                               <textarea
+                                id={`quote-${milestone.id}-message`}
                                 rows={3}
                                 value={quoteDrafts[milestone.id]?.subcontractor_message || ""}
                                 onChange={(e) =>

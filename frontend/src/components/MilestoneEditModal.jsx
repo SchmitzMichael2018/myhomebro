@@ -1235,10 +1235,10 @@ export default function MilestoneEditModal({
 
               <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-blue-900">
+                  <label htmlFor="mhb-milestoneeditmodal-1238" className="mb-1 block text-xs font-medium text-blue-900">
                     Change Type
                   </label>
-                  <select
+                  <select id="mhb-milestoneeditmodal-1238"
                     value={changeType}
                     onChange={(e) => setChangeType(e.target.value)}
                     className="w-full rounded border px-3 py-2 text-sm"
@@ -1253,10 +1253,10 @@ export default function MilestoneEditModal({
 
                 {changeType === "date_change" ? (
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-xs font-medium text-blue-900">
+                    <label htmlFor="mhb-milestoneeditmodal-1256" className="mb-1 block text-xs font-medium text-blue-900">
                       Requested New Completion Date
                     </label>
-                    <input
+                    <input id="mhb-milestoneeditmodal-1256"
                       type="date"
                       value={requestedDate}
                       onChange={(e) => setRequestedDate(toDateOnly(e.target.value))}
@@ -1270,10 +1270,10 @@ export default function MilestoneEditModal({
 
                 {changeType === "amount_change" ? (
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-xs font-medium text-blue-900">
+                    <label htmlFor="mhb-milestoneeditmodal-1273" className="mb-1 block text-xs font-medium text-blue-900">
                       Requested New Amount
                     </label>
-                    <input
+                    <input id="mhb-milestoneeditmodal-1273"
                       type="number"
                       step="0.01"
                       value={requestedAmount}
@@ -1289,10 +1289,10 @@ export default function MilestoneEditModal({
 
                 {changeType === "scope_product_change" ? (
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-xs font-medium text-blue-900">
+                    <label htmlFor="mhb-milestoneeditmodal-1292" className="mb-1 block text-xs font-medium text-blue-900">
                       Product / Scope Change
                     </label>
-                    <textarea
+                    <textarea id="mhb-milestoneeditmodal-1292"
                       value={requestedScope}
                       onChange={(e) => setRequestedScope(e.target.value)}
                       rows={3}
@@ -1304,10 +1304,10 @@ export default function MilestoneEditModal({
 
                 {changeType === "other" ? (
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-xs font-medium text-blue-900">
+                    <label htmlFor="mhb-milestoneeditmodal-1307" className="mb-1 block text-xs font-medium text-blue-900">
                       Describe Requested Change
                     </label>
-                    <textarea
+                    <textarea id="mhb-milestoneeditmodal-1307"
                       value={requestedOther}
                       onChange={(e) => setRequestedOther(e.target.value)}
                       rows={3}
@@ -1318,10 +1318,10 @@ export default function MilestoneEditModal({
                 ) : null}
 
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-xs font-medium text-blue-900">
+                  <label htmlFor="mhb-milestoneeditmodal-1321" className="mb-1 block text-xs font-medium text-blue-900">
                     Justification / Notes (required)
                   </label>
-                  <textarea
+                  <textarea id="mhb-milestoneeditmodal-1321"
                     value={justification}
                     onChange={(e) => setJustification(e.target.value)}
                     rows={3}
@@ -1432,10 +1432,10 @@ export default function MilestoneEditModal({
             </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
+              <label htmlFor="mhb-milestoneeditmodal-1435" className="mb-1 block text-sm font-medium text-gray-700">
                 Title
               </label>
-              <input
+              <input id="mhb-milestoneeditmodal-1435"
                 type="text"
                 name="title"
                 value={form.title}
@@ -1449,10 +1449,10 @@ export default function MilestoneEditModal({
             </div>
 
             <div>
-              <label className="mb-1 block text-sm font-medium text-gray-700">
+              <label htmlFor="mhb-milestoneeditmodal-1452" className="mb-1 block text-sm font-medium text-gray-700">
                 Amount ($)
               </label>
-              <input
+              <input id="mhb-milestoneeditmodal-1452"
                 type="number"
                 step="0.01"
                 name="amount"
@@ -1470,10 +1470,10 @@ export default function MilestoneEditModal({
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="mhb-milestoneeditmodal-1473" className="mb-1 block text-sm font-medium text-gray-700">
                   Start Date
                 </label>
-                <input
+                <input id="mhb-milestoneeditmodal-1473"
                   type="date"
                   name="start_date"
                   value={form.start_date || ""}
@@ -1485,10 +1485,10 @@ export default function MilestoneEditModal({
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-700">
+                <label htmlFor="mhb-milestoneeditmodal-1488" className="mb-1 block text-sm font-medium text-gray-700">
                   Completion Date
                 </label>
-                <input
+                <input id="mhb-milestoneeditmodal-1488"
                   type="date"
                   name="end_date"
                   value={form.end_date || ""}
@@ -1502,10 +1502,10 @@ export default function MilestoneEditModal({
             </div>
 
             <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium text-gray-700">
+              <label htmlFor="mhb-milestoneeditmodal-1505" className="mb-1 block text-sm font-medium text-gray-700">
                 Description
               </label>
-              <textarea
+              <textarea id="mhb-milestoneeditmodal-1505"
                 name="description"
                 value={form.description}
                 onChange={onChange}

@@ -231,6 +231,12 @@ export default function EmployeeCalendar() {
                     "hover:bg-slate-50 transition",
                   ].join(" ")}
                   onClick={() => setSelectedDay(new Date(d))}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedDay(new Date(d));
+                    }
+                  }}
                   role="button"
                   tabIndex={0}
                 >

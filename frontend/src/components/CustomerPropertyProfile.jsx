@@ -3062,10 +3062,11 @@ export default function CustomerPropertyProfile({
               ))}
             </select>
           </label>
-          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+          <label htmlFor="mhb-customerpropertyprofile-3065" className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Address search
             <div className="mt-1">
               <AddressAutocomplete
+                inputId="mhb-customerpropertyprofile-3065"
                 value={form?.address_line1 || ""}
                 onChangeText={(value) => update("address_line1", value)}
                 onSelect={(address) => {

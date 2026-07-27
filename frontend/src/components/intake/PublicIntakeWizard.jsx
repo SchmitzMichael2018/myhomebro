@@ -1876,8 +1876,8 @@ export default function PublicIntakeWizard() {
             </p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Project Type</label>
-                <select
+                <label htmlFor="mhb-publicintakewizard-1879" className="mb-1 block text-sm font-medium text-gray-900">Project Type</label>
+                <select id="mhb-publicintakewizard-1879"
                   data-testid="public-intake-project-type"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                   value={form.ai_project_type}
@@ -1899,8 +1899,8 @@ export default function PublicIntakeWizard() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Subtype or focus</label>
-                <input
+                <label htmlFor="mhb-publicintakewizard-1902" className="mb-1 block text-sm font-medium text-gray-900">Subtype or focus</label>
+                <input id="mhb-publicintakewizard-1902"
                   data-testid="public-intake-project-subtype"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                   value={form.ai_project_subtype}
@@ -1919,8 +1919,8 @@ export default function PublicIntakeWizard() {
             <p className="mt-1 text-sm text-slate-600">Optional details help contractors understand urgency and ballpark fit.</p>
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Budget range</label>
-                <select
+                <label htmlFor="mhb-publicintakewizard-1922" className="mb-1 block text-sm font-medium text-gray-900">Budget range</label>
+                <select id="mhb-publicintakewizard-1922"
                   data-testid="public-intake-budget-range"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                   value={form.budget_range_text}
@@ -1936,8 +1936,8 @@ export default function PublicIntakeWizard() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-gray-900">Timeline</label>
-                <select
+                <label htmlFor="mhb-publicintakewizard-1939" className="mb-1 block text-sm font-medium text-gray-900">Timeline</label>
+                <select id="mhb-publicintakewizard-1939"
                   data-testid="public-intake-timeline"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                   value={form.desired_timing_text}
@@ -1960,8 +1960,8 @@ export default function PublicIntakeWizard() {
               </div>
               {form.desired_timing_text === "Specific date" ? (
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Tentative start date</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-1963" className="mb-1 block text-sm font-medium text-gray-900">Tentative start date</label>
+                  <input id="mhb-publicintakewizard-1963"
                     type="date"
                     data-testid="public-intake-tentative-start-date"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
@@ -2063,8 +2063,8 @@ export default function PublicIntakeWizard() {
               </div>
             )}
             <div className="mt-4">
-              <label className="mb-1 block text-sm font-medium text-gray-900">Measurement notes</label>
-              <textarea
+              <label htmlFor="mhb-publicintakewizard-2066" className="mb-1 block text-sm font-medium text-gray-900">Measurement notes</label>
+              <textarea id="mhb-publicintakewizard-2066"
                 data-testid="public-intake-measurements-input"
                 rows={4}
                 className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
@@ -2121,8 +2121,8 @@ export default function PublicIntakeWizard() {
               </div>
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2124" className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
+                  <input id="mhb-publicintakewizard-2124"
                     data-testid="public-intake-customer-address-line1"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_address_line1}
@@ -2131,8 +2131,8 @@ export default function PublicIntakeWizard() {
                   />
                 </div>
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Address line 2</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2134" className="mb-1 block text-sm font-medium text-gray-900">Address line 2</label>
+                  <input id="mhb-publicintakewizard-2134"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_address_line2}
                     onChange={(e) => setField("customer_address_line2", e.target.value)}
@@ -2140,8 +2140,8 @@ export default function PublicIntakeWizard() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">City</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2143" className="mb-1 block text-sm font-medium text-gray-900">City</label>
+                  <input id="mhb-publicintakewizard-2143"
                     data-testid="public-intake-customer-city"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_city}
@@ -2150,8 +2150,8 @@ export default function PublicIntakeWizard() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">State</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2153" className="mb-1 block text-sm font-medium text-gray-900">State</label>
+                  <input id="mhb-publicintakewizard-2153"
                     data-testid="public-intake-customer-state"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_state}
@@ -2160,8 +2160,8 @@ export default function PublicIntakeWizard() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">ZIP / Postal Code</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2163" className="mb-1 block text-sm font-medium text-gray-900">ZIP / Postal Code</label>
+                  <input id="mhb-publicintakewizard-2163"
                     data-testid="public-intake-customer-postal-code"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_postal_code}
@@ -2252,10 +2252,10 @@ export default function PublicIntakeWizard() {
                       </span>
                     </label>
                   ) : null}
-                  <label className="mb-1 block text-sm font-medium text-gray-900">
+                  <label htmlFor="mhb-publicintakewizard-2255" className="mb-1 block text-sm font-medium text-gray-900">
                     Homeowner participation notes
                   </label>
-                  <textarea
+                  <textarea id="mhb-publicintakewizard-2255"
                     className="w-full rounded border px-3 py-2 text-sm"
                     rows={3}
                     value={form.homeowner_participation_notes}
@@ -2372,8 +2372,8 @@ export default function PublicIntakeWizard() {
                 </div>
                 <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
-                    <input
+                    <label htmlFor="mhb-publicintakewizard-2375" className="mb-1 block text-sm font-medium text-gray-900">Address line 1</label>
+                    <input id="mhb-publicintakewizard-2375"
                       data-testid="public-intake-project-address-line1"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                       value={form.project_address_line1}
@@ -2382,8 +2382,8 @@ export default function PublicIntakeWizard() {
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="mb-1 block text-sm font-medium text-gray-900">Address line 2</label>
-                    <input
+                    <label htmlFor="mhb-publicintakewizard-2385" className="mb-1 block text-sm font-medium text-gray-900">Address line 2</label>
+                    <input id="mhb-publicintakewizard-2385"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                       value={form.project_address_line2}
                       onChange={(e) => setField("project_address_line2", e.target.value)}
@@ -2391,8 +2391,8 @@ export default function PublicIntakeWizard() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-900">City</label>
-                    <input
+                    <label htmlFor="mhb-publicintakewizard-2394" className="mb-1 block text-sm font-medium text-gray-900">City</label>
+                    <input id="mhb-publicintakewizard-2394"
                       data-testid="public-intake-project-city"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                       value={form.project_city}
@@ -2401,8 +2401,8 @@ export default function PublicIntakeWizard() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-900">State</label>
-                    <input
+                    <label htmlFor="mhb-publicintakewizard-2404" className="mb-1 block text-sm font-medium text-gray-900">State</label>
+                    <input id="mhb-publicintakewizard-2404"
                       data-testid="public-intake-project-state"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                       value={form.project_state}
@@ -2411,8 +2411,8 @@ export default function PublicIntakeWizard() {
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-900">ZIP / Postal Code</label>
-                    <input
+                    <label htmlFor="mhb-publicintakewizard-2414" className="mb-1 block text-sm font-medium text-gray-900">ZIP / Postal Code</label>
+                    <input id="mhb-publicintakewizard-2414"
                       data-testid="public-intake-project-postal-code"
                       className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                       value={form.project_postal_code}
@@ -2459,8 +2459,8 @@ export default function PublicIntakeWizard() {
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm lg:col-span-2">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Full name</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2462" className="mb-1 block text-sm font-medium text-gray-900">Full name</label>
+                  <input id="mhb-publicintakewizard-2462"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_name}
                     onChange={(e) => setField("customer_name", e.target.value)}
@@ -2468,8 +2468,8 @@ export default function PublicIntakeWizard() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Email</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2471" className="mb-1 block text-sm font-medium text-gray-900">Email</label>
+                  <input id="mhb-publicintakewizard-2471"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_email}
                     onChange={(e) => setField("customer_email", e.target.value)}
@@ -2477,8 +2477,8 @@ export default function PublicIntakeWizard() {
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Phone</label>
-                  <input
+                  <label htmlFor="mhb-publicintakewizard-2480" className="mb-1 block text-sm font-medium text-gray-900">Phone</label>
+                  <input id="mhb-publicintakewizard-2480"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
                     value={form.customer_phone}
                     onChange={(e) => setField("customer_phone", e.target.value)}
@@ -2626,20 +2626,20 @@ export default function PublicIntakeWizard() {
                   </p>
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor name</label>
-                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.name} onChange={(e) => setSingleContractor((prev) => ({ ...prev, name: e.target.value }))} placeholder="Contractor name" />
+                  <label htmlFor="mhb-publicintakewizard-2629" className="mb-1 block text-sm font-medium text-gray-900">Contractor name</label>
+                  <input id="mhb-publicintakewizard-2629" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.name} onChange={(e) => setSingleContractor((prev) => ({ ...prev, name: e.target.value }))} placeholder="Contractor name" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor email</label>
-                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.email} onChange={(e) => setSingleContractor((prev) => ({ ...prev, email: e.target.value }))} placeholder="contractor@example.com" />
+                  <label htmlFor="mhb-publicintakewizard-2633" className="mb-1 block text-sm font-medium text-gray-900">Contractor email</label>
+                  <input id="mhb-publicintakewizard-2633" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.email} onChange={(e) => setSingleContractor((prev) => ({ ...prev, email: e.target.value }))} placeholder="contractor@example.com" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Contractor phone</label>
-                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.phone} onChange={(e) => setSingleContractor((prev) => ({ ...prev, phone: e.target.value }))} placeholder="(555) 555-5555" />
+                  <label htmlFor="mhb-publicintakewizard-2637" className="mb-1 block text-sm font-medium text-gray-900">Contractor phone</label>
+                  <input id="mhb-publicintakewizard-2637" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={singleContractor.phone} onChange={(e) => setSingleContractor((prev) => ({ ...prev, phone: e.target.value }))} placeholder="(555) 555-5555" />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Optional note</label>
-                  <input className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note for the contractor" />
+                  <label htmlFor="mhb-publicintakewizard-2641" className="mb-1 block text-sm font-medium text-gray-900">Optional note</label>
+                  <input id="mhb-publicintakewizard-2641" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note for the contractor" />
                 </div>
               </div>
             ) : (
@@ -2669,8 +2669,8 @@ export default function PublicIntakeWizard() {
                 </div>
                 <button type="button" className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50" onClick={() => setBranchContacts((prev) => [...prev, { name: "", email: "", phone: "" }])}>Add another contractor</button>
                 <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-900">Message for invited contractors</label>
-                  <textarea className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" rows={3} value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note shared with each invited contractor" />
+                  <label htmlFor="mhb-publicintakewizard-2672" className="mb-1 block text-sm font-medium text-gray-900">Message for invited contractors</label>
+                  <textarea id="mhb-publicintakewizard-2672" className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" rows={3} value={branchMessage} onChange={(e) => setBranchMessage(e.target.value)} placeholder="Optional note shared with each invited contractor" />
                 </div>
               </div>
             )}

@@ -1,4 +1,4 @@
-import rules from "../../../shared/milestone_shaping_rules.json" with { type: "json" };
+import rules from "../../../shared/milestone_shaping_rules.json";
 import { dedupeMilestoneRows } from "./milestonePlanGuardrails.js";
 
 function safeStr(value) {

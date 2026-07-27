@@ -274,11 +274,11 @@ function SimpleModal({
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-      <div
+      <button
+        type="button"
+        aria-label="Close expense dialog"
         className="absolute inset-0 bg-black/40"
         onClick={onClose}
-        role="button"
-        tabIndex={-1}
       />
 
       <div
@@ -415,8 +415,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       className="grid grid-cols-1 gap-4 rounded-2xl border border-white/12 bg-slate-950/45 p-5 shadow-sm sm:grid-cols-2 md:grid-cols-12"
     >
       <div className="md:col-span-4">
-        <label className={labelClass}>Agreement</label>
-        <select
+        <label htmlFor="mhb-expensespage-418" className={labelClass}>Agreement</label>
+        <select id="mhb-expensespage-418"
           name="agreement"
           value={form.agreement}
           onChange={onChange}
@@ -433,8 +433,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-3">
-        <label className={labelClass}>Merchant / Title</label>
-        <input
+        <label htmlFor="mhb-expensespage-436" className={labelClass}>Merchant / Title</label>
+        <input id="mhb-expensespage-436"
           name="description"
           placeholder="Expense title (e.g., Nails, Dumpster fee)"
           value={form.description}
@@ -445,8 +445,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-2">
-        <label className={labelClass}>Category</label>
-        <select
+        <label htmlFor="mhb-expensespage-448" className={labelClass}>Category</label>
+        <select id="mhb-expensespage-448"
           name="category"
           value={form.category}
           onChange={onChange}
@@ -461,8 +461,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-2">
-        <label className={labelClass}>Funding Source</label>
-        <select
+        <label htmlFor="mhb-expensespage-464" className={labelClass}>Funding Source</label>
+        <select id="mhb-expensespage-464"
           name="funding_source"
           value={selectedFundingSource}
           onChange={onChange}
@@ -481,8 +481,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-2">
-        <label className={labelClass}>Amount</label>
-        <input
+        <label htmlFor="mhb-expensespage-484" className={labelClass}>Amount</label>
+        <input id="mhb-expensespage-484"
           name="amount"
           type="number"
           step="0.01"
@@ -495,8 +495,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-1">
-        <label className={labelClass}>Expense Date</label>
-        <input
+        <label htmlFor="mhb-expensespage-498" className={labelClass}>Expense Date</label>
+        <input id="mhb-expensespage-498"
           name="incurred_date"
           type="date"
           value={form.incurred_date}
@@ -507,8 +507,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-8">
-        <label className={labelClass}>Customer Note</label>
-        <input
+        <label htmlFor="mhb-expensespage-510" className={labelClass}>Customer Note</label>
+        <input id="mhb-expensespage-510"
           name="note"
           placeholder="Details for customer: store/vendor + what was purchased + why (optional)"
           value={form.note}
@@ -521,8 +521,8 @@ const AddExpenseForm = ({ agreements, onAdd, submitting }) => {
       </div>
 
       <div className="md:col-span-4">
-        <label className={labelClass}>Receipts / Files</label>
-        <input
+        <label htmlFor="mhb-expensespage-524" className={labelClass}>Receipts / Files</label>
+        <input id="mhb-expensespage-524"
           type="file"
           multiple
           onChange={onFiles}
@@ -1175,8 +1175,8 @@ export default function ExpensesPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <label className="text-sm font-semibold text-sky-100/75">Filter:</label>
-          <select
+          <label htmlFor="mhb-expensespage-1178" className="text-sm font-semibold text-sky-100/75">Filter:</label>
+          <select id="mhb-expensespage-1178"
             value={agreementFilter}
             onChange={(e) => setAgreementFilter(e.target.value)}
             className="min-h-[42px] rounded-xl border border-white/15 bg-slate-950/55 px-3 py-2 text-sm font-semibold text-sky-50 outline-none focus:border-sky-300/60"

@@ -284,8 +284,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
-            <select
+            <label htmlFor="mhb-expenserequestmodal-287" className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
+            <select id="mhb-expenserequestmodal-287"
               name="agreement"
               value={form.agreement}
               onChange={onChange}
@@ -301,8 +301,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Incurred Date</label>
-            <input
+            <label htmlFor="mhb-expenserequestmodal-304" className="block text-sm text-gray-700 mb-1">Incurred Date</label>
+            <input id="mhb-expenserequestmodal-304"
               type="date"
               name="incurred_date"
               value={form.incurred_date}
@@ -312,8 +312,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Request Type</label>
-            <select
+            <label htmlFor="mhb-expenserequestmodal-315" className="block text-sm text-gray-700 mb-1">Request Type</label>
+            <select id="mhb-expenserequestmodal-315"
               name="request_kind"
               value={form.request_kind}
               onChange={onChange}
@@ -325,8 +325,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Category</label>
-            <select
+            <label htmlFor="mhb-expenserequestmodal-328" className="block text-sm text-gray-700 mb-1">Category</label>
+            <select id="mhb-expenserequestmodal-328"
               name="category"
               value={form.category}
               onChange={onChange}
@@ -341,8 +341,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Description</label>
-            <input
+            <label htmlFor="mhb-expenserequestmodal-344" className="block text-sm text-gray-700 mb-1">Description</label>
+            <input id="mhb-expenserequestmodal-344"
               name="description"
               value={form.description}
               onChange={onChange}
@@ -352,8 +352,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Amount</label>
-            <input
+            <label htmlFor="mhb-expenserequestmodal-355" className="block text-sm text-gray-700 mb-1">Amount</label>
+            <input id="mhb-expenserequestmodal-355"
               type="number"
               step="0.01"
               name="amount"
@@ -365,8 +365,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Attachments (PDF or Images)</label>
-            <input
+            <label htmlFor="mhb-expenserequestmodal-368" className="block text-sm text-gray-700 mb-1">Attachments (PDF or Images)</label>
+            <input id="mhb-expenserequestmodal-368"
               ref={fileInputRef}
               type="file"
               accept="image/*,.pdf"
@@ -430,8 +430,8 @@ export default function ExpenseRequestModal({ isOpen, onClose, defaultAgreementI
         ) : null}
 
         <div>
-          <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
-          <textarea
+          <label htmlFor="mhb-expenserequestmodal-433" className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
+          <textarea id="mhb-expenserequestmodal-433"
             name="notes_to_homeowner"
             value={form.notes_to_homeowner}
             onChange={onChange}

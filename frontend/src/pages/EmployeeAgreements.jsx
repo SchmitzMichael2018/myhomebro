@@ -43,13 +43,10 @@ function Modal({ open, onClose, title, children }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4"
-      onMouseDown={(e) => {
-        // click outside closes
-        if (e.target === e.currentTarget) onClose();
-      }}
+      className="fixed inset-0 z-50 flex items-start justify-center p-4"
     >
-      <div className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl overflow-hidden">
+      <button type="button" aria-label="Close agreement dialog" className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-4xl rounded-2xl bg-white shadow-2xl overflow-hidden" role="dialog" aria-modal="true">
         <div className="flex items-center justify-between px-5 py-4 border-b">
           <div className="text-lg font-extrabold">{title}</div>
           <button

@@ -92,14 +92,14 @@ export default function Modal({
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 ${overlayClassName}`.trim()}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby={title ? titleIdRef.current : undefined}
-      onClick={handleOverlayClick}
+      className={`fixed inset-0 z-50 flex items-center justify-center ${overlayClassName}`.trim()}
     >
+      <button type="button" aria-label="Close modal" className="absolute inset-0 bg-black/50" onClick={handleOverlayClick} />
       <div
         ref={containerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? titleIdRef.current : undefined}
         data-testid={testId || undefined}
         className={
           containerClassName

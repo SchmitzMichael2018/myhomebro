@@ -2200,10 +2200,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
         <div className="mhb-template-filter-grid mt-4 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-6">
           <div className="xl:col-span-2">
-            <label className="mb-1 block text-sm font-medium text-slate-800">
+            <label htmlFor="mhb-templatespage-2203" className="mb-1 block text-sm font-medium text-slate-800">
               Search Templates
             </label>
-              <input
+              <input id="mhb-templatespage-2203"
                 type="text"
                 data-testid="templates-search-input"
                 value={search}
@@ -2213,10 +2213,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
               />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-800">
+            <label htmlFor="mhb-templatespage-2216" className="mb-1 block text-sm font-medium text-slate-800">
               Project Type
             </label>
-            <input
+            <input id="mhb-templatespage-2216"
               value={projectTypeFilter}
               onChange={(e) => setProjectTypeFilter(e.target.value)}
               placeholder="Remodel"
@@ -2224,10 +2224,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-800">
+            <label htmlFor="mhb-templatespage-2227" className="mb-1 block text-sm font-medium text-slate-800">
               Project Subtype
             </label>
-            <input
+            <input id="mhb-templatespage-2227"
               value={projectSubtypeFilter}
               onChange={(e) => setProjectSubtypeFilter(e.target.value)}
               placeholder="Kitchen Remodel"
@@ -2235,10 +2235,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-800">
+            <label htmlFor="mhb-templatespage-2238" className="mb-1 block text-sm font-medium text-slate-800">
               State
             </label>
-            <input
+            <input id="mhb-templatespage-2238"
               value={regionStateFilter}
               onChange={(e) => setRegionStateFilter(e.target.value)}
               placeholder="TX"
@@ -2246,10 +2246,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
             />
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-800">
+            <label htmlFor="mhb-templatespage-2249" className="mb-1 block text-sm font-medium text-slate-800">
               Sort
             </label>
-            <select
+            <select id="mhb-templatespage-2249"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -2602,10 +2602,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </button>
                   </div>
                   <div className="mt-4 flex flex-col gap-2 sm:max-w-lg">
-                    <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+                    <label htmlFor="mhb-templatespage-2605" className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                       Describe the job
                     </label>
-                    <input
+                    <input id="mhb-templatespage-2605"
                       data-testid="templates-ai-prompt-input"
                       type="text"
                       value={templateAiPrompt}
@@ -2842,8 +2842,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                 <SectionCard title="Project Setup">
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                      <label className="mb-1 block text-sm font-medium">Template Name</label>
-                      <input
+                      <label htmlFor="mhb-templatespage-2845" className="mb-1 block text-sm font-medium">Template Name</label>
+                      <input id="mhb-templatespage-2845"
                         data-testid="templates-name-input"
                         ref={draftNameInputRef}
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -2854,8 +2854,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-sm font-medium">Estimated Project Days</label>
-                      <input
+                      <label htmlFor="mhb-templatespage-2857" className="mb-1 block text-sm font-medium">Estimated Project Days</label>
+                      <input id="mhb-templatespage-2857"
                         type="number"
                         min="1"
                         data-testid="templates-estimated-days-input"
@@ -2870,9 +2870,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-sm font-medium">Project Type</label>
+                      <label htmlFor="mhb-templatespage-2873" className="mb-1 block text-sm font-medium">Project Type</label>
                       <div className="flex items-start gap-2">
-                        <input
+                        <input id="mhb-templatespage-2873"
                           data-testid="templates-project-type-input"
                           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                           value={currentHeader?.project_type || ""}
@@ -2895,9 +2895,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
 
                     <div>
-                      <label className="mb-1 block text-sm font-medium">Project Subtype</label>
+                      <label htmlFor="mhb-templatespage-2898" className="mb-1 block text-sm font-medium">Project Subtype</label>
                       <div className="flex items-start gap-2">
-                        <input
+                        <input id="mhb-templatespage-2898"
                           data-testid="templates-project-subtype-input"
                           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                           value={currentHeader?.project_subtype || ""}
@@ -2910,7 +2910,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
                     <div className="md:col-span-2">
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <label className="block text-sm font-medium">Description / Scope</label>
+                        <label htmlFor="mhb-templatespage-2913" className="block text-sm font-medium">Description / Scope</label>
                         {(editMode || creatingNew) ? (
                           <button
                             type="button"
@@ -2923,7 +2923,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                           </button>
                         ) : null}
                       </div>
-                      <textarea
+                      <textarea id="mhb-templatespage-2913"
                         data-testid="templates-description-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         rows={6}
@@ -2944,8 +2944,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
 
                     <div className="md:col-span-2">
-                      <label className="mb-1 block text-sm font-medium">Exclusions</label>
-                      <textarea
+                      <label htmlFor="mhb-templatespage-2947" className="mb-1 block text-sm font-medium">Exclusions</label>
+                      <textarea id="mhb-templatespage-2947"
                         data-testid="templates-exclusions-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         rows={5}
@@ -2961,8 +2961,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
 
                     <div className="md:col-span-2">
-                      <label className="mb-1 block text-sm font-medium">Assumptions</label>
-                      <textarea
+                      <label htmlFor="mhb-templatespage-2964" className="mb-1 block text-sm font-medium">Assumptions</label>
+                      <textarea id="mhb-templatespage-2964"
                         data-testid="templates-assumptions-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                         rows={4}
@@ -2995,8 +2995,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
                       <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
                         <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-700">Assistance Format</label>
-                          <select
+                          <label htmlFor="mhb-templatespage-2998" className="mb-1 block text-xs font-semibold text-slate-700">Assistance Format</label>
+                          <select id="mhb-templatespage-2998"
                             data-testid="templates-workflow-assistance-format"
                             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                             value={currentHeader?.workflow_profile?.assistance_format || "milestone_based"}
@@ -3017,8 +3017,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         </div>
 
                         <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-700">Scheduling Mode</label>
-                          <select
+                          <label htmlFor="mhb-templatespage-3020" className="mb-1 block text-xs font-semibold text-slate-700">Scheduling Mode</label>
+                          <select id="mhb-templatespage-3020"
                             data-testid="templates-workflow-scheduling-mode"
                             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                             value={currentHeader?.workflow_profile?.scheduling_mode || "milestone_driven"}
@@ -3039,7 +3039,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         </div>
 
                         <div>
-                          <label className="mb-1 block text-xs font-semibold text-slate-700">Billing Style</label>
+                          <label htmlFor="mhb-templatespage-3042" className="mb-1 block text-xs font-semibold text-slate-700">Billing Style</label>
                           <div className="rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
                             {safeTrim(currentHeader?.workflow_profile?.billing_style) || "milestone"}
                           </div>
@@ -3067,7 +3067,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                     : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                                 }`}
                               >
-                                <input
+                                <input id="mhb-templatespage-3042"
                                   type="checkbox"
                                   className="sr-only"
                                   checked={selected}
@@ -3316,8 +3316,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
                             <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                               <div className="md:col-span-2">
-                                <label className="mb-1 block text-xs font-semibold text-slate-700">Title</label>
+                                <label htmlFor={`template-milestone-${idx}-title`} className="mb-1 block text-xs font-semibold text-slate-700">Title</label>
                                 <input
+                                  id={`template-milestone-${idx}-title`}
                                   data-testid={`templates-milestone-title-${idx + 1}`}
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                                   value={m?.title || ""}
@@ -3327,8 +3328,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               </div>
 
                               <div>
-                                <label className="mb-1 block text-xs font-semibold text-slate-700">Sort Order</label>
+                                <label htmlFor={`template-milestone-${idx}-sort-order`} className="mb-1 block text-xs font-semibold text-slate-700">Sort Order</label>
                                 <input
+                                  id={`template-milestone-${idx}-sort-order`}
                                   type="number"
                                   min="1"
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -3338,8 +3340,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               </div>
 
                               <div className="md:col-span-4">
-                                <label className="mb-1 block text-xs font-semibold text-slate-700">Description</label>
+                                <label htmlFor={`template-milestone-${idx}-description`} className="mb-1 block text-xs font-semibold text-slate-700">Description</label>
                                 <textarea
+                                  id={`template-milestone-${idx}-description`}
                                   data-testid={`templates-milestone-description-${idx + 1}`}
                                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                                   rows={3}
@@ -3813,10 +3816,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                   ) : null}
 
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <label className="mb-1 block text-sm font-medium text-slate-800">
+                    <label htmlFor="mhb-templatespage-3816" className="mb-1 block text-sm font-medium text-slate-800">
                       Project-Level Suggested Materials
                     </label>
-                    <textarea
+                    <textarea id="mhb-templatespage-3816"
                       data-testid="templates-project-materials-hint"
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
                       rows={4}

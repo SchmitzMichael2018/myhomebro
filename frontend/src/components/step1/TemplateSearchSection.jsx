@@ -720,8 +720,8 @@ export default function TemplateSearchSection({
 
               <div className="mt-3 space-y-3">
                 <div className="rounded-lg border border-slate-200 bg-white p-3">
-                  <label className="mb-1 block text-sm font-medium">Search templates</label>
-                  <input
+                  <label htmlFor="mhb-templatesearchsection-723" className="mb-1 block text-sm font-medium">Search templates</label>
+                  <input id="mhb-templatesearchsection-723"
                     className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                     value={templateSearch}
                     onChange={(e) => {
@@ -1215,7 +1215,7 @@ export default function TemplateSearchSection({
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <label className="block text-sm font-medium">Type</label>
+              <label htmlFor="mhb-templatesearchsection-1218" className="block text-sm font-medium">Type</label>
 
               {!locked && (onAddProjectType || onManageProjectTypes) ? (
                 <div className="flex items-center gap-2">
@@ -1241,7 +1241,7 @@ export default function TemplateSearchSection({
               ) : null}
             </div>
 
-            <select
+            <select id="mhb-templatesearchsection-1218"
               className="w-full rounded border px-3 py-2 text-sm"
               name="project_type"
               value={dLocal.project_type || ""}
@@ -1283,7 +1283,7 @@ export default function TemplateSearchSection({
 
           <div>
             <div className="mb-1 flex items-center justify-between gap-2">
-              <label className="block text-sm font-medium">Subtype</label>
+              <label htmlFor="mhb-templatesearchsection-1286" className="block text-sm font-medium">Subtype</label>
 
               {!locked && (onAddProjectSubtype || onManageProjectSubtypes) ? (
                 <div className="flex items-center gap-2">
@@ -1309,7 +1309,7 @@ export default function TemplateSearchSection({
               ) : null}
             </div>
 
-            <select
+            <select id="mhb-templatesearchsection-1286"
               className="w-full rounded border px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-500"
               name="project_subtype"
               value={dLocal.project_subtype || ""}
@@ -1402,8 +1402,8 @@ export default function TemplateSearchSection({
             ) : null}
 
             <div className="mt-1">
-              <label className="mb-1 block text-sm font-medium">Project Title</label>
-              <input
+              <label htmlFor="mhb-templatesearchsection-1405" className="mb-1 block text-sm font-medium">Project Title</label>
+              <input id="mhb-templatesearchsection-1405"
                 data-testid="agreement-project-title-input"
                 className="w-full rounded border px-3 py-2 text-sm"
                 name="project_title"
@@ -1428,7 +1428,7 @@ export default function TemplateSearchSection({
             </div>
           </div>
           <div className="mb-1 flex items-center justify-between gap-2">
-            <label className="block text-sm font-medium">
+            <label htmlFor="mhb-templatesearchsection-1431" className="block text-sm font-medium">
               Description / Scope of Work
             </label>
           </div>
@@ -1439,7 +1439,7 @@ export default function TemplateSearchSection({
             sides can avoid disputes later.
           </div>
 
-          <textarea
+          <textarea id="mhb-templatesearchsection-1431"
             className="w-full rounded border px-3 py-2 text-sm"
             rows={6}
             name="description"

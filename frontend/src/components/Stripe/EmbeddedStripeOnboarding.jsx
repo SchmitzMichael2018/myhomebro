@@ -336,7 +336,7 @@ export default function EmbeddedStripeOnboarding() {
                   data-testid="embedded-stripe-fallback"
                 >
                   <div className="text-xs font-semibold text-slate-500">
-                    If the embedded flow isn't loading
+                    If the embedded flow isn&apos;t loading
                   </div>
                   <div className="mt-2">
                     <StripeOnboardingButton

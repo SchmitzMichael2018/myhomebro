@@ -139,7 +139,9 @@ export default function MobileSidebarShell({ sidebar, children }) {
         {open && (
           <div className="fixed inset-0 z-40 md:hidden">
             {/* Backdrop */}
-            <div
+            <button
+              type="button"
+              aria-label="Close navigation"
               className="absolute inset-0 bg-black/40"
               onClick={() => setOpen(false)}
             />

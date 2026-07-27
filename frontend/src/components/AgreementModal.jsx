@@ -70,8 +70,8 @@ const AgreementModal = ({ agreement, onClose, onSigned }) => {
             </div>
 
             <div className="mt-4">
-              <label className="block mb-2 font-semibold">Select Signature Type:</label>
-              <select
+              <label htmlFor="mhb-agreementmodal-73" className="block mb-2 font-semibold">Select Signature Type:</label>
+              <select id="mhb-agreementmodal-73"
                 value={signatureType}
                 onChange={(e) => setSignatureType(e.target.value)}
                 className="w-full p-2 border rounded"

@@ -136,8 +136,8 @@ export default function AttachmentSection({ agreementId, onChange }) {
         <form onSubmit={onUpload}>
           <div className="row g-3 align-items-end">
             <div className="col-md-6">
-              <label className="form-label">Title</label>
-              <input
+              <label htmlFor="mhb-agreementsection-139" className="form-label">Title</label>
+              <input id="mhb-agreementsection-139"
                 type="text"
                 className="form-control"
                 placeholder="e.g., 12-Month Workmanship Warranty"
@@ -146,16 +146,16 @@ export default function AttachmentSection({ agreementId, onChange }) {
               />
             </div>
             <div className="col-md-3">
-              <label className="form-label">Category</label>
-              <select className="form-select" value={category} onChange={(e) => setCategory(e.target.value)}>
+              <label htmlFor="mhb-agreementsection-149" className="form-label">Category</label>
+              <select id="mhb-agreementsection-149" className="form-select" value={category} onChange={(e) => setCategory(e.target.value)}>
                 {categories.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
             </div>
             <div className="col-md-12">
-              <label className="form-label">File</label>
-              <input className="form-control" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+              <label htmlFor="mhb-agreementsection-157" className="form-label">File</label>
+              <input id="mhb-agreementsection-157" className="form-control" type="file" onChange={(e) => setFile(e.target.files?.[0] || null)} />
             </div>
             <div className="col-md-12 d-flex gap-4 pt-2">
               <label className="form-check">

@@ -206,10 +206,10 @@ export default function CustomerForm(){
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* ✅ NEW: Company Name */}
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">
+              <label htmlFor="mhb-customerform-209" className="block text-sm font-medium text-gray-700">
                 Company Name <span className="text-gray-400">(optional)</span>
               </label>
-              <input
+              <input id="mhb-customerform-209"
                 name="company_name"
                 value={form.company_name}
                 onChange={handleChange}
@@ -223,8 +223,8 @@ export default function CustomerForm(){
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Full Name</label>
-              <input
+              <label htmlFor="mhb-customerform-226" className="block text-sm font-medium text-gray-700">Full Name</label>
+              <input id="mhb-customerform-226"
                 name="full_name"
                 value={form.full_name}
                 onChange={handleChange}
@@ -235,8 +235,8 @@ export default function CustomerForm(){
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Email</label>
-              <input
+              <label htmlFor="mhb-customerform-238" className="block text-sm font-medium text-gray-700">Email</label>
+              <input id="mhb-customerform-238"
                 name="email"
                 type="email"
                 value={form.email}
@@ -248,8 +248,8 @@ export default function CustomerForm(){
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Phone Number</label>
-              <input
+              <label htmlFor="mhb-customerform-251" className="block text-sm font-medium text-gray-700">Phone Number</label>
+              <input id="mhb-customerform-251"
                 name="phone_number"
                 type="tel"
                 value={form.phone_number}
@@ -267,8 +267,8 @@ export default function CustomerForm(){
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">Status</label>
-              <select
+              <label htmlFor="mhb-customerform-270" className="block text-sm font-medium text-gray-700">Status</label>
+              <select id="mhb-customerform-270"
                 name="status"
                 value={form.status}
                 onChange={handleChange}
@@ -287,8 +287,9 @@ export default function CustomerForm(){
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Street Address</label>
+              <label htmlFor="mhb-customerform-290" className="block text-sm font-medium text-gray-700">Street Address</label>
               <AddressAutocomplete
+                inputId="mhb-customerform-290"
                 value={form.street_address}
                 onChangeText={(text) => setForm((p) => ({ ...p, street_address: text }))}
                 onSelect={(a) => {
@@ -321,8 +322,8 @@ export default function CustomerForm(){
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700">Address Line 2</label>
-              <input
+              <label htmlFor="mhb-customerform-324" className="block text-sm font-medium text-gray-700">Address Line 2</label>
+              <input id="mhb-customerform-324"
                 name="address_line_2"
                 value={form.address_line_2}
                 onChange={handleChange}
@@ -332,8 +333,8 @@ export default function CustomerForm(){
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">City</label>
-              <input
+              <label htmlFor="mhb-customerform-335" className="block text-sm font-medium text-gray-700">City</label>
+              <input id="mhb-customerform-335"
                 name="city"
                 value={form.city}
                 onChange={handleChange}
@@ -343,8 +344,8 @@ export default function CustomerForm(){
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">State</label>
-              <select
+              <label htmlFor="mhb-customerform-346" className="block text-sm font-medium text-gray-700">State</label>
+              <select id="mhb-customerform-346"
                 name="state"
                 value={form.state}
                 onChange={handleChange}
@@ -364,8 +365,8 @@ export default function CustomerForm(){
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700">ZIP Code</label>
-              <input
+              <label htmlFor="mhb-customerform-367" className="block text-sm font-medium text-gray-700">ZIP Code</label>
+              <input id="mhb-customerform-367"
                 name="zip_code"
                 value={form.zip_code}
                 onChange={handleChange}

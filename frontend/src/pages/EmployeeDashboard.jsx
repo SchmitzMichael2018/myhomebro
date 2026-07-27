@@ -223,8 +223,10 @@ function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onO
   return (
     <div className="mt-6 rounded-xl bg-white shadow-sm border border-slate-100">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-        <h2 className="font-semibold text-slate-900 cursor-pointer hover:underline" onClick={onHeaderClick}>
+        <h2 className="font-semibold text-slate-900">
+          <button type="button" className="cursor-pointer hover:underline" onClick={onHeaderClick}>
           {title}
+          </button>
         </h2>
         <div className="text-xs font-semibold text-slate-500">
           {loading ? "" : canWork ? "Work enabled" : "Read-only"}
@@ -252,6 +254,14 @@ function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onO
                   <div
                     className="min-w-0 flex-1 cursor-pointer hover:bg-slate-50 rounded-lg p-2 -m-2"
                     onClick={() => onOpen?.(m.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        onOpen?.(m.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
                     title="Open milestone details"
                   >
                     <div className="flex items-center gap-2 flex-wrap">

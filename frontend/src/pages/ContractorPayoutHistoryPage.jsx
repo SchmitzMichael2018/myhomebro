@@ -309,15 +309,14 @@ export default function ContractorPayoutHistoryPage() {
 
       {selectedRow ? (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-end bg-slate-950/50 p-4"
-          role="dialog"
-          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-end p-4"
           data-testid="payout-history-detail-drawer"
-          onClick={closeDrawer}
         >
+          <button type="button" aria-label="Close payout detail" className="absolute inset-0 bg-slate-950/50" onClick={closeDrawer} />
           <div
-            className="h-full w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
+            className="relative h-full w-full max-w-xl overflow-y-auto rounded-2xl bg-white shadow-2xl"
+            role="dialog"
+            aria-modal="true"
           >
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
               <div>

@@ -288,14 +288,12 @@ export default function RefundEscrowModal({
   const modal = (
     <div
       className="fixed inset-0 z-[99999] flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.55)" }}
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
     >
+      <button type="button" aria-label="Close refund dialog" className="absolute inset-0" style={{ background: "rgba(0,0,0,0.55)" }} onClick={onClose} />
       <div
-        className="w-full max-w-5xl rounded-2xl bg-white shadow-xl border border-black/10 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-5xl rounded-2xl bg-white shadow-xl border border-black/10 overflow-hidden"
+        role="dialog"
+        aria-modal="true"
       >
         <div className="px-5 py-4 border-b border-black/10 flex items-center justify-between">
           <div>
@@ -454,8 +452,8 @@ export default function RefundEscrowModal({
 
                 <div className="flex flex-col md:flex-row gap-3 md:items-end">
                   <div className="flex-1">
-                    <label className="text-xs text-gray-500">Confirmation</label>
-                    <input
+                    <label htmlFor="mhb-refundescrowmodal-457" className="text-xs text-gray-500">Confirmation</label>
+                    <input id="mhb-refundescrowmodal-457"
                       type="text"
                       value={confirmText}
                       onChange={(e) => setConfirmText(e.target.value)}

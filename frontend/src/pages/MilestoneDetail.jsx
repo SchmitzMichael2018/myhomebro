@@ -462,8 +462,8 @@ export default function MilestoneDetail() {
             <h3 className="text-sm font-semibold text-[var(--mhb-text-secondary)]">Server Amount</h3>
             <p className="text-lg font-bold text-[var(--mhb-text-primary)]">{formatCurrency(serverAmount)}</p>
             <div className="mt-3">
-              <label className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Edit Amount ($)</label>
-              <input
+              <label htmlFor="mhb-milestonedetail-465" className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Edit Amount ($)</label>
+              <input id="mhb-milestonedetail-465"
                 ref={amountRef}
                 type="number"
                 min="0"
@@ -503,8 +503,8 @@ export default function MilestoneDetail() {
         {/* Title & Description */}
         <div className="grid grid-cols-1 gap-4 border-t border-[var(--mhb-border-divider)] pt-4">
           <div>
-            <label className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Title</label>
-            <input
+            <label htmlFor="mhb-milestonedetail-506" className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Title</label>
+            <input id="mhb-milestonedetail-506"
               ref={titleRef}
               value={form.title}
               onChange={(e) => handleField("title", e.target.value)}
@@ -517,8 +517,8 @@ export default function MilestoneDetail() {
           </div>
 
           <div>
-            <label className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Description</label>
-            <textarea
+            <label htmlFor="mhb-milestonedetail-520" className="mb-1 block text-sm text-[var(--mhb-text-secondary)]">Description</label>
+            <textarea id="mhb-milestonedetail-520"
               ref={descriptionRef}
               value={form.description}
               onChange={(e) => handleField("description", e.target.value)}

@@ -219,11 +219,11 @@ export default function ExpenseRequestsPanel() {
     if (!open) return null;
     return (
       <div className="fixed inset-0 z-[9999] flex items-center justify-center">
-        <div
+        <button
+          type="button"
+          aria-label="Close expense request dialog"
           className="absolute inset-0 bg-black/40"
           onClick={onClose}
-          role="button"
-          tabIndex={-1}
         />
         <div className={`relative w-[92vw] ${maxWidthClass} bg-white rounded-2xl shadow-xl`}>
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
@@ -264,8 +264,8 @@ export default function ExpenseRequestsPanel() {
 
         {/* Filter */}
         <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
-          <label className="text-sm text-gray-600">Filter by agreement:</label>
-          <select
+          <label htmlFor="mhb-expenserequestpanel-267" className="text-sm text-gray-600">Filter by agreement:</label>
+          <select id="mhb-expenserequestpanel-267"
             value={agreementFilter}
             onChange={(e) => setAgreementFilter(e.target.value)}
             className="px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 w-full sm:w-auto"

@@ -65,8 +65,8 @@ export default function AssignSubaccountModal({
               </div>
             )}
 
-            <label className="block text-sm font-semibold mb-2">Select Employee</label>
-            <select
+            <label htmlFor="mhb-assignsubaccountmodal-68" className="block text-sm font-semibold mb-2">Select Employee</label>
+            <select id="mhb-assignsubaccountmodal-68"
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
               className="w-full rounded-lg border border-gray-300 px-3 py-2"

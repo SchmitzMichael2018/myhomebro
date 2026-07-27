@@ -12,7 +12,7 @@ const PRIVACY_URL = "/legal/privacy-policy/";
 function Overlay({ children, onClose, disableClose, expanded }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="absolute inset-0" onClick={disableClose ? undefined : onClose} />
+      <button type="button" aria-label="Close signature dialog" className="absolute inset-0" onClick={disableClose ? undefined : onClose} />
       <div
         className={[
           "relative rounded-2xl border border-white/15 bg-slate-950 text-slate-50 shadow-2xl overflow-hidden",
@@ -431,8 +431,8 @@ export default function SignatureModal({
               </div>
 
               <div>
-                <label className="text-[11px] font-semibold text-slate-200">Type Your Full Legal Name</label>
-                <input
+                <label htmlFor="mhb-signaturemodal-434" className="text-[11px] font-semibold text-slate-200">Type Your Full Legal Name</label>
+                <input id="mhb-signaturemodal-434"
                   ref={nameInputRef}
                   type="text"
                   value={typedName}

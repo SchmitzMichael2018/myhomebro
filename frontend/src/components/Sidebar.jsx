@@ -557,7 +557,7 @@ export default function Sidebar({ variant = "desktop" }) {
               One quick step before sending
             </h3>
             <p className="mt-2 text-sm leading-6 text-slate-700">
-              To receive payments through MyHomeBro, your bank account needs to be connected. It takes about 2 minutes — and you'll only do it once.
+              To receive payments through MyHomeBro, your bank account needs to be connected. It takes about 2 minutes — and you&apos;ll only do it once.
             </p>
             <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button

@@ -104,10 +104,10 @@ export default function InviteContractorModal({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label htmlFor="mhb-invitecontractormodal-107" className="block text-sm font-medium text-gray-700">
               Your Name <span className="text-red-500">*</span>
             </label>
-            <input
+            <input id="mhb-invitecontractormodal-107"
               value={homeownerName}
               onChange={(e) => setHomeownerName(e.target.value)}
               type="text"
@@ -118,10 +118,10 @@ export default function InviteContractorModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label htmlFor="mhb-invitecontractormodal-121" className="block text-sm font-medium text-gray-700">
               Your Email <span className="text-red-500">*</span>
             </label>
-            <input
+            <input id="mhb-invitecontractormodal-121"
               value={homeownerEmail}
               onChange={(e) => setHomeownerEmail(e.target.value)}
               type="email"
@@ -132,10 +132,10 @@ export default function InviteContractorModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label htmlFor="mhb-invitecontractormodal-135" className="block text-sm font-medium text-gray-700">
               Your Phone (optional)
             </label>
-            <input
+            <input id="mhb-invitecontractormodal-135"
               value={homeownerPhone}
               onChange={(e) => setHomeownerPhone(e.target.value)}
               type="tel"
@@ -148,10 +148,10 @@ export default function InviteContractorModal({
           <div className="md:col-span-2 border-t pt-3" />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label htmlFor="mhb-invitecontractormodal-151" className="block text-sm font-medium text-gray-700">
               Contractor Email
             </label>
-            <input
+            <input id="mhb-invitecontractormodal-151"
               value={contractorEmail}
               onChange={(e) => setContractorEmail(e.target.value)}
               type="email"
@@ -162,10 +162,10 @@ export default function InviteContractorModal({
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">
+            <label htmlFor="mhb-invitecontractormodal-165" className="block text-sm font-medium text-gray-700">
               Contractor Phone
             </label>
-            <input
+            <input id="mhb-invitecontractormodal-165"
               value={contractorPhone}
               onChange={(e) => setContractorPhone(e.target.value)}
               type="tel"
@@ -182,10 +182,10 @@ export default function InviteContractorModal({
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-700">
+            <label htmlFor="mhb-invitecontractormodal-185" className="block text-sm font-medium text-gray-700">
               Message (optional)
             </label>
-            <textarea
+            <textarea id="mhb-invitecontractormodal-185"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={3}

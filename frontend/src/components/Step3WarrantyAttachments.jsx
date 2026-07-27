@@ -303,8 +303,8 @@ export default function Step3WarrantyAttachments({
             </div>
           ) : (
             <div className="mt-3">
-              <label className="mb-1 block text-sm font-medium text-slate-800">Custom Warranty</label>
-              <textarea
+              <label htmlFor="mhb-step3warrantyattachments-306" className="mb-1 block text-sm font-medium text-slate-800">Custom Warranty</label>
+              <textarea id="mhb-step3warrantyattachments-306"
                 className="min-h-[120px] w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 placeholder="Enter your custom warranty text…"
                 value={customWarranty}
@@ -381,9 +381,7 @@ export default function Step3WarrantyAttachments({
               className={`inline-flex items-center px-3 py-1.5 rounded-md border bg-white ${
                 locked ? "cursor-not-allowed" : "hover:bg-gray-50 cursor-pointer"
               }`}
-              onClick={(e) => {
-                if (locked) e.preventDefault();
-              }}
+              aria-disabled={locked}
             >
               Choose Files
             </label>

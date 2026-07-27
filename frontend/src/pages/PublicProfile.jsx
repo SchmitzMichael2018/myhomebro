@@ -557,7 +557,7 @@ export default function PublicProfile() {
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
             <div className="font-semibold text-slate-900">Verified review option</div>
             <p className="mt-1">
-              If this review came from an approved invoice or a completed milestone, we will mark it verified so it counts toward the contractor's public rating.
+              If this review came from an approved invoice or a completed milestone, we will mark it verified so it counts toward the contractor&apos;s public rating.
             </p>
           </div>
           <form onSubmit={submitReview} className="grid gap-4 md:grid-cols-2">

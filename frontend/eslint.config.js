@@ -81,7 +81,11 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
       'react/prop-types': 'off', // Correct for projects using TypeScript or no prop-types
       'react/react-in-jsx-scope': 'off', // Correct for modern React
-      
+      'jsx-a11y/label-has-associated-control': [
+        'error',
+        { assert: 'either', depth: 5 },
+      ],
+
       'react-refresh/only-export-components': [
         'warn',
         { allowConstantExport: true },

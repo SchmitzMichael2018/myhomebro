@@ -294,7 +294,7 @@ export default function TeamEmployeeDetailPage() {
               {employee?.display_name || "Employee profile"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-slate-600">
-              Permission role controls app access. Trade capabilities describe this employee's skills and profile completeness.
+              Permission role controls app access. Trade capabilities describe this employee&apos;s skills and profile completeness.
             </p>
           </div>
           <button

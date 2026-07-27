@@ -134,8 +134,8 @@ export default function DisputesCreateModal({ open, onClose }) {
           {step === 1 && (
             <>
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Agreement</label>
-                <select
+                <label htmlFor="mhb-disputescreatemodal-137" className="block text-sm text-slate-600 mb-1">Agreement</label>
+                <select id="mhb-disputescreatemodal-137"
                   data-testid="dispute-agreement-select"
                   className="w-full border rounded px-3 py-2"
                   value={agreementId}
@@ -154,8 +154,8 @@ export default function DisputesCreateModal({ open, onClose }) {
               </div>
 
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Milestone (optional)</label>
-                <select
+                <label htmlFor="mhb-disputescreatemodal-157" className="block text-sm text-slate-600 mb-1">Milestone (optional)</label>
+                <select id="mhb-disputescreatemodal-157"
                   className="w-full border rounded px-3 py-2"
                   value={milestoneId}
                   onChange={(e) => setMilestoneId(e.target.value)}
@@ -181,8 +181,8 @@ export default function DisputesCreateModal({ open, onClose }) {
           {step === 2 && (
             <>
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Reason</label>
-                <input
+                <label htmlFor="mhb-disputescreatemodal-184" className="block text-sm text-slate-600 mb-1">Reason</label>
+                <input id="mhb-disputescreatemodal-184"
                   data-testid="dispute-reason-input"
                   className="w-full border rounded px-3 py-2"
                   placeholder="e.g., Work not approved / quality dispute / scope issue"
@@ -191,8 +191,8 @@ export default function DisputesCreateModal({ open, onClose }) {
                 />
               </div>
               <div>
-                <label className="block text-sm text-slate-600 mb-1">Details</label>
-                <textarea
+                <label htmlFor="mhb-disputescreatemodal-194" className="block text-sm text-slate-600 mb-1">Details</label>
+                <textarea id="mhb-disputescreatemodal-194"
                   className="w-full border rounded px-3 py-2"
                   rows={5}
                   placeholder="Provide as much detail as possible…"

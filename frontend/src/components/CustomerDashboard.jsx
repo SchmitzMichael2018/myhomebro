@@ -2926,10 +2926,11 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
             />
           </label>
-          <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+          <label htmlFor="mhb-customerdashboard-2929" className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Mailing address search
             <div className="mt-1">
               <AddressAutocomplete
+                inputId="mhb-customerdashboard-2929"
                 value={form.address_line1}
                 onChangeText={(value) => update("address_line1", value)}
                 onSelect={(address) => {
@@ -3037,10 +3038,11 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
                   className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                 />
               </label>
-              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+              <label htmlFor="mhb-customerdashboard-3040" className="block text-sm font-medium text-slate-200 sm:col-span-2">
                 Company mailing address search
                 <div className="mt-1">
                   <AddressAutocomplete
+                    inputId="mhb-customerdashboard-3040"
                     value={form.company_street}
                     onChangeText={(value) => update("company_street", value)}
                     onSelect={(address) => {
@@ -3061,7 +3063,7 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
               </label>
               <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
                 Street
-                <input
+                <input id="mhb-customerdashboard-3040"
                   data-testid="customer-company-street"
                   value={form.company_street}
                   onChange={(event) => update("company_street", event.target.value)}

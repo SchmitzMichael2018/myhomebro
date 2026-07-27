@@ -1174,15 +1174,10 @@ function PipelineRow({
 
   return (
     <div
+      role="presentation"
       className="group relative"
-      onMouseEnter={() => setPreviewOpen(true)}
-      onMouseLeave={() => setPreviewOpen(false)}
-      onFocus={() => setPreviewOpen(true)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          setPreviewOpen(false);
-        }
-      }}
+      onPointerEnter={() => setPreviewOpen(true)}
+      onPointerLeave={() => setPreviewOpen(false)}
       onKeyDown={(event) => {
         if (event.key === "Escape") {
           event.stopPropagation();
@@ -1373,8 +1368,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
       <form onSubmit={submit} className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
-            <select
+            <label htmlFor="mhb-contractordashboard-1376" className="block text-sm text-gray-700 mb-1">Agreement (optional)</label>
+            <select id="mhb-contractordashboard-1376"
               name="agreement"
               value={form.agreement}
               onChange={onChange}
@@ -1390,8 +1385,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Incurred Date</label>
-            <input
+            <label htmlFor="mhb-contractordashboard-1393" className="block text-sm text-gray-700 mb-1">Incurred Date</label>
+            <input id="mhb-contractordashboard-1393"
               type="date"
               name="incurred_date"
               value={form.incurred_date}
@@ -1401,8 +1396,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Request Type</label>
-            <select
+            <label htmlFor="mhb-contractordashboard-1404" className="block text-sm text-gray-700 mb-1">Request Type</label>
+            <select id="mhb-contractordashboard-1404"
               name="request_kind"
               value={form.request_kind}
               onChange={onChange}
@@ -1414,8 +1409,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Category</label>
-            <select
+            <label htmlFor="mhb-contractordashboard-1417" className="block text-sm text-gray-700 mb-1">Category</label>
+            <select id="mhb-contractordashboard-1417"
               name="category"
               value={form.category}
               onChange={onChange}
@@ -1430,8 +1425,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div className="md:col-span-2">
-            <label className="block text-sm text-gray-700 mb-1">Description</label>
-            <input
+            <label htmlFor="mhb-contractordashboard-1433" className="block text-sm text-gray-700 mb-1">Description</label>
+            <input id="mhb-contractordashboard-1433"
               name="description"
               value={form.description}
               onChange={onChange}
@@ -1441,8 +1436,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Amount</label>
-            <input
+            <label htmlFor="mhb-contractordashboard-1444" className="block text-sm text-gray-700 mb-1">Amount</label>
+            <input id="mhb-contractordashboard-1444"
               type="number"
               step="0.01"
               name="amount"
@@ -1454,8 +1449,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-700 mb-1">Receipt (PDF or Image)</label>
-            <input type="file" accept="image/*,pdf" onChange={onFile} className="w-full" />
+            <label htmlFor="mhb-contractordashboard-1457" className="block text-sm text-gray-700 mb-1">Receipt (PDF or Image)</label>
+            <input id="mhb-contractordashboard-1457" type="file" accept="image/*,pdf" onChange={onFile} className="w-full" />
           </div>
         </div>
 
@@ -1467,8 +1462,8 @@ function ExpenseRequestModal({ isOpen, onClose, defaultAgreementId = null }) {
         ) : null}
 
         <div>
-          <label className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
-          <textarea
+          <label htmlFor="mhb-contractordashboard-1470" className="block text-sm text-gray-700 mb-1">Notes to Customer (optional)</label>
+          <textarea id="mhb-contractordashboard-1470"
             name="notes_to_homeowner"
             value={form.notes_to_homeowner}
             onChange={onChange}

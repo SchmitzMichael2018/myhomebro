@@ -121,8 +121,8 @@ function DisputeForm({ open, submitting, onCancel, onSubmit }) {
       </h3>
 
       <div className="mb-3">
-        <label className="mb-1 block text-sm font-semibold text-red-900">Reason</label>
-        <select
+        <label htmlFor="mhb-magicinvoice-124" className="mb-1 block text-sm font-semibold text-red-900">Reason</label>
+        <select id="mhb-magicinvoice-124"
           data-testid="public-issue-reason-select"
           className="w-full rounded border border-red-200 bg-white px-3 py-2"
           value={reason}
@@ -139,8 +139,8 @@ function DisputeForm({ open, submitting, onCancel, onSubmit }) {
       </div>
 
       <div className="mb-4">
-        <label className="mb-1 block text-sm font-semibold text-red-900">Description</label>
-        <textarea
+        <label htmlFor="mhb-magicinvoice-142" className="mb-1 block text-sm font-semibold text-red-900">Description</label>
+        <textarea id="mhb-magicinvoice-142"
           data-testid="public-issue-description-input"
           className="min-h-[110px] w-full rounded border border-red-200 bg-white px-3 py-2"
           placeholder="Describe the issue, what you expected, and what you want done to resolve it…"

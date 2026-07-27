@@ -117,7 +117,7 @@ export default function EstimateSlotPicker({
                     onChange={() => updatePreference(key, { preference: "flexible" })}
                     data-testid={`estimate-slot-flexible-${key}`}
                   />
-                  <span>I'm flexible</span>
+                  <span>I&apos;m flexible</span>
                 </label>
                 <label className={optionClass}>
                   <input

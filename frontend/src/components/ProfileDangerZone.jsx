@@ -85,10 +85,10 @@ export default function ProfileDangerZone() {
       </label>
 
       <div className="mb-3">
-        <label className="block text-sm font-medium text-red-900 mb-1">
+        <label htmlFor="mhb-profiledangerzone-88" className="block text-sm font-medium text-red-900 mb-1">
           Type <span className="font-mono bg-red-100 px-1 rounded">DELETE</span> to confirm
         </label>
-        <input
+        <input id="mhb-profiledangerzone-88"
           type="text"
           className="w-full max-w-sm border rounded px-3 py-2"
           value={confirmText}

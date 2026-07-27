@@ -5313,10 +5313,10 @@ export default function AgreementDetail({
               {inviteFormOpen && (
                 <div className="rounded border border-white/10 bg-[#041735]/80 p-4 grid gap-3 md:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-sky-100">
+                    <label htmlFor="mhb-agreementdetail-5316" className="block text-sm font-medium mb-1 text-sky-100">
                       Email
                     </label>
-                    <input
+                    <input id="mhb-agreementdetail-5316"
                       data-testid="subcontractor-email-input"
                       type="email"
                       className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
@@ -5331,10 +5331,10 @@ export default function AgreementDetail({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium mb-1 text-sky-100">
+                    <label htmlFor="mhb-agreementdetail-5334" className="block text-sm font-medium mb-1 text-sky-100">
                       Name
                     </label>
-                    <input
+                    <input id="mhb-agreementdetail-5334"
                       className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                       value={invitationForm.invite_name}
                       onChange={(e) =>
@@ -5347,10 +5347,10 @@ export default function AgreementDetail({
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label className="block text-sm font-medium mb-1">
+                    <label htmlFor="mhb-agreementdetail-5350" className="block text-sm font-medium mb-1">
                       Message
                     </label>
-                    <textarea
+                    <textarea id="mhb-agreementdetail-5350"
                       className="w-full rounded border px-3 py-2 text-sm"
                       rows={3}
                       value={invitationForm.invited_message}
@@ -5548,10 +5548,10 @@ export default function AgreementDetail({
             {warrantyEditorOpen && (
               <div className="rounded border border-white/10 bg-[#041735]/80 p-4 grid gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium mb-1 text-sky-100">
+                  <label htmlFor="mhb-agreementdetail-5551" className="block text-sm font-medium mb-1 text-sky-100">
                     Title
                   </label>
-                  <input
+                  <input id="mhb-agreementdetail-5551"
                     data-testid="warranty-title-input"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.title}
@@ -5566,10 +5566,10 @@ export default function AgreementDetail({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium mb-1 text-sky-100">
+                  <label htmlFor="mhb-agreementdetail-5569" className="block text-sm font-medium mb-1 text-sky-100">
                     Coverage Details
                   </label>
-                  <textarea
+                  <textarea id="mhb-agreementdetail-5569"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     rows={4}
                     value={warrantyForm.coverage_details}
@@ -5584,10 +5584,10 @@ export default function AgreementDetail({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-medium mb-1 text-sky-100">
+                  <label htmlFor="mhb-agreementdetail-5587" className="block text-sm font-medium mb-1 text-sky-100">
                     Exclusions
                   </label>
-                  <textarea
+                  <textarea id="mhb-agreementdetail-5587"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     rows={3}
                     value={warrantyForm.exclusions}
@@ -5602,10 +5602,10 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-sky-100">
+                  <label htmlFor="mhb-agreementdetail-5605" className="block text-sm font-medium mb-1 text-sky-100">
                     Start Date
                   </label>
-                  <input
+                  <input id="mhb-agreementdetail-5605"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     type="date"
                     value={warrantyForm.start_date}
@@ -5619,10 +5619,10 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-sky-100">
+                  <label htmlFor="mhb-agreementdetail-5622" className="block text-sm font-medium mb-1 text-sky-100">
                     End Date
                   </label>
-                  <input
+                  <input id="mhb-agreementdetail-5622"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     type="date"
                     value={warrantyForm.end_date}
@@ -5636,10 +5636,10 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-sky-100">
+                  <label htmlFor="mhb-agreementdetail-5639" className="block text-sm font-medium mb-1 text-sky-100">
                     Status
                   </label>
-                  <select
+                  <select id="mhb-agreementdetail-5639"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.status}
                     onChange={(e) =>
@@ -5656,10 +5656,10 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1 text-sky-100">
+                  <label htmlFor="mhb-agreementdetail-5659" className="block text-sm font-medium mb-1 text-sky-100">
                     Applies To
                   </label>
-                  <select
+                  <select id="mhb-agreementdetail-5659"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.applies_to}
                     onChange={(e) =>

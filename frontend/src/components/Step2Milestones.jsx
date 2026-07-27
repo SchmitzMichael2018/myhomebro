@@ -5667,7 +5667,7 @@ export default function Step2Milestones({
                   : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
               }`}
             >
-              No - I'll handle all work
+              No - I&apos;ll handle all work
             </button>
             <button
               type="button"
@@ -5951,7 +5951,7 @@ export default function Step2Milestones({
                 </span>
               </div>
               <div className="mt-1 text-sm text-slate-700">
-                Keep these suggestions in view while you edit milestones. They're advisory and easy to ignore.
+                Keep these suggestions in view while you edit milestones. They&apos;re advisory and easy to ignore.
               </div>
               <ul className="mt-3 space-y-1 text-sm text-slate-700">
                 <li>{step2InsightCards.milestones.body}</li>
@@ -7271,10 +7271,10 @@ export default function Step2Milestones({
 
           <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-sky-100/75">
+              <label htmlFor="mhb-step2milestones-7274" className="mb-1 block text-xs font-semibold uppercase tracking-wide text-sky-100/75">
                 Project Start Date
               </label>
-              <input
+              <input id="mhb-step2milestones-7274"
                 type="date"
                 value={projectStartDateDraft || ""}
                 onChange={(e) => setProjectStartDateDraft(e.target.value)}
@@ -8772,7 +8772,7 @@ export default function Step2Milestones({
               <div>
                 <div className="text-lg font-semibold text-gray-900">Save as Template</div>
                 <div className="text-xs text-gray-500">
-                  Save this agreement's current milestone structure as a reusable template.
+                  Save this agreement&apos;s current milestone structure as a reusable template.
                 </div>
               </div>
               <button
@@ -8789,8 +8789,8 @@ export default function Step2Milestones({
 
             <div className="mt-4 grid grid-cols-1 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-700">Template Name</label>
-                <input
+                <label htmlFor="mhb-step2milestones-8792" className="mb-1 block text-xs font-semibold text-gray-700">Template Name</label>
+                <input id="mhb-step2milestones-8792"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={saveTemplateName}
                   onChange={(e) => setSaveTemplateName(e.target.value)}
@@ -8800,8 +8800,8 @@ export default function Step2Milestones({
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-700">Description (optional)</label>
-                <textarea
+                <label htmlFor="mhb-step2milestones-8803" className="mb-1 block text-xs font-semibold text-gray-700">Description (optional)</label>
+                <textarea id="mhb-step2milestones-8803"
                   className="w-full rounded border px-3 py-2 text-sm"
                   rows={4}
                   value={saveTemplateDescription}
@@ -8921,10 +8921,10 @@ export default function Step2Milestones({
 
             <div className="mt-4 space-y-4">
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label htmlFor="mhb-step2milestones-8924" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Subcontractor
                 </label>
-                <select
+                <select id="mhb-step2milestones-8924"
                   data-testid="step2-quote-subcontractor-select"
                   value={quoteFormSubcontractorId}
                   onChange={(e) => setQuoteFormSubcontractorId(e.target.value)}
@@ -8940,10 +8940,10 @@ export default function Step2Milestones({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label htmlFor="mhb-step2milestones-8943" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Scope
                 </label>
-                <textarea
+                <textarea id="mhb-step2milestones-8943"
                   value={subcontractorQuoteTarget.description || ""}
                   readOnly
                   rows={4}
@@ -8952,10 +8952,10 @@ export default function Step2Milestones({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <label htmlFor="mhb-step2milestones-8955" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                   Optional message
                 </label>
-                <textarea
+                <textarea id="mhb-step2milestones-8955"
                   data-testid="step2-quote-message-input"
                   value={quoteFormMessage}
                   onChange={(e) => setQuoteFormMessage(e.target.value)}
@@ -9060,10 +9060,10 @@ export default function Step2Milestones({
 
                       {activeQuoteAmount > Number(subcontractorQuoteTarget?.amount || 0) ? (
                         <div>
-                          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          <label htmlFor="mhb-step2milestones-9063" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                             Override Reason
                           </label>
-                          <textarea
+                          <textarea id="mhb-step2milestones-9063"
                             value={quoteReviewOverrideReason}
                             onChange={(e) => setQuoteReviewOverrideReason(e.target.value)}
                             rows={2}
@@ -9074,10 +9074,10 @@ export default function Step2Milestones({
                       ) : null}
 
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <label htmlFor="mhb-step2milestones-9077" className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                           Revision Note
                         </label>
-                        <textarea
+                        <textarea id="mhb-step2milestones-9077"
                           value={quoteReviewRevisionNote}
                           onChange={(e) => setQuoteReviewRevisionNote(e.target.value)}
                           rows={2}
@@ -9169,8 +9169,8 @@ export default function Step2Milestones({
 
             <div className="mt-4 grid grid-cols-1 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-semibold text-gray-700">Title</label>
-                <input
+                <label htmlFor="mhb-step2milestones-9172" className="mb-1 block text-xs font-semibold text-gray-700">Title</label>
+                <input id="mhb-step2milestones-9172"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={editForm.title}
                   onChange={(e) => setEditForm((s) => ({ ...s, title: e.target.value }))}
@@ -9181,7 +9181,7 @@ export default function Step2Milestones({
 
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <label className="mb-1 block text-xs font-semibold text-gray-700">Description</label>
+                  <label htmlFor="mhb-step2milestones-9184" className="mb-1 block text-xs font-semibold text-gray-700">Description</label>
                   <button
                     type="button"
                     onClick={runEditAiImprove}
@@ -9192,7 +9192,7 @@ export default function Step2Milestones({
                     {editAiBusy ? "Working" : " Improve Description"}
                   </button>
                 </div>
-                <textarea
+                <textarea id="mhb-step2milestones-9184"
                   className="w-full rounded border px-3 py-2 text-sm"
                   rows={4}
                   value={editForm.description}
@@ -9338,8 +9338,8 @@ export default function Step2Milestones({
 
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-700">Start</label>
-                  <input
+                  <label htmlFor="mhb-step2milestones-9341" className="mb-1 block text-xs font-semibold text-gray-700">Start</label>
+                  <input id="mhb-step2milestones-9341"
                     type="date"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={editForm.start_date}
@@ -9349,8 +9349,8 @@ export default function Step2Milestones({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-semibold text-gray-700">Due</label>
-                  <input
+                  <label htmlFor="mhb-step2milestones-9352" className="mb-1 block text-xs font-semibold text-gray-700">Due</label>
+                  <input id="mhb-step2milestones-9352"
                     type="date"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={editForm.completion_date}
@@ -9361,7 +9361,7 @@ export default function Step2Milestones({
                 </div>
                 <div>
                   <div className="mb-1 flex items-center justify-between gap-2">
-                    <label className="block text-xs font-semibold text-gray-700">Amount</label>
+                    <label htmlFor="mhb-step2milestones-9364" className="block text-xs font-semibold text-gray-700">Amount</label>
                     {Number.isFinite(deriveSuggestedPriceAmount(editForm)) && deriveSuggestedPriceAmount(editForm) > 0 ? (
                       <button
                         type="button"
@@ -9373,7 +9373,7 @@ export default function Step2Milestones({
                       </button>
                     ) : null}
                   </div>
-                  <input
+                  <input id="mhb-step2milestones-9364"
                     type="number"
                     min="0.01"
                     step="0.01"
@@ -9418,7 +9418,7 @@ export default function Step2Milestones({
           <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
             <h3 className="text-lg font-semibold text-gray-900">Overlapping Schedule</h3>
             <p className="mt-2 text-sm text-gray-700">
-              This milestone overlaps an existing milestones schedule. Do you want to continue anyway'
+              This milestone overlaps an existing milestones schedule. Do you want to continue anyway&apos;
             </p>
 
             <div className="mt-5 flex justify-end gap-2">

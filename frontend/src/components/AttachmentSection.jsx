@@ -170,8 +170,8 @@ export default function AttachmentSection({ agreementId, onChange }) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div>
-          <label className="block text-sm font-medium mb-1">Title</label>
-          <input
+          <label htmlFor="mhb-attachmentsection-173" className="block text-sm font-medium mb-1">Title</label>
+          <input id="mhb-attachmentsection-173"
             className="w-full border rounded px-3 py-2"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -179,8 +179,8 @@ export default function AttachmentSection({ agreementId, onChange }) {
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Category</label>
-          <select
+          <label htmlFor="mhb-attachmentsection-182" className="block text-sm font-medium mb-1">Category</label>
+          <select id="mhb-attachmentsection-182"
             className="w-full border rounded px-3 py-2"
             value={category}
             onChange={(e) => setCategory(e.target.value)}

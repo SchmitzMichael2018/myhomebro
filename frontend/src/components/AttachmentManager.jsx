@@ -152,8 +152,8 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
       {canEdit && (
         <form onSubmit={onUpload} className="grid md:grid-cols-2 gap-3 items-end">
           <div>
-            <label className="block text-sm font-medium">Title</label>
-            <input
+            <label htmlFor="mhb-attachmentmanager-155" className="block text-sm font-medium">Title</label>
+            <input id="mhb-attachmentmanager-155"
               type="text"
               className="mt-1 w-full border rounded px-3 py-2"
               placeholder="e.g., 12-Month Workmanship Warranty"
@@ -162,8 +162,8 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium">Category</label>
-            <select
+            <label htmlFor="mhb-attachmentmanager-165" className="block text-sm font-medium">Category</label>
+            <select id="mhb-attachmentmanager-165"
               className="mt-1 w-full border rounded px-3 py-2"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -172,8 +172,8 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium">File</label>
-            <input
+            <label htmlFor="mhb-attachmentmanager-175" className="block text-sm font-medium">File</label>
+            <input id="mhb-attachmentmanager-175"
               type="file"
               className="mt-1 w-full"
               onChange={(e) => setFile(e.target.files?.[0] || null)}

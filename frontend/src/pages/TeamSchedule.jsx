@@ -426,7 +426,7 @@ export default function TeamSchedule() {
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-200">Daily Operations Board</div>
               <h2 className="mt-2 text-2xl font-bold">Who is doing what today</h2>
               <p className="mt-2 text-sm leading-6 text-sky-100/75">
-                Review employee availability, today's workload, and upcoming assignment context without changing schedule behavior.
+                Review employee availability, today&apos;s workload, and upcoming assignment context without changing schedule behavior.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -642,8 +642,8 @@ export default function TeamSchedule() {
       </div>
 
       <div className="hidden">
-        <label className="block text-sm font-semibold text-sky-100/80 mb-2">Select employee</label>
-        <select
+        <label htmlFor="mhb-teamschedule-645" className="block text-sm font-semibold text-sky-100/80 mb-2">Select employee</label>
+        <select id="mhb-teamschedule-645"
           value={selectedId}
           onChange={(e) => updateSelectedEmployee(e.target.value)}
           className="mhb-operational-control w-full rounded-lg px-3 py-2"
@@ -748,8 +748,8 @@ export default function TeamSchedule() {
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div>
-                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Timezone</label>
-                <input
+                <label htmlFor="mhb-teamschedule-751" className="mb-1 block text-sm font-semibold text-sky-100/80">Timezone</label>
+                <input id="mhb-teamschedule-751"
                   value={schedule.timezone || "America/Chicago"}
                   onChange={(e) => setSchedule((prev) => ({ ...prev, timezone: e.target.value }))}
                   className="mhb-operational-control w-full rounded-lg px-3 py-2"
@@ -759,8 +759,8 @@ export default function TeamSchedule() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Work start (optional)</label>
-                <input
+                <label htmlFor="mhb-teamschedule-762" className="mb-1 block text-sm font-semibold text-sky-100/80">Work start (optional)</label>
+                <input id="mhb-teamschedule-762"
                   type="time"
                   value={schedule.start_time || ""}
                   onChange={(e) => setTime("start_time", e.target.value)}
@@ -770,8 +770,8 @@ export default function TeamSchedule() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Work end (optional)</label>
-                <input
+                <label htmlFor="mhb-teamschedule-773" className="mb-1 block text-sm font-semibold text-sky-100/80">Work end (optional)</label>
+                <input id="mhb-teamschedule-773"
                   type="time"
                   value={schedule.end_time || ""}
                   onChange={(e) => setTime("end_time", e.target.value)}
@@ -870,8 +870,8 @@ export default function TeamSchedule() {
 
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
               <div>
-                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Date</label>
-                <input
+                <label htmlFor="mhb-teamschedule-873" className="mb-1 block text-sm font-semibold text-sky-100/80">Date</label>
+                <input id="mhb-teamschedule-873"
                   type="date"
                   value={exDate}
                   onChange={(e) => setExDate(e.target.value)}
@@ -893,8 +893,8 @@ export default function TeamSchedule() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-semibold text-sky-100/80">Note</label>
-                <input
+                <label htmlFor="mhb-teamschedule-896" className="mb-1 block text-sm font-semibold text-sky-100/80">Note</label>
+                <input id="mhb-teamschedule-896"
                   value={exNote}
                   onChange={(e) => setExNote(e.target.value)}
                   placeholder="e.g., Vacation / Half day / Site visit"

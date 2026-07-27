@@ -27,7 +27,7 @@ export default function DescriptionAiSection({
   return (
     <div className="md:col-span-2">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <label className="block text-sm font-medium">Description / Scope of Work</label>
+        <label htmlFor="mhb-descriptionaisection-30" className="block text-sm font-medium">Description / Scope of Work</label>
       </div>
 
       <div className="mb-2 text-xs leading-5 text-gray-600">
@@ -36,7 +36,7 @@ export default function DescriptionAiSection({
         Project Title is just the label; this Description is the real scope.
       </div>
 
-      <textarea
+      <textarea id="mhb-descriptionaisection-30"
         className="w-full rounded border px-3 py-2 text-sm"
         rows={6}
         name="description"

@@ -793,7 +793,7 @@ export default function CustomerPortalPage() {
                   <div>
                     <div className="text-sm font-bold text-white">Need a secure access link?</div>
                     <p className="mt-1 text-sm leading-6 text-slate-300">
-                      Enter the email address connected to your project. We'll send a secure link to access your customer records.
+                      Enter the email address connected to your project. We&apos;ll send a secure link to access your customer records.
                     </p>
                   </div>
                 </div>

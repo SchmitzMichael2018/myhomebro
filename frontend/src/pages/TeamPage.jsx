@@ -256,7 +256,7 @@ function MemberDetailPanel({ member, onClose, onToggleActive, onDelete, onChange
         <section data-testid="team-member-detail-permissions">
           <h3 className="text-sm font-black text-white">Permissions</h3>
           <p className="mt-1 text-xs font-semibold text-sky-100/60">
-            Change this member's assigned built-in access level. Custom role definitions are not currently available.
+            Change this member&apos;s assigned built-in access level. Custom role definitions are not currently available.
           </p>
           <label className="mt-2 block">
             <span className="text-xs font-black uppercase tracking-[0.13em] text-sky-100/55">Assigned role</span>

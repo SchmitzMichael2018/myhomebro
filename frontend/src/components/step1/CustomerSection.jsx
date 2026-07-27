@@ -31,8 +31,8 @@ export default function CustomerSection({
   return (
     <>
       <div className="md:col-span-2">
-        <label className="block text-sm font-medium mb-1">Customer</label>
-        <select
+        <label htmlFor="mhb-customersection-34" className="block text-sm font-medium mb-1">Customer</label>
+        <select id="mhb-customersection-34"
           data-testid="agreement-customer-select"
           className="w-full rounded border px-3 py-2 text-sm"
           name="homeowner"
@@ -88,8 +88,8 @@ export default function CustomerSection({
         <div className="md:col-span-2 rounded-md border p-3 bg-indigo-50">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="md:col-span-2">
-              <label className="block text-xs font-medium mb-1">Full Name</label>
-              <input
+              <label htmlFor="mhb-customersection-91" className="block text-xs font-medium mb-1">Full Name</label>
+              <input id="mhb-customersection-91"
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={qaName}
                 onChange={(e) => setQaName(e.target.value)}
@@ -98,8 +98,8 @@ export default function CustomerSection({
               />
             </div>
             <div className="md:col-span-1">
-              <label className="block text-xs font-medium mb-1">Email</label>
-              <input
+              <label htmlFor="mhb-customersection-101" className="block text-xs font-medium mb-1">Email</label>
+              <input id="mhb-customersection-101"
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={qaEmail}
                 onChange={(e) => setQaEmail(e.target.value)}

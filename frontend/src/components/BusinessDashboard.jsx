@@ -222,7 +222,6 @@ function ViewSelectorCard({ title, icon: Icon, selected, onClick, testId }) {
     <button
       type="button"
       data-testid={testId}
-      aria-pressed={selected}
       role="tab"
       aria-selected={selected}
       onClick={onClick}
@@ -1758,10 +1757,10 @@ export default function BusinessDashboard() {
       contentClassName="space-y-4"
       actions={
         <div className="flex flex-wrap items-center gap-2">
-          <label className="text-sm font-semibold text-slate-700">Date Range</label>
+          <label htmlFor="mhb-businessdashboard-1761" className="text-sm font-semibold text-slate-700">Date Range</label>
           <div className="relative">
             <CalendarDays aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600" />
-          <select
+          <select id="mhb-businessdashboard-1761"
             value={range}
             onChange={(e) => {
               setRange(e.target.value);
@@ -1817,7 +1816,7 @@ export default function BusinessDashboard() {
       }
     >
 
-      <section
+      <div
         data-testid="dashboard-view-selector-row"
         className="mb-5 -mx-1 overflow-x-auto px-1 pb-1"
         role="tablist"
@@ -1841,7 +1840,7 @@ export default function BusinessDashboard() {
             />
           ))}
         </div>
-      </section>
+      </div>
 
       <section className="sr-only">
         <div>

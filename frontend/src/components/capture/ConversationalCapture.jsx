@@ -134,6 +134,7 @@ export default function ConversationalCapture({
     [context.milestoneId, context.projectId]
   );
   const requestSequence = useRef(0);
+  const textInputRef = useRef(null);
   const [stage, setStage] = useState(STATES.COMPOSING);
   const [text, setText] = useState(context.sourceText || "");
   const [files, setFiles] = useState(context.files || []);
@@ -162,6 +163,10 @@ export default function ConversationalCapture({
   }
 
   useEffect(() => () => voice.cancelListening(), [voice]);
+
+  useEffect(() => {
+    textInputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!PWA_FLAGS.offlineDrafts || !identity) return;
@@ -578,7 +583,7 @@ export default function ConversationalCapture({
       ) : null}
       {selectedContext.project_id ? <Card theme="operational" padding="sm">Current project: {contextLabels.project || `Project #${selectedContext.project_id}`}</Card> : null}
       <FormField label="What happened?" helperText="Private to your company unless a reviewed workflow says otherwise." required>
-        {(fieldProps) => <textarea {...fieldProps} autoFocus rows={7} value={text} onChange={(event) => setText(event.target.value)} className="min-h-40 w-full resize-y rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 text-base" data-testid="conversational-text" />}
+        {(fieldProps) => <textarea {...fieldProps} ref={textInputRef} rows={7} value={text} onChange={(event) => setText(event.target.value)} className="min-h-40 w-full resize-y rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3 text-base" data-testid="conversational-text" />}
       </FormField>
       <div className="grid gap-2 sm:grid-cols-2">
         <Button type="button" variant="secondary" theme="operational" icon={listening ? Square : Mic} onClick={toggleVoice} data-testid="conversational-voice" disabled={!voice.canListen()}>

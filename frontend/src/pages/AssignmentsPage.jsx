@@ -1149,10 +1149,11 @@ export default function AssignmentsPage() {
                       </div>
                       <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
                         <div className="min-w-0">
-                          <label className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          <label htmlFor={`assignment-supervisor-${agreementId}`} className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                             Select project supervisor
                           </label>
                           <select
+                            id={`assignment-supervisor-${agreementId}`}
                             value={selectedEmployee[String(agreementId)] || ""}
                             onChange={async (e) => {
                               const val = e.target.value;

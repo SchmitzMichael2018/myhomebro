@@ -43,8 +43,8 @@ export default function ReviewInvoiceModal({ visible, onClose, milestoneId }) {
         </p>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Upload File or Photo</label>
-          <input
+          <label htmlFor="mhb-reviewinvoicemodal-46" className="block text-sm font-medium mb-1">Upload File or Photo</label>
+          <input id="mhb-reviewinvoicemodal-46"
             type="file"
             accept="image/*,application/pdf"
             onChange={(e) => setFile(e.target.files[0])}
@@ -53,8 +53,8 @@ export default function ReviewInvoiceModal({ visible, onClose, milestoneId }) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Note (optional)</label>
-          <textarea
+          <label htmlFor="mhb-reviewinvoicemodal-56" className="block text-sm font-medium mb-1">Note (optional)</label>
+          <textarea id="mhb-reviewinvoicemodal-56"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder="Add any context or details here..."
@@ -63,8 +63,8 @@ export default function ReviewInvoiceModal({ visible, onClose, milestoneId }) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Final Expense (optional)</label>
-          <input
+          <label htmlFor="mhb-reviewinvoicemodal-66" className="block text-sm font-medium mb-1">Final Expense (optional)</label>
+          <input id="mhb-reviewinvoicemodal-66"
             type="number"
             step="0.01"
             value={expense}

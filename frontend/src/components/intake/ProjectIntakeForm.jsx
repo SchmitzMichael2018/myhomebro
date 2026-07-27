@@ -578,8 +578,8 @@ export default function ProjectIntakeForm() {
 
           <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
               <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">Customer Name</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-581" className="mb-1 block text-sm font-medium">Customer Name</label>
+                <input id="mhb-projectintakeform-581"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_name}
                   onChange={(e) => setField("customer_name", e.target.value)}
@@ -588,8 +588,8 @@ export default function ProjectIntakeForm() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">Customer Email</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-591" className="mb-1 block text-sm font-medium">Customer Email</label>
+                <input id="mhb-projectintakeform-591"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_email}
                   onChange={(e) => setField("customer_email", e.target.value)}
@@ -598,8 +598,8 @@ export default function ProjectIntakeForm() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">Customer Phone</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-601" className="mb-1 block text-sm font-medium">Customer Phone</label>
+                <input id="mhb-projectintakeform-601"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_phone}
                   onChange={(e) => setField("customer_phone", e.target.value)}
@@ -608,8 +608,8 @@ export default function ProjectIntakeForm() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">Customer Address Line 1</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-611" className="mb-1 block text-sm font-medium">Customer Address Line 1</label>
+                <input id="mhb-projectintakeform-611"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_address_line1}
                   onChange={(e) => setField("customer_address_line1", e.target.value)}
@@ -618,8 +618,8 @@ export default function ProjectIntakeForm() {
               </div>
 
               <div className="md:col-span-2">
-                <label className="mb-1 block text-sm font-medium">Customer Address Line 2</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-621" className="mb-1 block text-sm font-medium">Customer Address Line 2</label>
+                <input id="mhb-projectintakeform-621"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_address_line2}
                   onChange={(e) => setField("customer_address_line2", e.target.value)}
@@ -628,8 +628,8 @@ export default function ProjectIntakeForm() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">City</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-631" className="mb-1 block text-sm font-medium">City</label>
+                <input id="mhb-projectintakeform-631"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_city}
                   onChange={(e) => setField("customer_city", e.target.value)}
@@ -638,8 +638,8 @@ export default function ProjectIntakeForm() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">State</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-641" className="mb-1 block text-sm font-medium">State</label>
+                <input id="mhb-projectintakeform-641"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_state}
                   onChange={(e) => setField("customer_state", e.target.value)}
@@ -648,8 +648,8 @@ export default function ProjectIntakeForm() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
-                <input
+                <label htmlFor="mhb-projectintakeform-651" className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
+                <input id="mhb-projectintakeform-651"
                   className="w-full rounded border px-3 py-2 text-sm"
                   value={form.customer_postal_code}
                   onChange={(e) => setField("customer_postal_code", e.target.value)}
@@ -740,10 +740,10 @@ export default function ProjectIntakeForm() {
                   </span>
                 </label>
               ) : null}
-              <label className="mt-3 mb-1 block text-sm font-medium text-gray-900">
+              <label htmlFor="mhb-projectintakeform-743" className="mt-3 mb-1 block text-sm font-medium text-gray-900">
                 Homeowner participation notes
               </label>
-              <textarea
+              <textarea id="mhb-projectintakeform-743"
                 className="w-full rounded border px-3 py-2 text-sm"
                 value={form.homeowner_participation_notes}
                 onChange={(e) => setField("homeowner_participation_notes", e.target.value)}
@@ -835,8 +835,8 @@ export default function ProjectIntakeForm() {
             {!form.same_as_customer_address ? (
               <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-sm font-medium">Project Address Line 1</label>
-                  <input
+                  <label htmlFor="mhb-projectintakeform-838" className="mb-1 block text-sm font-medium">Project Address Line 1</label>
+                  <input id="mhb-projectintakeform-838"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={form.project_address_line1}
                     onChange={(e) => setField("project_address_line1", e.target.value)}
@@ -845,8 +845,8 @@ export default function ProjectIntakeForm() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="mb-1 block text-sm font-medium">Project Address Line 2</label>
-                  <input
+                  <label htmlFor="mhb-projectintakeform-848" className="mb-1 block text-sm font-medium">Project Address Line 2</label>
+                  <input id="mhb-projectintakeform-848"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={form.project_address_line2}
                     onChange={(e) => setField("project_address_line2", e.target.value)}
@@ -855,8 +855,8 @@ export default function ProjectIntakeForm() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium">City</label>
-                  <input
+                  <label htmlFor="mhb-projectintakeform-858" className="mb-1 block text-sm font-medium">City</label>
+                  <input id="mhb-projectintakeform-858"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={form.project_city}
                     onChange={(e) => setField("project_city", e.target.value)}
@@ -865,8 +865,8 @@ export default function ProjectIntakeForm() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium">State</label>
-                  <input
+                  <label htmlFor="mhb-projectintakeform-868" className="mb-1 block text-sm font-medium">State</label>
+                  <input id="mhb-projectintakeform-868"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={form.project_state}
                     onChange={(e) => setField("project_state", e.target.value)}
@@ -875,8 +875,8 @@ export default function ProjectIntakeForm() {
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
-                  <input
+                  <label htmlFor="mhb-projectintakeform-878" className="mb-1 block text-sm font-medium">ZIP / Postal Code</label>
+                  <input id="mhb-projectintakeform-878"
                     className="w-full rounded border px-3 py-2 text-sm"
                     value={form.project_postal_code}
                     onChange={(e) => setField("project_postal_code", e.target.value)}

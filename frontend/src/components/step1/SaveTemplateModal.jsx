@@ -304,7 +304,7 @@ export default function SaveTemplateModal({
 
           <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="text-xs font-semibold uppercase tracking-wide text-slate-700">
+              <label htmlFor="mhb-savetemplatemodal-307" className="text-xs font-semibold uppercase tracking-wide text-slate-700">
                 Reusable Scope
               </label>
               <button
@@ -317,7 +317,7 @@ export default function SaveTemplateModal({
                 Generate Reusable Scope
               </button>
             </div>
-            <textarea
+            <textarea id="mhb-savetemplatemodal-307"
               data-testid="save-template-scope-input"
               className="mt-2 w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm leading-6"
               rows={5}
@@ -378,8 +378,8 @@ export default function SaveTemplateModal({
           ) : null}
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Template Name</label>
-            <input
+            <label htmlFor="mhb-savetemplatemodal-381" className="mb-1 block text-sm font-medium">Template Name</label>
+            <input id="mhb-savetemplatemodal-381"
               data-testid="save-template-name-input"
               className="w-full rounded border px-3 py-2 text-sm"
               value={name}
@@ -392,8 +392,8 @@ export default function SaveTemplateModal({
           </div>
 
           <div>
-            <label className="mb-1 block text-sm font-medium">Template Note (optional)</label>
-            <textarea
+            <label htmlFor="mhb-savetemplatemodal-395" className="mb-1 block text-sm font-medium">Template Note (optional)</label>
+            <textarea id="mhb-savetemplatemodal-395"
               data-testid="save-template-note-input"
               className="w-full rounded border px-3 py-2 text-sm"
               rows={4}

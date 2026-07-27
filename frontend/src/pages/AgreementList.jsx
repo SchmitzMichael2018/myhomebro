@@ -1447,7 +1447,7 @@ export default function AgreementList() {
     const versions = Array.isArray(cached?.pdf_versions) ? cached.pdf_versions : [];
 
     return (
-      <div className="relative inline-flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      <div className="relative inline-flex items-center gap-2">
         <button
           type="button"
           className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100 transition hover:border-white/30 hover:bg-white/15 hover:text-white"
@@ -1491,7 +1491,6 @@ export default function AgreementList() {
           <div
             ref={pdfPopoverRef}
             className="absolute z-50 top-10 left-0 w-[420px] max-w-[80vw] rounded-xl border bg-white shadow-lg overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
           >
             <div className="px-3 py-2 bg-gray-50 border-b flex items-center justify-between">
               <div className="text-sm font-semibold">PDF History — Agreement #{id}</div>
@@ -2216,7 +2215,6 @@ export default function AgreementList() {
                         <div
                           ref={actionMenuRef}
                           className="absolute right-3 top-14 z-20 min-w-[180px] rounded-xl border border-white/15 bg-[#071f46] p-1.5 text-left shadow-[0_16px_40px_rgba(2,8,23,0.34)]"
-                          onClick={(e) => e.stopPropagation()}
                         >
                           {primaryAction.key !== "workspace" ? (
                             <button

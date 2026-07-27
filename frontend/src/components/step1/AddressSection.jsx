@@ -20,12 +20,13 @@ export default function AddressSection({
   return (
     <>
       <div className="md:col-span-2">
-        <label className="block text-sm font-medium mb-1">Address Search</label>
+        <label htmlFor="mhb-addresssection-23" className="block text-sm font-medium mb-1">Address Search</label>
         <div className="mb-2 text-xs text-gray-500">
           Search first, then confirm the structured address fields below.
         </div>
 
         <AddressAutocomplete
+          inputId="mhb-addresssection-23"
           value={addrSearch}
           disabled={locked}
           onChangeText={(text) => {
@@ -90,10 +91,10 @@ export default function AddressSection({
       </div>
 
       <div className="md:col-span-2">
-        <label className="block text-sm font-medium mb-1">
+        <label htmlFor="mhb-addresssection-93" className="block text-sm font-medium mb-1">
           Address Line 1 <span className="text-red-500">*</span>
         </label>
-        <input
+        <input id="mhb-addresssection-93"
           className="w-full rounded border px-3 py-2 text-sm"
           name="address_line1"
           value={dLocal.address_line1}
@@ -112,8 +113,8 @@ export default function AddressSection({
       </div>
 
       <div className="md:col-span-2">
-        <label className="block text-sm font-medium mb-1">Address Line 2 (optional)</label>
-        <input
+        <label htmlFor="mhb-addresssection-115" className="block text-sm font-medium mb-1">Address Line 2 (optional)</label>
+        <input id="mhb-addresssection-115"
           className="w-full rounded border px-3 py-2 text-sm"
           name="address_line2"
           value={dLocal.address_line2}
@@ -132,10 +133,10 @@ export default function AddressSection({
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">
+        <label htmlFor="mhb-addresssection-135" className="block text-sm font-medium mb-1">
           City <span className="text-red-500">*</span>
         </label>
-        <input
+        <input id="mhb-addresssection-135"
           className="w-full rounded border px-3 py-2 text-sm"
           name="address_city"
           value={dLocal.address_city}
@@ -154,10 +155,10 @@ export default function AddressSection({
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">
+        <label htmlFor="mhb-addresssection-157" className="block text-sm font-medium mb-1">
           State <span className="text-red-500">*</span>
         </label>
-        <input
+        <input id="mhb-addresssection-157"
           className="w-full rounded border px-3 py-2 text-sm"
           name="address_state"
           value={dLocal.address_state}
@@ -176,10 +177,10 @@ export default function AddressSection({
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">
+        <label htmlFor="mhb-addresssection-179" className="block text-sm font-medium mb-1">
           ZIP / Postal Code <span className="text-red-500">*</span>
         </label>
-        <input
+        <input id="mhb-addresssection-179"
           className="w-full rounded border px-3 py-2 text-sm"
           name="address_postal_code"
           value={dLocal.address_postal_code}

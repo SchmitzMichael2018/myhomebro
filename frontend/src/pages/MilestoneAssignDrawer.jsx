@@ -166,12 +166,11 @@ export default function MilestoneAssignDrawer({
   return (
     <div className="fixed inset-0 z-[9999]">
       {/* overlay */}
-      <div className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onMouseDown={onClose} />
+      <button type="button" aria-label="Close assignment drawer" className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm" onMouseDown={onClose} />
 
       {/* drawer */}
       <div
         className="absolute right-0 top-0 flex h-full w-[840px] max-w-[96vw] flex-col border-l border-slate-300 bg-slate-100 shadow-2xl"
-        onMouseDown={(e) => e.stopPropagation()}
         data-testid="assign-work-drawer"
       >
         {/* top bar */}

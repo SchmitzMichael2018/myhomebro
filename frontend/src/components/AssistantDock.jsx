@@ -497,7 +497,7 @@ function BriefingPanel({ items, onNavigate }) {
     >
       <div className="border-b border-slate-100 bg-slate-50 px-4 py-3">
         <div className="text-sm font-semibold text-slate-800">
-          Here's what needs your attention:
+          Here&apos;s what needs your attention:
         </div>
       </div>
 

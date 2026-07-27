@@ -466,7 +466,7 @@ export default function PublicQuoteRequestWizard({
                           : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
                       }`}
                     >
-                      I'm not sure
+                      I&apos;m not sure
                     </button>
                   </div>
                   <label className="space-y-2">
