@@ -21,11 +21,17 @@ class MeasurementCalculationTests(SimpleTestCase):
             "4 3/8 in": Decimal("4.375"),
             "12 ft 4 3/8 in": Decimal("148.375"),
             "twelve feet four and three eighths inches": Decimal("148.375"),
+            "12 1/2 ft": Decimal("150.0"),
         }
         for raw, expected in examples.items():
             with self.subTest(raw=raw):
                 self.assertEqual(parse_measurement(raw)[0], expected)
         self.assertEqual(display_inches(Decimal("148.375")), "12 ft 4 3/8 in")
+
+    def test_metric_forms_normalize_to_inches_without_binary_floats(self):
+        self.assertEqual(parse_measurement("3.81 m")[0], Decimal("150.0000000000000000000000000"))
+        self.assertEqual(parse_measurement("254 cm")[0], Decimal("100.0000000000000000000000000"))
+        self.assertEqual(parse_measurement("25.4 mm")[0], Decimal("1.000000000000000000000000000"))
 
     def test_invalid_fraction_and_negative_values_are_rejected(self):
         for raw in ("-2 in", "4 1/3 in", "4 9/8 in"):

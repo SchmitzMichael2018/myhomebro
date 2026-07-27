@@ -200,6 +200,22 @@ export async function getMeasurementSession(sessionId) {
   return response.data;
 }
 
+export async function previewManualMeasurement(projectId, measurement) {
+  const response = await api.post("/projects/measurements/manual-preview/", {
+    project_id: Number(projectId),
+    measurement,
+  });
+  return response.data;
+}
+
+export async function addManualMeasurement(sessionId, version, measurement) {
+  const response = await api.post(
+    `/projects/measurements/${encodeURIComponent(sessionId)}/`,
+    { version, measurement }
+  );
+  return response.data;
+}
+
 export async function listPlanDocuments(sessionId) {
   const response = await api.get("/projects/measurement-plan-documents/", {
     params: { measurement_session: sessionId },

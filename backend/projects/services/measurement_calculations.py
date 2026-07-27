@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, getcontext
 
 
 getcontext().prec = 28
-CALCULATION_VERSION = "1"
+CALCULATION_VERSION = "2"
 VERIFICATION_RANK = {
     "confirmed": 0, "verified": 1, "needs_verification": 2, "estimated": 3,
 }
@@ -55,6 +55,14 @@ def parse_measurement(raw_value, dimension_type="length"):
         if not match:
             raise MeasurementCalculationError("Enter a valid angle.")
         return Decimal(match.group(1)), "degrees"
+    metric_match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)\s*(m|cm|mm)\s*", raw)
+    if metric_match:
+        value = Decimal(metric_match.group(1))
+        multiplier = {"m": Decimal("39.37007874015748031496062992"), "cm": Decimal("0.3937007874015748031496062992"), "mm": Decimal("0.03937007874015748031496062992")}
+        return value * multiplier[metric_match.group(2)], "inches"
+    fractional_feet = re.fullmatch(r"\s*(\d+)\s+(\d+/\d+)\s*(?:ft|')\s*", raw)
+    if fractional_feet:
+        return (Decimal(fractional_feet.group(1)) + _fraction(fractional_feet.group(2))) * 12, "inches"
     feet = Decimal("0")
     inches = Decimal("0")
     fraction = Decimal("0")
@@ -194,6 +202,13 @@ def calculate_measurement_session(profile, entries, adjustments=None):
         rows = by_type.get(kind, [])
         return rows[0] if rows else None
 
+    requested_profile = profile
+    profile = {
+        "linear_measurement": "linear_run",
+        "rectangle": "rectangular_room",
+        "wall_with_deductions": "wall",
+        "multi_section_area": "rectangular_room",
+    }.get(profile, profile)
     if profile in {"rectangular_room", "wall", "opening", "rectangular_volume"}:
         keys = {
             "rectangular_room": ("length", "width"),
@@ -218,7 +233,8 @@ def calculate_measurement_session(profile, entries, adjustments=None):
                     adjustment_entries = [row for row in selected if row["client_key"] in adjustment["source_entry_keys"]]
                     calculated = Decimal("0")
                     if len(adjustment_entries) == 2:
-                        calculated = Decimal(adjustment_entries[0]["normalized_value"]) * Decimal(adjustment_entries[1]["normalized_value"])
+                        quantity = Decimal(str(adjustment.get("quantity", 1)))
+                        calculated = Decimal(adjustment_entries[0]["normalized_value"]) * Decimal(adjustment_entries[1]["normalized_value"]) * quantity
                     adjustment["calculated_value"] = str(calculated)
                     if adjustment["adjustment_type"] == "addition":
                         additions += calculated
@@ -226,7 +242,12 @@ def calculate_measurement_session(profile, entries, adjustments=None):
                         exclusions += calculated
                 net = gross + additions - exclusions
                 if net < 0:
-                    warnings.append("Exclusions exceed gross area. Recheck adjustments.")
+                    raise MeasurementCalculationError("Deductions cannot exceed gross measured area.")
+                if requested_profile == "multi_section_area":
+                    results[0] = _result(
+                        "gross_area", "Positive section subtotal", gross + additions,
+                        "square_inches", "multi_section_area.positive.v1", source, adjustments,
+                    )
                 results.append(_result("excluded_area", "Excluded area", exclusions, "square_inches", "adjustments.excluded.v1", source, adjustments))
                 results.append(_result("net_area", "Net area", net, "square_inches", "area.net.v1", source, adjustments))
                 results.append(_result("perimeter", "Perimeter", 2 * (values[0] + values[1]), "inches", f"{profile}.perimeter.v1", source))

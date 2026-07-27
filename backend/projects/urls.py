@@ -251,7 +251,7 @@ from .views.capture_qr import (
     CaptureQrAssetQrView,
     PublicCaptureQrView,
 )
-from .views.measurement import MeasurementSessionDetailView
+from .views.measurement import ManualMeasurementPreviewView, MeasurementSessionDetailView
 from .views.measurement_plan import (
     PlanAnnotationActionView,
     PlanAnnotationCreateView,
@@ -539,6 +539,7 @@ urlpatterns = [
     path("captures/<uuid:capture_id>/apply/", CaptureApplyView.as_view(), name="capture-apply"),
     path("captures/<uuid:capture_id>/duplicates/", CaptureDuplicatesView.as_view(), name="capture-duplicates"),
     path("captures/<uuid:capture_id>/receipt/", CaptureReceiptView.as_view(), name="capture-receipt"),
+    path("measurements/manual-preview/", ManualMeasurementPreviewView.as_view(), name="measurement-manual-preview"),
     path("measurements/<int:session_id>/", MeasurementSessionDetailView.as_view(), name="measurement-session-detail"),
     path("measurement-plan-documents/", PlanDocumentListCreateView.as_view(), name="measurement-plan-document-list"),
     path("measurement-plan-documents/<int:document_id>/", PlanDocumentDetailView.as_view(), name="measurement-plan-document-detail"),

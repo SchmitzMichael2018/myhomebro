@@ -560,7 +560,10 @@ def validate_structured_draft(capture_type, value, *, capture=None):
         if value.get("schema_version") != "measurement.v1" or not value.get("project_id"):
             raise CaptureSchemaError("Measurement project and schema version are required.")
         purposes = {row[0] for row in __import__("projects.models", fromlist=["MeasurementSession"]).MeasurementSession.PURPOSE_CHOICES}
-        profiles = {"rectangular_room", "wall", "opening", "linear_run", "rectangular_volume"}
+        profiles = {
+            "rectangular_room", "wall", "opening", "linear_run", "rectangular_volume",
+            "linear_measurement", "rectangle", "wall_with_deductions", "multi_section_area",
+        }
         if value.get("purpose") not in purposes or value.get("guided_profile") not in profiles:
             raise CaptureSchemaError("Measurement purpose or guided profile is invalid.")
         room = value.get("room")
@@ -624,18 +627,25 @@ def validate_structured_draft(capture_type, value, *, capture=None):
             })
         adjustments = []
         for index, row in enumerate(value.get("adjustments") or []):
-            if not isinstance(row, dict) or set(row) - {"client_key", "label", "adjustment_type", "source_entry_keys", "notes"}:
+            if not isinstance(row, dict) or set(row) - {"client_key", "label", "adjustment_type", "source_entry_keys", "quantity", "notes", "calculated_value"}:
                 raise CaptureSchemaError("Measurement adjustment fields are invalid.")
             if row.get("adjustment_type") not in {"addition", "exclusion", "unmeasured"}:
                 raise CaptureSchemaError("Measurement adjustment type is invalid.")
             source_keys = row.get("source_entry_keys")
             if not isinstance(source_keys, list) or any(key not in client_keys for key in source_keys):
                 raise CaptureSchemaError("Measurement adjustment sources are invalid.")
+            try:
+                quantity = int(row.get("quantity", 1))
+            except (TypeError, ValueError):
+                raise CaptureSchemaError("Measurement adjustment quantity is invalid.") from None
+            if quantity < 1 or quantity > 100:
+                raise CaptureSchemaError("Measurement adjustment quantity is invalid.")
             adjustments.append({
                 "client_key": _text(row.get("client_key") or f"adjustment-{index + 1}", 80),
                 "label": _text(row.get("label"), 160),
                 "adjustment_type": row["adjustment_type"],
                 "source_entry_keys": source_keys,
+                "quantity": quantity,
                 "notes": _text(row.get("notes"), 1000),
             })
         annotations = value.get("annotations") or []

@@ -85,6 +85,34 @@ class MeasurementCaptureTests(TestCase):
         self.assertEqual(detail.status_code, 200)
         self.assertEqual(detail.data["room_name"], "Living Room")
         self.assertEqual(len(detail.data["events"]), 4)
+        before_result_ids = set(MeasurementCalculatedResult.objects.filter(session=session).values_list("id", flat=True))
+        revised = self.client.post(
+            f"/api/projects/measurements/{session.id}/",
+            {
+                "version": session.version,
+                "measurement": {
+                    "profile": "wall_with_deductions",
+                    "source": "field_verified_manual",
+                    "length": "12 ft",
+                    "height": "8 ft",
+                    "deductions": [{
+                        "deduction_key": "door-1", "type": "door", "label": "Hall door",
+                        "width": "3 ft", "height": "7 ft", "quantity": 1,
+                    }],
+                },
+            },
+            format="json",
+        )
+        self.assertEqual(revised.status_code, 201, revised.data)
+        self.assertEqual(revised.data["version"], 2)
+        self.assertTrue(before_result_ids.issubset(set(MeasurementCalculatedResult.objects.filter(session=session).values_list("id", flat=True))))
+        self.assertEqual(ProposalMeasurement.objects.count(), 0)
+        stale = self.client.post(
+            f"/api/projects/measurements/{session.id}/",
+            {"version": 1, "measurement": {"profile": "linear_measurement", "source": "approximate_manual", "length": "1 ft"}},
+            format="json",
+        )
+        self.assertEqual(stale.status_code, 409)
 
     def test_server_rejects_unknown_fields_provider_calculation_and_photo_verification(self):
         create = self.client.post("/api/projects/captures/", self.payload(), format="json")

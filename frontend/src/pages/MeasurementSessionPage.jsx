@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
-import { ArrowLeft, Camera, FileUp, Ruler } from "lucide-react";
+import React, { useCallback, useEffect, useState } from "react";
+import { ArrowLeft, Camera, FileUp, Plus, Ruler } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
+  addManualMeasurement,
   createPlanDocument,
   createPlanDocumentFromArtifact,
   createPhotoMeasurementDocument,
@@ -10,6 +11,7 @@ import {
   getCaptureArtifacts,
   getMeasurementSession,
 } from "../api/captures.js";
+import ManualMeasurementEditor, { createManualMeasurement } from "../components/capture/ManualMeasurementEditor.jsx";
 import { InlineAlert } from "../components/ui";
 import CreateTakeoffModal from "../components/takeoff/CreateTakeoffModal.jsx";
 
@@ -23,12 +25,33 @@ export default function MeasurementSessionPage() {
   const [session, setSession] = useState(null);
   const [error, setError] = useState("");
   const [takeoffOpen, setTakeoffOpen] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualValue, setManualValue] = useState(createManualMeasurement);
+  const [manualPreview, setManualPreview] = useState(null);
   const [planBusy, setPlanBusy] = useState(false);
   const [availablePlans, setAvailablePlans] = useState([]);
   const [availablePhotos, setAvailablePhotos] = useState([]);
   const takeoffEnabled = String(import.meta.env.VITE_TAKEOFF_ENABLED || "").toLowerCase() === "true";
   const pdfMeasurementEnabled = String(import.meta.env.VITE_MEASUREMENT_PDF_ENABLED || "").toLowerCase() === "true";
   const photoMeasurementEnabled = String(import.meta.env.VITE_MEASUREMENT_PHOTO_ASSISTED_ENABLED || "").toLowerCase() === "true";
+  const handleManualPreview = useCallback(setManualPreview, []);
+
+  async function saveManualMeasurement() {
+    if (!manualPreview) return;
+    setPlanBusy(true);
+    setError("");
+    try {
+      const updated = await addManualMeasurement(sessionId, session.version, manualValue);
+      setSession(updated);
+      setManualOpen(false);
+      setManualValue(createManualMeasurement());
+      setManualPreview(null);
+    } catch (reason) {
+      setError(reason?.response?.data?.detail || "The measurement could not be added.");
+    } finally {
+      setPlanBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (!pdfMeasurementEnabled || !session?.source_capture_id) return;
@@ -105,6 +128,7 @@ export default function MeasurementSessionPage() {
         <h1 className="mt-1 text-2xl font-bold">{session.room_name}</h1>
         <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{session.project_title} · {friendly(session.purpose)} · Version {session.version}</p>
         <div className="mt-3 flex flex-wrap gap-2">
+          <button type="button" onClick={() => setManualOpen(true)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--mhb-interaction-primary)] px-4 font-bold text-white" data-testid="add-measurement"><Plus size={18} />Add Measurement</button>
           {pdfMeasurementEnabled ? <label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 font-bold"><FileUp size={18} />{planBusy ? "Uploading…" : "Measure from Plan"}<input type="file" accept="application/pdf,.pdf" className="sr-only" disabled={planBusy} onChange={uploadPlan} data-testid="measure-from-plan-input" /></label> : null}
           {photoMeasurementEnabled ? <><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 font-bold"><Camera size={18} />Take Photo<input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" className="sr-only" disabled={planBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) openPhoto(file); event.target.value = ""; }} data-testid="measure-from-camera-input" /></label><label className="inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-4 font-bold"><FileUp size={18} />Upload Photo<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={planBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) openPhoto(file); event.target.value = ""; }} data-testid="measure-from-photo-input" /></label></> : null}
           {takeoffEnabled ? <button type="button" onClick={() => setTakeoffOpen(true)} className="min-h-11 rounded-xl bg-[var(--mhb-interaction-primary)] px-4 font-bold text-white" data-testid="create-takeoff">Create Takeoff</button> : null}
@@ -159,6 +183,16 @@ export default function MeasurementSessionPage() {
         </section>
       </div>
       {takeoffEnabled ? <CreateTakeoffModal measurement={session} visible={takeoffOpen} onClose={() => setTakeoffOpen(false)} /> : null}
+      {manualOpen ? <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="manual-measurement-title">
+        <div className="mx-auto grid min-w-0 max-w-3xl gap-4 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card-elevated)] p-4 shadow-2xl sm:p-6">
+          <div><h2 id="manual-measurement-title" className="text-xl font-bold">Add Measurement</h2><p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">Add a new revision to {session.room_name}. Existing confirmed results remain in history.</p></div>
+          <ManualMeasurementEditor projectId={session.project_id} value={manualValue} onChange={setManualValue} onPreview={handleManualPreview} />
+          <div className="sticky bottom-0 -mx-4 flex justify-end gap-2 border-t border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card-elevated)] p-4 sm:static sm:mx-0 sm:border-0 sm:p-0">
+            <button type="button" onClick={() => setManualOpen(false)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] px-4 font-bold">Cancel</button>
+            <button type="button" disabled={!manualPreview || planBusy} onClick={saveManualMeasurement} className="min-h-11 rounded-xl bg-[var(--mhb-interaction-primary)] px-4 font-bold text-white disabled:opacity-50">Save measurement</button>
+          </div>
+        </div>
+      </div> : null}
     </main>
   );
 }

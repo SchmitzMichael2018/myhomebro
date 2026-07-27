@@ -42,7 +42,7 @@ const ACTIONS = [
   { key: "issue", label: "Document an issue", icon: AlertTriangle },
   { key: "communication", label: "Log a communication", icon: MessageSquare },
   { key: "document", label: "Add a project document", icon: FileText },
-  ...(MEASUREMENT_ENABLED ? [{ key: "measurement", label: "Measure a Space", icon: Ruler }] : []),
+  ...(MEASUREMENT_ENABLED ? [{ key: "measurement", label: "Enter Measurements", icon: Ruler }] : []),
   ...(EQUIPMENT_ENABLED ? [{ key: "equipment", label: "Add Equipment", icon: Camera }] : []),
   ...(WARRANTY_ENABLED ? [
     { key: "warranty_document", label: "Save Warranty Information", icon: FileText },
