@@ -234,7 +234,9 @@ SUPPORTED_DESTINATIONS = {
     },
     Capture.TYPE_PROGRESS_PHOTO: {"project_attachment", "project_activity"},
     Capture.TYPE_ISSUE: {"project_issue", "project_activity", "follow_up"},
-    Capture.TYPE_COMMUNICATION: {"communication_log", "project_activity", "follow_up"},
+    Capture.TYPE_COMMUNICATION: {
+        "communication_log", "project_activity", "follow_up", "amendment_request",
+    },
     Capture.TYPE_DOCUMENT: {"project_attachment", "project_activity"},
     Capture.TYPE_EQUIPMENT: {"equipment_record", "equipment_attachment"},
     Capture.TYPE_WARRANTY_DOCUMENT: {"warranty_record", "warranty_document"},
@@ -315,6 +317,7 @@ def _validate_request(capture, payload, *, require_confirmation=False):
             "create_separate": "create_separate",
             "not_same_person": "not_same_person",
             "not_same_item": "not_same_item",
+            "not_same": "not_same",
         }
         if not approved_decision or mapping.get(requested_resolution.get("action")) != approved_decision.get("decision"):
             raise CaptureApplicationError("Duplicate resolution does not match the approved review.")
@@ -343,6 +346,7 @@ def _validate_request(capture, payload, *, require_confirmation=False):
         "warranty_request": 0,
         "measurement_session": 0,
         "communication_log": 0,
+        "amendment_request": 0,
         "project_attachment": 1,
         "equipment_attachment": 1,
         "warranty_document": 1,

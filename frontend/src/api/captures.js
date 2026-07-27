@@ -88,9 +88,27 @@ export async function createProjectCapture(payload, files = []) {
   form.append("capture_method", payload.capture_method || "typed");
   form.append("project_id", String(payload.project_id));
   if (payload.milestone_id) form.append("milestone_id", String(payload.milestone_id));
+  if (payload.agreement_id) form.append("agreement_id", String(payload.agreement_id));
   form.append("raw_text_payload", JSON.stringify(payload.raw_text_payload || {}));
   files.forEach((file) => form.append("files", file));
   const response = await api.post("/projects/captures/", form);
+  return response.data;
+}
+
+export async function submitCustomerChangeIntake(payload, files = []) {
+  const form = new FormData();
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) form.append(key, String(value));
+  });
+  files.forEach((file) => form.append("files", file));
+  const response = await api.post("/projects/captures/customer-change-intake/", form);
+  return response.data;
+}
+
+export async function getCustomerChangeIntakeStatus(captureId) {
+  const response = await api.get(
+    `/projects/captures/customer-change-intake/${encodeURIComponent(captureId)}/`
+  );
   return response.data;
 }
 

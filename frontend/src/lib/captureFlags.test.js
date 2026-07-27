@@ -5,6 +5,7 @@ import {
   isCaptureQrEnabled,
   isCaptureReviewEnabled,
   isCaptureFieldFindingsEnabled,
+  isCaptureChangeRequestEnabled,
 } from "./captureFlags.js";
 
 describe("Capture review feature flag", () => {
@@ -23,6 +24,18 @@ describe("Capture review feature flag", () => {
     })).toBe(true);
     expect(isCaptureFieldFindingsEnabled({
       foundation: true, inbox: false, review: true, fieldFindings: true,
+    })).toBe(false);
+  });
+
+  it("requires application and the independent change-request flag", () => {
+    expect(isCaptureChangeRequestEnabled({
+      foundation: true, inbox: true, review: true, application: true, changeRequest: true,
+    })).toBe(true);
+    expect(isCaptureChangeRequestEnabled({
+      foundation: true, inbox: true, review: true, application: false, changeRequest: true,
+    })).toBe(false);
+    expect(isCaptureChangeRequestEnabled({
+      foundation: true, inbox: true, review: true, application: true, changeRequest: false,
     })).toBe(false);
   });
 

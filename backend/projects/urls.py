@@ -242,6 +242,8 @@ from .views.capture import (
     CaptureSummaryView,
     CaptureTimelineView,
     CaptureProjectOptionsView,
+    CustomerChangeIntakeStatusView,
+    CustomerChangeIntakeView,
 )
 from .views.capture_qr import (
     CaptureQrAssetActionView,
@@ -527,6 +529,8 @@ urlpatterns = [
     path("captures/", CaptureListCreateView.as_view(), name="capture-list-create"),
     path("captures/summary/", CaptureSummaryView.as_view(), name="capture-summary"),
     path("captures/project-options/", CaptureProjectOptionsView.as_view(), name="capture-project-options"),
+    path("captures/customer-change-intake/", CustomerChangeIntakeView.as_view(), name="customer-change-intake"),
+    path("captures/customer-change-intake/<uuid:capture_id>/", CustomerChangeIntakeStatusView.as_view(), name="customer-change-intake-status"),
     path("captures/<uuid:capture_id>/", CaptureDetailView.as_view(), name="capture-detail"),
     path("captures/<uuid:capture_id>/timeline/", CaptureTimelineView.as_view(), name="capture-timeline"),
     path("captures/<uuid:capture_id>/artifacts/", CaptureArtifactListView.as_view(), name="capture-artifacts"),

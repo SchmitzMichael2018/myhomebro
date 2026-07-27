@@ -31,6 +31,7 @@ const EQUIPMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_EQUIPMENT_ENABLED 
 const WARRANTY_ENABLED = String(import.meta.env.VITE_CAPTURE_WARRANTY_ENABLED || "").toLowerCase() === "true";
 const MEASUREMENT_ENABLED = String(import.meta.env.VITE_CAPTURE_MEASUREMENT_ENABLED || "").toLowerCase() === "true";
 const FIELD_FINDINGS_ENABLED = String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
+const CHANGE_REQUEST_ENABLED = String(import.meta.env.VITE_CAPTURE_CHANGE_REQUEST_ENABLED || "").toLowerCase() === "true";
 
 const ACTIONS = [
   { key: "lead", label: "I met someone", icon: UserRound },
@@ -364,6 +365,13 @@ const PROJECT_CAPTURE_CONFIG = {
     captureType: "issue",
     profile: "site_condition",
   },
+  change_request: {
+    title: "Request a Change",
+    textLabel: "Describe the requested project change",
+    captureType: "communication",
+    profile: "change_request",
+    files: "optional_evidence",
+  },
   communication: {
     title: "Log a communication",
     textLabel: "What was discussed?",
@@ -395,6 +403,7 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
   const [projects, setProjects] = useState([]);
   const [projectId, setProjectId] = useState(String(initialProjectId || ""));
   const [milestoneId, setMilestoneId] = useState(String(initialMilestoneId || ""));
+  const [agreementId, setAgreementId] = useState("");
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [files, setFiles] = useState([]);
@@ -405,6 +414,9 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
   const [details, setDetails] = useState({
     category: "", manufacturer: "", model: "", serial_number: "",
     installation_date: "", start_date: "", expiration_date: "", urgency: "normal",
+    change_kind: "add_scope", reason: "", location_or_scope_area: "",
+    requested_timing: "", known_price_expectation: "",
+    known_schedule_expectation: "", decision_boundary: "change_request",
   });
   const [voiceLanguage, setVoiceLanguage] = useState("");
   const [loading, setLoading] = useState(true);
@@ -422,6 +434,7 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
   const requiresText = ["project_update", "issue", "communication", "warranty_concern"].includes(captureType);
   const requiresFiles = ["progress_photo", "document", "equipment", "warranty_document", "warranty_concern"].includes(captureType);
   const isD2 = ["equipment", "warranty_document", "warranty_concern"].includes(captureType);
+  const isChangeRequest = profile === "change_request";
 
   async function submit(event) {
     event.preventDefault();
@@ -433,6 +446,7 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
           capture_type: captureType,
           capture_method: voiceLanguage ? "voice_transcript" : files.length ? "file_upload" : "typed",
           project_id: projectId,
+          agreement_id: isChangeRequest ? agreementId : null,
           milestone_id: milestoneId || null,
           raw_text_payload: {
             title,
@@ -480,6 +494,7 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
             onChange={(event) => {
               setProjectId(event.target.value);
               setMilestoneId("");
+              setAgreementId("");
             }}
             className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"
           >
@@ -492,6 +507,24 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
           </select>
         )}
       </FormField>
+      {isChangeRequest ? (
+        <FormField label="Agreement" required helperText="The request remains non-binding until the existing amendment workflow is completed.">
+          {(fieldProps) => (
+            <select
+              {...fieldProps}
+              value={agreementId}
+              disabled={!project}
+              onChange={(event) => setAgreementId(event.target.value)}
+              className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"
+            >
+              <option value="">Select an agreement</option>
+              {(project?.agreements || []).map((row) => (
+                <option key={row.id} value={row.id}>{row.title}</option>
+              ))}
+            </select>
+          )}
+        </FormField>
+      ) : null}
       <FormField label="Milestone" helperText="Optional">
         {(fieldProps) => (
           <select
@@ -554,7 +587,7 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
           )}
         </FormField>
       ) : null}
-      {captureType === "communication" ? (
+      {captureType === "communication" && !isChangeRequest ? (
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField label="Communication type" required>
             {(fieldProps) => (
@@ -576,6 +609,41 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
               </select>
             )}
           </FormField>
+        </div>
+      ) : null}
+      {isChangeRequest ? (
+        <div className="grid gap-4">
+          <FormField label="Change category" required>
+            {(fieldProps) => (
+              <select {...fieldProps} value={details.change_kind} onChange={(event) => setDetails((value) => ({ ...value, change_kind: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+                <option value="add_scope">Add work</option>
+                <option value="remove_scope">Remove work</option>
+                <option value="material_substitution">Substitute material</option>
+                <option value="design_change">Change design</option>
+                <option value="quantity_change">Change quantity</option>
+                <option value="changed_condition">Changed site condition</option>
+                <option value="schedule_impact">Schedule-impacting request</option>
+                <option value="access_or_sequence">Access or sequencing change</option>
+                <option value="customer_revision">Customer-requested revision</option>
+                <option value="contractor_scope_concern">Contractor-discovered scope concern</option>
+                <option value="other">Other</option>
+              </select>
+            )}
+          </FormField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField label="Reason" helperText="Optional">
+              {(fieldProps) => <textarea {...fieldProps} rows={2} value={details.reason} onChange={(event) => setDetails((value) => ({ ...value, reason: event.target.value }))} className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3 py-2" />}
+            </FormField>
+            <FormField label="Area or location" helperText="Optional">
+              {(fieldProps) => <input {...fieldProps} value={details.location_or_scope_area} onChange={(event) => setDetails((value) => ({ ...value, location_or_scope_area: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3" />}
+            </FormField>
+            <FormField label="Requested timing" helperText="Requester input, not a promised date">
+              {(fieldProps) => <input {...fieldProps} value={details.requested_timing} onChange={(event) => setDetails((value) => ({ ...value, requested_timing: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3" />}
+            </FormField>
+            <FormField label="Known price expectation" helperText="Requester assertion only">
+              {(fieldProps) => <input {...fieldProps} value={details.known_price_expectation} onChange={(event) => setDetails((value) => ({ ...value, known_price_expectation: event.target.value }))} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3" />}
+            </FormField>
+          </div>
         </div>
       ) : null}
       {["equipment", "warranty_document"].includes(captureType) ? (
@@ -616,7 +684,7 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
       ) : null}
       {config.files ? (
         <FormField
-          label={["required_document", "required_source"].includes(config.files) ? "Photos or documents" : "Photos"}
+          label={["required_document", "required_source", "optional_evidence"].includes(config.files) ? "Photos or documents" : "Photos"}
           required={requiresFiles}
           helperText={config.files === "optional_photos" ? "Optional" : "Up to 10 files"}
         >
@@ -625,8 +693,8 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
               {...fieldProps}
               type="file"
               multiple={config.files !== "required_document"}
-              accept={["required_document", "required_source"].includes(config.files) ? ".pdf,.jpg,.jpeg,.png,.webp,.txt" : "image/*"}
-              capture={["required_document", "required_source"].includes(config.files) ? undefined : "environment"}
+              accept={["required_document", "required_source", "optional_evidence"].includes(config.files) ? ".pdf,.jpg,.jpeg,.png,.webp,.txt" : "image/*"}
+              capture={["required_document", "required_source", "optional_evidence"].includes(config.files) ? undefined : "environment"}
               onChange={(event) => setFiles(Array.from(event.target.files || []))}
               className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3"
             />
@@ -644,8 +712,10 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
           Make the applied update and files visible in the Customer Portal
         </label>
       ) : null}
-      <InlineAlert theme="operational" tone="info">
-        {isD2
+      <InlineAlert theme="operational" tone={isChangeRequest ? "warning" : "info"}>
+        {isChangeRequest
+          ? "This prepares a change request for review. It does not change the agreement, approve pricing, or authorize work."
+          : isD2
           ? "This saves a review draft. It does not decide warranty coverage, authorize repair, or publish anything."
           : "This saves a Capture for review. It does not complete a milestone or publish anything yet."}
       </InlineAlert>
@@ -656,7 +726,7 @@ function ProjectCaptureForm({ captureType, profile = "", initialProjectId = "", 
           type="submit"
           theme="operational"
           loading={busy}
-          disabled={!projectId || (requiresText && !text.trim()) || (requiresFiles && !files.length) || (captureType === "equipment" && !details.category.trim())}
+          disabled={!projectId || (isChangeRequest && !agreementId) || (requiresText && !text.trim()) || (requiresFiles && !files.length) || (captureType === "equipment" && !details.category.trim())}
         >
           Save for review
         </Button>
@@ -677,6 +747,7 @@ export default function CaptureLauncher() {
       if (
         ACTIONS.some((action) => action.key === requested)
         || (FIELD_FINDINGS_ENABLED && ["punch_item", "site_condition"].includes(requested))
+        || (CHANGE_REQUEST_ENABLED && requested === "change_request")
       ) {
         setContext(event.detail || {});
         setMode(requested);

@@ -9,7 +9,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from projects.models import Capture, CaptureEvent, Homeowner, ProjectCaptureIssue
+from projects.models import AmendmentRequest, Capture, CaptureEvent, Homeowner, ProjectCaptureIssue
 from projects.services.capture_lifecycle import (
     CaptureLifecycleError,
     check_expected_version,
@@ -82,6 +82,12 @@ FIELD_FINDING_PROFILES = {"punch_item", "site_condition"}
 FIELD_FINDING_SEVERITIES = {"", "low", "medium", "high"}
 FIELD_FINDING_DECISIONS = {"pending", "approved", "rejected", "excluded"}
 MAX_FIELD_FINDINGS = 25
+CHANGE_REQUEST_CATEGORIES = {
+    "add_scope", "remove_scope", "material_substitution", "design_change",
+    "quantity_change", "changed_condition", "schedule_impact",
+    "access_or_sequence", "customer_revision", "contractor_scope_concern", "other",
+}
+CHANGE_DECISION_BOUNDARIES = {"change_request", "informal_preference", "formal_approval"}
 
 
 def is_field_findings_capture(capture):
@@ -91,6 +97,104 @@ def is_field_findings_capture(capture):
         capture.capture_type == Capture.TYPE_ISSUE
         and profile in FIELD_FINDING_PROFILES
     )
+
+
+def is_change_intake_capture(capture):
+    raw = capture.raw_text_payload or {}
+    metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+    return (
+        capture.capture_type == Capture.TYPE_COMMUNICATION
+        and (raw.get("capture_profile") or metadata.get("capture_profile")) == "change_request"
+    )
+
+
+def _change_boundary(text, requested):
+    if requested in CHANGE_DECISION_BOUNDARIES:
+        return requested
+    normalized = str(text or "").casefold()
+    formal = ("approve" in normalized or "accept" in normalized or "authorize" in normalized) and any(
+        token in normalized for token in ("price", "payment", "signed", "proceed", "contract")
+    )
+    if formal:
+        return "formal_approval"
+    action_words = ("replace", "add ", "remove", "change ", "move ", "substitute", "increase", "decrease")
+    return "change_request" if any(token in normalized for token in action_words) else "informal_preference"
+
+
+def build_change_intake_draft(capture):
+    if not getattr(settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False):
+        raise CaptureProcessingError("Change Intake is not enabled.")
+    raw = capture.raw_text_payload or {}
+    metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+    requested_change = _text(raw.get("text") or raw.get("transcript"), 5000)
+    change_kind = _text(metadata.get("change_kind") or "other", 40)
+    boundary = _change_boundary(requested_change, metadata.get("decision_boundary"))
+    boundary_confirmed = metadata.get("decision_boundary") in CHANGE_DECISION_BOUNDARIES
+    agreement = capture.agreement
+    actor_type = "customer" if metadata.get("actor_type") == "customer" else "contractor"
+    requester = capture.customer if actor_type == "customer" else None
+    missing = []
+    if not requested_change or len(requested_change) < 8:
+        missing.append("requested_change")
+    if change_kind not in CHANGE_REQUEST_CATEGORIES:
+        missing.append("change_kind")
+    if not agreement:
+        missing.append("agreement_id")
+    if boundary == "formal_approval" or (
+        boundary == "informal_preference" and not boundary_confirmed
+    ):
+        missing.append("decision_boundary")
+    return {
+        "schema_version": "change-intake.v1",
+        "capture_profile": "change_request",
+        "actor_type": actor_type,
+        "project_id": capture.project_id,
+        "agreement_id": capture.agreement_id,
+        "requester": {
+            "actor_id": capture.captured_by_id,
+            "display_name": _text(
+                getattr(requester, "full_name", "")
+                or (capture.captured_by.get_full_name() if capture.captured_by else "")
+                or getattr(capture.captured_by, "email", ""),
+                255,
+            ),
+            "relationship": "project_customer" if actor_type == "customer" else "contractor_team",
+        },
+        "decision_boundary": boundary,
+        "boundary_confirmed": boundary_confirmed,
+        "change_kind": change_kind,
+        "title": _text(raw.get("title") or requested_change[:120] or "Requested project change", 200),
+        "requested_change": requested_change,
+        "reason": _text(metadata.get("reason"), 2000),
+        "location_or_scope_area": _text(metadata.get("location_or_scope_area"), 500),
+        "requested_timing": _text(metadata.get("requested_timing"), 500),
+        "customer_priority": _text(metadata.get("customer_priority"), 40),
+        "known_price_expectation": _text(metadata.get("known_price_expectation"), 500),
+        "known_schedule_expectation": _text(metadata.get("known_schedule_expectation"), 500),
+        "related_issue_id": metadata.get("related_issue_id") or None,
+        "related_milestone_id": capture.milestone_id,
+        "artifact_ids": [str(value) for value in capture.artifacts.values_list("id", flat=True)],
+        "source_evidence": _bounded_list(metadata.get("source_evidence", []), limit=20),
+        "confidence": {},
+        "warnings": [
+            "This creates an Amendment Request for review. It does not change the agreement.",
+            *(
+                ["This appears to be an informal preference. Confirm an explicit requested change."]
+                if boundary == "informal_preference" else
+                ["Formal approval belongs in the existing amendment and signature workflow."]
+                if boundary == "formal_approval" else []
+            ),
+        ],
+        "missing_information": missing,
+        "missing_fields": missing,
+        "uncertainties": [],
+        "proposed_destination": (
+            "amendment_request" if boundary == "change_request" else "communication_log"
+        ),
+        "proposed_destinations": (
+            ["amendment_request"] if boundary == "change_request" else ["communication_log"]
+        ),
+    }
 
 
 def _field_finding_key(index):
@@ -371,6 +475,8 @@ def build_quick_note_draft(raw):
 def build_project_capture_draft(capture):
     if is_field_findings_capture(capture):
         return build_field_findings_draft(capture)
+    if is_change_intake_capture(capture):
+        return build_change_intake_draft(capture)
     raw = capture.raw_text_payload or {}
     metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
     body = _text(raw.get("text") or raw.get("transcript"), 5000)
@@ -767,6 +873,126 @@ def validate_structured_draft(capture_type, value, *, capture=None):
                 raise CaptureSchemaError("Warranty concerns must remain review requests.")
             result["follow_up"] = _follow_up(value.get("follow_up"))
         return result
+    if (
+        capture_type == Capture.TYPE_COMMUNICATION
+        and value.get("schema_version") == "change-intake.v1"
+    ):
+        if capture is None or not is_change_intake_capture(capture):
+            raise CaptureSchemaError("Change Intake validation requires Capture context.")
+        if not getattr(settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False):
+            raise CaptureSchemaError("Change Intake is not enabled.")
+        allowed = {
+            "schema_version", "capture_profile", "actor_type", "project_id",
+            "agreement_id", "requester", "decision_boundary", "boundary_confirmed", "change_kind",
+            "title", "requested_change", "reason", "location_or_scope_area",
+            "requested_timing", "customer_priority", "known_price_expectation",
+            "known_schedule_expectation", "related_issue_id", "related_milestone_id",
+            "artifact_ids", "source_evidence", "confidence", "warnings",
+            "missing_information", "missing_fields", "uncertainties",
+            "proposed_destination", "proposed_destinations",
+        }
+        if set(value) - allowed:
+            raise CaptureSchemaError("Change Intake contains unsupported fields.")
+        if value.get("capture_profile") != "change_request":
+            raise CaptureSchemaError("Change Intake profile is invalid.")
+        if value.get("project_id") != capture.project_id:
+            raise CaptureSchemaError("Change Intake project context cannot be changed.")
+        if value.get("agreement_id") != capture.agreement_id:
+            raise CaptureSchemaError("Change Intake agreement context cannot be changed.")
+        if not capture.agreement_id or capture.agreement.project_id != capture.project_id:
+            raise CaptureSchemaError("Select an agreement for the same project.")
+        actor_type = value.get("actor_type")
+        expected_actor_type = (
+            "customer"
+            if (capture.raw_text_payload or {}).get("input_metadata", {}).get("actor_type") == "customer"
+            else "contractor"
+        )
+        if actor_type != expected_actor_type:
+            raise CaptureSchemaError("Change Intake actor identity cannot be changed.")
+        requester = value.get("requester")
+        if not isinstance(requester, dict) or set(requester) - {
+            "actor_id", "display_name", "relationship"
+        }:
+            raise CaptureSchemaError("Change Intake requester is invalid.")
+        if requester.get("actor_id") != capture.captured_by_id:
+            raise CaptureSchemaError("Change Intake requester identity cannot be changed.")
+        boundary = value.get("decision_boundary")
+        if boundary not in CHANGE_DECISION_BOUNDARIES:
+            raise CaptureSchemaError("Change Intake decision boundary is invalid.")
+        change_kind = value.get("change_kind")
+        if change_kind not in CHANGE_REQUEST_CATEGORIES:
+            raise CaptureSchemaError("Change Intake category is invalid.")
+        artifact_ids = value.get("artifact_ids") or []
+        if (
+            not isinstance(artifact_ids, list)
+            or len(artifact_ids) > 20
+            or len(artifact_ids) != len(set(map(str, artifact_ids)))
+        ):
+            raise CaptureSchemaError("Change Intake artifacts are invalid.")
+        owned_artifacts = {
+            str(item) for item in capture.artifacts.filter(retention_state="active").values_list("id", flat=True)
+        }
+        if any(str(item) not in owned_artifacts for item in artifact_ids):
+            raise CaptureSchemaError("Change Intake artifact is unavailable.")
+        related_issue_id = value.get("related_issue_id")
+        if related_issue_id and not ProjectCaptureIssue.objects.filter(
+            pk=related_issue_id, project=capture.project
+        ).exists():
+            raise CaptureSchemaError("Related Project Issue is unavailable.")
+        requested_change = _text(value.get("requested_change"), 5000)
+        missing = []
+        if len(requested_change) < 8:
+            missing.append("requested_change")
+        if not capture.agreement_id:
+            missing.append("agreement_id")
+        boundary_confirmed = value.get("boundary_confirmed") is True
+        if boundary == "formal_approval" or (
+            boundary == "informal_preference" and not boundary_confirmed
+        ):
+            missing.append("decision_boundary")
+        destination = "amendment_request" if boundary == "change_request" else "communication_log"
+        if value.get("proposed_destination") != destination or value.get("proposed_destinations") != [destination]:
+            raise CaptureSchemaError("Change Intake destination must match its decision boundary.")
+        confidence = value.get("confidence") or {}
+        if not isinstance(confidence, dict) or len(confidence) > 12:
+            raise CaptureSchemaError("Change Intake confidence is invalid.")
+        source_evidence = value.get("source_evidence") or []
+        if not isinstance(source_evidence, list) or len(source_evidence) > 20:
+            raise CaptureSchemaError("Change Intake source evidence is invalid.")
+        return {
+            "schema_version": "change-intake.v1",
+            "capture_profile": "change_request",
+            "actor_type": actor_type,
+            "project_id": capture.project_id,
+            "agreement_id": capture.agreement_id,
+            "requester": {
+                "actor_id": capture.captured_by_id,
+                "display_name": _text(requester.get("display_name"), 255),
+                "relationship": _text(requester.get("relationship"), 40),
+            },
+            "decision_boundary": boundary,
+            "boundary_confirmed": boundary_confirmed,
+            "change_kind": change_kind,
+            "title": _text(value.get("title"), 200),
+            "requested_change": requested_change,
+            "reason": _text(value.get("reason"), 2000),
+            "location_or_scope_area": _text(value.get("location_or_scope_area"), 500),
+            "requested_timing": _text(value.get("requested_timing"), 500),
+            "customer_priority": _text(value.get("customer_priority"), 40),
+            "known_price_expectation": _text(value.get("known_price_expectation"), 500),
+            "known_schedule_expectation": _text(value.get("known_schedule_expectation"), 500),
+            "related_issue_id": related_issue_id or None,
+            "related_milestone_id": capture.milestone_id,
+            "artifact_ids": [str(item) for item in artifact_ids],
+            "source_evidence": _bounded_list(source_evidence, limit=20),
+            "confidence": confidence,
+            "warnings": _bounded_list(value.get("warnings", []), limit=20),
+            "missing_information": missing,
+            "missing_fields": missing,
+            "uncertainties": _bounded_list(value.get("uncertainties", []), limit=20),
+            "proposed_destination": destination,
+            "proposed_destinations": [destination],
+        }
     if capture_type in PROJECT_CAPTURE_TYPES:
         if capture_type == Capture.TYPE_ISSUE and value.get("schema_version") == "field-findings.v1":
             if capture is None:
@@ -960,6 +1186,30 @@ def _mask_phone(value):
 
 
 def find_duplicate_candidates(capture):
+    if is_change_intake_capture(capture):
+        raw = capture.raw_text_payload or {}
+        metadata = raw.get("input_metadata") if isinstance(raw.get("input_metadata"), dict) else {}
+        needle = _text(raw.get("text") or raw.get("transcript"), 5000).casefold()
+        category = _text(metadata.get("change_kind"), 40)
+        candidates = []
+        for row in AmendmentRequest.objects.filter(
+            agreement_id=capture.agreement_id,
+            change_intake_category=category,
+        ).exclude(status=AmendmentRequest.Status.CLOSED).order_by("-created_at")[:50]:
+            existing = _text((row.requested_changes or {}).get("requested_change"), 5000).casefold()
+            similarity = SequenceMatcher(None, needle, existing).ratio() if needle and existing else 0
+            if similarity >= 0.72:
+                candidates.append({
+                    "candidate_id": row.id,
+                    "display_name": _text(
+                        (row.requested_changes or {}).get("title") or f"Amendment Request #{row.id}",
+                        200,
+                    ),
+                    "reason": "Similar open request for this agreement",
+                    "match_strength": "strong" if similarity >= 0.88 else "advisory",
+                    "similarity": round(similarity, 3),
+                })
+        return candidates[:8]
     if capture.capture_type == Capture.TYPE_WARRANTY_DOCUMENT:
         from projects.models import WarrantyCaptureDocument
         hashes = list(

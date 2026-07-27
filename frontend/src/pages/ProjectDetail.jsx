@@ -7,6 +7,8 @@ import toast from "react-hot-toast";
 
 const FIELD_FINDINGS_ENABLED =
   String(import.meta.env.VITE_CAPTURE_FIELD_FINDINGS_ENABLED || "").toLowerCase() === "true";
+const CHANGE_REQUEST_ENABLED =
+  String(import.meta.env.VITE_CAPTURE_CHANGE_REQUEST_ENABLED || "").toLowerCase() === "true";
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -99,6 +101,18 @@ export default function ProjectDetail() {
                   Record Site Condition
                 </button>
               </>
+            ) : null}
+            {CHANGE_REQUEST_ENABLED ? (
+              <button
+                type="button"
+                data-testid="project-request-change"
+                onClick={() => window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+                  detail: { mode: "change_request", projectId: project.id },
+                }))}
+                className="min-h-11 rounded-lg border border-gray-300 px-4 font-semibold text-gray-800"
+              >
+                Request a Change
+              </button>
             ) : null}
           </div>
         </section>

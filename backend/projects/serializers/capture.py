@@ -273,18 +273,36 @@ class CaptureCreateSerializer(CaptureSerializer):
             )
         profile = payload.get("capture_profile") or metadata.get("capture_profile")
         if profile:
-            if profile not in {"punch_item", "site_condition"}:
+            if profile not in {"punch_item", "site_condition", "change_request"}:
                 raise serializers.ValidationError(
-                    {"raw_text_payload": "Choose a supported field-finding profile."}
+                    {"raw_text_payload": "Choose a supported Capture profile."}
                 )
-            if not getattr(settings, "CAPTURE_FIELD_FINDINGS_ENABLED", False):
+            if profile in {"punch_item", "site_condition"} and not getattr(
+                settings, "CAPTURE_FIELD_FINDINGS_ENABLED", False
+            ):
                 raise serializers.ValidationError(
                     {"raw_text_payload": "Project Field Findings is not enabled."}
                 )
-            if capture_type != Capture.TYPE_ISSUE or metadata.get("issue_classification") != profile:
+            if profile in {"punch_item", "site_condition"} and (
+                capture_type != Capture.TYPE_ISSUE
+                or metadata.get("issue_classification") != profile
+            ):
                 raise serializers.ValidationError(
                     {"raw_text_payload": "Field findings must use the matching Issue classification."}
                 )
+            if profile == "change_request":
+                if not getattr(settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False):
+                    raise serializers.ValidationError(
+                        {"raw_text_payload": "Change Intake is not enabled."}
+                    )
+                if capture_type != Capture.TYPE_COMMUNICATION:
+                    raise serializers.ValidationError(
+                        {"raw_text_payload": "Change Intake must use Communication Capture."}
+                    )
+                if not self.context.get("agreement"):
+                    raise serializers.ValidationError(
+                        {"agreement_id": "Select an agreement for this change request."}
+                    )
         if capture_type == Capture.TYPE_COMMUNICATION and metadata.get("communication_type") not in {
             "phone_call", "email", "sms", "in_person", "other",
         }:

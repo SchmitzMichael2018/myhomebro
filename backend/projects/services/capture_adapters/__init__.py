@@ -19,6 +19,7 @@ from .measurement_attachment import MeasurementAttachmentAdapter
 from .measurement_calculations import MeasurementCalculationsAdapter
 from .measurement_entries import MeasurementEntriesAdapter
 from .measurement_session import MeasurementSessionAdapter
+from .amendment_request import AmendmentRequestAdapter
 
 ADAPTERS = {
     "customer": CustomerAdapter(),
@@ -42,4 +43,5 @@ ADAPTERS = {
     "measurement_adjustments": MeasurementAdjustmentsAdapter(),
     "measurement_calculations": MeasurementCalculationsAdapter(),
     "measurement_attachment": MeasurementAttachmentAdapter(),
+    "amendment_request": AmendmentRequestAdapter(),
 }

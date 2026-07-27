@@ -44,6 +44,23 @@ class AmendmentRequest(models.Model):
         REJECTED = "rejected", "Rejected"
         COUNTERED = "countered", "Countered"
 
+    class ChangeIntakeCategory(models.TextChoices):
+        ADD_SCOPE = "add_scope", "Add Work"
+        REMOVE_SCOPE = "remove_scope", "Remove Work"
+        MATERIAL_SUBSTITUTION = "material_substitution", "Substitute Material"
+        DESIGN_CHANGE = "design_change", "Change Design"
+        QUANTITY_CHANGE = "quantity_change", "Change Quantity"
+        CHANGED_CONDITION = "changed_condition", "Changed Site Condition"
+        SCHEDULE_IMPACT = "schedule_impact", "Schedule-impacting Request"
+        ACCESS_OR_SEQUENCE = "access_or_sequence", "Access or Sequencing Change"
+        CUSTOMER_REVISION = "customer_revision", "Customer-requested Revision"
+        CONTRACTOR_SCOPE_CONCERN = "contractor_scope_concern", "Contractor-discovered Scope Concern"
+        OTHER = "other", "Other"
+
+    class SourceActorType(models.TextChoices):
+        CONTRACTOR = "contractor", "Contractor"
+        CUSTOMER = "customer", "Customer"
+
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -121,6 +138,32 @@ class AmendmentRequest(models.Model):
         max_length=64,
         choices=Status.choices,
         default=Status.OPEN,
+    )
+    source_capture = models.OneToOneField(
+        "projects.Capture",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="amendment_request_destination",
+        help_text="Immutable Capture provenance when this request originated in Change Intake.",
+    )
+    change_intake_category = models.CharField(
+        max_length=40,
+        choices=ChangeIntakeCategory.choices,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+    source_actor_type = models.CharField(
+        max_length=20,
+        choices=SourceActorType.choices,
+        blank=True,
+        default="",
+    )
+    source_artifacts = models.ManyToManyField(
+        "projects.CaptureArtifact",
+        blank=True,
+        related_name="amendment_requests",
     )
 
     def mark_refund_eligible_after_signed_amendment(self, *, amendment_agreement=None, save=True) -> bool:

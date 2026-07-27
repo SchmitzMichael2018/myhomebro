@@ -19,6 +19,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import (
+    Agreement,
+    AmendmentRequest,
     Capture,
     CaptureApplication,
     CaptureArtifact,
@@ -70,6 +72,12 @@ from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_
 
 
 logger = logging.getLogger(__name__)
+
+CHANGE_REQUEST_CATEGORIES = {
+    "add_scope", "remove_scope", "material_substitution", "design_change",
+    "quantity_change", "changed_condition", "schedule_impact",
+    "access_or_sequence", "customer_revision", "contractor_scope_concern", "other",
+}
 
 
 class CapturePagination(CursorPagination):
@@ -287,6 +295,21 @@ class CaptureProjectOptionsView(APIView):
                     {"id": row.id, "title": row.title, "completed": row.completed}
                     for row in milestones
                 ],
+                "agreements": [
+                    {
+                        "id": agreement.id,
+                        "title": (
+                            str(agreement.project.title or "").strip()
+                            or f"Agreement #{agreement.id}"
+                        ),
+                        "status": agreement.status,
+                    }
+                    for agreement in Agreement.objects.filter(
+                        project=project, contractor=project.contractor
+                    ).select_related("project").exclude(
+                        status__in=["cancelled", "void"]
+                    ).order_by("-id")[:10]
+                ],
             })
         can_manage = not subaccount or subaccount.role == subaccount.ROLE_EMPLOYEE_SUPERVISOR
         return Response({
@@ -305,7 +328,183 @@ class CaptureProjectOptionsView(APIView):
                 "can_apply": can_manage,
                 "project_context_available": bool(rows),
                 "milestone_context_available": any(row["milestones"] for row in rows),
+                "change_intake_enabled": bool(
+                    getattr(settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False)
+                ),
+                "change_request": {
+                    "enabled": bool(getattr(settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False)),
+                    "can_create": bool(rows),
+                    "can_review": can_manage,
+                    "can_apply": can_manage,
+                    "customer_submission_allowed": bool(
+                        getattr(settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False)
+                    ),
+                    "agreement_required": True,
+                    "destination_available": True,
+                    "related_issue_linking_available": True,
+                    "allowed_categories": [
+                        "add_scope", "remove_scope", "material_substitution",
+                        "design_change", "quantity_change", "changed_condition",
+                        "schedule_impact", "access_or_sequence", "customer_revision",
+                        "contractor_scope_concern", "other",
+                    ],
+                },
             },
+        })
+
+
+class CustomerChangeIntakeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not _foundation_enabled() or not getattr(
+            settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False
+        ):
+            return Response(
+                {"detail": "Change Intake is not enabled.", "code": "change_intake_disabled"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        email = str(getattr(request.user, "email", "") or "").strip().lower()
+        project = Project.objects.select_related("contractor", "homeowner").filter(
+            pk=request.data.get("project_id"),
+            homeowner__email__iexact=email,
+        ).first()
+        if not project:
+            return Response({"detail": "Project not found."}, status=status.HTTP_404_NOT_FOUND)
+        agreement = Agreement.objects.filter(
+            pk=request.data.get("agreement_id"),
+            project=project,
+            contractor=project.contractor,
+        ).exclude(status__in=["cancelled", "void"]).first()
+        if not agreement:
+            return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+        category = str(request.data.get("change_kind") or "").strip()
+        requested_change = str(request.data.get("requested_change") or "").strip()
+        if category not in CHANGE_REQUEST_CATEGORIES:
+            return Response(
+                {"detail": "Choose a valid change category.", "code": "invalid_change_category"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if len(requested_change) < 8 or len(requested_change) > 5000:
+            return Response(
+                {"detail": "Describe the requested change in 8 to 5000 characters.", "code": "invalid_requested_change"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        uploads = request.FILES.getlist("files") or request.FILES.getlist("file")
+        if len(uploads) > int(getattr(settings, "CAPTURE_PROJECT_MAX_FILES", 10)):
+            return Response({"detail": "Choose no more than 10 files."}, status=400)
+        for upload in uploads:
+            upload_error = _validate_project_upload(upload, Capture.TYPE_COMMUNICATION)
+            if upload_error:
+                return Response({"detail": upload_error}, status=status.HTTP_400_BAD_REQUEST)
+        metadata = {
+            "capture_profile": "change_request",
+            "actor_type": "customer",
+            "change_kind": category,
+            "decision_boundary": "change_request",
+            "reason": str(request.data.get("reason") or "")[:2000],
+            "location_or_scope_area": str(request.data.get("location_or_scope_area") or "")[:500],
+            "requested_timing": str(request.data.get("requested_timing") or "")[:500],
+            "customer_priority": str(request.data.get("customer_priority") or "")[:40],
+            "known_price_expectation": str(request.data.get("known_price_expectation") or "")[:500],
+            "known_schedule_expectation": str(request.data.get("known_schedule_expectation") or "")[:500],
+            "communication_type": "other",
+            "communication_direction": "inbound",
+        }
+        with transaction.atomic():
+            capture = Capture.objects.create(
+                contractor=project.contractor,
+                captured_by=request.user,
+                capture_type=Capture.TYPE_COMMUNICATION,
+                status=Capture.STATUS_SAVED,
+                source_category="customer_portal",
+                source_detail="authenticated_change_intake",
+                capture_method=Capture.METHOD_FILE_UPLOAD if uploads else Capture.METHOD_TYPED,
+                project=project,
+                agreement=agreement,
+                customer=project.homeowner,
+                raw_text_payload={
+                    "title": str(request.data.get("title") or "")[:200],
+                    "text": requested_change,
+                    "capture_profile": "change_request",
+                    "input_metadata": metadata,
+                },
+                audit_metadata={"actor_type": "customer", "authenticated": True},
+            )
+            for upload in uploads:
+                digest = hashlib.sha256()
+                for chunk in upload.chunks():
+                    digest.update(chunk)
+                upload.seek(0)
+                CaptureArtifact.objects.create(
+                    capture=capture,
+                    artifact_type=(
+                        CaptureArtifact.TYPE_PHOTO
+                        if str(upload.content_type or "").startswith("image/")
+                        else CaptureArtifact.TYPE_DOCUMENT
+                    ),
+                    file=upload,
+                    original_filename=str(upload.name or "")[:255],
+                    mime_type=str(upload.content_type or "")[:120],
+                    file_size=upload.size or 0,
+                    file_sha256=digest.hexdigest(),
+                    uploaded_by=request.user,
+                )
+            CaptureEvent.objects.create(
+                capture=capture,
+                event_type="customer_change_intake_submitted",
+                to_status=Capture.STATUS_SAVED,
+                actor=request.user,
+                metadata={
+                    "actor_type": "customer",
+                    "project_id": project.id,
+                    "agreement_id": agreement.id,
+                    "change_kind": category,
+                },
+            )
+        return Response({
+            "capture_id": str(capture.id),
+            "status": "submitted",
+            "status_label": "Submitted",
+            "message": "Your request was submitted for contractor review.",
+            "contract_effect": False,
+        }, status=status.HTTP_201_CREATED)
+
+
+class CustomerChangeIntakeStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, capture_id):
+        if not getattr(settings, "CAPTURE_CHANGE_REQUEST_ENABLED", False):
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        email = str(getattr(request.user, "email", "") or "").strip().lower()
+        capture = Capture.objects.filter(
+            pk=capture_id,
+            capture_type=Capture.TYPE_COMMUNICATION,
+            project__homeowner__email__iexact=email,
+            raw_text_payload__capture_profile="change_request",
+        ).first()
+        if not capture:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        labels = {
+            Capture.STATUS_SAVED: "Submitted",
+            Capture.STATUS_PROCESSING: "Under review",
+            Capture.STATUS_READY_FOR_REVIEW: "Under review",
+            Capture.STATUS_NEEDS_INFORMATION: "More information needed",
+            Capture.STATUS_POSSIBLE_DUPLICATE: "Under review",
+            Capture.STATUS_APPROVED: "Request being prepared",
+            Capture.STATUS_APPLYING: "Request being prepared",
+            Capture.STATUS_APPLIED: "Submitted",
+            Capture.STATUS_APPLY_FAILED: "Under review",
+            Capture.STATUS_ARCHIVED: "Completed",
+        }
+        destination = AmendmentRequest.objects.filter(source_capture=capture).first()
+        return Response({
+            "capture_id": str(capture.id),
+            "status": labels.get(capture.status, "Under review"),
+            "request_id": destination.id if destination else None,
+            "contract_effect": False,
+            "message": "This request does not approve pricing, change the contract, or authorize work.",
         })
 
 
@@ -427,6 +626,7 @@ class CaptureListCreateView(APIView):
             )
         project = None
         milestone = None
+        agreement = None
         if capture_type in PROJECT_CAPTURE_TYPES | D2_CAPTURE_TYPES | MEASUREMENT_CAPTURE_TYPES:
             project = Project.objects.filter(
                 contractor=contractor, pk=request.data.get("project_id")
@@ -446,6 +646,17 @@ class CaptureListCreateView(APIView):
                     {"detail": "The selected project is unavailable."},
                     status=status.HTTP_404_NOT_FOUND,
                 )
+            if request.data.get("agreement_id"):
+                agreement = Agreement.objects.filter(
+                    pk=request.data.get("agreement_id"),
+                    project=project,
+                    contractor=contractor,
+                ).first()
+                if not agreement:
+                    return Response(
+                        {"detail": "The selected agreement is unavailable."},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
             if len(uploads) > int(getattr(settings, "CAPTURE_PROJECT_MAX_FILES", 10)):
                 return Response(
                     {"detail": "Choose no more than 10 files."},
@@ -453,7 +664,9 @@ class CaptureListCreateView(APIView):
                 )
         serializer = CaptureCreateSerializer(
             data=request.data,
-            context={"has_file": bool(upload), "project": project},
+            context={
+                "has_file": bool(upload), "project": project, "agreement": agreement,
+            },
         )
         serializer.is_valid(raise_exception=True)
         if serializer.validated_data["capture_type"] == Capture.TYPE_PHOTO:
@@ -481,6 +694,7 @@ class CaptureListCreateView(APIView):
                 project=project,
                 milestone=milestone,
                 customer=project.homeowner if project else None,
+                agreement=agreement,
             )
             for upload in uploads:
                 digest = hashlib.sha256()

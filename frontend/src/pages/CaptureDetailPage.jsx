@@ -279,6 +279,7 @@ export default function CaptureDetailPage() {
                   create_separate: "create_separate",
                   not_same_person: "not_same_person",
                   not_same_item: "not_same_item",
+                  not_same: "not_same",
                 }[duplicate.decision],
                 ...(capture.capture_type === "equipment"
                   ? { equipment_id: duplicate.candidate_id }
@@ -486,6 +487,64 @@ export default function CaptureDetailPage() {
                     )}
                   </FormField>
                 </>
+              ) : draft.schema_version === "change-intake.v1" ? (
+                <div className="grid gap-4" data-testid="change-intake-review" aria-live="polite">
+                  <InlineAlert theme="operational" tone="warning">
+                    This will create an Amendment Request draft. It will not change the agreement, approve pricing, request a signature, or authorize work.
+                  </InlineAlert>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <ValueRow label="Authenticated requester" value={`${draft.requester?.display_name || "Unknown"} (${draft.actor_type})`} />
+                    <FormField label="Decision boundary" required>
+                      {(props) => (
+                        <select
+                          {...props}
+                          value={draft.decision_boundary}
+                          onChange={(event) => {
+                            const boundary = event.target.value;
+                            const destination = boundary === "change_request" ? "amendment_request" : "communication_log";
+                            update(["decision_boundary"], boundary);
+                            update(["boundary_confirmed"], true);
+                            update(["proposed_destination"], destination);
+                            update(["proposed_destinations"], [destination]);
+                          }}
+                          className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3"
+                        >
+                          <option value="change_request">Explicit change request</option>
+                          <option value="informal_preference">Informal preference</option>
+                          <option value="formal_approval">Formal approval — existing workflow required</option>
+                        </select>
+                      )}
+                    </FormField>
+                    <FormField label="Change category" required>
+                      {(props) => (
+                        <select {...props} value={draft.change_kind} onChange={(event) => update(["change_kind"], event.target.value)} className="min-h-11 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3">
+                          <option value="add_scope">Add work</option>
+                          <option value="remove_scope">Remove work</option>
+                          <option value="material_substitution">Substitute material</option>
+                          <option value="design_change">Change design</option>
+                          <option value="quantity_change">Change quantity</option>
+                          <option value="changed_condition">Changed site condition</option>
+                          <option value="schedule_impact">Schedule-impacting request</option>
+                          <option value="access_or_sequence">Access or sequencing change</option>
+                          <option value="customer_revision">Customer-requested revision</option>
+                          <option value="contractor_scope_concern">Contractor-discovered scope concern</option>
+                          <option value="other">Other</option>
+                        </select>
+                      )}
+                    </FormField>
+                    <TextField label="Title" required value={draft.title} onChange={(value) => update(["title"], value)} />
+                  </div>
+                  <TextField label="Requested change" required multiline value={draft.requested_change} onChange={(value) => update(["requested_change"], value)} />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <TextField label="Reason" multiline value={draft.reason} onChange={(value) => update(["reason"], value)} />
+                    <TextField label="Area or location" value={draft.location_or_scope_area} onChange={(value) => update(["location_or_scope_area"], value)} />
+                    <TextField label="Requested timing (unapproved input)" value={draft.requested_timing} onChange={(value) => update(["requested_timing"], value)} />
+                    <TextField label="Price expectation (unapproved input)" value={draft.known_price_expectation} onChange={(value) => update(["known_price_expectation"], value)} />
+                  </div>
+                  <p className="text-sm text-[var(--mhb-text-secondary)]">
+                    Project #{draft.project_id} · Agreement #{draft.agreement_id} · {draft.artifact_ids?.length || 0} supporting artifact(s)
+                  </p>
+                </div>
               ) : draft.schema_version === "field-findings.v1" ? (
                 <div className="grid gap-4" data-testid="field-findings-review" aria-live="polite">
                   <InlineAlert theme="operational" tone="info">
