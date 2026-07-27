@@ -103,8 +103,8 @@ export default function Modal({
         data-testid={testId || undefined}
         className={
           containerClassName
-            ? `w-full overflow-hidden bg-white shadow-2xl ${containerClassName}`.trim()
-            : "mx-4 w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+            ? `relative w-full overflow-hidden bg-white shadow-2xl ${containerClassName}`.trim()
+            : "relative mx-4 w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
         }
       >
         {hideHeader ? null : (

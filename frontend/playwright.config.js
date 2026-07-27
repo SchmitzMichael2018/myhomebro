@@ -3,6 +3,13 @@ import { defineConfig, devices } from '@playwright/test';
 const PORT = 5173;
 const HOST = '127.0.0.1';
 const baseURL = `http://${HOST}:${PORT}`;
+export const captureTestEnv = [
+  'VITE_CAPTURE_FOUNDATION_ENABLED=true',
+  'VITE_CAPTURE_INBOX_ENABLED=true',
+  'VITE_CAPTURE_REVIEW_ENABLED=true',
+  'VITE_CAPTURE_APPLICATION_ENABLED=true',
+  'VITE_CAPTURE_CONVERSATIONAL_ENABLED=true',
+].join(' ');
 
 export default defineConfig({
   testDir: './tests',
@@ -27,7 +34,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm.cmd run dev -- --host ${HOST} --port ${PORT}`,
+    command: `cross-env ${captureTestEnv} npm.cmd run dev -- --host ${HOST} --port ${PORT}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120 * 1000,

@@ -74,6 +74,13 @@ async function installMocks(page) {
       body: JSON.stringify(captureRow()),
     })
   );
+  await page.route(`**/api/projects/captures/${captureId}/process/`, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(captureRow({ status: 'ready_for_review', version: 2 })),
+    })
+  );
   await page.route('**/api/projects/captures/project-options/', (route) =>
     route.fulfill({
       status: 200,
@@ -264,8 +271,8 @@ test('Project Capture requires project context and saves a Project Update for re
   await expect(launcher.getByRole('button', { name: 'Report Warranty Concern' })).toHaveCount(0);
 
   await page.getByTestId('capture-action-project_update').click();
-  await page.getByLabel('Project').selectOption('41');
-  await page.getByLabel('Milestone').selectOption('51');
+  await page.getByLabel('Project* (required)', { exact: true }).selectOption('41');
+  await page.getByLabel('Milestone', { exact: true }).selectOption('51');
   await page.getByLabel('What work was completed?').fill('Installed flooring in the living room.');
   await expect(page.getByText(/does not complete a milestone/i)).toBeVisible();
   await page.getByRole('button', { name: 'Save for review' }).click();
@@ -288,7 +295,7 @@ test('Inbox renders metrics, row actions, and Capture detail', async ({ page }) 
   await expect(page.getByLabel('Filter by status')).toBeVisible();
   await expect(page.getByLabel('Filter by type')).toBeVisible();
   await expect(page.getByLabel('Capture results')).toContainText('John');
-  await page.getByTestId('capture-inbox').getByRole('button', { name: 'Open', exact: true }).click();
+  await page.getByTestId('capture-inbox').getByRole('button', { name: 'Process', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/app/capture/${captureId}$`));
   await expect(page.getByTestId('capture-detail')).toContainText('Original contents');
   await expect(page.getByTestId('capture-detail')).toContainText('Needs a deck');
