@@ -8,6 +8,88 @@
   z-index: 10000; /* keep modal above FullCalendar */
 }
 
+.mhb-login-modal-card {
+  box-sizing: border-box;
+  min-width: 0;
+  width: min(520px, calc(100vw - 24px));
+  width: min(520px, calc(100dvw - 24px));
+  max-width: 100%;
+  max-height: min(
+    85dvh,
+    calc(var(--mhb-login-visual-height, 100dvh) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))
+  );
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.mhb-login-modal-overlay {
+  box-sizing: border-box;
+  top: var(--mhb-login-visual-top, 0px);
+  bottom: auto;
+  height: var(--mhb-login-visual-height, 100dvh);
+  padding:
+    max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+.mhb-login-modal-card .mhb-modal-header {
+  position: relative;
+  min-width: 0;
+  padding-inline: 48px;
+}
+
+.mhb-login-modal-card .mhb-modal-header > div {
+  min-width: 0;
+}
+
+.mhb-login-modal-card .mhb-modal-close {
+  position: absolute;
+  inset-inline-end: 12px;
+  top: 12px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mhb-login-modal-card .mhb-modal-body {
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mhb-login-password-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mhb-landing-login-menu {
+  max-width: calc(100dvw - 24px);
+  max-height: calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+@media (max-width: 640px) {
+  .mhb-landing-login-menu {
+    position: fixed;
+    inset-inline:
+      max(12px, env(safe-area-inset-left))
+      max(12px, env(safe-area-inset-right));
+    top: calc(72px + env(safe-area-inset-top));
+    width: auto;
+  }
+
+  .mhb-login-modal-overlay {
+    align-items: flex-start;
+  }
+}
+
 .mhb-modal-card {
   background: #ffffff;
   width: min(720px, 92vw);

@@ -136,7 +136,7 @@ test('landing login modal closes with close button and backdrop click', async ({
     .click();
   await expect(page.getByTestId('login-modal')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Close' }).click();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByTestId('login-modal')).toBeHidden();
 
   await page.getByTestId('landing-sign-in-button').click();

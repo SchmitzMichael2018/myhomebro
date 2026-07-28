@@ -1,5 +1,6 @@
 // src/components/LoginModal.jsx
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
@@ -33,11 +34,19 @@ export default function LoginModal() {
   const [rememberMe, setRememberMe] = useState(true);
   const [inviteToken, setInviteToken] = useState("");
   const [loginAudience, setLoginAudience] = useState("contractor");
+  const overlayRef = useRef(null);
+  const openerRef = useRef(null);
 
-  const openLogin = useCallback(() => setVisible(true), []);
-  const close = () => {
-    if (!loading) setVisible(false);
-  };
+  const openLogin = useCallback(() => {
+    openerRef.current = document.activeElement;
+    setVisible(true);
+  }, []);
+  const close = useCallback(() => {
+    if (!loading) {
+      setVisible(false);
+      window.setTimeout(() => openerRef.current?.focus?.(), 0);
+    }
+  }, [loading]);
 
   const openLoginForAudience = useCallback(
     (audience = "contractor") => {
@@ -127,6 +136,75 @@ export default function LoginModal() {
       window.removeEventListener("mhb:open-login", onEvt);
     };
   }, [openLoginForAudience]);
+
+  // Keep the fixed dialog inside iOS's keyboard-adjusted visual viewport
+  // without storing viewport dimensions in React state or remounting the form.
+  useEffect(() => {
+    if (!visible) return;
+    const overlay = overlayRef.current;
+    const viewport = window.visualViewport;
+    const syncVisualViewport = () => {
+      if (!overlay) return;
+      overlay.style.setProperty(
+        "--mhb-login-visual-height",
+        `${Math.round(viewport?.height || window.innerHeight)}px`
+      );
+      overlay.style.setProperty(
+        "--mhb-login-visual-top",
+        `${Math.round(viewport?.offsetTop || 0)}px`
+      );
+    };
+    syncVisualViewport();
+    viewport?.addEventListener("resize", syncVisualViewport);
+    viewport?.addEventListener("scroll", syncVisualViewport);
+    return () => {
+      viewport?.removeEventListener("resize", syncVisualViewport);
+      viewport?.removeEventListener("scroll", syncVisualViewport);
+    };
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+        return;
+      }
+      if (event.key === "Tab") {
+        const dialog = overlayRef.current?.querySelector('[role="dialog"]');
+        const focusable = Array.from(
+          dialog?.querySelectorAll(
+            'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          ) || []
+        );
+        if (!focusable.length) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.requestAnimationFrame(() => {
+      overlayRef.current?.querySelector(".mhb-modal-close")?.focus();
+    });
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [close, visible]);
 
   // Auto-open / URL hints
   useEffect(() => {
@@ -260,13 +338,20 @@ export default function LoginModal() {
 
   if (!visible) return null;
 
-  return (
+  return createPortal(
     <div
-      className="mhb-modal-overlay"
+      className="mhb-modal-overlay mhb-login-modal-overlay"
       data-testid="login-modal"
+      ref={overlayRef}
     >
-      <button type="button" aria-label="Close login dialog" className="absolute inset-0" onClick={close} />
-      <div className="mhb-modal-card" style={{ maxWidth: 520 }} role="dialog" aria-modal="true">
+      <button type="button" aria-label="Close login dialog" className="mhb-login-backdrop absolute inset-0" onClick={close} />
+      <div
+        className="mhb-modal-card mhb-login-modal-card"
+        style={{ maxWidth: 520 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="mhb-login-title"
+      >
         <div className="mhb-modal-header" style={{ justifyContent: "center" }}>
           <div style={{ display: "grid", placeItems: "center", width: "100%" }}>
             <div
@@ -292,7 +377,7 @@ export default function LoginModal() {
               />
             </div>
 
-            <h2 style={{ margin: "10px 0 0", fontSize: 20, fontWeight: 900 }}>
+            <h2 id="mhb-login-title" style={{ margin: "10px 0 0", fontSize: 20, fontWeight: 900 }}>
               Sign In
             </h2>
 
@@ -324,8 +409,11 @@ export default function LoginModal() {
                 type="email"
                 required
                 data-testid="login-email-input"
+                autoComplete="username"
                 style={{
                   width: "100%",
+                  minWidth: 0,
+                  fontSize: 16,
                   border: "1px solid #e5e7eb",
                   borderRadius: 10,
                   padding: "10px 12px",
@@ -340,15 +428,18 @@ export default function LoginModal() {
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div className="mhb-login-password-row">
                   <input
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     type={showPw ? "text" : "password"}
                     required
                     data-testid="login-password-input"
+                    autoComplete="current-password"
                     style={{
                       width: "100%",
+                      minWidth: 0,
+                      fontSize: 16,
                       border: "1px solid #e5e7eb",
                       borderRadius: 10,
                       padding: "10px 12px",
@@ -448,6 +539,7 @@ export default function LoginModal() {
           </form>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -317,7 +317,8 @@ function LoginDropdown({ navigate, onLoginSelect }) {
     <div
       role="menu"
       aria-label="Log in options"
-      className="absolute right-0 top-[calc(100%+0.75rem)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.13] bg-[#071a3a] shadow-[0_20px_50px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.04)]"
+      data-testid="landing-login-menu"
+      className="mhb-landing-login-menu absolute right-0 top-[calc(100%+0.75rem)] z-50 w-[min(22rem,calc(100vw-2rem))] overflow-y-auto overscroll-contain rounded-2xl border border-white/[0.13] bg-[#071a3a] shadow-[0_20px_50px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.04)]"
     >
       <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
         <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Log In</div>
