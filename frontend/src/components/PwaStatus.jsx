@@ -7,34 +7,34 @@ import { PWA_FLAGS } from "../lib/pwaFlags.js";
 import {
   clearPwaCaches,
   disablePwa,
-  isStandalonePwa,
   PWA_VERSION,
   registerPwa,
 } from "../lib/pwaLifecycle.js";
+import {
+  dismissPassivePwaInstall,
+  markPwaRegistration,
+  openPwaInstallDialog,
+  passivePwaInstallAllowed,
+  usePwaInstall,
+} from "../lib/pwaInstallStore.js";
 
-const DISMISS_KEY = "mhb.pwa.install-dismissed.v1";
-const DISMISS_MS = 14 * 24 * 60 * 60 * 1000;
 const CRITICAL_ROUTE = /agreement|estimate|payment|invoice|capture|measurement|takeoff|warrant|change/i;
 
 export default function PwaStatus() {
   const location = useLocation();
   const updateRef = useRef(null);
-  const installEventRef = useRef(null);
   const restoredTimerRef = useRef(null);
+  const install = usePwaInstall();
   const [connection, setConnection] = useState(navigator.onLine ? "online" : "offline");
   const [updateWaiting, setUpdateWaiting] = useState(false);
   const [registrationFailed, setRegistrationFailed] = useState(false);
-  const [installable, setInstallable] = useState(false);
-  const [installDismissed, setInstallDismissed] = useState(false);
-  const [standalone, setStandalone] = useState(isStandalonePwa());
-  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
 
   const hasUnsavedWork = useMemo(
     () => Boolean(
       document.querySelector('[data-pwa-unsaved="true"]')
       || CRITICAL_ROUTE.test(location.pathname)
     ),
-    [location.pathname, updateWaiting]
+    [location.pathname]
   );
 
   useEffect(() => {
@@ -44,7 +44,11 @@ export default function PwaStatus() {
     }
     updateRef.current = registerPwa({
       onNeedRefresh: () => setUpdateWaiting(true),
-      onRegisterError: () => setRegistrationFailed(true),
+      onRegistered: () => markPwaRegistration({ registered: true }),
+      onRegisterError: () => {
+        setRegistrationFailed(true);
+        markPwaRegistration({ failed: true });
+      },
     });
     return undefined;
   }, []);
@@ -74,40 +78,8 @@ export default function PwaStatus() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!PWA_FLAGS.enabled || !PWA_FLAGS.installPrompt || standalone) return undefined;
-    const dismissedAt = Number(localStorage.getItem(DISMISS_KEY) || 0);
-    if (Date.now() - dismissedAt < DISMISS_MS) setInstallDismissed(true);
-    if (isIos) setInstallable(true);
-    function beforeInstall(event) {
-      event.preventDefault();
-      installEventRef.current = event;
-      setInstallable(true);
-    }
-    function installed() {
-      installEventRef.current = null;
-      setInstallable(false);
-      setStandalone(true);
-    }
-    window.addEventListener("beforeinstallprompt", beforeInstall);
-    window.addEventListener("appinstalled", installed);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", beforeInstall);
-      window.removeEventListener("appinstalled", installed);
-    };
-  }, [standalone]);
-
-  async function install() {
-    if (!installEventRef.current) return;
-    await installEventRef.current.prompt();
-    await installEventRef.current.userChoice;
-    installEventRef.current = null;
-    setInstallable(false);
-  }
-
   function dismissInstall() {
-    localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    setInstallDismissed(true);
+    dismissPassivePwaInstall();
   }
 
   async function recover() {
@@ -154,17 +126,19 @@ export default function PwaStatus() {
           </div>
         </div>
       ) : null}
-      {installable && !installDismissed ? (
+      {PWA_FLAGS.installPrompt
+        && install.classification !== "installed"
+        && install.classification !== "disabled"
+        && passivePwaInstallAllowed()
+        && !install.dialogOpen ? (
         <div className="pointer-events-auto rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card-elevated)] p-3 shadow-card-elevated" role="dialog" aria-labelledby="pwa-install-title">
           <strong id="pwa-install-title">Install MyHomeBro</strong>
           <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
-            {isIos
-              ? "In Safari, tap Share, then Add to Home Screen. Internet is still required for current business data."
-              : "Open MyHomeBro in its own app window. Internet is still required for current business data."}
+            Open MyHomeBro from your home screen or desktop. Internet is still required for current business data.
           </p>
           <div className="mt-3 flex flex-wrap justify-end gap-2">
             <Button type="button" size="sm" variant="secondary" theme="operational" onClick={dismissInstall}>Not now</Button>
-            {!isIos ? <Button type="button" size="sm" theme="operational" icon={Download} onClick={install}>Install</Button> : null}
+            <Button type="button" size="sm" theme="operational" icon={Download} onClick={() => openPwaInstallDialog({ explicit: false })}>Install</Button>
           </div>
         </div>
       ) : null}

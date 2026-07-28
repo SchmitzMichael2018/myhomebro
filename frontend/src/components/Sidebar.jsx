@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
 import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
 import { clearPwaDrafts } from "../lib/pwaDrafts.js";
+import { PwaInstallButton } from "./PwaInstallAccess.jsx";
 import toast from "react-hot-toast";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
 import RefundEscrowModal from "./RefundEscrowModal";
@@ -688,6 +689,12 @@ export default function Sidebar({ variant = "desktop" }) {
       </nav>
 
       <div className="mhb-sidebar-footer shrink-0 border-t border-slate-200/90 px-4 py-3" data-testid="authenticated-sidebar-footer">
+        <PwaInstallButton
+          compact
+          className="mb-2 w-full"
+          data-close-sidebar="1"
+          testId="authenticated-pwa-install-button"
+        />
         <button
           onClick={handleLogout}
           data-close-sidebar="1"

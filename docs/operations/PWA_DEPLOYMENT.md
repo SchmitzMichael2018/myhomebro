@@ -50,3 +50,24 @@ curl -sS -D - https://myhomebro.com/workbox-<hash>.js -o /dev/null
 Expected worker headers include `Content-Type: application/javascript`,
 `Service-Worker-Allowed: /`, and `Cache-Control: no-cache, no-store,
 must-revalidate`.
+
+## Installation access
+
+When `VITE_PWA_ENABLED=true`, persistent **Install MyHomeBro** actions appear on
+the public landing page and in the authenticated sidebar. Both open one shared
+platform-aware dialog. The application captures `beforeinstallprompt` globally,
+so navigation does not lose the browser event.
+
+- Chromium uses the native prompt when available and otherwise explains the
+  browser-menu installation path.
+- Android Chromium explains **Install app** or **Add to Home screen**.
+- iPhone/iPad explains **Share → Add to Home Screen → Add**.
+- Standalone mode displays an installed state.
+- Missing worker registration or manifest availability produces a temporary
+  unavailable state with a retry action.
+
+The 14-day passive-prompt cooldown suppresses only unsolicited install banners.
+Persistent entry points remain available throughout the cooldown. Development
+builds expose sanitized install diagnostics inside the shared dialog. No
+camera, microphone, location, notification, push, or background-sync
+permission is requested by installation access.

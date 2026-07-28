@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ClipboardList,
   Home,
+  Download,
   Lock,
   MessageSquareText,
   Play,
@@ -21,6 +22,8 @@ import logo from "../assets/myhomebro_logo.png";
 import homeownerCardImage from "../assets/landing/homeowner-card.png";
 import contractorCardImage from "../assets/landing/contractor-card.png";
 import kitchenPreviewImage from "../assets/kitchen-preview.jpg";
+import { PwaInstallButton } from "./PwaInstallAccess.jsx";
+import { PWA_FLAGS } from "../lib/pwaFlags.js";
 
 const platformRowOne = [
   {
@@ -244,6 +247,23 @@ export default function LandingPage() {
         </section>
 
         <PlatformStrip />
+        {PWA_FLAGS.enabled ? (
+          <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6" data-testid="landing-pwa-install-section">
+            <div className="grid gap-5 rounded-3xl border border-amber-300/30 bg-slate-950/35 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur sm:p-7 md:grid-cols-[1fr_auto] md:items-center">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-amber-200">
+                  <Download className="h-5 w-5" aria-hidden="true" />
+                  Take MyHomeBro with you
+                </div>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Install MyHomeBro</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/72">
+                  Install the app for faster access from your home screen or desktop.
+                </p>
+              </div>
+              <PwaInstallButton className="w-full md:w-auto" />
+            </div>
+          </section>
+        ) : null}
         <HowItWorks />
         <VideoPreview />
         <AudienceCards navigate={navigate} />
