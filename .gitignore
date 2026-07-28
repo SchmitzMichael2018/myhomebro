@@ -34,6 +34,9 @@ db.sqlite3.corrupt-*
 db.sqlite3.locked-*
 db.sqlite3.pre-*
 recovered.sql
+backups/
+*.sqlite3.metadata.json
+*.sqlite3.sha256
 
 # Aider AI assistant
 .aider*

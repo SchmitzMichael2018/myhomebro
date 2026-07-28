@@ -24,9 +24,11 @@ fi
 log "Activating virtualenv…"
 source "$REPO_ROOT/venv/bin/activate"
 
-# 1) Backend: migrate only (no pip)
-log "Applying Django migrations…"
-python "$BACKEND_DIR/manage.py" migrate --noinput
+# 1) Backend: report engine and fail if an operator-run migration is required.
+log "Checking database engine and migration state…"
+python "$BACKEND_DIR/manage.py" shell -c \
+  "from django.db import connection; print('Database engine:', connection.vendor)"
+python "$BACKEND_DIR/manage.py" migrate --check
 
 # 2) Frontend: build only (no npm i/ci)
 log "Building frontend with Vite (no installs)…"

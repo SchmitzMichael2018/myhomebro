@@ -23,6 +23,7 @@ def _log_startup():
 
     db_cfg = settings.DATABASES.get("default", {})
     db_name = str(db_cfg.get("NAME", ""))
+    engine = str(db_cfg.get("ENGINE", "unknown")).rsplit(".", 1)[-1]
     is_sqlite = db_cfg.get("ENGINE") == "django.db.backends.sqlite3"
     is_memory = "mode=memory" in db_name or db_name in (":memory:", "")
 
@@ -41,8 +42,9 @@ def _log_startup():
             journal_mode = "unknown"
 
     logger.info(
-        "\n[MyHomeBro Startup]\nDB: %s\nDEBUG: %s\nLOAD_LOCAL_ENV: %s\nJournal Mode: %s\n",
-        db_name,
+        "\n[MyHomeBro Startup]\nDB engine: %s\nDeployment: %s\nDEBUG: %s\nLOAD_LOCAL_ENV: %s\nJournal Mode: %s\n",
+        engine,
+        getattr(settings, "DEPLOYMENT_ENVIRONMENT", "unknown"),
         settings.DEBUG,
         load_local,
         journal_mode,

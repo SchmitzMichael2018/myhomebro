@@ -217,15 +217,41 @@ _sqlite_file = next((p for p in _sqlite_candidates if p.exists()), _sqlite_candi
 SQLITE_ABS_PATH = str(_sqlite_file.resolve())
 
 DEFAULT_DB_URL = f"sqlite:///{SQLITE_ABS_PATH}"
-DATABASE_URL = os.environ.get("DATABASE_URL", DEFAULT_DB_URL)
+DEPLOYMENT_ENVIRONMENT = get_env_var(
+    "DEPLOYMENT_ENVIRONMENT",
+    get_env_var("ENVIRONMENT", "development" if DEBUG else "production"),
+).strip().lower()
+DATABASE_ENGINE_INTENT = get_env_var("DATABASE_ENGINE", "sqlite").strip().lower()
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+if DATABASE_ENGINE_INTENT in {"postgres", "postgresql"} and not DATABASE_URL:
+    raise ImproperlyConfigured(
+        "DATABASE_URL is required when DATABASE_ENGINE requests PostgreSQL."
+    )
+if not DATABASE_URL:
+    DATABASE_URL = DEFAULT_DB_URL
+
+DB_SSL_REQUIRE = get_bool(
+    "DB_SSL_REQUIRE",
+    default=DATABASE_URL.startswith(("postgres://", "postgresql://")),
+)
+DB_CONNECT_TIMEOUT = int(get_env_var("DB_CONNECT_TIMEOUT", "10"))
+DB_CONN_MAX_AGE = int(get_env_var("DB_CONN_MAX_AGE", "600"))
+DB_HEALTH_CHECKS = get_bool("DB_HEALTHCHECKS", default=True)
 
 DATABASES = {
     "default": dj_database_url.parse(
         DATABASE_URL,
-        conn_max_age=600,
-        ssl_require=DATABASE_URL.startswith(("postgres://", "postgresql://")),
+        conn_max_age=DB_CONN_MAX_AGE,
+        conn_health_checks=DB_HEALTH_CHECKS,
+        ssl_require=DB_SSL_REQUIRE,
     )
 }
+if DATABASES["default"].get("ENGINE") == "django.db.backends.postgresql":
+    DATABASES["default"].setdefault("OPTIONS", {})
+    DATABASES["default"]["OPTIONS"].setdefault(
+        "connect_timeout",
+        max(1, min(DB_CONNECT_TIMEOUT, 60)),
+    )
 
 # SQLite production hardening.
 # OPTIONS["timeout"] tells Django's sqlite3.connect() to wait up to N seconds
@@ -377,10 +403,6 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str
 # ──────────────────────────────────────────────────────────────────────────────
 REDIS_URL = get_env_var("REDIS_URL", "").strip()
 CACHE_URL = get_env_var("CACHE_URL", "").strip()
-DEPLOYMENT_ENVIRONMENT = get_env_var(
-    "DEPLOYMENT_ENVIRONMENT",
-    get_env_var("ENVIRONMENT", "development" if DEBUG else "production"),
-).strip().lower()
 
 CELERY_BROKER_URL = (
     get_env_var("CELERY_BROKER_URL", "").strip()
