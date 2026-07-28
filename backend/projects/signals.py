@@ -1,6 +1,7 @@
 # projects/signals.py
 
 import logging
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Avg, Count
 from django.db.models.signals import post_save, pre_save, post_delete
@@ -126,6 +127,13 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
     """
     _capture_milestone_performance_from_invoice(instance, "invoice_created" if created else "invoice_saved")
     if created:
+        if not getattr(settings, "CELERY_NOTIFICATIONS_ENABLED", False):
+            logger.info(
+                "invoice_notification_dispatch_skipped invoice_id=%s "
+                "reason=celery_notifications_disabled",
+                instance.id,
+            )
+            return
         try:
             task_send_invoice_notification.delay(instance.id)
             logger.info(

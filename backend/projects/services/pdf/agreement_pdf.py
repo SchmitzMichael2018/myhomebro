@@ -11,6 +11,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.utils import timezone
 from django.utils.timezone import localtime
 
 from projects.models import Agreement, Milestone
@@ -1466,8 +1467,19 @@ def generate_full_agreement_pdf(ag: Agreement, *, merge_attachments: bool = True
 
   with transaction.atomic():
     ag.pdf_version = version
+    ag.pdf_generation_status = "completed"
+    ag.pdf_generation_error_code = ""
+    ag.pdf_generation_updated_at = timezone.now()
     ag.pdf_file.save(fname_ag, ContentFile(final_bytes), save=False)
-    ag.save(update_fields=["pdf_version", "pdf_file"])
+    ag.save(
+      update_fields=[
+        "pdf_version",
+        "pdf_file",
+        "pdf_generation_status",
+        "pdf_generation_error_code",
+        "pdf_generation_updated_at",
+      ]
+    )
 
     if AgreementPDFVersion is not None:
       try:

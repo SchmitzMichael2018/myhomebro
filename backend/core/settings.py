@@ -404,6 +404,8 @@ CELERY_TASK_DEFAULT_QUEUE = get_env_var("CELERY_DEFAULT_QUEUE", "default").strip
 PDF_QUEUE_NAME = get_env_var("PDF_QUEUE_NAME", "pdf").strip() or "pdf"
 PDF_ASYNC_ENABLED = get_bool("PDF_ASYNC_ENABLED", default=False)
 PDF_SYNC_FALLBACK_ENABLED = get_bool("PDF_SYNC_FALLBACK_ENABLED", default=False)
+CELERY_NOTIFICATIONS_ENABLED = get_bool("CELERY_NOTIFICATIONS_ENABLED", default=False)
+CELERY_SCHEDULED_JOBS_ENABLED = get_bool("CELERY_SCHEDULED_JOBS_ENABLED", default=False)
 CELERY_BROKER_CONNECTION_TIMEOUT = int(get_env_var("CELERY_BROKER_CONNECTION_TIMEOUT", "5"))
 CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
     "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
@@ -425,7 +427,7 @@ CELERY_TASK_ROUTES = {
 }
 
 CELERY_BEAT_SCHEDULE = {}
-if CELERY_BROKER_URL:
+if CELERY_SCHEDULED_JOBS_ENABLED:
     from celery.schedules import crontab
     CELERY_BEAT_SCHEDULE = {
         "auto-release-undisputed-invoices-daily": {

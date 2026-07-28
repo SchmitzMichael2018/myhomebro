@@ -8,6 +8,4 @@ READINESS_TIMEOUT="${ASYNC_READINESS_TIMEOUT_SECONDS:-10}"
 
 "$PYTHON_BIN" "$BACKEND_DIR/manage.py" check --deploy
 "$PYTHON_BIN" "$BACKEND_DIR/manage.py" check_async_services --mode configuration
-"$PYTHON_BIN" "$BACKEND_DIR/manage.py" check_async_services --mode broker --timeout "$READINESS_TIMEOUT"
-"$PYTHON_BIN" "$BACKEND_DIR/manage.py" check_async_services --mode worker --timeout "$READINESS_TIMEOUT"
 "$PYTHON_BIN" "$BACKEND_DIR/manage.py" check_async_services --mode pdf --timeout "$READINESS_TIMEOUT"

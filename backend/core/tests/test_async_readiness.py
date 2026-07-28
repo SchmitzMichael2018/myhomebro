@@ -69,6 +69,49 @@ class AsyncConfigurationTests(SimpleTestCase):
 
     @override_settings(
         DEPLOYMENT_ENVIRONMENT="production",
+        PDF_ASYNC_ENABLED=False,
+        CELERY_SCHEDULED_JOBS_ENABLED=False,
+        CELERY_NOTIFICATIONS_ENABLED=False,
+        CELERY_BROKER_URL="",
+        CELERY_RESULT_BACKEND=None,
+    )
+    def test_async_disabled_production_without_redis_is_ready(self):
+        diagnostics = configuration_diagnostics()
+        self.assertTrue(diagnostics["ready"])
+        self.assertFalse(diagnostics["celery_required"])
+
+    @override_settings(
+        PDF_ASYNC_ENABLED=False,
+        CELERY_SCHEDULED_JOBS_ENABLED=False,
+        CELERY_NOTIFICATIONS_ENABLED=False,
+        CELERY_BROKER_URL="rediss://stale.example.test:6380/0",
+        CELERY_RESULT_BACKEND="rediss://stale.example.test:6380/1",
+    )
+    @patch("core.async_readiness.probe_redis_url")
+    def test_disabled_async_does_not_probe_stale_redis_url(self, probe):
+        report = readiness_report(connect_broker=True, check_worker=True)
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["broker_connection"]["status"], "disabled")
+        self.assertEqual(report["worker"]["status"], "disabled")
+        probe.assert_not_called()
+
+    @override_settings(
+        PDF_ASYNC_ENABLED=True,
+        CELERY_BROKER_URL="redis://queue.example.test:6379/0",
+        CELERY_RESULT_BACKEND="redis://queue.example.test:6379/1",
+    )
+    @patch("core.async_readiness.probe_redis_url")
+    def test_enabled_async_with_unreachable_broker_fails(self, probe):
+        probe.return_value = {
+            "configured": True,
+            "reachable": False,
+            "error": "ConnectionError",
+        }
+        report = readiness_report(connect_broker=True)
+        self.assertFalse(report["ready"])
+
+    @override_settings(
+        DEPLOYMENT_ENVIRONMENT="production",
         PDF_ASYNC_ENABLED=True,
         CELERY_BROKER_URL="",
         CELERY_RESULT_BACKEND=None,
@@ -95,7 +138,39 @@ class AsyncReadinessCommandTests(SimpleTestCase):
             connect_broker=False,
             check_worker=False,
             write_test=False,
+            force_optional=False,
         )
+
+    @override_settings(
+        PDF_ASYNC_ENABLED=False,
+        CELERY_SCHEDULED_JOBS_ENABLED=False,
+        CELERY_NOTIFICATIONS_ENABLED=False,
+    )
+    def test_broker_mode_reports_capability_disabled(self):
+        out = StringIO()
+        call_command("check_async_services", mode="broker", stdout=out)
+        self.assertIn('"status": "disabled"', out.getvalue())
+
+
+class LegacyRealtimeCapabilityTests(SimpleTestCase):
+    def test_channels_and_channel_layers_are_not_active_django_requirements(self):
+        from django.conf import settings
+
+        self.assertNotIn("channels", settings.INSTALLED_APPS)
+        self.assertNotIn("chat", settings.INSTALLED_APPS)
+        self.assertFalse(hasattr(settings, "CHANNEL_LAYERS"))
+
+    def test_active_cache_is_not_redis_backed(self):
+        from django.conf import settings
+
+        backend = settings.CACHES["default"]["BACKEND"]
+        self.assertNotIn("redis", backend.lower())
+
+    def test_scheduled_jobs_are_explicitly_disabled(self):
+        from django.conf import settings
+
+        self.assertFalse(settings.CELERY_SCHEDULED_JOBS_ENABLED)
+        self.assertEqual(settings.CELERY_BEAT_SCHEDULE, {})
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)

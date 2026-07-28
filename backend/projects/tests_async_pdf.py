@@ -1,10 +1,11 @@
+import tempfile
 from decimal import Decimal
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from projects.models import Agreement, Contractor, Homeowner, Project
+from projects.models import Agreement, Contractor, Homeowner, Invoice, Project
 from projects.services.pdf_dispatch import enqueue_agreement_pdf
 from projects.tasks import task_generate_full_agreement_pdf
 
@@ -57,8 +58,51 @@ class PDFDispatchTests(AsyncPDFTestBase):
         result = enqueue_agreement_pdf(self.agreement.id)
         self.agreement.refresh_from_db()
         self.assertFalse(result.accepted)
-        self.assertEqual(self.agreement.pdf_generation_status, "failed_retryable")
-        self.assertEqual(self.agreement.pdf_generation_error_code, "async_pdf_disabled")
+        self.assertEqual(result.status, "disabled")
+        self.assertEqual(self.agreement.pdf_generation_status, "disabled")
+        self.assertEqual(self.agreement.pdf_generation_error_code, "")
+
+    @override_settings(
+        PDF_ASYNC_ENABLED=False,
+        CELERY_BROKER_URL="",
+        CELERY_RESULT_BACKEND=None,
+    )
+    def test_agreement_pdf_generates_synchronously_without_redis(self):
+        from projects.services.pdf import generate_full_agreement_pdf
+
+        with tempfile.TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            path = generate_full_agreement_pdf(self.agreement, merge_attachments=False)
+            self.agreement.refresh_from_db()
+            with open(path, "rb") as generated:
+                self.assertEqual(generated.read(4), b"%PDF")
+        self.assertEqual(self.agreement.pdf_generation_status, "completed")
+
+    @override_settings(
+        PDF_ASYNC_ENABLED=False,
+        CELERY_NOTIFICATIONS_ENABLED=False,
+        CELERY_BROKER_URL="",
+        CELERY_RESULT_BACKEND=None,
+    )
+    def test_invoice_and_receipt_pdfs_generate_without_redis(self):
+        from projects.services.invoice_pdf import generate_invoice_pdf_bytes
+        from receipts.models import Receipt
+
+        with tempfile.TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            invoice = Invoice.objects.create(agreement=self.agreement, amount=Decimal("250.00"))
+            invoice_pdf = generate_invoice_pdf_bytes(invoice)
+            self.assertTrue(invoice_pdf.startswith(b"%PDF"))
+
+            receipt = Receipt.objects.create(
+                invoice=invoice,
+                agreement=self.agreement,
+                receipt_number="RECEIPT-NO-REDIS",
+                stripe_payment_intent_id="pi_test_no_redis",
+                amount_paid_cents=25000,
+            )
+            receipt.refresh_from_db()
+            self.assertTrue(receipt.pdf_file.name)
+            with receipt.pdf_file.open("rb") as generated:
+                self.assertEqual(generated.read(4), b"%PDF")
 
 
 class PDFTaskTests(AsyncPDFTestBase):

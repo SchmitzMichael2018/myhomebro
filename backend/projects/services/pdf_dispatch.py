@@ -59,17 +59,17 @@ def enqueue_agreement_pdf(agreement_id: int) -> PDFDispatchResult:
     if not getattr(settings, "PDF_ASYNC_ENABLED", False):
         set_pdf_generation_status(
             agreement_id,
-            "failed_retryable",
+            "disabled",
             task_id="",
-            error_code="async_pdf_disabled",
+            error_code="",
         )
-        logger.warning(
-            "pdf_enqueue_failure document_type=agreement record_id=%s "
-            "queue=%s error_code=async_pdf_disabled",
+        logger.info(
+            "pdf_enqueue_skipped document_type=agreement record_id=%s "
+            "queue=%s reason=async_pdf_disabled",
             agreement_id,
             queue,
         )
-        return PDFDispatchResult(False, "failed_retryable", error_code="async_pdf_disabled")
+        return PDFDispatchResult(False, "disabled")
 
     try:
         from projects.tasks import task_generate_full_agreement_pdf

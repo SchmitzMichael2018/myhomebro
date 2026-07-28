@@ -53,6 +53,9 @@ def configuration_diagnostics() -> dict[str, Any]:
     backend = str(getattr(settings, "CELERY_RESULT_BACKEND", "") or "")
     environment = str(getattr(settings, "DEPLOYMENT_ENVIRONMENT", "") or "").lower()
     async_enabled = bool(getattr(settings, "PDF_ASYNC_ENABLED", False))
+    scheduled_jobs_enabled = bool(getattr(settings, "CELERY_SCHEDULED_JOBS_ENABLED", False))
+    notifications_enabled = bool(getattr(settings, "CELERY_NOTIFICATIONS_ENABLED", False))
+    broker_required = async_enabled or scheduled_jobs_enabled or notifications_enabled
     eager = bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False))
     redis_status = redis_dependency_status()
     errors: list[str] = []
@@ -60,13 +63,22 @@ def configuration_diagnostics() -> dict[str, Any]:
 
     broker_status = sanitized_url_status(broker)
     backend_status = sanitized_url_status(backend)
-    if async_enabled and not broker:
-        errors.append("Async PDF generation is enabled but CELERY_BROKER_URL/REDIS_URL is missing.")
-    if broker and not broker_status.get("valid"):
+    if broker_required and not broker:
+        errors.append("A Celery capability is enabled but CELERY_BROKER_URL/REDIS_URL is missing.")
+    if broker_required and broker and not broker_status.get("valid"):
         errors.append("The configured Celery broker URL is malformed.")
-    if broker_status.get("scheme") in REDIS_SCHEMES and not redis_status["available"]:
+    if (
+        broker_required
+        and broker_status.get("scheme") in REDIS_SCHEMES
+        and not redis_status["available"]
+    ):
         errors.append("The Python redis package required by the Celery Redis transport is unavailable.")
-    if environment in PRODUCTION_ENVIRONMENTS and broker and is_local_broker(broker):
+    if (
+        broker_required
+        and environment in PRODUCTION_ENVIRONMENTS
+        and broker
+        and is_local_broker(broker)
+    ):
         errors.append("A localhost Celery broker is not allowed in staging or production.")
     if environment in PRODUCTION_ENVIRONMENTS and eager:
         warnings.append("Celery eager mode is enabled outside development.")
@@ -79,6 +91,9 @@ def configuration_diagnostics() -> dict[str, Any]:
         "ready": not errors,
         "environment": environment,
         "async_pdf_enabled": async_enabled,
+        "celery_required": broker_required,
+        "scheduled_jobs_enabled": scheduled_jobs_enabled,
+        "celery_notifications_enabled": notifications_enabled,
         "sync_fallback_enabled": bool(getattr(settings, "PDF_SYNC_FALLBACK_ENABLED", False)),
         "eager_mode": eager,
         "queue": str(getattr(settings, "PDF_QUEUE_NAME", "pdf")),
@@ -176,13 +191,34 @@ def readiness_report(
     connect_broker: bool = False,
     check_worker: bool = False,
     write_test: bool = False,
+    force_optional: bool = False,
 ) -> dict[str, Any]:
     config = configuration_diagnostics()
+    async_enabled = bool(config["async_pdf_enabled"])
+    storage = pdf_storage_status(write_test=write_test)
     report: dict[str, Any] = {
         "ready": config["ready"],
         "configuration": config,
         "celery": celery_app_status(),
-        "pdf_storage": pdf_storage_status(write_test=write_test),
+        "pdf_storage": storage,
+        "capabilities": {
+            "core_web": {"status": "available", "required": True},
+            "database": {"status": "configured", "required": True},
+            "file_pdf_generation": {
+                "status": "available" if storage.get("writable") else "unavailable",
+                "required": True,
+            },
+            "async_pdf_queue": {
+                "status": "enabled" if async_enabled else "disabled",
+                "required": async_enabled,
+            },
+            "scheduled_jobs": {
+                "status": "enabled" if config["scheduled_jobs_enabled"] else "disabled",
+                "required": config["scheduled_jobs_enabled"],
+            },
+            "websockets": {"status": "inactive", "required": False},
+            "redis_cache": {"status": "inactive", "required": False},
+        },
     }
     report["ready"] = bool(
         report["ready"]
@@ -190,7 +226,10 @@ def readiness_report(
         and report["celery"].get("pdf_task_registered")
         and report["pdf_storage"].get("writable")
     )
-    if connect_broker:
+    should_probe_celery = bool(config["celery_required"]) or force_optional
+    if connect_broker and not should_probe_celery:
+        report["broker_connection"] = {"status": "disabled", "attempted": False}
+    elif connect_broker:
         report["broker_connection"] = probe_redis_url(
             getattr(settings, "CELERY_BROKER_URL", ""),
             timeout=float(getattr(settings, "CELERY_BROKER_CONNECTION_TIMEOUT", 5)),
@@ -205,7 +244,9 @@ def readiness_report(
             report["ready"] = bool(
                 report["ready"] and report["result_backend_connection"].get("reachable")
             )
-    if check_worker:
+    if check_worker and not should_probe_celery:
+        report["worker"] = {"status": "disabled", "attempted": False}
+    elif check_worker:
         report["worker"] = worker_status()
         report["ready"] = bool(report["ready"] and report["worker"].get("available"))
     return report

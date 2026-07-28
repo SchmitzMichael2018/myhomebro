@@ -2,11 +2,17 @@
 
 ## Architecture
 
-Agreement PDF generation is dispatched after the creating database transaction
-commits. Django records an explicit lifecycle on `Agreement`:
+Redis and Celery are optional production capabilities. The core Django
+application, REST messaging, Project Assistant/AI, storage, and synchronous PDF
+paths do not require Redis.
+
+When `PDF_ASYNC_ENABLED=true`, agreement PDF generation is dispatched after the
+creating database transaction commits. Django records an explicit lifecycle on
+`Agreement`:
 
 ```text
-pending → queued → processing → completed
+pending → disabled
+        → queued → processing → completed
                    ↘ failed_retryable
                    ↘ failed_permanent
 ```
@@ -16,6 +22,10 @@ A Celery worker consumes that queue and calls the canonical
 `projects.services.pdf.generate_full_agreement_pdf` service. Existing PDF files
 and `AgreementPDFVersion` history are preserved; status changes do not replace
 document artifacts.
+
+When async PDF is disabled, creation records `disabled`; synchronous final-PDF
+generation later records `completed`. It is not represented as infrastructure
+failure.
 
 Public `/healthz` is liveness only and returns `ok`. Staff administrators can
 inspect redacted dependency readiness at `/admin/health/async-services/`.
@@ -51,6 +61,32 @@ Two configuration inconsistencies amplified the problem:
 
 Both have been removed. Django settings are now the single configuration source.
 
+## Legacy Valkey and realtime audit
+
+The powered-off Aiven Valkey instance was historically associated with Celery
+and removed realtime experiments. It is not a current core-launch dependency.
+
+- `core.asgi` exposes plain Django HTTP only.
+- Legacy consumers/routing files remain in `chat/` and `core/`, but are not
+  mounted by ASGI.
+- `channels` is not an installed Django application and no `CHANNEL_LAYERS`
+  setting exists.
+- The production frontend contains no WebSocket constructor or `ws://`/`wss://`
+  endpoint.
+- Current messaging uses database-backed REST/API requests and refreshes.
+- Project Assistant and active AI services call their providers directly. Their
+  Django cache usage resolves to the default local-memory backend, not Redis.
+- No Redis cache backend is configured.
+- The invoice-notification Celery dispatch is inactive unless
+  `CELERY_NOTIFICATIONS_ENABLED=true`.
+- The auto-release beat schedule is inactive unless
+  `CELERY_SCHEDULED_JOBS_ENABLED=true`. Payment records and manual workflow
+  remain available, but operators must not assume the optional daily automation
+  runs while that flag is false.
+
+Legacy consumer files are retained for historical isolation only. They must not
+be treated as an active capability or a reason to provision Redis.
+
 ## Required environment variables
 
 | Variable | Requirement |
@@ -62,6 +98,8 @@ Both have been removed. Django settings are now the single configuration source.
 | `CACHE_URL` | Reserved explicit cache endpoint; no queue fallback depends on it |
 | `PDF_ASYNC_ENABLED` | Must be explicitly true to dispatch queued PDFs |
 | `PDF_SYNC_FALLBACK_ENABLED` | Must remain false; synchronous web fallback is unsupported |
+| `CELERY_NOTIFICATIONS_ENABLED` | Optional queued invoice notification capability; defaults false |
+| `CELERY_SCHEDULED_JOBS_ENABLED` | Optional Celery beat capability; defaults false |
 | `PDF_QUEUE_NAME` | Defaults to `pdf` |
 | `CELERY_DEFAULT_QUEUE` | Defaults to `default` |
 | `CELERY_TASK_ALWAYS_EAGER` | Development/test only |
@@ -81,12 +119,15 @@ contains only configured state, scheme, and sanitized hostname.
 
 ### Local development
 
-Use an explicit disabled mode when Redis is not needed:
+Use an explicit disabled mode when Redis is not needed. Redis variables may be
+blank or absent:
 
 ```dotenv
 DEPLOYMENT_ENVIRONMENT=development
 PDF_ASYNC_ENABLED=false
 PDF_SYNC_FALLBACK_ENABLED=false
+CELERY_NOTIFICATIONS_ENABLED=false
+CELERY_SCHEDULED_JOBS_ENABLED=false
 CELERY_TASK_ALWAYS_EAGER=false
 ```
 
@@ -108,12 +149,16 @@ CELERY_RESULT_BACKEND=rediss://USER:PASSWORD@PRIVATE_REDIS_HOST:PORT/1
 PDF_ASYNC_ENABLED=true
 PDF_SYNC_FALLBACK_ENABLED=false
 PDF_QUEUE_NAME=pdf
+CELERY_NOTIFICATIONS_ENABLED=false
+CELERY_SCHEDULED_JOBS_ENABLED=false
 CELERY_TASK_ALWAYS_EAGER=false
 ```
 
 Use `DEPLOYMENT_ENVIRONMENT=production` in production. Localhost broker URLs,
 missing broker configuration, missing Redis transport dependencies, and
-unwritable PDF storage fail deployment checks when async PDF is enabled.
+unwritable PDF storage fail deployment checks only when a Celery capability is
+enabled. A stale configured Redis URL is not contacted when async PDF is
+disabled.
 
 ## Startup commands
 
@@ -148,23 +193,47 @@ python manage.py check_async_services --mode pdf --timeout 10
 ```
 
 - `configuration` performs no network connection.
-- `broker` pings broker and result-backend Redis endpoints.
-- `worker` also requires a worker ping and safe task round trip.
+- `broker` pings broker and result-backend Redis endpoints when async PDF is enabled.
+- `worker` also requires a worker ping and safe task round trip when enabled.
 - `pdf` performs the round trip with an in-memory non-customer PDF and checks
   PDF output-directory writability.
+- When async PDF is disabled, these modes report `disabled`, make no connection,
+  and exit successfully. Add `--force` only for an intentional diagnostic of
+  optional infrastructure.
 
 Every mode returns nonzero on failure. A broker ping alone does not establish
 readiness; staging requires the worker and PDF round trips.
 
-The full deployment scripts call `scripts/check_async_readiness.sh`. The fast
-frontend rebuild does not run infrastructure checks.
+The full deployment scripts call `scripts/check_async_readiness.sh`. Its PDF
+mode performs the complete broker/worker/queued-PDF gate only when async PDF is
+enabled; otherwise it prints the disabled/skipped result. The fast frontend
+rebuild does not run infrastructure checks.
+
+## PDF workflow matrix
+
+| Document type | Current behavior without Redis |
+| --- | --- |
+| Agreement preview | Generated synchronously on demand as bytes; no Celery dependency |
+| Agreement final/download | Existing stored PDF is served; if missing, authorized final/download paths can generate synchronously through the canonical PDF service |
+| Agreement creation convenience generation | Optional queued generation only when `PDF_ASYNC_ENABLED=true`; otherwise status is `disabled` |
+| Agreement signing/regeneration | Synchronous canonical generation/version attachment |
+| Estimate/proposal | No independent backend proposal-PDF generator is present; proposal records and attachments remain available, and agreement conversion owns contract PDF generation |
+| Invoice | Generated synchronously on demand by `generate_invoice_pdf_bytes` |
+| Receipt | Generated synchronously on receipt creation or explicit ensure/backfill |
+| Resolution/dispute package | Generated synchronously on explicit authorized action |
+| Measurement/blueprint PDFs | Uploaded/stored artifacts are validated and streamed; browser PDF.js handles takeoff rendering |
+| Customer reports | Email/report data is generated directly; no Redis-backed PDF task was found |
+
+Core document access therefore remains available without Redis. Async agreement
+generation is an optimization, not the sole agreement-PDF path.
 
 ## Dispatch, retry, and idempotency
 
 - Dispatch occurs with `transaction.on_commit`, so workers cannot race an
   uncommitted Agreement.
 - A task ID is saved only after the broker accepts the publish request.
-- Publish failures leave `failed_retryable`, clear the task ID, and expose a
+- Disabled dispatch records `disabled` without contacting a broker.
+- Publish failures while enabled leave `failed_retryable`, clear the task ID, and expose a
   non-sensitive error code.
 - Task start sets `processing`; only successful file generation sets `completed`.
 - Storage/connection/time-out failures are retryable up to three attempts.
@@ -174,7 +243,10 @@ frontend rebuild does not run infrastructure checks.
 
 ## Synchronous fallback policy
 
-There is no synchronous PDF fallback in web requests. Setting
+There is no automatic synchronous fallback inside the creation signal or an
+ordinary unrelated web request. Existing explicit preview, final-download,
+signing, invoice, and receipt workflows retain their bounded synchronous
+generation behavior. Setting
 `PDF_SYNC_FALLBACK_ENABLED=true` produces a deployment warning but does not
 activate unbounded generation. When the queue is unavailable, the Agreement
 remains retryable and operators restore the queue before retrying.
@@ -216,7 +288,16 @@ PDF smoke fails:
 
 ## Deployment and rollback
 
-Deployment order:
+Deployment order when async PDF remains disabled:
+
+1. Remove stale `REDIS_URL`, `CELERY_BROKER_URL`, and
+   `CELERY_RESULT_BACKEND` values from the host environment after preserving
+   any required audit record.
+2. Keep all Celery capability flags false.
+3. Install requirements, apply migrations, and run the readiness script.
+4. Confirm the output reports async PDF `disabled` and does not attempt Redis.
+
+Deployment order when enabling async PDF:
 
 1. Install `backend/requirements.txt`.
 2. Configure Redis/broker/result backend without logging credentials.
@@ -234,3 +315,10 @@ dispatch explicitly if the queue must be taken out of service.
 When rotating Redis credentials, update web, worker, beat, and deployment-check
 environments together; restart all processes, revoke the old credential, and
 repeat broker, worker, and PDF checks.
+
+For the powered-off Aiven service, first confirm no separately managed worker or
+external integration still uses it. Then remove stale credentials from
+PythonAnywhere/web/worker environment configuration and password managers,
+archive only non-secret service-identification and decommission evidence, and
+delete the powered-off service through the provider when retention obligations
+allow. Never commit or paste the old URL because it may contain credentials.

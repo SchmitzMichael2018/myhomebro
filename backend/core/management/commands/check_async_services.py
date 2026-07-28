@@ -21,22 +21,38 @@ class Command(BaseCommand):
         )
         parser.add_argument("--timeout", type=float, default=5.0)
         parser.add_argument("--json", action="store_true", dest="as_json")
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Probe optional async infrastructure even when async PDF is disabled.",
+        )
 
     def handle(self, *args, **options):
         mode = options["mode"]
         timeout = max(0.5, min(float(options["timeout"]), 30.0))
+        force_optional = bool(options["force"])
         report = readiness_report(
             connect_broker=mode in {"broker", "worker", "pdf"},
             check_worker=mode in {"worker", "pdf"},
-            write_test=mode == "pdf",
+            write_test=mode == "pdf" and (
+                bool(getattr(settings, "PDF_ASYNC_ENABLED", False)) or force_optional
+            ),
+            force_optional=force_optional,
         )
 
-        if mode in {"worker", "pdf"} and report.get("ready"):
+        async_active = bool(getattr(settings, "PDF_ASYNC_ENABLED", False))
+        celery_active = bool(
+            async_active
+            or getattr(settings, "CELERY_SCHEDULED_JOBS_ENABLED", False)
+            or getattr(settings, "CELERY_NOTIFICATIONS_ENABLED", False)
+            or force_optional
+        )
+        if mode in {"worker", "pdf"} and report.get("ready") and celery_active:
             from projects.tasks import pdf_readiness_probe
 
             try:
                 result = pdf_readiness_probe.apply_async(
-                    kwargs={"pdf_smoke": mode == "pdf"},
+                    kwargs={"pdf_smoke": mode == "pdf" and async_active},
                     queue=str(getattr(settings, "PDF_QUEUE_NAME", "pdf")),
                 )
                 report["round_trip"] = result.get(timeout=timeout, propagate=True)
@@ -47,16 +63,19 @@ class Command(BaseCommand):
                     "error": type(exc).__name__,
                 }
 
-        if mode == "pdf":
+        if mode == "pdf" and (async_active or force_optional):
             report["local_pdf_smoke"] = self._local_pdf_smoke()
             report["ready"] = bool(report["ready"] and report["local_pdf_smoke"]["valid"])
+        elif mode == "pdf":
+            report["queued_pdf_smoke"] = {"status": "disabled", "attempted": False}
 
         if options["as_json"]:
             self.stdout.write(json.dumps(report, sort_keys=True))
         else:
             self.stdout.write(
                 f"Async services readiness: {'PASS' if report['ready'] else 'FAIL'} "
-                f"(mode={mode})"
+                f"(mode={mode}, async_pdf="
+                f"{'enabled' if getattr(settings, 'PDF_ASYNC_ENABLED', False) else 'disabled'})"
             )
             self.stdout.write(json.dumps(report, indent=2, sort_keys=True))
 

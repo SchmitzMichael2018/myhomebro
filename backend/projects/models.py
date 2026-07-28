@@ -1712,6 +1712,7 @@ class Agreement(models.Model):
         max_length=24,
         choices=[
             ("pending", "Pending"),
+            ("disabled", "Async generation disabled"),
             ("queued", "Queued"),
             ("processing", "Processing"),
             ("completed", "Completed"),
