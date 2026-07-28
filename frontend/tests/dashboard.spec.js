@@ -246,6 +246,60 @@ test("Smart Capture quick action remains usable at 320px", async ({ page }) => {
   await expect(page.getByTestId("capture-launcher")).toBeVisible();
 });
 
+for (const width of [320, 375, 390, 393, 430]) {
+  test(`authenticated navigation remains visible after dashboard settles at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 760 });
+    await mockDashboard(page);
+    await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+
+    const menu = page.getByTestId("authenticated-mobile-menu-button");
+    await expect(menu).toBeVisible();
+    await expect(menu).toHaveAttribute("aria-label", "Open navigation menu");
+    await expect(menu).toHaveAttribute("aria-expanded", "false");
+    await expect(page.getByTestId("dashboard-workspace-header")).toBeVisible();
+    await expect(menu).toBeVisible();
+    expect((await menu.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+}
+
+test("standalone authenticated navigation opens the existing drawer and restores focus", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    const original = window.matchMedia.bind(window);
+    window.matchMedia = (query) => (
+      query === "(display-mode: standalone)"
+        ? { matches: true, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }
+        : original(query)
+    );
+    Object.defineProperty(window.navigator, "standalone", { configurable: true, value: true });
+  });
+  await mockDashboard(page);
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+
+  const menu = page.getByTestId("authenticated-mobile-menu-button");
+  await expect(menu).toBeVisible();
+  await menu.click();
+  await expect(menu).toHaveAttribute("aria-expanded", "true");
+  const drawer = page.getByRole("dialog", { name: "Authenticated navigation" });
+  await expect(drawer).toBeVisible();
+  await expect(drawer.getByRole("button", { name: "Logout" })).toBeVisible();
+
+  await page.keyboard.press("Escape");
+  await expect(drawer).toHaveCount(0);
+  await expect(menu).toBeFocused();
+});
+
+test("desktop keeps its sidebar and does not render the mobile fallback", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mockDashboard(page);
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("authenticated-mobile-menu-button")).toBeHidden();
+  await expect(page.getByTestId("authenticated-sidebar-footer").last()).toBeVisible();
+  await expect(page.getByTestId("dashboard-quick-actions-row")).toBeVisible();
+});
+
 test("Create Estimate launches workspace from an existing customer", async ({ page }) => {
   let createPayload = null;
   await mockDashboard(page, {

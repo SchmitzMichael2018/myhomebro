@@ -1,6 +1,7 @@
 // src/components/PageShell.jsx
 import React, { useEffect } from "react";
 import { useMobileSidebar } from "./MobileSidebarShell.jsx";
+import { pageShellOwnsMobileNavigation } from "../lib/mobileNavigation.js";
 
 /**
  * PageShell
@@ -17,26 +18,31 @@ export default function PageShell({
   className = "",
   compact = false,
 }) {
-  const { openSidebar, registerHeaderHamburger, unregisterHeaderHamburger } =
+  const { isOpen, openSidebar, registerHeaderHamburger, unregisterHeaderHamburger } =
     useMobileSidebar();
+  const hasHeader = pageShellOwnsMobileNavigation({ title, showLogo });
 
   // Tell the shell this page header includes a hamburger (so it can hide the floating fallback)
   useEffect(() => {
+    if (!hasHeader) return undefined;
     registerHeaderHamburger?.();
     return () => unregisterHeaderHamburger?.();
-  }, [registerHeaderHamburger, unregisterHeaderHamburger]);
+  }, [hasHeader, registerHeaderHamburger, unregisterHeaderHamburger]);
 
   return (
     <div className={`mhb-container ${className}`.trim()}>
-      {(title || showLogo) && (
+      {hasHeader && (
         <header>
           <div className={`mhb-topbar${compact ? " mb-3 gap-3" : ""}`}>
             {/* ✅ Mobile header hamburger */}
             <button
               type="button"
               onClick={openSidebar}
-              aria-label="Open menu"
-              className="md:hidden mr-2 inline-flex items-center justify-center rounded-lg bg-white/80 backdrop-blur px-3 py-2 shadow border border-black/10 active:scale-[0.99]"
+              aria-label="Open navigation menu"
+              aria-expanded={isOpen}
+              aria-controls="authenticated-mobile-navigation"
+              data-testid="authenticated-mobile-menu-button"
+              className="mr-2 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-white/90 text-slate-800 shadow backdrop-blur active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 md:hidden"
               style={{ lineHeight: 1 }}
             >
               <span className="text-xl leading-none">☰</span>

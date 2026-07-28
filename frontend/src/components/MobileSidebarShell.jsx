@@ -3,7 +3,7 @@
 // - Always allow a floating hamburger fallback (so pages without PageShell can open the sidebar)
 // - PageShell registers that it has its own hamburger; the shell auto-hides the floating one to prevent duplicates
 
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 
 const MOBILE_SIDEBAR_DEBUG_PREFIX = "[MobileSidebarShellDebug]";
@@ -42,6 +42,8 @@ export default function MobileSidebarShell({ sidebar, children }) {
   const [open, setOpen] = useState(false);
   const location = useLocation();
   const mobilePanelRef = useRef(null);
+  const lastTriggerRef = useRef(null);
+  const wasOpenRef = useRef(false);
 
   console.log(`${MOBILE_SIDEBAR_DEBUG_PREFIX} render`, {
     instanceId,
@@ -65,26 +67,34 @@ export default function MobileSidebarShell({ sidebar, children }) {
 
   // Tracks whether the current page header provides its own hamburger (PageShell does).
   const [headerHamburgerPresent, setHeaderHamburgerPresent] = useState(false);
+  const openSidebar = useCallback(() => {
+    lastTriggerRef.current = document.activeElement;
+    setOpen(true);
+  }, []);
+  const closeSidebar = useCallback(() => setOpen(false), []);
+  const toggleSidebar = useCallback(() => {
+    if (!open) lastTriggerRef.current = document.activeElement;
+    setOpen((value) => !value);
+  }, [open]);
+  const registerHeaderHamburger = useCallback(() => setHeaderHamburgerPresent(true), []);
+  const unregisterHeaderHamburger = useCallback(() => setHeaderHamburgerPresent(false), []);
 
   const ctx = useMemo(
     () => ({
       isOpen: open,
-      openSidebar: () => setOpen(true),
-      closeSidebar: () => setOpen(false),
-      toggleSidebar: () => setOpen((v) => !v),
-      registerHeaderHamburger: () => setHeaderHamburgerPresent(true),
-      unregisterHeaderHamburger: () => setHeaderHamburgerPresent(false),
+      openSidebar,
+      closeSidebar,
+      toggleSidebar,
+      registerHeaderHamburger,
+      unregisterHeaderHamburger,
       headerHamburgerPresent,
     }),
-    [open, headerHamburgerPresent]
+    [closeSidebar, headerHamburgerPresent, open, openSidebar, registerHeaderHamburger, toggleSidebar, unregisterHeaderHamburger]
   );
 
   // Close on route change
   useEffect(() => {
     setOpen(false);
-    // Reset header hamburger flag on navigation; PageShell will re-register if present.
-    setHeaderHamburgerPresent(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search, location.hash]);
 
   // Close when clicking a nav element inside the mobile sidebar
@@ -117,6 +127,27 @@ export default function MobileSidebarShell({ sidebar, children }) {
     };
   }, [open]);
 
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
+      window.requestAnimationFrame(() => mobilePanelRef.current?.focus());
+      return;
+    }
+    if (wasOpenRef.current) {
+      wasOpenRef.current = false;
+      window.requestAnimationFrame(() => lastTriggerRef.current?.focus?.());
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [open]);
+
   return (
     <MobileSidebarContext.Provider value={ctx}>
       <div className="mhb-mobile-sidebar-shell min-h-screen bg-slate-50">
@@ -124,9 +155,12 @@ export default function MobileSidebarShell({ sidebar, children }) {
         {!headerHamburgerPresent ? (
           <button
             type="button"
-            onClick={() => setOpen(true)}
-            aria-label="Open menu"
-            className="fixed top-4 left-4 z-50 inline-flex items-center justify-center rounded-lg bg-white/90 backdrop-blur px-3 py-2 shadow border border-slate-200 active:scale-[0.99] md:hidden"
+            onClick={openSidebar}
+            aria-label="Open navigation menu"
+            aria-expanded={open}
+            aria-controls="authenticated-mobile-navigation"
+            data-testid="authenticated-mobile-menu-button"
+            className="fixed left-4 top-[calc(1rem+env(safe-area-inset-top))] z-50 inline-flex h-11 w-11 items-center justify-center rounded-xl border border-slate-200 bg-white/95 text-slate-800 shadow backdrop-blur active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 md:hidden"
           >
             <span className="text-xl leading-none">☰</span>
           </button>
@@ -137,7 +171,7 @@ export default function MobileSidebarShell({ sidebar, children }) {
 
         {/* Mobile overlay */}
         {open && (
-          <div className="fixed inset-0 z-40 md:hidden">
+          <div className="fixed inset-0 z-[60] md:hidden">
             {/* Backdrop */}
             <button
               type="button"
@@ -149,9 +183,12 @@ export default function MobileSidebarShell({ sidebar, children }) {
             {/* Slide-in panel */}
             <div
               ref={mobilePanelRef}
-              className="absolute left-0 top-0 h-full w-[84vw] max-w-[340px] bg-white shadow-xl border-r border-slate-200"
+              id="authenticated-mobile-navigation"
+              tabIndex={-1}
+              className="absolute bottom-0 left-0 top-0 w-[84vw] max-w-[340px] border-r border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-xl outline-none"
               role="dialog"
               aria-modal="true"
+              aria-label="Authenticated navigation"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
@@ -160,7 +197,7 @@ export default function MobileSidebarShell({ sidebar, children }) {
                   type="button"
                   onClick={() => setOpen(false)}
                   aria-label="Close menu"
-                  className="rounded-md px-2 py-1 text-slate-600 hover:bg-slate-100"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   ✕
                 </button>
