@@ -459,6 +459,7 @@ export function GlobalCopilotTrigger() {
       type="button"
       data-testid="assistant-dock-open-button"
       aria-label={isOpen ? "Project Assistant open" : "Open Project Assistant"}
+      title="Project Assistant"
       aria-pressed={isOpen}
       onClick={() => openAssistant()}
       className={`inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-bold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${

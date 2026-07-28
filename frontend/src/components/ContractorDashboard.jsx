@@ -26,6 +26,7 @@ import {
   FileText,
   Flag,
   CalendarDays,
+  ScanLine,
   AlertTriangle,
   Wrench,
   X,
@@ -41,6 +42,7 @@ import {
   summarizePaymentRecords,
 } from "../utils/paymentRecords.js";
 import { getContractorNextActions } from "../lib/contractorNextActions.js";
+import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
 import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
 import OnboardingConversation from "./OnboardingConversation.jsx";
 import { useAssistantDock } from "./AssistantDock.jsx";
@@ -1971,6 +1973,10 @@ export default function ContractorDashboard() {
   const [activationSummary, setActivationSummary] = useState(null);
   const [dismissedContextualGuides, setDismissedContextualGuides] = useState(new Set());
   const [contextualGuideSuppressed, setContextualGuideSuppressed] = useState(false);
+  const [showSmartCaptureHint, setShowSmartCaptureHint] = useState(
+    () => typeof window !== "undefined"
+      && window.localStorage.getItem("mhb.smart-capture-dashboard-hint.v1") !== "dismissed"
+  );
 
   const [agreements, setAgreements] = useState([]);
   const [publicLeads, setPublicLeads] = useState([]);
@@ -2736,6 +2742,18 @@ export default function ContractorDashboard() {
   const goInvoicesDisputed = () => goPayments({ moneyStatus: "issues", recordType: "invoice" });
   const goCalendar = () => navigate(`/app/calendar`);
   const goTodaySchedule = () => navigate(`/app/team/schedule`);
+  const openSmartCapture = () => {
+    window.dispatchEvent(new CustomEvent("mhb:analytics", {
+      detail: { event: "smart_capture_opened", category: "capture", source: "dashboard_quick_action" },
+    }));
+    window.dispatchEvent(new CustomEvent("mhb:open-capture", {
+      detail: { mode: "launcher", source: "dashboard_quick_action" },
+    }));
+  };
+  const dismissSmartCaptureHint = () => {
+    window.localStorage.setItem("mhb.smart-capture-dashboard-hint.v1", "dismissed");
+    setShowSmartCaptureHint(false);
+  };
   const goAgreementScheduleLate = () => navigate(`/app/agreements?focus=schedule&range=late`);
   const goAgreementScheduleToday = () => navigate(`/app/agreements?focus=schedule&range=today`);
   const goAgreementScheduleTomorrow = () => navigate(`/app/agreements?focus=schedule&range=tomorrow`);
@@ -3628,6 +3646,25 @@ export default function ContractorDashboard() {
       {!isEmployee ? (
         <div className="space-y-6">
           <DashboardSection variant="premium">
+            {isCaptureInboxEnabled() && showSmartCaptureHint ? (
+              <div
+                data-testid="dashboard-smart-capture-hint"
+                className="mb-3 flex items-center gap-3 rounded-xl border border-sky-300/25 bg-sky-300/10 px-4 py-3 text-sm text-sky-50"
+              >
+                <ScanLine className="h-5 w-5 shrink-0 text-sky-200" aria-hidden="true" />
+                <p className="min-w-0 flex-1">
+                  <strong>New:</strong> Capture customer details, receipts, labels, and field information.
+                </p>
+                <button
+                  type="button"
+                  onClick={dismissSmartCaptureHint}
+                  aria-label="Dismiss Smart Capture hint"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-sky-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sky-300"
+                >
+                  <X className="h-5 w-5" aria-hidden="true" />
+                </button>
+              </div>
+            ) : null}
             <DashboardCard
               testId="dashboard-quick-actions-row"
               tone="premium"
@@ -3641,7 +3678,7 @@ export default function ContractorDashboard() {
                     <span className="mt-1 block text-sm font-medium text-sky-100/76">Choose your workflow</span>
                   </span>
                 </div>
-                <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
                   <Button
                     theme="operational"
                     variant="primary"
@@ -3653,6 +3690,23 @@ export default function ContractorDashboard() {
                     <span className="text-white">Create Estimate</span>
                     <span className="text-[11px] font-black uppercase tracking-[0.12em] text-amber-100">Primary</span>
                   </Button>
+                  {isCaptureInboxEnabled() ? (
+                    <Button
+                      theme="operational"
+                      variant="secondary"
+                      data-testid="dashboard-quick-action-smart-capture"
+                      onClick={openSmartCapture}
+                      aria-label="Open Smart Capture"
+                      title="Smart Capture"
+                      className="!min-h-[88px] !flex-col !rounded-2xl !border-sky-300/45 !bg-sky-300/12 px-3 text-center hover:!bg-sky-300/20"
+                    >
+                      <ScanLine className="h-5 w-5 text-sky-200" aria-hidden="true" />
+                      <span>Smart Capture</span>
+                      <span className="text-[10px] font-semibold leading-4 text-sky-100/75">
+                        Capture customers, receipts, labels &amp; job details
+                      </span>
+                    </Button>
+                  ) : null}
                   <Button
                     theme="operational"
                     variant="secondary"

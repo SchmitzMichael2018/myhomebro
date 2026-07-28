@@ -749,13 +749,15 @@ export default function CaptureLauncher() {
     function openCapture(event) {
       const requested = String(event.detail?.mode || "");
       if (
-        ACTIONS.some((action) => action.key === requested)
+        !requested
+        || requested === "launcher"
+        || ACTIONS.some((action) => action.key === requested)
         || (CONVERSATIONAL_ENABLED && requested === "conversational")
         || (FIELD_FINDINGS_ENABLED && ["punch_item", "site_condition"].includes(requested))
         || (CHANGE_REQUEST_ENABLED && requested === "change_request")
       ) {
         setContext(event.detail || {});
-        setMode(requested);
+        setMode(requested === "launcher" ? "" : requested);
         setOpen(true);
       }
     }
@@ -803,11 +805,13 @@ export default function CaptureLauncher() {
         type="button"
         theme="operational"
         size="sm"
-          icon={Camera}
+        icon={Camera}
         onClick={() => setOpen(true)}
+        aria-label="Open Smart Capture"
+        title="Smart Capture"
         data-testid="global-capture-trigger"
       >
-        <span className="hidden sm:inline">Capture</span>
+        <span className="hidden sm:inline">Smart Capture</span>
       </Button>
       <Modal
         visible={open}
@@ -820,6 +824,12 @@ export default function CaptureLauncher() {
       >
         {!mode ? (
           <div className="grid gap-3" data-testid="capture-launcher-actions">
+            <div className="px-1 pb-1">
+              <p className="font-bold text-[var(--mhb-text-primary)]">Capture first. Organize later.</p>
+              <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
+                Save customer details, receipts, labels, photos, and field information for review.
+              </p>
+            </div>
             {CONVERSATIONAL_ENABLED ? (
               <button
                 type="button"

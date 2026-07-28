@@ -187,6 +187,7 @@ test("dashboard quick actions show estimate-first workflow in order", async ({ p
 
   await expect(actions.getByRole("button")).toHaveText([
     /Create Estimate\s*Primary/,
+    /Smart Capture\s*Capture customers, receipts, labels & job details/,
     "New Agreement",
     "Today's Schedule",
     "Expense",
@@ -203,6 +204,46 @@ test("dashboard quick actions show estimate-first workflow in order", async ({ p
   }
 
   await expect(actions.getByText("Primary")).toHaveCSS("color", "rgb(254, 243, 199)");
+});
+
+test("Smart Capture dashboard action opens the shared launcher and its hint dismisses once", async ({ page }) => {
+  await mockDashboard(page);
+  await page.addInitScript(() => {
+    window.__captureAnalytics = [];
+    window.addEventListener("mhb:analytics", (event) => window.__captureAnalytics.push(event.detail));
+  });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+
+  await expect(page.getByTestId("dashboard-smart-capture-hint")).toContainText(
+    "New: Capture customer details, receipts, labels, and field information."
+  );
+  await page.getByTestId("dashboard-quick-action-smart-capture").click();
+  await expect(page.getByTestId("capture-launcher")).toBeVisible();
+  await expect(page.getByTestId("capture-launcher-actions")).toContainText("Capture first. Organize later.");
+  await expect(page.getByTestId("capture-launcher-actions")).toContainText("Capture a receipt");
+  expect(await page.evaluate(() => window.__captureAnalytics)).toContainEqual({
+    event: "smart_capture_opened",
+    category: "capture",
+    source: "dashboard_quick_action",
+  });
+
+  await page.getByTestId("capture-launcher").getByRole("button", { name: "Close modal" }).click();
+  await page.getByRole("button", { name: "Dismiss Smart Capture hint" }).click();
+  await expect(page.getByTestId("dashboard-smart-capture-hint")).toHaveCount(0);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("dashboard-smart-capture-hint")).toHaveCount(0);
+});
+
+test("Smart Capture quick action remains usable at 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 720 });
+  await mockDashboard(page);
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+
+  const action = page.getByTestId("dashboard-quick-action-smart-capture");
+  await expect(action).toBeVisible();
+  expect((await action.boundingBox())?.height).toBeGreaterThanOrEqual(44);
+  await action.click();
+  await expect(page.getByTestId("capture-launcher")).toBeVisible();
 });
 
 test("Create Estimate launches workspace from an existing customer", async ({ page }) => {
