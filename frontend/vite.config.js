@@ -95,7 +95,7 @@ export default defineConfig(({ mode }) => {
             if (id.includes("/node_modules/react/") || id.includes("/node_modules/react-dom/")) return "react";
             if (id.includes("lucide-react") || id.includes("react-icons")) return "icons";
             if (id.includes("@stripe")) return "stripe";
-            if (id.includes("jspdf") || id.includes("pdfjs-dist")) return "documents";
+            if (id.includes("pdfjs-dist")) return "documents";
           }
         },
       },
