@@ -185,26 +185,27 @@ export default function MobileSidebarShell({ sidebar, children }) {
               ref={mobilePanelRef}
               id="authenticated-mobile-navigation"
               tabIndex={-1}
-              className="absolute bottom-0 left-0 top-0 w-[84vw] max-w-[340px] border-r border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] pt-[env(safe-area-inset-top)] shadow-xl outline-none"
+              data-testid="authenticated-mobile-navigation-drawer"
+              className="mhb-mobile-sidebar-drawer absolute bottom-0 left-0 top-0 flex w-[min(86vw,360px)] max-w-[calc(100vw-env(safe-area-inset-right)-1rem)] flex-col overflow-hidden border-r border-sky-300/15 bg-[#031126] pl-[env(safe-area-inset-left)] pt-[env(safe-area-inset-top)] shadow-[18px_0_48px_rgba(0,4,14,0.5)] outline-none"
               role="dialog"
               aria-modal="true"
               aria-label="Authenticated navigation"
             >
               {/* Header */}
-              <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
-                <div className="text-sm font-semibold text-slate-700">Menu</div>
+              <div className="flex min-h-14 shrink-0 items-center justify-between border-b border-sky-300/15 bg-[#061a36] px-4">
+                <div className="text-sm font-bold tracking-wide text-sky-50">Menu</div>
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
                   aria-label="Close menu"
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-sky-100 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-sky-300"
                 >
                   ✕
                 </button>
               </div>
 
               {/* Body */}
-              <div className="h-[calc(100%-49px)] overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-hidden" data-testid="authenticated-mobile-navigation-body">
                 {sidebar}
               </div>
             </div>

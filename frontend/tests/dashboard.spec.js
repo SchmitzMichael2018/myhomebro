@@ -284,6 +284,13 @@ test("standalone authenticated navigation opens the existing drawer and restores
   const drawer = page.getByRole("dialog", { name: "Authenticated navigation" });
   await expect(drawer).toBeVisible();
   await expect(drawer.getByRole("button", { name: "Logout" })).toBeVisible();
+  const drawerBox = await drawer.boundingBox();
+  expect(drawerBox.width / 390).toBeGreaterThanOrEqual(0.84);
+  expect(drawerBox.width / 390).toBeLessThanOrEqual(0.88);
+  await expect(drawer).toHaveCSS("background-color", "rgb(3, 17, 38)");
+  await expect(drawer.getByRole("link", { name: "Dashboard" })).toHaveCSS("min-height", "44px");
+  await expect(drawer.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
+  expect(await drawer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
   await page.keyboard.press("Escape");
   await expect(drawer).toHaveCount(0);

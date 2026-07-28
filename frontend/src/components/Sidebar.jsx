@@ -735,7 +735,7 @@ export default function Sidebar({ variant = "desktop" }) {
   );
 
   if (variant === "plain") {
-    return <div className="flex h-full min-h-0 max-w-full flex-col overflow-x-hidden">{inner}</div>;
+    return <div className="mhb-mobile-sidebar-content flex h-full min-h-0 max-w-full flex-col overflow-x-hidden">{inner}</div>;
   }
 
   return (
