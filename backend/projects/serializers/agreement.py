@@ -672,6 +672,14 @@ class AgreementSerializer(serializers.ModelSerializer):
     def get_current_pdf_url(self, obj):
         return _safe_file_url(getattr(obj, "pdf_file", None))
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get("request")
+        if not getattr(getattr(request, "user", None), "is_staff", False):
+            data.pop("pdf_task_id", None)
+            data.pop("pdf_generation_error_code", None)
+        return data
+
     def get_pdf_versions(self, obj):
         if AgreementPDFVersion is None:
             return []

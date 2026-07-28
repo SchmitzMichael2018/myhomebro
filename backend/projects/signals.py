@@ -9,10 +9,7 @@ from django.utils import timezone
 
 from .models import Agreement, Contractor, ContractorReview, Invoice, Milestone
 from .models_dispute import Dispute
-from .tasks import (
-    task_send_invoice_notification,
-    task_generate_full_agreement_pdf,
-)
+from .tasks import task_generate_full_agreement_pdf, task_send_invoice_notification
 
 logger = logging.getLogger(__name__)
 
@@ -42,13 +39,9 @@ def on_agreement_creation(sender, instance, created, **kwargs):
     After a new Agreement is created, generate the agreement PDF.
     """
     if created:
-        try:
-            task_generate_full_agreement_pdf.delay(instance.id)
-            logger.info(f"📄 PDF generation queued for Agreement {instance.id}.")
-        except Exception as e:
-            logger.error(
-                f"❌ Failed to dispatch PDF task for Agreement {instance.id}: {e}"
-            )
+        from projects.services.pdf_dispatch import enqueue_agreement_pdf
+
+        transaction.on_commit(lambda: enqueue_agreement_pdf(instance.id))
 
 
 # --------------------------------------------------------------------

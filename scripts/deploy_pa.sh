@@ -40,6 +40,15 @@ git fetch origin
 git checkout main
 git pull --ff-only
 
+echo "==> Install backend requirements"
+pip install -r "$BACKEND_DIR/requirements.txt"
+
+echo "==> Apply migrations and verify async services"
+python "$BACKEND_DIR/manage.py" migrate --noinput
+REPO_ROOT="$REPO_DIR" \
+PYTHON_BIN="$(command -v python)" \
+bash "$REPO_DIR/scripts/check_async_readiness.sh"
+
 echo "==> Build frontend"
 cd "$FRONTEND_DIR"
 echo "Build will use: node $(node -v), npm $(npm -v)"

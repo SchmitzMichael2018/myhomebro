@@ -1708,6 +1708,22 @@ class Agreement(models.Model):
         upload_to="agreements/pdf/", null=True, blank=True
     )
     pdf_version = models.PositiveIntegerField(default=1)
+    pdf_generation_status = models.CharField(
+        max_length=24,
+        choices=[
+            ("pending", "Pending"),
+            ("queued", "Queued"),
+            ("processing", "Processing"),
+            ("completed", "Completed"),
+            ("failed_retryable", "Failed — retryable"),
+            ("failed_permanent", "Failed — permanent"),
+        ],
+        default="pending",
+        db_index=True,
+    )
+    pdf_task_id = models.CharField(max_length=255, blank=True, default="")
+    pdf_generation_error_code = models.CharField(max_length=80, blank=True, default="")
+    pdf_generation_updated_at = models.DateTimeField(null=True, blank=True)
     pdf_archived = models.BooleanField(default=False)
     signature_log = models.TextField(blank=True)
 

@@ -375,6 +375,11 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str
 # Celery
 # ──────────────────────────────────────────────────────────────────────────────
 REDIS_URL = get_env_var("REDIS_URL", "").strip()
+CACHE_URL = get_env_var("CACHE_URL", "").strip()
+DEPLOYMENT_ENVIRONMENT = get_env_var(
+    "DEPLOYMENT_ENVIRONMENT",
+    get_env_var("ENVIRONMENT", "development" if DEBUG else "production"),
+).strip().lower()
 
 CELERY_BROKER_URL = (
     get_env_var("CELERY_BROKER_URL", "").strip()
@@ -393,13 +398,38 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = get_env_var("CELERY_TIMEZONE", "America/Chicago")
+CELERY_TASK_ALWAYS_EAGER = get_bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+CELERY_TASK_EAGER_PROPAGATES = get_bool("CELERY_TASK_EAGER_PROPAGATES", default=True)
+CELERY_TASK_DEFAULT_QUEUE = get_env_var("CELERY_DEFAULT_QUEUE", "default").strip() or "default"
+PDF_QUEUE_NAME = get_env_var("PDF_QUEUE_NAME", "pdf").strip() or "pdf"
+PDF_ASYNC_ENABLED = get_bool("PDF_ASYNC_ENABLED", default=False)
+PDF_SYNC_FALLBACK_ENABLED = get_bool("PDF_SYNC_FALLBACK_ENABLED", default=False)
+CELERY_BROKER_CONNECTION_TIMEOUT = int(get_env_var("CELERY_BROKER_CONNECTION_TIMEOUT", "5"))
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
+    "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+    "socket_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+}
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+    "socket_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
+    "visibility_timeout": int(get_env_var("CELERY_VISIBILITY_TIMEOUT", "900")),
+}
+CELERY_TASK_SOFT_TIME_LIMIT = int(get_env_var("CELERY_TASK_SOFT_TIME_LIMIT", "120"))
+CELERY_TASK_TIME_LIMIT = int(get_env_var("CELERY_TASK_TIME_LIMIT", "150"))
+CELERY_TASK_ACKS_LATE = True
+CELERY_TASK_REJECT_ON_WORKER_LOST = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+CELERY_TASK_ROUTES = {
+    "generate_full_agreement_pdf": {"queue": PDF_QUEUE_NAME},
+    "projects.tasks.pdf_readiness_probe": {"queue": PDF_QUEUE_NAME},
+}
 
 CELERY_BEAT_SCHEDULE = {}
 if CELERY_BROKER_URL:
     from celery.schedules import crontab
     CELERY_BEAT_SCHEDULE = {
         "auto-release-undisputed-invoices-daily": {
-            "task": "projects.tasks.auto_release_undisputed_invoices",
+            "task": "auto_release_undisputed_invoices",
             "schedule": crontab(hour=0, minute=0),
         },
     }

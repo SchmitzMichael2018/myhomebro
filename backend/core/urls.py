@@ -26,6 +26,7 @@ from projects.views.notifications import (
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 from .views_frontend import pwa_asset, spa as spa_index
+from .views_health import async_services_readiness
 
 try:
     from payments.return_views import stripe_return, ok as stripe_ok  # type: ignore
@@ -79,8 +80,9 @@ def favicon(_request):
 
 urlpatterns = [
     # Admin & health
-    path("admin/", admin.site.urls),
     path("healthz", health),
+    path("admin/health/async-services/", async_services_readiness, name="async-services-readiness"),
+    path("admin/", admin.site.urls),
 
     # Auth (JWT) — legacy aliases kept
     path("api/auth/login",    TokenObtainPairView.as_view(), name="auth-login-noslash"),

@@ -9,8 +9,12 @@ PY="$HOME/backend/venv/bin/python"
 
 echo "==> Backend: migrations"
 cd "$BACKEND"
-$PY manage.py makemigrations --noinput
 $PY manage.py migrate --noinput
+
+echo "==> Backend: Redis, Celery, and PDF readiness gate"
+REPO_ROOT="$HOME/backend" \
+PYTHON_BIN="$PY" \
+bash "$HOME/backend/scripts/check_async_readiness.sh"
 
 echo
 echo "==> Frontend: Vite build (clean cache)"

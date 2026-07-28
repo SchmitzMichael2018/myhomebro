@@ -12,6 +12,7 @@ class CoreConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
+        from core import checks  # noqa: F401
         from django.db.backends.signals import connection_created
         connection_created.connect(_apply_sqlite_pragmas)
         _log_startup()

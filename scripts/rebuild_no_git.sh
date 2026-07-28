@@ -18,8 +18,8 @@ source "$REPO_ROOT/venv/bin/activate"
 
 # 1) Backend deps (optional) + migrate
 log "Installing backend requirements (optional)…"
-if [[ -f "$REPO_ROOT/requirements.txt" ]]; then
-  pip install -r "$REPO_ROOT/requirements.txt"
+if [[ -f "$BACKEND_DIR/requirements.txt" ]]; then
+  pip install -r "$BACKEND_DIR/requirements.txt"
 fi
 
 log "Applying Django migrations…"

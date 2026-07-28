@@ -28,12 +28,17 @@ git -C "$REPO_ROOT" pull --ff-only || true
 
 # ── 3) Backend deps & migrations
 log "Installing backend requirements (if any)…"
-if [[ -f "$REPO_ROOT/requirements.txt" ]]; then
-  pip install --upgrade -r "$REPO_ROOT/requirements.txt"
+if [[ -f "$BACKEND_DIR/requirements.txt" ]]; then
+  pip install --upgrade -r "$BACKEND_DIR/requirements.txt"
 fi
 
 log "Applying Django migrations…"
 python "$BACKEND_DIR/manage.py" migrate --noinput
+
+log "Checking Redis, Celery worker, and PDF readiness…"
+REPO_ROOT="$REPO_ROOT" \
+PYTHON_BIN="$(command -v python)" \
+bash "$REPO_ROOT/scripts/check_async_readiness.sh"
 
 # ── 4) Frontend build (Vite)
 log "Building frontend…"
