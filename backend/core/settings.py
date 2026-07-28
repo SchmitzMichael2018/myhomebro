@@ -69,6 +69,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_DIR = BASE_DIR.parent
 FRONTEND_DIR = REPO_DIR / "frontend"
 FRONTEND_DIST_DIR = FRONTEND_DIR / "dist"
+PWA_BUILD_DIR = FRONTEND_DIST_DIR
 
 explicit_env_candidates = [
     BASE_DIR / ".env",

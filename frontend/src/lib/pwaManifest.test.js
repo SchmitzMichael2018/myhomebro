@@ -18,6 +18,10 @@ describe("PWA manifest", () => {
     expect(manifest.icons.some((icon) => icon.sizes === "192x192")).toBe(true);
     expect(manifest.icons.some((icon) => icon.sizes === "512x512")).toBe(true);
     expect(manifest.icons.some((icon) => icon.purpose === "maskable")).toBe(true);
+    for (const icon of manifest.icons) {
+      expect(icon.src).toMatch(/^\/(?:favicon|pwa-maskable)/);
+      expect(icon.src).not.toMatch(/^\/static\//);
+    }
   });
 
   it("limits shortcuts to non-destructive destinations", () => {

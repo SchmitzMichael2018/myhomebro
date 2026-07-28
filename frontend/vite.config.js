@@ -36,6 +36,9 @@ export default defineConfig(({ mode }) => {
           "pwa-maskable-512x512.png",
           "manifest.webmanifest",
         ],
+        modifyURLPrefix: {
+          "assets/": "/static/assets/",
+        },
         additionalManifestEntries: [
           { url: "/offline.html", revision: env.VITE_APP_VERSION || "dev" },
         ],

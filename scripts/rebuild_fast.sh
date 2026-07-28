@@ -12,6 +12,14 @@ ASSETS_DIR="$STATIC_ROOT/assets"
 
 log(){ printf "\n\033[1;34m[%s]\033[0m %s\n" "$(date +%H:%M:%S)" "$*"; }
 
+# Export deployment flags to Django and Vite before either process starts.
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
 # 0) venv
 log "Activating virtualenv…"
 source "$REPO_ROOT/venv/bin/activate"
@@ -25,8 +33,28 @@ log "Building frontend with Vite (no installs)…"
 cd "$FRONTEND_DIR"
 npx vite build
 
+PWA_ENABLED_NORMALIZED="${PWA_ENABLED:-false}"
+VITE_PWA_ENABLED_NORMALIZED="${VITE_PWA_ENABLED:-false}"
+if [[ "${PWA_ENABLED_NORMALIZED,,}" == "true" || "${VITE_PWA_ENABLED_NORMALIZED,,}" == "true" ]]; then
+  if [[ "${PWA_ENABLED_NORMALIZED,,}" != "true" || "${VITE_PWA_ENABLED_NORMALIZED,,}" != "true" ]]; then
+    echo "ERROR: PWA_ENABLED and VITE_PWA_ENABLED must both be true for a PWA deployment." >&2
+    exit 1
+  fi
+  for PWA_REQUIRED in sw.js manifest.webmanifest offline.html favicon.ico favicon-192x192.png favicon-512x512.png apple-touch-icon.png pwa-maskable-512x512.png; do
+    [[ -r "$FRONTEND_DIR/dist/$PWA_REQUIRED" ]] || {
+      echo "ERROR: Required PWA build output is missing: $PWA_REQUIRED" >&2
+      exit 1
+    }
+  done
+  compgen -G "$FRONTEND_DIR/dist/workbox-*.js" >/dev/null || {
+    echo "ERROR: No generated Workbox JavaScript file was found." >&2
+    exit 1
+  }
+fi
+
 # Publish public PWA metadata and branding assets. The root-scoped worker itself
 # is served by Django from dist/sw.js with Service-Worker-Allowed: /.
+mkdir -p "$STATIC_ROOT"
 for PWA_ASSET in manifest.webmanifest offline.html favicon.ico favicon-192x192.png favicon-512x512.png apple-touch-icon.png pwa-maskable-512x512.png; do
   if [[ -f "$FRONTEND_DIR/dist/$PWA_ASSET" ]]; then
     rsync -a "$FRONTEND_DIR/dist/$PWA_ASSET" "$STATIC_ROOT/$PWA_ASSET"

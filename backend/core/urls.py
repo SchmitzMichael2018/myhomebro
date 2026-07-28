@@ -1,10 +1,9 @@
 # backend/core/urls.py
 from __future__ import annotations
 
-from pathlib import Path
 from django.conf import settings
 from django.contrib import admin
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import HttpResponse
 from django.urls import path, include, re_path
 from django.views.generic import RedirectView
 
@@ -61,22 +60,6 @@ except Exception:
 
 def health(_request):
     return HttpResponse("ok", content_type="text/plain")
-
-def favicon(_request):
-    try:
-        static_root = getattr(settings, "STATIC_ROOT", None)
-        if static_root:
-            p = Path(static_root) / "favicon.ico"
-            if p.exists() and p.is_file():
-                return FileResponse(open(p, "rb"), content_type="image/x-icon")
-
-        dist_fav = Path(settings.BASE_DIR) / "frontend" / "dist" / "favicon.ico"
-        if dist_fav.exists() and dist_fav.is_file():
-            return FileResponse(open(dist_fav, "rb"), content_type="image/x-icon")
-    except Exception:
-        pass
-    raise Http404("favicon.ico not found")
-
 
 urlpatterns = [
     # Admin & health
@@ -164,11 +147,21 @@ urlpatterns = [
     # PDF viewer
     path("pdf/viewer/", pdf_viewer, name="pdf-viewer"),
 
-    # Favicon
-    path("favicon.ico", favicon, name="favicon"),
+    # Root-scoped public PWA files must precede the SPA fallback.
     path("sw.js", pwa_asset, {"filename": "sw.js"}, name="pwa-service-worker"),
     path("manifest.webmanifest", pwa_asset, {"filename": "manifest.webmanifest"}, name="pwa-manifest"),
     path("offline.html", pwa_asset, {"filename": "offline.html"}, name="pwa-offline"),
+    re_path(
+        r"^(?P<filename>workbox-[A-Za-z0-9_-]+\.js)$",
+        pwa_asset,
+        name="pwa-workbox",
+    ),
+    re_path(r"^(?P<filename>workbox-.*)$", pwa_asset, name="pwa-workbox-rejected"),
+    path("favicon.ico", pwa_asset, {"filename": "favicon.ico"}, name="favicon"),
+    path("favicon-192x192.png", pwa_asset, {"filename": "favicon-192x192.png"}, name="pwa-icon-192"),
+    path("favicon-512x512.png", pwa_asset, {"filename": "favicon-512x512.png"}, name="pwa-icon-512"),
+    path("apple-touch-icon.png", pwa_asset, {"filename": "apple-touch-icon.png"}, name="pwa-apple-icon"),
+    path("pwa-maskable-512x512.png", pwa_asset, {"filename": "pwa-maskable-512x512.png"}, name="pwa-maskable-icon"),
 
     # Legal pages
     path("legal/terms-of-service/", TermsOfServiceView.as_view(), name="terms-of-service"),
