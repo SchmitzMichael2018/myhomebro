@@ -17,6 +17,7 @@ import {
   passivePwaInstallAllowed,
   usePwaInstall,
 } from "../lib/pwaInstallStore.js";
+import { PwaAppIcon } from "./PwaInstallAccess.jsx";
 
 const CRITICAL_ROUTE = /agreement|estimate|payment|invoice|capture|measurement|takeoff|warrant|change/i;
 
@@ -131,14 +132,19 @@ export default function PwaStatus() {
         && install.classification !== "disabled"
         && passivePwaInstallAllowed()
         && !install.dialogOpen ? (
-        <div className="pointer-events-auto rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card-elevated)] p-3 shadow-card-elevated" role="dialog" aria-labelledby="pwa-install-title">
-          <strong id="pwa-install-title">Install MyHomeBro</strong>
-          <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
-            Open MyHomeBro from your home screen or desktop. Internet is still required for current business data.
-          </p>
-          <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <Button type="button" size="sm" variant="secondary" theme="operational" onClick={dismissInstall}>Not now</Button>
-            <Button type="button" size="sm" theme="operational" icon={Download} onClick={() => openPwaInstallDialog({ explicit: false })}>Install</Button>
+        <div className="pointer-events-auto fixed inset-x-3 top-[calc(76px+env(safe-area-inset-top))] mx-auto max-w-md rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card-elevated)] p-3 shadow-card-elevated sm:left-auto sm:right-4" role="dialog" aria-labelledby="pwa-install-title" data-testid="pwa-passive-install-banner">
+          <div className="flex items-start gap-3">
+            <PwaAppIcon className="h-12 w-12" />
+            <div className="min-w-0 flex-1">
+              <strong id="pwa-install-title">Install MyHomeBro</strong>
+              <p className="mt-0.5 text-sm leading-5 text-[var(--mhb-text-secondary)]">
+                Add MyHomeBro to your home screen or desktop for faster access.
+              </p>
+            </div>
+          </div>
+          <div className="mt-3 flex flex-col-reverse gap-2 min-[375px]:flex-row min-[375px]:justify-end">
+            <Button type="button" size="sm" variant="secondary" theme="operational" className="min-h-11" onClick={dismissInstall}>Not now</Button>
+            <Button type="button" size="sm" theme="operational" className="min-h-11" icon={Download} onClick={() => openPwaInstallDialog({ explicit: false })}>Install</Button>
           </div>
         </div>
       ) : null}

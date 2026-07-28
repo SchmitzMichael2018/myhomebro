@@ -5,14 +5,29 @@ test("public landing page exposes persistent install access at mobile widths", a
   await page.goto("/");
   const section = page.getByTestId("landing-pwa-install-section");
   await expect(section).toBeVisible();
+  await expect(page.getByTestId("landing-header-pwa-install-button")).toBeVisible();
+  await expect(page.getByTestId("landing-header-pwa-install-button")).toHaveAttribute(
+    "aria-label",
+    "Install MyHomeBro"
+  );
+  await expect(section.getByTestId("pwa-app-icon")).toBeVisible();
+  await expect(section.getByTestId("landing-pwa-benefits").getByRole("listitem")).toHaveCount(3);
+  const passiveBanner = page.getByTestId("pwa-passive-install-banner");
+  await expect(passiveBanner.getByTestId("pwa-app-icon")).toBeVisible();
   await expect(section.getByRole("button", { name: "Install MyHomeBro" })).toBeVisible();
-  await section.getByRole("button", { name: "Install MyHomeBro" }).click();
+  await page.getByTestId("landing-header-pwa-install-button").click();
   await expect(page.getByTestId("pwa-install-dialog")).toBeVisible();
+  await expect(page.getByTestId("pwa-install-value-copy")).toContainText(
+    "Keep projects, estimates, messages, agreements, photos, payments, and property records in one place."
+  );
   await expect(page.getByText("App installation is temporarily unavailable.")).toBeVisible();
 
   await page.getByRole("button", { name: "Close", exact: true }).click();
   await page.setViewportSize({ width: 375, height: 760 });
   await expect(section).toBeVisible();
+  const headerBox = await page.getByTestId("landing-header-pwa-install-button").boundingBox();
+  const bannerBox = await passiveBanner.boundingBox();
+  expect(headerBox && bannerBox && bannerBox.y >= headerBox.y + headerBox.height).toBeTruthy();
 });
 
 test("captured Chromium prompt is invoked from the shared install dialog", async ({ page }) => {
@@ -45,8 +60,13 @@ test("authenticated contractor sidebar exposes the same install dialog", async (
   await page.goto("/app/notifications");
   const action = page.getByTestId("authenticated-pwa-install-button").first();
   await expect(action).toBeVisible();
+  await expect(action.locator("svg")).toBeVisible();
+  await expect(action).toHaveAttribute("aria-label", "Install MyHomeBro");
   await action.click();
   await expect(page.getByTestId("pwa-install-dialog")).toBeVisible();
+  await expect(page.getByTestId("pwa-install-value-copy")).toContainText(
+    "Manage customers, estimates, projects, milestones, payments, and field records from one place."
+  );
 });
 
 test.describe("iOS installation guidance", () => {
@@ -75,5 +95,7 @@ test("standalone mode replaces install language with installed state", async ({ 
     );
   });
   await page.goto("/");
-  await expect(page.getByTestId("pwa-install-button")).toContainText("MyHomeBro is installed");
+  await expect(page.getByTestId("landing-header-pwa-install-button")).toHaveCount(0);
+  await expect(page.getByTestId("pwa-install-button")).toContainText("App Installed");
+  await expect(page.getByTestId("pwa-passive-install-banner")).toHaveCount(0);
 });

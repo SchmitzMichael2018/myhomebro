@@ -6,6 +6,20 @@ import { isStandalonePwa } from "./pwaLifecycle.js";
 export const PWA_INSTALL_DISMISS_KEY = "mhb.pwa.install-dismissed.v1";
 export const PWA_INSTALL_DISMISS_MS = 14 * 24 * 60 * 60 * 1000;
 
+export function pwaInstallValueCopy(role) {
+  const normalizedRole = String(role || "").trim().toLowerCase();
+  if (["contractor", "contractor_owner", "subaccount", "employee"].includes(normalizedRole)) {
+    return "Manage customers, estimates, projects, milestones, payments, and field records from one place.";
+  }
+  if (["homeowner", "customer"].includes(normalizedRole)) {
+    return "Follow project progress, review agreements, communicate with contractors, and keep your property records organized.";
+  }
+  if (["property_manager", "property-manager", "property manager"].includes(normalizedRole)) {
+    return "Manage units, maintenance requests, vendors, warranties, and property history.";
+  }
+  return "Keep projects, estimates, messages, agreements, photos, payments, and property records in one place.";
+}
+
 function detectPlatform() {
   if (typeof navigator === "undefined") {
     return { ios: false, browser: "unknown" };
@@ -44,6 +58,7 @@ let state = {
   registrationFailed: false,
   dialogOpen: false,
   explicitAction: false,
+  audienceRole: null,
   promptOutcome: null,
   passiveDismissed: false,
 };
@@ -103,14 +118,14 @@ export function usePwaInstall() {
   return useSyncExternalStore(subscribePwaInstall, getPwaInstallSnapshot, getPwaInstallSnapshot);
 }
 
-export function openPwaInstallDialog({ explicit = true } = {}) {
+export function openPwaInstallDialog({ explicit = true, audienceRole = null } = {}) {
   if (!state.enabled) return;
-  update({ dialogOpen: true, explicitAction: explicit });
+  update({ dialogOpen: true, explicitAction: explicit, audienceRole });
   trackPwaInstallEvent(explicit ? "install_cta_clicked" : "install_cta_viewed");
 }
 
 export function closePwaInstallDialog() {
-  update({ dialogOpen: false, explicitAction: false });
+  update({ dialogOpen: false, explicitAction: false, audienceRole: null });
 }
 
 export function dismissPassivePwaInstall() {

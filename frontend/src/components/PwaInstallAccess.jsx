@@ -7,6 +7,7 @@ import {
   closePwaInstallDialog,
   invokePwaInstallPrompt,
   openPwaInstallDialog,
+  pwaInstallValueCopy,
   retryPwaInstallAvailability,
   trackPwaInstallEvent,
   usePwaInstall,
@@ -16,6 +17,11 @@ export function PwaInstallButton({
   className = "",
   theme = "default",
   compact = false,
+  iconOnly = false,
+  hideWhenInstalled = false,
+  installLabel = "Install App",
+  installedLabel = "App Installed",
+  audienceRole = null,
   testId = "pwa-install-button",
   ...props
 }) {
@@ -25,22 +31,39 @@ export function PwaInstallButton({
     if (install.enabled) trackPwaInstallEvent("install_cta_viewed");
   }, [install.enabled]);
 
-  if (!install.enabled) return null;
   const installed = install.classification === "installed";
+  if (!install.enabled || (installed && hideWhenInstalled)) return null;
+  const accessibleLabel = installed ? "MyHomeBro is installed" : "Install MyHomeBro";
   return (
     <Button
       type="button"
-      variant={installed ? "secondary" : "primary"}
+      variant={iconOnly ? "icon" : installed ? "secondary" : "primary"}
       theme={theme}
       size={compact ? "sm" : "md"}
       icon={installed ? CheckCircle2 : Download}
       className={className}
       data-testid={testId}
-      onClick={() => openPwaInstallDialog({ explicit: true })}
+      aria-label={accessibleLabel}
+      title={iconOnly ? accessibleLabel : undefined}
+      onClick={() => openPwaInstallDialog({ explicit: true, audienceRole })}
       {...props}
     >
-      {installed ? "MyHomeBro is installed" : "Install MyHomeBro"}
+      <span className={iconOnly ? "sr-only" : ""}>
+        {installed ? installedLabel : installLabel}
+      </span>
     </Button>
+  );
+}
+
+export function PwaAppIcon({ className = "h-12 w-12", decorative = true }) {
+  return (
+    <img
+      src="/favicon-192x192.png"
+      alt={decorative ? "" : "MyHomeBro app icon"}
+      aria-hidden={decorative ? "true" : undefined}
+      className={`shrink-0 rounded-xl object-cover shadow-sm ${className}`}
+      data-testid="pwa-app-icon"
+    />
   );
 }
 
@@ -118,6 +141,7 @@ function InstallGuidance({ install }) {
 
 export function PwaInstallDialog() {
   const install = usePwaInstall();
+  const valueCopy = pwaInstallValueCopy(install.audienceRole);
 
   useEffect(() => {
     if (install.dialogOpen && install.classification !== "native_prompt") {
@@ -137,7 +161,9 @@ export function PwaInstallDialog() {
       <div className="space-y-4 text-slate-700">
         <div>
           <h4 className="text-lg font-bold text-slate-900">Take MyHomeBro with you</h4>
-          <p className="mt-1 text-sm">Install the app for faster access from your home screen or desktop.</p>
+          <p className="mt-1 text-sm leading-6" data-testid="pwa-install-value-copy">
+            {valueCopy} Install MyHomeBro for faster access from your phone or desktop.
+          </p>
         </div>
         <InstallGuidance install={install} />
         {import.meta.env.DEV ? (

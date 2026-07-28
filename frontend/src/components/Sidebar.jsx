@@ -691,8 +691,11 @@ export default function Sidebar({ variant = "desktop" }) {
       <div className="mhb-sidebar-footer shrink-0 border-t border-slate-200/90 px-4 py-3" data-testid="authenticated-sidebar-footer">
         <PwaInstallButton
           compact
-          className="mb-2 w-full"
+          className="mb-2 min-h-11 w-full"
           data-close-sidebar="1"
+          audienceRole={data?.role || data?.type || (isContractor ? "contractor" : null)}
+          installLabel="Install App"
+          installedLabel="App Installed"
           testId="authenticated-pwa-install-button"
         />
         <button

@@ -22,7 +22,7 @@ import logo from "../assets/myhomebro_logo.png";
 import homeownerCardImage from "../assets/landing/homeowner-card.png";
 import contractorCardImage from "../assets/landing/contractor-card.png";
 import kitchenPreviewImage from "../assets/kitchen-preview.jpg";
-import { PwaInstallButton } from "./PwaInstallAccess.jsx";
+import { PwaAppIcon, PwaInstallButton } from "./PwaInstallAccess.jsx";
 import { PWA_FLAGS } from "../lib/pwaFlags.js";
 
 const platformRowOne = [
@@ -146,6 +146,13 @@ export default function LandingPage() {
           </div>
 
           <div className="relative order-2 flex items-center gap-3 lg:order-3" ref={menuRef}>
+            <PwaInstallButton
+              compact
+              hideWhenInstalled
+              installLabel="Install App"
+              className="min-h-11 px-3 max-[374px]:w-11 max-[374px]:px-0 max-[374px]:[&>span:last-child]:sr-only"
+              testId="landing-header-pwa-install-button"
+            />
             <button
               type="button"
               data-testid="landing-sign-in-button"
@@ -250,17 +257,32 @@ export default function LandingPage() {
         {PWA_FLAGS.enabled ? (
           <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6" data-testid="landing-pwa-install-section">
             <div className="grid gap-5 rounded-3xl border border-amber-300/30 bg-slate-950/35 p-5 shadow-2xl shadow-slate-950/20 backdrop-blur sm:p-7 md:grid-cols-[1fr_auto] md:items-center">
-              <div>
-                <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-amber-200">
-                  <Download className="h-5 w-5" aria-hidden="true" />
-                  Take MyHomeBro with you
+              <div className="flex items-start gap-4">
+                <PwaAppIcon className="h-14 w-14 sm:h-16 sm:w-16" />
+                <div>
+                  <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.16em] text-amber-200">
+                    <Download className="h-5 w-5" aria-hidden="true" />
+                    Take MyHomeBro with you
+                  </div>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">Install MyHomeBro</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/72">
+                    Keep your projects, estimates, messages, agreements, photos, payments, and property records in one place. Install MyHomeBro for faster access from your phone or desktop.
+                  </p>
+                  <ul className="mt-3 grid gap-1.5 text-sm text-sky-50/82 sm:grid-cols-3" data-testid="landing-pwa-benefits">
+                    {[
+                      "Track projects and milestones",
+                      "Access estimates, agreements, and payments",
+                      "Keep messages, photos, warranties, and records organized",
+                    ].map((benefit) => (
+                      <li key={benefit} className="flex items-start gap-1.5">
+                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+                        <span>{benefit}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Install MyHomeBro</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/72">
-                  Install the app for faster access from your home screen or desktop.
-                </p>
               </div>
-              <PwaInstallButton className="w-full md:w-auto" />
+              <PwaInstallButton className="min-h-11 w-full md:w-auto" installLabel="Install App" />
             </div>
           </section>
         ) : null}

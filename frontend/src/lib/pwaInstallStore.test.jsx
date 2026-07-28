@@ -122,6 +122,13 @@ describe("shared PWA install store", () => {
     const { store } = await loadStore();
     const { PwaInstallButton } = await import("../components/PwaInstallAccess.jsx");
     expect(renderToStaticMarkup(<PwaInstallButton />)).toContain("Install MyHomeBro");
+    const iconOnly = renderToStaticMarkup(<PwaInstallButton iconOnly />);
+    expect(iconOnly).toContain('aria-label="Install MyHomeBro"');
+    expect(iconOnly).toContain('title="Install MyHomeBro"');
+    expect(store.pwaInstallValueCopy("contractor_owner")).toContain("Manage customers");
+    expect(store.pwaInstallValueCopy("homeowner")).toContain("Follow project progress");
+    expect(store.pwaInstallValueCopy("property_manager")).toContain("Manage units");
+    expect(store.pwaInstallValueCopy()).toContain("Keep projects");
     store.setPwaInstallStateForTest({ enabled: false });
     expect(renderToStaticMarkup(<PwaInstallButton />)).toBe("");
   });
