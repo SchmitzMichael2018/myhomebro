@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ArrowRight,
   BriefcaseBusiness,
   Building2,
   ChevronDown,
@@ -22,11 +23,26 @@ const TABS = [
 ];
 
 const WORKFLOW = [
-  "Capture the customer and job",
-  "Prepare the estimate",
-  "Review and approve the agreement",
-  "Track work, milestones, and payments",
-  "Keep records, warranties, and project history",
+  {
+    title: "Capture the customer and job",
+    description: "Collect the request, property details, photos, and field notes.",
+  },
+  {
+    title: "Prepare the estimate",
+    description: "Turn the job details into clear scope, pricing, and next steps.",
+  },
+  {
+    title: "Review and approve the agreement",
+    description: "Confirm the work, responsibilities, schedule, and payment terms.",
+  },
+  {
+    title: "Track work, milestones, and payments",
+    description: "Keep progress, approvals, updates, and payment status connected.",
+  },
+  {
+    title: "Keep records, warranties, and project history",
+    description: "Organize the documents and history needed after the work is done.",
+  },
 ];
 
 const AUDIENCES = [
@@ -57,13 +73,24 @@ function trackProductOverview(event, detail = {}) {
 
 function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
   return (
-    <div className="divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/12 bg-slate-950/35">
+    <div
+      data-testid={`${idPrefix}-accordion`}
+      className="grid gap-2 md:grid-cols-2"
+    >
       {items.map((item) => {
         const open = openItemId === item.id;
         const buttonId = `${idPrefix}-button-${item.id}`;
         const panelId = `${idPrefix}-panel-${item.id}`;
         return (
-          <article key={item.id} data-testid={`product-question-${item.id}`}>
+          <article
+            key={item.id}
+            data-testid={`product-question-${item.id}`}
+            className={`self-start overflow-hidden rounded-xl border transition-colors motion-reduce:transition-none ${
+              open
+                ? "border-sky-600 bg-slate-800"
+                : "border-slate-700 bg-slate-900 hover:border-slate-600"
+            }`}
+          >
             <h4>
               <button
                 id={buttonId}
@@ -71,11 +98,13 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
                 aria-expanded={open}
                 aria-controls={panelId}
                 onClick={() => onToggle(item)}
-                className="flex min-h-14 w-full items-center justify-between gap-4 px-4 py-3 text-left text-sm font-semibold leading-6 text-white transition hover:bg-white/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:px-5 sm:text-base"
+                className={`flex min-h-12 w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold leading-5 text-slate-50 transition-colors motion-reduce:transition-none focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:text-[15px] ${
+                  open ? "bg-slate-800" : "bg-slate-900 hover:bg-slate-800"
+                }`}
               >
                 <span>{item.question}</span>
                 <ChevronDown
-                  className={`h-5 w-5 shrink-0 text-sky-300 transition-transform motion-reduce:transition-none ${open ? "rotate-180" : ""}`}
+                  className={`h-5 w-5 shrink-0 text-sky-300 transition-transform motion-reduce:transition-none ${open ? "rotate-180 text-amber-300" : ""}`}
                   aria-hidden="true"
                 />
               </button>
@@ -85,9 +114,9 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
               role="region"
               aria-labelledby={buttonId}
               hidden={!open}
-              className="px-4 pb-5 pr-10 text-sm leading-6 text-sky-50/78 sm:px-5 sm:pr-14"
+              className="border-t border-slate-700 bg-slate-950/70 px-4 py-3 text-sm leading-6 text-slate-300"
             >
-              <p>{item.answer}</p>
+              <p className="max-w-prose">{item.answer}</p>
             </div>
           </article>
         );
@@ -156,11 +185,11 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
       hideHeader
       labelledBy="product-overview-title"
       overlayClassName="bg-slate-950/72 px-0 sm:px-4 sm:py-6"
-      containerClassName="h-[100dvh] max-h-[100dvh] bg-[#071a3a] text-white sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:max-w-5xl sm:rounded-3xl sm:border sm:border-white/14"
+      containerClassName="h-[100dvh] max-h-[100dvh] !bg-slate-950 text-white sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:max-w-5xl sm:rounded-3xl sm:border sm:border-slate-700"
       bodyClassName="h-full max-h-full overflow-y-auto overscroll-contain p-0"
     >
-      <div className="flex min-h-full flex-col">
-        <header className="sticky top-0 z-10 border-b border-white/10 bg-[#071a3a]/95 px-[max(1rem,env(safe-area-inset-left))] pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur sm:px-6 sm:pt-4">
+      <div data-testid="product-overview-surface" className="flex min-h-full flex-col bg-slate-950 text-slate-50">
+        <header className="sticky top-0 z-10 border-b border-slate-700 bg-slate-950/95 px-[max(1rem,env(safe-area-inset-left))] pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur sm:px-6 sm:pt-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
@@ -186,7 +215,7 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
             tabIndex={-1}
             aria-label="Product overview sections"
             onKeyDown={handleTabKeyDown}
-            className="mt-3 grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-slate-950/35 p-1"
+            className="mt-3 grid grid-cols-3 gap-1 rounded-xl border border-slate-700 bg-slate-900 p-1"
           >
             {TABS.map((tab) => {
               const selected = activeTab === tab.id;
@@ -202,7 +231,7 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
                   tabIndex={selected ? 0 : -1}
                   onClick={() => selectTab(tab.id)}
                   className={`min-h-11 rounded-lg px-2 text-sm font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
-                    selected ? "bg-blue-600 text-white shadow" : "text-sky-100/72 hover:bg-white/6 hover:text-white"
+                    selected ? "bg-blue-600 text-white shadow-sm" : "text-slate-200 hover:bg-slate-800 hover:text-white"
                   }`}
                 >
                   {tab.label}
@@ -212,7 +241,7 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
           </div>
         </header>
 
-        <div className="flex-1 px-[max(1rem,env(safe-area-inset-left))] py-5 sm:px-6 sm:py-6">
+        <div className="flex-1 bg-slate-950 px-[max(1rem,env(safe-area-inset-left))] py-4 sm:px-6 sm:py-5">
           <section
             id="product-panel-overview"
             role="tabpanel"
@@ -223,26 +252,46 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
             <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">
               See how MyHomeBro keeps projects moving
             </h3>
-            <p className="mt-3 max-w-3xl text-sm leading-6 text-sky-50/76 sm:text-base">
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300 sm:text-base">
               MyHomeBro brings customers, estimates, agreements, payments, project updates, messages,
               and property records into one guided workspace.
             </p>
-            <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <ol
+              data-testid="product-overview-workflow"
+              className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+            >
               {WORKFLOW.map((step, index) => (
-                <li key={step} className="rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+                <li
+                  key={step.title}
+                  data-testid={`product-workflow-step-${index + 1}`}
+                  className="relative flex min-h-full gap-3 rounded-xl border border-slate-700 bg-slate-900 p-3 lg:block"
+                >
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-300 text-xs font-bold text-slate-950">
                     {index + 1}
                   </span>
-                  <span className="mt-3 block text-sm font-semibold leading-5 text-white">{step}</span>
+                  <div className="min-w-0 lg:mt-3">
+                    <h4 className="text-sm font-semibold leading-5 text-white">{step.title}</h4>
+                    <p className="mt-1 text-xs leading-5 text-slate-300">{step.description}</p>
+                  </div>
+                  {index < WORKFLOW.length - 1 ? (
+                    <ArrowRight
+                      className="absolute -right-2.5 top-1/2 z-[1] hidden h-5 w-5 -translate-y-1/2 rounded-full bg-slate-950 p-0.5 text-sky-300 lg:block"
+                      aria-hidden="true"
+                    />
+                  ) : null}
                 </li>
               ))}
             </ol>
-            <div className="mt-6 grid gap-3 md:grid-cols-3">
+            <div data-testid="product-overview-audiences" className="mt-5 grid gap-3 md:grid-cols-3">
               {AUDIENCES.map(({ icon: Icon, title, text }) => (
-                <article key={title} className="rounded-2xl border border-sky-300/15 bg-blue-950/30 p-4">
-                  <Icon className="h-5 w-5 text-amber-300" aria-hidden="true" />
-                  <h4 className="mt-3 font-semibold text-white">{title}</h4>
-                  <p className="mt-2 text-sm leading-6 text-sky-50/72">{text}</p>
+                <article
+                  key={title}
+                  data-testid={`product-audience-${title.toLowerCase().replaceAll(" ", "-")}`}
+                  className="h-full rounded-xl border border-sky-800/70 bg-slate-900 p-4"
+                >
+                  <Icon className="h-5 w-5 text-sky-300" aria-hidden="true" />
+                  <h4 className="mt-2 font-semibold text-white">{title}</h4>
+                  <p className="mt-1 text-sm leading-6 text-slate-300">{text}</p>
                 </article>
               ))}
             </div>
@@ -281,13 +330,15 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
             id="product-panel-questions"
             role="tabpanel"
             aria-labelledby="product-tab-questions"
+            data-testid="product-questions-panel"
             hidden={activeTab !== "questions"}
             tabIndex={0}
+            className="bg-slate-950"
           >
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h3 className="text-2xl font-semibold">Common questions</h3>
-                <p className="mt-2 text-sm leading-6 text-sky-50/72">
+                <p className="mt-2 text-sm leading-6 text-slate-300">
                   Clear answers about the platform, payments, AI assistance, privacy, and records.
                 </p>
               </div>
@@ -300,19 +351,19 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
                     setOpenItemId("");
                     trackProductOverview("product_view_all_questions_clicked");
                   }}
-                  className="min-h-11 self-start rounded-xl px-3 text-sm font-semibold text-amber-200 hover:bg-amber-300/8 hover:text-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:self-auto"
+                  className="min-h-11 self-start rounded-xl border border-amber-400/70 bg-amber-300/10 px-4 py-2 text-sm font-semibold text-amber-200 transition-colors hover:border-amber-300 hover:bg-amber-300/15 hover:text-amber-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 sm:self-auto"
                 >
                   View all questions
                 </button>
               ) : null}
             </div>
-            <div className="mt-5 space-y-7">
+            <div className="mt-4 space-y-6">
               {showAllQuestions ? (
                 PUBLIC_FAQ_CATEGORIES.map((category) => (
                   <section key={category.id} aria-labelledby={`product-category-${category.id}`}>
                     <h4
                       id={`product-category-${category.id}`}
-                      className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-sky-200"
+                      className="mb-2 border-l-2 border-amber-300 pl-3 text-xs font-semibold uppercase tracking-[0.16em] text-sky-200"
                     >
                       {category.label}
                     </h4>
@@ -336,7 +387,7 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
           </section>
         </div>
 
-        <footer className="sticky bottom-0 border-t border-white/10 bg-[#071a3a]/96 px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
+        <footer className="sticky bottom-0 border-t border-slate-700 bg-slate-950/96 px-[max(1rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-col gap-2 sm:flex-row">
               <button
@@ -350,16 +401,16 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
               <button
                 type="button"
                 onClick={() => goTo("create_account", "/create-account")}
-                className="min-h-11 rounded-xl border border-white/16 px-4 py-2 text-sm font-semibold text-white hover:bg-white/8 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                className="min-h-11 rounded-xl border border-sky-500 bg-slate-900 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-slate-800 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               >
                 Create Free Account
               </button>
             </div>
             <div className="flex items-center justify-center gap-4 text-sm font-semibold sm:justify-end">
-              <button type="button" onClick={() => goTo("login", "/login")} className="min-h-11 text-sky-200 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
+              <button type="button" onClick={() => goTo("login", "/login")} className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
                 Log In
               </button>
-              <button type="button" onClick={() => goTo("support", "/login")} className="min-h-11 text-sky-200 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
+              <button type="button" onClick={() => goTo("support", "/login")} className="min-h-11 rounded-lg px-2 text-sky-300 underline-offset-4 hover:text-white hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300">
                 Contact Support
               </button>
             </div>
