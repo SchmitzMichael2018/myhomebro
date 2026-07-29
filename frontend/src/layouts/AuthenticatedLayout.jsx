@@ -3,7 +3,8 @@
 // - Floating hamburger is now a fallback and auto-hides when PageShell registers its own hamburger
 
 import React, { Suspense, useEffect } from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Link, Outlet, useLocation } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
 import Sidebar from "../components/Sidebar.jsx";
 import ErrorBoundary from "../components/ErrorBoundary.jsx";
 import MobileSidebarShell from "../components/MobileSidebarShell.jsx";
@@ -63,6 +64,16 @@ export default function AuthenticatedLayout() {
                 >
                   <div style={{ flex: 1, minHeight: 0 }}>
                     <div className="mhb-content-pad">
+                      {location.state?.fromGuidedHelp ? (
+                        <Link
+                          to="/app/guided-onboarding"
+                          className="guided-hub__return-link"
+                          aria-label="Back to Guided Help"
+                        >
+                          <ArrowLeft aria-hidden="true" size={17} />
+                          Back to Guided Help
+                        </Link>
+                      ) : null}
                       <ErrorBoundary>
                         <Suspense fallback={<RouteLoadingFallback operational />}>
                           <Outlet />

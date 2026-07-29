@@ -158,14 +158,23 @@ function cleanRole(value) {
 }
 
 export function getGuidedExperienceRole(identityOrRole) {
-  const raw =
+  const candidates =
     typeof identityOrRole === "string"
-      ? identityOrRole
-      : identityOrRole?.account_type || identityOrRole?.type || identityOrRole?.role || identityOrRole?.user_type;
-  const role = cleanRole(raw);
-  if (["admin", "platform_admin", "staff", "superuser"].includes(role)) return "admin";
-  if (["property_manager", "propertymanager", "property_management", "manager"].includes(role)) return "property_manager";
-  if (["customer", "homeowner", "property_owner"].includes(role)) return "customer";
+      ? [identityOrRole]
+      : [
+          identityOrRole?.account_type,
+          identityOrRole?.type,
+          identityOrRole?.role,
+          identityOrRole?.user_type,
+        ];
+  const roles = candidates.map(cleanRole).filter(Boolean);
+  const hasRole = (values) => roles.some((role) => values.includes(role));
+  if (hasRole(["admin", "platform_admin", "staff", "superuser", "reviewer"])) return "admin";
+  if (hasRole(["property_manager", "propertymanager", "property_management", "manager"])) return "property_manager";
+  if (hasRole(["tenant", "resident"])) return "tenant";
+  if (hasRole(["subcontractor", "sub_contractor"])) return "subcontractor";
+  if (hasRole(["employee", "subaccount", "team_member", "supervisor", "completion_access", "read_only"])) return "employee";
+  if (hasRole(["customer", "homeowner", "property_owner"])) return "customer";
   return "contractor";
 }
 
