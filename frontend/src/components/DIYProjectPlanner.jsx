@@ -126,6 +126,8 @@ export default function DIYProjectPlanner({
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('action') === 'create') setCreating(true);
+    const requestedProject = params.get('project');
+    if (requestedProject) loadProject(requestedProject).catch(() => {});
     const requestedSection = params.get('section');
     if (
       ['overview', 'design', 'plan', 'progress', 'get-help', 'files'].includes(
@@ -133,7 +135,7 @@ export default function DIYProjectPlanner({
       )
     )
       setSection(requestedSection);
-  }, []);
+  }, [loadProject]);
 
   const createProject = async (event) => {
     event.preventDefault();
@@ -1547,6 +1549,17 @@ export default function DIYProjectPlanner({
                 {selected.target_budget_max || 'Not set'}
               </p>
               <p>Timing: {selected.target_completion_date || 'Not set'}</p>
+              <h5 className="mt-3 font-bold">What I will continue doing</h5>
+              {selected.phases
+                .flatMap((phase) => phase.tasks)
+                .filter((task) => task.participation_type === 'DO_IT_MYSELF')
+                .map((task) => (
+                  <p key={task.id}>• {task.title}</p>
+                ))}
+              <h5 className="mt-3 font-bold">What I need help with</h5>
+              <p className="text-slate-300">
+                The task or phase selection above is the professional scope.
+              </p>
             </div>
             <div className="rounded-xl bg-slate-950 p-3 text-sm">
               <h4 className="font-bold">Supporting details to share</h4>
@@ -1598,9 +1611,17 @@ export default function DIYProjectPlanner({
           </button>
           {selected.request_links?.length ? (
             <div className="mt-3 text-sm text-emerald-200">
-              Linked request draft #
-              {selected.request_links[0].customer_request_id} is ready in
-              Requests.
+              <strong>
+                Linked {selected.request_links[0].project_mode_label || 'help'}{' '}
+                request #{selected.request_links[0].customer_request_id}
+              </strong>
+              <span className="ml-2">
+                {selected.request_links[0].status_label ||
+                  selected.request_links[0].status}
+                {selected.request_links[0].routed_contractor_count
+                  ? ` · Sent to ${selected.request_links[0].routed_contractor_count} contractor${selected.request_links[0].routed_contractor_count === 1 ? '' : 's'}`
+                  : ''}
+              </span>
               {onOpenRequest ? (
                 <button
                   type="button"
@@ -1612,10 +1633,16 @@ export default function DIYProjectPlanner({
                   Open request draft
                 </button>
               ) : null}
-              <p className="mt-2">
-                No contractor has been contacted. Review and submit separately
-                when ready.
-              </p>
+              {selected.request_links[0].routed_contractor_count ? (
+                <p className="mt-2">
+                  Open Requests to review contractor responses and next steps.
+                </p>
+              ) : (
+                <p className="mt-2">
+                  No contractors have been contacted yet. Open the request to
+                  review it and find contractors when ready.
+                </p>
+              )}
             </div>
           ) : null}
         </section>

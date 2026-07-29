@@ -2444,6 +2444,14 @@ def _sync_customer_request_source_intake(customer_request: CustomerRequest) -> P
         },
         "analyzed_at": timezone.now(),
     }
+    if source_intake is not None:
+        preserved_analysis = getattr(source_intake, "ai_analysis_payload", {}) or {}
+        defaults["ai_analysis_payload"] = {
+            **preserved_analysis,
+            **defaults["ai_analysis_payload"],
+            "measurements": preserved_analysis.get("measurements", []),
+            "origin": preserved_analysis.get("origin", ""),
+        }
     if source_intake is None:
         source_intake = ProjectIntake.objects.create(**defaults)
         source_intake.ensure_share_token(save=True)
@@ -2637,6 +2645,7 @@ def _customer_request_rows(email: str) -> list[dict]:
         project_class = infer_project_class(project_type, project_scope, getattr(request_row, "preferred_timeline", ""), "")
         comparison_key = _comparison_key(email, project_address, project_class)
         source_intake = getattr(request_row, "source_intake", None)
+        diy_link = request_row.diy_project_links.select_related("diy_project").order_by("-created_at", "-id").first()
         routed_contractors = _customer_request_routed_contractors(source_intake)
         workflow_key, workflow_label, next_action = _customer_request_workflow_status(
             request_row,
@@ -2678,6 +2687,8 @@ def _customer_request_rows(email: str) -> list[dict]:
                 "comparison_key": comparison_key,
                 "request_type": _safe_text(request_row.request_type),
                 "request_type_label": request_row.get_request_type_display(),
+                "source_diy_project_id": str(diy_link.diy_project_id) if diy_link else "",
+                "source_diy_project_title": _safe_text(getattr(getattr(diy_link, "diy_project", None), "title", "")),
                 "project_mode": _safe_text(getattr(request_row, "project_mode", "")),
                 "project_mode_label": request_row.get_project_mode_display() if getattr(request_row, "project_mode", "") else "",
                 "project_category": _safe_text(getattr(request_row, "project_category", "")),

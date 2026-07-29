@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import PurePosixPath
+
 from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404
@@ -11,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import CustomerRequest, PropertyProfile
+from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
 from projects.models_diy_planner import (
     DIYProject, DIYProjectAIProposal, DIYProjectAsset, DIYProjectMeasurement,
     DIYProjectPhase, DIYProjectProgressEntry, DIYProjectRequestLink, DIYProjectTask,
@@ -102,8 +105,16 @@ def serialize_project(row, request=None, detail=False):
         ]
         payload["request_links"] = [
             {"id": link.id, "customer_request_id": link.customer_request_id,
-             "status": getattr(link.customer_request, "status", ""), "created_at": link.created_at}
-            for link in row.request_links.select_related("customer_request").all()
+             "status": getattr(link.customer_request, "status", ""),
+             "status_label": getattr(link.customer_request, "get_status_display", lambda: "")(),
+             "project_mode": getattr(link.customer_request, "project_mode", ""),
+             "project_mode_label": getattr(link.customer_request, "get_project_mode_display", lambda: "")(),
+             "routed_contractor_count": (
+                 link.customer_request.source_intake.contractor_opportunities.count()
+                 if getattr(link.customer_request, "source_intake_id", None) else 0
+             ),
+             "created_at": link.created_at}
+            for link in row.request_links.select_related("customer_request", "customer_request__source_intake").all()
         ]
     return payload
 
@@ -400,6 +411,8 @@ class DIYGetHelpView(APIView):
             f"Work already completed: {project.work_completed or 'None provided'}\n"
             f"Selected work:\n{generated_scope}"
         )
+        if data.get("scope"):
+            scope += f"\n\nSelected professional-help work:\n{generated_scope}"
         if measurements:
             scope += "\n\nShared homeowner-provided measurements (verify before pricing or work):\n" + "\n".join(
                 f"- {row.label}: {row.value} {row.unit}" for row in measurements
@@ -416,6 +429,78 @@ class DIYGetHelpView(APIView):
             description=scope, preferred_timeline=str(project.target_completion_date or ""),
             status=CustomerRequest.STATUS_DRAFT,
         )
+        profile = project.property_profile
+        continuing_tasks = list(
+            DIYProjectTask.objects.filter(
+                phase__project=project,
+                participation_type=DIYProjectTask.Participation.DO_IT_MYSELF,
+            ).select_related("phase")
+        )
+        budget_range = " â€“ ".join(
+            value for value in [
+                str(project.target_budget_min) if project.target_budget_min is not None else "",
+                str(project.target_budget_max) if project.target_budget_max is not None else "",
+            ] if value
+        )
+        intake = ProjectIntake.objects.create(
+            homeowner=request_row.homeowner,
+            initiated_by="homeowner",
+            status="analyzed",
+            lead_source="direct",
+            customer_email=email,
+            project_mode={
+                "diy_assist": "assisted_diy",
+                "consultation": "consultation",
+                "inspection_only": "inspection_only",
+                "full_service": "full_service",
+                "not_sure": "full_service",
+            }.get(data["project_mode"], "full_service"),
+            property_type=getattr(profile, "property_type", "") or "",
+            budget_range_text=budget_range,
+            desired_timing_text=str(project.target_completion_date or ""),
+            homeowner_participation_notes=project.work_completed,
+            homeowner_started_work=bool(project.work_completed),
+            homeowner_task_summary="\n".join(
+                f"- {task.phase.title}: {task.title}" for task in continuing_tasks
+            ),
+            homeowner_assistance_summary=generated_scope,
+            project_address_line1=getattr(profile, "address_line1", "") or "",
+            project_address_line2=getattr(profile, "address_line2", "") or "",
+            project_city=getattr(profile, "city", "") or "",
+            project_state=getattr(profile, "state", "") or "",
+            project_postal_code=getattr(profile, "postal_code", "") or "",
+            accomplishment_text=scope,
+            ai_project_title=request_row.title,
+            ai_project_type=request_row.project_type,
+            ai_description=scope,
+            measurement_handling="provided" if measurements else "",
+            ai_clarification_answers={
+                "existing_conditions": project.existing_conditions,
+                "work_completed": project.work_completed,
+                "shared_measurements": [
+                    {"label": row.label, "value": str(row.value), "unit": row.unit}
+                    for row in measurements
+                ],
+            },
+            ai_analysis_payload={
+                "origin": "homeowner_diy_project",
+                "source_customer_request_id": request_row.id,
+                "measurements": [
+                    {"label": row.label, "value": str(row.value), "unit": row.unit}
+                    for row in measurements
+                ],
+            },
+        )
+        intake.ensure_share_token(save=True)
+        request_row.source_intake = intake
+        request_row.save(update_fields=["source_intake", "updated_at"])
+        for asset in assets:
+            ProjectIntakeClarificationPhoto.objects.create(
+                project_intake=intake,
+                image=asset.file.name,
+                original_name=PurePosixPath(asset.file.name).name,
+                caption=asset.caption or asset.get_asset_type_display(),
+            )
         link = DIYProjectRequestLink.objects.create(diy_project=project, customer_request=request_row,
                                                    idempotency_key=data["idempotency_key"])
         return Response({"link_id": link.id, "request_id": request_row.id, "created": True,

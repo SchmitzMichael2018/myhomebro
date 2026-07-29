@@ -1,8 +1,13 @@
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from projects.models import CustomerRequest
-from projects.models_diy_planner import DIYProject, DIYProjectMeasurement, DIYProjectTask
+from projects.models import Contractor, CustomerRequest
+from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
+from projects.models_diy_planner import DIYProject, DIYProjectAsset, DIYProjectMeasurement, DIYProjectTask
+from projects.models_project_intake import ProjectIntakeClarificationPhoto
+from projects.services.contractor_directory import normalize_business_name
 from projects.views.customer_portal import _portal_token
 
 
@@ -121,3 +126,110 @@ class DIYProjectPlannerTests(TestCase):
         self.assertEqual(second.status_code, 200, second.data)
         self.assertFalse(second.data["created"])
         self.assertEqual(CustomerRequest.objects.count(), 1)
+
+    def test_diy_help_selected_evidence_routes_to_contractor_without_exposing_private_assets(self):
+        project = self.create_project()
+        phase = self.client.post(
+            f"{self.base}/{project['id']}/phases/",
+            {"title": "Electrical and finish work"},
+            format="json",
+        ).data
+        diy_task = self.client.post(
+            f"{self.base}/{project['id']}/phases/{phase['id']}/tasks/",
+            {"title": "Paint repaired wall", "participation_type": "DO_IT_MYSELF"},
+            format="json",
+        ).data
+        professional_task = self.client.post(
+            f"{self.base}/{project['id']}/phases/{phase['id']}/tasks/",
+            {
+                "title": "Connect exterior circuit",
+                "description": "Review existing wiring and complete the connection.",
+                "participation_type": "NEED_PROFESSIONAL",
+                "professional_review_recommended": True,
+            },
+            format="json",
+        ).data
+        measurement = self.client.post(
+            f"{self.base}/{project['id']}/measurements/",
+            {"label": "Cable run", "value": "18", "unit": "ft"},
+            format="json",
+        ).data
+        shared_upload = self.client.post(
+            f"{self.base}/{project['id']}/assets/",
+            {"file": SimpleUploadedFile("shared.jpg", b"shared-image", content_type="image/jpeg"), "caption": "Panel location"},
+            format="multipart",
+        )
+        private_upload = self.client.post(
+            f"{self.base}/{project['id']}/assets/",
+            {"file": SimpleUploadedFile("private.jpg", b"private-image", content_type="image/jpeg"), "caption": "Private progress"},
+            format="multipart",
+        )
+        self.assertEqual(shared_upload.status_code, 201, shared_upload.data)
+        self.assertEqual(private_upload.status_code, 201, private_upload.data)
+
+        conversion = self.client.post(
+            f"{self.base}/{project['id']}/get-help/",
+            {
+                "selection_type": "task",
+                "task_ids": [professional_task["id"]],
+                "asset_ids": [shared_upload.data["id"]],
+                "measurement_ids": [measurement["id"]],
+                "project_mode": "diy_assist",
+                "scope": "Please review and connect the exterior circuit.",
+                "idempotency_key": "exterior-circuit-v1",
+            },
+            format="json",
+        )
+        self.assertEqual(conversion.status_code, 201, conversion.data)
+        request_row = CustomerRequest.objects.select_related("source_intake").get(id=conversion.data["request_id"])
+        intake = request_row.source_intake
+        self.assertEqual(intake.project_mode, "assisted_diy")
+        self.assertIn("Paint repaired wall", intake.homeowner_task_summary)
+        self.assertIn("Connect exterior circuit", intake.homeowner_assistance_summary)
+        self.assertNotIn("Paint repaired wall", request_row.description)
+        self.assertEqual(ProjectIntakeClarificationPhoto.objects.filter(project_intake=intake).count(), 1)
+        self.assertEqual(intake.clarification_photos.get().caption, "Panel location")
+        self.assertNotIn("private.jpg", intake.clarification_photos.get().image.name)
+
+        User = get_user_model()
+        contractor_user = User.objects.create_user(email="routed@example.com", password="test-pass")
+        contractor = Contractor.objects.create(
+            user=contractor_user, business_name="Safe Electric", city="Austin", state="TX"
+        )
+        entry = ContractorDirectoryEntry.objects.create(
+            business_name="Safe Electric",
+            normalized_name=normalize_business_name("Safe Electric"),
+            city="Austin",
+            state="TX",
+            claimed=True,
+            claimed_by_contractor=contractor,
+            services=["electrician"],
+        )
+        routed = self.client.post(
+            f"/api/projects/customer-portal/{self.token}/requests/{request_row.id}/contractors/select/",
+            {"selected_contractors": [{"directory_entry_id": entry.id}]},
+            format="json",
+        )
+        self.assertEqual(routed.status_code, 200, routed.data)
+        self.assertEqual(routed.data["opportunity_count"], 1)
+        opportunity = ContractorOpportunity.objects.get(intake_request=intake, directory_entry=entry)
+        self.assertIn("Connect exterior circuit", opportunity.project_description)
+        self.assertNotIn("Paint repaired wall", opportunity.project_description)
+        self.assertEqual(len(opportunity.photos), 1)
+        self.assertEqual(opportunity.measurements, [{"label": "Cable run", "value": "18.0000", "unit": "ft"}])
+
+        duplicate_route = self.client.post(
+            f"/api/projects/customer-portal/{self.token}/requests/{request_row.id}/contractors/select/",
+            {"selected_contractors": [{"directory_entry_id": entry.id}]},
+            format="json",
+        )
+        self.assertEqual(duplicate_route.status_code, 200, duplicate_route.data)
+        self.assertEqual(ContractorOpportunity.objects.filter(intake_request=intake, directory_entry=entry).count(), 1)
+        self.assertEqual(
+            self.client.get(
+                f"/api/projects/customer-portal/{self.other_token}/diy-projects/{project['id']}/assets/{shared_upload.data['id']}/download/"
+            ).status_code,
+            404,
+        )
+        self.assertTrue(DIYProjectAsset.objects.filter(id=private_upload.data["id"]).exists())
+        self.assertTrue(DIYProjectTask.objects.filter(id=diy_task["id"]).exists())

@@ -126,14 +126,41 @@ const portalPayload = {
             home_depot_url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
             lowes_url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
             provider_links: [
-              { provider: "amazon", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" },
-              { provider: "home_depot", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter" },
-              { provider: "lowes", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter" },
+              {
+                provider: "amazon",
+                label: "Amazon",
+                url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20",
+              },
+              {
+                provider: "home_depot",
+                label: "Home Depot",
+                url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
+              },
+              {
+                provider: "lowes",
+                label: "Lowe's",
+                url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
+              },
             ],
             actions: [
-              { type: "amazon_search", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
-              { type: "home_depot_search", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter", provider: "home_depot" },
-              { type: "lowes_search", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter", provider: "lowes" },
+              {
+                type: "amazon_search",
+                label: "Amazon",
+                url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20",
+                provider: "amazon",
+              },
+              {
+                type: "home_depot_search",
+                label: "Home Depot",
+                url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
+                provider: "home_depot",
+              },
+              {
+                type: "lowes_search",
+                label: "Lowe's",
+                url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
+                provider: "lowes",
+              },
             ],
             is_ignored: false,
           },
@@ -149,7 +176,14 @@ const portalPayload = {
             url: "/files/roof-warranty.pdf",
           },
         ],
-        linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
+        linked_projects: [
+          {
+            id: 1,
+            agreement_id: 1,
+            title: "Kitchen Remodel",
+            contractor_name: "Builder Co",
+          },
+        ],
         linked_requests: [],
       },
       {
@@ -277,21 +311,55 @@ const portalPayload = {
               home_depot_url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
               lowes_url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
               provider_links: [
-                { provider: "amazon", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20" },
-                { provider: "home_depot", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter" },
-                { provider: "lowes", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter" },
+                {
+                  provider: "amazon",
+                  label: "Amazon",
+                  url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20",
+                },
+                {
+                  provider: "home_depot",
+                  label: "Home Depot",
+                  url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
+                },
+                {
+                  provider: "lowes",
+                  label: "Lowe's",
+                  url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
+                },
               ],
               actions: [
-                { type: "amazon_search", label: "Amazon", url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20", provider: "amazon" },
-                { type: "home_depot_search", label: "Home Depot", url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter", provider: "home_depot" },
-                { type: "lowes_search", label: "Lowe's", url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter", provider: "lowes" },
+                {
+                  type: "amazon_search",
+                  label: "Amazon",
+                  url: "https://www.amazon.com/s?k=Carrier+XR-500+HVAC+air+filter&tag=myhomebro-test-20",
+                  provider: "amazon",
+                },
+                {
+                  type: "home_depot_search",
+                  label: "Home Depot",
+                  url: "https://www.homedepot.com/s/Carrier+XR-500+HVAC+air+filter",
+                  provider: "home_depot",
+                },
+                {
+                  type: "lowes_search",
+                  label: "Lowe's",
+                  url: "https://www.lowes.com/search?searchTerm=Carrier+XR-500+HVAC+air+filter",
+                  provider: "lowes",
+                },
               ],
               is_ignored: false,
             },
           ],
           linked_records_count: 2,
           linked_documents: [],
-          linked_projects: [{ id: 1, agreement_id: 1, title: "Kitchen Remodel", contractor_name: "Builder Co" }],
+          linked_projects: [
+            {
+              id: 1,
+              agreement_id: 1,
+              title: "Kitchen Remodel",
+              contractor_name: "Builder Co",
+            },
+          ],
           linked_requests: [],
         },
         {
@@ -383,7 +451,13 @@ const portalPayload = {
           reason: "Suggested from saved milestone material guidance.",
           related_milestone: "Demo",
           compatibility_warning: "Confirm exact product, size, quantity, and compatibility before purchasing.",
-          provider_links: [{ provider: "amazon", label: "Search on Amazon", url: "https://www.amazon.com/s?k=Dust+barriers&tag=myhomebro-test-20" }],
+          provider_links: [
+            {
+              provider: "amazon",
+              label: "Search on Amazon",
+              url: "https://www.amazon.com/s?k=Dust+barriers&tag=myhomebro-test-20",
+            },
+          ],
         },
       ],
       review: {
@@ -458,7 +532,14 @@ const portalPayload = {
         accepted_at: "2026-04-15T15:00:00Z",
         profile_url: "/contractors/builder-co",
       },
-      photos: [{ id: "intake-photo-1", title: "Existing office", filename: "office-before.jpg", url: "/files/office-before.jpg" }],
+      photos: [
+        {
+          id: "intake-photo-1",
+          title: "Existing office",
+          filename: "office-before.jpg",
+          url: "/files/office-before.jpg",
+        },
+      ],
       documents: [],
       activity_timeline: [
         {
@@ -841,7 +922,10 @@ const portalPayload = {
           reason: "No recent completed HVAC service record was found for this property in the last year.",
           property_id: 1,
           property_name: "Kitchen Remodel",
-          suggested_action: { label: "Schedule Maintenance", target: "requests" },
+          suggested_action: {
+            label: "Schedule Maintenance",
+            target: "requests",
+          },
         },
       ],
       upcoming: [],
@@ -866,7 +950,10 @@ const portalPayload = {
           reason: "Cooling systems work hardest in summer. A service visit can help catch filter, airflow, and condensate issues early.",
           property_id: 1,
           property_name: "Kitchen Remodel",
-          suggested_action: { label: "Schedule Maintenance", target: "requests" },
+          suggested_action: {
+            label: "Schedule Maintenance",
+            target: "requests",
+          },
         },
       ],
       informational: [
@@ -884,7 +971,13 @@ const portalPayload = {
       ],
     },
     learning_summary: {
-      record_counts: { documents: 4, photos: 1, maintenance_work_orders: 1, agreements: 1, projects: 1 },
+      record_counts: {
+        documents: 4,
+        photos: 1,
+        maintenance_work_orders: 1,
+        agreements: 1,
+        projects: 1,
+      },
       categories: ["maintenance_due", "missing_records", "seasonal", "warranty_awareness"],
       common_work_signals: ["HVAC"],
     },
@@ -892,7 +985,12 @@ const portalPayload = {
       {
         property_id: 1,
         property_name: "Kitchen Remodel",
-        health: { status: "needs_attention", label: "Needs Attention", score: 64, confidence: "medium" },
+        health: {
+          status: "needs_attention",
+          label: "Needs Attention",
+          score: 64,
+          confidence: "medium",
+        },
         insight_count: 4,
       },
     ],
@@ -1135,9 +1233,24 @@ const scanUploadResult = {
       status: "completed",
       document_classification: "Equipment Label",
       suggested_fields: {
-        manufacturer: { value: "Carrier", confidence: "medium", source_text: "Carrier", apply_default: false },
-        model_number: { value: "ABC123", confidence: "high", source_text: "model ABC123", apply_default: true },
-        serial_number: { value: "SN9876", confidence: "low", source_text: "serial SN9876", apply_default: false },
+        manufacturer: {
+          value: "Carrier",
+          confidence: "medium",
+          source_text: "Carrier",
+          apply_default: false,
+        },
+        model_number: {
+          value: "ABC123",
+          confidence: "high",
+          source_text: "model ABC123",
+          apply_default: true,
+        },
+        serial_number: {
+          value: "SN9876",
+          confidence: "low",
+          source_text: "serial SN9876",
+          apply_default: false,
+        },
       },
     },
   },
@@ -1145,9 +1258,24 @@ const scanUploadResult = {
     status: "completed",
     document_classification: "Equipment Label",
     suggested_fields: {
-      manufacturer: { value: "Carrier", confidence: "medium", source_text: "Carrier", apply_default: false },
-      model_number: { value: "ABC123", confidence: "high", source_text: "model ABC123", apply_default: true },
-      serial_number: { value: "SN9876", confidence: "low", source_text: "serial SN9876", apply_default: false },
+      manufacturer: {
+        value: "Carrier",
+        confidence: "medium",
+        source_text: "Carrier",
+        apply_default: false,
+      },
+      model_number: {
+        value: "ABC123",
+        confidence: "high",
+        source_text: "model ABC123",
+        apply_default: true,
+      },
+      serial_number: {
+        value: "SN9876",
+        confidence: "low",
+        source_text: "serial SN9876",
+        apply_default: false,
+      },
     },
   },
   portal: portalPayload,
@@ -1244,7 +1372,12 @@ const systemUpdatedPortalPayload = {
     ...portalPayload.property_profile,
     home_systems: portalPayload.property_profile.home_systems.map((system) =>
       system.id === 11
-        ? { ...system, condition: "needs_service", condition_label: "Needs Service", notes: "Annual service is due." }
+        ? {
+            ...system,
+            condition: "needs_service",
+            condition_label: "Needs Service",
+            notes: "Annual service is due.",
+          }
         : system
     ),
   },
@@ -1356,23 +1489,25 @@ const systemServiceRequestPortalPayload = {
 
 const notificationReadPortalPayload = {
   ...portalPayload,
-  notifications: portalPayload.notifications.map((notification) =>
-    notification.id === 101 ? { ...notification, status: "read" } : notification
-  ),
+  notifications: portalPayload.notifications.map((notification) => (notification.id === 101 ? { ...notification, status: "read" } : notification)),
 };
 
 const notificationsAllReadPortalPayload = {
   ...portalPayload,
-  notifications: portalPayload.notifications.map((notification) =>
-    notification.channel === "in_app" ? { ...notification, status: "read" } : notification
-  ),
+  notifications: portalPayload.notifications.map((notification) => (notification.channel === "in_app" ? { ...notification, status: "read" } : notification)),
 };
 
 const notificationArchivedPortalPayload = {
   ...notificationReadPortalPayload,
   notifications: notificationReadPortalPayload.notifications.map((notification) =>
     notification.id === 102 || notification.id === 103
-      ? { ...notification, status: "dismissed", is_archived: true, archived_at: "2026-06-01T12:00:00Z", archive_reason: "manual_archive" }
+      ? {
+          ...notification,
+          status: "dismissed",
+          is_archived: true,
+          archived_at: "2026-06-01T12:00:00Z",
+          archive_reason: "manual_archive",
+        }
       : notification
   ),
 };
@@ -1381,7 +1516,14 @@ const notificationRestoredPortalPayload = {
   ...notificationArchivedPortalPayload,
   notifications: notificationArchivedPortalPayload.notifications.map((notification) =>
     notification.id === 102
-      ? { ...notification, status: "read", is_archived: false, archived_at: "", auto_archived_at: "", archive_reason: "" }
+      ? {
+          ...notification,
+          status: "read",
+          is_archived: false,
+          archived_at: "",
+          auto_archived_at: "",
+          archive_reason: "",
+        }
       : notification
   ),
 };
@@ -1730,7 +1872,11 @@ const longPortalPayload = {
       customer_status_label: "Payment Pending",
       customer_status_group: "open",
       homeowner_actions: {
-        amendment: { available: true, active: false, label: "Request Amendment" },
+        amendment: {
+          available: true,
+          active: false,
+          label: "Request Amendment",
+        },
         refund: { available: true, active: false, label: "Request Refund" },
         dispute: { available: true, active: false, label: "Open Dispute" },
       },
@@ -1824,7 +1970,11 @@ const longPortalPayload = {
       customer_status_label: "Payment Pending",
       customer_status_group: "open",
       homeowner_actions: {
-        amendment: { available: true, active: false, label: "Request Amendment" },
+        amendment: {
+          available: true,
+          active: false,
+          label: "Request Amendment",
+        },
         refund: { available: true, active: false, label: "Request Refund" },
         dispute: { available: true, active: false, label: "Open Dispute" },
       },
@@ -2000,18 +2150,15 @@ async function setupRecommendedSuppliesPortal(page) {
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/ignore/") && method === "POST") {
-      const updateRecommendations = (systems = []) => systems.map((system) =>
-        system.id === 11
-          ? {
-              ...system,
-              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
-                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
-                  ? { ...recommendation, is_ignored: true }
-                  : recommendation
-              ),
-            }
-          : system
-      );
+      const updateRecommendations = (systems = []) =>
+        systems.map((system) =>
+          system.id === 11
+            ? {
+                ...system,
+                supply_recommendations: (system.supply_recommendations || []).map((recommendation) => (recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1" ? { ...recommendation, is_ignored: true } : recommendation)),
+              }
+            : system
+        );
       currentPortalPayload = {
         ...currentPortalPayload,
         property_profile: {
@@ -2020,31 +2167,34 @@ async function setupRecommendedSuppliesPortal(page) {
         },
         property_profiles: currentPortalPayload.property_profiles.map((property) =>
           property.id === currentPortalPayload.property_profile.id
-            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            ? {
+                ...property,
+                home_systems: updateRecommendations(property.home_systems),
+              }
             : property
         ),
       };
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ detail: "Recommendation ignored.", portal: currentPortalPayload }),
+        body: JSON.stringify({
+          detail: "Recommendation ignored.",
+          portal: currentPortalPayload,
+        }),
       });
       return;
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/restore/") && method === "POST") {
-      const updateRecommendations = (systems = []) => systems.map((system) =>
-        system.id === 11
-          ? {
-              ...system,
-              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
-                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
-                  ? { ...recommendation, is_ignored: false }
-                  : recommendation
-              ),
-            }
-          : system
-      );
+      const updateRecommendations = (systems = []) =>
+        systems.map((system) =>
+          system.id === 11
+            ? {
+                ...system,
+                supply_recommendations: (system.supply_recommendations || []).map((recommendation) => (recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1" ? { ...recommendation, is_ignored: false } : recommendation)),
+              }
+            : system
+        );
       currentPortalPayload = {
         ...currentPortalPayload,
         property_profile: {
@@ -2053,14 +2203,20 @@ async function setupRecommendedSuppliesPortal(page) {
         },
         property_profiles: currentPortalPayload.property_profiles.map((property) =>
           property.id === currentPortalPayload.property_profile.id
-            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            ? {
+                ...property,
+                home_systems: updateRecommendations(property.home_systems),
+              }
             : property
         ),
       };
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ detail: "Recommendation restored.", portal: currentPortalPayload }),
+        body: JSON.stringify({
+          detail: "Recommendation restored.",
+          portal: currentPortalPayload,
+        }),
       });
       return;
     }
@@ -2095,7 +2251,9 @@ test("customer portal recommended supplies retailer links and actions are isolat
   await expect(page.getByTestId("property-supply-lowes-link").first()).toHaveAttribute("href", /lowes\.com\/search\?searchTerm=Carrier\+XR-500\+HVAC\+air\+filter/);
 
   await page.getByTestId("property-supply-view").first().click();
-  const detailDialog = page.getByRole("dialog", { name: "Supply recommendation details" });
+  const detailDialog = page.getByRole("dialog", {
+    name: "Supply recommendation details",
+  });
   await expect(detailDialog).toContainText("HVAC filter");
   await expect(detailDialog.getByTestId("property-supply-amazon-link")).toHaveText("Amazon");
   await expect(detailDialog.getByTestId("property-supply-home-depot-link")).toHaveText("Home Depot");
@@ -2123,9 +2281,7 @@ test("customer portal recommended supplies retailer links and actions are isolat
   await expect(page.getByTestId("property-suggested-supplies")).toContainText("HVAC filter");
 });
 
-test("customer portal is reachable from the landing page and loads secure records", async ({
-  page,
-}) => {
+test("customer portal is reachable from the landing page and loads secure records", async ({ page }) => {
   test.setTimeout(60000);
   const consoleErrors = [];
   let submittedRequestPayload = null;
@@ -2181,12 +2337,36 @@ test("customer portal is reachable from the landing page and loads secure record
               },
             },
             address_components: [
-              { long_name: "1515", short_name: "1515", types: ["street_number"] },
-              { long_name: "South Ellison Drive", short_name: "S Ellison Dr", types: ["route"] },
-              { long_name: "San Antonio", short_name: "San Antonio", types: ["locality"] },
-              { long_name: "Texas", short_name: "TX", types: ["administrative_area_level_1"] },
-              { long_name: "78245", short_name: "78245", types: ["postal_code"] },
-              { long_name: "United States", short_name: "US", types: ["country"] },
+              {
+                long_name: "1515",
+                short_name: "1515",
+                types: ["street_number"],
+              },
+              {
+                long_name: "South Ellison Drive",
+                short_name: "S Ellison Dr",
+                types: ["route"],
+              },
+              {
+                long_name: "San Antonio",
+                short_name: "San Antonio",
+                types: ["locality"],
+              },
+              {
+                long_name: "Texas",
+                short_name: "TX",
+                types: ["administrative_area_level_1"],
+              },
+              {
+                long_name: "78245",
+                short_name: "78245",
+                types: ["postal_code"],
+              },
+              {
+                long_name: "United States",
+                short_name: "US",
+                types: ["country"],
+              },
             ],
           },
           "OK"
@@ -3078,18 +3258,7 @@ test("customer portal is reachable from the landing page and loads secure record
           ? {
               ...request,
               ...submittedTenantMaintenanceReviewPayload,
-              status_label:
-                submittedTenantMaintenanceReviewPayload.status === "under_review"
-                  ? "Under Review"
-                  : submittedTenantMaintenanceReviewPayload.status === "more_info_requested"
-                    ? "More Info Requested"
-                    : submittedTenantMaintenanceReviewPayload.status === "approved"
-                      ? "Approved"
-                      : submittedTenantMaintenanceReviewPayload.status === "rejected"
-                        ? "Rejected"
-                        : submittedTenantMaintenanceReviewPayload.status === "closed"
-                          ? "Closed"
-                          : request.status_label,
+              status_label: submittedTenantMaintenanceReviewPayload.status === "under_review" ? "Under Review" : submittedTenantMaintenanceReviewPayload.status === "more_info_requested" ? "More Info Requested" : submittedTenantMaintenanceReviewPayload.status === "approved" ? "Approved" : submittedTenantMaintenanceReviewPayload.status === "rejected" ? "Rejected" : submittedTenantMaintenanceReviewPayload.status === "closed" ? "Closed" : request.status_label,
               reviewed_by: "customer@example.com",
               reviewed_at: "2026-06-16T16:00:00Z",
               can_create_work_order: submittedTenantMaintenanceReviewPayload.status === "approved",
@@ -3320,7 +3489,10 @@ test("customer portal is reachable from the landing page and loads secure record
             }
           : row
       );
-      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({
+        ...row,
+        timeline: row.activities || [],
+      }));
       currentPortalPayload = {
         ...currentPortalPayload,
         property_work_orders: propertyWorkOrders,
@@ -3330,7 +3502,13 @@ test("customer portal is reachable from the landing page and loads secure record
           work_order_count: propertyWorkOrders.length,
         },
         property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
-          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+          property.id === 1
+            ? {
+                ...property,
+                work_orders: propertyWorkOrders,
+                work_order_count: propertyWorkOrders.length,
+              }
+            : property
         ),
       };
       await route.fulfill({
@@ -3366,40 +3544,12 @@ test("customer portal is reachable from the landing page and loads secure record
           ? {
               ...row,
               ...submittedWorkOrderEditPayload,
-              status_label:
-                submittedWorkOrderEditPayload.status === "completed"
-                  ? "Completed"
-                  : submittedWorkOrderEditPayload.status === "in_progress"
-                  ? "In Progress"
-                  : submittedWorkOrderEditPayload.status === "waiting"
-                    ? "Waiting"
-                    : submittedWorkOrderEditPayload.status === "closed"
-                      ? "Closed"
-                  : submittedWorkOrderEditPayload.status === "scheduled"
-                    ? "Scheduled"
-                    : row.status_label,
-              priority_label:
-                submittedWorkOrderEditPayload.priority === "normal"
-                  ? "Normal"
-                  : submittedWorkOrderEditPayload.priority === "low"
-                    ? "Low"
-                    : row.priority_label,
+              status_label: submittedWorkOrderEditPayload.status === "completed" ? "Completed" : submittedWorkOrderEditPayload.status === "in_progress" ? "In Progress" : submittedWorkOrderEditPayload.status === "waiting" ? "Waiting" : submittedWorkOrderEditPayload.status === "closed" ? "Closed" : submittedWorkOrderEditPayload.status === "scheduled" ? "Scheduled" : row.status_label,
+              priority_label: submittedWorkOrderEditPayload.priority === "normal" ? "Normal" : submittedWorkOrderEditPayload.priority === "low" ? "Low" : row.priority_label,
               assignment_type: submittedWorkOrderEditPayload.assignment_type || row.assignment_type || "internal_staff",
-              assignment_type_label:
-                submittedWorkOrderEditPayload.assignment_type === "vendor"
-                  ? "Vendor"
-                  : submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor"
-                    ? "Marketplace Contractor"
-                    : submittedWorkOrderEditPayload.assignment_type === "internal_staff"
-                      ? "Internal Staff"
-                      : row.assignment_type_label || "Internal Staff",
+              assignment_type_label: submittedWorkOrderEditPayload.assignment_type === "vendor" ? "Vendor" : submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "Marketplace Contractor" : submittedWorkOrderEditPayload.assignment_type === "internal_staff" ? "Internal Staff" : row.assignment_type_label || "Internal Staff",
               assigned_staff_member_id: submittedWorkOrderEditPayload.assignment_type === "internal_staff" ? submittedWorkOrderEditPayload.assigned_staff_member_id : row.assigned_staff_member_id,
-              assigned_staff_member_name:
-                submittedWorkOrderEditPayload.assignment_type === "internal_staff" && submittedWorkOrderEditPayload.assigned_staff_member_id
-                  ? "Sam Supervisor"
-                  : submittedWorkOrderEditPayload.assignment_type === "vendor" || submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor"
-                    ? ""
-                    : row.assigned_staff_member_name,
+              assigned_staff_member_name: submittedWorkOrderEditPayload.assignment_type === "internal_staff" && submittedWorkOrderEditPayload.assigned_staff_member_id ? "Sam Supervisor" : submittedWorkOrderEditPayload.assignment_type === "vendor" || submittedWorkOrderEditPayload.assignment_type === "marketplace_contractor" ? "" : row.assigned_staff_member_name,
               assigned_vendor_id: submittedWorkOrderEditPayload.assignment_type === "vendor" ? submittedWorkOrderEditPayload.assigned_vendor_id : submittedWorkOrderEditPayload.assignment_type ? null : row.assigned_vendor_id,
               assigned_vendor_name: submittedWorkOrderEditPayload.assignment_type === "vendor" && submittedWorkOrderEditPayload.assigned_vendor_id ? "Pipe Pros" : submittedWorkOrderEditPayload.assignment_type ? "" : row.assigned_vendor_name,
               assigned_vendor_trade_category: submittedWorkOrderEditPayload.assignment_type === "vendor" && submittedWorkOrderEditPayload.assigned_vendor_id ? "Plumbing" : submittedWorkOrderEditPayload.assignment_type ? "" : row.assigned_vendor_trade_category,
@@ -3440,7 +3590,10 @@ test("customer portal is reachable from the landing page and loads secure record
             }
           : row
       );
-      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({
+        ...row,
+        timeline: row.activities || [],
+      }));
       currentPortalPayload = {
         ...currentPortalPayload,
         property_work_orders: propertyWorkOrders,
@@ -3450,7 +3603,13 @@ test("customer portal is reachable from the landing page and loads secure record
           work_order_count: propertyWorkOrders.length,
         },
         property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
-          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+          property.id === 1
+            ? {
+                ...property,
+                work_orders: propertyWorkOrders,
+                work_order_count: propertyWorkOrders.length,
+              }
+            : property
         ),
       };
       await route.fulfill({
@@ -3471,14 +3630,7 @@ test("customer portal is reachable from the landing page and loads secure record
       const recipientInvitations = (submittedMarketplacePayload.recipients || []).map((recipient, index) => ({
         id: 9900 + index,
         recipient_type: recipient.source,
-        recipient_type_label:
-          recipient.source === "myhomebro_contractor"
-            ? "MyHomeBro Contractor"
-            : recipient.source === "preferred_vendor"
-              ? "Preferred Vendor"
-              : recipient.source === "manual_vendor"
-                ? "Manual Vendor"
-                : "Local Business",
+        recipient_type_label: recipient.source === "myhomebro_contractor" ? "MyHomeBro Contractor" : recipient.source === "preferred_vendor" ? "Preferred Vendor" : recipient.source === "manual_vendor" ? "Manual Vendor" : "Local Business",
         status: recipient.email || recipient.phone || recipient.source === "myhomebro_contractor" ? "sent" : "no_contact",
         status_label: recipient.email || recipient.phone || recipient.source === "myhomebro_contractor" ? "Sent" : "No Contact Info",
         name: recipient.name,
@@ -3518,7 +3670,10 @@ test("customer portal is reachable from the landing page and loads secure record
             }
           : row
       );
-      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({
+        ...row,
+        timeline: row.activities || [],
+      }));
       currentPortalPayload = {
         ...currentPortalPayload,
         property_work_orders: propertyWorkOrders,
@@ -3528,7 +3683,13 @@ test("customer portal is reachable from the landing page and loads secure record
           work_order_count: propertyWorkOrders.length,
         },
         property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
-          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+          property.id === 1
+            ? {
+                ...property,
+                work_orders: propertyWorkOrders,
+                work_order_count: propertyWorkOrders.length,
+              }
+            : property
         ),
       };
       await route.fulfill({
@@ -3567,7 +3728,10 @@ test("customer portal is reachable from the landing page and loads secure record
             }
           : row
       );
-      propertyWorkOrders = propertyWorkOrders.map((row) => ({ ...row, timeline: row.activities || [] }));
+      propertyWorkOrders = propertyWorkOrders.map((row) => ({
+        ...row,
+        timeline: row.activities || [],
+      }));
       currentPortalPayload = {
         ...currentPortalPayload,
         property_work_orders: propertyWorkOrders,
@@ -3577,7 +3741,13 @@ test("customer portal is reachable from the landing page and loads secure record
           work_order_count: propertyWorkOrders.length,
         },
         property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
-          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+          property.id === 1
+            ? {
+                ...property,
+                work_orders: propertyWorkOrders,
+                work_order_count: propertyWorkOrders.length,
+              }
+            : property
         ),
       };
       await route.fulfill({
@@ -3612,19 +3782,9 @@ test("customer portal is reachable from the landing page and loads secure record
         priority: submittedWorkOrderPayload.priority,
         priority_label: "Normal",
         status: submittedWorkOrderPayload.status,
-        status_label:
-          submittedWorkOrderPayload.status === "scheduled"
-            ? "Scheduled"
-            : submittedWorkOrderPayload.status === "in_progress"
-              ? "In Progress"
-              : "Open",
+        status_label: submittedWorkOrderPayload.status === "scheduled" ? "Scheduled" : submittedWorkOrderPayload.status === "in_progress" ? "In Progress" : "Open",
         assignment_type: submittedWorkOrderPayload.assignment_type || "internal_staff",
-        assignment_type_label:
-          submittedWorkOrderPayload.assignment_type === "vendor"
-            ? "Vendor"
-            : submittedWorkOrderPayload.assignment_type === "marketplace_contractor"
-              ? "Marketplace Contractor"
-              : "Internal Staff",
+        assignment_type_label: submittedWorkOrderPayload.assignment_type === "vendor" ? "Vendor" : submittedWorkOrderPayload.assignment_type === "marketplace_contractor" ? "Marketplace Contractor" : "Internal Staff",
         assigned_staff_member_id: submittedWorkOrderPayload.assigned_staff_member_id,
         assigned_staff_member_name: submittedWorkOrderPayload.assigned_staff_member_id ? "Sam Supervisor" : "",
         assigned_vendor_id: submittedWorkOrderPayload.assigned_vendor_id,
@@ -3680,7 +3840,13 @@ test("customer portal is reachable from the landing page and loads secure record
           work_order_count: propertyWorkOrders.length,
         },
         property_profiles: (currentPortalPayload.property_profiles || []).map((property) =>
-          property.id === 1 ? { ...property, work_orders: propertyWorkOrders, work_order_count: propertyWorkOrders.length } : property
+          property.id === 1
+            ? {
+                ...property,
+                work_orders: propertyWorkOrders,
+                work_order_count: propertyWorkOrders.length,
+              }
+            : property
         ),
       };
       await route.fulfill({
@@ -3937,9 +4103,7 @@ test("customer portal is reachable from the landing page and loads secure record
       currentPortalPayload = {
         ...currentPortalPayload,
         property_profile: updatedProperty,
-        property_profiles: currentPortalPayload.property_profiles.map((property) =>
-          property.id === updatedProperty.id ? { ...property, ...updatedProperty } : property
-        ),
+        property_profiles: currentPortalPayload.property_profiles.map((property) => (property.id === updatedProperty.id ? { ...property, ...updatedProperty } : property)),
       };
       await route.fulfill({
         status: 200,
@@ -4061,18 +4225,15 @@ test("customer portal is reachable from the landing page and loads secure record
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/ignore/") && method === "POST") {
-      const updateRecommendations = (systems = []) => systems.map((system) =>
-        system.id === 11
-          ? {
-              ...system,
-              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
-                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
-                  ? { ...recommendation, is_ignored: true }
-                  : recommendation
-              ),
-            }
-          : system
-      );
+      const updateRecommendations = (systems = []) =>
+        systems.map((system) =>
+          system.id === 11
+            ? {
+                ...system,
+                supply_recommendations: (system.supply_recommendations || []).map((recommendation) => (recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1" ? { ...recommendation, is_ignored: true } : recommendation)),
+              }
+            : system
+        );
       currentPortalPayload = {
         ...currentPortalPayload,
         property_profile: {
@@ -4081,31 +4242,34 @@ test("customer portal is reachable from the landing page and loads secure record
         },
         property_profiles: currentPortalPayload.property_profiles.map((property) =>
           property.id === currentPortalPayload.property_profile.id
-            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            ? {
+                ...property,
+                home_systems: updateRecommendations(property.home_systems),
+              }
             : property
         ),
       };
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ detail: "Recommendation ignored.", portal: currentPortalPayload }),
+        body: JSON.stringify({
+          detail: "Recommendation ignored.",
+          portal: currentPortalPayload,
+        }),
       });
       return;
     }
 
     if (requestUrl.includes("/customer-portal/customer-token/property/systems/recommendations/system-11-supply-1/restore/") && method === "POST") {
-      const updateRecommendations = (systems = []) => systems.map((system) =>
-        system.id === 11
-          ? {
-              ...system,
-              supply_recommendations: (system.supply_recommendations || []).map((recommendation) =>
-                recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1"
-                  ? { ...recommendation, is_ignored: false }
-                  : recommendation
-              ),
-            }
-          : system
-      );
+      const updateRecommendations = (systems = []) =>
+        systems.map((system) =>
+          system.id === 11
+            ? {
+                ...system,
+                supply_recommendations: (system.supply_recommendations || []).map((recommendation) => (recommendation.recommendation_key === "system-11-supply-1" || recommendation.id === "system-11-supply-1" ? { ...recommendation, is_ignored: false } : recommendation)),
+              }
+            : system
+        );
       currentPortalPayload = {
         ...currentPortalPayload,
         property_profile: {
@@ -4114,14 +4278,20 @@ test("customer portal is reachable from the landing page and loads secure record
         },
         property_profiles: currentPortalPayload.property_profiles.map((property) =>
           property.id === currentPortalPayload.property_profile.id
-            ? { ...property, home_systems: updateRecommendations(property.home_systems) }
+            ? {
+                ...property,
+                home_systems: updateRecommendations(property.home_systems),
+              }
             : property
         ),
       };
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ detail: "Recommendation restored.", portal: currentPortalPayload }),
+        body: JSON.stringify({
+          detail: "Recommendation restored.",
+          portal: currentPortalPayload,
+        }),
       });
       return;
     }
@@ -4153,13 +4323,7 @@ test("customer portal is reachable from the landing page and loads secure record
       return;
     }
 
-    if (
-      (
-        requestUrl.includes("/customer-portal/customer-token/notifications/102/archive/")
-        || requestUrl.includes("/customer-portal/customer-token/notifications/103/archive/")
-      )
-      && method === "POST"
-    ) {
+    if ((requestUrl.includes("/customer-portal/customer-token/notifications/102/archive/") || requestUrl.includes("/customer-portal/customer-token/notifications/103/archive/")) && method === "POST") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -4320,14 +4484,8 @@ test("customer portal is reachable from the landing page and loads secure record
   const footer = page.getByRole("contentinfo");
   await expect(footer.getByRole("link", { name: "Terms of Service" })).toBeVisible();
   await expect(footer.getByRole("link", { name: "Privacy Policy" })).toBeVisible();
-  await expect(footer.getByRole("link", { name: "Terms of Service" })).toHaveAttribute(
-    "href",
-    "/legal/terms-of-service/"
-  );
-  await expect(footer.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute(
-    "href",
-    "/legal/privacy-policy/"
-  );
+  await expect(footer.getByRole("link", { name: "Terms of Service" })).toHaveAttribute("href", "/legal/terms-of-service/");
+  await expect(footer.getByRole("link", { name: "Privacy Policy" })).toHaveAttribute("href", "/legal/privacy-policy/");
 
   await page.getByTestId("landing-customer-portal-button").click();
   await expect(page).toHaveURL(/\/portal$/);
@@ -4357,16 +4515,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
   await expect(page.getByText("track projects, payments, documents, warranties, and property records in one place.")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([
-    /Overview/,
-    /Requests/,
-    /Projects/,
-    /Property/,
-    /Payments/,
-    /Documents/,
-    /Notifications/,
-    /Account/,
-  ]);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([/Overview/, /Requests/, /Projects/, /DIY Planner/, /Property/, /Payments/, /Documents/, /Notifications/, /Account/]);
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
@@ -4393,16 +4542,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("Summer HVAC review recommended.");
   await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("contractor_performance");
   await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("Admin");
-  await page
-    .getByTestId("customer-unified-recommendations")
-    .getByRole("button", { name: "Create Request" })
-    .click();
+  await page.getByTestId("customer-unified-recommendations").getByRole("button", { name: "Create Request" }).click();
   await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-overview").click();
-  await page
-    .getByTestId("customer-unified-recommendations")
-    .getByRole("button", { name: "View Property Records" })
-    .click();
+  await page.getByTestId("customer-unified-recommendations").getByRole("button", { name: "View Property Records" }).click();
   await expect(page.getByTestId("customer-dashboard-tab-property")).toHaveClass(/border-amber/);
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-activation-action-payments")).toHaveCount(0);
@@ -4436,9 +4579,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Pool service request was saved.");
   await expect(page.getByTestId("customer-notification-preferences")).toContainText("Notification preferences");
   await expect(page.getByTestId("customer-notification-cleanup-settings")).toContainText("Notification cleanup");
-  await expect(page.getByTestId("customer-notification-cleanup-settings")).toContainText(
-    "Unread and action-required notifications are never auto-archived."
-  );
+  await expect(page.getByTestId("customer-notification-cleanup-settings")).toContainText("Unread and action-required notifications are never auto-archived.");
   await expect(page.getByTestId("notification-cleanup-enabled")).toBeChecked();
   await expect(page.getByTestId("notification-cleanup-frequency")).toHaveValue("daily");
   await page.getByTestId("notification-cleanup-read-days").fill("6");
@@ -4486,9 +4627,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-account-type-property_management_company").check();
   await expect(page.getByTestId("customer-company-profile-section")).toContainText("Company Profile");
   await expect(page.getByTestId("pm-team-members-section")).toContainText("Team Members");
-  await expect(page.getByTestId("pm-team-members-section")).toContainText(
-    "Team members help manage properties, maintenance requests, tenants, vendors, and operations."
-  );
+  await expect(page.getByTestId("pm-team-members-section")).toContainText("Team members help manage properties, maintenance requests, tenants, vendors, and operations.");
   await expect(page.getByTestId("pm-team-members-empty")).toContainText("Add team members");
   await expect(page.getByTestId("pm-vendors-section")).toContainText("Vendors");
   await expect(page.getByTestId("pm-vendors-empty")).toContainText("Add preferred vendors");
@@ -4502,10 +4641,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-profile-name").fill("Pat Updated");
   await page.getByTestId("customer-profile-phone").fill("512-555-1212");
   await page.getByTestId("customer-profile-address-line1").fill("700 Customer Ln");
-  const profileSaveRequestPromise = page.waitForRequest((request) =>
-    request.method() === "PATCH" &&
-    request.url().includes("/customer-portal/customer-token/profile/")
-  );
+  const profileSaveRequestPromise = page.waitForRequest((request) => request.method() === "PATCH" && request.url().includes("/customer-portal/customer-token/profile/"));
   await page.getByRole("button", { name: "Save profile" }).click();
   const profileSaveRequest = await profileSaveRequestPromise;
   const profileSavePayload = profileSaveRequest.postDataJSON();
@@ -4523,17 +4659,7 @@ test("customer portal is reachable from the landing page and loads secure record
     company_notes: "Portfolio onboarding account.",
   });
   expect(savedProfilePayload).toMatchObject(profileSavePayload);
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([
-    /Overview/,
-    /Maintenance/,
-    /Requests/,
-    /Projects/,
-    /Property/,
-    /Payments/,
-    /Documents/,
-    /Notifications/,
-    /Account/,
-  ]);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([/Overview/, /Maintenance/, /Requests/, /Projects/, /DIY Planner/, /Property/, /Payments/, /Documents/, /Notifications/, /Account/]);
   await page.getByTestId("customer-account-type-individual").check();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
   await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
@@ -4694,9 +4820,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-tenant-add-button")).toHaveCount(0);
   await page.getByTestId("property-tenants-toggle").click();
   await expect(page.getByTestId("property-tenants-empty")).toContainText("No tenants added yet.");
-  await expect(page.getByTestId("property-tenants-empty")).toContainText(
-    "Add tenants so maintenance requests can be tied to the right property, unit, and resident.",
-  );
+  await expect(page.getByTestId("property-tenants-empty")).toContainText("Add tenants so maintenance requests can be tied to the right property, unit, and resident.");
   await page.getByTestId("property-tenant-add-button").click();
   await expect(page.getByTestId("property-tenant-add-modal")).toBeVisible();
   await expect(page.getByTestId("property-tenant-unit")).toContainText("Unit 101");
@@ -5069,7 +5193,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-request-address-autocomplete").locator("input")).toHaveValue("");
   await page.getByTestId("customer-request-address-autocomplete").locator("input").fill("1515 South Ellison");
   await expect(page.getByTestId("address-autocomplete-suggestions")).toContainText("1515 South Ellison Drive");
-  await page.getByTestId("address-autocomplete-suggestions").getByRole("button", { name: /1515 South Ellison Drive/ }).click();
+  await page
+    .getByTestId("address-autocomplete-suggestions")
+    .getByRole("button", { name: /1515 South Ellison Drive/ })
+    .click();
   await expect(page.getByTestId("customer-request-address-autocomplete").locator("input")).toHaveValue("1515 South Ellison Drive");
   await page.getByTestId("customer-request-property-selector").selectOption("2");
   await expect(page.getByTestId("customer-request-address-fields")).toHaveCount(0);
@@ -5415,9 +5542,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Water heater warranty");
   await expect(page.getByTestId("customer-portal-documents")).toContainText("water-heater-warranty.pdf");
 
-  const predictionInputsBeforePropertyTab = await page.evaluate(
-    () => window.__mhbPlacePredictionInputs?.length || 0
-  );
+  const predictionInputsBeforePropertyTab = await page.evaluate(() => window.__mhbPlacePredictionInputs?.length || 0);
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-command-summary")).toContainText("Property Summary");
   await expect(page.getByTestId("property-command-summary")).toContainText("Kitchen Remodel");
@@ -5451,14 +5576,15 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-property-address-autocomplete").locator("input")).toHaveClass(/placeholder:text-slate-400/);
   await page.waitForTimeout(350);
   await expect(page.getByTestId("address-autocomplete-suggestions")).toHaveCount(0);
-  await expect
-    .poll(() => page.evaluate(() => window.__mhbPlacePredictionInputs || []))
-    .toHaveLength(predictionInputsBeforePropertyTab);
+  await expect.poll(() => page.evaluate(() => window.__mhbPlacePredictionInputs || [])).toHaveLength(predictionInputsBeforePropertyTab);
   await page.getByTestId("property-summary-edit").click();
   const propertyAddressSearch = page.getByTestId("customer-property-address-autocomplete").locator("input");
   await propertyAddressSearch.fill("1515 South Ellison");
   await expect(page.getByTestId("address-autocomplete-suggestions")).toContainText("1515 South Ellison Drive");
-  await page.getByTestId("address-autocomplete-suggestions").getByRole("button", { name: /1515 South Ellison Drive/ }).click();
+  await page
+    .getByTestId("address-autocomplete-suggestions")
+    .getByRole("button", { name: /1515 South Ellison Drive/ })
+    .click();
   await expect(page.getByTestId("address-autocomplete-suggestions")).toHaveCount(0);
   await page.waitForTimeout(350);
   await expect(page.getByTestId("address-autocomplete-suggestions")).toHaveCount(0);
@@ -5624,7 +5750,10 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-bid-comparison")).toContainText("Awarded Contractor");
   await expect(page.getByTestId("customer-bid-comparison-card-lead-3")).toContainText("Not Selected");
 
-  await page.screenshot({ path: "test-results/customer-portal.png", fullPage: true });
+  await page.screenshot({
+    path: "test-results/customer-portal.png",
+    fullPage: true,
+  });
 
   expect(consoleErrors.filter((msg) => msg.includes("We could not open that portal link"))).toHaveLength(0);
 });
@@ -5673,7 +5802,10 @@ test("customer notification preferences save and reminder details show supplies"
   await expect(page.getByTestId("notification-channel-sms_enabled")).toBeChecked();
   await expect(page.getByTestId("notification-preference-frequency")).toHaveValue("weekly_digest");
 
-  await page.getByTestId("customer-notifications-center-item-106").getByRole("link", { name: /Open related item/ }).click();
+  await page
+    .getByTestId("customer-notifications-center-item-106")
+    .getByRole("link", { name: /Open related item/ })
+    .click();
   await expect(page.getByTestId("customer-reminder-detail-modal")).toContainText("Main HVAC");
   await expect(page.getByTestId("customer-reminder-detail-modal")).toContainText("Recommended Supplies");
   await expect(page.getByTestId("customer-reminder-supply").first()).toContainText("HVAC");
@@ -5782,7 +5914,9 @@ test("tenant maintenance request intake form submits and confirms", async ({ pag
     await route.fallback();
   });
 
-  await page.goto("/maintenance-request/public-token", { waitUntil: "domcontentloaded" });
+  await page.goto("/maintenance-request/public-token", {
+    waitUntil: "domcontentloaded",
+  });
   await expect(page.getByTestId("tenant-maintenance-form")).toBeVisible();
   await expect(page.getByText("Duplex")).toBeVisible();
   await expect(page.getByTestId("tenant-maintenance-unit")).toContainText("Unit 101");
@@ -5802,13 +5936,7 @@ test("tenant maintenance request intake form submits and confirms", async ({ pag
     buffer: Buffer.from("fake-image"),
   });
   await expect(page.getByTestId("tenant-maintenance-selected-files")).toContainText("sink-leak.jpg");
-  await Promise.all([
-    page.waitForResponse((response) =>
-      response.url().includes("/api/projects/maintenance-request/public-token/") &&
-      response.request().method() === "POST"
-    ),
-    page.getByTestId("tenant-maintenance-submit").click(),
-  ]);
+  await Promise.all([page.waitForResponse((response) => response.url().includes("/api/projects/maintenance-request/public-token/") && response.request().method() === "POST"), page.getByTestId("tenant-maintenance-submit").click()]);
 
   expect(submittedPayload).toMatchObject({
     hasAttachment: true,
@@ -5816,10 +5944,7 @@ test("tenant maintenance request intake form submits and confirms", async ({ pag
   });
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("Maintenance request submitted.");
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000901");
-  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute(
-    "href",
-    "/maintenance-request/status/status-token-901"
-  );
+  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute("href", "/maintenance-request/status/status-token-901");
 });
 
 test("tenant maintenance request verification flow starts from landing and submits with attachment", async ({ page }) => {
@@ -5962,13 +6087,7 @@ test("tenant maintenance request verification flow starts from landing and submi
     buffer: Buffer.from("fake-image"),
   });
   await expect(page.getByTestId("tenant-maintenance-selected-files")).toContainText("sink-leak.jpg");
-  await Promise.all([
-    page.waitForResponse((response) =>
-      response.url().includes("/api/projects/maintenance-request/verified-submit/") &&
-      response.request().method() === "POST"
-    ),
-    page.getByTestId("tenant-maintenance-submit").click(),
-  ]);
+  await Promise.all([page.waitForResponse((response) => response.url().includes("/api/projects/maintenance-request/verified-submit/") && response.request().method() === "POST"), page.getByTestId("tenant-maintenance-submit").click()]);
 
   expect(submittedPayload).toMatchObject({
     hasAttachment: true,
@@ -5977,10 +6096,7 @@ test("tenant maintenance request verification flow starts from landing and submi
   });
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("Maintenance request submitted.");
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000902");
-  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute(
-    "href",
-    "/maintenance-request/status/status-token-902"
-  );
+  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute("href", "/maintenance-request/status/status-token-902");
   await page.getByTestId("tenant-maintenance-status-link").click();
   await expect(page).toHaveURL(/\/maintenance-request\/status\/status-token-902$/);
   await expect(page.getByTestId("tenant-maintenance-status-page")).toContainText("TMR-000902");
@@ -6073,23 +6189,14 @@ test("tenant maintenance request verification supports whole-property rentals wi
   await page.getByTestId("tenant-maintenance-category").selectOption("plumbing");
   await page.getByTestId("tenant-maintenance-title").fill("Water heater issue");
   await page.getByTestId("tenant-maintenance-description").fill("The water heater is not producing hot water.");
-  await Promise.all([
-    page.waitForResponse((response) =>
-      response.url().includes("/api/projects/maintenance-request/verified-submit/") &&
-      response.request().method() === "POST"
-    ),
-    page.getByTestId("tenant-maintenance-submit").click(),
-  ]);
+  await Promise.all([page.waitForResponse((response) => response.url().includes("/api/projects/maintenance-request/verified-submit/") && response.request().method() === "POST"), page.getByTestId("tenant-maintenance-submit").click()]);
 
   expect(submittedPayload).toMatchObject({
     hasVerificationToken: true,
     hasTitle: true,
   });
   await expect(page.getByTestId("tenant-maintenance-confirmation")).toContainText("TMR-000903");
-  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute(
-    "href",
-    "/maintenance-request/status/status-token-903"
-  );
+  await expect(page.getByTestId("tenant-maintenance-status-link")).toHaveAttribute("href", "/maintenance-request/status/status-token-903");
 });
 
 test("tenant maintenance verification failure is generic", async ({ page }) => {
@@ -6109,9 +6216,7 @@ test("tenant maintenance verification failure is generic", async ({ page }) => {
   await page.getByTestId("tenant-maintenance-contact").fill("wrong@example.com");
   await page.getByTestId("tenant-maintenance-verify-submit").click();
 
-  await expect(page.getByTestId("tenant-maintenance-verify-error")).toContainText(
-    "We could not verify those details. Check the information and try again.",
-  );
+  await expect(page.getByTestId("tenant-maintenance-verify-error")).toContainText("We could not verify those details. Check the information and try again.");
   await expect(page.getByTestId("tenant-maintenance-form")).toHaveCount(0);
 });
 
@@ -6139,9 +6244,7 @@ test("tenant maintenance blank-unit verification failure is generic", async ({ p
     last_name: "Tenant",
     contact: "taylor@example.com",
   });
-  await expect(page.getByTestId("tenant-maintenance-verify-error")).toContainText(
-    "We could not verify those details. Check the information and try again.",
-  );
+  await expect(page.getByTestId("tenant-maintenance-verify-error")).toContainText("We could not verify those details. Check the information and try again.");
   await expect(page.getByTestId("tenant-maintenance-form")).toHaveCount(0);
 });
 
@@ -6160,10 +6263,7 @@ test("customer portal can approve escrow reimbursement requests from payments", 
       return;
     }
 
-    if (
-      method === "POST" &&
-      requestUrl.includes("/customer-portal/reimbursement-token/reimbursements/99/approve/")
-    ) {
+    if (method === "POST" && requestUrl.includes("/customer-portal/reimbursement-token/reimbursements/99/approve/")) {
       approveCalled = true;
       await route.fulfill({
         status: 200,
@@ -6181,7 +6281,9 @@ test("customer portal can approve escrow reimbursement requests from payments", 
     await route.fallback();
   });
 
-  await page.goto("/portal/reimbursement-token", { waitUntil: "domcontentloaded" });
+  await page.goto("/portal/reimbursement-token", {
+    waitUntil: "domcontentloaded",
+  });
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("Reimbursement");
   await expect(page.getByTestId("customer-payment-action-reimbursement-99")).toContainText("$425.00");
@@ -6388,9 +6490,7 @@ test("tenant maintenance notification opens the Maintenance tab", async ({ page 
     if (method === "POST" && requestUrl.includes("/customer-portal/customer-token/notifications/901/read/")) {
       currentPortalPayload = {
         ...currentPortalPayload,
-        notifications: currentPortalPayload.notifications.map((notification) =>
-          notification.id === 901 ? { ...notification, status: "read" } : notification
-        ),
+        notifications: currentPortalPayload.notifications.map((notification) => (notification.id === 901 ? { ...notification, status: "read" } : notification)),
       };
       await route.fulfill({
         status: 200,
@@ -6457,7 +6557,9 @@ test("rental operations gating locks internal work orders but keeps marketplace 
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ checkout_url: "https://checkout.stripe.test/rental-ops" }),
+        body: JSON.stringify({
+          checkout_url: "https://checkout.stripe.test/rental-ops",
+        }),
       });
       return;
     }
@@ -6577,7 +6679,9 @@ test("customer portal paginates projects and requests", async ({ page }) => {
     await route.fallback();
   });
 
-  await page.goto("/portal/pagination-token", { waitUntil: "domcontentloaded" });
+  await page.goto("/portal/pagination-token", {
+    waitUntil: "domcontentloaded",
+  });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
 
   await page.getByTestId("customer-dashboard-tab-projects").click();
@@ -6655,7 +6759,11 @@ test("individual customer rental toggle unlocks tenant and unit tools for that p
         },
         property_profiles: currentPayload.property_profiles.map((property) =>
           property.id === body.id
-            ? { ...property, ...body, rental_tools_enabled: Boolean(body.is_rental_property) }
+            ? {
+                ...property,
+                ...body,
+                rental_tools_enabled: Boolean(body.is_rental_property),
+              }
             : property
         ),
       };
@@ -6669,7 +6777,9 @@ test("individual customer rental toggle unlocks tenant and unit tools for that p
     await route.fallback();
   });
 
-  await page.goto("/portal/rental-toggle-token", { waitUntil: "domcontentloaded" });
+  await page.goto("/portal/rental-toggle-token", {
+    waitUntil: "domcontentloaded",
+  });
   await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveCount(0);
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("property-units-section")).toHaveCount(0);
@@ -6812,9 +6922,7 @@ test("customer portal limits long home records, payments, and documents without 
   await expect(page.getByTestId("customer-action-ai-suggestion")).toContainText("Improved description");
   await expect(page.getByTestId("customer-action-ai-suggestion")).toContainText("Evidence or document suggestion");
   await page.getByTestId("customer-action-apply-ai-suggestion").click();
-  await expect(page.getByTestId("customer-action-requested-change")).toHaveValue(
-    "Please review this proposed de-scope change: remove the remaining cabinet installation milestone."
-  );
+  await expect(page.getByTestId("customer-action-requested-change")).toHaveValue("Please review this proposed de-scope change: remove the remaining cabinet installation milestone.");
   await expect(page.getByTestId("customer-action-change-type")).toHaveValue("descope_remove_work");
   await page.getByTestId("customer-action-change-type").selectOption("materials_change");
   await expect(page.getByTestId("customer-action-change-type")).toHaveValue("materials_change");
@@ -6938,7 +7046,9 @@ test("customer portal mobile upload session saves a home system document", async
     await route.fallback();
   });
 
-  await page.goto("/portal/upload-session/scan-session-token", { waitUntil: "domcontentloaded" });
+  await page.goto("/portal/upload-session/scan-session-token", {
+    waitUntil: "domcontentloaded",
+  });
   await expect(page.getByTestId("portal-upload-session-page")).toContainText("Saving to:");
   await expect(page.getByTestId("portal-upload-session-page")).toContainText("Main HVAC");
   await page.getByTestId("portal-upload-session-document-type").selectOption("Warranty");
@@ -6967,7 +7077,9 @@ test("legacy customer portal aliases redirect to the active portal", async ({ pa
     await route.fallback();
   });
 
-  await page.goto("/customer-portal/empty-token", { waitUntil: "domcontentloaded" });
+  await page.goto("/customer-portal/empty-token", {
+    waitUntil: "domcontentloaded",
+  });
   await expect(page).toHaveURL(/\/portal\/empty-token$/);
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
 
