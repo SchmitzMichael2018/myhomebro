@@ -52,6 +52,35 @@ class DIYProjectPlannerTests(TestCase):
         response = self.client.get(f"/api/projects/customer-portal/not-a-token/diy-projects/{payload['id']}/")
         self.assertIn(response.status_code, {403, 404})
 
+    def test_tenant_and_property_manager_tokens_cannot_access_private_diy_project_or_assets(self):
+        payload = self.create_project()
+        upload = self.client.post(
+            f"{self.base}/{payload['id']}/assets/",
+            {
+                "file": SimpleUploadedFile("private.jpg", b"private-image", content_type="image/jpeg"),
+                "caption": "Homeowner-only progress",
+            },
+            format="multipart",
+        )
+        self.assertEqual(upload.status_code, 201, upload.data)
+
+        for role_email in ("tenant@example.com", "property-manager@example.com"):
+            role_token = _portal_token(role_email)
+            with self.subTest(role_email=role_email):
+                self.assertEqual(
+                    self.client.get(
+                        f"/api/projects/customer-portal/{role_token}/diy-projects/{payload['id']}/"
+                    ).status_code,
+                    404,
+                )
+                self.assertEqual(
+                    self.client.get(
+                        f"/api/projects/customer-portal/{role_token}/diy-projects/"
+                        f"{payload['id']}/assets/{upload.data['id']}/download/"
+                    ).status_code,
+                    404,
+                )
+
     def test_phases_tasks_reorder_and_status_progress_persist(self):
         project = self.create_project()
         phase = self.client.post(f"{self.base}/{project['id']}/phases/", {"title": "Preparation", "sort_order": 2}, format="json")

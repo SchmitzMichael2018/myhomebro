@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 const portalPayload = {
-  customer: { name: 'Pat Customer', email: 'customer@example.com' },
-  account: { email: 'customer@example.com', has_user: true },
+  customer: { name: 'Daniel Carter', email: 'daniel.carter@example.com' },
+  account: { email: 'daniel.carter@example.com', has_user: true },
   summary: {},
   property_profiles: [],
   requests: [],
@@ -22,12 +22,12 @@ test('homeowner can create and resume a DIY plan at desktop and mobile widths', 
   let projects = [];
   const project = {
     id: '11111111-1111-4111-8111-111111111111',
-    title: 'Backsplash refresh',
-    desired_outcome: 'Install a durable tile backsplash',
+    title: 'Backyard Floating Deck',
+    desired_outcome: 'Build a durable floating deck for the backyard seating area',
     status: 'planning',
     status_label: 'Planning',
     category: '',
-    area: 'Kitchen',
+    area: 'Backyard',
     task_count: 0,
     completed_task_count: 0,
     progress_percent: 0,
@@ -71,12 +71,12 @@ test('homeowner can create and resume a DIY plan at desktop and mobile widths', 
   await expect(page.getByTestId('guided-video-player')).toHaveCount(1);
   await page.getByTestId('guided-video-dock').selectOption('top-left');
   await page.getByTestId('diy-project-new').click();
-  await page.getByLabel('Project title').fill('Backsplash refresh');
+  await page.getByLabel('Project title').fill('Backyard Floating Deck');
   await page
     .getByLabel('Desired outcome')
-    .fill('Install a durable tile backsplash');
+    .fill('Build a durable floating deck for the backyard seating area');
   await page.getByTestId('diy-project-create').click();
-  await expect(page.getByText('Backsplash refresh')).toBeVisible();
+  await expect(page.getByText('Backyard Floating Deck')).toBeVisible();
   await expect(page.getByTestId('guided-video-player')).toBeVisible();
   await page.getByTestId('guided-video-preview-checkpoint').click();
   await expect(page.getByTestId('guided-video-checkpoint')).toContainText(
@@ -86,6 +86,10 @@ test('homeowner can create and resume a DIY plan at desktop and mobile widths', 
   await page.getByTestId('guided-video-minimize').click();
   await page.getByTestId('diy-section-plan').click();
   await page.getByTestId('guided-video-restore').click();
+  await page.screenshot({
+    path: 'test-results/diy-project-planner-desktop.png',
+    fullPage: true,
+  });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId('diy-project-workspace')).toBeVisible();
@@ -95,4 +99,8 @@ test('homeowner can create and resume a DIY plan at desktop and mobile widths', 
       document.documentElement.clientWidth
   );
   expect(overflow).toBe(false);
+  await page.screenshot({
+    path: 'test-results/diy-project-planner-mobile.png',
+    fullPage: true,
+  });
 });

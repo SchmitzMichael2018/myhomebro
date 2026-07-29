@@ -16,7 +16,7 @@ from django.core import signing
 from django.core.cache import cache
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -421,7 +421,21 @@ def _request_has_records(email: str) -> bool:
 
 
 def _primary_homeowner_for_email(email: str):
-    return Homeowner.objects.filter(email__iexact=email).order_by("-updated_at", "-created_at").first()
+    return (
+        Homeowner.objects.filter(email__iexact=email)
+        .annotate(
+            portal_identity_priority=Case(
+                When(
+                    account_type=Homeowner.ACCOUNT_TYPE_PROPERTY_MANAGEMENT_COMPANY,
+                    then=Value(1),
+                ),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by("-portal_identity_priority", "-updated_at", "-created_at")
+        .first()
+    )
 
 
 def _get_or_create_homeowner_for_email(email: str):

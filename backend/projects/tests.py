@@ -25647,7 +25647,7 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(other_response.status_code, 200)
         self.assertNotEqual(other_response.data["customer"]["phone_number"], "512-555-1212")
 
-    def test_customer_portal_account_login_requires_connected_records(self):
+    def test_customer_portal_account_login_provisions_email_scoped_identity(self):
         User = get_user_model()
         user = User.objects.create_user(email="unconnected@example.com", password="CustomerPass123!")
         client = _use_secure_requests(APIClient())
@@ -25655,7 +25655,11 @@ class CustomerPortalAccessTests(TestCase):
 
         response = client.get("/api/projects/customer-portal/account/")
 
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["customer"]["email"], "unconnected@example.com")
+        self.assertEqual(response.data["summary"]["active_projects"], 0)
+        self.assertTrue(response.data["account"]["has_user"])
+        self.assertTrue(Homeowner.objects.filter(email__iexact="unconnected@example.com").exists())
 
     def test_customer_portal_token_can_create_customer_password(self):
         token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)

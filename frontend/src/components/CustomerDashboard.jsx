@@ -3496,6 +3496,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (activeTab === "requests" || activeTab === "maintenance") {
       return (
         <CustomerRequests
+          token={token}
           requests={portal?.requests || []}
           bids={portal?.bids || []}
           tenantMaintenanceRequests={portal?.tenant_maintenance_requests || []}
