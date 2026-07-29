@@ -1655,11 +1655,13 @@ class PropertyIntelligenceSnapshot(models.Model):
 class CustomerRequest(models.Model):
     PROJECT_MODE_FULL_SERVICE = "full_service"
     PROJECT_MODE_DIY_ASSIST = "diy_assist"
+    PROJECT_MODE_CONSULTATION = "consultation"
     PROJECT_MODE_INSPECTION_ONLY = "inspection_only"
     PROJECT_MODE_NOT_SURE = "not_sure"
     PROJECT_MODE_CHOICES = [
         (PROJECT_MODE_FULL_SERVICE, "Full Service"),
         (PROJECT_MODE_DIY_ASSIST, "DIY Assist"),
+        (PROJECT_MODE_CONSULTATION, "Consultation / Guidance"),
         (PROJECT_MODE_INSPECTION_ONLY, "Inspection Only"),
         (PROJECT_MODE_NOT_SURE, "Not Sure Yet"),
     ]

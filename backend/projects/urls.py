@@ -22,6 +22,22 @@ from .views.milestone import (
 )
 from .views.homeowner import HomeownerViewSet, customer_records
 from .views.project import ProjectViewSet
+from .views.diy_planner import (
+    DIYAIProposalApplyView,
+    DIYAIProposalView,
+    DIYAssetDetailView,
+    DIYAssetView,
+    DIYGetHelpView,
+    DIYMeasurementListCreateView,
+    DIYMeasurementDetailView,
+    DIYPhaseDetailView,
+    DIYPhaseListCreateView,
+    DIYProjectDetailView,
+    DIYProjectListCreateView,
+    DIYProgressEntryView,
+    DIYTaskDetailView,
+    DIYTaskListCreateView,
+)
 
 from .views.dispute import (
     DisputeViewSet,
@@ -535,6 +551,20 @@ agreements_router.register(
 )
 
 urlpatterns = [
+    path("customer-portal/<str:token>/diy-projects/", DIYProjectListCreateView.as_view(), name="customer-diy-projects"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/", DIYProjectDetailView.as_view(), name="customer-diy-project-detail"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/phases/", DIYPhaseListCreateView.as_view(), name="customer-diy-phase-create"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/phases/<int:phase_id>/", DIYPhaseDetailView.as_view(), name="customer-diy-phase-detail"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/phases/<int:phase_id>/tasks/", DIYTaskListCreateView.as_view(), name="customer-diy-task-create"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/tasks/<int:task_id>/", DIYTaskDetailView.as_view(), name="customer-diy-task-detail"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/measurements/", DIYMeasurementListCreateView.as_view(), name="customer-diy-measurement-create"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/measurements/<int:measurement_id>/", DIYMeasurementDetailView.as_view(), name="customer-diy-measurement-detail"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/progress/", DIYProgressEntryView.as_view(), name="customer-diy-progress-create"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/assets/", DIYAssetView.as_view(), name="customer-diy-asset-create"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/assets/<int:asset_id>/", DIYAssetDetailView.as_view(), name="customer-diy-asset-detail"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/assistant/proposals/", DIYAIProposalView.as_view(), name="customer-diy-ai-proposal"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/assistant/proposals/<uuid:proposal_id>/apply/", DIYAIProposalApplyView.as_view(), name="customer-diy-ai-apply"),
+    path("customer-portal/<str:token>/diy-projects/<uuid:project_id>/get-help/", DIYGetHelpView.as_view(), name="customer-diy-get-help"),
     path("captures/", CaptureListCreateView.as_view(), name="capture-list-create"),
     path("captures/summary/", CaptureSummaryView.as_view(), name="capture-summary"),
     path("captures/project-options/", CaptureProjectOptionsView.as_view(), name="capture-project-options"),

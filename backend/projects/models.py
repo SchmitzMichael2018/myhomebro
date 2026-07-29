@@ -3355,3 +3355,13 @@ from .models_measurement_photo import (  # noqa: E402,F401
     PhotoMeasurementCalibration,
     PhotoMeasurementDocument,
 )
+from .models_diy_planner import (  # noqa: E402,F401
+    DIYProject,
+    DIYProjectAIProposal,
+    DIYProjectAsset,
+    DIYProjectMeasurement,
+    DIYProjectPhase,
+    DIYProjectProgressEntry,
+    DIYProjectRequestLink,
+    DIYProjectTask,
+)

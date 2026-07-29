@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Home, Inbox, LayoutDashboard, LogOut, Pencil, UserRound, Users, Wrench } from "lucide-react";
+import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Hammer, Home, Inbox, LayoutDashboard, LogOut, Pencil, UserRound, Users, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -9,11 +9,13 @@ import CustomerDocuments from "./CustomerDocuments.jsx";
 import CustomerProjectWorkspace from "./CustomerProjectWorkspace.jsx";
 import CustomerPropertyProfile from "./CustomerPropertyProfile.jsx";
 import CustomerRequests from "./CustomerRequests.jsx";
+import DIYProjectPlanner from "./DIYProjectPlanner.jsx";
 
 const BASE_TABS = [
   ["overview", "Overview", LayoutDashboard],
   ["requests", "Requests", Inbox],
   ["projects", "Projects", FolderKanban],
+  ["diy-planner", "DIY Planner", Hammer],
   ["property", "Property", Home],
   ["payments", "Payments", CreditCard],
   ["documents", "Documents", FileText],
@@ -4168,6 +4170,9 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           }}
         />
       );
+    }
+    if (activeTab === "diy-planner") {
+      return <DIYProjectPlanner token={token} propertyProfiles={portal?.property_profiles || []} />;
     }
     if (activeTab === "requests" || activeTab === "maintenance") {
       return (
