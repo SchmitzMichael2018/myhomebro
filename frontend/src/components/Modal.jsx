@@ -24,6 +24,7 @@ export default function Modal({
   containerClassName = "",
   bodyClassName = "",
   hideHeader = false,
+  labelledBy = "",
   children,
 }) {
   const containerRef = useRef(null);
@@ -99,7 +100,7 @@ export default function Modal({
         ref={containerRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={title ? titleIdRef.current : undefined}
+        aria-labelledby={labelledBy || (title ? titleIdRef.current : undefined)}
         data-testid={testId || undefined}
         className={
           containerClassName

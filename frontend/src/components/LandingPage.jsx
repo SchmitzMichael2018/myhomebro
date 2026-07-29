@@ -23,8 +23,9 @@ import homeownerCardImage from "../assets/landing/homeowner-card.png";
 import contractorCardImage from "../assets/landing/contractor-card.png";
 import kitchenPreviewImage from "../assets/kitchen-preview.jpg";
 import { PwaAppIcon, PwaInstallButton } from "./PwaInstallAccess.jsx";
+import ProductOverviewModal from "./ProductOverviewModal.jsx";
 import { PWA_FLAGS } from "../lib/pwaFlags.js";
-import { buildPublicFaqJsonLd, PUBLIC_FAQ_CATEGORIES } from "../lib/publicFaq.js";
+import { buildPublicFaqJsonLd, PUBLIC_FAQ_CURATED_ITEMS } from "../lib/publicFaq.js";
 
 const platformRowOne = [
   {
@@ -165,22 +166,6 @@ export default function LandingPage() {
               Log In
               <ChevronDown className={`h-4 w-4 transition ${loginOpen ? "rotate-180" : ""}`} aria-hidden="true" />
             </button>
-            <button
-              type="button"
-              onClick={() => navigate("/start-project")}
-              className="inline-flex items-center gap-2 rounded-xl border border-blue-300/30 bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-700 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-950/25 transition hover:border-amber-200/60 hover:from-blue-500 hover:to-purple-600 focus:outline-none focus:ring-2 focus:ring-amber-300/60"
-            >
-              <Sparkles className="h-4 w-4" aria-hidden="true" />
-              Start a Project
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/create-account")}
-              className="hidden rounded-xl border border-amber-300/35 bg-amber-300/10 px-4 py-2.5 text-sm font-semibold text-amber-100 transition hover:border-amber-200/70 hover:bg-amber-300/16 focus:outline-none focus:ring-2 focus:ring-amber-300/60 sm:inline-flex"
-            >
-              Create Free Account
-            </button>
-
             {loginOpen ? (
               <LoginDropdown navigate={navigate} onLoginSelect={() => setLoginOpen(false)} />
             ) : null}
@@ -288,9 +273,8 @@ export default function LandingPage() {
           </section>
         ) : null}
         <HowItWorks />
-        <VideoPreview />
+        <VideoPreview navigate={navigate} />
         <AudienceCards navigate={navigate} />
-        <PublicFaq navigate={navigate} />
         <TrustBand />
       </main>
 
@@ -306,136 +290,6 @@ export default function LandingPage() {
         </div>
       </footer>
     </div>
-  );
-}
-
-function trackFaqEvent(event, detail = {}) {
-  window.dispatchEvent(new CustomEvent("mhb:analytics", {
-    detail: { event, category: "public_faq", ...detail },
-  }));
-}
-
-function PublicFaq({ navigate }) {
-  const [openItemId, setOpenItemId] = useState("");
-  const sectionRef = useRef(null);
-
-  useEffect(() => {
-    const section = sectionRef.current;
-    if (!section || typeof IntersectionObserver === "undefined") return undefined;
-    let tracked = false;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (!tracked && entry?.isIntersecting) {
-        tracked = true;
-        trackFaqEvent("faq_section_viewed");
-        observer.disconnect();
-      }
-    }, { threshold: 0.2 });
-    observer.observe(section);
-    return () => observer.disconnect();
-  }, []);
-
-  const toggleItem = (item) => {
-    setOpenItemId((current) => {
-      const next = current === item.id ? "" : item.id;
-      if (next) trackFaqEvent("faq_question_opened", { question_id: item.id });
-      return next;
-    });
-  };
-
-  const jsonLd = JSON.stringify(buildPublicFaqJsonLd()).replace(/</g, "\\u003c");
-
-  return (
-    <section
-      id="faq"
-      ref={sectionRef}
-      data-testid="landing-faq-section"
-      aria-labelledby="landing-faq-title"
-      className="mx-auto max-w-5xl scroll-mt-24 px-4 pb-16 sm:px-6 lg:px-8"
-    >
-      <script
-        type="application/ld+json"
-        data-testid="landing-faq-jsonld"
-        dangerouslySetInnerHTML={{ __html: jsonLd }}
-      />
-      <div className="text-center">
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Questions and answers</div>
-        <h2 id="landing-faq-title" className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
-          Understand MyHomeBro before you begin
-        </h2>
-        <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-sky-50/72 sm:text-base">
-          Clear answers about projects, payments, Project Assistant, privacy, and working together.
-        </p>
-      </div>
-
-      <div className="mt-9 grid gap-8">
-        {PUBLIC_FAQ_CATEGORIES.map((category) => (
-          <section key={category.id} aria-labelledby={`faq-category-${category.id}`}>
-            <h3
-              id={`faq-category-${category.id}`}
-              className="mb-3 text-sm font-semibold uppercase tracking-[0.16em] text-sky-200"
-            >
-              {category.label}
-            </h3>
-            <div className="divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/12 bg-slate-950/28">
-              {category.items.map((item) => {
-                const open = openItemId === item.id;
-                const buttonId = `faq-button-${item.id}`;
-                const panelId = `faq-panel-${item.id}`;
-                return (
-                  <article key={item.id} data-testid={`landing-faq-item-${item.id}`}>
-                    <h4>
-                      <button
-                        id={buttonId}
-                        type="button"
-                        aria-expanded={open}
-                        aria-controls={panelId}
-                        onClick={() => toggleItem(item)}
-                        className="flex min-h-14 w-full items-center justify-between gap-4 px-4 py-3 text-left text-[15px] font-semibold leading-6 text-white transition hover:bg-white/[0.045] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-300 sm:px-5 sm:text-base"
-                      >
-                        <span>{item.question}</span>
-                        <ChevronDown
-                          className={`h-5 w-5 shrink-0 text-sky-300 transition-transform ${open ? "rotate-180" : ""}`}
-                          aria-hidden="true"
-                        />
-                      </button>
-                    </h4>
-                    <div
-                      id={panelId}
-                      role="region"
-                      aria-labelledby={buttonId}
-                      hidden={!open}
-                      className="px-4 pb-5 pr-12 text-sm leading-6 text-sky-50/76 sm:px-5 sm:pr-16"
-                    >
-                      <p>{item.answer}</p>
-                    </div>
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-        ))}
-      </div>
-
-      <div className="mt-9 flex flex-col items-start justify-between gap-4 rounded-2xl border border-sky-300/18 bg-blue-950/28 p-5 sm:flex-row sm:items-center">
-        <div>
-          <h3 className="text-lg font-semibold text-white">Still have questions?</h3>
-          <p className="mt-1 text-sm leading-6 text-sky-50/70">
-            Sign in, then open the existing Support workspace for account-specific help.
-          </p>
-        </div>
-        <button
-          type="button"
-          data-testid="landing-faq-support"
-          onClick={() => {
-            trackFaqEvent("faq_support_clicked");
-            navigate("/login");
-          }}
-          className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-sky-300/30 bg-white/[0.06] px-4 py-2.5 text-sm font-semibold text-sky-50 transition hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-        >
-          Open Support
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -574,9 +428,33 @@ function HowItWorks() {
   );
 }
 
-function VideoPreview() {
+function VideoPreview({ navigate }) {
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  const triggerRef = useRef(null);
+  const jsonLd = JSON.stringify(buildPublicFaqJsonLd(PUBLIC_FAQ_CURATED_ITEMS)).replace(/</g, "\\u003c");
+
+  const openOverview = () => {
+    setOverviewOpen(true);
+    window.dispatchEvent(new CustomEvent("mhb:analytics", {
+      detail: { event: "product_overview_opened", category: "product_overview" },
+    }));
+  };
+
+  const closeOverview = (method = "dismiss") => {
+    setOverviewOpen(false);
+    window.dispatchEvent(new CustomEvent("mhb:analytics", {
+      detail: { event: "product_overview_closed", category: "product_overview", method },
+    }));
+    requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
   return (
     <section className="mx-auto px-4 pb-16 sm:px-6 lg:px-8">
+      <script
+        type="application/ld+json"
+        data-testid="landing-faq-jsonld"
+        dangerouslySetInnerHTML={{ __html: jsonLd }}
+      />
       <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
       <div className="p-3 sm:p-4">
         <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Platform Preview</div>
@@ -606,16 +484,19 @@ function VideoPreview() {
           <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.18),rgba(2,6,23,0.02)_44%,rgba(2,6,23,0.30)),radial-gradient(circle_at_50%_50%,transparent_38%,rgba(2,6,23,0.34)_100%)]" />
           <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/16 blur-2xl" />
           <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-slate-950/90 via-slate-950/28 to-transparent" />
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 z-10 flex items-center justify-center">
             <button
+              ref={triggerRef}
               type="button"
-              aria-label="Play MyHomeBro preview"
+              aria-label="See MyHomeBro in action"
+              data-testid="product-overview-trigger"
+              onClick={openOverview}
               className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-blue-700 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-amber-300/60"
             >
               <Play className="ml-1 h-9 w-9" aria-hidden="true" />
             </button>
           </div>
-          <div className="absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-slate-950/62 p-4 backdrop-blur">
+          <div className="pointer-events-none absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-slate-950/62 p-4 backdrop-blur">
             <div className="text-sm font-semibold text-white">Kitchen remodel workspace</div>
             <div className="mt-2 grid gap-2 sm:grid-cols-3">
               {[
@@ -641,6 +522,7 @@ function VideoPreview() {
         </div>
       </div>
       </div>
+      <ProductOverviewModal visible={overviewOpen} onClose={closeOverview} navigate={navigate} />
     </section>
   );
 }

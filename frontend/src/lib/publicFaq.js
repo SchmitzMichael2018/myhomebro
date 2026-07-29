@@ -187,6 +187,25 @@ export const PUBLIC_FAQ_ITEMS = PUBLIC_FAQ_CATEGORIES.flatMap((category) =>
   category.items.map((item) => ({ ...item, category: category.label }))
 );
 
+export const PUBLIC_FAQ_CURATED_IDS = [
+  "what-is-myhomebro",
+  "who-is-it-for",
+  "contractor-marketplace",
+  "browser-or-app",
+  "smart-capture",
+  "project-assistant",
+  "ai-decisions",
+  "payment-handling",
+  "contractor-guarantees",
+  "dispute-process",
+  "project-visibility",
+  "property-records",
+];
+
+export const PUBLIC_FAQ_CURATED_ITEMS = PUBLIC_FAQ_CURATED_IDS.map((id) =>
+  PUBLIC_FAQ_ITEMS.find((item) => item.id === id)
+).filter(Boolean);
+
 export function buildPublicFaqJsonLd(items = PUBLIC_FAQ_ITEMS) {
   return {
     "@context": "https://schema.org",

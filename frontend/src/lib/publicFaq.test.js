@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   buildPublicFaqJsonLd,
   PUBLIC_FAQ_CATEGORIES,
+  PUBLIC_FAQ_CURATED_IDS,
+  PUBLIC_FAQ_CURATED_ITEMS,
   PUBLIC_FAQ_ITEMS,
 } from "./publicFaq.js";
 
@@ -26,14 +28,20 @@ describe("public FAQ content", () => {
   });
 
   it("keeps FAQPage structured data synchronized with visible content", () => {
-    const jsonLd = buildPublicFaqJsonLd();
+    const jsonLd = buildPublicFaqJsonLd(PUBLIC_FAQ_CURATED_ITEMS);
     expect(jsonLd["@type"]).toBe("FAQPage");
-    expect(jsonLd.mainEntity).toHaveLength(PUBLIC_FAQ_ITEMS.length);
+    expect(jsonLd.mainEntity).toHaveLength(PUBLIC_FAQ_CURATED_ITEMS.length);
     expect(jsonLd.mainEntity.map((entry) => entry.name)).toEqual(
-      PUBLIC_FAQ_ITEMS.map((item) => item.question)
+      PUBLIC_FAQ_CURATED_ITEMS.map((item) => item.question)
     );
     expect(jsonLd.mainEntity.map((entry) => entry.acceptedAnswer.text)).toEqual(
-      PUBLIC_FAQ_ITEMS.map((item) => item.answer)
+      PUBLIC_FAQ_CURATED_ITEMS.map((item) => item.answer)
     );
+  });
+
+  it("derives the curated modal questions from the authoritative full FAQ source", () => {
+    expect(PUBLIC_FAQ_CURATED_ITEMS).toHaveLength(12);
+    expect(PUBLIC_FAQ_CURATED_ITEMS.map((item) => item.id)).toEqual(PUBLIC_FAQ_CURATED_IDS);
+    expect(PUBLIC_FAQ_ITEMS).toHaveLength(28);
   });
 });
