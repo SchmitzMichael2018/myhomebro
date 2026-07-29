@@ -25,18 +25,20 @@ test("existing play action opens the combined overview and restores focus on clo
   await expect(modal.getByRole("heading", { name: "See how MyHomeBro keeps projects moving" })).toBeVisible();
   const workflowContent = [
     ["Capture the customer and job", "Collect the request, property details, photos, and field notes."],
-    ["Prepare the estimate", "Turn the job details into clear scope, pricing, and next steps."],
-    ["Review and approve the agreement", "Confirm the work, responsibilities, schedule, and payment terms."],
-    ["Track work, milestones, and payments", "Keep progress, approvals, updates, and payment status connected."],
-    ["Keep records, warranties, and project history", "Organize the documents and history needed after the work is done."],
+    ["Prepare the estimate", "Build scope, pricing, options, and next steps."],
+    ["Send the agreement", "Confirm responsibilities, schedule, milestones, and payment terms."],
+    ["Manage work and payments", "Coordinate customers, team members, progress, approvals, and funding."],
+    ["Close out and keep records", "Preserve documents, warranties, receipts, photos, and project history."],
   ];
   for (const [title, description] of workflowContent) {
     await expect(modal.getByText(title, { exact: true })).toBeVisible();
     await expect(modal.getByText(description, { exact: true })).toBeVisible();
   }
-  for (const audience of ["For contractors", "For homeowners", "For property managers"]) {
-    await expect(modal.getByRole("heading", { name: audience })).toBeVisible();
-  }
+  const contractorAudience = modal.getByTestId("product-audience-contractor");
+  await expect(contractorAudience).toHaveAttribute("aria-pressed", "true");
+  await expect(contractorAudience).toContainText("Selected");
+  await expect(modal.getByTestId("product-audience-homeowner")).toHaveAttribute("aria-pressed", "false");
+  await expect(modal.getByTestId("product-audience-property_manager")).toHaveAttribute("aria-pressed", "false");
   await expect(modal.getByRole("button", { name: "Create Free Account" })).toBeVisible();
   await expect(modal.getByRole("button", { name: "Log In" })).toBeVisible();
   await expect(modal.getByRole("button", { name: "Contact Support" })).toBeVisible();
@@ -47,7 +49,7 @@ test("existing play action opens the combined overview and restores focus on clo
   expect(surfaceColor).toBe("rgb(2, 6, 23)");
   const workflowBox = await modal.getByTestId("product-overview-workflow").boundingBox();
   const audienceBox = await modal.getByTestId("product-overview-audiences").boundingBox();
-  expect(audienceBox.y - (workflowBox.y + workflowBox.height)).toBeLessThanOrEqual(24);
+  expect(workflowBox.y - (audienceBox.y + audienceBox.height)).toBeLessThanOrEqual(24);
 
   await page.keyboard.press("Escape");
   await expect(modal).toHaveCount(0);
@@ -58,6 +60,73 @@ test("existing play action opens the combined overview and restores focus on clo
       expect.objectContaining({ event: "product_overview_closed", category: "product_overview" }),
     ])
   );
+});
+
+test("audience selectors personalize all five steps and persist across tabs", async ({ page }) => {
+  const modal = await openOverview(page);
+  const homeowner = modal.getByTestId("product-audience-homeowner");
+  await homeowner.focus();
+  await page.keyboard.press("Space");
+  await expect(homeowner).toHaveAttribute("aria-pressed", "true");
+  await expect(modal.getByTestId("product-overview-workflow")).toHaveAttribute("data-audience", "homeowner");
+  for (const title of [
+    "Start or join a project",
+    "Review estimates",
+    "Approve the agreement",
+    "Follow progress and payments",
+    "Keep your property records",
+  ]) {
+    await expect(modal.getByText(title, { exact: true })).toBeVisible();
+  }
+
+  await modal.getByRole("tab", { name: "Watch" }).click();
+  await expect(modal.getByTestId("product-video-fallback")).toBeVisible();
+  await modal.getByRole("tab", { name: "Questions" }).click();
+  await expect(modal.getByRole("button", { name: "What is MyHomeBro?" })).toBeVisible();
+  await modal.getByRole("tab", { name: "Overview" }).click();
+  await expect(homeowner).toHaveAttribute("aria-pressed", "true");
+  await expect(modal.getByText("Keep your property records", { exact: true })).toBeVisible();
+
+  const propertyManager = modal.getByTestId("product-audience-property_manager");
+  await propertyManager.click();
+  await expect(propertyManager).toHaveAttribute("aria-pressed", "true");
+  for (const title of [
+    "Add the property or unit",
+    "Capture a maintenance need",
+    "Coordinate vendor work",
+    "Track completion and payment",
+    "Maintain property history",
+  ]) {
+    await expect(modal.getByText(title, { exact: true })).toBeVisible();
+  }
+  await expect(modal.locator('[data-testid^="product-workflow-step-"]')).toHaveCount(5);
+  expect(await page.evaluate(() => window.__productAnalytics)).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        event: "product_audience_selected",
+        audience: "homeowner",
+        source: "product_overview",
+      }),
+      expect.objectContaining({
+        event: "product_audience_selected",
+        audience: "property_manager",
+        source: "product_overview",
+      }),
+    ])
+  );
+
+  await modal.getByRole("button", { name: "Close product overview" }).click();
+  const reopened = await openOverview(page);
+  await expect(reopened.getByTestId("product-audience-contractor")).toHaveAttribute("aria-pressed", "true");
+});
+
+test("audience transition respects reduced-motion preference", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const modal = await openOverview(page);
+  const workflow = modal.getByTestId("product-overview-workflow");
+  expect(await workflow.evaluate((element) => getComputedStyle(element).transitionProperty)).toBe("none");
+  await modal.getByTestId("product-audience-homeowner").click();
+  await expect(workflow).toHaveAttribute("data-audience", "homeowner");
 });
 
 test("Watch provides an honest fallback and Questions derives curated and full FAQ content", async ({ page }) => {
@@ -152,6 +221,15 @@ for (const width of [320, 375, 390, 430, 768]) {
     expect(await modal.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     const box = await modal.boundingBox();
     expect(box.height).toBeLessThanOrEqual(760);
+    await modal.getByRole("tab", { name: "Overview" }).click();
+    const audienceColumns = await modal.getByTestId("product-overview-audiences").evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length
+    );
+    const workflowColumns = await modal.getByTestId("product-overview-workflow").evaluate(
+      (element) => getComputedStyle(element).gridTemplateColumns.split(" ").length
+    );
+    expect(audienceColumns).toBe(width >= 640 ? 3 : 1);
+    expect(workflowColumns).toBe(width >= 1024 ? 5 : width >= 640 ? 2 : 1);
   });
 }
 
@@ -163,7 +241,7 @@ for (const width of [1366, 1920]) {
     expect(box.width).toBeLessThanOrEqual(1024);
     expect(box.height).toBeLessThanOrEqual(900);
     await expect(modal.getByTestId("product-workflow-step-5")).toBeVisible();
-    await expect(modal.getByTestId("product-audience-for-property-managers")).toBeVisible();
+    await expect(modal.getByTestId("product-audience-property_manager")).toBeVisible();
   });
 }
 
@@ -174,6 +252,19 @@ test("header duplicate conversion actions are removed while hero actions remain"
   await expect(page.getByTestId("landing-start-project-intake-button")).toBeVisible();
   await expect(page.getByTestId("landing-create-free-account-button")).toBeVisible();
 });
+
+for (const [label, path] of [
+  ["Start a Project", "/start-project"],
+  ["Create Free Account", "/create-account"],
+  ["Log In", "/login"],
+  ["Contact Support", "/login"],
+]) {
+  test(`product overview ${label} action keeps its verified destination`, async ({ page }) => {
+    const modal = await openOverview(page);
+    await modal.getByRole("button", { name: label }).click();
+    await expect(page).toHaveURL(new RegExp(`${path.replaceAll("/", "\\/")}$`));
+  });
+}
 
 test("combined overview renders when launched in installed-app mode", async ({ page }) => {
   await page.addInitScript(() => {

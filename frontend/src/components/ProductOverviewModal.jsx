@@ -3,6 +3,7 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   Building2,
+  CheckCircle2,
   ChevronDown,
   Home,
   Play,
@@ -22,41 +23,92 @@ const TABS = [
   { id: "questions", label: "Questions" },
 ];
 
-const WORKFLOW = [
-  {
-    title: "Capture the customer and job",
-    description: "Collect the request, property details, photos, and field notes.",
-  },
-  {
-    title: "Prepare the estimate",
-    description: "Turn the job details into clear scope, pricing, and next steps.",
-  },
-  {
-    title: "Review and approve the agreement",
-    description: "Confirm the work, responsibilities, schedule, and payment terms.",
-  },
-  {
-    title: "Track work, milestones, and payments",
-    description: "Keep progress, approvals, updates, and payment status connected.",
-  },
-  {
-    title: "Keep records, warranties, and project history",
-    description: "Organize the documents and history needed after the work is done.",
-  },
-];
+const DEFAULT_AUDIENCE = "contractor";
+
+const AUDIENCE_PATHWAYS = {
+  contractor: [
+    {
+      title: "Capture the customer and job",
+      description: "Collect the request, property details, photos, and field notes.",
+    },
+    {
+      title: "Prepare the estimate",
+      description: "Build scope, pricing, options, and next steps.",
+    },
+    {
+      title: "Send the agreement",
+      description: "Confirm responsibilities, schedule, milestones, and payment terms.",
+    },
+    {
+      title: "Manage work and payments",
+      description: "Coordinate customers, team members, progress, approvals, and funding.",
+    },
+    {
+      title: "Close out and keep records",
+      description: "Preserve documents, warranties, receipts, photos, and project history.",
+    },
+  ],
+  homeowner: [
+    {
+      title: "Start or join a project",
+      description: "Share what you need or access a contractor-created project.",
+    },
+    {
+      title: "Review estimates",
+      description: "Compare scope, pricing, selections, and project expectations.",
+    },
+    {
+      title: "Approve the agreement",
+      description: "Review responsibilities, milestones, schedule, and payment terms.",
+    },
+    {
+      title: "Follow progress and payments",
+      description: "See updates, communicate, review work, and track payment activity.",
+    },
+    {
+      title: "Keep your property records",
+      description: "Store agreements, receipts, photos, warranties, and project history.",
+    },
+  ],
+  property_manager: [
+    {
+      title: "Add the property or unit",
+      description: "Organize properties, units, occupants, vendors, and existing records.",
+    },
+    {
+      title: "Capture a maintenance need",
+      description: "Record the issue, photos, urgency, location, and supporting details.",
+    },
+    {
+      title: "Coordinate vendor work",
+      description: "Review requests, assign work, collect estimates, and approve next steps.",
+    },
+    {
+      title: "Track completion and payment",
+      description: "Follow updates, documentation, approvals, invoices, and completion.",
+    },
+    {
+      title: "Maintain property history",
+      description: "Preserve maintenance, warranty, equipment, vendor, and unit records.",
+    },
+  ],
+};
 
 const AUDIENCES = [
   {
+    id: "contractor",
     icon: BriefcaseBusiness,
     title: "For contractors",
     text: "Manage customers, estimates, projects, teams, payments, and field records.",
   },
   {
+    id: "homeowner",
     icon: Home,
     title: "For homeowners",
     text: "Review documents, follow progress, communicate, and keep property records.",
   },
   {
+    id: "property_manager",
     icon: Building2,
     title: "For property managers",
     text: "Track units, maintenance, vendors, warranties, and property history.",
@@ -127,6 +179,7 @@ function FaqAccordion({ items, openItemId, onToggle, idPrefix }) {
 
 export default function ProductOverviewModal({ visible, onClose, navigate }) {
   const [activeTab, setActiveTab] = useState("overview");
+  const [activeAudience, setActiveAudience] = useState(DEFAULT_AUDIENCE);
   const [openItemId, setOpenItemId] = useState("");
   const [showAllQuestions, setShowAllQuestions] = useState(false);
   const tabListRef = useRef(null);
@@ -134,6 +187,7 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
   useEffect(() => {
     if (!visible) return;
     setActiveTab("overview");
+    setActiveAudience(DEFAULT_AUDIENCE);
     setOpenItemId("");
     setShowAllQuestions(false);
   }, [visible]);
@@ -167,6 +221,14 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
         trackProductOverview("product_question_opened", { question_id: item.id });
       }
       return next;
+    });
+  };
+
+  const selectAudience = (audience) => {
+    setActiveAudience(audience);
+    trackProductOverview("product_audience_selected", {
+      audience,
+      source: "product_overview",
     });
   };
 
@@ -256,11 +318,55 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
               MyHomeBro brings customers, estimates, agreements, payments, project updates, messages,
               and property records into one guided workspace.
             </p>
-            <ol
-              data-testid="product-overview-workflow"
-              className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <h4 className="text-sm font-semibold uppercase tracking-[0.14em] text-sky-200">
+                Choose your view
+              </h4>
+              <span className="text-xs text-slate-400">Pathway updates below</span>
+            </div>
+            <div
+              data-testid="product-overview-audiences"
+              aria-label="Choose your product overview audience"
+              className="mt-2 grid gap-2 sm:grid-cols-3"
             >
-              {WORKFLOW.map((step, index) => (
+              {AUDIENCES.map(({ id, icon: Icon, title, text }) => {
+                const selected = activeAudience === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={selected}
+                    data-testid={`product-audience-${id}`}
+                    onClick={() => selectAudience(id)}
+                    className={`min-h-11 rounded-xl border p-3 text-left transition-colors motion-reduce:transition-none focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 ${
+                      selected
+                        ? "border-sky-400 bg-sky-950/70"
+                        : "border-slate-700 bg-slate-900 hover:border-slate-600 hover:bg-slate-800"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <Icon className={`h-5 w-5 ${selected ? "text-amber-300" : "text-sky-300"}`} aria-hidden="true" />
+                      <span className="font-semibold text-white">{title}</span>
+                      {selected ? (
+                        <span className="ml-auto inline-flex items-center gap-1 text-xs font-semibold text-sky-200">
+                          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
+                          Selected
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="mt-1 block text-xs leading-5 text-slate-300">{text}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <ol
+              key={activeAudience}
+              data-testid="product-overview-workflow"
+              data-audience={activeAudience}
+              aria-live="polite"
+              className="mt-4 grid gap-3 transition-opacity motion-reduce:transition-none sm:grid-cols-2 lg:grid-cols-5"
+            >
+              {AUDIENCE_PATHWAYS[activeAudience].map((step, index) => (
                 <li
                   key={step.title}
                   data-testid={`product-workflow-step-${index + 1}`}
@@ -273,7 +379,7 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
                     <h4 className="text-sm font-semibold leading-5 text-white">{step.title}</h4>
                     <p className="mt-1 text-xs leading-5 text-slate-300">{step.description}</p>
                   </div>
-                  {index < WORKFLOW.length - 1 ? (
+                  {index < AUDIENCE_PATHWAYS[activeAudience].length - 1 ? (
                     <ArrowRight
                       className="absolute -right-2.5 top-1/2 z-[1] hidden h-5 w-5 -translate-y-1/2 rounded-full bg-slate-950 p-0.5 text-sky-300 lg:block"
                       aria-hidden="true"
@@ -282,19 +388,6 @@ export default function ProductOverviewModal({ visible, onClose, navigate }) {
                 </li>
               ))}
             </ol>
-            <div data-testid="product-overview-audiences" className="mt-5 grid gap-3 md:grid-cols-3">
-              {AUDIENCES.map(({ icon: Icon, title, text }) => (
-                <article
-                  key={title}
-                  data-testid={`product-audience-${title.toLowerCase().replaceAll(" ", "-")}`}
-                  className="h-full rounded-xl border border-sky-800/70 bg-slate-900 p-4"
-                >
-                  <Icon className="h-5 w-5 text-sky-300" aria-hidden="true" />
-                  <h4 className="mt-2 font-semibold text-white">{title}</h4>
-                  <p className="mt-1 text-sm leading-6 text-slate-300">{text}</p>
-                </article>
-              ))}
-            </div>
           </section>
 
           <section
