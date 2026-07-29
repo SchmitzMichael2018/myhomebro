@@ -363,6 +363,8 @@ class DIYGetHelpView(APIView):
         selection_type = serializers.ChoiceField(choices=["task", "tasks", "phase", "remaining"])
         task_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
         phase_id = serializers.IntegerField(required=False)
+        asset_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
+        measurement_ids = serializers.ListField(child=serializers.IntegerField(), required=False)
         project_mode = serializers.ChoiceField(choices=[c for c, _ in CustomerRequest.PROJECT_MODE_CHOICES])
         title = serializers.CharField(max_length=200, required=False, allow_blank=True)
         scope = serializers.CharField(required=False, allow_blank=True)
@@ -387,6 +389,10 @@ class DIYGetHelpView(APIView):
         task_list = list(tasks.select_related("phase"))
         if not task_list:
             return Response({"detail": "Select at least one task to include."}, status=400)
+        assets = list(project.assets.filter(id__in=data.get("asset_ids", [])))
+        measurements = list(project.measurements.filter(id__in=data.get("measurement_ids", [])))
+        if len(assets) != len(set(data.get("asset_ids", []))) or len(measurements) != len(set(data.get("measurement_ids", []))):
+            return Response({"detail": "One or more selected supporting details do not belong to this project."}, status=400)
         generated_scope = "\n".join([f"- {t.phase.title}: {t.title} — {t.description}".strip() for t in task_list])
         scope = data.get("scope") or (
             f"Desired outcome: {project.desired_outcome}\n"
@@ -394,6 +400,14 @@ class DIYGetHelpView(APIView):
             f"Work already completed: {project.work_completed or 'None provided'}\n"
             f"Selected work:\n{generated_scope}"
         )
+        if measurements:
+            scope += "\n\nShared homeowner-provided measurements (verify before pricing or work):\n" + "\n".join(
+                f"- {row.label}: {row.value} {row.unit}" for row in measurements
+            )
+        if assets:
+            scope += "\n\nShared project files:\n" + "\n".join(
+                f"- Project file #{asset.id}: {asset.caption or asset.get_asset_type_display()}" for asset in assets
+            )
         request_row = CustomerRequest.objects.create(
             homeowner=_primary_homeowner_for_email(email), property_profile=project.property_profile,
             customer_email=email, request_type=CustomerRequest.TYPE_DIY_ASSISTANCE,

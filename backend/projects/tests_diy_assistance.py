@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover
     except Exception:  # pragma: no cover
         PdfReader = None  # type: ignore
 
-from projects.models import Agreement, Contractor, ContractorPublicProfile, Homeowner, Milestone, Project, PublicContractorLead
+from projects.models import Agreement, Contractor, ContractorPublicProfile, Homeowner, Milestone, Project, PublicContractorLead, Skill
 from projects.models import InspectionStatus
 from projects.models_contractor_discovery import ContractorDirectoryListing, ContractorDiscoveryInvite
 from projects.models_project_intake import ProjectIntake
@@ -37,6 +37,14 @@ class DIYAssistanceTests(TestCase):
         self.user = user_model.objects.create_user(email="diy@example.com", password="testpass123")
         self.contractor = Contractor.objects.create(user=self.user, business_name="DIY Pro")
         self.client = APIClient()
+        self.client.defaults.update(
+            {
+                "wsgi.url_scheme": "https",
+                "SERVER_PORT": "443",
+                "HTTPS": "on",
+                "HTTP_X_FORWARDED_PROTO": "https",
+            }
+        )
         self.client.force_authenticate(user=self.user)
 
     def test_contractor_me_patch_persists_diy_flags(self):
@@ -191,7 +199,7 @@ class DIYAssistanceTests(TestCase):
             "accepts_consultation_only",
             "accepts_inspection_only",
         ])
-        self.contractor.skills.create(name="Flooring", slug="flooring")
+        self.contractor.skills.add(Skill.objects.get(name="Flooring"))
         profile = ContractorPublicProfile.objects.create(
             contractor=self.contractor,
             business_name_public="DIY Pro",
@@ -248,7 +256,7 @@ class DIYAssistanceTests(TestCase):
             "accepts_consultation_only",
             "accepts_inspection_only",
         ])
-        self.contractor.skills.create(name="Electrical", slug="electrical")
+        self.contractor.skills.add(Skill.objects.get(name="Electrical"))
         profile = ContractorPublicProfile.objects.create(
             contractor=self.contractor,
             business_name_public="DIY Pro Profile",
@@ -279,7 +287,7 @@ class DIYAssistanceTests(TestCase):
             "accepts_diy_assistance",
             "accepts_inspection_only",
         ])
-        self.contractor.skills.create(name="Flooring", slug="flooring-compatibility")
+        self.contractor.skills.add(Skill.objects.get(name="Flooring"))
         profile = ContractorPublicProfile.objects.create(
             contractor=self.contractor,
             business_name_public="Lead Match Profile",
@@ -575,11 +583,11 @@ class DIYAssistanceTests(TestCase):
         reader = PdfReader(io.BytesIO(pdf_bytes))
         extracted = "\n".join(page.extract_text() or "" for page in reader.pages)
 
-        self.assertIn("Responsibility Matrix", extracted)
+        self.assertIn("Collaboration Summary", extracted)
         self.assertIn("Homeowner Acknowledgements", extracted)
         self.assertIn("Inspection Checkpoints", extracted)
         self.assertIn("Rescue / Partial Completion Notes", extracted)
-        self.assertIn("Payment Protection", extracted)
+        self.assertIn("Payment & Escrow", extracted)
 
     def test_contractor_search_prioritizes_claimed_contractor_before_cached_listing(self):
         ContractorPublicProfile.objects.create(
@@ -611,10 +619,19 @@ class DIYAssistanceTests(TestCase):
             trade_categories=["plumbing"],
         )
 
-        response = self.client.get(
-            "/api/projects/public-intake/contractor-search/",
-            {"token": intake.share_token, "query": "bathroom remodel"},
-        )
+        with patch(
+            "projects.services.contractor_discovery._resolve_project_location",
+            return_value={
+                "latitude": 30.2672,
+                "longitude": -97.7431,
+                "location_source": "test_fixture",
+                "location_resolution_status": "resolved",
+            },
+        ):
+            response = self.client.get(
+                "/api/projects/public-intake/contractor-search/",
+                {"token": intake.share_token, "query": "bathroom remodel"},
+            )
 
         self.assertEqual(response.status_code, 200)
         results = response.data["results"]
@@ -638,7 +655,10 @@ class DIYAssistanceTests(TestCase):
         )
         intake.ensure_share_token()
 
-        with patch("projects.services.contractor_discovery.search_google_places_contractors", return_value=[]):
+        with patch(
+            "projects.services.contractor_discovery.search_google_places_contractors_with_diagnostics",
+            return_value={"results": [], "diagnostic": {"google_raw_count": 0}},
+        ):
             result = build_contractor_recommendations(intake=intake, query="")
 
         self.assertIn("search_query", result["summary"])

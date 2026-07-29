@@ -48,20 +48,8 @@ const NOTIFICATION_CHANNEL_LABELS = {
   sms_enabled: "SMS",
 };
 const DEFAULT_NOTIFICATION_PREFERENCE_GROUPS = {
-  Projects: [
-    "project_request_updates",
-    "contractor_responses",
-    "agreement_updates",
-    "milestone_updates",
-    "invoice_payment_updates",
-  ],
-  Maintenance: [
-    "maintenance_due_soon",
-    "maintenance_overdue",
-    "maintenance_completed",
-    "tenant_maintenance_requests",
-    "work_order_updates",
-  ],
+  Projects: ["project_request_updates", "contractor_responses", "agreement_updates", "milestone_updates", "invoice_payment_updates"],
+  Maintenance: ["maintenance_due_soon", "maintenance_overdue", "maintenance_completed", "tenant_maintenance_requests", "work_order_updates"],
   Property: ["warranty_expiration", "lifecycle_events", "document_updates"],
   Supplies: ["recommended_supplies", "seasonal_supplies"],
 };
@@ -79,26 +67,16 @@ function customerPortalTabs(showMaintenanceTab) {
 }
 
 const PORTAL_ADDRESS_AUTOCOMPLETE_CLASSES = {
-  inputClassName:
-    "w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 pr-10 text-sm text-white placeholder:text-slate-400 outline-none focus:border-sky-400 disabled:bg-slate-800 disabled:text-slate-400",
-  suggestionsClassName:
-    "absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-600 bg-slate-950 text-sm text-slate-100 shadow-xl",
-  suggestionButtonClassName:
-    "block w-full px-3 py-2 text-left text-slate-100 hover:bg-slate-800 hover:text-white focus:bg-sky-900 focus:text-white focus:outline-none active:bg-sky-800 disabled:bg-slate-900 disabled:text-slate-500",
+  inputClassName: "w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 pr-10 text-sm text-white placeholder:text-slate-400 outline-none focus:border-sky-400 disabled:bg-slate-800 disabled:text-slate-400",
+  suggestionsClassName: "absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-600 bg-slate-950 text-sm text-slate-100 shadow-xl",
+  suggestionButtonClassName: "block w-full px-3 py-2 text-left text-slate-100 hover:bg-slate-800 hover:text-white focus:bg-sky-900 focus:text-white focus:outline-none active:bg-sky-800 disabled:bg-slate-900 disabled:text-slate-500",
   helperClassName: "mt-1 text-xs text-slate-300",
 };
 
 function StatCard({ label, value, testId, onClick }) {
   const Component = onClick ? "button" : "div";
   return (
-    <Component
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
-      data-testid={testId}
-      className={`rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-left ${
-        onClick ? "transition hover:border-amber-300/55 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/45" : ""
-      }`}
-    >
+    <Component type={onClick ? "button" : undefined} onClick={onClick} data-testid={testId} className={`rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-left ${onClick ? "transition hover:border-amber-300/55 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/45" : ""}`}>
       <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-2 text-2xl font-bold text-white">{value}</div>
     </Component>
@@ -107,14 +85,7 @@ function StatCard({ label, value, testId, onClick }) {
 function InfoCard({ eyebrow, title, body, actionLabel, onClick, testId, children }) {
   const Component = onClick ? "button" : "article";
   return (
-    <Component
-      type={onClick ? "button" : undefined}
-      onClick={onClick}
-      data-testid={testId}
-      className={`rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-left ${
-        onClick ? "transition hover:border-amber-300/55 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/45" : ""
-      }`}
-    >
+    <Component type={onClick ? "button" : undefined} onClick={onClick} data-testid={testId} className={`rounded-2xl border border-slate-700 bg-slate-950/60 p-4 text-left ${onClick ? "transition hover:border-amber-300/55 hover:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-300/45" : ""}`}>
       {eyebrow ? <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{eyebrow}</div> : null}
       {title ? <div className="mt-1 text-sm font-semibold text-white">{title}</div> : null}
       {body ? <p className="mt-1 text-sm leading-5 text-slate-300">{body}</p> : null}
@@ -129,11 +100,7 @@ function Badge({ children, tone = "slate" }) {
     gold: "border-amber-300/50 bg-amber-300/15 text-amber-100",
     slate: "border-slate-600 bg-slate-900 text-slate-200",
   };
-  return (
-    <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone] || tones.slate}`}>
-      {children}
-    </span>
-  );
+  return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${tones[tone] || tones.slate}`}>{children}</span>;
 }
 
 function EmptyState({ title, children, testId }) {
@@ -146,14 +113,7 @@ function EmptyState({ title, children, testId }) {
 }
 
 function recommendationTheme(recommendation = {}) {
-  const text = [
-    recommendation.title,
-    recommendation.summary,
-    recommendation.reason,
-    recommendation.category,
-    recommendation.type,
-    recommendation.id,
-  ].join(" ").toLowerCase();
+  const text = [recommendation.title, recommendation.summary, recommendation.reason, recommendation.category, recommendation.type, recommendation.id].join(" ").toLowerCase();
   if (text.includes("hvac") || text.includes("cooling") || text.includes("filter")) return "hvac";
   if (text.includes("water heater")) return "water_heater";
   if (text.includes("roof")) return "roof";
@@ -241,54 +201,36 @@ function CustomerRecommendationsPanel({ recommendations = [], onOpenTab }) {
     return "";
   };
   return (
-    <section
-      data-testid="customer-unified-recommendations"
-      className="rounded-2xl border border-amber-300/25 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.13),transparent_34%),rgba(15,23,42,0.72)] p-5"
-    >
+    <section data-testid="customer-unified-recommendations" className="rounded-2xl border border-amber-300/25 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.13),transparent_34%),rgba(15,23,42,0.72)] p-5">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Recommendations</div>
           <h2 className="mt-1 text-xl font-semibold text-white">Recommended for you</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-            Advisory suggestions from your property records, documents, warranties, and service history.
-          </p>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Advisory suggestions from your property records, documents, warranties, and service history.</p>
         </div>
         <Badge tone={rows.length ? "gold" : "slate"}>{rows.length || "No"} advisory</Badge>
       </div>
       {rows.length ? (
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {rows.map((recommendation) => {
-          const tab = targetTab(recommendation.action_target);
-          return (
-            <article
-              key={recommendation.id || recommendation.key || recommendation.title}
-              data-testid="customer-unified-recommendation-card"
-              className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-white" data-testid="recommendation-title">
-                  {recommendation.title}
-                </h3>
-                <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">
-                  {recommendation.severity || "info"}
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-5 text-slate-300">{recommendation.summary}</p>
-              {recommendation.explanation ? (
-                <p className="mt-1 text-xs leading-5 text-slate-500">{recommendation.explanation}</p>
-              ) : null}
-              {recommendation.action_label && tab ? (
-                <button
-                  type="button"
-                  data-testid="recommendation-action"
-                  onClick={() => onOpenTab?.(tab)}
-                  className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-300/20"
-                >
-                  {recommendation.action_label}
-                </button>
-              ) : null}
-            </article>
-          );
+            const tab = targetTab(recommendation.action_target);
+            return (
+              <article key={recommendation.id || recommendation.key || recommendation.title} data-testid="customer-unified-recommendation-card" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold text-white" data-testid="recommendation-title">
+                    {recommendation.title}
+                  </h3>
+                  <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-300">{recommendation.severity || "info"}</span>
+                </div>
+                <p className="mt-2 text-sm leading-5 text-slate-300">{recommendation.summary}</p>
+                {recommendation.explanation ? <p className="mt-1 text-xs leading-5 text-slate-500">{recommendation.explanation}</p> : null}
+                {recommendation.action_label && tab ? (
+                  <button type="button" data-testid="recommendation-action" onClick={() => onOpenTab?.(tab)} className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/35 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-300/20">
+                    {recommendation.action_label}
+                  </button>
+                ) : null}
+              </article>
+            );
           })}
         </div>
       ) : (
@@ -349,13 +291,7 @@ function isEscrowFundingPayment(payment) {
   if (payment?.escrow_funding_record === true) return true;
   const status = paymentStatusText(payment);
   const type = paymentTypeText(payment);
-  return (
-    type === "escrow" ||
-    type.includes("escrow funding") ||
-    type.includes("funding") ||
-    payment?.reference === "escrow_funded" ||
-    (status.includes("funded") && escrowLedgerValue(payment, "funded") > 0)
-  );
+  return type === "escrow" || type.includes("escrow funding") || type.includes("funding") || payment?.reference === "escrow_funded" || (status.includes("funded") && escrowLedgerValue(payment, "funded") > 0);
 }
 
 function isRefundPayment(payment) {
@@ -391,40 +327,18 @@ function isActionablePayment(payment) {
 
 function isPaymentHistoryRecord(payment) {
   const status = paymentStatusText(payment);
-  return (
-    isEscrowReleasePayment(payment) ||
-    isCustomerPaidPayment(payment) ||
-    isRefundPayment(payment) ||
-    status.includes("failed") ||
-    status.includes("reversed")
-  );
+  return isEscrowReleasePayment(payment) || isCustomerPaidPayment(payment) || isRefundPayment(payment) || status.includes("failed") || status.includes("reversed");
 }
 
 function isEscrowAdjustmentRecord(payment) {
   const status = paymentStatusText(payment);
   const type = paymentTypeText(payment);
   const notes = String(payment?.notes || "").toLowerCase();
-  return (
-    type.includes("adjustment") ||
-    type.includes("chargeback") ||
-    type.includes("reversal") ||
-    status.includes("chargeback") ||
-    status.includes("reversed") ||
-    status.includes("reversal") ||
-    notes.includes("adjustment") ||
-    notes.includes("chargeback") ||
-    notes.includes("reversal")
-  );
+  return type.includes("adjustment") || type.includes("chargeback") || type.includes("reversal") || status.includes("chargeback") || status.includes("reversed") || status.includes("reversal") || notes.includes("adjustment") || notes.includes("chargeback") || notes.includes("reversal");
 }
 
 function isEscrowHistoryRecord(payment) {
-  return (
-    isEscrowFundingPayment(payment) ||
-    isEscrowReleasePayment(payment) ||
-    isRefundPayment(payment) ||
-    Boolean(payment?.dispute_escrow_hold_active) ||
-    isEscrowAdjustmentRecord(payment)
-  );
+  return isEscrowFundingPayment(payment) || isEscrowReleasePayment(payment) || isRefundPayment(payment) || Boolean(payment?.dispute_escrow_hold_active) || isEscrowAdjustmentRecord(payment);
 }
 
 function paymentHistoryLabel(payment) {
@@ -458,10 +372,7 @@ function escrowHistoryDescription(payment) {
   if (isEscrowReleasePayment(payment)) {
     const reference = payment.invoice_number || payment.reference || "this paid invoice";
     const remaining = escrowLedgerValue(payment, "available") || escrowLedgerValue(payment, "remaining") || escrowLedgerValue(payment, "balance_after");
-    return [
-      `Released from escrow for paid invoice ${reference}.`,
-      remaining ? `Remaining escrow after release: ${moneyLabel(remaining)}.` : "",
-    ].filter(Boolean).join(" ");
+    return [`Released from escrow for paid invoice ${reference}.`, remaining ? `Remaining escrow after release: ${moneyLabel(remaining)}.` : ""].filter(Boolean).join(" ");
   }
   if (payment?.dispute_escrow_hold_active) return "Escrow balance is paused while this issue is reviewed";
   if (isRefundPayment(payment)) return payment?.status === "eligible" ? "Available for homeowner refund review" : "Refund issued from escrow";
@@ -517,10 +428,7 @@ function escrowHistoryWithRunningBalances(rows = []) {
   return [...(rows || [])]
     .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
     .map((payment) => {
-      const ledgerBalance =
-        escrowLedgerValue(payment, "available") ||
-        escrowLedgerValue(payment, "remaining") ||
-        escrowLedgerValue(payment, "balance_after");
+      const ledgerBalance = escrowLedgerValue(payment, "available") || escrowLedgerValue(payment, "remaining") || escrowLedgerValue(payment, "balance_after");
       const signedAmount = escrowSignedAmount(payment);
       balance = ledgerBalance || Math.max(0, balance + signedAmount);
       return { payment, signedAmount, balance };
@@ -585,14 +493,7 @@ function isArchivedNotification(notification) {
   return Boolean(notification?.is_archived || notification?.archived_at || notification?.status === "dismissed" || notification?.status === "archived");
 }
 
-const ACTIONABLE_NOTIFICATION_EVENTS = new Set([
-  "agreement_needs_signature",
-  "escrow_needs_funding",
-  "milestone_needs_approval",
-  "reimbursement_submitted",
-  "customer_bid_received",
-  "request_marketplace_ready",
-]);
+const ACTIONABLE_NOTIFICATION_EVENTS = new Set(["agreement_needs_signature", "escrow_needs_funding", "milestone_needs_approval", "reimbursement_submitted", "customer_bid_received", "request_marketplace_ready"]);
 
 function hasOpenDispute(payment) {
   const value = String(payment?.dispute_status || payment?.dispute_status_label || "").toLowerCase();
@@ -602,12 +503,27 @@ function hasOpenDispute(payment) {
 function customerDisputeStatus(payment) {
   if (!hasOpenDispute(payment)) return null;
   const resolution = String(payment?.dispute_resolution_type || "").trim();
-  if (resolution) return { label: "Resolution recorded", detail: "Review the dispute thread for the recorded outcome and next steps." };
-  if (payment?.dispute_escrow_hold_active) return { label: "Escrow hold active", detail: "Funds tied to this issue remain paused while the dispute is reviewed." };
+  if (resolution)
+    return {
+      label: "Resolution recorded",
+      detail: "Review the dispute thread for the recorded outcome and next steps.",
+    };
+  if (payment?.dispute_escrow_hold_active)
+    return {
+      label: "Escrow hold active",
+      detail: "Funds tied to this issue remain paused while the dispute is reviewed.",
+    };
   const next = String(payment?.dispute_next_action || "").trim();
-  if (next) return { label: next, detail: "Track the issue status before approving any release." };
+  if (next)
+    return {
+      label: next,
+      detail: "Track the issue status before approving any release.",
+    };
   const label = payment.dispute_status_label || payment.dispute_status || "Dispute opened";
-  return { label, detail: "Track the issue status before approving any release." };
+  return {
+    label,
+    detail: "Track the issue status before approving any release.",
+  };
 }
 
 function isReimbursementPayment(payment) {
@@ -649,15 +565,24 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
   }, 0);
   const escrowEventTotal = escrowHistory.reduce((sum, payment) => sum + Math.abs(escrowSignedAmount(payment)), 0);
   const agreementRows = (agreements || []).map((agreement) => {
-    const agreementTitle = String(agreement.project_title || agreement.title || "").trim().toLowerCase();
+    const agreementTitle = String(agreement.project_title || agreement.title || "")
+      .trim()
+      .toLowerCase();
     const related = payments.filter((payment) => {
       if (String(payment.agreement_id || "") === String(agreement.id || "")) return true;
-      const paymentTitle = String(payment.project_title || "").trim().toLowerCase();
+      const paymentTitle = String(payment.project_title || "")
+        .trim()
+        .toLowerCase();
       return Boolean(agreementTitle && paymentTitle && paymentTitle === agreementTitle);
     });
     const summary = agreement.payment_summary || paymentSummary(related);
     const milestones = agreement.milestones || [];
-    const completed = milestones.filter((milestone) => String(milestone.status || "").toLowerCase().includes("complete") || milestone.completed).length;
+    const completed = milestones.filter(
+      (milestone) =>
+        String(milestone.status || "")
+          .toLowerCase()
+          .includes("complete") || milestone.completed
+    ).length;
     const milestoneLabel = milestones.length ? `${completed} of ${milestones.length} complete` : "Milestones pending";
     const paidPercent = paidProgress(summary, agreement);
     return { agreement, related, summary, milestoneLabel, paidPercent };
@@ -676,9 +601,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
     <div data-testid="customer-portal-payments" className="space-y-5">
       <section className="rounded-2xl border border-amber-300/35 bg-amber-300/10 p-5">
         <h2 className="text-xl font-semibold text-white">Project Payment Center</h2>
-        <p className="mt-1 max-w-3xl text-sm leading-6 text-amber-100">
-          Start with the project, then review escrow funded, releases, invoices, refunds, and the milestone progress behind each payment.
-        </p>
+        <p className="mt-1 max-w-3xl text-sm leading-6 text-amber-100">Start with the project, then review escrow funded, releases, invoices, refunds, and the milestone progress behind each payment.</p>
       </section>
 
       <section data-testid="customer-payments-summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -692,9 +615,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-200">Escrow Summary</div>
           <h3 className="mt-1 text-lg font-semibold text-white">Money held and released through MyHomeBro</h3>
-          <p className="mt-1 text-sm leading-6 text-sky-100/85">
-            Invoice & Payment History answers which invoice was paid. Escrow History shows how the escrow balance changed after deposits, releases, holds, refunds, and adjustments.
-          </p>
+          <p className="mt-1 text-sm leading-6 text-sky-100/85">Invoice & Payment History answers which invoice was paid. Escrow History shows how the escrow balance changed after deposits, releases, holds, refunds, and adjustments.</p>
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           <StatCard label="Escrow Funded" value={moneyLabel(escrowTotals.funded)} testId="customer-payments-escrow-funded" />
@@ -710,36 +631,38 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
           <div className="space-y-3">
-            {agreementRows.length ? agreementRows.map(({ agreement, summary, milestoneLabel, paidPercent }) => (
-              <button
-                key={agreement.id}
-                type="button"
-                data-testid={`customer-payment-agreement-${agreement.id}`}
-                onClick={() => setSelectedAgreementId(agreement.id)}
-                className={`w-full rounded-2xl border p-4 text-left transition ${
-                  String(selectedAgreement?.agreement?.id) === String(agreement.id)
-                    ? "border-amber-300/55 bg-amber-300/10"
-                    : "border-slate-700 bg-slate-900/60 hover:border-slate-500"
-                }`}
-              >
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-white">{agreement.project_title || agreement.title || "Project"}</div>
-                    <div className="mt-1 text-xs text-slate-400">{agreement.contractor_name || "Contractor"} - {agreement.customer_status_label || agreement.status_label || "Project"}</div>
+            {agreementRows.length ? (
+              agreementRows.map(({ agreement, summary, milestoneLabel, paidPercent }) => (
+                <button key={agreement.id} type="button" data-testid={`customer-payment-agreement-${agreement.id}`} onClick={() => setSelectedAgreementId(agreement.id)} className={`w-full rounded-2xl border p-4 text-left transition ${String(selectedAgreement?.agreement?.id) === String(agreement.id) ? "border-amber-300/55 bg-amber-300/10" : "border-slate-700 bg-slate-900/60 hover:border-slate-500"}`}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-white">{agreement.project_title || agreement.title || "Project"}</div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        {agreement.contractor_name || "Contractor"} - {agreement.customer_status_label || agreement.status_label || "Project"}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2 sm:justify-end">
+                      <Badge>{milestoneLabel}</Badge>
+                      <Badge tone={paidPercent > 0 ? "gold" : "slate"}>{paidPercent}% released</Badge>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2 sm:justify-end">
-                    <Badge>{milestoneLabel}</Badge>
-                    <Badge tone={paidPercent > 0 ? "gold" : "slate"}>{paidPercent}% released</Badge>
+                  <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
+                    <span>
+                      Project value: <strong className="text-white">{moneyLabel(Number(summary.project_value || agreement.total_cost || 0))}</strong>
+                    </span>
+                    <span>
+                      Escrow funded: <strong className="text-white">{moneyLabel(Number(summary.escrow_funded || 0))}</strong>
+                    </span>
+                    <span>
+                      Released: <strong className="text-white">{moneyLabel(Number(summary.released_to_contractor || 0))}</strong>
+                    </span>
+                    <span>
+                      Remaining: <strong className="text-white">{moneyLabel(Number(summary.remaining_in_escrow || 0))}</strong>
+                    </span>
                   </div>
-                </div>
-                <div className="mt-3 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
-                  <span>Project value: <strong className="text-white">{moneyLabel(Number(summary.project_value || agreement.total_cost || 0))}</strong></span>
-                  <span>Escrow funded: <strong className="text-white">{moneyLabel(Number(summary.escrow_funded || 0))}</strong></span>
-                  <span>Released: <strong className="text-white">{moneyLabel(Number(summary.released_to_contractor || 0))}</strong></span>
-                  <span>Remaining: <strong className="text-white">{moneyLabel(Number(summary.remaining_in_escrow || 0))}</strong></span>
-                </div>
-              </button>
-            )) : (
+                </button>
+              ))
+            ) : (
               <EmptyState title="No project payments yet" testId="customer-payments-agreement-empty">
                 Project-level payment summaries appear here once agreements or payments are connected.
               </EmptyState>
@@ -753,13 +676,27 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                 <div data-testid="customer-selected-project-financial-summary" className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/45 p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project Financial Summary</div>
                   <div className="mt-3 grid gap-2 text-sm text-slate-300">
-                    <div>Project Value: <strong className="text-white">{moneyLabel(selectedProjectValue)}</strong></div>
-                    <div>Paid to Contractor: <strong className="text-white">{moneyLabel(selectedPaidToContractor)}</strong></div>
-                    <div>Remaining Project Value: <strong className="text-white">{moneyLabel(selectedRemainingProjectValue)}</strong></div>
-                    <div>Escrow Funded: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.escrow_funded || 0))}</strong></div>
-                    <div>Remaining Escrow: <strong className="text-white">{moneyLabel(selectedRemainingEscrow)}</strong></div>
-                    <div>Milestone Progress: <strong className="text-white">{selectedAgreement.milestoneLabel}</strong></div>
-                    <div>Paid Progress: <strong className="text-white">{selectedAgreement.paidPercent}% of project value paid</strong></div>
+                    <div>
+                      Project Value: <strong className="text-white">{moneyLabel(selectedProjectValue)}</strong>
+                    </div>
+                    <div>
+                      Paid to Contractor: <strong className="text-white">{moneyLabel(selectedPaidToContractor)}</strong>
+                    </div>
+                    <div>
+                      Remaining Project Value: <strong className="text-white">{moneyLabel(selectedRemainingProjectValue)}</strong>
+                    </div>
+                    <div>
+                      Escrow Funded: <strong className="text-white">{moneyLabel(Number(selectedAgreement.summary.escrow_funded || 0))}</strong>
+                    </div>
+                    <div>
+                      Remaining Escrow: <strong className="text-white">{moneyLabel(selectedRemainingEscrow)}</strong>
+                    </div>
+                    <div>
+                      Milestone Progress: <strong className="text-white">{selectedAgreement.milestoneLabel}</strong>
+                    </div>
+                    <div>
+                      Paid Progress: <strong className="text-white">{selectedAgreement.paidPercent}% of project value paid</strong>
+                    </div>
                   </div>
                 </div>
                 <div className="mt-4 space-y-4">
@@ -767,35 +704,49 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Invoice & Payment History</div>
                     <p className="mt-1 text-xs leading-5 text-slate-400">What work has been paid for.</p>
                     <div className="mt-2 space-y-2">
-                      {selectedPaymentHistoryRows.length ? selectedPaymentHistoryRows.slice(0, 4).map(({ payment, totalPaid, percentPaid }) => (
-                        <div key={payment.id} data-testid={`customer-selected-payment-running-${payment.id}`} className="space-y-2">
-                          <PaymentActionCard payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
-                          <div className="rounded-xl border border-slate-700 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">
-                            <div>Amount Paid: <strong className="text-white">{moneyLabel(paymentAmountValue(payment))}</strong></div>
-                            <div>Total Paid To Date: <strong className="text-white">{moneyLabel(totalPaid)}</strong></div>
-                            <div>{percentPaid}% of Project Value Paid</div>
+                      {selectedPaymentHistoryRows.length ? (
+                        selectedPaymentHistoryRows.slice(0, 4).map(({ payment, totalPaid, percentPaid }) => (
+                          <div key={payment.id} data-testid={`customer-selected-payment-running-${payment.id}`} className="space-y-2">
+                            <PaymentActionCard payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
+                            <div className="rounded-xl border border-slate-700 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">
+                              <div>
+                                Amount Paid: <strong className="text-white">{moneyLabel(paymentAmountValue(payment))}</strong>
+                              </div>
+                              <div>
+                                Total Paid To Date: <strong className="text-white">{moneyLabel(totalPaid)}</strong>
+                              </div>
+                              <div>{percentPaid}% of Project Value Paid</div>
+                            </div>
                           </div>
-                        </div>
-                      )) : (
+                        ))
+                      ) : (
                         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No contractor releases, direct payments, refunds, or adjustments are connected yet.</div>
                       )}
                     </div>
                   </div>
                   <div data-testid="customer-selected-escrow-history">
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Escrow History</div>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">
-                      How your escrow balance changed after deposits, releases, holds, refunds, and adjustments.
-                    </p>
+                    <p className="mt-1 text-xs leading-5 text-slate-400">How your escrow balance changed after deposits, releases, holds, refunds, and adjustments.</p>
                     <div className="mt-2 space-y-2">
-                      {selectedEscrowHistoryRows.length ? selectedEscrowHistoryRows.slice(0, 4).map(({ payment, signedAmount, balance }) => (
-                        <div key={payment.id} data-testid={`customer-selected-escrow-running-${payment.id}`} className="space-y-2">
-                          <PaymentActionCard payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
-                          <div className="rounded-xl border border-slate-700 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">
-                            <div>Amount: <strong className="text-white">{signedAmount >= 0 ? "+" : "-"}{moneyLabel(Math.abs(signedAmount))}</strong></div>
-                            <div>Balance: <strong className="text-white">{moneyLabel(balance)}</strong></div>
+                      {selectedEscrowHistoryRows.length ? (
+                        selectedEscrowHistoryRows.slice(0, 4).map(({ payment, signedAmount, balance }) => (
+                          <div key={payment.id} data-testid={`customer-selected-escrow-running-${payment.id}`} className="space-y-2">
+                            <PaymentActionCard payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-selected-escrow-action-${payment.id}`} />
+                            <div className="rounded-xl border border-slate-700 bg-slate-950/45 px-3 py-2 text-xs text-slate-300">
+                              <div>
+                                Amount:{" "}
+                                <strong className="text-white">
+                                  {signedAmount >= 0 ? "+" : "-"}
+                                  {moneyLabel(Math.abs(signedAmount))}
+                                </strong>
+                              </div>
+                              <div>
+                                Balance: <strong className="text-white">{moneyLabel(balance)}</strong>
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      )) : (
+                        ))
+                      ) : (
                         <div className="rounded-xl border border-dashed border-slate-700 bg-slate-950/45 p-3 text-sm text-slate-400">No escrow deposits, holds, refunds, or balance adjustments are connected yet.</div>
                       )}
                     </div>
@@ -821,9 +772,7 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-2">
           {attention.length ? (
-            attention.map((payment) => (
-              <PaymentActionCard key={payment.id} payment={payment} token={token} onPortalUpdate={onPortalUpdate} />
-            ))
+            attention.map((payment) => <PaymentActionCard key={payment.id} payment={payment} token={token} onPortalUpdate={onPortalUpdate} />)
           ) : (
             <div className="lg:col-span-2">
               <EmptyState title="No payments need review" testId="customer-payments-attention-empty">
@@ -839,33 +788,25 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           <div>
             <h3 className="text-lg font-semibold text-white">Invoice & Payment History</h3>
             <p className="mt-1 text-sm text-slate-400">
-              {paymentHistory.length} payment record{paymentHistory.length === 1 ? "" : "s"} · {moneyLabel(paymentHistoryTotal)} paid or released
+              {paymentHistory.length} payment record
+              {paymentHistory.length === 1 ? "" : "s"} · {moneyLabel(paymentHistoryTotal)} paid or released
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{paymentHistory.length} records</Badge>
-            <button
-              type="button"
-              data-testid="customer-payments-history-toggle"
-              onClick={() => setPaymentHistoryCollapsed((value) => !value)}
-              className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
-            >
+            <button type="button" data-testid="customer-payments-history-toggle" onClick={() => setPaymentHistoryCollapsed((value) => !value)} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white">
               {paymentHistoryCollapsed ? "Expand" : "Collapse"}
             </button>
           </div>
         </div>
         {paymentHistoryCollapsed ? (
           <div data-testid="customer-payment-history-collapsed-summary" className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/55 p-4 text-sm text-slate-300">
-            {paymentHistory.length
-              ? `${paymentHistory.length} records hidden. Total paid or released: ${moneyLabel(paymentHistoryTotal)}.`
-              : "No invoice or payment history records yet."}
+            {paymentHistory.length ? `${paymentHistory.length} records hidden. Total paid or released: ${moneyLabel(paymentHistoryTotal)}.` : "No invoice or payment history records yet."}
           </div>
         ) : (
           <div data-testid="customer-payment-history" className="mt-4 space-y-3">
             {paymentHistory.length ? (
-              paymentHistory.map((payment) => (
-                <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />
-              ))
+              paymentHistory.map((payment) => <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={paymentHistoryLabel(payment)} displayDescription={paymentHistoryDescription(payment)} />)
             ) : payments.length ? null : (
               <EmptyState title="No payment records yet" testId="customer-payments-empty">
                 Contractor releases, direct payments, refunds, and adjustments will appear here when they are connected to this secure customer record.
@@ -880,36 +821,26 @@ function PaymentsPanel({ payments = [], agreements = [], token = "", onPortalUpd
           <div>
             <h3 className="text-lg font-semibold text-white">Escrow History</h3>
             <p className="mt-1 text-sm text-slate-400">
-              {escrowHistory.length} escrow event{escrowHistory.length === 1 ? "" : "s"} · Current balance {moneyLabel(escrowTotals.remaining)}
+              {escrowHistory.length} escrow event
+              {escrowHistory.length === 1 ? "" : "s"} · Current balance {moneyLabel(escrowTotals.remaining)}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{escrowHistory.length} records</Badge>
-            <button
-              type="button"
-              data-testid="customer-escrow-history-toggle"
-              onClick={() => setEscrowHistoryCollapsed((value) => !value)}
-              className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white"
-            >
+            <button type="button" data-testid="customer-escrow-history-toggle" onClick={() => setEscrowHistoryCollapsed((value) => !value)} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white">
               {escrowHistoryCollapsed ? "Expand" : "Collapse"}
             </button>
           </div>
         </div>
-        <p className="mt-1 text-sm leading-6 text-slate-400">
-          This ledger shows escrow balance movement. Invoice & Payment History shows which invoice or contractor payout was paid.
-        </p>
+        <p className="mt-1 text-sm leading-6 text-slate-400">This ledger shows escrow balance movement. Invoice & Payment History shows which invoice or contractor payout was paid.</p>
         {escrowHistoryCollapsed ? (
           <div data-testid="customer-escrow-history-collapsed-summary" className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/55 p-4 text-sm text-slate-300">
-            {escrowHistory.length
-              ? `${escrowHistory.length} escrow records hidden. Recorded escrow movement: ${moneyLabel(escrowEventTotal)}.`
-              : "No escrow history records yet."}
+            {escrowHistory.length ? `${escrowHistory.length} escrow records hidden. Recorded escrow movement: ${moneyLabel(escrowEventTotal)}.` : "No escrow history records yet."}
           </div>
         ) : (
           <div data-testid="customer-escrow-history" className="mt-4 space-y-3">
             {escrowHistory.length ? (
-              escrowHistory.map((payment) => (
-                <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-escrow-action-${payment.id}`} />
-              ))
+              escrowHistory.map((payment) => <PaymentActionCard key={payment.id} payment={payment} compact token={token} onPortalUpdate={onPortalUpdate} displayLabel={escrowHistoryLabel(payment)} displayDescription={escrowHistoryDescription(payment)} cardTestId={`customer-escrow-action-${payment.id}`} />)
             ) : (
               <EmptyState title="No escrow records yet" testId="customer-escrow-history-empty">
                 Escrow deposits, holds, refunds, reversals, and adjustments will appear here when this project uses milestone holds.
@@ -960,193 +891,142 @@ function PaymentActionCard({ payment, compact = false, token = "", onPortalUpdat
 
   return (
     <>
-    <article data-testid={cardTestId || `customer-payment-action-${payment.id}`} className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${compact ? "" : "shadow-xl shadow-slate-950/20"}`}>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap gap-2">
-            <Badge>{displayLabel || payment.record_type_label || "Payment"}</Badge>
-            <Badge>{payment.status_label || "Pending"}</Badge>
-          </div>
-          <div className="mt-3 text-sm font-semibold text-white">{payment.project_title}</div>
-          {displayDescription ? <p className="mt-1 text-xs font-medium text-slate-300">{displayDescription}</p> : null}
-          <div className="mt-1 text-xs text-slate-500">
-            {payment.date ? new Date(payment.date).toLocaleDateString() : "No date"}
-            {payment.reference ? ` - ${payment.reference}` : ""}
-          </div>
-          <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
-            <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : "Contractor: Your contractor"}</span>
-            <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Secure payment"}</span>
-            {payment.due_date ? <span>Due: {new Date(payment.due_date).toLocaleDateString()}</span> : null}
-            {payment.invoice_number ? <span>Invoice: {payment.invoice_number}</span> : null}
-            {disputeStatus ? <span className="text-rose-100">Issue: {disputeStatus.label}</span> : null}
-          </div>
-          {disputeStatus ? (
-            <div data-testid={`customer-payment-dispute-status-${payment.id}`} className="mt-3 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-50">
-              <div className="font-semibold">{disputeStatus.label}</div>
-              <p className="mt-1 leading-6 text-rose-100/85">{disputeStatus.detail}</p>
+      <article data-testid={cardTestId || `customer-payment-action-${payment.id}`} className={`rounded-2xl border border-slate-700 bg-slate-900/70 p-4 ${compact ? "" : "shadow-xl shadow-slate-950/20"}`}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap gap-2">
+              <Badge>{displayLabel || payment.record_type_label || "Payment"}</Badge>
+              <Badge>{payment.status_label || "Pending"}</Badge>
             </div>
-          ) : null}
-          {payment.notes ? <p className="mt-2 text-sm text-slate-300">{payment.notes}</p> : null}
-          {isReimbursementPayment(payment) && payment.escrow_ledger?.available ? (
-            <p className="mt-2 text-xs text-amber-100">
-              Available escrow before this request: ${payment.escrow_ledger.available}. Approval queues release from escrow and reduces funds available for later milestone releases.
-            </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 flex-col gap-2 sm:items-end">
-          <div className="text-lg font-bold text-white">{payment.amount_label || "$0.00"}</div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto">
-            {target && target !== "#" ? (
-              <a
-                data-testid={`customer-payment-primary-${payment.id}`}
-                href={target}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
-              >
-                {paymentActionLabel(payment)}
-                <ExternalLink size={14} />
-              </a>
+            <div className="mt-3 text-sm font-semibold text-white">{payment.project_title}</div>
+            {displayDescription ? <p className="mt-1 text-xs font-medium text-slate-300">{displayDescription}</p> : null}
+            <div className="mt-1 text-xs text-slate-500">
+              {payment.date ? new Date(payment.date).toLocaleDateString() : "No date"}
+              {payment.reference ? ` - ${payment.reference}` : ""}
+            </div>
+            <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+              <span>{payment.contractor_name ? `Contractor: ${payment.contractor_name}` : "Contractor: Your contractor"}</span>
+              <span>{payment.payment_mode_label ? `Method: ${payment.payment_mode_label}` : "Method: Secure payment"}</span>
+              {payment.due_date ? <span>Due: {new Date(payment.due_date).toLocaleDateString()}</span> : null}
+              {payment.invoice_number ? <span>Invoice: {payment.invoice_number}</span> : null}
+              {disputeStatus ? <span className="text-rose-100">Issue: {disputeStatus.label}</span> : null}
+            </div>
+            {disputeStatus ? (
+              <div data-testid={`customer-payment-dispute-status-${payment.id}`} className="mt-3 rounded-xl border border-rose-300/35 bg-rose-400/10 p-3 text-sm text-rose-50">
+                <div className="font-semibold">{disputeStatus.label}</div>
+                <p className="mt-1 leading-6 text-rose-100/85">{disputeStatus.detail}</p>
+              </div>
             ) : null}
-            {isInvoicePayment(payment) && invoiceUrl && actionable ? (
-              <>
-                <a
-                  data-testid={`customer-payment-view-invoice-${payment.id}`}
-                  href={invoiceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-300/35 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20"
-                >
-                  View Invoice
+            {payment.notes ? <p className="mt-2 text-sm text-slate-300">{payment.notes}</p> : null}
+            {isReimbursementPayment(payment) && payment.escrow_ledger?.available ? <p className="mt-2 text-xs text-amber-100">Available escrow before this request: ${payment.escrow_ledger.available}. Approval queues release from escrow and reduces funds available for later milestone releases.</p> : null}
+          </div>
+          <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+            <div className="text-lg font-bold text-white">{payment.amount_label || "$0.00"}</div>
+            <div className="flex w-full flex-col gap-2 sm:w-auto">
+              {target && target !== "#" ? (
+                <a data-testid={`customer-payment-primary-${payment.id}`} href={target} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
+                  {paymentActionLabel(payment)}
                   <ExternalLink size={14} />
                 </a>
-                <a
-                  data-testid={`customer-payment-open-dispute-${payment.id}`}
-                  href={disputeUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
-                >
-                  Open Dispute
+              ) : null}
+              {isInvoicePayment(payment) && invoiceUrl && actionable ? (
+                <>
+                  <a data-testid={`customer-payment-view-invoice-${payment.id}`} href={invoiceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-sky-300/35 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
+                    View Invoice
+                    <ExternalLink size={14} />
+                  </a>
+                  <a data-testid={`customer-payment-open-dispute-${payment.id}`} href={disputeUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20">
+                    Open Dispute
+                    <ExternalLink size={14} />
+                  </a>
+                </>
+              ) : null}
+              {hasOpenDispute(payment) && payment.dispute_url ? (
+                <a data-testid={`customer-payment-track-dispute-${payment.id}`} href={payment.dispute_url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20">
+                  Track Issue Status
                   <ExternalLink size={14} />
                 </a>
-              </>
-            ) : null}
-            {hasOpenDispute(payment) && payment.dispute_url ? (
-              <a
-                data-testid={`customer-payment-track-dispute-${payment.id}`}
-                href={payment.dispute_url}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20"
+              ) : null}
+              {canReviewReimbursement(payment) ? (
+                <>
+                  <button type="button" data-testid={`customer-payment-approve-reimbursement-${payment.record_id}`} onClick={() => runReimbursementAction("approve")} disabled={Boolean(busyAction)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60">
+                    {busyAction === "approve" ? "Approving..." : "Approve Reimbursement"}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid={`customer-payment-deny-reimbursement-${payment.record_id}`}
+                    onClick={() => {
+                      setDenyReason("");
+                      setDenyError("");
+                      setDenyModalOpen(true);
+                    }}
+                    disabled={Boolean(busyAction)}
+                    className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
+                  >
+                    {busyAction === "deny" ? "Denying..." : "Deny"}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </article>
+      {denyModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Deny reimbursement">
+          <div className="w-full max-w-lg rounded-3xl border border-rose-300/35 bg-slate-950 p-5 shadow-2xl">
+            <div className="text-xs font-bold uppercase tracking-[0.2em] text-rose-200">Reimbursement Review</div>
+            <h3 className="mt-1 text-2xl font-extrabold text-white">Deny reimbursement?</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">Add a reason so the contractor understands what needs to change. This does not release escrow funds.</p>
+            <label className="mt-4 block text-sm font-semibold text-slate-200">
+              Reason
+              <textarea
+                data-testid={`customer-payment-deny-reason-${payment.record_id}`}
+                value={denyReason}
+                onChange={(event) => {
+                  setDenyReason(event.target.value);
+                  setDenyError("");
+                }}
+                rows={4}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-rose-300"
+                placeholder="Explain why this reimbursement should not be approved yet."
+              />
+            </label>
+            {denyError ? <div className="mt-3 text-sm font-semibold text-rose-100">{denyError}</div> : null}
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setDenyModalOpen(false)} disabled={Boolean(busyAction)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60">
+                Keep Review Open
+              </button>
+              <button
+                type="button"
+                data-testid={`customer-payment-confirm-deny-${payment.record_id}`}
+                onClick={async () => {
+                  if (!String(denyReason || "").trim()) {
+                    setDenyError("Add a reason before denying this reimbursement.");
+                    return;
+                  }
+                  await runReimbursementAction("deny", denyReason);
+                  setDenyModalOpen(false);
+                  setDenyReason("");
+                }}
+                disabled={Boolean(busyAction)}
+                className="rounded-xl bg-rose-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-rose-200 disabled:opacity-60"
               >
-                Track Issue Status
-                <ExternalLink size={14} />
-              </a>
-            ) : null}
-            {canReviewReimbursement(payment) ? (
-              <>
-                <button
-                  type="button"
-                  data-testid={`customer-payment-approve-reimbursement-${payment.record_id}`}
-                  onClick={() => runReimbursementAction("approve")}
-                  disabled={Boolean(busyAction)}
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-emerald-300/40 bg-emerald-400/10 px-4 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/20 disabled:opacity-60"
-                >
-                  {busyAction === "approve" ? "Approving..." : "Approve Reimbursement"}
-                </button>
-                <button
-                  type="button"
-                  data-testid={`customer-payment-deny-reimbursement-${payment.record_id}`}
-                  onClick={() => {
-                    setDenyReason("");
-                    setDenyError("");
-                    setDenyModalOpen(true);
-                  }}
-                  disabled={Boolean(busyAction)}
-                  className="inline-flex min-h-11 items-center justify-center rounded-xl border border-rose-300/40 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-400/20 disabled:opacity-60"
-                >
-                  {busyAction === "deny" ? "Denying..." : "Deny"}
-                </button>
-              </>
-            ) : null}
+                {busyAction === "deny" ? "Denying..." : "Deny Reimbursement"}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-    </article>
-    {denyModalOpen ? (
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Deny reimbursement">
-        <div className="w-full max-w-lg rounded-3xl border border-rose-300/35 bg-slate-950 p-5 shadow-2xl">
-          <div className="text-xs font-bold uppercase tracking-[0.2em] text-rose-200">Reimbursement Review</div>
-          <h3 className="mt-1 text-2xl font-extrabold text-white">Deny reimbursement?</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
-            Add a reason so the contractor understands what needs to change. This does not release escrow funds.
-          </p>
-          <label className="mt-4 block text-sm font-semibold text-slate-200">
-            Reason
-            <textarea
-              data-testid={`customer-payment-deny-reason-${payment.record_id}`}
-              value={denyReason}
-              onChange={(event) => {
-                setDenyReason(event.target.value);
-                setDenyError("");
-              }}
-              rows={4}
-              className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none placeholder:text-slate-500 focus:border-rose-300"
-              placeholder="Explain why this reimbursement should not be approved yet."
-            />
-          </label>
-          {denyError ? <div className="mt-3 text-sm font-semibold text-rose-100">{denyError}</div> : null}
-          <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setDenyModalOpen(false)}
-              disabled={Boolean(busyAction)}
-              className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 hover:bg-slate-800 disabled:opacity-60"
-            >
-              Keep Review Open
-            </button>
-            <button
-              type="button"
-              data-testid={`customer-payment-confirm-deny-${payment.record_id}`}
-              onClick={async () => {
-                if (!String(denyReason || "").trim()) {
-                  setDenyError("Add a reason before denying this reimbursement.");
-                  return;
-                }
-                await runReimbursementAction("deny", denyReason);
-                setDenyModalOpen(false);
-                setDenyReason("");
-              }}
-              disabled={Boolean(busyAction)}
-              className="rounded-xl bg-rose-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-rose-200 disabled:opacity-60"
-            >
-              {busyAction === "deny" ? "Denying..." : "Deny Reimbursement"}
-            </button>
-          </div>
-        </div>
-      </div>
-    ) : null}
+      ) : null}
     </>
   );
 }
 
 function propertyHasAddress(profile = {}) {
-  return Boolean(
-    String(profile.address_line1 || "").trim() &&
-      String(profile.city || "").trim() &&
-      String(profile.state || "").trim()
-  );
+  return Boolean(String(profile.address_line1 || "").trim() && String(profile.city || "").trim() && String(profile.state || "").trim());
 }
 
 function propertyHasDetails(profile = {}) {
-  return Boolean(
-    String(profile.display_name || "").trim() ||
-      String(profile.property_type || "").trim() ||
-      Number(profile.year_built || 0) > 0 ||
-      Number(profile.square_feet || 0) > 0 ||
-      String(profile.notes || "").trim()
-  );
+  return Boolean(String(profile.display_name || "").trim() || String(profile.property_type || "").trim() || Number(profile.year_built || 0) > 0 || Number(profile.square_feet || 0) > 0 || String(profile.notes || "").trim());
 }
 
 function customerHasDocuments(portal = {}) {
@@ -1163,37 +1043,18 @@ function customerHasDocuments(portal = {}) {
 }
 
 function agreementNeedsCustomerAction(agreement = {}) {
-  const status = String(
-    agreement.status || agreement.signature_status || agreement.agreement_status || agreement.state || ""
-  ).toLowerCase();
-  return (
-    status.includes("signature") ||
-    status.includes("sent") ||
-    agreement.requires_signature === true ||
-    agreement.signed_by_homeowner === false ||
-    agreement.customer_action_required === true
-  );
+  const status = String(agreement.status || agreement.signature_status || agreement.agreement_status || agreement.state || "").toLowerCase();
+  return status.includes("signature") || status.includes("sent") || agreement.requires_signature === true || agreement.signed_by_homeowner === false || agreement.customer_action_required === true;
 }
 
 function systemNeedsHomeownerAttention(system = {}) {
   const status = String(system.maintenance_status || system.maintenanceStatus || "").toLowerCase();
   const priority = String(system.priority || "").toLowerCase();
-  return (
-    status.includes("overdue") ||
-    status.includes("due_soon") ||
-    status.includes("warranty_expir") ||
-    status.includes("lifespan") ||
-    priority === "high" ||
-    priority === "critical"
-  );
+  return status.includes("overdue") || status.includes("due_soon") || status.includes("warranty_expir") || status.includes("lifespan") || priority === "high" || priority === "critical";
 }
 
 function homeSystemAttentionItems(portal = {}) {
-  const profiles = Array.isArray(portal.property_profiles)
-    ? portal.property_profiles
-    : portal.property_profile?.id
-      ? [portal.property_profile]
-      : [];
+  const profiles = Array.isArray(portal.property_profiles) ? portal.property_profiles : portal.property_profile?.id ? [portal.property_profile] : [];
   const rows = [];
   for (const profile of profiles) {
     for (const system of profile.home_systems || []) {
@@ -1294,16 +1155,15 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
 
   if (completeCount === items.length) {
     return (
-      <section
-        data-testid="customer-activation-checklist"
-        className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4"
-      >
+      <section data-testid="customer-activation-checklist" className="rounded-2xl border border-emerald-300/25 bg-emerald-400/10 p-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-sm font-semibold text-white">Home Profile Setup complete</div>
             <p className="mt-1 text-sm text-emerald-100">Your basic Customer Portal setup is ready.</p>
           </div>
-          <Badge tone="gold">{completeCount} of {items.length} complete</Badge>
+          <Badge tone="gold">
+            {completeCount} of {items.length} complete
+          </Badge>
         </div>
       </section>
     );
@@ -1311,31 +1171,22 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
 
   if (mostlyComplete && !expanded) {
     return (
-      <section
-        data-testid="customer-activation-checklist"
-        className="rounded-2xl border border-sky-300/25 bg-slate-950/60 p-4"
-      >
+      <section data-testid="customer-activation-checklist" className="rounded-2xl border border-sky-300/25 bg-slate-950/60 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <div className="text-sm font-semibold text-white">Home Profile Setup: {completeCount} of {items.length} complete</div>
-            <p className="mt-1 text-sm text-slate-300">
-              {allSetupDone
-                ? "Any remaining active tasks are shown above in Needs Attention."
-                : `${remainingSetupItems[0]?.title || "One setup item"} is the only setup item left.`}
-            </p>
+            <div className="text-sm font-semibold text-white">
+              Home Profile Setup: {completeCount} of {items.length} complete
+            </div>
+            <p className="mt-1 text-sm text-slate-300">{allSetupDone ? "Any remaining active tasks are shown above in Needs Attention." : `${remainingSetupItems[0]?.title || "One setup item"} is the only setup item left.`}</p>
           </div>
-          <button
-            type="button"
-            data-testid="customer-activation-expand"
-            onClick={() => setExpanded(true)}
-            className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
-          >
+          <button type="button" data-testid="customer-activation-expand" onClick={() => setExpanded(true)} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20">
             Expand setup
           </button>
         </div>
         {activeTasks.length ? (
           <p className="mt-3 text-xs leading-5 text-amber-100">
-            {activeTasks.length} active task{activeTasks.length === 1 ? "" : "s"} moved to Needs Attention.
+            {activeTasks.length} active task
+            {activeTasks.length === 1 ? "" : "s"} moved to Needs Attention.
           </p>
         ) : null}
       </section>
@@ -1343,49 +1194,31 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
   }
 
   return (
-    <section
-      data-testid="customer-activation-checklist"
-      className="rounded-2xl border border-sky-300/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),rgba(15,23,42,0.72)] p-5"
-    >
+    <section data-testid="customer-activation-checklist" className="rounded-2xl border border-sky-300/25 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.14),transparent_34%),rgba(15,23,42,0.72)] p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Setup checklist</div>
           <h2 className="mt-1 text-xl font-semibold text-white">Get your customer workspace ready</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-            Confirm your property record, upload important documents, and create a request when you are ready for the next project.
-          </p>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Confirm your property record, upload important documents, and create a request when you are ready for the next project.</p>
         </div>
-        <Badge tone="gold">{completeCount} of {items.length} complete</Badge>
+        <Badge tone="gold">
+          {completeCount} of {items.length} complete
+        </Badge>
       </div>
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         {setupItems.map((item) => {
           const complete = Boolean(item.complete);
           return (
-            <article
-              key={item.key}
-              data-testid={`customer-activation-check-${item.key}`}
-              className={`rounded-2xl border p-4 ${complete ? "border-emerald-300/25 bg-emerald-400/10" : "border-slate-700 bg-slate-950/55"}`}
-            >
+            <article key={item.key} data-testid={`customer-activation-check-${item.key}`} className={`rounded-2xl border p-4 ${complete ? "border-emerald-300/25 bg-emerald-400/10" : "border-slate-700 bg-slate-950/55"}`}>
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 ${complete ? "text-emerald-300" : "text-slate-500"}`}>
-                  {complete ? <CheckCircle2 className="h-5 w-5" aria-hidden="true" /> : <Circle className="h-5 w-5" aria-hidden="true" />}
-                </span>
+                <span className={`mt-0.5 ${complete ? "text-emerald-300" : "text-slate-500"}`}>{complete ? <CheckCircle2 className="h-5 w-5" aria-hidden="true" /> : <Circle className="h-5 w-5" aria-hidden="true" />}</span>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-sm font-semibold text-white">{item.title}</h3>
-                    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${complete ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" : "border-amber-300/35 bg-amber-300/10 text-amber-100"}`}>
-                      {complete ? "Complete" : "Recommended"}
-                    </span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${complete ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" : "border-amber-300/35 bg-amber-300/10 text-amber-100"}`}>{complete ? "Complete" : "Recommended"}</span>
                   </div>
-                  <p className="mt-1 text-sm leading-5 text-slate-300">
-                    {complete ? item.completeText : item.description}
-                  </p>
-                  <button
-                    type="button"
-                    data-testid={`customer-activation-action-${item.key}`}
-                    onClick={() => onOpenTab?.(item.tab)}
-                    className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
-                  >
+                  <p className="mt-1 text-sm leading-5 text-slate-300">{complete ? item.completeText : item.description}</p>
+                  <button type="button" data-testid={`customer-activation-action-${item.key}`} onClick={() => onOpenTab?.(item.tab)} className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20">
                     {item.actionLabel}
                   </button>
                 </div>
@@ -1404,28 +1237,16 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
   const latestProjects = (portal?.projects || []).slice(0, 3);
   const notifications = portal?.notifications || [];
   const unreadNotifications = notifications.filter(isUnreadNotification);
-  const overviewRecommendations = [
-    ...(Array.isArray(portal?.recommendations) ? portal.recommendations : []),
-    ...(Array.isArray(portal?.property_intelligence?.insights)
-      ? portal.property_intelligence.insights.map(normalizeInsightRecommendation)
-      : []),
-  ];
+  const overviewRecommendations = [...(Array.isArray(portal?.recommendations) ? portal.recommendations : []), ...(Array.isArray(portal?.property_intelligence?.insights) ? portal.property_intelligence.insights.map(normalizeInsightRecommendation) : [])];
   const property = portal?.property_profile || {};
   const documents = Array.isArray(portal?.documents) ? portal.documents : [];
-  const propertyDocs = [
-    ...(Array.isArray(property?.documents) ? property.documents : []),
-    ...(Array.isArray(property?.photos) ? property.photos : []),
-  ];
+  const propertyDocs = [...(Array.isArray(property?.documents) ? property.documents : []), ...(Array.isArray(property?.photos) ? property.photos : [])];
   const openPayments = (portal?.payments || []).filter((payment) => {
     return isActionablePayment(payment);
   });
   const openDisputes = (portal?.payments || []).filter(hasOpenDispute);
-  const actionableNotifications = notifications.filter((notification) => (
-    notification.status !== "read" && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || ""))
-  ));
-  const tenantMaintenanceNeedsAttention = (portal?.tenant_maintenance_requests || []).filter((request) =>
-    ["submitted", "under_review", "more_info_requested", "approved"].includes(String(request?.status || "").toLowerCase())
-  );
+  const actionableNotifications = notifications.filter((notification) => notification.status !== "read" && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || "")));
+  const tenantMaintenanceNeedsAttention = (portal?.tenant_maintenance_requests || []).filter((request) => ["submitted", "under_review", "more_info_requested", "approved"].includes(String(request?.status || "").toLowerCase()));
   const needsAttention = [
     ...tenantMaintenanceNeedsAttention.slice(0, 3).map((request) => ({
       id: `tenant-maintenance-${request.id}`,
@@ -1465,29 +1286,11 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Needs Attention</div>
             <h2 className="mt-1 text-2xl font-semibold text-white">What needs my attention?</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-              Homeowner-resolvable actions only: signatures, escrow funding, payment reviews, contractor responses, disputes, and maintenance due.
-            </p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Homeowner-resolvable actions only: signatures, escrow funding, payment reviews, contractor responses, disputes, and maintenance due.</p>
           </div>
           <Badge tone={needsAttention.length ? "gold" : "slate"}>{needsAttention.length || "No"} open</Badge>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-          {needsAttention.length ? (
-            needsAttention.slice(0, 5).map((item) => (
-              <InfoCard
-                key={item.id}
-                title={item.title}
-                body={item.body}
-                actionLabel={item.action}
-                onClick={() => onOpenTab?.(item.tab)}
-              />
-            ))
-          ) : (
-            <div className="lg:col-span-2 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">
-              Nothing needs your attention right now. New signatures, payment reviews, contractor responses, disputes, and maintenance reminders will appear here.
-            </div>
-          )}
-        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">{needsAttention.length ? needsAttention.slice(0, 5).map((item) => <InfoCard key={item.id} title={item.title} body={item.body} actionLabel={item.action} onClick={() => onOpenTab?.(item.tab)} />) : <div className="lg:col-span-2 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">Nothing needs your attention right now. New signatures, payment reviews, contractor responses, disputes, and maintenance reminders will appear here.</div>}</div>
       </section>
 
       <section data-testid="customer-overview-active-projects" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -1495,25 +1298,16 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Projects</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Active Projects</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-              Review milestones, payments, documents, warranties, and updates for work connected to this customer portal.
-            </p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Review milestones, payments, documents, warranties, and updates for work connected to this customer portal.</p>
           </div>
           <button type="button" onClick={() => onOpenTab?.("projects")} className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
             Open Projects
           </button>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          {latestProjects.length ? latestProjects.map((project) => (
-            <InfoCard
-              key={project.id}
-              title={project.title}
-              eyebrow={project.customer_status_label || project.status_label || "Project"}
-              body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` - ${moneyLabel(project.total_cost)}` : ""}`}
-              actionLabel="View project workspace"
-              onClick={() => onOpenTab?.("projects")}
-            />
-          )) : (
+          {latestProjects.length ? (
+            latestProjects.map((project) => <InfoCard key={project.id} title={project.title} eyebrow={project.customer_status_label || project.status_label || "Project"} body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` - ${moneyLabel(project.total_cost)}` : ""}`} actionLabel="View project workspace" onClick={() => onOpenTab?.("projects")} />)
+          ) : (
             <div className="lg:col-span-3">
               <EmptyState title="No active projects yet" testId="customer-overview-projects-empty">
                 Projects will appear here after a request becomes an agreement or a contractor connects project records to your email.
@@ -1523,15 +1317,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
         </div>
       </section>
 
-      <NotificationPanel
-        notifications={unreadNotifications}
-        unreadCount={unreadNotifications.length}
-        markingId={markingId}
-        bulkMarking={bulkMarking}
-        onMarkRead={onMarkRead}
-        onMarkAllRead={onMarkAllRead}
-        onOpenHistory={() => onOpenTab?.("notifications")}
-      />
+      <NotificationPanel notifications={unreadNotifications} unreadCount={unreadNotifications.length} markingId={markingId} bulkMarking={bulkMarking} onMarkRead={onMarkRead} onMarkAllRead={onMarkAllRead} onOpenHistory={() => onOpenTab?.("notifications")} />
 
       <CustomerRecommendationsPanel recommendations={overviewRecommendations} onOpenTab={onOpenTab} />
 
@@ -1540,9 +1326,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
           <div>
             <div className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-200">Property Records</div>
             <h2 className="mt-1 text-xl font-semibold text-white">Your home history, organized</h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-              Keep documents, photos, warranties, project records, and maintenance history connected to the right property.
-            </p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">Keep documents, photos, warranties, project records, and maintenance history connected to the right property.</p>
           </div>
           <button type="button" onClick={() => onOpenTab?.("property")} className="rounded-xl border border-sky-300/40 bg-sky-400/10 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-400/20">
             Open Property Records
@@ -1584,28 +1368,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
   );
 }
 
-function NotificationsCenter({
-  notifications = [],
-  unreadCount = 0,
-  preferences = {},
-  notificationPreferences = {},
-  markingId = "",
-  archivingId = "",
-  restoringId = "",
-  savingPreferences = false,
-  savingNotificationPreferences = false,
-  preferenceError = "",
-  notificationPreferenceError = "",
-  bulkMarking = false,
-  onMarkRead,
-  onMarkAllRead,
-  onArchive,
-  onRestore,
-  onSavePreferences,
-  onSaveNotificationPreferences,
-  onOpenTab,
-  onOpenReminder,
-}) {
+function NotificationsCenter({ notifications = [], unreadCount = 0, preferences = {}, notificationPreferences = {}, markingId = "", archivingId = "", restoringId = "", savingPreferences = false, savingNotificationPreferences = false, preferenceError = "", notificationPreferenceError = "", bulkMarking = false, onMarkRead, onMarkAllRead, onArchive, onRestore, onSavePreferences, onSaveNotificationPreferences, onOpenTab, onOpenReminder }) {
   const [filter, setFilter] = useState("recent");
   const [settings, setSettings] = useState({
     auto_archive_enabled: true,
@@ -1639,19 +1402,9 @@ function NotificationsCenter({
       frequency: notificationPreferences?.frequency || "immediate",
     });
   }, [notificationPreferences]);
-  const filtered = filter === "unread"
-    ? notifications.filter(isUnreadNotification)
-    : filter === "archived"
-      ? notifications.filter(isArchivedNotification)
-      : notifications.filter((notification) => !isArchivedNotification(notification));
+  const filtered = filter === "unread" ? notifications.filter(isUnreadNotification) : filter === "archived" ? notifications.filter(isArchivedNotification) : notifications.filter((notification) => !isArchivedNotification(notification));
   const smsStatus = notificationPreferences?.sms_status || {};
-  const smsConsentLabel = smsStatus.sms_enabled
-    ? "Enabled"
-    : smsStatus.sms_opted_out
-      ? "Opted out"
-      : smsStatus.consent_on_file
-        ? "Consent incomplete"
-        : "No SMS consent on file";
+  const smsConsentLabel = smsStatus.sms_enabled ? "Enabled" : smsStatus.sms_opted_out ? "Opted out" : smsStatus.consent_on_file ? "Consent incomplete" : "No SMS consent on file";
   const smsPhoneLabel = smsStatus.phone_number_e164 || "No verified phone number";
 
   return (
@@ -1664,13 +1417,7 @@ function NotificationsCenter({
         <div className="flex flex-wrap items-center gap-2">
           <Badge>{unreadCount} unread</Badge>
           {unreadCount > 0 ? (
-            <button
-              type="button"
-              data-testid="customer-notifications-center-mark-all-read"
-              disabled={bulkMarking}
-              onClick={() => onMarkAllRead?.()}
-              className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-300/20 disabled:opacity-50"
-            >
+            <button type="button" data-testid="customer-notifications-center-mark-all-read" disabled={bulkMarking} onClick={() => onMarkAllRead?.()} className="rounded-xl border border-amber-300/40 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-300/20 disabled:opacity-50">
               {bulkMarking ? "Saving..." : "Mark all as read"}
             </button>
           ) : null}
@@ -1680,20 +1427,25 @@ function NotificationsCenter({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h3 className="text-sm font-bold text-white">Notification preferences</h3>
-            <p className="mt-1 text-sm leading-6 text-slate-300">
-              Choose the portal updates, reminder categories, and delivery channels you want MyHomeBro to use.
-            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-300">Choose the portal updates, reminder categories, and delivery channels you want MyHomeBro to use.</p>
           </div>
           <label className="text-sm font-medium text-slate-200 lg:w-56">
             Frequency
             <select
               data-testid="notification-preference-frequency"
               value={deliverySettings.frequency}
-              onChange={(event) => setDeliverySettings((prev) => ({ ...prev, frequency: event.target.value }))}
+              onChange={(event) =>
+                setDeliverySettings((prev) => ({
+                  ...prev,
+                  frequency: event.target.value,
+                }))
+              }
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             >
               {(notificationPreferences?.frequency_options || DEFAULT_NOTIFICATION_FREQUENCY_OPTIONS).map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
               ))}
             </select>
           </label>
@@ -1710,10 +1462,15 @@ function NotificationsCenter({
                         type="checkbox"
                         data-testid={`notification-category-${key}`}
                         checked={deliverySettings.categories?.[key] !== false}
-                        onChange={(event) => setDeliverySettings((prev) => ({
-                          ...prev,
-                          categories: { ...prev.categories, [key]: event.target.checked },
-                        }))}
+                        onChange={(event) =>
+                          setDeliverySettings((prev) => ({
+                            ...prev,
+                            categories: {
+                              ...prev.categories,
+                              [key]: event.target.checked,
+                            },
+                          }))
+                        }
                         className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-300"
                       />
                       {NOTIFICATION_CATEGORY_LABELS[key] || key.replaceAll("_", " ")}
@@ -1732,59 +1489,58 @@ function NotificationsCenter({
                     type="checkbox"
                     data-testid={`notification-channel-${key}`}
                     checked={deliverySettings.channels?.[key] === true}
-                    onChange={(event) => setDeliverySettings((prev) => ({
-                      ...prev,
-                      channels: { ...prev.channels, [key]: event.target.checked },
-                    }))}
+                    onChange={(event) =>
+                      setDeliverySettings((prev) => ({
+                        ...prev,
+                        channels: {
+                          ...prev.channels,
+                          [key]: event.target.checked,
+                        },
+                      }))
+                    }
                     className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-300"
                   />
                   {label}
                 </label>
               ))}
             </div>
-            <p className="mt-3 text-xs leading-5 text-slate-400">
-              SMS reminders require a verified phone number and text-message consent.
-            </p>
+            <p className="mt-3 text-xs leading-5 text-slate-400">SMS reminders require a verified phone number and text-message consent.</p>
             <div data-testid="customer-sms-status-panel" className="mt-4 rounded-xl border border-slate-700 bg-slate-900/80 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-bold uppercase tracking-wide text-slate-400">SMS status</div>
-                  <div data-testid="customer-sms-status-label" className="mt-1 text-sm font-semibold text-white">{smsConsentLabel}</div>
+                  <div data-testid="customer-sms-status-label" className="mt-1 text-sm font-semibold text-white">
+                    {smsConsentLabel}
+                  </div>
                 </div>
-                <Badge tone={smsStatus.sms_enabled ? "gold" : "slate"}>
-                  {deliverySettings.channels?.sms_enabled ? "Preferred" : "Off"}
-                </Badge>
+                <Badge tone={smsStatus.sms_enabled ? "gold" : "slate"}>{deliverySettings.channels?.sms_enabled ? "Preferred" : "Off"}</Badge>
               </div>
               <dl className="mt-3 grid gap-2 text-xs text-slate-300">
                 <div className="flex items-start justify-between gap-3">
                   <dt className="text-slate-500">Phone</dt>
-                  <dd data-testid="customer-sms-status-phone" className="text-right font-medium text-slate-200">{smsPhoneLabel}</dd>
+                  <dd data-testid="customer-sms-status-phone" className="text-right font-medium text-slate-200">
+                    {smsPhoneLabel}
+                  </dd>
                 </div>
                 <div className="flex items-start justify-between gap-3">
                   <dt className="text-slate-500">Consent</dt>
-                  <dd className="text-right font-medium text-slate-200">
-                    {smsStatus.opted_in_at ? `Opted in ${new Date(smsStatus.opted_in_at).toLocaleDateString()}` : smsStatus.sms_opted_out ? "Stopped by customer" : "Not recorded"}
-                  </dd>
+                  <dd className="text-right font-medium text-slate-200">{smsStatus.opted_in_at ? `Opted in ${new Date(smsStatus.opted_in_at).toLocaleDateString()}` : smsStatus.sms_opted_out ? "Stopped by customer" : "Not recorded"}</dd>
                 </div>
               </dl>
               <p data-testid="customer-sms-quiet-hours" className="mt-3 text-xs leading-5 text-slate-400">
                 {smsStatus.quiet_hours?.notice || "Most SMS notifications pause overnight unless the update is urgent."}
               </p>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                SMS controls are preference and consent safeguards only. Contractors cannot send freeform SMS from here.
-              </p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">SMS controls are preference and consent safeguards only. Contractors cannot send freeform SMS from here.</p>
             </div>
           </div>
         </div>
-        {notificationPreferenceError ? <p data-testid="notification-preferences-error" className="mt-3 text-sm font-semibold text-rose-200">{notificationPreferenceError}</p> : null}
+        {notificationPreferenceError ? (
+          <p data-testid="notification-preferences-error" className="mt-3 text-sm font-semibold text-rose-200">
+            {notificationPreferenceError}
+          </p>
+        ) : null}
         <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            data-testid="notification-preferences-save"
-            disabled={savingNotificationPreferences}
-            onClick={() => onSaveNotificationPreferences?.(deliverySettings)}
-            className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50"
-          >
+          <button type="button" data-testid="notification-preferences-save" disabled={savingNotificationPreferences} onClick={() => onSaveNotificationPreferences?.(deliverySettings)} className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50">
             {savingNotificationPreferences ? "Saving..." : "Save notification preferences"}
           </button>
         </div>
@@ -1793,9 +1549,7 @@ function NotificationsCenter({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h3 className="text-sm font-bold text-white">Notification cleanup</h3>
-            <p className="mt-1 text-sm leading-6 text-slate-300">
-              Unread and action-required notifications are never auto-archived.
-            </p>
+            <p className="mt-1 text-sm leading-6 text-slate-300">Unread and action-required notifications are never auto-archived.</p>
             <div className="mt-2 text-xs text-slate-400">
               Last cleanup: {preferences?.last_auto_archive_run_at ? new Date(preferences.last_auto_archive_run_at).toLocaleString() : "Not run yet"}
               <span className="mx-2 text-slate-600">|</span>
@@ -1807,7 +1561,12 @@ function NotificationsCenter({
               type="checkbox"
               data-testid="notification-cleanup-enabled"
               checked={settings.auto_archive_enabled}
-              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_enabled: event.target.checked }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  auto_archive_enabled: event.target.checked,
+                }))
+              }
               className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-amber-300"
             />
             Enable auto-archive old read notifications
@@ -1819,7 +1578,12 @@ function NotificationsCenter({
             <select
               data-testid="notification-cleanup-frequency"
               value={settings.auto_archive_frequency}
-              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_frequency: event.target.value }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  auto_archive_frequency: event.target.value,
+                }))
+              }
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             >
               <option value="daily">Daily</option>
@@ -1834,7 +1598,12 @@ function NotificationsCenter({
               min="7"
               data-testid="notification-cleanup-read-days"
               value={settings.auto_archive_read_after_days}
-              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_read_after_days: Number(event.target.value) }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  auto_archive_read_after_days: Number(event.target.value),
+                }))
+              }
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             />
           </label>
@@ -1845,7 +1614,12 @@ function NotificationsCenter({
               min="14"
               data-testid="notification-cleanup-maintenance-days"
               value={settings.auto_archive_maintenance_after_days}
-              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_maintenance_after_days: Number(event.target.value) }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  auto_archive_maintenance_after_days: Number(event.target.value),
+                }))
+              }
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             />
           </label>
@@ -1856,37 +1630,30 @@ function NotificationsCenter({
               min="30"
               data-testid="notification-cleanup-completed-days"
               value={settings.auto_archive_completed_work_after_days}
-              onChange={(event) => setSettings((prev) => ({ ...prev, auto_archive_completed_work_after_days: Number(event.target.value) }))}
+              onChange={(event) =>
+                setSettings((prev) => ({
+                  ...prev,
+                  auto_archive_completed_work_after_days: Number(event.target.value),
+                }))
+              }
               className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white"
             />
           </label>
         </div>
-        {preferenceError ? <p data-testid="notification-cleanup-error" className="mt-3 text-sm font-semibold text-rose-200">{preferenceError}</p> : null}
+        {preferenceError ? (
+          <p data-testid="notification-cleanup-error" className="mt-3 text-sm font-semibold text-rose-200">
+            {preferenceError}
+          </p>
+        ) : null}
         <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            data-testid="notification-cleanup-save"
-            disabled={savingPreferences}
-            onClick={() => onSavePreferences?.(settings)}
-            className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50"
-          >
+          <button type="button" data-testid="notification-cleanup-save" disabled={savingPreferences} onClick={() => onSavePreferences?.(settings)} className="rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25 disabled:opacity-50">
             {savingPreferences ? "Saving..." : "Save cleanup settings"}
           </button>
         </div>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {["unread", "recent", "archived"].map((value) => (
-          <button
-            key={value}
-            type="button"
-            data-testid={`customer-notifications-filter-${value}`}
-            onClick={() => setFilter(value)}
-            className={`rounded-xl border px-4 py-2 text-sm font-semibold ${
-              filter === value
-                ? "border-amber-300/55 bg-amber-300/15 text-amber-100"
-                : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
-            }`}
-          >
+          <button key={value} type="button" data-testid={`customer-notifications-filter-${value}`} onClick={() => setFilter(value)} className={`rounded-xl border px-4 py-2 text-sm font-semibold ${filter === value ? "border-amber-300/55 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"}`}>
             {value === "unread" ? "Unread" : value === "archived" ? "Archived" : "Recent"}
           </button>
         ))}
@@ -1929,34 +1696,16 @@ function NotificationsCenter({
                     ) : null}
                   </div>
                   {isUnread ? (
-                    <button
-                      type="button"
-                      data-testid={`customer-notifications-center-mark-read-${notification.id}`}
-                      disabled={markingId === String(notification.id)}
-                      onClick={() => onMarkRead?.(notification)}
-                      className="shrink-0 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white disabled:opacity-50"
-                    >
+                    <button type="button" data-testid={`customer-notifications-center-mark-read-${notification.id}`} disabled={markingId === String(notification.id)} onClick={() => onMarkRead?.(notification)} className="shrink-0 rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-200 hover:border-amber-300/50 hover:text-white disabled:opacity-50">
                       {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
                     </button>
                   ) : null}
                   {isArchived ? (
-                    <button
-                      type="button"
-                      data-testid={`customer-notifications-center-restore-${notification.id}`}
-                      disabled={restoringId === String(notification.id)}
-                      onClick={() => onRestore?.(notification)}
-                      className="shrink-0 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20 disabled:opacity-50"
-                    >
+                    <button type="button" data-testid={`customer-notifications-center-restore-${notification.id}`} disabled={restoringId === String(notification.id)} onClick={() => onRestore?.(notification)} className="shrink-0 rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-xs font-semibold text-sky-100 hover:bg-sky-400/20 disabled:opacity-50">
                       {restoringId === String(notification.id) ? "Saving..." : "Move to recent"}
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      data-testid={`customer-notifications-center-archive-${notification.id}`}
-                      disabled={archivingId === String(notification.id)}
-                      onClick={() => onArchive?.(notification)}
-                      className="shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50"
-                    >
+                    <button type="button" data-testid={`customer-notifications-center-archive-${notification.id}`} disabled={archivingId === String(notification.id)} onClick={() => onArchive?.(notification)} className="shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-300 hover:border-slate-500 hover:text-white disabled:opacity-50">
                       {archivingId === String(notification.id) ? "Saving..." : "Archive"}
                     </button>
                   )}
@@ -1975,7 +1724,9 @@ function NotificationsCenter({
 }
 
 function eventLabel(eventType = "") {
-  return String(eventType || "notification").replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  return String(eventType || "notification")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
 function ReminderDetailModal({ reminder, loading = false, onClose, onCreateServiceRequest }) {
@@ -1988,19 +1739,15 @@ function ReminderDetailModal({ reminder, loading = false, onClose, onCreateServi
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">Maintenance Reminder</div>
-            <h2 className="mt-1 text-xl font-bold text-white">
-              {isLoadingOnly ? "Loading reminder..." : reminder?.home_system?.display_name || "Home system reminder"}
-            </h2>
+            <h2 className="mt-1 text-xl font-bold text-white">{isLoadingOnly ? "Loading reminder..." : reminder?.home_system?.display_name || "Home system reminder"}</h2>
             {!isLoadingOnly && reminder?.property?.display_name ? (
-              <p className="mt-1 text-sm text-slate-300">{reminder.property.display_name}{reminder.property.address ? ` · ${reminder.property.address}` : ""}</p>
+              <p className="mt-1 text-sm text-slate-300">
+                {reminder.property.display_name}
+                {reminder.property.address ? ` · ${reminder.property.address}` : ""}
+              </p>
             ) : null}
           </div>
-          <button
-            type="button"
-            data-testid="customer-reminder-detail-close"
-            onClick={onClose}
-            className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
-          >
+          <button type="button" data-testid="customer-reminder-detail-close" onClick={onClose} className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500">
             Close
           </button>
         </div>
@@ -2024,30 +1771,29 @@ function ReminderDetailModal({ reminder, loading = false, onClose, onCreateServi
                   <h3 className="text-sm font-bold text-white">Recommended Supplies</h3>
                   <p className="mt-1 text-sm text-slate-400">Supplies are advisory and based on saved system details.</p>
                 </div>
-                <Badge>{supplies.length} item{supplies.length === 1 ? "" : "s"}</Badge>
+                <Badge>
+                  {supplies.length} item{supplies.length === 1 ? "" : "s"}
+                </Badge>
               </div>
               <div className="mt-4 grid gap-3">
-                {supplies.length ? supplies.map((supply, index) => (
-                  <div key={supply.recommendation_key || supply.id || index} data-testid="customer-reminder-supply" className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
-                    <div className="font-semibold text-white">{supply.title || supply.supply_name || "Recommended supply"}</div>
-                    {supply.summary || supply.reason ? <p className="mt-1 text-sm leading-5 text-slate-300">{supply.summary || supply.reason}</p> : null}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {(supply.provider_links || []).filter((link) => link.url).map((link) => (
-                        <a
-                          key={`${link.provider || link.label}-${link.url}`}
-                          href={link.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          data-testid="customer-reminder-retailer-link"
-                          className="inline-flex items-center gap-1 rounded-lg border border-amber-300/35 bg-amber-300/10 px-2.5 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-300/20"
-                        >
-                          {link.label || eventLabel(link.provider || "Shop")}
-                          <ExternalLink size={12} />
-                        </a>
-                      ))}
+                {supplies.length ? (
+                  supplies.map((supply, index) => (
+                    <div key={supply.recommendation_key || supply.id || index} data-testid="customer-reminder-supply" className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                      <div className="font-semibold text-white">{supply.title || supply.supply_name || "Recommended supply"}</div>
+                      {supply.summary || supply.reason ? <p className="mt-1 text-sm leading-5 text-slate-300">{supply.summary || supply.reason}</p> : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {(supply.provider_links || [])
+                          .filter((link) => link.url)
+                          .map((link) => (
+                            <a key={`${link.provider || link.label}-${link.url}`} href={link.url} target="_blank" rel="noreferrer" data-testid="customer-reminder-retailer-link" className="inline-flex items-center gap-1 rounded-lg border border-amber-300/35 bg-amber-300/10 px-2.5 py-1.5 text-xs font-semibold text-amber-100 hover:bg-amber-300/20">
+                              {link.label || eventLabel(link.provider || "Shop")}
+                              <ExternalLink size={12} />
+                            </a>
+                          ))}
+                      </div>
                     </div>
-                  </div>
-                )) : (
+                  ))
+                ) : (
                   <EmptyState title="No supplies recommended yet" testId="customer-reminder-supplies-empty">
                     We did not find recommended supplies for this reminder.
                   </EmptyState>
@@ -2055,12 +1801,7 @@ function ReminderDetailModal({ reminder, loading = false, onClose, onCreateServi
               </div>
             </div>
             <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                data-testid="customer-reminder-create-request"
-                onClick={() => onCreateServiceRequest?.(reminder?.id)}
-                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25"
-              >
+              <button type="button" data-testid="customer-reminder-create-request" onClick={() => onCreateServiceRequest?.(reminder?.id)} className="inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-4 py-2 text-sm font-bold text-amber-100 hover:bg-amber-300/25">
                 Create Service Request
               </button>
             </div>
@@ -2074,13 +1815,7 @@ function ReminderDetailModal({ reminder, loading = false, onClose, onCreateServi
 function notificationDedupeKey(notification) {
   const createdAt = notification?.created_at ? new Date(notification.created_at).getTime() : 0;
   const bucket = Number.isFinite(createdAt) ? Math.floor(createdAt / (10 * 60 * 1000)) : 0;
-  return [
-    notification?.event_type || "",
-    notification?.action_url || "",
-    String(notification?.title || "").toLowerCase(),
-    String(notification?.message || "").toLowerCase(),
-    bucket,
-  ].join("|");
+  return [notification?.event_type || "", notification?.action_url || "", String(notification?.title || "").toLowerCase(), String(notification?.message || "").toLowerCase(), bucket].join("|");
 }
 
 function normalizePortalNotifications(rows = []) {
@@ -2117,22 +1852,11 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
             {unreadCount > 0 ? `${unreadCount} unread` : "No new notifications"}
           </span>
           {unreadCount > 0 ? (
-            <button
-              type="button"
-              data-testid="customer-notifications-mark-all-read"
-              disabled={bulkMarking}
-              onClick={() => onMarkAllRead?.()}
-              className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/20"
-            >
+            <button type="button" data-testid="customer-notifications-mark-all-read" disabled={bulkMarking} onClick={() => onMarkAllRead?.()} className="rounded-xl border border-sky-300/35 bg-sky-400/10 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-400/20">
               {bulkMarking ? "Saving..." : "Mark all as read"}
             </button>
           ) : null}
-          <button
-            type="button"
-            data-testid="customer-notifications-open-history"
-            onClick={() => onOpenHistory?.()}
-            className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
-          >
+          <button type="button" data-testid="customer-notifications-open-history" onClick={() => onOpenHistory?.()} className="rounded-xl border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white">
             View all
           </button>
         </div>
@@ -2142,34 +1866,18 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
         {unreadNotifications.length ? (
           unreadNotifications.map((notification) => {
             return (
-              <article
-                key={notification.id}
-                data-testid={`customer-notification-${notification.id}`}
-                className="rounded-xl border border-sky-300/45 bg-sky-400/10 p-4 shadow-[inset_3px_0_0_rgba(56,189,248,0.55)]"
-              >
+              <article key={notification.id} data-testid={`customer-notification-${notification.id}`} className="rounded-xl border border-sky-300/45 bg-sky-400/10 p-4 shadow-[inset_3px_0_0_rgba(56,189,248,0.55)]">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-sm font-semibold text-white">{notification.title || "Update"}</h3>
-                      <span className="rounded-full border border-slate-600 bg-slate-950/70 px-2 py-0.5 text-[11px] font-semibold text-slate-300">
-                        {eventLabel(notification.event_type)}
-                      </span>
-                      <span className="rounded-full border border-sky-300/40 bg-sky-400/15 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
-                        Unread
-                      </span>
+                      <span className="rounded-full border border-slate-600 bg-slate-950/70 px-2 py-0.5 text-[11px] font-semibold text-slate-300">{eventLabel(notification.event_type)}</span>
+                      <span className="rounded-full border border-sky-300/40 bg-sky-400/15 px-2 py-0.5 text-[11px] font-semibold text-sky-100">Unread</span>
                     </div>
                     <p className="mt-2 text-sm leading-5 text-slate-300">{notification.message || "A workspace update is available."}</p>
-                    <div className="mt-2 text-xs text-slate-500">
-                      {notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}
-                    </div>
+                    <div className="mt-2 text-xs text-slate-500">{notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}</div>
                   </div>
-                  <button
-                    type="button"
-                    data-testid={`customer-notification-mark-read-${notification.id}`}
-                    disabled={markingId === String(notification.id)}
-                    onClick={() => onMarkRead?.(notification)}
-                    className="shrink-0 rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white disabled:opacity-50"
-                  >
+                  <button type="button" data-testid={`customer-notification-mark-read-${notification.id}`} disabled={markingId === String(notification.id)} onClick={() => onMarkRead?.(notification)} className="shrink-0 rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white disabled:opacity-50">
                     {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
                   </button>
                 </div>
@@ -2272,88 +1980,51 @@ function TeamMemberModal({ mode = "add", member = null, saving = false, onClose,
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Team Members</div>
             <h3 className="mt-1 text-lg font-semibold text-white">{isEdit ? "Edit Team Member" : "Add Team Member"}</h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500"
-          >
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500">
             Close
           </button>
         </div>
         <div className="mt-5 grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-200">
             Name
-            <input
-              data-testid="pm-team-member-name"
-              value={form.name || ""}
-              onChange={(event) => update("name", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input data-testid="pm-team-member-name" value={form.name || ""} onChange={(event) => update("name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             Email
-            <input
-              data-testid="pm-team-member-email"
-              type="email"
-              required={!isEdit}
-              readOnly={isEdit}
-              value={form.email || ""}
-              onChange={(event) => update("email", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400 read-only:bg-slate-900/60 read-only:text-slate-400"
-            />
+            <input data-testid="pm-team-member-email" type="email" required={!isEdit} readOnly={isEdit} value={form.email || ""} onChange={(event) => update("email", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400 read-only:bg-slate-900/60 read-only:text-slate-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             Phone
-            <input
-              data-testid="pm-team-member-phone"
-              value={form.phone || ""}
-              onChange={(event) => update("phone", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input data-testid="pm-team-member-phone" value={form.phone || ""} onChange={(event) => update("phone", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             Role
-            <select
-              data-testid="pm-team-member-role"
-              value={form.role || "viewer"}
-              onChange={(event) => update("role", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            >
+            <select data-testid="pm-team-member-role" value={form.role || "viewer"} onChange={(event) => update("role", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
               {PM_TEAM_ROLES.map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+                <option key={value} value={value}>
+                  {label}
+                </option>
               ))}
             </select>
           </label>
           {isEdit ? (
             <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
               Status
-              <select
-                data-testid="pm-team-member-status"
-                value={form.status || "invited"}
-                onChange={(event) => update("status", event.target.value)}
-                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-              >
+              <select data-testid="pm-team-member-status" value={form.status || "invited"} onChange={(event) => update("status", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
                 {PM_TEAM_STATUSES.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
                 ))}
               </select>
             </label>
           ) : null}
         </div>
         <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
-          >
+          <button type="button" onClick={onClose} className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500">
             Cancel
           </button>
-          <button
-            type="submit"
-            disabled={saving}
-            data-testid={isEdit ? "pm-team-save-edit" : "pm-team-save-add"}
-            className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-          >
+          <button type="submit" disabled={saving} data-testid={isEdit ? "pm-team-save-edit" : "pm-team-save-add"} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
             {saving ? "Saving..." : isEdit ? "Save changes" : "Add Team Member"}
           </button>
         </div>
@@ -2369,7 +2040,12 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
     status: vendor?.status || "active",
   }));
   const [activeSource, setActiveSource] = useState("myhomebro_contractor");
-  const [searchForm, setSearchForm] = useState({ trade_category: "", location: "", search: "", radius_miles: "25" });
+  const [searchForm, setSearchForm] = useState({
+    trade_category: "",
+    location: "",
+    search: "",
+    radius_miles: "25",
+  });
   const [contractorResults, setContractorResults] = useState([]);
   const [businessResults, setBusinessResults] = useState([]);
   const [searchMeta, setSearchMeta] = useState({});
@@ -2397,10 +2073,7 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
       Object.entries(searchForm).forEach(([key, value]) => {
         if (String(value || "").trim()) params.set(key, value);
       });
-      const path =
-        source === "local_business"
-          ? `/projects/customer-portal/${encodeURIComponent(token)}/vendor-search/businesses/`
-          : `/projects/customer-portal/${encodeURIComponent(token)}/vendor-search/contractors/`;
+      const path = source === "local_business" ? `/projects/customer-portal/${encodeURIComponent(token)}/vendor-search/businesses/` : `/projects/customer-portal/${encodeURIComponent(token)}/vendor-search/contractors/`;
       const { data } = await api.get(`${path}?${params.toString()}`);
       if (source === "local_business") {
         setBusinessResults(Array.isArray(data?.results) ? data.results : []);
@@ -2430,91 +2103,46 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
         <label className="block text-sm font-medium text-slate-200">
           Vendor Name
-          <input
-            data-testid="pm-vendor-name"
-            required
-            value={form.name || ""}
-            onChange={(event) => update("name", event.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-          />
+          <input data-testid="pm-vendor-name" required value={form.name || ""} onChange={(event) => update("name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
         </label>
         <label className="block text-sm font-medium text-slate-200">
           Trade
-          <input
-            data-testid="pm-vendor-trade"
-            value={form.trade_category || ""}
-            onChange={(event) => update("trade_category", event.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-          />
+          <input data-testid="pm-vendor-trade" value={form.trade_category || ""} onChange={(event) => update("trade_category", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
         </label>
         <label className="block text-sm font-medium text-slate-200">
           Email
-          <input
-            data-testid="pm-vendor-email"
-            type="email"
-            value={form.email || ""}
-            onChange={(event) => update("email", event.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-          />
+          <input data-testid="pm-vendor-email" type="email" value={form.email || ""} onChange={(event) => update("email", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
         </label>
         <label className="block text-sm font-medium text-slate-200">
           Phone
-          <input
-            data-testid="pm-vendor-phone"
-            value={form.phone || ""}
-            onChange={(event) => update("phone", event.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-          />
+          <input data-testid="pm-vendor-phone" value={form.phone || ""} onChange={(event) => update("phone", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
         </label>
         <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
           Website
-          <input
-            data-testid="pm-vendor-website"
-            value={form.website || ""}
-            onChange={(event) => update("website", event.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-          />
+          <input data-testid="pm-vendor-website" value={form.website || ""} onChange={(event) => update("website", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
         </label>
         <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
           Notes
-          <textarea
-            data-testid="pm-vendor-notes"
-            rows={3}
-            value={form.notes || ""}
-            onChange={(event) => update("notes", event.target.value)}
-            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-          />
+          <textarea data-testid="pm-vendor-notes" rows={3} value={form.notes || ""} onChange={(event) => update("notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
         </label>
         {isEdit ? (
           <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Status
-            <select
-              data-testid="pm-vendor-status"
-              value={form.status || "active"}
-              onChange={(event) => update("status", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            >
+            <select data-testid="pm-vendor-status" value={form.status || "active"} onChange={(event) => update("status", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
               {PM_VENDOR_STATUSES.map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+                <option key={value} value={value}>
+                  {label}
+                </option>
               ))}
             </select>
           </label>
         ) : null}
       </div>
       <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500"
-        >
+        <button type="button" onClick={onClose} className="rounded-xl border border-slate-700 px-4 py-2 text-sm font-semibold text-slate-200 hover:border-slate-500">
           Cancel
         </button>
-        <button
-          type="submit"
-          disabled={saving || !form.name?.trim()}
-          data-testid={isEdit ? "pm-vendor-save-edit" : "pm-vendor-save-add"}
-          className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-        >
+        <button type="submit" disabled={saving || !form.name?.trim()} data-testid={isEdit ? "pm-vendor-save-edit" : "pm-vendor-save-add"} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
           {saving ? "Saving..." : isEdit ? "Save changes" : "Add Vendor"}
         </button>
       </div>
@@ -2525,12 +2153,7 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
   const activeSearchMeta = searchMeta[activeSource] || {};
   const searchDisplayLocation = activeSearchMeta.display_location || searchForm.location || "the selected area";
   const searchRadius = activeSearchMeta.radius_miles || searchForm.radius_miles || 25;
-  const localBusinessGeocodeFailed = Boolean(
-    activeSource === "local_business" &&
-      activeSearchMeta?.diagnostics?.geocode_error &&
-      activeSearchMeta?.diagnostics?.geocode_error !== "google_geocode_api_key_missing" &&
-      !activeSearchMeta?.diagnostics?.geocoded
-  );
+  const localBusinessGeocodeFailed = Boolean(activeSource === "local_business" && activeSearchMeta?.diagnostics?.geocode_error && activeSearchMeta?.diagnostics?.geocode_error !== "google_geocode_api_key_missing" && !activeSearchMeta?.diagnostics?.geocoded);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-6">
@@ -2547,11 +2170,7 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
             <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Vendors</div>
             <h3 className="mt-1 text-lg font-semibold text-white">{isEdit ? "Edit Vendor" : "Add Vendor"}</h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500"
-          >
+          <button type="button" onClick={onClose} className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-slate-500">
             Close
           </button>
         </div>
@@ -2562,164 +2181,117 @@ function VendorModal({ mode = "add", vendor = null, saving = false, token = "", 
               ["local_business", "Local Businesses"],
               ["manual", "Manual Entry"],
             ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                data-testid={`pm-vendor-source-${value}`}
-                onClick={() => setActiveSource(value)}
-                className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
-                  activeSource === value
-                    ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
-                    : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"
-                }`}
-              >
+              <button key={value} type="button" data-testid={`pm-vendor-source-${value}`} onClick={() => setActiveSource(value)} className={`rounded-xl border px-3 py-2 text-sm font-semibold ${activeSource === value ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500"}`}>
                 {label}
               </button>
             ))}
           </div>
         ) : null}
 
-        {isManual ? manualForm : (
+        {isManual ? (
+          manualForm
+        ) : (
           <div className="mt-5 space-y-4" data-testid={`pm-vendor-search-${activeSource}`}>
             <div className="grid gap-3 sm:grid-cols-4">
               <label className="block text-sm font-medium text-slate-200">
                 Trade
-                <input
-                  data-testid="pm-vendor-search-trade"
-                  value={searchForm.trade_category}
-                  onChange={(event) => updateSearch("trade_category", event.target.value)}
-                  placeholder="Plumbing"
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
+                <input data-testid="pm-vendor-search-trade" value={searchForm.trade_category} onChange={(event) => updateSearch("trade_category", event.target.value)} placeholder="Plumbing" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
               </label>
               <label className="block text-sm font-medium text-slate-200">
                 Location
-                <input
-                  data-testid="pm-vendor-search-location"
-                  value={searchForm.location}
-                  onChange={(event) => updateSearch("location", event.target.value)}
-                  placeholder="San Antonio, TX"
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
+                <input data-testid="pm-vendor-search-location" value={searchForm.location} onChange={(event) => updateSearch("location", event.target.value)} placeholder="San Antonio, TX" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
               </label>
               <label className="block text-sm font-medium text-slate-200">
                 Search
-                <input
-                  data-testid="pm-vendor-search-text"
-                  value={searchForm.search}
-                  onChange={(event) => updateSearch("search", event.target.value)}
-                  placeholder="Company name"
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
+                <input data-testid="pm-vendor-search-text" value={searchForm.search} onChange={(event) => updateSearch("search", event.target.value)} placeholder="Company name" className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
               </label>
               <label className="block text-sm font-medium text-slate-200">
                 Radius
-                <select
-                  data-testid="pm-vendor-search-radius"
-                  value={searchForm.radius_miles}
-                  onChange={(event) => updateSearch("radius_miles", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                >
+                <select data-testid="pm-vendor-search-radius" value={searchForm.radius_miles} onChange={(event) => updateSearch("radius_miles", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400">
                   {SEARCH_RADIUS_OPTIONS.map((radius) => (
-                    <option key={radius} value={String(radius)}>{radius} miles</option>
+                    <option key={radius} value={String(radius)}>
+                      {radius} miles
+                    </option>
                   ))}
                 </select>
               </label>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs leading-5 text-slate-400">
-                {activeSource === "local_business"
-                  ? "Search local businesses and import them as preferred vendors without creating contractor accounts."
-                  : "Search existing MyHomeBro contractor profiles and import them as preferred vendors."}
-              </p>
-              <button
-                type="button"
-                data-testid={`pm-vendor-run-search-${activeSource}`}
-                onClick={() => runVendorSearch(activeSource)}
-                disabled={searching}
-                className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-              >
+              <p className="text-xs leading-5 text-slate-400">{activeSource === "local_business" ? "Search local businesses and import them as preferred vendors without creating contractor accounts." : "Search existing MyHomeBro contractor profiles and import them as preferred vendors."}</p>
+              <button type="button" data-testid={`pm-vendor-run-search-${activeSource}`} onClick={() => runVendorSearch(activeSource)} disabled={searching} className="rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
                 {searching ? "Searching..." : "Search"}
               </button>
             </div>
             <div className="space-y-2" data-testid={`pm-vendor-results-${activeSource}`}>
               <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-3 text-xs font-semibold text-slate-300">
-                {results.length} {activeSource === "local_business" ? "local business" : "MyHomeBro contractor"}{results.length === 1 ? "" : activeSource === "local_business" ? "es" : "s"} within {searchRadius} miles{activeSource === "local_business" ? ` of ${searchDisplayLocation}` : ""}
+                {results.length} {activeSource === "local_business" ? "local business" : "MyHomeBro contractor"}
+                {results.length === 1 ? "" : activeSource === "local_business" ? "es" : "s"} within {searchRadius} miles
+                {activeSource === "local_business" ? ` of ${searchDisplayLocation}` : ""}
                 {results.length <= 1 ? <span className="ml-2 font-normal text-slate-400">Try increasing the radius to 50 or 100 miles.</span> : null}
-                {localBusinessGeocodeFailed ? (
-                  <div className="mt-1 font-semibold text-amber-100">
-                    We could not verify that location. Try city/state or a ZIP code.
-                  </div>
-                ) : null}
+                {localBusinessGeocodeFailed ? <div className="mt-1 font-semibold text-amber-100">We could not verify that location. Try city/state or a ZIP code.</div> : null}
               </div>
-              {results.length ? results.map((row) => {
-                const key = activeSource === "local_business" ? row.business_id : row.contractor_id;
-                const name = row.business_name || row.name || "Vendor";
-                return (
-                  <article key={`${activeSource}-${key}-${name}`} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-sm font-semibold text-white">{name}</div>
-                          {activeSource === "local_business" ? (
-                            <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">Local Business</span>
-                          ) : (
-                            <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-100">
-                              {row.verification_status_label || "MyHomeBro Contractor"}
-                            </span>
-                          )}
+              {results.length ? (
+                results.map((row) => {
+                  const key = activeSource === "local_business" ? row.business_id : row.contractor_id;
+                  const name = row.business_name || row.name || "Vendor";
+                  return (
+                    <article key={`${activeSource}-${key}-${name}`} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold text-white">{name}</div>
+                            {activeSource === "local_business" ? <span className="rounded-full border border-slate-600 bg-slate-950 px-2 py-0.5 text-[11px] font-semibold text-slate-200">Local Business</span> : <span className="rounded-full border border-emerald-300/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-100">{row.verification_status_label || "MyHomeBro Contractor"}</span>}
+                          </div>
+                          <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+                            <div>{row.primary_trade || row.trade_category || row.trade_categories?.join?.(", ") || "General"}</div>
+                            <div>{row.location || "No location"}</div>
+                            <div>{row.phone || "No phone"}</div>
+                            <div>{row.website || "No website"}</div>
+                            {row.rating ? <div>Rating: {row.rating}</div> : null}
+                          </div>
                         </div>
-                        <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
-                          <div>{row.primary_trade || row.trade_category || row.trade_categories?.join?.(", ") || "General"}</div>
-                          <div>{row.location || "No location"}</div>
-                          <div>{row.phone || "No phone"}</div>
-                          <div>{row.website || "No website"}</div>
-                          {row.rating ? <div>Rating: {row.rating}</div> : null}
-                        </div>
+                        <button
+                          type="button"
+                          data-testid={`pm-vendor-import-${activeSource}-${key}`}
+                          disabled={saving || importingKey === String(key)}
+                          onClick={() =>
+                            importVendor(
+                              activeSource === "local_business"
+                                ? {
+                                    import_type: "local_business",
+                                    business_id: row.business_id,
+                                    name,
+                                    trade_category: row.trade_category || row.primary_trade || "",
+                                    phone: row.phone || "",
+                                    website: row.website || "",
+                                    address: row.address || "",
+                                    city: row.city || "",
+                                    state: row.state || "",
+                                    rating: row.rating || undefined,
+                                    source_metadata: row.source_metadata || row,
+                                  }
+                                : {
+                                    import_type: "myhomebro_contractor",
+                                    contractor_id: row.contractor_id,
+                                    name,
+                                    trade_category: row.primary_trade || row.trade_categories?.[0] || "",
+                                    phone: row.phone || "",
+                                    website: row.website || "",
+                                    source_metadata: row,
+                                  },
+                              String(key)
+                            )
+                          }
+                          className="rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-200 disabled:opacity-50"
+                        >
+                          {importingKey === String(key) ? "Importing..." : "Import Vendor"}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        data-testid={`pm-vendor-import-${activeSource}-${key}`}
-                        disabled={saving || importingKey === String(key)}
-                        onClick={() =>
-                          importVendor(
-                            activeSource === "local_business"
-                              ? {
-                                  import_type: "local_business",
-                                  business_id: row.business_id,
-                                  name,
-                                  trade_category: row.trade_category || row.primary_trade || "",
-                                  phone: row.phone || "",
-                                  website: row.website || "",
-                                  address: row.address || "",
-                                  city: row.city || "",
-                                  state: row.state || "",
-                                  rating: row.rating || undefined,
-                                  source_metadata: row.source_metadata || row,
-                                }
-                              : {
-                                  import_type: "myhomebro_contractor",
-                                  contractor_id: row.contractor_id,
-                                  name,
-                                  trade_category: row.primary_trade || row.trade_categories?.[0] || "",
-                                  phone: row.phone || "",
-                                  website: row.website || "",
-                                  source_metadata: row,
-                                },
-                            String(key)
-                          )
-                        }
-                        className="rounded-xl bg-amber-300 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-amber-200 disabled:opacity-50"
-                      >
-                        {importingKey === String(key) ? "Importing..." : "Import Vendor"}
-                      </button>
-                    </div>
-                  </article>
-                );
-              }) : (
-                <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
-                  Search for vendors to import, or use Manual Entry as a fallback.
-                </div>
+                    </article>
+                  );
+                })
+              ) : (
+                <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">Search for vendors to import, or use Manual Entry as a fallback.</div>
               )}
             </div>
           </div>
@@ -2733,11 +2305,7 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
   const customer = portal?.customer || {};
   const account = portal?.account || {};
   const accountType = customer.account_type || account.account_type || "individual";
-  const linkedProperties = Array.isArray(portal?.property_profiles)
-    ? portal.property_profiles
-    : portal?.property_profile?.id
-      ? [portal.property_profile]
-      : [];
+  const linkedProperties = Array.isArray(portal?.property_profiles) ? portal.property_profiles : portal?.property_profile?.id ? [portal.property_profile] : [];
   const profileForm = {
     full_name: customer.full_name || customer.name || "",
     phone_number: customer.phone_number || "",
@@ -2767,48 +2335,11 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
 
   useEffect(() => {
     setForm(profileForm);
-  }, [
-    customer.full_name,
-    customer.name,
-    customer.phone_number,
-    customer.account_type,
-    customer.address_line1,
-    customer.address_line2,
-    customer.city,
-    customer.state,
-    customer.postal_code,
-    customer.company_name,
-    customer.company_phone,
-    customer.company_email,
-    customer.company_website,
-    customer.company_street,
-    customer.company_unit,
-    customer.company_city,
-    customer.company_state,
-    customer.company_zip,
-    customer.company_license_number,
-    customer.company_notes,
-    account.account_type,
-    account.company_name,
-    account.company_phone,
-    account.company_email,
-    account.company_website,
-    account.company_street,
-    account.company_unit,
-    account.company_city,
-    account.company_state,
-    account.company_zip,
-    account.company_license_number,
-    account.company_notes,
-  ]);
+  }, [customer.full_name, customer.name, customer.phone_number, customer.account_type, customer.address_line1, customer.address_line2, customer.city, customer.state, customer.postal_code, customer.company_name, customer.company_phone, customer.company_email, customer.company_website, customer.company_street, customer.company_unit, customer.company_city, customer.company_state, customer.company_zip, customer.company_license_number, customer.company_notes, account.account_type, account.company_name, account.company_phone, account.company_email, account.company_website, account.company_street, account.company_unit, account.company_city, account.company_state, account.company_zip, account.company_license_number, account.company_notes]);
 
   const update = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
   const isCompanyAccount = form.account_type === "property_management_company";
-  const canManageVendors = Boolean(
-    isCompanyAccount ||
-      account.has_rental_properties ||
-      linkedProperties.some((property) => property?.is_rental_property)
-  );
+  const canManageVendors = Boolean(isCompanyAccount || account.has_rental_properties || linkedProperties.some((property) => property?.is_rental_property));
   const teamMembers = Array.isArray(account.team_members) ? account.team_members : [];
   const vendors = Array.isArray(account.vendors) ? account.vendors : [];
 
@@ -2866,9 +2397,7 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
       >
         <div className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">Account</div>
         <h2 className="mt-1 text-xl font-semibold text-white">My Profile</h2>
-        <p className="mt-1 text-sm leading-6 text-slate-300">
-          Keep your contact details current so project updates, payment notices, and property records stay connected to you.
-        </p>
+        <p className="mt-1 text-sm leading-6 text-slate-300">Keep your contact details current so project updates, payment notices, and property records stay connected to you.</p>
 
         <div className="mt-5 rounded-xl border border-slate-700 bg-slate-900/70 p-3" data-testid="customer-account-type-section">
           <div className="text-sm font-semibold text-white">Account Type</div>
@@ -2877,23 +2406,8 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
               ["individual", "Individual / Homeowner"],
               ["property_management_company", "Property Management Company"],
             ].map(([value, label]) => (
-              <label
-                key={value}
-                className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${
-                  form.account_type === value
-                    ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
-                    : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-slate-500"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="customer-account-type"
-                  value={value}
-                  checked={form.account_type === value}
-                  onChange={(event) => update("account_type", event.target.value)}
-                  className="h-4 w-4 border-slate-600 bg-slate-950"
-                  data-testid={`customer-account-type-${value}`}
-                />
+              <label key={value} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold ${form.account_type === value ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-slate-500"}`}>
+                <input type="radio" name="customer-account-type" value={value} checked={form.account_type === value} onChange={(event) => update("account_type", event.target.value)} className="h-4 w-4 border-slate-600 bg-slate-950" data-testid={`customer-account-type-${value}`} />
                 {label}
               </label>
             ))}
@@ -2903,30 +2417,15 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="block text-sm font-medium text-slate-200">
             Name
-            <input
-              data-testid="customer-profile-name"
-              value={form.full_name}
-              onChange={(event) => update("full_name", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input data-testid="customer-profile-name" value={form.full_name} onChange={(event) => update("full_name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             Email
-            <input
-              data-testid="customer-profile-email"
-              value={customer.email || account.email || ""}
-              readOnly
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-300 outline-none"
-            />
+            <input data-testid="customer-profile-email" value={customer.email || account.email || ""} readOnly className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900/70 px-3 py-2 text-sm text-slate-300 outline-none" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             Phone number
-            <input
-              data-testid="customer-profile-phone"
-              value={form.phone_number}
-              onChange={(event) => update("phone_number", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input data-testid="customer-profile-phone" value={form.phone_number} onChange={(event) => update("phone_number", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label htmlFor="mhb-customerdashboard-2929" className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Mailing address search
@@ -2953,44 +2452,23 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
           </label>
           <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Mailing street
-            <input
-              data-testid="customer-profile-address-line1"
-              value={form.address_line1}
-              onChange={(event) => update("address_line1", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input data-testid="customer-profile-address-line1" value={form.address_line1} onChange={(event) => update("address_line1", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
             Unit / suite
-            <input
-              value={form.address_line2}
-              onChange={(event) => update("address_line2", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input value={form.address_line2} onChange={(event) => update("address_line2", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             City
-            <input
-              value={form.city}
-              onChange={(event) => update("city", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input value={form.city} onChange={(event) => update("city", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             State
-            <input
-              value={form.state}
-              onChange={(event) => update("state", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input value={form.state} onChange={(event) => update("state", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
           <label className="block text-sm font-medium text-slate-200">
             ZIP
-            <input
-              value={form.postal_code}
-              onChange={(event) => update("postal_code", event.target.value)}
-              className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-            />
+            <input value={form.postal_code} onChange={(event) => update("postal_code", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
           </label>
         </div>
 
@@ -2998,211 +2476,144 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
           <div className="mt-4 space-y-4">
             {isCompanyAccount ? (
               <>
-            <div data-testid="customer-company-profile-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
-              <h3 className="text-base font-semibold text-white">Company Profile</h3>
-              <p className="mt-1 text-xs leading-5 text-slate-300">
-                Use this for property management companies that manage multiple properties, owners, tenants, and maintenance requests.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="block text-sm font-medium text-slate-200">
-                Company name
-                <input
-                  data-testid="customer-company-name"
-                  value={form.company_name}
-                  onChange={(event) => update("company_name", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                Company phone
-                <input
-                  data-testid="customer-company-phone"
-                  value={form.company_phone}
-                  onChange={(event) => update("company_phone", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                Company email
-                <input
-                  data-testid="customer-company-email"
-                  value={form.company_email}
-                  onChange={(event) => update("company_email", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                Website
-                <input
-                  data-testid="customer-company-website"
-                  value={form.company_website}
-                  onChange={(event) => update("company_website", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label htmlFor="mhb-customerdashboard-3040" className="block text-sm font-medium text-slate-200 sm:col-span-2">
-                Company mailing address search
-                <div className="mt-1">
-                  <AddressAutocomplete
-                    inputId="mhb-customerdashboard-3040"
-                    value={form.company_street}
-                    onChangeText={(value) => update("company_street", value)}
-                    onSelect={(address) => {
-                      setForm((prev) => ({
-                        ...prev,
-                        company_street: address.line1 || prev.company_street,
-                        company_unit: address.line2 || "",
-                        company_city: address.city || prev.company_city,
-                        company_state: address.state || prev.company_state,
-                        company_zip: address.postal_code || prev.company_zip,
-                      }));
-                    }}
-                    placeholder="Search company mailing address..."
-                    testId="customer-company-address-autocomplete"
-                    {...PORTAL_ADDRESS_AUTOCOMPLETE_CLASSES}
-                  />
-                </div>
-              </label>
-              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
-                Street
-                <input id="mhb-customerdashboard-3040"
-                  data-testid="customer-company-street"
-                  value={form.company_street}
-                  onChange={(event) => update("company_street", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                Unit / suite
-                <input
-                  value={form.company_unit}
-                  onChange={(event) => update("company_unit", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                City
-                <input
-                  value={form.company_city}
-                  onChange={(event) => update("company_city", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                State
-                <input
-                  value={form.company_state}
-                  onChange={(event) => update("company_state", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                ZIP
-                <input
-                  value={form.company_zip}
-                  onChange={(event) => update("company_zip", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200">
-                License number
-                <input
-                  data-testid="customer-company-license-number"
-                  value={form.company_license_number}
-                  onChange={(event) => update("company_license_number", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
-                Notes
-                <textarea
-                  rows={3}
-                  data-testid="customer-company-notes"
-                  value={form.company_notes}
-                  onChange={(event) => update("company_notes", event.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                />
-              </label>
-              </div>
-            </div>
-
-            <div data-testid="pm-team-members-section" className="rounded-xl border border-sky-300/25 bg-slate-900/55 p-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h3 className="text-base font-semibold text-white">Team Members</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-300">
-                    Team members help manage properties, maintenance requests, tenants, vendors, and operations.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  data-testid="pm-team-add-button"
-                  onClick={() => {
-                    setEditingTeamMember(null);
-                    setTeamModalMode("add");
-                  }}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400"
-                >
-                  <Users size={16} />
-                  Add Team Member
-                </button>
-              </div>
-              <div className="mt-4 space-y-2">
-                {teamMembers.length ? teamMembers.map((member) => (
-                  <article
-                    key={member.id || member.email}
-                    data-testid={`pm-team-member-${member.id}`}
-                    className="rounded-xl border border-slate-700 bg-slate-950/70 p-3"
-                  >
-                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-sm font-semibold text-white">{member.name || member.email || "Team Member"}</div>
-                          <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
-                            {member.role_label || roleLabel(member.role)}
-                          </span>
-                          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
-                            {member.status_label || statusLabel(member.status)}
-                          </span>
-                        </div>
-                        <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
-                          <div>{member.email || "No email"}</div>
-                          <div>{member.phone || "No phone"}</div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          data-testid={`pm-team-edit-${member.id}`}
-                          onClick={() => {
-                            setEditingTeamMember(member);
-                            setTeamModalMode("edit");
+                <div data-testid="customer-company-profile-section" className="rounded-xl border border-amber-300/25 bg-slate-900/55 p-4">
+                  <h3 className="text-base font-semibold text-white">Company Profile</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-300">Use this for property management companies that manage multiple properties, owners, tenants, and maintenance requests.</p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <label className="block text-sm font-medium text-slate-200">
+                      Company name
+                      <input data-testid="customer-company-name" value={form.company_name} onChange={(event) => update("company_name", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      Company phone
+                      <input data-testid="customer-company-phone" value={form.company_phone} onChange={(event) => update("company_phone", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      Company email
+                      <input data-testid="customer-company-email" value={form.company_email} onChange={(event) => update("company_email", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      Website
+                      <input data-testid="customer-company-website" value={form.company_website} onChange={(event) => update("company_website", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label htmlFor="mhb-customerdashboard-3040" className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                      Company mailing address search
+                      <div className="mt-1">
+                        <AddressAutocomplete
+                          inputId="mhb-customerdashboard-3040"
+                          value={form.company_street}
+                          onChangeText={(value) => update("company_street", value)}
+                          onSelect={(address) => {
+                            setForm((prev) => ({
+                              ...prev,
+                              company_street: address.line1 || prev.company_street,
+                              company_unit: address.line2 || "",
+                              company_city: address.city || prev.company_city,
+                              company_state: address.state || prev.company_state,
+                              company_zip: address.postal_code || prev.company_zip,
+                            }));
                           }}
-                          className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
-                        >
-                          <Pencil size={13} />
-                          Edit
-                        </button>
-                        {member.status !== "disabled" ? (
-                          <button
-                            type="button"
-                            data-testid={`pm-team-disable-${member.id}`}
-                            onClick={() => onDisableTeamMember?.(member)}
-                            className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
-                          >
-                            Disable
-                          </button>
-                        ) : null}
+                          placeholder="Search company mailing address..."
+                          testId="customer-company-address-autocomplete"
+                          {...PORTAL_ADDRESS_AUTOCOMPLETE_CLASSES}
+                        />
                       </div>
-                    </div>
-                  </article>
-                )) : (
-                  <div data-testid="pm-team-members-empty" className="rounded-xl border border-dashed border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-400">
-                    Add team members who help manage company operations.
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                      Street
+                      <input id="mhb-customerdashboard-3040" data-testid="customer-company-street" value={form.company_street} onChange={(event) => update("company_street", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      Unit / suite
+                      <input value={form.company_unit} onChange={(event) => update("company_unit", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      City
+                      <input value={form.company_city} onChange={(event) => update("company_city", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      State
+                      <input value={form.company_state} onChange={(event) => update("company_state", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      ZIP
+                      <input value={form.company_zip} onChange={(event) => update("company_zip", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200">
+                      License number
+                      <input data-testid="customer-company-license-number" value={form.company_license_number} onChange={(event) => update("company_license_number", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
+                    <label className="block text-sm font-medium text-slate-200 sm:col-span-2">
+                      Notes
+                      <textarea rows={3} data-testid="customer-company-notes" value={form.company_notes} onChange={(event) => update("company_notes", event.target.value)} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-400" />
+                    </label>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+
+                <div data-testid="pm-team-members-section" className="rounded-xl border border-sky-300/25 bg-slate-900/55 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="text-base font-semibold text-white">Team Members</h3>
+                      <p className="mt-1 text-xs leading-5 text-slate-300">Team members help manage properties, maintenance requests, tenants, vendors, and operations.</p>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid="pm-team-add-button"
+                      onClick={() => {
+                        setEditingTeamMember(null);
+                        setTeamModalMode("add");
+                      }}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400"
+                    >
+                      <Users size={16} />
+                      Add Team Member
+                    </button>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    {teamMembers.length ? (
+                      teamMembers.map((member) => (
+                        <article key={member.id || member.email} data-testid={`pm-team-member-${member.id}`} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="text-sm font-semibold text-white">{member.name || member.email || "Team Member"}</div>
+                                <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{member.role_label || roleLabel(member.role)}</span>
+                                <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">{member.status_label || statusLabel(member.status)}</span>
+                              </div>
+                              <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+                                <div>{member.email || "No email"}</div>
+                                <div>{member.phone || "No phone"}</div>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                data-testid={`pm-team-edit-${member.id}`}
+                                onClick={() => {
+                                  setEditingTeamMember(member);
+                                  setTeamModalMode("edit");
+                                }}
+                                className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
+                              >
+                                <Pencil size={13} />
+                                Edit
+                              </button>
+                              {member.status !== "disabled" ? (
+                                <button type="button" data-testid={`pm-team-disable-${member.id}`} onClick={() => onDisableTeamMember?.(member)} className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10">
+                                  Disable
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </article>
+                      ))
+                    ) : (
+                      <div data-testid="pm-team-members-empty" className="rounded-xl border border-dashed border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-400">
+                        Add team members who help manage company operations.
+                      </div>
+                    )}
+                  </div>
+                </div>
               </>
             ) : null}
 
@@ -3210,9 +2621,7 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h3 className="text-base font-semibold text-white">Vendors</h3>
-                  <p className="mt-1 text-xs leading-5 text-slate-300">
-                    Track preferred vendors for maintenance work without requiring a MyHomeBro contractor account.
-                  </p>
+                  <p className="mt-1 text-xs leading-5 text-slate-300">Track preferred vendors for maintenance work without requiring a MyHomeBro contractor account.</p>
                 </div>
                 <button
                   type="button"
@@ -3228,58 +2637,45 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
                 </button>
               </div>
               <div className="mt-4 space-y-2">
-                {vendors.length ? vendors.map((vendor) => (
-                  <article
-                    key={vendor.id || vendor.name}
-                    data-testid={`pm-vendor-${vendor.id}`}
-                    className="rounded-xl border border-slate-700 bg-slate-950/70 p-3"
-                  >
-                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="text-sm font-semibold text-white">{vendor.name || "Vendor"}</div>
-                          <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-slate-200">
-                            {vendor.trade_category || "General"}
-                          </span>
-                          <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">
-                            {vendor.status_label || vendorStatusLabel(vendor.status)}
-                          </span>
-                          <span className="rounded-full border border-sky-300/35 bg-sky-400/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
-                            {vendor.vendor_source_label || "Manual Vendor"}
-                          </span>
+                {vendors.length ? (
+                  vendors.map((vendor) => (
+                    <article key={vendor.id || vendor.name} data-testid={`pm-vendor-${vendor.id}`} className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+                      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold text-white">{vendor.name || "Vendor"}</div>
+                            <span className="rounded-full border border-slate-600 bg-slate-900 px-2 py-0.5 text-[11px] font-semibold text-slate-200">{vendor.trade_category || "General"}</span>
+                            <span className="rounded-full border border-amber-300/40 bg-amber-300/10 px-2 py-0.5 text-[11px] font-semibold text-amber-100">{vendor.status_label || vendorStatusLabel(vendor.status)}</span>
+                            <span className="rounded-full border border-sky-300/35 bg-sky-400/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100">{vendor.vendor_source_label || "Manual Vendor"}</span>
+                          </div>
+                          <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
+                            <div>{vendor.email || "No email"}</div>
+                            <div>{vendor.phone || "No phone"}</div>
+                          </div>
                         </div>
-                        <div className="mt-2 grid gap-1 text-xs text-slate-400 sm:grid-cols-2">
-                          <div>{vendor.email || "No email"}</div>
-                          <div>{vendor.phone || "No phone"}</div>
-                        </div>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          data-testid={`pm-vendor-edit-${vendor.id}`}
-                          onClick={() => {
-                            setEditingVendor(vendor);
-                            setVendorModalMode("edit");
-                          }}
-                          className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
-                        >
-                          <Pencil size={13} />
-                          Edit
-                        </button>
-                        {vendor.status !== "inactive" ? (
+                        <div className="flex flex-wrap gap-2">
                           <button
                             type="button"
-                            data-testid={`pm-vendor-disable-${vendor.id}`}
-                            onClick={() => onDisableVendor?.(vendor)}
-                            className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10"
+                            data-testid={`pm-vendor-edit-${vendor.id}`}
+                            onClick={() => {
+                              setEditingVendor(vendor);
+                              setVendorModalMode("edit");
+                            }}
+                            className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-slate-600 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white"
                           >
-                            Disable
+                            <Pencil size={13} />
+                            Edit
                           </button>
-                        ) : null}
+                          {vendor.status !== "inactive" ? (
+                            <button type="button" data-testid={`pm-vendor-disable-${vendor.id}`} onClick={() => onDisableVendor?.(vendor)} className="min-h-9 rounded-lg border border-rose-300/40 px-3 py-1.5 text-xs font-semibold text-rose-100 hover:bg-rose-400/10">
+                              Disable
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
-                    </div>
-                  </article>
-                )) : (
+                    </article>
+                  ))
+                ) : (
                   <div data-testid="pm-vendors-empty" className="rounded-xl border border-dashed border-slate-700 bg-slate-950/50 p-3 text-sm text-slate-400">
                     Add preferred vendors for recurring maintenance and repairs.
                   </div>
@@ -3289,11 +2685,7 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
           </div>
         ) : null}
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="mt-5 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50"
-        >
+        <button type="submit" disabled={saving} className="mt-5 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-sky-400 disabled:opacity-50">
           {saving ? "Saving..." : "Save profile"}
         </button>
       </form>
@@ -3301,34 +2693,25 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
       <aside className="space-y-4">
         <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
           <h3 className="text-lg font-semibold text-white">Linked Properties</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
-            These properties are connected to this Customer Portal and can be used for requests, records, and project history.
-          </p>
+          <p className="mt-2 text-sm leading-6 text-slate-300">These properties are connected to this Customer Portal and can be used for requests, records, and project history.</p>
           <div className="mt-4 space-y-2" data-testid="customer-account-linked-properties">
-            {linkedProperties.length ? linkedProperties.slice(0, 4).map((property) => (
-              <div key={property.id || property.address || property.display_name} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
-                <div className="text-sm font-semibold text-white">{property.display_name || property.address || "Property"}</div>
-                {property.address ? <div className="mt-1 text-xs text-slate-400">{property.address}</div> : null}
-                {property.is_primary ? <div className="mt-2 text-xs font-semibold text-amber-100">Primary Property</div> : null}
-              </div>
-            )) : (
-              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">
-                Add property details in the Property tab to connect records and future requests.
-              </div>
+            {linkedProperties.length ? (
+              linkedProperties.slice(0, 4).map((property) => (
+                <div key={property.id || property.address || property.display_name} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3">
+                  <div className="text-sm font-semibold text-white">{property.display_name || property.address || "Property"}</div>
+                  {property.address ? <div className="mt-1 text-xs text-slate-400">{property.address}</div> : null}
+                  {property.is_primary ? <div className="mt-2 text-xs font-semibold text-amber-100">Primary Property</div> : null}
+                </div>
+              ))
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-700 bg-slate-900/50 p-3 text-sm text-slate-400">Add property details in the Property tab to connect records and future requests.</div>
             )}
           </div>
         </div>
         <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
           <h3 className="text-lg font-semibold text-white">Password</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
-            {account.has_usable_password
-              ? "Use password reset if you need to change your Customer Portal password."
-              : "Create a password from your secure portal link for faster access next time."}
-          </p>
-          <a
-            href="/portal"
-            className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
-          >
+          <p className="mt-2 text-sm leading-6 text-slate-300">{account.has_usable_password ? "Use password reset if you need to change your Customer Portal password." : "Create a password from your secure portal link for faster access next time."}</p>
+          <a href="/portal" className="mt-4 inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-300/45 bg-amber-300/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25">
             Password help
           </a>
         </div>
@@ -3379,14 +2762,8 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const customerName = portal?.customer?.name || "Customer";
   const notifications = normalizePortalNotifications(portal?.notifications || []);
   const unreadCount = notifications.filter(isUnreadNotification).length;
-  const isPropertyManagementAccount = Boolean(
-    portal?.account?.is_property_management_company ||
-      portal?.account?.account_type === "property_management_company" ||
-      portal?.customer?.account_type === "property_management_company"
-  );
-  const selectedPropertySupportsRentalMaintenance = Boolean(
-    portal?.property_profile?.rental_tools_enabled || portal?.property_profile?.is_rental_property
-  );
+  const isPropertyManagementAccount = Boolean(portal?.account?.is_property_management_company || portal?.account?.account_type === "property_management_company" || portal?.customer?.account_type === "property_management_company");
+  const selectedPropertySupportsRentalMaintenance = Boolean(portal?.property_profile?.rental_tools_enabled || portal?.property_profile?.is_rental_property);
   const showMaintenanceTab = Boolean(isPropertyManagementAccount || selectedPropertySupportsRentalMaintenance);
   const rentalOperations = portal?.account?.rental_operations || {
     subscription_status: portal?.account?.subscription_status || "none",
@@ -3419,9 +2796,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   };
 
   const startRentalOperationsCheckout = async () => {
-    const endpoint =
-      rentalOperations.checkout_endpoint ||
-      `/projects/customer-portal/${encodeURIComponent(token)}/rental-operations/checkout/`;
+    const endpoint = rentalOperations.checkout_endpoint || `/projects/customer-portal/${encodeURIComponent(token)}/rental-operations/checkout/`;
     if (!token || startingRentalOperationsCheckout) return;
     setStartingRentalOperationsCheckout(true);
     try {
@@ -3446,9 +2821,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (notification.status === "read") return;
     setMarkingNotificationId(String(notification.id));
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/read/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/read/`);
       onPortalUpdate?.(data);
       toast.success("Update marked as read.");
     } catch (error) {
@@ -3462,9 +2835,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (!token || unreadCount <= 0) return;
     setMarkingAllNotifications(true);
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/mark-all-read/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/notifications/mark-all-read/`);
       onPortalUpdate?.(data);
       toast.success("Notifications marked as read.");
     } catch (error) {
@@ -3478,9 +2849,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (!notification?.id) return;
     setArchivingNotificationId(String(notification.id));
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/archive/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/archive/`);
       onPortalUpdate?.(data);
       toast.success("Notification archived.");
     } catch (error) {
@@ -3607,9 +2976,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (!notification?.id) return;
     setRestoringNotificationId(String(notification.id));
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/restore/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/notifications/${notification.id}/restore/`);
       onPortalUpdate?.(data);
       toast.success("Notification moved to recent.");
     } catch (error) {
@@ -3642,10 +3009,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
 
     setSavingNotificationPreferences(true);
     try {
-      const { data } = await api.patch(
-        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/cleanup-preferences/`,
-        payload
-      );
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/notifications/cleanup-preferences/`, payload);
       onPortalUpdate?.(data);
       toast.success("Notification cleanup settings saved.");
     } catch (error) {
@@ -3662,10 +3026,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     setDeliveryPreferenceError("");
     setSavingDeliveryPreferences(true);
     try {
-      const { data } = await api.patch(
-        `/projects/customer-portal/${encodeURIComponent(token)}/notifications/preferences/`,
-        preferences
-      );
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/notifications/preferences/`, preferences);
       onPortalUpdate?.(data);
       toast.success("Notification preferences saved.");
     } catch (error) {
@@ -3681,41 +3042,36 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const openReminderDetail = async (systemId) => {
     if (!systemId) return;
     const fallbackSystem = (portal?.property_profile?.home_systems || []).find((system) => String(system.id) === String(systemId));
-    const fallbackReminder = fallbackSystem ? {
-      id: fallbackSystem.id,
-      home_system: {
-        id: fallbackSystem.id,
-        display_name: fallbackSystem.display_name || fallbackSystem.custom_name || "Home system reminder",
-        system_type: fallbackSystem.system_type,
-        system_type_label: fallbackSystem.system_type_label,
-        manufacturer: fallbackSystem.manufacturer,
-        model_number: fallbackSystem.model_number,
-      },
-      property: {
-        id: portal?.property_profile?.id,
-        display_name: portal?.property_profile?.display_name || portal?.property_profile?.address_line1 || "Property",
-        address: portal?.property_profile?.address || [
-          portal?.property_profile?.address_line1,
-          portal?.property_profile?.city,
-          portal?.property_profile?.state,
-          portal?.property_profile?.postal_code,
-        ].filter(Boolean).join(", "),
-      },
-      status: fallbackSystem.maintenance_status,
-      priority: fallbackSystem.priority,
-      due_date: fallbackSystem.next_recommended_service_date,
-      days_until_due: fallbackSystem.days_until_due,
-      reason: fallbackSystem.reminder_reason,
-      recommended_action: fallbackSystem.recommended_action,
-      service_interval_months: fallbackSystem.service_interval_months,
-      supplies: fallbackSystem.supply_recommendations || [],
-    } : null;
+    const fallbackReminder = fallbackSystem
+      ? {
+          id: fallbackSystem.id,
+          home_system: {
+            id: fallbackSystem.id,
+            display_name: fallbackSystem.display_name || fallbackSystem.custom_name || "Home system reminder",
+            system_type: fallbackSystem.system_type,
+            system_type_label: fallbackSystem.system_type_label,
+            manufacturer: fallbackSystem.manufacturer,
+            model_number: fallbackSystem.model_number,
+          },
+          property: {
+            id: portal?.property_profile?.id,
+            display_name: portal?.property_profile?.display_name || portal?.property_profile?.address_line1 || "Property",
+            address: portal?.property_profile?.address || [portal?.property_profile?.address_line1, portal?.property_profile?.city, portal?.property_profile?.state, portal?.property_profile?.postal_code].filter(Boolean).join(", "),
+          },
+          status: fallbackSystem.maintenance_status,
+          priority: fallbackSystem.priority,
+          due_date: fallbackSystem.next_recommended_service_date,
+          days_until_due: fallbackSystem.days_until_due,
+          reason: fallbackSystem.reminder_reason,
+          recommended_action: fallbackSystem.recommended_action,
+          service_interval_months: fallbackSystem.service_interval_months,
+          supplies: fallbackSystem.supply_recommendations || [],
+        }
+      : null;
     setLoadingReminderDetail(true);
     setReminderDetail(fallbackReminder);
     try {
-      const { data } = await api.get(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/reminder/`
-      );
+      const { data } = await api.get(`/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/reminder/`);
       setReminderDetail(data?.reminder || null);
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Could not load that reminder.");
@@ -3737,10 +3093,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       formData.append("title", title || file.name || "Property file");
       if (documentType) formData.append("document_type", documentType);
       const uploadKind = kind === "photo" ? "photos" : "documents";
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`,
-        formData
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/${uploadKind}/`, formData);
       onPortalUpdate?.(data);
       toast.success(uploadKind === "photos" ? "Photo uploaded." : "Document uploaded.");
       return true;
@@ -3778,11 +3131,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       if (data?.portal) onPortalUpdate?.(data.portal);
       const createdCount = Number(data?.created_count || 0);
       const skippedCount = Number(data?.skipped_count || 0);
-      toast.success(
-        skippedCount
-          ? `${createdCount} unit${createdCount === 1 ? "" : "s"} added; ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"} skipped.`
-          : `${createdCount} unit${createdCount === 1 ? "" : "s"} added.`
-      );
+      toast.success(skippedCount ? `${createdCount} unit${createdCount === 1 ? "" : "s"} added; ${skippedCount} duplicate${skippedCount === 1 ? "" : "s"} skipped.` : `${createdCount} unit${createdCount === 1 ? "" : "s"} added.`);
       return true;
     } catch (error) {
       toast.error(error?.response?.data?.detail || error?.response?.data?.unit_labels?.[0] || "Could not bulk add units.");
@@ -3885,10 +3234,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       formData.append("run_extraction", "true");
       if (propertyProfileId) formData.append("property_profile_id", propertyProfileId);
       if (homeSystemId) formData.append("home_system_id", homeSystemId);
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/documents/`,
-        formData
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/documents/`, formData);
       onPortalUpdate?.(data.portal || data);
       toast.success(data?.detail || "File saved.");
       return data;
@@ -3905,10 +3251,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const createHomeSystemUploadSession = async (payload) => {
     setSavingHomeSystem(true);
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/upload-sessions/`,
-        payload
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/upload-sessions/`, payload);
       toast.success("Phone scan link created.");
       return data;
     } catch (error) {
@@ -3923,10 +3266,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (!documentId) return false;
     setSavingHomeSystem(true);
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/documents/${documentId}/apply-extraction/`,
-        { selected_fields: selectedFields }
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/documents/${documentId}/apply-extraction/`, { selected_fields: selectedFields });
       onPortalUpdate?.(data);
       toast.success("Home System updated.");
       return true;
@@ -3985,10 +3325,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (!systemId) return false;
     setSavingHomeSystem(true);
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/mark-serviced/`,
-        payload
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/mark-serviced/`, payload);
       onPortalUpdate?.(data);
       toast.success("Service record updated.");
       return true;
@@ -4003,9 +3340,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (!systemId) return false;
     setSavingHomeSystem(true);
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/service-request/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/systems/${systemId}/service-request/`);
       onPortalUpdate?.(data);
       toast.success("Service request created.");
       setActiveTab("requests");
@@ -4021,10 +3356,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     if (!systemId || !recommendationKey) return false;
     setSavingHomeSystem(true);
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/property/systems/recommendations/${encodeURIComponent(recommendationKey)}/${action}/`,
-        { system_id: systemId }
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/property/systems/recommendations/${encodeURIComponent(recommendationKey)}/${action}/`, { system_id: systemId });
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success(data?.detail || (action === "ignore" ? "Recommendation ignored." : "Recommendation restored."));
       return true;
@@ -4038,10 +3370,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const reviewTenantMaintenanceRequest = async (propertyId, requestId, payload) => {
     if (!propertyId || !requestId) return false;
     try {
-      const { data } = await api.patch(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenant-maintenance-requests/${requestId}/`,
-        payload
-      );
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenant-maintenance-requests/${requestId}/`, payload);
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success("Maintenance request updated.");
       return true;
@@ -4053,10 +3382,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const createPropertyWorkOrder = async (propertyId, payload) => {
     if (!propertyId) return false;
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/`,
-        payload
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/`, payload);
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success("Work order created.");
       return data;
@@ -4068,10 +3394,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const updatePropertyWorkOrder = async (propertyId, workOrderId, payload) => {
     if (!propertyId || !workOrderId) return false;
     try {
-      const { data } = await api.patch(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/`,
-        payload
-      );
+      const { data } = await api.patch(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/`, payload);
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success("Work order updated.");
       return data;
@@ -4083,10 +3406,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const sendPropertyWorkOrderToMarketplace = async (propertyId, workOrderId, payload = {}) => {
     if (!propertyId || !workOrderId) return false;
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/send-to-marketplace/`,
-        payload
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/send-to-marketplace/`, payload);
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success("Work order sent to marketplace contractors.");
       return data;
@@ -4098,9 +3418,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const withdrawPropertyWorkOrderMarketplace = async (propertyId, workOrderId) => {
     if (!propertyId || !workOrderId) return false;
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/withdraw-marketplace/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/withdraw-marketplace/`);
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success("Marketplace work order withdrawn.");
       return data;
@@ -4112,9 +3430,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const createPropertyWorkOrderAgreementDraft = async (propertyId, workOrderId) => {
     if (!propertyId || !workOrderId) return false;
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/create-agreement-draft/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/create-agreement-draft/`);
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success(data?.created ? "Agreement draft created." : "Agreement draft already exists.");
       return data;
@@ -4126,9 +3442,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const createWorkOrderFromTenantRequest = async (propertyId, requestId) => {
     if (!propertyId || !requestId) return false;
     try {
-      const { data } = await api.post(
-        `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenant-maintenance-requests/${requestId}/create-work-order/`
-      );
+      const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/tenant-maintenance-requests/${requestId}/create-work-order/`);
       if (data?.portal) onPortalUpdate?.(data.portal);
       toast.success("Work order created from request.");
       return data;
@@ -4139,17 +3453,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   };
   const tabContent = useMemo(() => {
     if (activeTab === "overview") {
-      return (
-        <OverviewPanel
-          portal={{ ...portal, notifications }}
-          onOpenTab={setActiveTab}
-          tenantMaintenanceTab={showMaintenanceTab ? "maintenance" : "requests"}
-          markingId={markingNotificationId}
-          bulkMarking={markingAllNotifications}
-          onMarkRead={markNotificationRead}
-          onMarkAllRead={markAllNotificationsRead}
-        />
-      );
+      return <OverviewPanel portal={{ ...portal, notifications }} onOpenTab={setActiveTab} tenantMaintenanceTab={showMaintenanceTab ? "maintenance" : "requests"} markingId={markingNotificationId} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} />;
     }
     if (activeTab === "projects") {
       return (
@@ -4172,7 +3476,16 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
       );
     }
     if (activeTab === "diy-planner") {
-      return <DIYProjectPlanner token={token} propertyProfiles={portal?.property_profiles || []} />;
+      return (
+        <DIYProjectPlanner
+          token={token}
+          propertyProfiles={portal?.property_profiles || []}
+          onOpenRequest={(requestId) => {
+            setFocusedRequestId(String(requestId));
+            setActiveTab("requests");
+          }}
+        />
+      );
     }
     if (activeTab === "requests" || activeTab === "maintenance") {
       return (
@@ -4200,9 +3513,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             if (!bidKey) return;
             setAcceptingBidId(bidKey);
             try {
-              const { data } = await api.post(
-                `/projects/customer-portal/${encodeURIComponent(token)}/bids/${encodeURIComponent(bidKey)}/accept/`
-              );
+              const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/bids/${encodeURIComponent(bidKey)}/accept/`);
               if (data?.portal) onPortalUpdate?.(data.portal);
               toast.success(data?.created ? "Agreement draft created from awarded marketplace bid." : "Agreement draft already exists for this awarded bid.");
             } catch (error) {
@@ -4247,18 +3558,13 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
             if (String(params.location || "").trim()) search.set("location", params.location);
             if (String(params.search || "").trim()) search.set("search", params.search);
             if (String(params.radius_miles || "").trim()) search.set("radius_miles", params.radius_miles);
-            const { data } = await api.get(
-              `/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/contractor-matches/${search.toString() ? `?${search.toString()}` : ""}`
-            );
+            const { data } = await api.get(`/projects/customer-portal/${encodeURIComponent(token)}/properties/${propertyId}/work-orders/${workOrderId}/contractor-matches/${search.toString() ? `?${search.toString()}` : ""}`);
             return data;
           }}
           onImportVendor={importVendor}
           onCreateWorkOrderFromTenantRequest={createWorkOrderFromTenantRequest}
           onImproveRequest={async (payload) => {
-            const { data } = await api.post(
-              `/projects/customer-portal/${encodeURIComponent(token)}/requests/improve/`,
-              payload
-            );
+            const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/requests/improve/`, payload);
             return data;
           }}
           onStartContractorSearch={async (requestId) => {
@@ -4273,10 +3579,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           }}
           onRouteRequestContractors={async (requestId, selectedContractors) => {
             try {
-              const { data } = await api.post(
-                `/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/contractors/select/`,
-                { selected_contractors: selectedContractors }
-              );
+              const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/contractors/select/`, { selected_contractors: selectedContractors });
               if (data?.portal) onPortalUpdate?.(data.portal);
               toast.success(data?.detail || "Request sent to selected contractors.");
               return data;
@@ -4287,10 +3590,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           }}
           onCancelRequest={async (requestId, reason) => {
             try {
-              const { data } = await api.post(
-                `/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/cancel/`,
-                { reason }
-              );
+              const { data } = await api.post(`/projects/customer-portal/${encodeURIComponent(token)}/requests/${requestId}/cancel/`, { reason });
               if (data?.portal) onPortalUpdate?.(data.portal);
               toast.success(data?.detail || "Request cancelled.");
               return data;
@@ -4387,30 +3687,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     }
     if (activeTab === "payments") return <PaymentsPanel payments={portal?.payments || []} agreements={portal?.agreements || []} token={token} onPortalUpdate={onPortalUpdate} />;
     if (activeTab === "notifications") {
-      return (
-        <NotificationsCenter
-          notifications={notifications}
-          unreadCount={unreadCount}
-          preferences={portal?.notification_cleanup_preferences || {}}
-          notificationPreferences={portal?.notification_preferences || {}}
-          markingId={markingNotificationId}
-          archivingId={archivingNotificationId}
-          restoringId={restoringNotificationId}
-          savingPreferences={savingNotificationPreferences}
-          savingNotificationPreferences={savingDeliveryPreferences}
-          preferenceError={notificationPreferenceError}
-          notificationPreferenceError={deliveryPreferenceError}
-          bulkMarking={markingAllNotifications}
-          onMarkRead={markNotificationRead}
-          onMarkAllRead={markAllNotificationsRead}
-          onArchive={archiveNotification}
-          onRestore={restoreNotification}
-          onSavePreferences={saveNotificationCleanupPreferences}
-          onSaveNotificationPreferences={saveCustomerNotificationPreferences}
-          onOpenTab={setActiveTab}
-          onOpenReminder={openReminderDetail}
-        />
-      );
+      return <NotificationsCenter notifications={notifications} unreadCount={unreadCount} preferences={portal?.notification_cleanup_preferences || {}} notificationPreferences={portal?.notification_preferences || {}} markingId={markingNotificationId} archivingId={archivingNotificationId} restoringId={restoringNotificationId} savingPreferences={savingNotificationPreferences} savingNotificationPreferences={savingDeliveryPreferences} preferenceError={notificationPreferenceError} notificationPreferenceError={deliveryPreferenceError} bulkMarking={markingAllNotifications} onMarkRead={markNotificationRead} onMarkAllRead={markAllNotificationsRead} onArchive={archiveNotification} onRestore={restoreNotification} onSavePreferences={saveNotificationCleanupPreferences} onSaveNotificationPreferences={saveCustomerNotificationPreferences} onOpenTab={setActiveTab} onOpenReminder={openReminderDetail} />;
     }
     if (activeTab === "account") {
       return (
@@ -4442,15 +3719,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
         />
       );
     }
-    return (
-      <CustomerDocuments
-        documents={portal?.documents || []}
-        propertyProfile={portal?.property_profile || {}}
-        uploading={uploadingPropertyFile}
-        uploadError={uploadError}
-        onUpload={uploadPropertyFile}
-      />
-    );
+    return <CustomerDocuments documents={portal?.documents || []} propertyProfile={portal?.property_profile || {}} uploading={uploadingPropertyFile} uploadError={uploadError} onUpload={uploadPropertyFile} />;
   }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingDeliveryPreferences, deliveryPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab]);
 
   return (
@@ -4460,28 +3729,21 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <div className="flex items-center gap-3">
-                <img
-                  src={logo}
-                  alt="MyHomeBro"
-                  data-testid="customer-dashboard-logo"
-                  className="h-12 w-12 rounded-2xl object-cover shadow-lg shadow-blue-950/30"
-                />
+                <img src={logo} alt="MyHomeBro" data-testid="customer-dashboard-logo" className="h-12 w-12 rounded-2xl object-cover shadow-lg shadow-blue-950/30" />
                 <div>
                   <div className="text-xl font-bold tracking-tight text-white">
                     MyHome<span className="text-amber-300">Bro</span>
                   </div>
-                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">
-                    Customer Portal
-                  </div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Customer Portal</div>
                 </div>
               </div>
               <h1 className="mt-5 text-2xl font-bold tracking-tight text-white sm:text-3xl">Customer Portal</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">
-                {customerName ? `${customerName}, ` : ""}track projects, payments, documents, warranties, and property records in one place.
-              </p>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-300">{customerName ? `${customerName}, ` : ""}track projects, payments, documents, warranties, and property records in one place.</p>
             </div>
             <div className="w-full rounded-2xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-300 lg:w-auto">
-              <div>Secure access verified for <span className="font-semibold text-white">{portal?.customer?.email}</span></div>
+              <div>
+                Secure access verified for <span className="font-semibold text-white">{portal?.customer?.email}</span>
+              </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
                   <Bell size={13} />
@@ -4505,17 +3767,7 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
 
           <nav className="mt-6 flex gap-2 overflow-x-auto pb-1" aria-label="Customer workspace tabs">
             {visibleTabs.map(([key, label, Icon]) => (
-              <button
-                key={key}
-                type="button"
-                data-testid={`customer-dashboard-tab-${key}`}
-                onClick={() => setActiveTab(key)}
-                className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${
-                  activeTab === key
-                    ? "border-amber-300/60 bg-amber-300/15 text-amber-100"
-                    : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"
-                }`}
-              >
+              <button key={key} type="button" data-testid={`customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${activeTab === key ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"}`}>
                 <Icon size={16} />
                 {label}
               </button>
@@ -4525,35 +3777,14 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
 
         <main className="mt-5">
           {showMaintenanceTab ? (
-            <section
-              data-testid="rental-operations-subscription-banner"
-              className={`mb-5 rounded-2xl border p-4 text-sm shadow-xl shadow-slate-950/15 ${
-                rentalOperations.rental_operations_locked
-                  ? "border-amber-300/40 bg-amber-300/10 text-amber-50"
-                  : "border-emerald-300/35 bg-emerald-400/10 text-emerald-50"
-              }`}
-            >
+            <section data-testid="rental-operations-subscription-banner" className={`mb-5 rounded-2xl border p-4 text-sm shadow-xl shadow-slate-950/15 ${rentalOperations.rental_operations_locked ? "border-amber-300/40 bg-amber-300/10 text-amber-50" : "border-emerald-300/35 bg-emerald-400/10 text-emerald-50"}`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="font-semibold text-white">
-                    {rentalOperations.rental_operations_locked
-                      ? "Internal maintenance tools require Rental Operations."
-                      : rentalOperations.trial_active
-                        ? `Rental Operations trial: ${rentalOperations.trial_days_remaining} day${rentalOperations.trial_days_remaining === 1 ? "" : "s"} remaining`
-                        : "Rental Operations active"}
-                  </div>
-                  <p className="mt-1 text-xs leading-5 opacity-85">
-                    Marketplace contractor routing and vendor invitations stay free. Internal staff assignment and self-performed completion workflows use Rental Operations.
-                  </p>
+                  <div className="font-semibold text-white">{rentalOperations.rental_operations_locked ? "Internal maintenance tools require Rental Operations." : rentalOperations.trial_active ? `Rental Operations trial: ${rentalOperations.trial_days_remaining} day${rentalOperations.trial_days_remaining === 1 ? "" : "s"} remaining` : "Rental Operations active"}</div>
+                  <p className="mt-1 text-xs leading-5 opacity-85">Marketplace contractor routing and vendor invitations stay free. Internal staff assignment and self-performed completion workflows use Rental Operations.</p>
                 </div>
                 {rentalOperations.rental_operations_locked ? (
-                  <button
-                    type="button"
-                    data-testid="rental-operations-checkout-button"
-                    disabled={startingRentalOperationsCheckout}
-                    onClick={startRentalOperationsCheckout}
-                    className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-60"
-                  >
+                  <button type="button" data-testid="rental-operations-checkout-button" disabled={startingRentalOperationsCheckout} onClick={startRentalOperationsCheckout} className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-extrabold text-slate-950 hover:bg-amber-200 disabled:opacity-60">
                     {startingRentalOperationsCheckout ? "Opening..." : "Start free trial"}
                   </button>
                 ) : null}
