@@ -34,6 +34,7 @@ const PublicRoutes = lazy(() => import("./routes/PublicRoutes.jsx"));
 import RouteLoadingFallback from "./components/RouteLoadingFallback.jsx";
 import { PwaInstallDialog } from "./components/PwaInstallAccess.jsx";
 import PwaStatus from "./components/PwaStatus.jsx";
+import { GuidedVideoProvider } from "./guided-video/GuidedVideoProvider.jsx";
 
 import "./styles/ui.css";
 import "./styles/modal.css";
@@ -55,6 +56,7 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <GuidedVideoProvider>
         <Suspense fallback={<RouteLoadingFallback />}>
           <Routes>
           {/* ✅ Legacy redirects (pre-/app routing) */}
@@ -107,6 +109,7 @@ export default function App() {
 
         {/* Toasts */}
         <Toaster position="top-right" />
+        </GuidedVideoProvider>
       </BrowserRouter>
     </AuthProvider>
   );

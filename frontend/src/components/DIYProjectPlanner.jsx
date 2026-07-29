@@ -1,13 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  ArrowLeft,
-  Hammer,
-  Image,
-  Plus,
-  Sparkles,
-} from 'lucide-react';
+import { ArrowLeft, Hammer, Image, Plus, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../api';
+import { useGuidedVideo } from '../guided-video/GuidedVideoProvider';
 
 export const participation = [
   ['DO_IT_MYSELF', 'Doing Myself'],
@@ -56,6 +51,7 @@ export default function DIYProjectPlanner({
   onOpenRequest,
 }) {
   const base = `/projects/customer-portal/${encodeURIComponent(token)}/diy-projects`;
+  const { openVideo } = useGuidedVideo();
   const [projects, setProjects] = useState([]);
   const [selected, setSelected] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -127,6 +123,17 @@ export default function DIYProjectPlanner({
   useEffect(() => {
     loadList().catch(() => {});
   }, [loadList]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'create') setCreating(true);
+    const requestedSection = params.get('section');
+    if (
+      ['overview', 'design', 'plan', 'progress', 'get-help', 'files'].includes(
+        requestedSection
+      )
+    )
+      setSection(requestedSection);
+  }, []);
 
   const createProject = async (event) => {
     event.preventDefault();
@@ -373,6 +380,37 @@ export default function DIYProjectPlanner({
           <p className="mt-4 rounded-xl border border-slate-700 bg-slate-950/60 p-3 text-xs leading-5 text-slate-300">
             {safetyCopy}
           </p>
+        </section>
+        <section className="rounded-2xl border border-sky-300/30 bg-slate-900 p-5 text-white">
+          <div className="text-xs font-bold uppercase tracking-[.18em] text-sky-200">
+            Guided video · development placeholder
+          </div>
+          <h3 className="mt-2 text-lg font-black">
+            DIY Doesn’t Mean Doing It Alone
+          </h3>
+          <p className="mt-2 max-w-2xl text-sm text-slate-300">
+            Learn how to create a private plan, review Project Assistant
+            suggestions, track work, and prepare selected tasks for professional
+            help. Watch & Do keeps the tutorial available while you work.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              data-testid="diy-video-watch"
+              type="button"
+              onClick={() => openVideo('diy-doesnt-mean-alone', 'watch')}
+              className="rounded-xl border border-sky-300/50 px-4 py-2 font-bold"
+            >
+              Watch · about 2 min
+            </button>
+            <button
+              data-testid="diy-video-watch-do"
+              type="button"
+              onClick={() => openVideo('diy-doesnt-mean-alone', 'watch-and-do')}
+              className="rounded-xl bg-sky-300 px-4 py-2 font-bold text-sky-950"
+            >
+              Watch & Do
+            </button>
+          </div>
         </section>
         {creating ? (
           <form

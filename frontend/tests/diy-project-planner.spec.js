@@ -67,6 +67,9 @@ test('homeowner can create and resume a DIY plan at desktop and mobile widths', 
   await page.goto('/portal/customer-token');
   await page.getByRole('button', { name: /DIY Planner/i }).click();
   await expect(page.getByTestId('diy-project-planner')).toBeVisible();
+  await page.getByTestId('diy-video-watch-do').click();
+  await expect(page.getByTestId('guided-video-player')).toHaveCount(1);
+  await page.getByTestId('guided-video-dock').selectOption('top-left');
   await page.getByTestId('diy-project-new').click();
   await page.getByLabel('Project title').fill('Backsplash refresh');
   await page
@@ -74,6 +77,15 @@ test('homeowner can create and resume a DIY plan at desktop and mobile widths', 
     .fill('Install a durable tile backsplash');
   await page.getByTestId('diy-project-create').click();
   await expect(page.getByText('Backsplash refresh')).toBeVisible();
+  await expect(page.getByTestId('guided-video-player')).toBeVisible();
+  await page.getByTestId('guided-video-preview-checkpoint').click();
+  await expect(page.getByTestId('guided-video-checkpoint')).toContainText(
+    'Create a private DIY project'
+  );
+  await page.getByTestId('guided-video-continue').click();
+  await page.getByTestId('guided-video-minimize').click();
+  await page.getByTestId('diy-section-plan').click();
+  await page.getByTestId('guided-video-restore').click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByTestId('diy-project-workspace')).toBeVisible();

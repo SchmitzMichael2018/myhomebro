@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Hammer, Home, Inbox, LayoutDashboard, LogOut, Pencil, UserRound, Users, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -2733,7 +2734,12 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
 }
 
 export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
-  const [activeTab, setActiveTab] = useState("overview");
+  const location = useLocation();
+  const requestedWorkspace = new URLSearchParams(location.search).get("workspace");
+  const [activeTab, setActiveTab] = useState(requestedWorkspace === "diy-planner" ? "diy-planner" : requestedWorkspace === "requests" ? "requests" : "overview");
+  useEffect(() => {
+    if (requestedWorkspace === "diy-planner" || requestedWorkspace === "requests") setActiveTab(requestedWorkspace);
+  }, [requestedWorkspace]);
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);
   const [savingUnit, setSavingUnit] = useState(false);
