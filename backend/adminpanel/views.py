@@ -1724,6 +1724,9 @@ class AdminAgreements(APIView):
 
             results.append({
                 "id": a.id,
+                "project_id": safe_get(a, ["project_id"], None),
+                "contractor_id": safe_get(a, ["contractor_id"], None),
+                "homeowner_id": safe_get(a, ["homeowner_id"], None),
                 "project_title": project_title,
                 "project_city": project_city,
                 "project_state": project_state,
@@ -2338,8 +2341,8 @@ class AdminAgreementRefreshPricing(APIView):
         try:
             out = suggest_pricing_refresh(agreement=agreement)
             persisted_count = _persist_pricing_estimates(agreement, out.get("pricing_estimates", []))
-        except Exception as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({"detail": "Pricing guidance could not be refreshed."}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(
             {
@@ -2363,14 +2366,13 @@ class AdminAgreementResendSignature(APIView):
             raise Http404("Agreement not found.")
 
         try:
-            result = send_signature_request_to_homeowner(agreement)
-        except Exception as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            send_signature_request_to_homeowner(agreement)
+        except Exception:
+            return Response({"detail": "The signature invite could not be sent."}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(
             {
                 "detail": "Signature invite resent.",
-                "sign_url": result.get("sign_url"),
             },
             status=status.HTTP_200_OK,
         )

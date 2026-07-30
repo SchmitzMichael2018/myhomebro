@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
@@ -237,6 +237,56 @@ const TableShell = ({ children, className = "", testId }) => (
     {children}
   </div>
 );
+
+function AgreementActionMenu({ agreement, busy, onFinancials, onAiContext, onRefreshPricing, onResendEmail }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const outside = (event) => {
+      if (!menuRef.current?.contains(event.target)) setOpen(false);
+    };
+    const escape = (event) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        menuRef.current?.querySelector("button")?.focus();
+      }
+    };
+    document.addEventListener("mousedown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  const select = (action) => {
+    setOpen(false);
+    action();
+  };
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button type="button" aria-haspopup="menu" aria-expanded={open} aria-label={`More actions for agreement ${agreement.id}`} className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50" onClick={() => setOpen((value) => !value)}>
+        More
+      </button>
+      {open ? (
+        <div className="absolute right-0 z-30 mt-1 w-56 rounded-xl border border-slate-200 bg-white p-1.5 text-slate-800 shadow-xl" role="menu">
+          <button type="button" role="menuitem" className="w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-100 focus:bg-slate-100" onClick={() => select(onFinancials)}>Financials</button>
+          <button type="button" role="menuitem" className="w-full rounded-lg px-3 py-2 text-left text-sm font-bold hover:bg-slate-100 focus:bg-slate-100" onClick={() => select(onAiContext)}>AI Context</button>
+          <div className="my-1 border-t border-slate-200" />
+          <button type="button" role="menuitem" disabled={Boolean(busy)} className="w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-amber-900 hover:bg-amber-50 focus:bg-amber-50 disabled:opacity-60" onClick={() => select(onRefreshPricing)}>
+            {busy === `pricing-${agreement.id}` ? "Recalculating…" : "Recalculate Pricing"}
+          </button>
+          <button type="button" role="menuitem" disabled={Boolean(busy)} className="w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-amber-900 hover:bg-amber-50 focus:bg-amber-50 disabled:opacity-60" onClick={() => select(onResendEmail)}>
+            {busy === `signature-${agreement.id}` ? "Sending…" : "Resend Customer Email"}
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 const Th = ({ children }) => (
   <th className="px-3 py-3 text-left text-xs font-extrabold uppercase tracking-wide text-sky-100/65">{children}</th>
@@ -511,6 +561,7 @@ export default function AdminDashboard() {
   }
 
   async function refreshAgreementPricing(agreementId) {
+    if (!window.confirm("Recalculate and save refreshed pricing guidance for this agreement? Existing agreement totals and payment records will not be changed.")) return;
     setAgreementOpsMsg("");
     setAgreementOpBusy(`pricing-${agreementId}`);
     try {
@@ -526,6 +577,7 @@ export default function AdminDashboard() {
   }
 
   async function resendAgreementSignature(agreementId) {
+    if (!window.confirm("Resend the customer signature email for this agreement? This sends a new customer communication.")) return;
     setAgreementOpsMsg("");
     setAgreementOpBusy(`signature-${agreementId}`);
     try {
@@ -1799,12 +1851,12 @@ export default function AdminDashboard() {
               <TableShell>
                 <table className="min-w-full text-sm">
                   <thead className="border-b border-black/10 bg-white/60">
-                    <tr><Th>ID</Th><Th>Project</Th><Th>City</Th><Th>State</Th><Th>Funded</Th><Th>Released</Th><Th>In Flight</Th><Th>Actions</Th></tr>
+                    <tr><Th>ID</Th><Th>Project</Th><Th>Status</Th><Th>Location</Th><Th>Total</Th><Th>Funded</Th><Th>Released</Th><Th>In Flight</Th><Th>Actions</Th></tr>
                   </thead>
                   <tbody>
                     {agreementsFiltered.length === 0 ? (
                       <tr>
-                        <Td colSpan={8} className="text-slate-600">
+                          <Td colSpan={9} className="text-slate-600">
                           {agreementEscrowFilterLabel
                             ? `No agreements match the ${agreementEscrowFilterLabel.toLowerCase()} filter.`
                             : "No results."}
@@ -1812,51 +1864,34 @@ export default function AdminDashboard() {
                       </tr>
                     ) : (
                       agreementsFiltered.map((a) => (
-                        <tr key={a.id} className="border-b border-black/5">
-                          <Td>{a.id}</Td>
+                        <tr key={a.id} data-testid={`admin-agreement-row-${a.id}`} className="border-b border-black/5">
+                          <Td><Link className="font-bold text-slate-900 underline underline-offset-2" to={`/app/admin/agreements/${a.id}`}>#{a.id}</Link></Td>
                           <Td>
-                            <div className="font-extrabold text-slate-900">{a.project_title || `Agreement #${a.id}`}</div>
+                            <Link className="font-extrabold text-slate-900 underline decoration-transparent underline-offset-2 hover:decoration-current focus-visible:decoration-current" to={`/app/admin/agreements/${a.id}`}>{a.project_title || `Agreement #${a.id}`}</Link>
                             <div className="text-xs text-slate-600">{a.is_archived ? "Archived" : "Active"} • PDF v{a.pdf_version || 0}</div>
                           </Td>
-                          <Td>{a.project_city || "—"}</Td>
-                          <Td>{a.project_state || "—"}</Td>
-                          <Td>{fmtMoney(a.escrow_funded_amount || 0)}</Td>
-                          <Td>{fmtMoney(a.escrow_released_amount || 0)}</Td>
-                          <Td className="font-extrabold">{fmtMoney(a.escrow_in_flight_amount || 0)}</Td>
+                          <Td>{titleCase(a.escrow_status || "not funded")}</Td>
+                          <Td>{[a.project_city, a.project_state].filter(Boolean).join(", ") || "—"}</Td>
+                          <Td className="text-right tabular-nums">{fmtMoney(a.total_cost || 0)}</Td>
+                          <Td className="text-right tabular-nums">{fmtMoney(a.escrow_funded_amount || 0)}</Td>
+                          <Td className="text-right tabular-nums">{fmtMoney(a.escrow_released_amount || 0)}</Td>
+                          <Td className="text-right font-extrabold tabular-nums">{fmtMoney(a.escrow_in_flight_amount || 0)}</Td>
                           <Td>
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                onClick={() => goToAdminAgreementDetail(a.id)}
+                            <div className="flex items-center gap-2">
+                              <Link
+                                to={`/app/admin/agreements/${a.id}`}
                                 className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-slate-800"
                               >
                                 View Agreement
-                              </button>
-                              <button
-                                onClick={() => goToAgreementPricing(a.id)}
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
-                              >
-                                Financials
-                              </button>
-                              <button
-                                onClick={() => viewAgreementAiContext(a.id)}
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50"
-                              >
-                                AI Context
-                              </button>
-                              <button
-                                onClick={() => refreshAgreementPricing(a.id)}
-                                disabled={agreementOpBusy === `pricing-${a.id}`}
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                              >
-                                {agreementOpBusy === `pricing-${a.id}` ? "Recalculating..." : "Recalculate Pricing"}
-                              </button>
-                              <button
-                                onClick={() => resendAgreementSignature(a.id)}
-                                disabled={agreementOpBusy === `signature-${a.id}`}
-                                className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-extrabold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-                              >
-                                {agreementOpBusy === `signature-${a.id}` ? "Sending..." : "Resend Customer Email"}
-                              </button>
+                              </Link>
+                              <AgreementActionMenu
+                                agreement={a}
+                                busy={agreementOpBusy}
+                                onFinancials={() => goToAgreementPricing(a.id)}
+                                onAiContext={() => viewAgreementAiContext(a.id)}
+                                onRefreshPricing={() => refreshAgreementPricing(a.id)}
+                                onResendEmail={() => resendAgreementSignature(a.id)}
+                              />
                             </div>
                           </Td>
                         </tr>

@@ -690,6 +690,14 @@ async function mockAdminDashboard(page) {
     });
   });
 
+  await page.route('**/api/projects/admin/agreements/321/resend-signature/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: 'Signature invite resent.' }),
+    });
+  });
+
   await page.route('**/api/projects/admin/disputes**', async (route) => {
     const requestUrl = new URL(route.request().url());
     const status = (requestUrl.searchParams.get('status') || 'active').toLowerCase();
@@ -868,25 +876,39 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByText('No agreements match')).toHaveCount(0);
   await expect(page.getByText('Kitchen Remodel')).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-agreements-light.png', fullPage: true });
-  await page.getByRole('button', { name: 'View Agreement' }).first().click();
+  await expect(page.getByTestId('admin-agreement-row-321').getByRole('link', { name: 'Kitchen Remodel' })).toHaveAttribute('href', '/app/admin/agreements/321');
+  await page.getByRole('link', { name: 'View Agreement' }).first().click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321$/);
   await expect(page.getByRole('heading', { name: 'Admin Agreement Detail' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Back to Admin Agreements' })).toBeVisible();
   await expect(page.getByTestId('admin-agreement-tabs')).toBeVisible();
   await page.screenshot({ path: 'test-results/admin-agreement-detail-light.png', fullPage: true });
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Financials' }).first().click();
+  await page.getByRole('button', { name: 'More actions for agreement 321' }).click();
+  await page.getByRole('menuitem', { name: 'Financials' }).click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=pricing$/);
   await expect(page.getByText('Escrow Summary')).toBeVisible();
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'AI Context' }).first().click();
+  await page.getByRole('button', { name: 'More actions for agreement 321' }).click();
+  await page.getByRole('menuitem', { name: 'AI Context' }).click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=ai$/);
   await expect(page.getByText('Saved AI title, template, confidence, and reasons.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Run AI Review' })).toBeVisible();
   await expect(page.getByText('Suggested title')).toBeVisible();
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Recalculate Pricing' }).first().click();
+  await page.getByRole('button', { name: 'More actions for agreement 321' }).click();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'More actions for agreement 321' })).toBeFocused();
+  await page.getByRole('button', { name: 'More actions for agreement 321' }).click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('menuitem', { name: 'Recalculate Pricing' }).click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=pricing$/);
+  await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
+  await page.getByRole('button', { name: 'More actions for agreement 321' }).click();
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('menuitem', { name: 'Resend Customer Email' }).click();
+  await expect(page.getByText('Signature invite resent.')).toBeVisible();
 
   await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractors-view')).toBeVisible();

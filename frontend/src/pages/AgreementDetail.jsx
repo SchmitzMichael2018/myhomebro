@@ -1912,6 +1912,7 @@ export default function AgreementDetail({
   };
 
   async function refreshAgreementPricing(agreementId) {
+    if (!window.confirm('Recalculate and save refreshed pricing guidance for this agreement? Existing agreement totals and payment records will not be changed.')) return;
     setAgreementOpsMsg('');
     setAgreementOpBusy(`pricing-${agreementId}`);
     try {
@@ -1929,6 +1930,7 @@ export default function AgreementDetail({
   }
 
   async function resendAgreementSignature(agreementId) {
+    if (!window.confirm('Resend the customer signature email for this agreement? This sends a new customer communication.')) return;
     setAgreementOpsMsg('');
     setAgreementOpBusy(`signature-${agreementId}`);
     try {
