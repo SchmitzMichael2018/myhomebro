@@ -2014,6 +2014,153 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   opacity: 1;
 }
 
+/* Admin workspace chrome: shared header, section tabs, and data controls. */
+.mhb-admin-page {
+  background: var(--mhb-surface-workspace);
+  color: var(--mhb-text-primary);
+}
+
+.mhb-admin-header {
+  min-height: 5.5rem;
+  border: 1px solid rgb(148 163 184 / 0.2);
+  border-radius: 1rem;
+  background: var(--mhb-surface-sidebar);
+  padding: 1rem 14rem 1rem 1.25rem;
+  box-shadow: var(--mhb-shadow-card);
+}
+
+.mhb-admin-header-action,
+.mhb-admin-tab {
+  min-height: 2.5rem;
+  border: 1px solid rgb(148 163 184 / 0.35);
+  border-radius: 0.75rem;
+  background: #172b4d;
+  color: #f8fafc;
+  box-shadow: none;
+}
+
+.mhb-admin-header-action {
+  background: #f8fafc;
+  color: #0f2747;
+}
+
+.mhb-admin-header-action:hover,
+.mhb-admin-header-action:focus-visible {
+  background: #eaf2ff;
+}
+
+.mhb-admin-tabs {
+  scrollbar-width: thin;
+  padding-bottom: 0.25rem;
+}
+
+.mhb-admin-tab {
+  padding: 0.625rem 0.875rem;
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1rem;
+  transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+}
+
+.mhb-admin-tab:hover {
+  border-color: #64748b;
+  background: #223a61;
+}
+
+.mhb-admin-tab.is-active,
+.mhb-admin-tab[aria-selected="true"] {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #0f2747;
+}
+
+.mhb-admin-contractors-panel {
+  border: 1px solid var(--mhb-border-default);
+  border-radius: 1rem;
+  background: var(--mhb-surface-card);
+  padding: 1.25rem;
+  box-shadow: var(--mhb-shadow-card);
+}
+
+.mhb-admin-contractors-panel :is(.text-slate-900, .text-slate-800) {
+  color: var(--mhb-text-primary) !important;
+}
+
+.mhb-admin-contractors-panel :is(.text-slate-700, .text-slate-600) {
+  color: var(--mhb-text-secondary) !important;
+}
+
+.mhb-admin-control {
+  min-height: 2.75rem;
+  border: 1px solid var(--mhb-border-strong);
+  border-radius: 0.75rem;
+  background: var(--mhb-surface-control);
+  padding: 0.625rem 0.75rem;
+  color: var(--mhb-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  outline: none;
+}
+
+.mhb-admin-control::placeholder {
+  color: var(--mhb-text-muted);
+  opacity: 1;
+}
+
+.mhb-admin-control:focus,
+.mhb-admin-control:focus-visible {
+  border-color: var(--mhb-border-selected);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mhb-border-selected) 24%, transparent);
+}
+
+.mhb-admin-control option {
+  background: #f8fafc;
+  color: #0f2747;
+}
+
+.mhb-admin-control option:checked {
+  background: #dbeafe;
+  color: #0f2747;
+}
+
+.mhb-admin-control option:disabled {
+  color: #64748b;
+}
+
+.mhb-admin-contractors-table {
+  border-color: var(--mhb-border-default) !important;
+  background: var(--mhb-surface-card) !important;
+  box-shadow: none !important;
+}
+
+.mhb-admin-contractors-table thead {
+  background: var(--mhb-surface-inset) !important;
+}
+
+.mhb-admin-contractors-table th {
+  color: var(--mhb-text-secondary);
+}
+
+.mhb-admin-contractors-table td {
+  border-color: var(--mhb-border-subtle);
+  color: var(--mhb-text-secondary);
+}
+
+.mhb-admin-contractors-table tbody tr {
+  background: var(--mhb-surface-card);
+  transition: background-color 150ms ease;
+}
+
+.mhb-admin-contractors-table tbody tr:hover {
+  background: var(--mhb-surface-interactive-hover) !important;
+}
+
+@media (max-width: 767px) {
+  .mhb-admin-header {
+    padding-right: 1.25rem;
+  }
+}
+
 /* Authenticated appearance integration. Operational dark remains the baseline;
    light mode swaps semantic surfaces without changing workspace layout. */
 .mhb-authenticated-main {

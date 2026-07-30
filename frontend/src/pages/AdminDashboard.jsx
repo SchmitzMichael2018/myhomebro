@@ -229,8 +229,11 @@ const ThinStat = ({ label, value, sub, onClick, testId }) => {
   );
 };
 
-const TableShell = ({ children }) => (
-  <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/8 shadow-sm">
+const TableShell = ({ children, className = "", testId }) => (
+  <div
+    data-testid={testId}
+    className={`overflow-x-auto rounded-2xl border border-white/10 bg-white/8 shadow-sm ${className}`}
+  >
     {children}
   </div>
 );
@@ -766,29 +769,25 @@ export default function AdminDashboard() {
      Render
   ========================= */
   return (
-    <div
-      className="min-h-screen px-4 py-6 md:px-6"
-      style={{
-        background:
-          "linear-gradient(135deg, #041735 0%, #063f96 38%, #667f88 70%, #f0c94b 100%)",
-      }}
-    >
+    <div className="mhb-admin-page min-h-screen px-4 py-6 md:px-6" data-testid="admin-dashboard-page">
     <div className="mx-auto max-w-7xl">
-      <div className="flex flex-wrap items-baseline gap-3">
-        <div className="text-3xl font-extrabold text-white drop-shadow-sm">Admin</div>
-        <div className="text-sm font-semibold text-sky-100/80 capitalize">{view}</div>
+      <header className="mhb-admin-header flex flex-wrap items-center gap-3" data-testid="admin-page-header">
+        <div>
+          <div className="text-3xl font-extrabold text-white">Admin</div>
+          <div className="mt-1 text-sm font-semibold capitalize text-slate-200">{view}</div>
+        </div>
 
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={loadAll}
-            className="rounded-xl border border-white/20 bg-white px-4 py-2 text-sm font-extrabold text-[#0a2550] shadow-sm hover:bg-sky-50"
+            className="mhb-admin-header-action rounded-xl px-4 py-2 text-sm font-extrabold"
           >
             Refresh
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="mt-4 flex flex-wrap gap-2">
+      <div className="mhb-admin-tabs mt-4 flex gap-2 overflow-x-auto" role="tablist" aria-label="Admin sections" data-testid="admin-navigation-tabs">
         {[
           { key: "overview", label: "Overview", action: () => goTo("overview") },
           { key: "marketplace", label: "Marketplace", action: () => navigate("/app/admin/marketplace") },
@@ -805,11 +804,12 @@ export default function AdminDashboard() {
             key={key}
             type="button"
             onClick={action}
+            role="tab"
+            aria-selected={view === key}
+            data-testid={`admin-navigation-tab-${key}`}
             className={[
-              "rounded-full border px-3 py-1.5 text-xs font-extrabold transition",
-              view === key
-                ? "border-white/25 bg-white text-[#0a2550]"
-                : "border-white/15 bg-white/10 text-sky-100 hover:bg-white/15",
+              "mhb-admin-tab shrink-0",
+              view === key ? "is-active" : "",
             ].join(" ")}
           >
             {label}
@@ -1581,30 +1581,41 @@ export default function AdminDashboard() {
 
           {/* ===================== CONTRACTORS ===================== */}
           {view === "contractors" && (
-            <div className="mt-6" data-testid="admin-contractors-view">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <div className="text-sm font-extrabold text-slate-900">Contractors</div>
+            <section className="mhb-admin-contractors-panel mt-6" data-testid="admin-contractors-view">
+              <div className="mb-4 flex flex-wrap items-end gap-3">
+                <div className="mr-auto">
+                  <h1 className="text-xl font-extrabold text-slate-900">Contractors</h1>
+                  <p className="mt-1 text-sm text-slate-600">Review contractor accounts, onboarding progress, profiles, and platform activity.</p>
+                </div>
+                <label className="min-w-48">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Sort and filter</span>
                 <select
+                  data-testid="admin-contractor-filter"
                   value={contractorFilter}
                   onChange={(e) => setContractorFilter(e.target.value)}
-                  className="rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+                  className="mhb-admin-control w-full"
                 >
                   <option value="newest">Newest signups</option>
                   <option value="inactive">Inactive onboarding</option>
                   <option value="top_fee">Top fee generators</option>
                   <option value="missing_profile">Missing public profile</option>
                 </select>
+                </label>
+                <label className="w-full md:w-[420px]">
+                  <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-600">Search</span>
                 <input
+                  data-testid="admin-contractor-search"
                   value={contractorQuery}
                   onChange={(e) => setContractorQuery(e.target.value)}
                   placeholder="Search by name, email, city, Stripe acct…"
-                  className="ml-auto w-full md:w-[420px] rounded-xl border border-black/10 bg-white px-3 py-2 text-sm"
+                  className="mhb-admin-control w-full"
                 />
+                </label>
               </div>
 
-              <TableShell>
+              <TableShell className="mhb-admin-contractors-table" testId="admin-contractors-table-panel">
                 <table className="min-w-full text-sm">
-                  <thead className="border-b border-black/10 bg-white/60">
+                  <thead>
                     <tr><Th>Contractor</Th><Th>Signup</Th><Th>Status</Th><Th>Public Profile</Th><Th>Pipeline</Th><Th>Fee Revenue</Th><Th>Recent Activity</Th></tr>
                   </thead>
                   <tbody>
@@ -1615,7 +1626,7 @@ export default function AdminDashboard() {
                         <tr
                           key={c.id}
                           data-testid={`admin-contractor-row-${c.id}`}
-                          className="border-b border-white/10 [&_.text-slate-600]:text-sky-100/75 [&_.text-slate-700]:text-sky-100/75 [&_.text-slate-900]:text-sky-50"
+                          className="border-b"
                         >
                           <Td>
                             <div className="font-extrabold text-slate-900">{c.business_name || c.name || "—"}</div>
@@ -1646,7 +1657,7 @@ export default function AdminDashboard() {
                   </tbody>
                 </table>
               </TableShell>
-            </div>
+            </section>
           )}
 
           {/* ===================== SUBCONTRACTORS ===================== */}
@@ -1960,8 +1971,8 @@ export default function AdminDashboard() {
                   {showArchivedDisputes ? "Hide archived" : "Show archived"}
                 </button>
               </div>
-            </div>
-          )}
+              </div>
+            )}
 
           {/* ===================== GEO ===================== */}
           {view === "geo" && (

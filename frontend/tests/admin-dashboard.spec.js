@@ -788,9 +788,9 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByText('Admin Home')).toHaveCount(0);
   await expect(page.getByText('Support Tools')).toHaveCount(0);
   await expect(page.getByText('Marketplace Operations Center')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Support', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Financial Operations', exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Platform Health', exact: true })).toBeVisible();
+  await expect(page.getByTestId('admin-navigation-tab-support')).toBeVisible();
+  await expect(page.getByTestId('admin-navigation-tab-fee_audit')).toBeVisible();
+  await expect(page.getByTestId('admin-navigation-tab-platform_health')).toBeVisible();
   const attentionClass = await page.getByTestId('admin-needs-attention').getAttribute('class');
   expect(attentionClass).toContain('bg-[#061d42]/95');
   await expect(page.getByTestId('admin-quick-actions')).toBeVisible();
@@ -855,7 +855,7 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await page.goto('/app/admin?view=support', { waitUntil: 'domcontentloaded' });
-  await expect(page.getByRole('button', { name: 'Support', exact: true })).toHaveClass(/bg-white/);
+  await expect(page.getByTestId('admin-navigation-tab-support')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByRole('heading', { name: 'Support' })).toBeVisible();
   await expect(page.getByText('Password Reset', { exact: true })).toBeVisible();
   await expect(page.getByText("Send a password reset email using Django's standard reset flow.")).toBeVisible();
@@ -888,9 +888,21 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractors-view')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-row-101')).toContainText('Summit Renovations');
-  const contractorRowClass = await page.getByTestId('admin-contractor-row-101').getAttribute('class');
-  expect(contractorRowClass).toContain('[&_.text-slate-600]:text-sky-100/75');
-  expect(contractorRowClass).toContain('[&_.text-slate-900]:text-sky-50');
+  await expect(page.getByTestId('admin-navigation-tab-contractors')).toHaveAttribute('aria-selected', 'true');
+  await expect(page.getByTestId('admin-navigation-tab-overview')).toHaveAttribute('aria-selected', 'false');
+  await expect(page.getByTestId('admin-navigation-tab-contractors')).toHaveClass(/is-active/);
+  await expect(page.getByTestId('admin-navigation-tab-overview')).not.toHaveClass(/is-active/);
+  await expect(page.getByTestId('admin-contractor-filter')).toHaveClass(/mhb-admin-control/);
+  await expect(page.getByTestId('admin-contractor-search')).toHaveClass(/mhb-admin-control/);
+  await expect(page.getByTestId('admin-contractors-table-panel')).toHaveClass(/mhb-admin-contractors-table/);
+  await expect(page.getByTestId('admin-contractor-filter').locator('option')).toHaveCount(4);
+  const optionColors = await page.getByTestId('admin-contractor-filter').locator('option').evaluateAll((options) =>
+    options.map((option) => ({
+      background: getComputedStyle(option).backgroundColor,
+      color: getComputedStyle(option).color,
+    }))
+  );
+  expect(optionColors.every(({ color }) => color === 'rgb(15, 39, 71)')).toBe(true);
 
   await page.goto('/app/admin?view=subcontractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-subcontractors-view')).toBeVisible();
@@ -926,6 +938,41 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByText('Filter:')).toContainText('Archived shown');
   await expect(page.getByTestId('admin-dispute-row-803')).toContainText('Archived');
   await expect(page.getByTestId('admin-dispute-row-803').getByRole('button', { name: 'Archive' })).toHaveCount(0);
+});
+
+test('admin contractor workspace preserves contrast and containment across appearances and widths', async ({ page }) => {
+  test.setTimeout(90000);
+  await mockAdminDashboard(page);
+
+  for (const appearance of ['light', 'dark']) {
+    await page.addInitScript((value) => {
+      window.localStorage.setItem('myhomebro.appearance.v1', value);
+    }, appearance);
+
+    for (const viewport of [
+      { width: 1440, height: 900 },
+      { width: 900, height: 900 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
+      await expect(page.locator('html')).toHaveAttribute('data-mhb-theme', appearance);
+      await expect(page.getByTestId('admin-page-header')).toBeVisible();
+      await expect(page.getByTestId('admin-contractors-table-panel')).toBeVisible();
+      await expect(page.getByTestId('admin-navigation-tab-contractors')).toHaveAttribute('aria-selected', 'true');
+
+      const pageHasOverflow = await page.evaluate(
+        () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+      );
+      expect(pageHasOverflow).toBe(false);
+      if (viewport.width === 1440) {
+        await page.screenshot({
+          path: `test-results/admin-contractors-${appearance}.png`,
+          fullPage: true,
+        });
+      }
+    }
+  }
 });
 
 test('admin templates page renders system template management controls', async ({ page }) => {
