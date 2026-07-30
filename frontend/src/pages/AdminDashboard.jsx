@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import { isDisputeTerminal } from "../lib/disputeStatus.js";
@@ -1626,10 +1626,13 @@ export default function AdminDashboard() {
                         <tr
                           key={c.id}
                           data-testid={`admin-contractor-row-${c.id}`}
-                          className="border-b"
+                          className="cursor-pointer border-b"
+                          onClick={(event) => {
+                            if (!event.target.closest("a,button,input,select,textarea,[role='button']")) navigate(`/app/admin/contractors/${c.id}`);
+                          }}
                         >
                           <Td>
-                            <div className="font-extrabold text-slate-900">{c.business_name || c.name || "—"}</div>
+                            <Link className="font-extrabold text-slate-900 underline decoration-transparent underline-offset-2 hover:decoration-current focus-visible:decoration-current" to={`/app/admin/contractors/${c.id}`}>{c.business_name || c.name || "—"}</Link>
                             <div className="text-xs text-slate-600">{c.email || "—"} • #{c.id}</div>
                           </Td>
                           <Td>{fmtDateTime(c.created_at)}</Td>
@@ -1716,10 +1719,13 @@ export default function AdminDashboard() {
                         <tr
                           key={h.id}
                           data-testid={`admin-homeowner-row-${h.id}`}
-                          className="border-b border-white/10 [&_.text-slate-600]:text-sky-100/75 [&_.text-slate-700]:text-sky-100/75 [&_.text-slate-900]:text-sky-50"
+                          className="cursor-pointer border-b border-white/10 [&_.text-slate-600]:text-sky-100/75 [&_.text-slate-700]:text-sky-100/75 [&_.text-slate-900]:text-sky-50"
+                          onClick={(event) => {
+                            if (!event.target.closest("a,button,input,select,textarea,[role='button']")) navigate(`/app/admin/customers/${h.id}`);
+                          }}
                         >
                           <Td>
-                            <div className="font-extrabold text-slate-900">{h.name || "—"}</div>
+                            <Link className="font-extrabold text-slate-900 underline decoration-transparent underline-offset-2 hover:decoration-current focus-visible:decoration-current" to={`/app/admin/customers/${h.id}`}>{h.name || "—"}</Link>
                             <div className="text-xs text-slate-600">{h.email || "—"} • {h.phone || "—"}</div>
                           </Td>
                           <Td>

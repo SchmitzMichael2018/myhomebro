@@ -891,6 +891,12 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=contractors', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-contractors-view')).toBeVisible();
   await expect(page.getByTestId('admin-contractor-row-101')).toContainText('Summit Renovations');
+  const contractorLink = page.getByTestId('admin-contractor-row-101').getByRole('link', { name: 'Summit Renovations' });
+  await expect(contractorLink).toHaveAttribute('href', '/app/admin/contractors/101');
+  await contractorLink.click();
+  await expect(page).toHaveURL(/\/app\/admin\/contractors\/101$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/view=contractors/);
   await expect(page.getByTestId('admin-navigation-tab-contractors')).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('admin-navigation-tab-overview')).toHaveAttribute('aria-selected', 'false');
   await expect(page.getByTestId('admin-navigation-tab-contractors')).toHaveClass(/is-active/);
@@ -915,6 +921,12 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=homeowners', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-homeowners-view')).toBeVisible();
   await expect(page.getByTestId('admin-homeowner-row-701')).toContainText('Casey Prospect');
+  const customerLink = page.getByTestId('admin-homeowner-row-701').getByRole('link', { name: 'Casey Prospect' });
+  await expect(customerLink).toHaveAttribute('href', '/app/admin/customers/701');
+  await customerLink.click();
+  await expect(page).toHaveURL(/\/app\/admin\/customers\/701$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/view=homeowners/);
   await page.screenshot({ path: 'test-results/admin-customers-light.png', fullPage: true });
   const homeownerRowClass = await page.getByTestId('admin-homeowner-row-701').getAttribute('class');
   expect(homeownerRowClass).toContain('[&_.text-slate-600]:text-sky-100/75');

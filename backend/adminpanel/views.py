@@ -1449,6 +1449,143 @@ class AdminHomeowners(APIView):
         return Response({"count": len(results), "results": results}, status=status.HTTP_200_OK)
 
 
+class AdminContractorDetail(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request, contractor_id: int):
+        contractor = Contractor.objects.select_related("user").filter(pk=contractor_id).first() if Contractor else None
+        if contractor is None:
+            return Response({"detail": "Contractor not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        profile = ContractorPublicProfile.objects.filter(contractor_id=contractor.id).first() if ContractorPublicProfile else None
+        agreements = list(Agreement.objects.filter(contractor_id=contractor.id).select_related("project", "homeowner").order_by("-updated_at")[:50]) if Agreement else []
+        projects = list(Project.objects.filter(contractor_id=contractor.id).select_related("homeowner").order_by("-updated_at")[:50]) if Project else []
+        user = contractor.user
+        fee_cents = 0
+        if Receipt is not None:
+            fee_cents = int(Receipt.objects.filter(agreement__contractor_id=contractor.id).aggregate(total=Sum("platform_fee_cents")).get("total") or 0)
+
+        return Response({
+            "id": contractor.id,
+            "user_id": contractor.user_id,
+            "company_id": None,
+            "business_name": contractor.business_name,
+            "name": contractor.name,
+            "email": contractor.email,
+            "phone": contractor.phone,
+            "city": contractor.city,
+            "state": contractor.state,
+            "zip": contractor.zip,
+            "service_radius_miles": contractor.service_radius_miles,
+            "account_status": _account_status(contractor),
+            "onboarding_status": contractor.contractor_onboarding_status or contractor.onboarding_status,
+            "public_profile_status": _public_profile_status(profile),
+            "public_profile_slug": getattr(profile, "slug", "") if profile else "",
+            "public_profile_is_public": bool(getattr(profile, "is_public", False)) if profile else False,
+            "marketplace_verification_status": contractor.marketplace_verification_status,
+            "created_at": _to_iso(contractor.created_at),
+            "updated_at": _to_iso(contractor.updated_at),
+            "recent_activity_at": _to_iso(max([contractor.updated_at] + [a.updated_at for a in agreements] + [p.updated_at for p in projects])),
+            "user": {
+                "is_active": bool(user.is_active),
+                "is_verified": bool(getattr(user, "is_verified", False)),
+                "is_staff": bool(user.is_staff),
+                "is_superuser": bool(user.is_superuser),
+                "date_joined": _to_iso(user.date_joined),
+                "last_login": _to_iso(user.last_login),
+            },
+            "financial": {
+                "stripe_account_id": contractor.stripe_account_id,
+                "connected": bool(contractor.stripe_account_id),
+                "charges_enabled": bool(contractor.charges_enabled),
+                "payouts_enabled": bool(contractor.payouts_enabled),
+                "details_submitted": bool(contractor.details_submitted),
+                "fee_revenue": _fmt_money(_cents_to_dollars_dec(fee_cents)),
+            },
+            "counts": {
+                "gallery": ContractorGalleryItem.objects.filter(contractor_id=contractor.id).count() if ContractorGalleryItem else 0,
+                "reviews": ContractorReview.objects.filter(contractor_id=contractor.id).count() if ContractorReview else 0,
+                "leads": PublicContractorLead.objects.filter(contractor_id=contractor.id).count() if PublicContractorLead else 0,
+                "agreements": Agreement.objects.filter(contractor_id=contractor.id).count() if Agreement else 0,
+                "projects": Project.objects.filter(contractor_id=contractor.id).count() if Project else 0,
+                "customers": Homeowner.objects.filter(created_by_id=contractor.id).count() if Homeowner else 0,
+            },
+            "agreements": [{
+                "id": row.id,
+                "project_title": safe_get(row.project, ["title"], None) or f"Agreement #{row.id}",
+                "customer_name": safe_get(row.homeowner, ["full_name"], None),
+                "status": _agreement_escrow_status(row),
+                "updated_at": _to_iso(row.updated_at),
+            } for row in agreements],
+            "projects": [{
+                "id": row.id,
+                "title": row.title,
+                "status": row.status,
+                "customer_id": row.homeowner_id,
+                "customer_name": safe_get(row.homeowner, ["full_name"], None),
+                "created_at": _to_iso(row.created_at),
+            } for row in projects],
+        })
+
+
+class AdminHomeownerDetail(APIView):
+    permission_classes = [IsAuthenticated, IsAdminUserRole]
+
+    def get(self, request, homeowner_id: int):
+        homeowner = Homeowner.objects.select_related("created_by", "created_by__user").filter(pk=homeowner_id).first() if Homeowner else None
+        if homeowner is None:
+            return Response({"detail": "Customer not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        contractor = homeowner.created_by
+        projects = list(Project.objects.filter(homeowner_id=homeowner.id).select_related("contractor").order_by("-updated_at")[:50]) if Project else []
+        agreements = list(Agreement.objects.filter(homeowner_id=homeowner.id).select_related("project", "contractor").order_by("-updated_at")[:50]) if Agreement else []
+        return Response({
+            "id": homeowner.id,
+            "homeowner_profile_id": homeowner.id,
+            "relationship_id": homeowner.id,
+            "user_id": None,
+            "contractor_id": homeowner.created_by_id,
+            "contractor_name": _contractor_display(contractor) if contractor else "",
+            "name": homeowner.full_name,
+            "email": homeowner.email,
+            "phone": homeowner.phone_number,
+            "status": homeowner.status,
+            "account_type": homeowner.account_type,
+            "created_at": _to_iso(homeowner.created_at),
+            "updated_at": _to_iso(homeowner.updated_at),
+            "recent_activity_at": _to_iso(max([homeowner.updated_at] + [a.updated_at for a in agreements] + [p.updated_at for p in projects])),
+            "address": {
+                "street": homeowner.street_address,
+                "line_2": homeowner.address_line_2,
+                "city": homeowner.city,
+                "state": homeowner.state,
+                "zip": homeowner.zip_code,
+            },
+            "counts": {
+                "properties": Project.objects.filter(homeowner_id=homeowner.id).exclude(project_street_address="").values("project_street_address", "project_city", "project_state", "project_zip_code").distinct().count() if Project else 0,
+                "projects": Project.objects.filter(homeowner_id=homeowner.id).count() if Project else 0,
+                "agreements": Agreement.objects.filter(homeowner_id=homeowner.id).count() if Agreement else 0,
+                "leads": PublicContractorLead.objects.filter(converted_homeowner_id=homeowner.id).count() if PublicContractorLead else 0,
+            },
+            "projects": [{
+                "id": row.id,
+                "title": row.title,
+                "status": row.status,
+                "contractor_id": row.contractor_id,
+                "contractor_name": _contractor_display(row.contractor),
+                "address": ", ".join(part for part in [row.project_street_address, row.project_city, row.project_state, row.project_zip_code] if part),
+                "created_at": _to_iso(row.created_at),
+            } for row in projects],
+            "agreements": [{
+                "id": row.id,
+                "project_title": safe_get(row.project, ["title"], None) or f"Agreement #{row.id}",
+                "status": _agreement_escrow_status(row),
+                "funded": _fmt_money(_to_dec(getattr(row, "escrow_funded_amount", None))),
+                "created_at": _to_iso(row.created_at),
+            } for row in agreements],
+        })
+
+
 class AdminSubcontractors(APIView):
     permission_classes = [IsAuthenticated, IsAdminUserRole]
 
