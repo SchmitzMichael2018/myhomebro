@@ -9,6 +9,8 @@
 }
 
 .mhb-login-modal-card {
+  position: relative;
+  z-index: 1;
   box-sizing: border-box;
   min-width: 0;
   width: min(520px, calc(100vw - 24px));
@@ -20,6 +22,11 @@
   );
   overflow: hidden;
   overscroll-behavior: contain;
+  cursor: default;
+}
+
+.mhb-login-modal-card :is(input[type="email"], input[type="password"], input[type="text"]) {
+  cursor: text;
 }
 
 .mhb-login-modal-overlay {

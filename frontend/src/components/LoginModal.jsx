@@ -44,7 +44,13 @@ export default function LoginModal() {
   const close = useCallback(() => {
     if (!loading) {
       setVisible(false);
-      window.setTimeout(() => openerRef.current?.focus?.(), 0);
+      window.setTimeout(() => {
+        const opener = openerRef.current;
+        const focusTarget = opener?.isConnected
+          ? opener
+          : document.querySelector('[data-testid="landing-sign-in-button"]');
+        focusTarget?.focus?.();
+      }, 0);
     }
   }, [loading]);
 
@@ -343,8 +349,10 @@ export default function LoginModal() {
       className="mhb-modal-overlay mhb-login-modal-overlay"
       data-testid="login-modal"
       ref={overlayRef}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
     >
-      <button type="button" aria-label="Close login dialog" className="mhb-login-backdrop absolute inset-0" onClick={close} />
       <div
         className="mhb-modal-card mhb-login-modal-card"
         style={{ maxWidth: 520 }}

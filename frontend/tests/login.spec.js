@@ -149,3 +149,85 @@ test('landing login modal closes with close button and backdrop click', async ({
   await page.mouse.click(8, 8);
   await expect(page.getByTestId('login-modal')).toBeHidden();
 });
+
+test('landing contractor login modal keeps all dialog controls interactive', async ({ page }) => {
+  const openContractorLogin = async () => {
+    await page.getByTestId('landing-sign-in-button').click();
+    await page
+      .getByRole('menu', { name: 'Log in options' })
+      .getByRole('button', { name: 'Contractor Log In', exact: true })
+      .click();
+    await expect(page.getByTestId('login-modal')).toBeVisible();
+  };
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await openContractorLogin();
+
+  const modal = page.getByTestId('login-modal');
+  const dialog = modal.getByRole('dialog');
+  const email = page.getByTestId('login-email-input');
+  const password = page.getByTestId('login-password-input');
+  const showPassword = dialog.getByRole('checkbox', { name: 'Show' });
+  const rememberMe = dialog.getByRole('checkbox', { name: 'Remember me' });
+
+  await expect(dialog).toHaveAttribute('aria-modal', 'true');
+  await email.click();
+  await expect(email).toBeFocused();
+  await email.fill('interaction@example.com');
+  await expect(email).toHaveValue('interaction@example.com');
+  expect(await email.evaluate((element) => getComputedStyle(element).cursor)).toBe('text');
+
+  await password.click();
+  await expect(password).toBeFocused();
+  await password.fill('not-a-real-password');
+  await expect(password).toHaveValue('not-a-real-password');
+  await showPassword.check();
+  await expect(password).toHaveAttribute('type', 'text');
+  await rememberMe.uncheck();
+  await expect(rememberMe).not.toBeChecked();
+
+  await dialog.getByRole('heading', { name: 'Sign In' }).click();
+  await expect(modal).toBeVisible();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('hidden');
+
+  for (let index = 0; index < 12; index += 1) {
+    await page.keyboard.press('Tab');
+    expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  }
+
+  await page.mouse.click(8, 8);
+  await expect(modal).toBeHidden();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe('');
+
+  await openContractorLogin();
+  await page.keyboard.press('Escape');
+  await expect(modal).toBeHidden();
+  await expect(page.getByTestId('landing-sign-in-button')).toBeFocused();
+});
+
+test('landing contractor login modal remains interactive and contained at supported widths', async ({ page }) => {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 900, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.getByTestId('landing-sign-in-button').click();
+    await page
+      .getByRole('menu', { name: 'Log in options' })
+      .getByRole('button', { name: 'Contractor Log In', exact: true })
+      .click();
+
+    const modal = page.getByTestId('login-modal');
+    const dialog = modal.getByRole('dialog');
+    const email = page.getByTestId('login-email-input');
+    await email.click();
+    await email.fill(`width-${viewport.width}@example.com`);
+    await expect(modal).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    expect(Number(await dialog.evaluate((element) => getComputedStyle(element).zIndex))).toBeGreaterThan(0);
+    await page.keyboard.press('Escape');
+    await expect(modal).toBeHidden();
+  }
+});
