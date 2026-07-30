@@ -785,6 +785,7 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=overview', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('admin-overview-cards')).toBeVisible();
+  await page.screenshot({ path: 'test-results/admin-overview-light.png', fullPage: true });
   await expect(page.getByText('Admin Home')).toHaveCount(0);
   await expect(page.getByText('Support Tools')).toHaveCount(0);
   await expect(page.getByText('Marketplace Operations Center')).toBeVisible();
@@ -866,11 +867,13 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByText('Filter:')).toContainText('Escrow in flight');
   await expect(page.getByText('No agreements match')).toHaveCount(0);
   await expect(page.getByText('Kitchen Remodel')).toBeVisible();
+  await page.screenshot({ path: 'test-results/admin-agreements-light.png', fullPage: true });
   await page.getByRole('button', { name: 'View Agreement' }).first().click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321$/);
   await expect(page.getByRole('heading', { name: 'Admin Agreement Detail' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Back to Admin Agreements' })).toBeVisible();
   await expect(page.getByTestId('admin-agreement-tabs')).toBeVisible();
+  await page.screenshot({ path: 'test-results/admin-agreement-detail-light.png', fullPage: true });
   await page.goto('/app/admin?view=agreements&escrow_status=in_flight', { waitUntil: 'domcontentloaded' });
   await page.getByRole('button', { name: 'Financials' }).first().click();
   await expect(page).toHaveURL(/\/app\/admin\/agreements\/321\?tab=pricing$/);
@@ -896,6 +899,7 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await expect(page.getByTestId('admin-contractor-search')).toHaveClass(/mhb-admin-control/);
   await expect(page.getByTestId('admin-contractors-table-panel')).toHaveClass(/mhb-admin-contractors-table/);
   await expect(page.getByTestId('admin-contractor-filter').locator('option')).toHaveCount(4);
+  await page.screenshot({ path: 'test-results/admin-contractors-light.png', fullPage: true });
   const optionColors = await page.getByTestId('admin-contractor-filter').locator('option').evaluateAll((options) =>
     options.map((option) => ({
       background: getComputedStyle(option).backgroundColor,
@@ -911,6 +915,7 @@ test('owner admin dashboard smoke renders overview and core admin views', async 
   await page.goto('/app/admin?view=homeowners', { waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('admin-homeowners-view')).toBeVisible();
   await expect(page.getByTestId('admin-homeowner-row-701')).toContainText('Casey Prospect');
+  await page.screenshot({ path: 'test-results/admin-customers-light.png', fullPage: true });
   const homeownerRowClass = await page.getByTestId('admin-homeowner-row-701').getAttribute('class');
   expect(homeownerRowClass).toContain('[&_.text-slate-600]:text-sky-100/75');
   expect(homeownerRowClass).toContain('[&_.text-slate-700]:text-sky-100/75');
@@ -968,6 +973,11 @@ test('admin contractor workspace preserves contrast and containment across appea
       if (viewport.width === 1440) {
         await page.screenshot({
           path: `test-results/admin-contractors-${appearance}.png`,
+          fullPage: true,
+        });
+      } else if (viewport.width === 390) {
+        await page.screenshot({
+          path: `test-results/admin-contractors-narrow-${appearance}.png`,
           fullPage: true,
         });
       }

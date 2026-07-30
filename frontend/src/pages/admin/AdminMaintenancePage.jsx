@@ -3,8 +3,8 @@ import { ExternalLink, RefreshCcw } from "lucide-react";
 
 import api from "../../api";
 
-const shell = "min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] p-4 text-slate-100 sm:p-6";
-const panel = "rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-2xl shadow-slate-950/30";
+const shell = "mhb-admin-page min-h-screen p-4 text-slate-100 sm:p-6";
+const panel = "mhb-admin-panel rounded-3xl p-5";
 const button = "inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50";
 
 function fmtDate(value) {
@@ -297,4 +297,3 @@ export default function AdminMaintenancePage() {
     </div>
   );
 }
-

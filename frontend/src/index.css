@@ -2082,6 +2082,27 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   box-shadow: var(--mhb-shadow-card);
 }
 
+.mhb-admin-panel {
+  border: 1px solid var(--mhb-border-default);
+  background: var(--mhb-surface-sidebar);
+  color: #f8fafc;
+  box-shadow: var(--mhb-shadow-card);
+}
+
+.mhb-admin-panel select option {
+  background: #f8fafc;
+  color: #0f2747;
+}
+
+.mhb-admin-panel select option:checked {
+  background: #dbeafe;
+}
+
+.mhb-admin-page :where(button, a[href], input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--mhb-border-selected);
+  outline-offset: 2px;
+}
+
 .mhb-admin-contractors-panel :is(.text-slate-900, .text-slate-800) {
   color: var(--mhb-text-primary) !important;
 }

@@ -43,12 +43,8 @@ const EXPORT_HEADERS = [
   "last_seen_at",
 ];
 
-const pageBackground = {
-  background: "linear-gradient(135deg, #041735 0%, #063f96 38%, #667f88 70%, #f0c94b 100%)",
-};
-
-const sectionClass = "rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]";
-const inputClass = "w-full rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-sky-100/45 outline-none focus:border-sky-200";
+const sectionClass = "mhb-admin-panel rounded-2xl p-5";
+const inputClass = "mhb-admin-control w-full";
 const labelClass = "mb-1 block text-xs font-bold uppercase tracking-wide text-sky-100/65";
 const subtlePanelClass = "rounded-xl border border-white/10 bg-white/8";
 const tableHeadClass = "border-b border-white/10 px-3 py-2 font-bold";
@@ -637,7 +633,7 @@ export default function AdminContractorDirectory() {
     : 0;
 
   return (
-    <div className="min-h-screen space-y-6 px-4 py-6 md:px-6" style={pageBackground} data-testid="admin-contractor-directory-page">
+    <div className="mhb-admin-page min-h-screen space-y-6 px-4 py-6 md:px-6" data-testid="admin-contractor-directory-page">
       {successMessage ? (
         <div data-testid="admin-contractor-toast" className="fixed right-4 top-4 z-[70] max-w-sm rounded-2xl border border-emerald-200/40 bg-emerald-950/95 px-4 py-3 text-sm font-bold text-emerald-50 shadow-2xl">
           {successMessage}

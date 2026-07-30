@@ -5,13 +5,9 @@ import { useWhoAmI } from "../../hooks/useWhoAmI";
 
 const DIRECTORY_BASE = "/projects/admin/contractor-directory";
 
-const pageStyle = {
-  background: "linear-gradient(135deg, #041735 0%, #063f96 38%, #667f88 70%, #f0c94b 100%)",
-};
-
-const sectionClass = "rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-white shadow-[0_22px_50px_rgba(2,8,23,0.32)]";
+const sectionClass = "mhb-admin-panel rounded-2xl p-5";
 const panelClass = "rounded-xl border border-white/10 bg-white/[0.08] p-4";
-const inputClass = "rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-sky-100/45 outline-none focus:border-sky-200";
+const inputClass = "mhb-admin-control";
 const tableHeadClass = "border-b border-white/10 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-sky-100/65";
 const tableCellClass = "border-b border-white/10 px-3 py-3 align-top text-sm text-sky-50/85";
 
@@ -615,7 +611,7 @@ export default function AdminMarketplacePage() {
   }
 
   return (
-    <div className="min-h-full px-4 py-6 md:px-6" style={pageStyle}>
+    <div className="mhb-admin-page min-h-full px-4 py-6 md:px-6" data-testid="admin-marketplace-page">
       <div className="mx-auto max-w-[1500px] space-y-6">
         <header className={sectionClass}>
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

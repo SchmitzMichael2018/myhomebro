@@ -12,8 +12,7 @@ const statusOptions = [
   ["", "All"],
 ];
 
-const inputClass =
-  "rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-sky-100/50 focus:border-amber-200 focus:outline-none";
+const inputClass = "mhb-admin-control";
 const buttonClass =
   "rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-bold text-sky-50 hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50";
 const primaryButtonClass =
@@ -143,7 +142,7 @@ export default function AdminReviewsPage() {
   };
 
   return (
-    <div data-testid="admin-reviews-page" className="min-h-screen bg-[#071b35] px-4 py-6 text-white sm:px-6 lg:px-8">
+    <div data-testid="admin-reviews-page" className="mhb-admin-page min-h-screen px-4 py-6 text-white sm:px-6 lg:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#0b2a58] to-[#06152b] p-6 shadow-2xl shadow-slate-950/30">
           <div className="text-xs font-black uppercase tracking-[0.22em] text-amber-200/80">Admin Trust</div>
