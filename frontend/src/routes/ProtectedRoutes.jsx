@@ -4,6 +4,7 @@ import { Route, Navigate, Outlet } from "react-router-dom";
 
 import RequireAuth from "./RequireAuth.jsx";
 import AuthenticatedLayout from "../layouts/AuthenticatedLayout.jsx";
+import ContractorOnboardingGate from "./ContractorOnboardingGate.jsx";
 
 const ContractorDashboard = lazy(() => import("../components/ContractorDashboard.jsx"));
 
@@ -185,7 +186,14 @@ export function protectedRoutes() {
         </Route>
 
         <Route element={<RoleGate allow={["contractor", "contractor_owner"]} />}>
-          <Route path="dashboard" element={<ContractorDashboard />} />
+          <Route
+            path="dashboard"
+            element={
+              <ContractorOnboardingGate>
+                <ContractorDashboard />
+              </ContractorOnboardingGate>
+            }
+          />
           <Route path="assistant" element={<AIAssistantPage />} />
           <Route path="support" element={<SupportTicketsPage />} />
           <Route path="support/:ticketNumber" element={<SupportTicketsPage />} />

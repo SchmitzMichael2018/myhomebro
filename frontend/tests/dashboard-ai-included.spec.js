@@ -30,6 +30,18 @@ test('contractor dashboard renders included AI messaging without legacy gating t
       }),
     });
   });
+  await page.route('**/api/projects/contractors/onboarding/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        required_onboarding_complete: true,
+        profile_basics_complete: true,
+        status: 'complete',
+        step: 'complete',
+      }),
+    });
+  });
 
   await page.route('**/api/projects/contractors/me/**', async (route) => {
     await route.fulfill({
@@ -95,6 +107,7 @@ test('contractor dashboard renders included AI messaging without legacy gating t
   await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-  await expect(page.getByText('AI tools are included with your account.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open Project Assistant' })).toBeVisible();
+  await expect(page.getByPlaceholder('Your business name')).toHaveCount(0);
   await expect(page.locator('text=/Upgrade to AI Pro|Payment required|credits remaining|subscription required/i')).toHaveCount(0);
 });

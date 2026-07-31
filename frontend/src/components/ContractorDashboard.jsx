@@ -44,13 +44,7 @@ import {
 import { getContractorNextActions } from "../lib/contractorNextActions.js";
 import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
 import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
-import OnboardingConversation from "./OnboardingConversation.jsx";
 import { useAssistantDock } from "./AssistantDock.jsx";
-import {
-  detectLoginExperience,
-  getDaysSinceLastLogin,
-  recordLoginTimestamp,
-} from "../lib/onboardingState.js";
 import {
   Button,
   EmptyState,
@@ -1963,11 +1957,6 @@ export default function ContractorDashboard() {
   const [who, setWho] = useState(null);
   const [contractorProfile, setContractorProfile] = useState(null);
 
-  // Onboarding detection shown on Dashboard.
-  const [loginExperience, setLoginExperience] = useState(null); // null = still loading
-  const [onboardingProfile, setOnboardingProfile] = useState(null);
-  const [onboardingStripe, setOnboardingStripe] = useState(null);
-  const [daysSinceLogin, setDaysSinceLogin] = useState(0);
   const [activityFeed, setActivityFeed] = useState([]);
   const [nextBestAction, setNextBestAction] = useState(null);
   const [activationSummary, setActivationSummary] = useState(null);
@@ -2051,35 +2040,6 @@ export default function ContractorDashboard() {
     })();
     return () => (mounted = false);
   }, [authReady, isAuthed]);
-
-  /* ----- onboarding / login experience detection ----- */
-  useEffect(() => {
-    const days = getDaysSinceLastLogin();
-    setDaysSinceLogin(days);
-    recordLoginTimestamp();
-
-    async function detectExperience() {
-      try {
-        const [profileRes, stripeRes, agreementsRes] = await Promise.allSettled([
-          api.get("/projects/contractors/me/"),
-          api.get("/payments/onboarding/status/"),
-          api.get("/projects/agreements/"),
-        ]);
-        const profile = profileRes.status === "fulfilled" ? (profileRes.value?.data || {}) : {};
-        const stripe = stripeRes.status === "fulfilled" ? (stripeRes.value?.data || {}) : {};
-        const agreementsData = agreementsRes.status === "fulfilled"
-          ? (agreementsRes.value?.data?.results ?? agreementsRes.value?.data ?? [])
-          : [];
-        const jobCount = Array.isArray(agreementsData) ? agreementsData.length : 0;
-        setOnboardingProfile(profile);
-        setOnboardingStripe(stripe);
-        setLoginExperience(detectLoginExperience(profile, jobCount, days));
-      } catch {
-        setLoginExperience("daily_briefing");
-      }
-    }
-    detectExperience();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ----- load dashboard data ----- */
   useEffect(() => {
@@ -3000,14 +2960,17 @@ export default function ContractorDashboard() {
   }, [contractorProfile, who]);
 
   const profileScore = useMemo(() => {
-    if (!onboardingProfile) return null;
-    const { score } = calculateProfileCompleteness(onboardingProfile, {
-      stripeConnected: Boolean(onboardingStripe?.connected),
+    if (!contractorProfile) return null;
+    const { score } = calculateProfileCompleteness(contractorProfile, {
+      stripeConnected: Boolean(
+        contractorProfile?.stripe_connected ||
+        contractorProfile?.onboarding?.stripe_ready
+      ),
       jobCount: agreements.length,
       templateCount: 0,
     });
     return score;
-  }, [onboardingProfile, onboardingStripe, agreements]);
+  }, [contractorProfile, agreements]);
 
   const hasUrgentSchedule = dueSchedule.late.count > 0 || dueSchedule.today.count > 0;
   const scheduleHasItems =
@@ -3589,29 +3552,6 @@ export default function ContractorDashboard() {
       </DashboardCard>
     </DashboardSection>
   );
-
-  // Show onboarding conversation on Dashboard until the contractor is fully set up
-  if (loginExperience === "first_login" || loginExperience === "resume_onboarding") {
-    return (
-      <PageShell
-        title={loginExperience === "resume_onboarding" ? "Finish your setup" : "Welcome to MyHomeBro"}
-        subtitle=""
-        showLogo={false}
-        compact
-        className="mhb-dashboard-shell"
-        titleClassName="drop-shadow-none"
-      >
-        <div className="mx-auto max-w-3xl py-4">
-          <OnboardingConversation
-            contractorProfile={onboardingProfile}
-            stripeStatus={onboardingStripe}
-            mode={loginExperience}
-            onComplete={() => setLoginExperience("daily_briefing")}
-          />
-        </div>
-      </PageShell>
-    );
-  }
 
   return (
     <PageShell

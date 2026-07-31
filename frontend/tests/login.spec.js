@@ -107,6 +107,20 @@ test('landing login dropdown opens contractor modal and routes to contractor das
       }),
     });
   });
+  await page.route('**/api/projects/contractors/onboarding/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        required_onboarding_complete: true,
+        status: 'in_progress',
+        step: 'stripe',
+        business_name: 'Contractor',
+        trade_count: 1,
+        service_region_label: 'Chicago, IL',
+      }),
+    });
+  });
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('landing-sign-in-button').click();

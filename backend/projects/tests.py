@@ -20102,6 +20102,7 @@ class ContractorActivationOnboardingTests(TestCase):
         self.assertEqual(payload["trade_count"], 2)
         self.assertEqual(payload["service_radius_miles"], 50)
         self.assertFalse(payload["show_soft_stripe_prompt"])
+        self.assertTrue(payload["required_onboarding_complete"])
 
         mark_response = self.client.patch(
             "/api/projects/contractors/onboarding/",
@@ -20139,6 +20140,21 @@ class ContractorActivationOnboardingTests(TestCase):
             list(self.contractor.skills.order_by("name").values_list("name", flat=True)),
             ["Electrical", "HVAC"],
         )
+
+    def test_required_onboarding_stays_incomplete_without_business_name(self):
+        response = self.client.patch(
+            "/api/projects/contractors/onboarding/",
+            {
+                "business_name": "",
+                "state": "TX",
+                "skills": ["HVAC"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["required_onboarding_complete"])
+        self.assertEqual(response.json()["step"], "welcome")
 
     def test_direct_pay_link_returns_structured_stripe_requirement(self):
         response = self.client.post(f"/api/projects/invoices/{self.invoice.id}/direct_pay_link/")

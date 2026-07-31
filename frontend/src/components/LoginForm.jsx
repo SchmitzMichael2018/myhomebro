@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
+import { resolveAuthenticatedEntry } from "../lib/contractorOnboardingRoute.js";
 
 export default function LoginForm({ redirectTo = "/dashboard" }) {
   const navigate = useNavigate();
@@ -117,9 +118,20 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
         toast.success("Welcome back!");
       }
 
-      navigate(redirectTo);
+      if (redirectTo === "/dashboard" || redirectTo === "/app/dashboard") {
+        const { data: identityData } = await api.get("/projects/whoami/");
+        const identity = Array.isArray(identityData) ? identityData[0] : identityData;
+        const nextRoute = await resolveAuthenticatedEntry(identity);
+        if (!nextRoute) throw new Error("Unable to determine the signed-in account route.");
+        navigate(nextRoute);
+      } else {
+        navigate(redirectTo);
+      }
     } catch (err) {
-      const msg = err?.response?.data?.detail || "Invalid email or password.";
+      const msg =
+        err?.response?.data?.detail ||
+        err?.message ||
+        "Invalid email or password.";
       toast.error(String(msg));
       console.error("LoginForm error:", err);
     } finally {

@@ -62,6 +62,19 @@ async function mockDashboard(page, { proposalId = 501, onProposalCreate = null, 
       });
     }
 
+    if (path.endsWith("/api/projects/contractors/onboarding/")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          required_onboarding_complete: true,
+          profile_basics_complete: true,
+          status: "complete",
+          step: "complete",
+        }),
+      });
+    }
+
     if (path.endsWith("/api/payments/onboarding/status/")) {
       return route.fulfill({
         status: 200,

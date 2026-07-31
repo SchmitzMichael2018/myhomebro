@@ -6,6 +6,7 @@ import { useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
 import { useAuth } from "../context/AuthContext";
 import logo from "../assets/myhomebro_logo.png";
+import { resolveAuthenticatedEntry } from "../lib/contractorOnboardingRoute.js";
 
 /**
  * LoginModal (Sign In only)
@@ -250,30 +251,18 @@ export default function LoginModal() {
     }
   };
 
-  const identityRoute = (identity) => {
-    const role = String(
-      identity?.identity_type || identity?.type || identity?.role || ""
-    ).toLowerCase();
-
-    if (role === "admin") return "/app/admin";
-    if (role === "subaccount" || role === "internal_team_member") {
-      return "/app/employee/dashboard";
-    }
-    if (role === "subcontractor") return "/app/subcontractor/assigned-work";
-    if (role === "contractor" || role === "contractor_owner") return "/app/dashboard";
-    if (role === "homeowner") return "/portal";
-    return "";
-  };
-
   const resolveLoginRoute = async () => {
     if (loginAudience === "homeowner") return "/portal";
-    if (loginAudience === "contractor") return "/app/dashboard";
-
     try {
       const { data } = await api.get("/projects/whoami/");
-      return identityRoute(Array.isArray(data) ? data[0] : data) || "/app/dashboard";
+      const identity = Array.isArray(data) ? data[0] : data;
+      const route = await resolveAuthenticatedEntry(identity);
+      if (!route) throw new Error("Unknown account type.");
+      return route;
     } catch {
-      return "/app/dashboard";
+      throw new Error(
+        "Signed in, but we couldn’t verify your setup progress. Retry to continue."
+      );
     }
   };
 
@@ -327,13 +316,19 @@ export default function LoginModal() {
         }
       }
 
-      toast.success("Signed in. Redirecting to your dashboard.");
+      const nextRoute = await resolveLoginRoute();
+      toast.success(
+        nextRoute === "/onboarding"
+          ? "Signed in. Resuming your setup."
+          : "Signed in. Redirecting to your dashboard."
+      );
       setVisible(false);
-      navigate(await resolveLoginRoute());
+      navigate(nextRoute);
     } catch (err) {
       const msg =
         err?.response?.data?.detail ||
         err?.response?.data?.message ||
+        err?.message ||
         "Unable to sign in. Check your email and password and try again.";
       toast.error(String(msg));
       console.error("Login error:", err);

@@ -555,7 +555,7 @@ export default function StripeOnboarding() {
             />
           </div>
 
-          {error ? (
+          {error && onboarding ? (
             <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
               {error}
             </div>
@@ -563,6 +563,20 @@ export default function StripeOnboarding() {
 
           {loading ? (
             <div className="mt-6 text-sm text-slate-600">Loading onboarding...</div>
+          ) : error && !onboarding ? (
+            <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-5" role="alert">
+              <h2 className="font-bold text-rose-900">We couldn’t load your setup progress</h2>
+              <p className="mt-1 text-sm text-rose-800">
+                No progress was changed. Retry when your connection is available.
+              </p>
+              <button
+                type="button"
+                onClick={loadAll}
+                className="mt-4 min-h-11 rounded-xl bg-rose-800 px-5 text-sm font-bold text-white hover:bg-rose-900"
+              >
+                Retry
+              </button>
+            </div>
           ) : (
             <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.7fr)]">
               <div className="space-y-5">

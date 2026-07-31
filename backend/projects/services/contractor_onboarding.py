@@ -40,9 +40,10 @@ def _coerce_service_radius_miles(value: Any) -> int:
 def contractor_profile_basics_complete(contractor: Contractor | None) -> bool:
     if contractor is None:
         return False
+    has_business_name = bool(str(getattr(contractor, "business_name", "") or "").strip())
     has_trade = contractor.skills.exists()
     has_region = bool(str(getattr(contractor, "state", "") or "").strip())
-    return bool(has_trade and has_region)
+    return bool(has_business_name and has_trade and has_region)
 
 
 def contractor_first_value_reached(contractor: Contractor | None) -> bool:
@@ -119,6 +120,8 @@ def update_stripe_onboarding_status(contractor: Contractor, *, save: bool = True
 
 def determine_onboarding_step(contractor: Contractor | None) -> str:
     if contractor is None:
+        return ONBOARDING_STEP_WELCOME
+    if not str(getattr(contractor, "business_name", "") or "").strip():
         return ONBOARDING_STEP_WELCOME
     if not contractor.skills.exists():
         return ONBOARDING_STEP_WELCOME
@@ -209,6 +212,7 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
             "status": "not_started",
             "step": ONBOARDING_STEP_WELCOME,
             "profile_basics_complete": False,
+            "required_onboarding_complete": False,
             "first_value_reached": False,
             "stripe_ready": False,
             "show_soft_stripe_prompt": False,
@@ -238,6 +242,7 @@ def build_onboarding_snapshot(contractor: Contractor | None) -> dict[str, Any]:
         "status": contractor.contractor_onboarding_status or determine_onboarding_status(contractor),
         "step": step_value,
         "profile_basics_complete": contractor_profile_basics_complete(contractor),
+        "required_onboarding_complete": contractor_profile_basics_complete(contractor),
         "first_value_reached": first_value_reached,
         "stripe_ready": stripe_ready,
         "stripe_onboarding_status": getattr(contractor, "stripe_onboarding_status", "") or determine_stripe_onboarding_status(contractor),
