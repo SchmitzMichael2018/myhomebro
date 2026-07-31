@@ -70,6 +70,60 @@ test('signup modal keeps validation visible and only backdrop clicks dismiss it'
   await expect(modal).toHaveCount(0);
 });
 
+test('signup modal Terms link preserves consent state and the dialog', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const modal = await openSignupFromHeader(page);
+  const dialog = modal.getByRole('dialog');
+  const checkbox = dialog.getByRole('checkbox');
+  const terms = dialog.getByRole('link', { name: 'Terms of Service' });
+  const privacy = dialog.getByRole('link', { name: 'Privacy Policy' });
+
+  await expect(terms).toHaveAttribute('href', '/legal/terms-of-service/');
+  await expect(privacy).toHaveAttribute('href', '/legal/privacy-policy/');
+  await expect(checkbox).not.toBeChecked();
+
+  await terms.click();
+  await expect(page).toHaveURL(/\/legal\/terms-of-service\/?$/);
+  await expect(modal).toBeVisible();
+  await expect(checkbox).not.toBeChecked();
+});
+
+test('signup modal Privacy link preserves consent state and the dialog', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const modal = await openSignupFromHeader(page);
+  const dialog = modal.getByRole('dialog');
+  const checkbox = dialog.getByRole('checkbox');
+  const privacy = dialog.getByRole('link', { name: 'Privacy Policy' });
+
+  await privacy.click();
+  await expect(page).toHaveURL(/\/legal\/privacy-policy\/?$/);
+  await expect(modal).toBeVisible();
+  await expect(checkbox).not.toBeChecked();
+});
+
+test('signup consent label toggles the checkbox and links have separate tab stops', async ({
+  page,
+}) => {
+  await page.goto('/');
+  const modal = await openSignupFromHeader(page);
+  const dialog = modal.getByRole('dialog');
+  const checkbox = dialog.getByRole('checkbox');
+  const terms = dialog.getByRole('link', { name: 'Terms of Service' });
+  const privacy = dialog.getByRole('link', { name: 'Privacy Policy' });
+
+  await dialog.getByTestId('signup-consent-copy').click();
+  await expect(checkbox).toBeChecked();
+  await expect(checkbox).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(terms).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(privacy).toBeFocused();
+});
+
 test('mocked contractor registration follows the existing onboarding redirect', async ({
   page,
 }) => {
@@ -100,6 +154,12 @@ test('direct signup route remains usable and preserves browser history', async (
     page.getByRole('heading', { name: 'Contractor Sign Up' })
   ).toBeVisible();
   await expect(page.getByLabel('Email')).toBeEditable();
+  await expect(
+    page.getByRole('link', { name: 'Terms of Service' })
+  ).toHaveAttribute('href', '/legal/terms-of-service/');
+  await expect(
+    page.getByRole('link', { name: 'Privacy Policy' })
+  ).toHaveAttribute('href', '/legal/privacy-policy/');
 
   await page.goBack();
   await expect(page).toHaveURL(/\/$/);

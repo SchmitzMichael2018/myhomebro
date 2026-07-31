@@ -2,7 +2,7 @@
 // v2026-02-10b — fix signup 404 by using real backend routes under /accounts/auth/*
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
 
@@ -214,9 +214,33 @@ export function ContractorSignupForm({ embedded = false, onComplete }) {
           />
         </div>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="agree" checked={form.agree} onChange={onChange} />
-          <span>I agree to the Terms of Service and Privacy Policy.</span>
+        <label className="flex items-start gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="agree"
+            checked={form.agree}
+            onChange={onChange}
+            className="mt-0.5 shrink-0"
+          />
+          <span className="min-w-0">
+            <span data-testid="signup-consent-copy">I agree to the </span>
+            <Link
+              to="/legal/terms-of-service/"
+              onClick={(event) => event.stopPropagation()}
+              className="font-semibold text-blue-700 underline decoration-1 underline-offset-2 visited:text-purple-700 hover:text-blue-900 hover:decoration-2 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+            >
+              Terms of Service
+            </Link>
+            <span> and </span>
+            <Link
+              to="/legal/privacy-policy/"
+              onClick={(event) => event.stopPropagation()}
+              className="font-semibold text-blue-700 underline decoration-1 underline-offset-2 visited:text-purple-700 hover:text-blue-900 hover:decoration-2 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
+            >
+              Privacy Policy
+            </Link>
+            <span>.</span>
+          </span>
         </label>
 
         <button type="submit" disabled={loading} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
