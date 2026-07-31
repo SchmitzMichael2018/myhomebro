@@ -1,312 +1,91 @@
-// src/components/SignUpModal.jsx
-// v2026-02-10b — Fix signup 404 by probing /accounts/auth/* endpoints (actual backend routes)
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import React, { useEffect, useState, useCallback, useRef } from "react";
-import toast from "react-hot-toast";
-import api, { setTokens } from "../api";
-import logo from "../assets/myhomebro_logo.png";
+import { ContractorSignupForm } from "./SignUpForm.jsx";
 
 export default function SignUpModal() {
   const [visible, setVisible] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const overlayRef = useRef(null);
+  const openerRef = useRef(null);
 
-  const [form, setForm] = useState({
-    first_name: "",
-    last_name: "",
-    email: "",
-    password: "",
-    confirm: "",
-    phone: "",
-    agree: false,
-  });
+  const open = useCallback(() => {
+    openerRef.current = document.activeElement;
+    setVisible(true);
+  }, []);
 
-  const [showPw, setShowPw] = useState(false);
-  const firstRef = useRef(null);
-
-  const openSignup = useCallback(() => setVisible(true), []);
-  const close = () => {
-    if (!loading) setVisible(false);
-  };
+  const close = useCallback(() => {
+    setVisible(false);
+    window.setTimeout(() => {
+      const opener = openerRef.current;
+      const fallback = document.querySelector('[data-testid="landing-contractor-signup-button"], [data-testid="landing-sign-in-button"]');
+      (opener?.isConnected ? opener : fallback)?.focus?.();
+    }, 0);
+  }, []);
 
   useEffect(() => {
-    window.mhbOpenSignup = () => openSignup();
-    const onEvt = () => openSignup();
-    window.addEventListener("mhb:open-signup", onEvt);
+    window.mhbOpenSignup = open;
+    window.addEventListener("mhb:open-signup", open);
     return () => {
       try {
         delete window.mhbOpenSignup;
-      } catch { /* The compatibility callback may already be non-configurable. */ }
-      window.removeEventListener("mhb:open-signup", onEvt);
+      } catch {
+        /* Compatibility callback cleanup is best-effort. */
+      }
+      window.removeEventListener("mhb:open-signup", open);
     };
-  }, [openSignup]);
+  }, [open]);
 
   useEffect(() => {
-    if (visible) setTimeout(() => firstRef.current?.focus(), 0);
-  }, [visible]);
-
-  const onChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setForm((s) => ({ ...s, [name]: type === "checkbox" ? checked : value }));
-  };
-
-  const validate = () => {
-    if (!form.agree) return "Please agree to the Terms to continue.";
-    if (!form.first_name.trim() || !form.last_name.trim())
-      return "First and last name are required.";
-    if (!/^\S+@\S+\.\S+$/.test(form.email)) return "Enter a valid email.";
-    if (form.password.length < 8)
-      return "Password must be at least 8 characters.";
-    if (form.password !== form.confirm) return "Passwords do not match.";
-    if (form.phone && !/^[0-9]{10}$/.test(form.phone))
-      return "Phone must be 10 digits (numbers only).";
-    return null;
-  };
-
-  async function registerContractor(payload) {
-    // ✅ Real backend routes are under /api/accounts/auth/...
-    const candidates = [
-      "/accounts/auth/contractor-register/",
-      "/accounts/auth/register/",
-      // fallback (if you later expose one)
-      "/auth/contractor-register/",
-      "/auth/register/",
-    ];
-
-    let last404 = null;
-
-    for (const url of candidates) {
-      try {
-        const res = await api.post(url, payload);
-        return { ...res, __used_url: url };
-      } catch (e) {
-        const st = e?.response?.status;
-        if (st === 404) {
-          last404 = e;
-          continue;
-        }
-        throw { ...e, __used_url: url };
-      }
-    }
-
-    throw last404 || new Error("No registration endpoint found.");
-  }
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const err = validate();
-    if (err) return toast.error(err);
-
-    setLoading(true);
-    try {
-      const payload = {
-        email: form.email.trim(),
-        password: form.password,
-        first_name: form.first_name.trim(),
-        last_name: form.last_name.trim(),
-        phone_number: (form.phone || "").trim(),
-      };
-
-      const { data, __used_url } = await registerContractor(payload);
-      // eslint-disable-next-line no-console
-      console.log("✅ Contractor register used endpoint:", __used_url);
-
-      if (data?.access) {
-        setTokens(data.access, data.refresh || null, true);
-        toast.success("Account created!");
-        setVisible(false);
-        window.location.href = "/onboarding";
+    if (!visible) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
         return;
       }
-
-      toast.success(
-        data?.message || "Registration successful. Check your email to verify."
-      );
-      setVisible(false);
-    } catch (err2) {
-      // eslint-disable-next-line no-console
-      console.error("SignUpModal error:", err2);
-
-      const status = err2?.response?.status;
-      if (status === 404) {
-        toast.error("Signup endpoint not found on the server.");
-        return;
+      if (event.key !== "Tab") return;
+      const dialog = overlayRef.current?.querySelector('[role="dialog"]');
+      const focusable = Array.from(dialog?.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])') || []);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
-
-      const msg =
-        err2?.response?.data?.detail ||
-        err2?.response?.data?.email ||
-        (Array.isArray(err2?.response?.data?.password)
-          ? err2.response.data.password[0]
-          : null) ||
-        err2?.message ||
-        "Registration failed.";
-      toast.error(String(msg));
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [close, visible]);
 
   if (!visible) return null;
 
-  const openFresh = (path) => {
-    const url = `${path}?v=${Date.now()}`;
-    window.open(url, "_blank", "noopener");
-  };
-
-  return (
-    <div className="mhb-modal-overlay" role="dialog" aria-modal="true">
-      <div className="mhb-modal-card" style={{ maxWidth: 520 }}>
-        <div className="mhb-modal-header" style={{ justifyContent: "center" }}>
-          <div style={{ display: "grid", placeItems: "center", width: "100%" }}>
-            <div
-              style={{
-                display: "grid",
-                placeItems: "center",
-                width: 88,
-                height: 88,
-                borderRadius: 18,
-                border: "4px solid rgba(0,0,0,0.06)",
-                outline: "2px solid rgba(0,0,0,0.03)",
-                background:
-                  "radial-gradient(100px 100px at 30% 20%, rgba(0,0,0,0.06), rgba(0,0,0,0) 60%)",
-                boxShadow:
-                  "inset 0 1px 0 rgba(255,255,255,.6), 0 10px 24px rgba(0,0,0,.08)",
-                overflow: "hidden",
-              }}
-            >
-              <img src={logo} alt="MyHomeBro" style={{ maxWidth: 72, maxHeight: 72, display: "block" }} />
-            </div>
-            <h2 style={{ margin: "10px 0 0", fontSize: 20, fontWeight: 900 }}>
-              Contractor Sign Up
-            </h2>
-          </div>
-          <button className="mhb-modal-close" onClick={close} aria-label="Close">
-            ✕
-          </button>
-        </div>
-
+  return createPortal(
+    <div
+      className="mhb-modal-overlay mhb-signup-modal-overlay"
+      data-testid="signup-modal"
+      ref={overlayRef}
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) close();
+      }}
+    >
+      <div className="mhb-modal-card mhb-signup-modal-card" role="dialog" aria-modal="true" aria-labelledby="mhb-signup-title">
+        <button type="button" className="mhb-modal-close mhb-signup-modal-close" onClick={close} aria-label="Close contractor signup">
+          ×
+        </button>
         <div className="mhb-modal-body">
-          <form onSubmit={handleSubmit} style={{ display: "grid", gap: 10 }}>
-            <div style={{ display: "grid", gap: 10 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <label>
-                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>First Name</div>
-                  <input
-                    ref={firstRef}
-                    name="first_name"
-                    value={form.first_name}
-                    onChange={onChange}
-                    required
-                    style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </label>
-                <label>
-                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Last Name</div>
-                  <input
-                    name="last_name"
-                    value={form.last_name}
-                    onChange={onChange}
-                    required
-                    style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
-                  />
-                </label>
-              </div>
-
-              <label>
-                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Email</div>
-                <input
-                  type="email"
-                  name="email"
-                  value={form.email}
-                  onChange={onChange}
-                  required
-                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
-                  placeholder="you@company.com"
-                />
-              </label>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                <label>
-                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Password</div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <input
-                      type={showPw ? "text" : "password"}
-                      name="password"
-                      value={form.password}
-                      onChange={onChange}
-                      required
-                      minLength={8}
-                      style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
-                      placeholder="••••••••"
-                    />
-                    <label style={{ display: "inline-flex", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" checked={showPw} onChange={(e) => setShowPw(e.target.checked)} />
-                      Show
-                    </label>
-                  </div>
-                </label>
-
-                <label>
-                  <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Confirm Password</div>
-                  <input
-                    type="password"
-                    name="confirm"
-                    value={form.confirm}
-                    onChange={onChange}
-                    required
-                    minLength={8}
-                    style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
-                    placeholder="••••••••"
-                  />
-                </label>
-              </div>
-
-              <label>
-                <div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Phone (10 digits)</div>
-                <input
-                  name="phone"
-                  value={form.phone}
-                  onChange={onChange}
-                  pattern="^[0-9]{10}$"
-                  style={{ width: "100%", border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 12px" }}
-                  placeholder="2105551212"
-                />
-              </label>
-
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                <input type="checkbox" name="agree" checked={form.agree} onChange={onChange} />
-                <span>
-                  I agree to the{" "}
-                  <span
-                    style={{ fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
-                    role="link"
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); openFresh("/legal/terms-of-service/"); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openFresh("/legal/terms-of-service/"); } }}
-                  >
-                    Terms of Service
-                  </span>{" "}
-                  and{" "}
-                  <span
-                    style={{ fontWeight: 700, textDecoration: "underline", cursor: "pointer" }}
-                    role="link"
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); openFresh("/legal/privacy-policy/"); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); openFresh("/legal/privacy-policy/"); } }}
-                  >
-                    Privacy Policy
-                  </span>
-                  .
-                </span>
-              </label>
-
-              <button type="submit" className="mhb-btn primary" disabled={loading} style={{ justifyContent: "center" }}>
-                {loading ? "Signing Up..." : "Sign Up"}
-              </button>
-            </div>
-          </form>
+          <ContractorSignupForm embedded onComplete={close} />
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

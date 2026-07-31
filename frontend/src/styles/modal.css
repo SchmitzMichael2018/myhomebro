@@ -18,15 +18,52 @@
   max-width: 100%;
   max-height: min(
     85dvh,
-    calc(var(--mhb-login-visual-height, 100dvh) - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))
+    calc(
+      var(--mhb-login-visual-height, 100dvh) - 24px - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom)
+    )
   );
   overflow: hidden;
   overscroll-behavior: contain;
   cursor: default;
 }
 
-.mhb-login-modal-card :is(input[type="email"], input[type="password"], input[type="text"]) {
+.mhb-login-modal-card
+  :is(input[type='email'], input[type='password'], input[type='text']) {
   cursor: text;
+}
+
+.mhb-signup-modal-overlay {
+  box-sizing: border-box;
+  padding: max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
+    max(12px, env(safe-area-inset-left));
+  overflow: hidden;
+}
+
+.mhb-signup-modal-card {
+  position: relative;
+  z-index: 1;
+  width: min(520px, calc(100dvw - 24px));
+  max-height: calc(
+    100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+  );
+  cursor: default;
+}
+
+.mhb-signup-modal-card .mhb-modal-body {
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.mhb-signup-modal-close {
+  position: absolute;
+  z-index: 2;
+  inset-inline-end: 10px;
+  top: 10px;
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .mhb-login-modal-overlay {
@@ -34,10 +71,8 @@
   top: var(--mhb-login-visual-top, 0px);
   bottom: auto;
   height: var(--mhb-login-visual-height, 100dvh);
-  padding:
-    max(12px, env(safe-area-inset-top))
-    max(12px, env(safe-area-inset-right))
-    max(12px, env(safe-area-inset-bottom))
+  padding: max(12px, env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom))
     max(12px, env(safe-area-inset-left));
   overflow: hidden;
   overscroll-behavior: contain;
@@ -79,14 +114,15 @@
 
 .mhb-landing-login-menu {
   max-width: calc(100dvw - 24px);
-  max-height: calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  max-height: calc(
+    100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+  );
 }
 
 @media (max-width: 640px) {
   .mhb-landing-login-menu {
     position: fixed;
-    inset-inline:
-      max(12px, env(safe-area-inset-left))
+    inset-inline: max(12px, env(safe-area-inset-left))
       max(12px, env(safe-area-inset-right));
     top: calc(72px + env(safe-area-inset-top));
     width: auto;
@@ -116,7 +152,10 @@
   border-bottom: 1px solid #f3f4f6;
 }
 
-.mhb-modal-header h2 { margin: 0; font-size: 18px; }
+.mhb-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
 
 .mhb-modal-close {
   border: none;
@@ -126,7 +165,10 @@
   line-height: 1;
 }
 
-.mhb-modal-body { padding: 16px 18px; overflow: auto; }
+.mhb-modal-body {
+  padding: 16px 18px;
+  overflow: auto;
+}
 
 .mhb-modal-footer {
   padding: 12px 18px;
@@ -146,5 +188,13 @@
   cursor: pointer;
 }
 
-.mhb-btn.primary { background: #111827; color: white; border-color: #111827; }
-.mhb-btn.warn { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+.mhb-btn.primary {
+  background: #111827;
+  color: white;
+  border-color: #111827;
+}
+.mhb-btn.warn {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #f59e0b;
+}

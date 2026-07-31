@@ -64,11 +64,31 @@ const platformRowTwo = [
 ];
 
 const howItWorks = [
-  { icon: Wrench, title: "Share Your Project", text: "Tell us what you want to get done in your own words." },
-  { icon: ClipboardList, title: "We Organize It", text: "We shape your details into a clearer contractor-ready project plan." },
-  { icon: UsersRound, title: "We Find Local Pros", text: "We help surface trusted local contractors that fit the work." },
-  { icon: MessageSquareText, title: "Compare & Connect", text: "Review options, ask questions, and choose the right fit." },
-  { icon: Home, title: "Get It Done", text: "Manage documents, updates, payments, and next steps in one place." },
+  {
+    icon: Wrench,
+    title: "Share Your Project",
+    text: "Tell us what you want to get done in your own words.",
+  },
+  {
+    icon: ClipboardList,
+    title: "We Organize It",
+    text: "We shape your details into a clearer contractor-ready project plan.",
+  },
+  {
+    icon: UsersRound,
+    title: "We Find Local Pros",
+    text: "We help surface trusted local contractors that fit the work.",
+  },
+  {
+    icon: MessageSquareText,
+    title: "Compare & Connect",
+    text: "Review options, ask questions, and choose the right fit.",
+  },
+  {
+    icon: Home,
+    title: "Get It Done",
+    text: "Manage documents, updates, payments, and next steps in one place.",
+  },
 ];
 
 const previewBullets = [
@@ -127,13 +147,25 @@ export default function LandingPage() {
           </button>
 
           <div className="order-3 flex w-full flex-wrap items-center justify-center gap-1 text-sm font-semibold text-sky-50/82 lg:order-2 lg:w-auto">
-            <button type="button" onClick={() => scrollTo("how-it-works")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
+            <button
+              type="button"
+              onClick={() => scrollTo("how-it-works")}
+              className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
+            >
               How It Works
             </button>
-            <button type="button" onClick={() => scrollTo("for-homeowners")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
+            <button
+              type="button"
+              onClick={() => scrollTo("for-homeowners")}
+              className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
+            >
               For Customers
             </button>
-            <button type="button" onClick={() => scrollTo("for-contractors")} className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50">
+            <button
+              type="button"
+              onClick={() => scrollTo("for-contractors")}
+              className="rounded-full px-3 py-2 hover:bg-white/8 focus:outline-none focus:ring-2 focus:ring-sky-300/50"
+            >
               For Contractors
             </button>
             <a
@@ -166,9 +198,7 @@ export default function LandingPage() {
               Log In
               <ChevronDown className={`h-4 w-4 transition ${loginOpen ? "rotate-180" : ""}`} aria-hidden="true" />
             </button>
-            {loginOpen ? (
-              <LoginDropdown navigate={navigate} onLoginSelect={() => setLoginOpen(false)} />
-            ) : null}
+            {loginOpen ? <LoginDropdown navigate={navigate} onLoginSelect={() => setLoginOpen(false)} /> : null}
           </div>
         </nav>
       </header>
@@ -179,7 +209,9 @@ export default function LandingPage() {
             <ShieldCheck className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
             <span className="font-semibold text-white">We&apos;re making improvements to serve you better.</span>
             <span className="hidden text-xs text-sky-100/55 sm:inline">Some features may be temporarily unavailable while updates are in progress.</span>
-            <a href="/legal/terms-of-service/" className="hidden text-xs font-semibold text-sky-300 hover:text-sky-200 sm:inline">Learn more</a>
+            <a href="/legal/terms-of-service/" className="hidden text-xs font-semibold text-sky-300 hover:text-sky-200 sm:inline">
+              Learn more
+            </a>
             <X className="ml-auto hidden h-4 w-4 text-sky-100/65 md:block" aria-hidden="true" />
           </div>
         </div>
@@ -190,7 +222,10 @@ export default function LandingPage() {
             The smarter way to build, remodel & manage
           </div>
 
-          <h1 data-testid="landing-hero-heading" className="mx-auto mt-6 max-w-5xl text-4xl font-semibold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
+          <h1
+            data-testid="landing-hero-heading"
+            className="mx-auto mt-6 max-w-5xl text-4xl font-semibold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl"
+          >
             Everything you need to plan, hire, and manage your project.
             <span className="block text-amber-300">All in one place.</span>
           </h1>
@@ -252,7 +287,8 @@ export default function LandingPage() {
                   </div>
                   <h2 className="mt-2 text-2xl font-semibold text-white">Install MyHomeBro</h2>
                   <p className="mt-2 max-w-2xl text-sm leading-6 text-sky-50/72">
-                    Keep your projects, estimates, messages, agreements, photos, payments, and property records in one place. Install MyHomeBro for faster access from your phone or desktop.
+                    Keep your projects, estimates, messages, agreements, photos, payments, and property records in one place. Install MyHomeBro for faster
+                    access from your phone or desktop.
                   </p>
                   <ul className="mt-3 grid gap-1.5 text-sm text-sky-50/82 sm:grid-cols-3" data-testid="landing-pwa-benefits">
                     {[
@@ -296,6 +332,10 @@ export default function LandingPage() {
 function LoginDropdown({ navigate, onLoginSelect }) {
   const openLoginModal = (audience) => {
     window.dispatchEvent(new CustomEvent("mhb:open-login", { detail: { audience } }));
+    onLoginSelect?.();
+  };
+  const openSignupModal = () => {
+    window.dispatchEvent(new CustomEvent("mhb:open-signup"));
     onLoginSelect?.();
   };
 
@@ -343,9 +383,7 @@ function LoginDropdown({ navigate, onLoginSelect }) {
         <div className="border-t border-white/10 pt-4">
           <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Contractors</div>
           <div className="mt-2 text-sm font-semibold text-white">Contractor Log In</div>
-          <p className="mt-1 text-sm leading-6 text-sky-50/72">
-            Manage projects, clients, documents, and payments.
-          </p>
+          <p className="mt-1 text-sm leading-6 text-sky-50/72">Manage projects, clients, documents, and payments.</p>
           <button
             type="button"
             onClick={() => openLoginModal("contractor")}
@@ -355,7 +393,8 @@ function LoginDropdown({ navigate, onLoginSelect }) {
           </button>
           <button
             type="button"
-            onClick={() => navigate("/signup")}
+            data-testid="landing-contractor-signup-button"
+            onClick={openSignupModal}
             className="mt-3 text-sm font-semibold text-amber-200 hover:text-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-300/50"
           >
             Contractors: Sign Up
@@ -435,92 +474,97 @@ function VideoPreview({ navigate }) {
 
   const openOverview = () => {
     setOverviewOpen(true);
-    window.dispatchEvent(new CustomEvent("mhb:analytics", {
-      detail: { event: "product_overview_opened", category: "product_overview" },
-    }));
+    window.dispatchEvent(
+      new CustomEvent("mhb:analytics", {
+        detail: {
+          event: "product_overview_opened",
+          category: "product_overview",
+        },
+      })
+    );
   };
 
   const closeOverview = (method = "dismiss") => {
     setOverviewOpen(false);
-    window.dispatchEvent(new CustomEvent("mhb:analytics", {
-      detail: { event: "product_overview_closed", category: "product_overview", method },
-    }));
+    window.dispatchEvent(
+      new CustomEvent("mhb:analytics", {
+        detail: {
+          event: "product_overview_closed",
+          category: "product_overview",
+          method,
+        },
+      })
+    );
     requestAnimationFrame(() => triggerRef.current?.focus());
   };
 
   return (
     <section className="mx-auto px-4 pb-16 sm:px-6 lg:px-8">
-      <script
-        type="application/ld+json"
-        data-testid="landing-faq-jsonld"
-        dangerouslySetInnerHTML={{ __html: jsonLd }}
-      />
+      <script type="application/ld+json" data-testid="landing-faq-jsonld" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       <div className="mx-auto grid max-w-7xl gap-6 overflow-hidden rounded-[2rem] border border-white/12 bg-slate-950/30 p-4 shadow-2xl shadow-slate-950/18 backdrop-blur lg:grid-cols-[0.58fr_1.42fr]">
-      <div className="p-3 sm:p-4">
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Platform Preview</div>
-        <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">See MyHomeBro in Action</h2>
-        <p className="mt-4 max-w-xl text-base leading-7 text-sky-50/72">
-          A quick look at how we help you plan, connect, and manage with confidence.
-        </p>
-        <div className="mt-7 space-y-3">
-          {previewBullets.map((item) => (
-            <div key={item} className="flex items-center gap-3 text-sm text-sky-50/78">
-              <CheckCircle2 className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
-              {item}
-            </div>
-          ))}
+        <div className="p-3 sm:p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">Platform Preview</div>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">See MyHomeBro in Action</h2>
+          <p className="mt-4 max-w-xl text-base leading-7 text-sky-50/72">A quick look at how we help you plan, connect, and manage with confidence.</p>
+          <div className="mt-7 space-y-3">
+            {previewBullets.map((item) => (
+              <div key={item} className="flex items-center gap-3 text-sm text-sky-50/78">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-amber-300" aria-hidden="true" />
+                {item}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
 
-      <div data-testid="landing-video-preview" className="relative">
-        <div className="grid gap-3">
-          <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22 lg:min-h-[22rem]">
-          <img
-            src={kitchenPreviewImage}
-            alt="Warm kitchen remodel planning preview"
-            data-testid="landing-video-preview-asset"
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-          <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.18),rgba(2,6,23,0.02)_44%,rgba(2,6,23,0.30)),radial-gradient(circle_at_50%_50%,transparent_38%,rgba(2,6,23,0.34)_100%)]" />
-          <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/16 blur-2xl" />
-          <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-slate-950/90 via-slate-950/28 to-transparent" />
-          <div className="absolute inset-0 z-10 flex items-center justify-center">
-            <button
-              ref={triggerRef}
-              type="button"
-              aria-label="See MyHomeBro in action"
-              data-testid="product-overview-trigger"
-              onClick={openOverview}
-              className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-blue-700 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-amber-300/60"
-            >
-              <Play className="ml-1 h-9 w-9" aria-hidden="true" />
-            </button>
-          </div>
-          <div className="pointer-events-none absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-slate-950/62 p-4 backdrop-blur">
-            <div className="text-sm font-semibold text-white">Kitchen remodel workspace</div>
-            <div className="mt-2 grid gap-2 sm:grid-cols-3">
-              {[
-                ["Scope", "AI organized"],
-                ["Escrow", "Funding ready"],
-                ["Docs", "All in one place"],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl bg-white/[0.06] px-3 py-2">
-                  <div className="text-[11px] uppercase tracking-[0.14em] text-sky-100/52">{label}</div>
-                  <div className="mt-1 text-xs font-semibold text-sky-50">{value}</div>
+        <div data-testid="landing-video-preview" className="relative">
+          <div className="grid gap-3">
+            <div className="relative min-h-[20rem] overflow-hidden rounded-[1.45rem] border border-white/12 bg-slate-950 shadow-xl shadow-slate-950/22 lg:min-h-[22rem]">
+              <img
+                src={kitchenPreviewImage}
+                alt="Warm kitchen remodel planning preview"
+                data-testid="landing-video-preview-asset"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.18),rgba(2,6,23,0.02)_44%,rgba(2,6,23,0.30)),radial-gradient(circle_at_50%_50%,transparent_38%,rgba(2,6,23,0.34)_100%)]" />
+              <div className="absolute inset-x-8 top-8 h-20 rounded-full bg-amber-200/16 blur-2xl" />
+              <div className="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-slate-950/90 via-slate-950/28 to-transparent" />
+              <div className="absolute inset-0 z-10 flex items-center justify-center">
+                <button
+                  ref={triggerRef}
+                  type="button"
+                  aria-label="See MyHomeBro in action"
+                  data-testid="product-overview-trigger"
+                  onClick={openOverview}
+                  className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-blue-700 shadow-2xl shadow-slate-950/45 transition hover:scale-[1.03] focus:outline-none focus:ring-2 focus:ring-amber-300/60"
+                >
+                  <Play className="ml-1 h-9 w-9" aria-hidden="true" />
+                </button>
+              </div>
+              <div className="pointer-events-none absolute bottom-5 left-5 right-5 rounded-2xl border border-white/10 bg-slate-950/62 p-4 backdrop-blur">
+                <div className="text-sm font-semibold text-white">Kitchen remodel workspace</div>
+                <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  {[
+                    ["Scope", "AI organized"],
+                    ["Escrow", "Funding ready"],
+                    ["Docs", "All in one place"],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-xl bg-white/[0.06] px-3 py-2">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-sky-100/52">{label}</div>
+                      <div className="mt-1 text-xs font-semibold text-sky-50">{value}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </div>
             </div>
           </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {featureChips.map((chip) => (
+              <span key={chip} className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5 text-xs font-semibold text-sky-50/78">
+                {chip}
+              </span>
+            ))}
+          </div>
         </div>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {featureChips.map((chip) => (
-            <span key={chip} className="rounded-full border border-white/10 bg-slate-950/35 px-3 py-1.5 text-xs font-semibold text-sky-50/78">
-              {chip}
-            </span>
-          ))}
-        </div>
-      </div>
       </div>
       <ProductOverviewModal visible={overviewOpen} onClose={closeOverview} navigate={navigate} />
     </section>
@@ -558,9 +602,13 @@ function AudienceCards({ navigate }) {
         ]}
         primaryLabel="Contractor Sign Up"
         secondaryLabel="Contractor Log In"
-        onPrimary={() => navigate("/signup")}
+        onPrimary={() => window.dispatchEvent(new CustomEvent("mhb:open-signup"))}
         onSecondary={() =>
-          window.dispatchEvent(new CustomEvent("mhb:open-login", { detail: { audience: "contractor" } }))
+          window.dispatchEvent(
+            new CustomEvent("mhb:open-login", {
+              detail: { audience: "contractor" },
+            })
+          )
         }
         tone="contractor"
       />
@@ -576,9 +624,7 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
       id={id}
       data-testid={`landing-${tone}-card`}
       className={`relative min-h-[17rem] overflow-hidden rounded-2xl border bg-slate-950 shadow-2xl shadow-slate-950/24 ${
-        isHomeowner
-          ? "border-blue-300/34 shadow-blue-950/20"
-          : "border-amber-300/34 shadow-amber-950/16"
+        isHomeowner ? "border-blue-300/34 shadow-blue-950/20" : "border-amber-300/34 shadow-amber-950/16"
       }`}
     >
       <img
@@ -602,12 +648,8 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
       />
       <div className="relative z-10 flex min-h-[17rem] items-center">
         <div className="w-full max-w-[17rem] p-4 sm:p-5">
-          <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>
-            {eyebrow}
-          </div>
-          <h2 className="mt-1.5 whitespace-pre-line text-xl font-semibold leading-tight text-white">
-            {title.replace(". ", ".\n")}
-          </h2>
+          <div className={`text-[10px] font-semibold uppercase tracking-[0.18em] ${isHomeowner ? "text-sky-300" : "text-amber-200"}`}>{eyebrow}</div>
+          <h2 className="mt-1.5 whitespace-pre-line text-xl font-semibold leading-tight text-white">{title.replace(". ", ".\n")}</h2>
           <div className="mt-2.5 space-y-1">
             {bullets.map((bullet) => (
               <div key={bullet} className="flex items-start gap-2 text-[11px] leading-4 text-sky-50/76">
@@ -642,10 +684,7 @@ function AudienceCard({ id, eyebrow, title, bullets, primaryLabel, secondaryLabe
 function TrustBand() {
   return (
     <section id="about" className="mx-auto max-w-7xl px-4 pb-16 sm:px-6 lg:px-8">
-      <div
-        data-testid="landing-trust-section"
-        className="rounded-3xl border border-white/12 bg-white/[0.052] p-6 shadow-2xl shadow-slate-950/18 backdrop-blur"
-      >
+      <div data-testid="landing-trust-section" className="rounded-3xl border border-white/12 bg-white/[0.052] p-6 shadow-2xl shadow-slate-950/18 backdrop-blur">
         <div className="flex items-center gap-3">
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-300/35 bg-amber-300/10 text-amber-200 shadow-[0_0_24px_rgba(251,191,36,0.12)]">
             <ShieldCheck className="h-6 w-6" aria-hidden="true" />

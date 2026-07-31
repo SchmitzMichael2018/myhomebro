@@ -6,7 +6,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
 
-export default function SignUpForm() {
+export function ContractorSignupForm({ embedded = false, onComplete }) {
   const navigate = useNavigate();
   const location = useLocation();
   const firstRef = useRef(null);
@@ -22,7 +22,9 @@ export default function SignUpForm() {
     agree: false,
   });
 
-  useEffect(() => { firstRef.current?.focus(); }, []);
+  useEffect(() => {
+    firstRef.current?.focus();
+  }, []);
 
   const subcontractorInviteToken = useMemo(() => {
     try {
@@ -64,7 +66,10 @@ export default function SignUpForm() {
         return { ...res, __used_url: url };
       } catch (e) {
         const st = e?.response?.status;
-        if (st === 404) { last404 = e; continue; }
+        if (st === 404) {
+          last404 = e;
+          continue;
+        }
         throw { ...e, __used_url: url };
       }
     }
@@ -74,7 +79,10 @@ export default function SignUpForm() {
   const submit = async (e) => {
     e.preventDefault();
     const err = validate();
-    if (err) { toast.error(err); return; }
+    if (err) {
+      toast.error(err);
+      return;
+    }
 
     setLoading(true);
     try {
@@ -93,17 +101,15 @@ export default function SignUpForm() {
       if (data?.access) {
         setTokens(data.access, data.refresh || null, true);
         toast.success("Account created!");
+        onComplete?.();
         if (subcontractorInviteToken) {
-          return navigate(
-            `/subcontractor-invitations/accept/${encodeURIComponent(
-              subcontractorInviteToken
-            )}`
-          );
+          return navigate(`/subcontractor-invitations/accept/${encodeURIComponent(subcontractorInviteToken)}`);
         }
         return navigate("/onboarding");
       }
 
       toast.success(data?.message || "Registration successful. Check your email to verify.");
+      onComplete?.();
       navigate("/");
     } catch (err2) {
       const status = err2?.response?.status;
@@ -128,44 +134,103 @@ export default function SignUpForm() {
     }
   };
 
-  return (
-    <div className="flex items-center justify-center min-h-[70vh] bg-gradient-to-r from-blue-50 to-blue-100">
-      <div className="bg-white p-8 rounded-xl shadow-md w-full max-w-md">
-        <h2 className="text-3xl font-bold text-blue-700 mb-6 text-center">Contractor Sign Up</h2>
+  const formContent = (
+    <div className={`w-full max-w-md bg-white ${embedded ? "p-1" : "rounded-xl p-8 shadow-md"}`}>
+      <h2 id={embedded ? "mhb-signup-title" : undefined} className="mb-6 text-center text-3xl font-bold text-blue-700">
+        Contractor Sign Up
+      </h2>
 
-        {subcontractorInviteToken ? (
-          <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            Create your account with the invited email address to continue to the subcontractor invitation.
-          </div>
-        ) : null}
+      {subcontractorInviteToken ? (
+        <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          Create your account with the invited email address to continue to the subcontractor invitation.
+        </div>
+      ) : null}
 
-        <form onSubmit={submit} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4">
-            <input ref={firstRef} name="first_name" value={form.first_name} onChange={onChange}
-              placeholder="First Name" required className="input-field" />
-            <input name="last_name" value={form.last_name} onChange={onChange}
-              placeholder="Last Name" required className="input-field" />
-            <input type="email" name="email" value={form.email} onChange={onChange}
-              placeholder="Email" required className="input-field" />
-            <input type="password" name="password" value={form.password} onChange={onChange}
-              placeholder="Password" required className="input-field" />
-            <input type="password" name="passwordConfirm" value={form.passwordConfirm} onChange={onChange}
-              placeholder="Confirm Password" required className="input-field" />
-            <input name="phone" value={form.phone} onChange={onChange}
-              placeholder="Phone (10 digits)" pattern="^[0-9]{10}$" className="input-field" />
-          </div>
+      <form onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-1 gap-4">
+          <input
+            ref={firstRef}
+            name="first_name"
+            value={form.first_name}
+            onChange={onChange}
+            placeholder="First Name"
+            aria-label="First Name"
+            autoComplete="given-name"
+            required
+            className="input-field"
+          />
+          <input
+            name="last_name"
+            value={form.last_name}
+            onChange={onChange}
+            placeholder="Last Name"
+            aria-label="Last Name"
+            autoComplete="family-name"
+            required
+            className="input-field"
+          />
+          <input
+            type="email"
+            name="email"
+            value={form.email}
+            onChange={onChange}
+            placeholder="Email"
+            aria-label="Email"
+            autoComplete="email"
+            required
+            className="input-field"
+          />
+          <input
+            type="password"
+            name="password"
+            value={form.password}
+            onChange={onChange}
+            placeholder="Password"
+            aria-label="Password"
+            autoComplete="new-password"
+            required
+            className="input-field"
+          />
+          <input
+            type="password"
+            name="passwordConfirm"
+            value={form.passwordConfirm}
+            onChange={onChange}
+            placeholder="Confirm Password"
+            aria-label="Confirm Password"
+            autoComplete="new-password"
+            required
+            className="input-field"
+          />
+          <input
+            name="phone"
+            value={form.phone}
+            onChange={onChange}
+            placeholder="Phone (10 digits)"
+            aria-label="Phone (10 digits)"
+            autoComplete="tel"
+            pattern="^[0-9]{10}$"
+            className="input-field"
+          />
+        </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" name="agree" checked={form.agree} onChange={onChange} />
-            <span>I agree to the Terms of Service and Privacy Policy.</span>
-          </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="agree" checked={form.agree} onChange={onChange} />
+          <span>I agree to the Terms of Service and Privacy Policy.</span>
+        </label>
 
-          <button type="submit" disabled={loading}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
-            {loading ? "Signing Up..." : "Sign Up"}
-          </button>
-        </form>
-      </div>
+        <button type="submit" disabled={loading} className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition">
+          {loading ? "Signing Up..." : "Sign Up"}
+        </button>
+      </form>
     </div>
   );
+
+  if (embedded) return formContent;
+
+  return <div className="flex min-h-[70vh] items-center justify-center bg-gradient-to-r from-blue-50 to-blue-100">{formContent}</div>;
+}
+
+export default function SignUpForm() {
+  return <ContractorSignupForm />;
 }
