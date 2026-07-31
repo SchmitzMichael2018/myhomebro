@@ -49,16 +49,32 @@ export default function TradeMultiSelect({
   testIdPrefix = "trade-multi-select",
   catalog = TRADE_CATALOG,
   showPopular = true,
+  popularLimit = null,
+  selectedFirst = false,
+  hideSelectedFromResults = false,
   className = "",
   disabled = false,
 }) {
   const [query, setQuery] = useState("");
   const selected = useMemo(() => normalizeSelectedTrades(value), [value]);
-  const popularTrades = useMemo(() => catalog.filter((trade) => trade.popular), [catalog]);
+  const popularTrades = useMemo(() => {
+    const popular = catalog.filter((trade) => trade.popular);
+    return Number.isInteger(popularLimit) && popularLimit > 0
+      ? popular.slice(0, popularLimit)
+      : popular;
+  }, [catalog, popularLimit]);
   const filteredTrades = useMemo(() => {
     const normalizedQuery = normalizeTradeText(query);
-    return catalog.filter((trade) => matchTrade(trade, normalizedQuery));
-  }, [catalog, query]);
+    return catalog.filter(
+      (trade) =>
+        matchTrade(trade, normalizedQuery) &&
+        (!hideSelectedFromResults ||
+          !selected.some(
+            (item) =>
+              normalizeTradeText(item) === normalizeTradeText(trade.label)
+          ))
+    );
+  }, [catalog, hideSelectedFromResults, query, selected]);
 
   function emit(next) {
     if (typeof onChange === "function") {
@@ -82,10 +98,10 @@ export default function TradeMultiSelect({
 
   return (
     <div className={className}>
-      <div className="space-y-5">
+      <div className="flex flex-col gap-5">
         {showPopular ? (
           <div>
-            <div className="text-sm font-semibold text-slate-900">{popularLabel}</div>
+            <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">{popularLabel}</div>
             <div className="mt-3 flex flex-wrap gap-2">
               {popularTrades.map((trade) => {
                 const active = selected.some(
@@ -99,11 +115,13 @@ export default function TradeMultiSelect({
                     onClick={() => (active ? removeTrade(trade.label) : addTrade(trade.label))}
                     className={`mhb-trade-option min-h-11 rounded-full border px-4 py-2 text-sm font-semibold transition ${
                       active
-                        ? "is-selected border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                        ? "is-selected border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] text-white"
+                        : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-surface-interactive-hover)]"
                     }`}
                   >
+                    {active ? <span aria-hidden="true">✓ </span> : null}
                     {trade.label}
+                    {active ? <span className="sr-only"> selected</span> : null}
                   </button>
                 );
               })}
@@ -112,19 +130,20 @@ export default function TradeMultiSelect({
         ) : null}
 
         <div>
-          <div className="text-sm font-semibold text-slate-900">{label}</div>
-          {helpText ? <div className="mt-1 text-sm text-slate-600">{helpText}</div> : null}
+          <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">{label}</div>
+          {helpText ? <div className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{helpText}</div> : null}
           <input
             type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={searchPlaceholder}
-            className="mt-2 h-12 w-full rounded-2xl border border-slate-200 px-4 text-sm text-slate-900 placeholder:text-slate-400"
+            aria-label={label}
+            className="mt-2 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-4 text-sm text-[var(--mhb-text-primary)] placeholder:text-[var(--mhb-text-muted)] focus:border-[var(--mhb-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
             data-testid={`${testIdPrefix}-search`}
             disabled={disabled}
           />
           <div
-            className="mt-3 max-h-64 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-2"
+            className="mt-3 max-h-56 overflow-y-auto rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-2"
             data-testid={`${testIdPrefix}-results`}
           >
             {filteredTrades.length ? (
@@ -143,47 +162,57 @@ export default function TradeMultiSelect({
                       disabled={disabled}
                       className={`mhb-trade-option min-h-12 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition ${
                         active
-                          ? "is-selected border-slate-900 bg-slate-900 text-white"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                          ? "is-selected border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] text-white"
+                          : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-surface-interactive-hover)]"
                       }`}
                     >
                       <div>{trade.label}</div>
-                      <div className={`mt-1 text-xs ${active ? "text-slate-200" : "text-slate-500"}`}>
-                        Tap to {active ? "remove" : "add"} trade
+                      <div className={`mt-1 text-xs ${active ? "text-white/80" : "text-[var(--mhb-text-muted)]"}`}>
+                        {active ? "Selected service" : "Add service"}
                       </div>
                     </button>
                   );
                 })}
               </div>
             ) : (
-              <div className="px-3 py-4 text-sm text-slate-600">{emptyText}</div>
+              <div className="px-3 py-4 text-sm text-[var(--mhb-text-secondary)]">{emptyText}</div>
             )}
           </div>
         </div>
 
-        <div>
-          <div className="text-sm font-semibold text-slate-900">{selectedLabel}</div>
+        <div className={selectedFirst ? "-order-1" : ""}>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">{selectedLabel}</div>
+            <div
+              className="text-sm font-medium text-[var(--mhb-text-secondary)]"
+              aria-live="polite"
+              data-testid={`${testIdPrefix}-count`}
+            >
+              {selected.length} {selected.length === 1 ? "service" : "services"} selected
+            </div>
+          </div>
           <div className="mt-3 flex flex-wrap gap-2" data-testid={`${testIdPrefix}-selected`}>
             {selected.length ? (
               selected.map((trade) => (
                 <span
                   key={trade}
                   data-testid={`${testIdPrefix}-chip-${toTestId(trade)}`}
-                  className="mhb-trade-chip inline-flex items-center gap-2 rounded-full border border-slate-900 bg-slate-900 px-3 py-2 text-sm font-semibold text-white"
+                  className="mhb-trade-chip inline-flex items-center gap-2 rounded-full border border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] px-3 py-2 text-sm font-semibold text-white"
                 >
+                  <span aria-hidden="true">✓</span>
                   {trade}
                   <button
                     type="button"
                     aria-label={`Remove ${trade}`}
                     onClick={() => removeTrade(trade)}
-                    className="mhb-trade-chip-remove rounded-full border border-white/20 bg-white/10 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20"
+                    className="mhb-trade-chip-remove rounded-full border border-white/40 bg-white/10 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                   >
                     ×
                   </button>
                 </span>
               ))
             ) : (
-              <div className="text-sm text-slate-500">Select one or more trades to personalize your setup.</div>
+              <div className="text-sm text-[var(--mhb-text-secondary)]">No services selected yet.</div>
             )}
           </div>
         </div>

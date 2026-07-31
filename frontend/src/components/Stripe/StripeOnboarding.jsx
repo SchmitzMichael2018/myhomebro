@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../../api";
 import { trackOnboardingEvent } from "../../lib/onboardingAnalytics.js";
@@ -37,20 +37,44 @@ function StripeStatusBadge({ stripeStatus }) {
 
 function PrimaryCard({ eyebrow, title, description, children, testId = "" }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" data-testid={testId || undefined}>
-      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-        {eyebrow}
-      </div>
-      <h2 className="mt-2 text-2xl font-bold text-slate-900">{title}</h2>
-      <p className="mt-2 text-sm text-slate-600">{description}</p>
+    <section className="rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-5 shadow-sm sm:p-6" data-testid={testId || undefined}>
+      {eyebrow ? (
+        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--mhb-text-muted)]">
+          {eyebrow}
+        </div>
+      ) : null}
+      <h2 className={`${eyebrow ? "mt-2" : ""} text-2xl font-bold text-[var(--mhb-text-primary)]`}>{title}</h2>
+      <p className="mt-2 text-base leading-6 text-[var(--mhb-text-secondary)]">{description}</p>
       <div className="mt-5">{children}</div>
-    </div>
+    </section>
+  );
+}
+
+function ChecklistItem({ label, value, complete }) {
+  return (
+    <li className="flex items-start gap-3 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-interactive)] p-3">
+      <span
+        aria-hidden="true"
+        className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-black ${
+          complete
+            ? "bg-emerald-600 text-white"
+            : "border border-[var(--mhb-border-strong)] text-[var(--mhb-text-muted)]"
+        }`}
+      >
+        {complete ? "✓" : "—"}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-semibold text-[var(--mhb-text-primary)]">{label}</span>
+        <span className="mt-0.5 block break-words text-sm text-[var(--mhb-text-secondary)]">
+          {value}
+        </span>
+        <span className="sr-only">{complete ? "Complete" : "Incomplete"}</span>
+      </span>
+    </li>
   );
 }
 
 function OnboardingStripeStep({
-  stepNumber,
-  stepTotal,
   stripeReady,
   statusError,
   onBack,
@@ -59,7 +83,6 @@ function OnboardingStripeStep({
 }) {
   return (
     <PrimaryCard
-      eyebrow={`Step ${Math.min(stepNumber, stepTotal)} of ${stepTotal}`}
       title={stripeReady ? "You're ready to get paid" : "Set up payments to get paid faster"}
       description={
         stripeReady
@@ -112,7 +135,6 @@ export default function StripeOnboarding() {
   const [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
   const [onboarding, setOnboarding] = useState(null);
-  const [meData, setMeData] = useState(null);
   const [stripeStatus, setStripeStatus] = useState(null);
   const [localStep, setLocalStep] = useState(null);
   const [entityType, setEntityType] = useState(null);
@@ -139,7 +161,6 @@ export default function StripeOnboarding() {
       const me = meRes?.data || {};
       const onboardingData = onboardingRes?.data || {};
       const stripe = stripeRes?.data || {};
-      setMeData(me);
       setOnboarding(onboardingData);
       setStripeStatus(stripe);
       setLocalStep((current) => current || onboardingData?.step || "welcome");
@@ -247,44 +268,6 @@ export default function StripeOnboarding() {
     navigate("/app/dashboard");
   }
 
-  const rightRailCards = useMemo(() => {
-    return [
-      {
-        title: "Activation Snapshot",
-        body: (
-          <div className="space-y-3 text-sm text-slate-700">
-            <div>
-              <div className="font-semibold text-slate-900">Business</div>
-              <div>{meData?.business_name || form.business_name || "Not set yet"}</div>
-            </div>
-            <div>
-              <div className="font-semibold text-slate-900">Service area</div>
-              <div>{[form.city || meData?.city, form.state || meData?.state].filter(Boolean).join(", ") || "Not set yet"}</div>
-            </div>
-            <div>
-              <div className="font-semibold text-slate-900">Trades</div>
-              <div>{(form.skills || []).join(", ") || "Pick at least one trade"}</div>
-            </div>
-            <div>
-              <div className="font-semibold text-slate-900">Last step reached</div>
-              <div>{onboarding?.activation?.last_step_reached || currentStep}</div>
-            </div>
-          </div>
-        ),
-      },
-      {
-        title: "What comes next",
-        body: (
-          <ul className="space-y-2 text-sm text-slate-600">
-            <li>Pick trades so templates, pricing, and compliance guidance stay relevant.</li>
-            <li>Set your home service area so recommendations stay local and accurate.</li>
-            <li>Connect Stripe when you are ready to receive payments and payouts.</li>
-          </ul>
-        ),
-      },
-    ];
-  }, [currentStep, form.business_name, form.city, form.skills, form.state, meData, onboarding]);
-
   function renderStepActions({
     backLabel = "Back",
     onBack,
@@ -312,7 +295,8 @@ export default function StripeOnboarding() {
             data-testid={continueTestId}
             onClick={onContinue}
             disabled={saving || continueDisabled}
-            className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+            aria-describedby={continueDisabled ? "onboarding-services-requirement" : undefined}
+            className="min-h-14 w-full rounded-2xl bg-[var(--mhb-interactive-primary)] px-7 py-3 text-base font-bold text-white shadow-sm transition hover:bg-[var(--mhb-interactive-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[var(--mhb-interactive-disabled-bg)] disabled:text-[var(--mhb-text-muted)] sm:ml-auto sm:w-auto"
           >
             {saving ? "Saving..." : continueLabel}
           </button>
@@ -326,33 +310,45 @@ export default function StripeOnboarding() {
     if (currentStep === "welcome") {
       return (
         <PrimaryCard
-          eyebrow={`Step ${stepNumber} of ${stepTotal}`}
-          title="Pick your trades"
-          description="Select one or more trades you offer. You can update this later from your profile."
+          title="Business details"
+          description="Add the essentials customers will use to understand your business."
           testId="contractor-onboarding-trades"
         >
-          <TradeMultiSelect
-            value={form.skills}
-            onChange={(nextSkills) => setForm((current) => ({ ...current, skills: nextSkills }))}
-            label="Search all trades"
-            helpText="Select one or more trades you offer. You can update this later from your profile."
-            popularLabel="Popular trades"
-            selectedLabel="Selected trades"
-            searchPlaceholder="Start typing to search for your trade..."
-            testIdPrefix="contractor-onboarding-trade"
-          />
-
-          <div className="mt-4">
-            <label htmlFor="mhb-stripeonboarding-346" className="block text-sm font-semibold text-slate-900">Business name</label>
+          <div className="mb-6">
+            <label htmlFor="mhb-stripeonboarding-346" className="block text-sm font-semibold text-[var(--mhb-text-primary)]">Business name</label>
             <input id="mhb-stripeonboarding-346"
               type="text"
               value={form.business_name}
               onChange={(e) => setForm((current) => ({ ...current, business_name: e.target.value }))}
               data-testid="contractor-onboarding-business-name"
-              className="mt-1 h-12 w-full rounded-2xl border border-slate-200 px-3 text-sm"
+              className="mt-2 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-4 text-base text-[var(--mhb-text-primary)] focus:border-[var(--mhb-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
               placeholder="MyHomeBro Services"
             />
           </div>
+          <div className="mb-4">
+            <h3 className="text-lg font-bold text-[var(--mhb-text-primary)]">Services you offer</h3>
+            <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">
+              Choose one or more services. You can update these later from your profile.
+            </p>
+          </div>
+          <TradeMultiSelect
+            value={form.skills}
+            onChange={(nextSkills) => setForm((current) => ({ ...current, skills: nextSkills }))}
+            label="Find another service"
+            helpText=""
+            popularLabel="Popular services"
+            selectedLabel="Selected services"
+            searchPlaceholder="Search all services..."
+            testIdPrefix="contractor-onboarding-trade"
+            selectedFirst
+            hideSelectedFromResults
+            popularLimit={8}
+          />
+          {!form.skills.length ? (
+            <p className="mt-5 text-sm font-medium text-[var(--mhb-text-secondary)]" id="onboarding-services-requirement">
+              Select at least one service to continue.
+            </p>
+          ) : null}
           {renderStepActions({
             onContinue: handleContinueTrades,
             continueDisabled: !form.skills.length,
@@ -365,7 +361,6 @@ export default function StripeOnboarding() {
     if (currentStep === "region") {
       return (
         <PrimaryCard
-          eyebrow={`Step ${stepNumber} of ${stepTotal}`}
           title="Set your service area"
           description="This keeps template and pricing suggestions relevant without asking for a full profile up front."
           testId="contractor-onboarding-region"
@@ -446,7 +441,6 @@ export default function StripeOnboarding() {
     if (!entityTypeConfirmed && !stripeReady) {
       return (
         <PrimaryCard
-          eyebrow={`Step ${stepNumber} of ${stepTotal}`}
           title="One quick question first"
           description={STRIPE_GUIDANCE.intro.default}
           testId="contractor-onboarding-entity-type"
@@ -510,8 +504,6 @@ export default function StripeOnboarding() {
 
     return (
       <OnboardingStripeStep
-        stepNumber={stepNumber}
-        stepTotal={stepTotal}
         stripeReady={stripeReady}
         statusError={statusError}
         onBack={() => {
@@ -526,32 +518,39 @@ export default function StripeOnboarding() {
   }
 
   return (
-    <div className="mhb-gradient-bg min-h-screen px-4 py-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm" data-testid="contractor-onboarding-page">
+    <div className="min-h-screen bg-[var(--mhb-surface-workspace)] px-4 py-6 text-[var(--mhb-text-primary)] sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-workspace-elevated)] p-5 shadow-sm sm:p-7" data-testid="contractor-onboarding-page">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Contractor Onboarding
+              <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--mhb-text-muted)]">
+                Contractor setup
               </div>
-              <h1 className="mt-2 text-3xl font-bold text-slate-900">
-                Reach first value before payments setup
+              <h1 className="mt-2 text-3xl font-bold text-[var(--mhb-text-primary)]">
+                Set up your contractor profile
               </h1>
-              <p className="mt-2 max-w-2xl text-sm text-slate-600">
-                The goal is simple: get your first project moving quickly, then connect payments when the timing makes sense.
+              <p className="mt-2 max-w-2xl text-base text-[var(--mhb-text-secondary)]">
+                Add your business details and services now. You can connect payments later.
               </p>
             </div>
             <div className="flex flex-col items-start gap-2">
               <StripeStatusBadge stripeStatus={stripeStatus} />
-              <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+              <span className="text-sm font-semibold text-[var(--mhb-text-secondary)]" data-testid="contractor-onboarding-step-indicator">
                 Step {stepNumber} of {stepTotal}
               </span>
             </div>
           </div>
 
-          <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="mt-5 h-2 w-full overflow-hidden rounded-full bg-[var(--mhb-surface-inset)]"
+            role="progressbar"
+            aria-label={`Contractor setup progress: step ${stepNumber} of ${stepTotal}`}
+            aria-valuemin="1"
+            aria-valuemax={stepTotal}
+            aria-valuenow={stepNumber}
+          >
             <div
-              className="h-full rounded-full bg-slate-900 transition-all"
+              className="h-full rounded-full bg-[var(--mhb-interactive-primary)] transition-all"
               style={{ width: `${Math.max(10, Math.min(100, (stepNumber / stepTotal) * 100))}%` }}
             />
           </div>
@@ -565,7 +564,7 @@ export default function StripeOnboarding() {
           {loading ? (
             <div className="mt-6 text-sm text-slate-600">Loading onboarding...</div>
           ) : (
-            <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
+            <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.7fr)]">
               <div className="space-y-5">
                 {renderCurrentStep()}
 
@@ -584,28 +583,35 @@ export default function StripeOnboarding() {
                 ) : null}
               </div>
 
-              <div className="space-y-5">
-                {rightRailCards.map((card) => (
-                  <div key={card.title} className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-                    <div className="text-sm font-semibold text-slate-900">{card.title}</div>
-                    <div className="mt-3">{card.body}</div>
-                  </div>
-                ))}
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-5" data-testid="contractor-onboarding-summary">
-                  <div className="text-sm font-semibold text-slate-900">Progress so far</div>
-                  <div className="mt-3 grid gap-3 text-sm text-slate-700 sm:grid-cols-2">
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Trades selected</div>
-                      <div className="mt-1 font-semibold text-slate-900">{Number(onboarding?.trade_count || 0)}</div>
-                    </div>
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current step</div>
-                      <div className="mt-1 font-semibold text-slate-900">Step {stepNumber} of {stepTotal}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <aside
+                className="h-fit rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-5 shadow-sm"
+                data-testid="contractor-onboarding-summary"
+                aria-labelledby="onboarding-checklist-title"
+              >
+                <h2 id="onboarding-checklist-title" className="text-lg font-bold text-[var(--mhb-text-primary)]">
+                  Setup checklist
+                </h2>
+                <ul className="mt-4 space-y-3">
+                  <ChecklistItem
+                    label="Business name"
+                    value={form.business_name.trim() || "Not set yet"}
+                    complete={Boolean(form.business_name.trim())}
+                  />
+                  <ChecklistItem
+                    label="Services"
+                    value={`${form.skills.length} selected`}
+                    complete={form.skills.length > 0}
+                  />
+                  <ChecklistItem
+                    label="Service area"
+                    value={[form.city, form.state].filter(Boolean).join(", ") || "Not set yet"}
+                    complete={Boolean(form.state)}
+                  />
+                </ul>
+                <p className="mt-5 border-t border-[var(--mhb-border-divider)] pt-4 text-sm leading-6 text-[var(--mhb-text-secondary)]">
+                  Payments can be connected later when you are ready to receive customer funds.
+                </p>
+              </aside>
             </div>
           )}
         </div>
