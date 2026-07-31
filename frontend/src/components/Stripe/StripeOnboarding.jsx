@@ -26,8 +26,8 @@ function StripeStatusBadge({ stripeStatus }) {
     ? "Payments not connected"
     : "Stripe onboarding incomplete";
   const tone = connected
-    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-    : "border-amber-200 bg-amber-50 text-amber-800";
+    ? "border-[var(--mhb-status-complete-border)] bg-[var(--mhb-status-complete-bg)] text-[var(--mhb-status-complete-text)]"
+    : "border-[var(--mhb-status-pending-border)] bg-[var(--mhb-status-pending-bg)] text-[var(--mhb-status-pending-text)]";
   return (
     <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${tone}`}>
       {label}
@@ -37,7 +37,7 @@ function StripeStatusBadge({ stripeStatus }) {
 
 function PrimaryCard({ eyebrow, title, description, children, testId = "" }) {
   return (
-    <section className="rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-5 shadow-sm sm:p-6" data-testid={testId || undefined}>
+    <section className="rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-5 shadow-[var(--mhb-shadow-card)] sm:p-6" data-testid={testId || undefined}>
       {eyebrow ? (
         <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--mhb-text-muted)]">
           {eyebrow}
@@ -92,7 +92,7 @@ function OnboardingStripeStep({
       testId="contractor-onboarding-stripe"
     >
       {statusError ? (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+        <div className="rounded-xl border border-[var(--mhb-status-blocked-border)] bg-[var(--mhb-status-blocked-bg)] px-3 py-2 text-sm text-[var(--mhb-status-blocked-text)]">
           {statusError}
         </div>
       ) : null}
@@ -101,13 +101,13 @@ function OnboardingStripeStep({
           type="button"
           onClick={onBack}
           disabled={saving}
-          className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className="min-h-12 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-5 py-3 text-sm font-semibold text-[var(--mhb-text-primary)] transition hover:bg-[var(--mhb-surface-interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] disabled:cursor-not-allowed disabled:text-[var(--mhb-interactive-disabled-text)]"
         >
           Back
         </button>
         <StripeOnboardingButton
           dataTestId="contractor-onboarding-connect-stripe"
-          className="min-h-12 rounded-2xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+          className="min-h-12 rounded-2xl bg-[var(--mhb-interactive-primary)] px-5 py-3 text-sm font-semibold text-[var(--mhb-text-inverse)] transition hover:bg-[var(--mhb-interactive-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] disabled:cursor-not-allowed disabled:bg-[var(--mhb-interactive-disabled-bg)] disabled:text-[var(--mhb-interactive-disabled-text)]"
         >
           Connect Stripe
         </StripeOnboardingButton>
@@ -117,7 +117,7 @@ function OnboardingStripeStep({
             data-testid="contractor-onboarding-skip-stripe"
             onClick={onSkip}
             disabled={saving}
-            className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="min-h-12 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-5 py-3 text-sm font-semibold text-[var(--mhb-text-primary)] transition hover:bg-[var(--mhb-surface-interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] disabled:cursor-not-allowed disabled:text-[var(--mhb-interactive-disabled-text)]"
           >
             Skip for now
           </button>
@@ -284,7 +284,7 @@ export default function StripeOnboarding() {
             type="button"
             onClick={onBack}
             disabled={saving}
-            className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            className="min-h-12 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-5 py-3 text-sm font-semibold text-[var(--mhb-text-primary)] transition hover:bg-[var(--mhb-surface-interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] disabled:cursor-not-allowed disabled:text-[var(--mhb-interactive-disabled-text)]"
           >
             {backLabel}
           </button>
@@ -296,7 +296,7 @@ export default function StripeOnboarding() {
             onClick={onContinue}
             disabled={saving || continueDisabled}
             aria-describedby={continueDisabled ? "onboarding-services-requirement" : undefined}
-            className="min-h-14 w-full rounded-2xl bg-[var(--mhb-interactive-primary)] px-7 py-3 text-base font-bold text-white shadow-sm transition hover:bg-[var(--mhb-interactive-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-[var(--mhb-interactive-disabled-bg)] disabled:text-[var(--mhb-text-muted)] sm:ml-auto sm:w-auto"
+            className="min-h-14 w-full rounded-2xl bg-[var(--mhb-interactive-primary)] px-7 py-3 text-base font-bold text-[var(--mhb-text-inverse)] shadow-[var(--mhb-shadow-interactive)] transition hover:bg-[var(--mhb-interactive-primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--mhb-surface-card)] disabled:cursor-not-allowed disabled:bg-[var(--mhb-interactive-disabled-bg)] disabled:text-[var(--mhb-interactive-disabled-text)] disabled:shadow-none sm:ml-auto sm:w-auto"
           >
             {saving ? "Saving..." : continueLabel}
           </button>
@@ -321,7 +321,7 @@ export default function StripeOnboarding() {
               value={form.business_name}
               onChange={(e) => setForm((current) => ({ ...current, business_name: e.target.value }))}
               data-testid="contractor-onboarding-business-name"
-              className="mt-2 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-4 text-base text-[var(--mhb-text-primary)] focus:border-[var(--mhb-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
+              className="mt-2 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-4 text-base text-[var(--mhb-text-primary)] placeholder:text-[var(--mhb-text-muted)] hover:border-[var(--mhb-border-strong)] focus:border-[var(--mhb-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
               placeholder="MyHomeBro Services"
             />
           </div>
@@ -367,23 +367,23 @@ export default function StripeOnboarding() {
         >
           <div className="grid gap-4 md:grid-cols-4">
             <div>
-              <label htmlFor="mhb-stripeonboarding-375" className="block text-sm font-semibold text-slate-900">City</label>
+              <label htmlFor="mhb-stripeonboarding-375" className="block text-sm font-semibold text-[var(--mhb-text-primary)]">City</label>
               <input id="mhb-stripeonboarding-375"
                 type="text"
                 value={form.city}
                 onChange={(e) => setForm((current) => ({ ...current, city: e.target.value }))}
                 data-testid="contractor-onboarding-city"
-                className="mt-1 h-12 w-full rounded-2xl border border-slate-200 px-3 text-sm"
+                className="mt-1 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 text-sm text-[var(--mhb-text-primary)] placeholder:text-[var(--mhb-text-muted)] hover:border-[var(--mhb-border-strong)] focus:border-[var(--mhb-border-focus)] focus:ring-[var(--mhb-border-focus)]"
                 placeholder="San Antonio"
               />
             </div>
             <div>
-              <label htmlFor="mhb-stripeonboarding-386" className="block text-sm font-semibold text-slate-900">State</label>
+              <label htmlFor="mhb-stripeonboarding-386" className="block text-sm font-semibold text-[var(--mhb-text-primary)]">State</label>
               <select id="mhb-stripeonboarding-386"
                 value={form.state}
                 onChange={(e) => setForm((current) => ({ ...current, state: e.target.value }))}
                 data-testid="contractor-onboarding-state"
-                className="mt-1 h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm"
+                className="mt-1 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 text-sm text-[var(--mhb-text-primary)] hover:border-[var(--mhb-border-strong)] focus:border-[var(--mhb-border-focus)] focus:ring-[var(--mhb-border-focus)]"
               >
                 <option value="">Select state...</option>
                 {STATE_OPTIONS.map((stateCode) => (
@@ -394,18 +394,18 @@ export default function StripeOnboarding() {
               </select>
             </div>
             <div>
-              <label htmlFor="mhb-stripeonboarding-402" className="block text-sm font-semibold text-slate-900">ZIP</label>
+              <label htmlFor="mhb-stripeonboarding-402" className="block text-sm font-semibold text-[var(--mhb-text-primary)]">ZIP</label>
               <input id="mhb-stripeonboarding-402"
                 type="text"
                 value={form.zip}
                 onChange={(e) => setForm((current) => ({ ...current, zip: e.target.value }))}
                 data-testid="contractor-onboarding-zip"
-                className="mt-1 h-12 w-full rounded-2xl border border-slate-200 px-3 text-sm"
+                className="mt-1 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 text-sm text-[var(--mhb-text-primary)] placeholder:text-[var(--mhb-text-muted)] hover:border-[var(--mhb-border-strong)] focus:border-[var(--mhb-border-focus)] focus:ring-[var(--mhb-border-focus)]"
                 placeholder="78205"
               />
             </div>
             <div>
-              <label htmlFor="mhb-stripeonboarding-413" className="block text-sm font-semibold text-slate-900">Service Range (miles)</label>
+              <label htmlFor="mhb-stripeonboarding-413" className="block text-sm font-semibold text-[var(--mhb-text-primary)]">Service Range (miles)</label>
               <select id="mhb-stripeonboarding-413"
                 value={String(form.service_radius_miles || 25)}
                 onChange={(e) =>
@@ -415,7 +415,7 @@ export default function StripeOnboarding() {
                   }))
                 }
                 data-testid="contractor-onboarding-service-radius"
-                className="mt-1 h-12 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm"
+                className="mt-1 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 text-sm text-[var(--mhb-text-primary)] hover:border-[var(--mhb-border-strong)] focus:border-[var(--mhb-border-focus)] focus:ring-[var(--mhb-border-focus)]"
               >
                 {SERVICE_RADIUS_OPTIONS.map((miles) => (
                   <option key={miles} value={miles}>
@@ -425,7 +425,7 @@ export default function StripeOnboarding() {
               </select>
             </div>
           </div>
-          <div className="mt-3 text-sm text-slate-600">
+          <div className="mt-3 text-sm text-[var(--mhb-text-secondary)]">
             Your ZIP is used as the center of your service area.
           </div>
           {renderStepActions({
@@ -445,7 +445,7 @@ export default function StripeOnboarding() {
           description={STRIPE_GUIDANCE.intro.default}
           testId="contractor-onboarding-entity-type"
         >
-          <div className="mt-4 text-sm font-semibold text-slate-900">
+          <div className="mt-4 text-sm font-semibold text-[var(--mhb-text-primary)]">
             How is your business set up?
           </div>
           <div className="mt-3 flex flex-wrap gap-3">
@@ -465,8 +465,8 @@ export default function StripeOnboarding() {
                 }}
                 className={`rounded-2xl border px-5 py-3 text-sm font-semibold transition ${
                   entityType === key
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-900"
+                    ? "border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] text-[var(--mhb-text-primary)] ring-1 ring-[var(--mhb-border-selected)]"
+                    : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] text-[var(--mhb-text-secondary)] hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-surface-interactive-hover)]"
                 }`}
               >
                 {label}
@@ -474,7 +474,7 @@ export default function StripeOnboarding() {
             ))}
           </div>
           {entityType ? (
-            <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+            <div className="mt-4 rounded-2xl border border-[var(--mhb-status-recommended-border)] bg-[var(--mhb-status-recommended-bg)] px-4 py-3 text-sm text-[var(--mhb-status-recommended-text)]">
               {STRIPE_GUIDANCE.entity[entityType]}
             </div>
           ) : null}
@@ -482,7 +482,7 @@ export default function StripeOnboarding() {
             <button
               type="button"
               onClick={() => handleBack("region")}
-              className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              className="min-h-12 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-5 py-3 text-sm font-semibold text-[var(--mhb-text-primary)] hover:bg-[var(--mhb-surface-interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]"
             >
               Back
             </button>
@@ -493,7 +493,7 @@ export default function StripeOnboarding() {
                 writeEntityTypeToSession(null);
                 setEntityTypeConfirmed(true);
               }}
-              className="min-h-12 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-500 hover:bg-slate-50"
+              className="min-h-12 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-interactive-secondary)] px-5 py-3 text-sm font-semibold text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-surface-interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]"
             >
               Skip this step
             </button>
@@ -520,7 +520,7 @@ export default function StripeOnboarding() {
   return (
     <div className="min-h-screen bg-[var(--mhb-surface-workspace)] px-4 py-6 text-[var(--mhb-text-primary)] sm:px-6 sm:py-8">
       <div className="mx-auto max-w-7xl">
-        <div className="rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-workspace-elevated)] p-5 shadow-sm sm:p-7" data-testid="contractor-onboarding-page">
+        <div className="rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-workspace-elevated)] p-5 shadow-[var(--mhb-shadow-card-elevated)] sm:p-7" data-testid="contractor-onboarding-page">
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--mhb-text-muted)]">
@@ -550,29 +550,29 @@ export default function StripeOnboarding() {
             aria-valuenow={stepNumber}
           >
             <div
-              className="h-full rounded-full bg-[var(--mhb-interactive-primary)] transition-all"
+              className="h-full rounded-full bg-[var(--mhb-border-selected)] transition-all"
               style={{ width: `${Math.max(10, Math.min(100, (stepNumber / stepTotal) * 100))}%` }}
             />
           </div>
 
           {error && onboarding ? (
-            <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            <div className="mt-4 rounded-xl border border-[var(--mhb-status-blocked-border)] bg-[var(--mhb-status-blocked-bg)] px-4 py-3 text-sm text-[var(--mhb-status-blocked-text)]">
               {error}
             </div>
           ) : null}
 
           {loading ? (
-            <div className="mt-6 text-sm text-slate-600">Loading onboarding...</div>
+            <div className="mt-6 text-sm text-[var(--mhb-text-secondary)]">Loading onboarding...</div>
           ) : error && !onboarding ? (
-            <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 p-5" role="alert">
-              <h2 className="font-bold text-rose-900">We couldn’t load your setup progress</h2>
-              <p className="mt-1 text-sm text-rose-800">
+            <div className="mt-6 rounded-2xl border border-[var(--mhb-status-blocked-border)] bg-[var(--mhb-status-blocked-bg)] p-5" role="alert">
+              <h2 className="font-bold text-[var(--mhb-status-blocked-text)]">We couldn’t load your setup progress</h2>
+              <p className="mt-1 text-sm text-[var(--mhb-status-blocked-text)]">
                 No progress was changed. Retry when your connection is available.
               </p>
               <button
                 type="button"
                 onClick={loadAll}
-                className="mt-4 min-h-11 rounded-xl bg-rose-800 px-5 text-sm font-bold text-white hover:bg-rose-900"
+                className="mt-4 min-h-11 rounded-xl bg-[var(--mhb-interactive-danger-bg)] px-5 text-sm font-bold text-[var(--mhb-interactive-danger-text)] hover:bg-[var(--mhb-interactive-danger-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]"
               >
                 Retry
               </button>
@@ -584,13 +584,13 @@ export default function StripeOnboarding() {
 
                 {onboarding?.show_soft_stripe_prompt && !stripeReady ? (
                   <div
-                    className="rounded-2xl border border-amber-200 bg-amber-50 p-5"
+                    className="rounded-2xl border border-[var(--mhb-status-pending-border)] bg-[var(--mhb-status-pending-bg)] p-5"
                     data-testid="contractor-onboarding-soft-stripe-prompt"
                   >
-                    <div className="text-sm font-semibold text-amber-900">
+                    <div className="text-sm font-semibold text-[var(--mhb-status-pending-text)]">
                       Set up payments now to get paid faster
                     </div>
-                    <div className="mt-2 text-sm text-amber-800">
+                    <div className="mt-2 text-sm text-[var(--mhb-status-pending-text)]">
                       You are ready to explore the app. Payments can wait, but they will require Stripe before you send money-related workflows.
                     </div>
                   </div>
@@ -598,7 +598,7 @@ export default function StripeOnboarding() {
               </div>
 
               <aside
-                className="h-fit rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-5 shadow-sm"
+                className="h-fit rounded-3xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-5 shadow-[var(--mhb-shadow-card)]"
                 data-testid="contractor-onboarding-summary"
                 aria-labelledby="onboarding-checklist-title"
               >

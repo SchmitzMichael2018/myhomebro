@@ -113,9 +113,9 @@ export default function TradeMultiSelect({
                     type="button"
                     aria-pressed={active}
                     onClick={() => (active ? removeTrade(trade.label) : addTrade(trade.label))}
-                    className={`mhb-trade-option min-h-11 rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                    className={`mhb-trade-option min-h-11 rounded-full border px-4 py-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--mhb-surface-card)] ${
                       active
-                        ? "is-selected border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] text-white"
+                        ? "is-selected border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] text-[var(--mhb-text-inverse)]"
                         : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-surface-interactive-hover)]"
                     }`}
                   >
@@ -138,7 +138,7 @@ export default function TradeMultiSelect({
             onChange={(event) => setQuery(event.target.value)}
             placeholder={searchPlaceholder}
             aria-label={label}
-            className="mt-2 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-4 text-sm text-[var(--mhb-text-primary)] placeholder:text-[var(--mhb-text-muted)] focus:border-[var(--mhb-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
+            className="mt-2 h-12 w-full rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-4 text-sm text-[var(--mhb-text-primary)] placeholder:text-[var(--mhb-text-muted)] hover:border-[var(--mhb-border-strong)] focus:border-[var(--mhb-border-focus)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
             data-testid={`${testIdPrefix}-search`}
             disabled={disabled}
           />
@@ -160,14 +160,14 @@ export default function TradeMultiSelect({
                       onClick={() => (active ? removeTrade(trade.label) : addTrade(trade.label))}
                       data-testid={`${testIdPrefix}-option-${toTestId(trade.label)}`}
                       disabled={disabled}
-                      className={`mhb-trade-option min-h-12 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition ${
+                      className={`mhb-trade-option min-h-12 rounded-xl border px-3 py-3 text-left text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--mhb-surface-inset)] ${
                         active
-                          ? "is-selected border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] text-white"
+                          ? "is-selected border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] text-[var(--mhb-text-inverse)]"
                           : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] text-[var(--mhb-text-secondary)] hover:bg-[var(--mhb-surface-interactive-hover)]"
                       }`}
                     >
                       <div>{trade.label}</div>
-                      <div className={`mt-1 text-xs ${active ? "text-white/80" : "text-[var(--mhb-text-muted)]"}`}>
+                      <div className={`mt-1 text-xs ${active ? "text-[var(--mhb-text-inverse)] opacity-80" : "text-[var(--mhb-text-muted)]"}`}>
                         {active ? "Selected service" : "Add service"}
                       </div>
                     </button>
@@ -197,7 +197,7 @@ export default function TradeMultiSelect({
                 <span
                   key={trade}
                   data-testid={`${testIdPrefix}-chip-${toTestId(trade)}`}
-                  className="mhb-trade-chip inline-flex items-center gap-2 rounded-full border border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] px-3 py-2 text-sm font-semibold text-white"
+                  className="mhb-trade-chip inline-flex items-center gap-2 rounded-full border border-[var(--mhb-border-selected)] bg-[var(--mhb-interactive-primary)] px-3 py-2 text-sm font-semibold text-[var(--mhb-text-inverse)]"
                 >
                   <span aria-hidden="true">✓</span>
                   {trade}
@@ -205,7 +205,7 @@ export default function TradeMultiSelect({
                     type="button"
                     aria-label={`Remove ${trade}`}
                     onClick={() => removeTrade(trade)}
-                    className="mhb-trade-chip-remove rounded-full border border-white/40 bg-white/10 px-2 py-0.5 text-xs font-bold text-white hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className="mhb-trade-chip-remove rounded-full border border-current bg-transparent px-2 py-0.5 text-xs font-bold text-[var(--mhb-text-inverse)] opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]"
                   >
                     ×
                   </button>

@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-
 import { clearExpiredConversations } from "./lib/conversationStorage.js";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
+import { AppearanceProvider } from "./context/AppearanceContext.jsx";
 
 import LoginModal from "./components/LoginModal.jsx";
 import SignUpModal from "./components/SignUpModal.jsx";
@@ -42,6 +43,24 @@ import "./styles/modal.css";
 function LegacyPortalTokenRedirect() {
   const { token = "" } = useParams();
   return <Navigate to={`/portal/${encodeURIComponent(token)}`} replace />;
+}
+
+function ContractorOnboardingRoute() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.dataset.mhbSurface = "operational";
+    return () => {
+      delete root.dataset.mhbSurface;
+    };
+  }, []);
+
+  return (
+    <AppearanceProvider>
+      <div data-mhb-surface="operational" className="mhb-operational-surface">
+        <StripeOnboarding />
+      </div>
+    </AppearanceProvider>
+  );
 }
 
 export default function App() {
@@ -87,7 +106,7 @@ export default function App() {
           <Route path="/app/project/:project_id" element={<ProjectDashboardPage />} />
 
           {/* Stripe onboarding */}
-          <Route path="/onboarding" element={<StripeOnboarding />} />
+          <Route path="/onboarding" element={<ContractorOnboardingRoute />} />
           <Route path="/onboarding/profile" element={<Navigate to="/app/onboarding" replace />} />
 
           {/* ✅ Auth-protected /app routes */}

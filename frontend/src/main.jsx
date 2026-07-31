@@ -17,10 +17,16 @@ import {
 
 // Apply the authenticated operational appearance before React renders to avoid
 // flashing the light theme while routes and profile data initialize.
-if (window.location.pathname.startsWith("/app")) {
+if (
+  window.location.pathname.startsWith("/app") ||
+  window.location.pathname === "/onboarding"
+) {
   const initialAppearance = readStoredAppearance();
   const systemDark = window.matchMedia?.(DARK_MEDIA_QUERY)?.matches ?? false;
   applyAppearanceToDocument(initialAppearance, resolveAppearance(initialAppearance, systemDark));
+  if (window.location.pathname === "/onboarding") {
+    document.documentElement.dataset.mhbSurface = "operational";
+  }
 }
 
 // Ensure there is a mount node. If #root doesn't exist, create it.

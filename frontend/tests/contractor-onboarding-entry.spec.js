@@ -114,6 +114,82 @@ test('Step 1 has one clear hierarchy and a live setup checklist', async ({
   ).toBeVisible();
 });
 
+test('onboarding uses operational dark surfaces and accessible control states', async ({
+  page,
+}) => {
+  await installEntryOnboardingRoutes(page);
+  await page.goto('/onboarding');
+
+  await expect(page.locator('html')).toHaveAttribute('data-mhb-theme', 'dark');
+  await expect(page.locator('html')).toHaveAttribute(
+    'data-mhb-surface',
+    'operational'
+  );
+
+  const pagePanel = page.getByTestId('contractor-onboarding-page');
+  const taskPanel = page.getByTestId('contractor-onboarding-trades');
+  const checklist = page.getByTestId('contractor-onboarding-summary');
+  const search = page.getByTestId('contractor-onboarding-trade-search');
+  const results = page.getByTestId('contractor-onboarding-trade-results');
+  const continueButton = page.getByTestId(
+    'contractor-onboarding-save-basics'
+  );
+
+  await expect(pagePanel).toHaveClass(
+    /bg-\[var\(--mhb-surface-workspace-elevated\)\]/
+  );
+  await expect(taskPanel).toHaveClass(/bg-\[var\(--mhb-surface-card\)\]/);
+  await expect(checklist).toHaveClass(/bg-\[var\(--mhb-surface-card\)\]/);
+  await expect(search).toHaveClass(/bg-\[var\(--mhb-surface-control\)\]/);
+  await expect(results).toHaveClass(/bg-\[var\(--mhb-surface-inset\)\]/);
+  await expect(continueButton).toBeDisabled();
+
+  const colors = await page.evaluate(() => {
+    const root = getComputedStyle(document.documentElement);
+    return {
+      workspace: root.getPropertyValue('--mhb-surface-workspace').trim(),
+      panel: root.getPropertyValue('--mhb-surface-workspace-elevated').trim(),
+      card: root.getPropertyValue('--mhb-surface-card').trim(),
+      control: root.getPropertyValue('--mhb-surface-control').trim(),
+      text: root.getPropertyValue('--mhb-text-primary').trim(),
+    };
+  });
+  expect(new Set(Object.values(colors).slice(0, 4)).size).toBeGreaterThan(2);
+  expect(colors.text).toBe('#f8fbff');
+
+  await search.focus();
+  expect(
+    await search.evaluate((element) => getComputedStyle(element).boxShadow)
+  ).not.toBe('none');
+
+  const popularService = page
+    .locator('button')
+    .filter({ hasText: 'General Contractor' })
+    .first();
+  await expect(popularService).toHaveAttribute('aria-pressed', 'false');
+  await popularService.click();
+  await expect(popularService).toHaveAttribute('aria-pressed', 'true');
+  await expect(popularService).toHaveClass(/is-selected/);
+  await expect(continueButton).toBeEnabled();
+});
+
+test('onboarding honors an existing operational light appearance preference', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('myhomebro.appearance.v1', 'light');
+  });
+  await installEntryOnboardingRoutes(page);
+  await page.goto('/onboarding');
+
+  await expect(page.locator('html')).toHaveAttribute('data-mhb-theme', 'light');
+  await expect(page.locator('html')).toHaveAttribute(
+    'data-mhb-surface',
+    'operational'
+  );
+  await expect(page.getByTestId('contractor-onboarding-page')).toBeVisible();
+});
+
 test('service selection is deduplicated, searchable, removable, and keyboard accessible', async ({
   page,
 }) => {
