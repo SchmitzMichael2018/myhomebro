@@ -10,7 +10,7 @@ export default function ProfilePage() {
       eyebrow="Settings"
       title="Profile & Billing"
       subtitle="Manage your business profile, plan details, Stripe status, and account settings from a consistent account surface."
-      className="max-w-[1180px]"
+      className="max-w-[1180px] !pt-16 md:!pt-3"
       variant="operational"
     >
       <ContractorProfile />

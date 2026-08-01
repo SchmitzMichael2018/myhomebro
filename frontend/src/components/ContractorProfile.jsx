@@ -8,7 +8,7 @@ import api from "../api";
 import AccountSettings from "./AccountSettings";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
 import TradeMultiSelect from "./trades/TradeMultiSelect.jsx";
-import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
+import { buildBusinessLaunchChecklist, calculateProfileCompleteness } from "../lib/profileCompleteness.js";
 import { Card } from "./ui/surfaces.jsx";
 
 const US_STATES = [
@@ -102,81 +102,16 @@ function formatComplianceDate(value) {
 
 // ── Profile completeness items: key → display label + fix route ──────────────
 // Route is null when the fix is on this page (user is already here).
-const PROFILE_COMPLETENESS_ITEMS = [
-  { key: "stripe_connect",        label: "Stripe connected",       route: "/app/onboarding/stripe" },
-  { key: "business_info",         label: "Business info",          route: null },
-  { key: "trade_profile",         label: "Trade profile",          route: null },
-  { key: "service_area",          label: "Service area set",       route: null },
-  { key: "first_job_or_template", label: "First job or template",  route: "/app/assistant" },
-  { key: "license",               label: "License on file",        route: null },
-  { key: "logo",                  label: "Logo uploaded",          route: null },
-  { key: "team_members",          label: "Team members",           route: "/app/team" },
-];
-
 function ProfileCompletenessBar({ meData }) {
   const navigate = useNavigate();
-  // Fetch agreement count once to detect first job for older accounts whose
-  // first_project_started_at / first_agreement_created_at were never set.
-  const [agreementCount, setAgreementCount] = useState(null); // null = still loading
   const [showDetails, setShowDetails] = useState(false);
 
-  useEffect(() => {
-    if (!meData) return;
-
-    api.get("/projects/agreements/", { params: { limit: 1 } })
-      .then((res) => {
-        const count =
-          typeof res.data?.count === "number"
-            ? res.data.count
-            : Array.isArray(res.data?.results)
-            ? res.data.results.length
-            : Array.isArray(res.data)
-            ? res.data.length
-            : 0;
-        setAgreementCount(count);
-      })
-      .catch(() => setAgreementCount(0));
-  }, [meData]);
-
   if (!meData) return null;
-
-  // Derive extras from meData. Use first_value_reached (backend boolean) first,
-  // then fall back to timestamps, then to the live agreement count fetch.
-  const stripeConnected = Boolean(meData.stripe_connected);
-  const hasFirstJob = Boolean(
-    meData?.onboarding?.first_value_reached ||
-    meData?.onboarding?.first_project_started_at ||
-    meData?.onboarding?.first_agreement_created_at ||
-    meData?.first_project_started_at ||
-    meData?.first_agreement_created_at ||
-    (agreementCount !== null && agreementCount > 0)
-  );
-
-  const { score, highestValueMissing, missingItems } = calculateProfileCompleteness(meData, {
-    stripeConnected,
-    jobCount: hasFirstJob ? 1 : 0,
-    templateCount: 0,
-  });
-
-  const isComplete = score >= 100;
-  const missingKeys = new Set(missingItems.map((m) => m.key));
+  const { score, items, highestValueMissing } = calculateProfileCompleteness(meData);
 
   // Score >= 85: collapsible (collapsed by default). Score < 85: always expanded.
-  const isCollapsible = !isComplete && score >= 85;
-  const showItems = isComplete || !isCollapsible || showDetails;
-
-  if (isComplete) {
-    return (
-      <div
-        data-testid="profile-completeness-bar"
-        className="mb-4 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5"
-      >
-        <span className="text-emerald-600">✓</span>
-        <span className="text-sm font-semibold text-emerald-800">Profile complete</span>
-        <span className="ml-auto text-sm font-bold text-emerald-600">100%</span>
-      </div>
-    );
-  }
+  const isCollapsible = score >= 85;
+  const showItems = !isCollapsible || showDetails;
 
   return (
     <div
@@ -210,10 +145,10 @@ function ProfileCompletenessBar({ meData }) {
 
       {showItems ? (
         <div className="mt-3 space-y-1">
-          {PROFILE_COMPLETENESS_ITEMS.map(({ key, label, route }) => {
-            const done = !missingKeys.has(key);
+          {items.map(({ key, label, state, route = null }) => {
+            const done = state === "complete";
             const isHighlight = highestValueMissing?.key === key;
-            const isMissing = !done;
+            const isMissing = state === "incomplete";
 
             return (
               <div
@@ -259,12 +194,60 @@ function ProfileCompletenessBar({ meData }) {
                 ) : isMissing ? (
                   <span className="shrink-0 text-xs text-slate-400">Update below</span>
                 ) : null}
+                {state === "recommended" ? <span className="shrink-0 text-xs font-semibold text-sky-700">Recommended</span> : null}
+                {state === "optional" ? <span className="shrink-0 text-xs text-slate-500">Add if applicable</span> : null}
               </div>
             );
           })}
         </div>
       ) : null}
     </div>
+  );
+}
+
+function resultCount(data) {
+  if (typeof data?.count === "number") return data.count;
+  if (Array.isArray(data?.results)) return data.results.length;
+  return Array.isArray(data) ? data.length : 0;
+}
+
+function BusinessLaunchChecklist({ meData }) {
+  const navigate = useNavigate();
+  const [activity, setActivity] = useState({ estimateCount: 0, templateCount: 0, customerCount: 0, teamCount: 0 });
+
+  useEffect(() => {
+    let active = true;
+    Promise.allSettled([
+      api.get("/projects/proposals/", { params: { page_size: 1 } }),
+      api.get("/projects/templates/", { params: { page_size: 1 } }),
+      api.get("/projects/customers/", { params: { page_size: 1 } }),
+      api.get("/projects/subaccounts/", { params: { page_size: 1 } }),
+    ]).then((results) => {
+      if (!active) return;
+      const countAt = (index) => results[index].status === "fulfilled" ? resultCount(results[index].value.data) : 0;
+      setActivity({ estimateCount: countAt(0), templateCount: countAt(1), customerCount: countAt(2), teamCount: countAt(3) });
+    });
+    return () => { active = false; };
+  }, []);
+
+  const items = buildBusinessLaunchChecklist(meData, activity);
+  return (
+    <section data-testid="business-launch-checklist" className="mb-5 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-4 text-[var(--mhb-text-primary)]">
+      <h2 className="text-sm font-bold">Business launch checklist</h2>
+      <p className="mt-1 text-xs leading-5 text-[var(--mhb-text-secondary)]">These actions help you start using MyHomeBro but do not affect your profile completeness.</p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item.key} data-testid={`launch-item-${item.key}`} className="flex min-w-0 items-center gap-2 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-3">
+            <span aria-hidden="true" className={item.complete ? "text-[var(--mhb-status-complete-text)]" : "text-[var(--mhb-text-muted)]"}>{item.complete ? "✓" : "○"}</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold">{item.label}</div>
+              <div className="mt-0.5 text-[11px] text-[var(--mhb-text-muted)]">{item.complete ? "Complete" : item.optional ? "Optional" : "Not started"}</div>
+            </div>
+            {!item.complete ? <button type="button" onClick={() => navigate(item.route)} className="shrink-0 rounded-lg px-2 py-1 text-xs font-bold text-[var(--mhb-interactive-link)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]">Open</button> : null}
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -1242,6 +1225,7 @@ export default function ContractorProfile() {
       <Card theme="operational" className="w-full">
 
         <ProfileCompletenessBar meData={meData} />
+        <BusinessLaunchChecklist meData={meData} />
 
         {showSetupReminder ? (
           <div

@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test('profile billing view renders with included AI wording', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error));
   await page.addInitScript(() => {
     window.localStorage.setItem('access', 'playwright-access-token');
   });
@@ -43,7 +45,8 @@ test('profile billing view renders with included AI wording', async ({ page }) =
         city: 'Austin',
         state: 'TX',
         zip: '78701',
-        skills: [],
+        service_radius_miles: 25,
+        skills: ['Carpentry'],
         pricing_summary: {
           current_rate: '0.045',
           current_rate_label: '4.5% + $1 per agreement',
@@ -81,6 +84,34 @@ test('profile billing view renders with included AI wording', async ({ page }) =
   });
 
   await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
+  await page.waitForTimeout(1000);
+  expect(pageErrors.map((error) => error.message)).toEqual([]);
+
+  const profileCompleteness = page.getByTestId('profile-completeness-bar');
+  await expect(profileCompleteness).toBeVisible();
+  await expect(profileCompleteness).toContainText('100%');
+  await page.getByRole('button', { name: /View details/ }).click();
+  await expect(profileCompleteness).not.toContainText('First job or template');
+  await expect(profileCompleteness).not.toContainText('Team members');
+  await expect(profileCompleteness).not.toContainText('Stripe');
+  const launchChecklist = page.getByTestId('business-launch-checklist');
+  await expect(launchChecklist).toBeVisible();
+  await expect(launchChecklist).toContainText('These actions help you start using MyHomeBro but do not affect your profile completeness.');
+  await expect(page.getByTestId('launch-item-first_estimate')).toContainText('Create your first estimate');
+  await expect(page.getByTestId('launch-item-template')).toContainText('Choose a reusable template');
+  await expect(page.getByTestId('launch-item-team')).toContainText('Optional');
+  await expect(page.getByTestId('launch-item-payments')).toContainText('Optional');
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.screenshot({ path: 'test-results/profile-completeness-and-launch.png', fullPage: true });
+  await profileCompleteness.screenshot({ path: 'test-results/profile-completeness.png' });
+  await launchChecklist.screenshot({ path: 'test-results/business-launch-checklist.png' });
+  await page.screenshot({ path: 'test-results/profile-solo-contractor.png', fullPage: true });
+  await page.setViewportSize({ width: 900, height: 900 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/profile-launch-tablet.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/profile-launch-solo-390.png', fullPage: true });
 
   await expect(page.getByRole('button', { name: /Plan & Billing/ })).toBeVisible();
   await page.getByRole('button', { name: /Plan & Billing/ }).click();

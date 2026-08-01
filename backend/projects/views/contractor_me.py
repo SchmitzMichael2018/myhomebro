@@ -20,6 +20,7 @@ from projects.services.contractor_onboarding import (
     _coerce_service_radius_miles,
 )
 from projects.services.contractor_skills import set_contractor_skills
+from projects.services.profile_completion import build_profile_completion
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
 from payments.fees import (
@@ -166,6 +167,7 @@ class ContractorMeView(APIView):
         capability_flags = get_contractor_capability_flags(c)
         performance_summary = contractor_performance_summary(c)
 
+        public_profile = getattr(c, "public_profile", None)
         payload = {
             "id": c.id,
             "business_name": c.business_name,
@@ -250,9 +252,14 @@ class ContractorMeView(APIView):
             "ai": ai_summary,
             "performance_summary": performance_summary,
             "performance": performance_summary,
+            "profile_completeness": build_profile_completion(
+                c,
+                u,
+                trade_requirements=compliance_snapshot["trade_requirements"],
+                public_profile=public_profile,
+            ),
         }
 
-        public_profile = getattr(c, "public_profile", None)
         if public_profile is not None:
             payload["public_profile"] = {
                 "business_name_public": getattr(public_profile, "business_name_public", "") or "",
@@ -262,6 +269,8 @@ class ContractorMeView(APIView):
                 "preferred_signoff": getattr(public_profile, "preferred_signoff", "") or "",
                 "brand_primary_color": getattr(public_profile, "brand_primary_color", "") or "",
                 "logo_url": _safe_url(getattr(public_profile, "logo", None)),
+                "is_public": bool(getattr(public_profile, "is_public", False)),
+                "published_at": _safe_dt(getattr(public_profile, "published_at", None)),
                 "accepts_diy_assistance": bool(capability_flags["accepts_diy_assistance"]),
                 "accepts_consultation_only": bool(getattr(c, "accepts_consultation_only", False)),
                 "accepts_inspection_only": bool(getattr(c, "accepts_inspection_only", False)),

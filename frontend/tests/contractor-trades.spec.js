@@ -285,6 +285,8 @@ test("stripe onboarding can be skipped without blocking account creation", async
   await installTradeRoutes(page, { meSkills: ["HVAC"], onboardingStep: "stripe" });
 
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("button", { name: "Skip this step" })).toBeVisible();
+  await page.getByRole("button", { name: "Skip this step" }).click();
   await expect(page.getByRole("button", { name: "Skip for now" })).toBeVisible();
   await page.getByRole("button", { name: "Skip for now" }).click();
 
