@@ -74,6 +74,10 @@ async function installStripeEmbeddedOnboardingRoutes(page, options = {}) {
   });
 
   await page.route("**/connect-js.stripe.com/v1.0/connect.js", async (route) => {
+    if (options.scriptFailure) {
+      await route.abort("blockedbyclient");
+      return;
+    }
     const script = `
       const stripeConnectOnLoad = window.StripeConnect && window.StripeConnect.onLoad;
       if (!customElements.get("stripe-connect-account-onboarding")) {
@@ -177,6 +181,22 @@ test("embedded Stripe shows one loading state while preparing a fresh session", 
   await expect(page.getByTestId("embedded-stripe-error")).toHaveCount(0);
   await page.screenshot({ path: "test-results/stripe-embedded-loading.png", fullPage: true });
   await expect(page.getByTestId("embedded-stripe-ready")).toBeVisible({ timeout: 15000 });
+});
+
+test("a blocked Connect.js load becomes one handled operational error", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  const calls = await installStripeEmbeddedOnboardingRoutes(page, { scriptFailure: true });
+
+  await page.goto("/app/onboarding/stripe", { waitUntil: "domcontentloaded" });
+
+  const error = page.getByTestId("embedded-stripe-error");
+  await expect(error).toBeVisible({ timeout: 15000 });
+  await expect(error).toContainText("Support reference: CONNECT-INITIALIZATION");
+  await expect(page.getByTestId("embedded-stripe-loading")).toHaveCount(0);
+  await expect(page.getByTestId("embedded-stripe-ready")).toBeHidden();
+  expect(calls.sessionRequests).toBe(1);
+  expect(pageErrors).toEqual([]);
 });
 
 test("embedded failure is exclusive, compact, retryable, and hides the raw account ID", async ({ page }) => {

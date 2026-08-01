@@ -155,6 +155,14 @@ export default function EmbeddedStripeOnboarding() {
             variables: { colorPrimary: "#60a5fa", colorBackground: "#081a31", colorText: "#f8fbff" },
           },
         });
+
+        // The SDK creates a promise for each component callback registration.
+        // Wait for its single loader promise first so a blocked Connect.js request
+        // is caught here instead of fanning out into repeated unhandled rejections.
+        if (typeof instance.debugInstance === "function") {
+          await instance.debugInstance();
+        }
+        if (!active) return;
         const onboarding = instance.create("account-onboarding");
 
         onboarding.setOnLoaderStart?.(() => {

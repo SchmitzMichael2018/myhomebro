@@ -155,6 +155,10 @@ if not DEBUG:
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+# Stripe Connect embedded authentication uses a Stripe-owned popup. Stripe
+# documents that COOP same-origin breaks this flow; unsafe-none is the browser
+# default and leaves the rest of SecurityMiddleware's headers unchanged.
+SECURE_CROSS_ORIGIN_OPENER_POLICY = "unsafe-none"
 
 
 # ──────────────────────────────────────────────────────────────────────────────

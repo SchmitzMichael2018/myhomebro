@@ -19,12 +19,12 @@
     <!-- CSP: keep same-origin assets & API calls; fonts allowed -->
     <meta http-equiv="Content-Security-Policy" content="
       default-src 'self';
-      script-src 'self' https://js.stripe.com https://maps.googleapis.com https://maps.gstatic.com;
-      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      script-src 'self' https://js.stripe.com https://connect-js.stripe.com https://maps.googleapis.com https://maps.gstatic.com;
+      style-src 'self' 'unsafe-inline' 'sha256-0hAheEzaMe6uXIKV4EehS9pu1am1lj/KnnzrOYqckXk=' https://fonts.googleapis.com;
       font-src 'self' https://fonts.gstatic.com data:;
-      img-src 'self' data: https://maps.googleapis.com https://maps.gstatic.com;
+      img-src 'self' data: https://*.stripe.com https://maps.googleapis.com https://maps.gstatic.com;
       connect-src 'self' ws: wss: https://api.stripe.com https://maps.googleapis.com https://maps.gstatic.com https://places.googleapis.com;
-      frame-src 'self' blob: https://js.stripe.com https://hooks.stripe.com;
+      frame-src 'self' blob: https://connect-js.stripe.com https://js.stripe.com https://hooks.stripe.com;
       child-src 'self' blob:;
       object-src 'self' blob:;
       base-uri 'self';
