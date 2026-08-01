@@ -1,5 +1,5 @@
 // src/components/ContractorDashboard.jsx
-import React, { useEffect, useId, useMemo, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api, { getContractorDrawRequests, releaseDrawRequest, resendDrawReview } from "../api";
 import { toast } from "react-hot-toast";
@@ -646,7 +646,7 @@ function emptyEstimateSchedule() {
   };
 }
 
-function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
+export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   const [mode, setMode] = useState("existing");
   const [customers, setCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
@@ -660,6 +660,10 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   });
   const [newForm, setNewForm] = useState(emptyDashboardEstimateForm);
   const [saving, setSaving] = useState(false);
+  const [customerLoadError, setCustomerLoadError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [customerLoadAttempt, setCustomerLoadAttempt] = useState(0);
+  const submissionGuard = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -673,6 +677,9 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
       ...emptyEstimateSchedule(),
     });
     setNewForm(emptyDashboardEstimateForm);
+    setCustomerLoadError("");
+    setSubmitError("");
+    submissionGuard.current = false;
   }, [isOpen]);
 
   useEffect(() => {
@@ -681,12 +688,20 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     (async () => {
       try {
         setLoadingCustomers(true);
+        setCustomerLoadError("");
         const { data } = await api.get("/projects/homeowners/", { params: { page_size: 50 } });
         if (!mounted) return;
         setCustomers(Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : []);
       } catch (error) {
         console.error(error);
-        if (mounted) setCustomers([]);
+        if (mounted) {
+          setCustomers([]);
+          setCustomerLoadError(
+            error?.response?.status === 403
+              ? "You do not have permission to view customers for estimate creation."
+              : "Customers could not be loaded. Retry before creating an estimate for an existing customer."
+          );
+        }
       } finally {
         if (mounted) setLoadingCustomers(false);
       }
@@ -694,7 +709,7 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     return () => {
       mounted = false;
     };
-  }, [isOpen, mode]);
+  }, [customerLoadAttempt, isOpen, mode]);
 
   const filteredCustomers = useMemo(() => {
     const q = customerQuery.trim().toLowerCase();
@@ -737,6 +752,8 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (submissionGuard.current) return;
+    setSubmitError("");
     const isExisting = mode === "existing";
     if (isExisting && !selectedCustomerId) {
       toast.error("Choose an existing customer first.");
@@ -777,6 +794,7 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     };
 
     try {
+      submissionGuard.current = true;
       setSaving(true);
       const { data } = await api.post("/projects/proposals/", payload);
       const proposal = data?.proposal || data;
@@ -787,8 +805,14 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
       console.error(error);
       const detail = error?.response?.data?.detail;
       const firstFieldError = Object.values(error?.response?.data || {}).flat?.()?.[0];
-      toast.error(detail || firstFieldError || "Could not create estimate workspace.");
+      const message =
+        error?.response?.status === 403
+          ? "You do not have permission to create estimates."
+          : detail || firstFieldError || "Could not create estimate workspace.";
+      setSubmitError(message);
+      toast.error(message);
     } finally {
+      submissionGuard.current = false;
       setSaving(false);
     }
   };
@@ -865,6 +889,19 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
                   <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70">
                     Loading customers...
                   </div>
+                ) : customerLoadError ? (
+                  <div className="rounded-xl border border-rose-300/30 bg-rose-400/10 px-3 py-4 text-sm text-rose-100" role="alert">
+                    <p className="font-semibold">{customerLoadError}</p>
+                    {customerLoadError.startsWith("Customers could") ? (
+                      <button
+                        type="button"
+                        onClick={() => setCustomerLoadAttempt((current) => current + 1)}
+                        className="mt-3 rounded-lg border border-rose-200/35 px-3 py-2 font-bold hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+                      >
+                        Retry loading customers
+                      </button>
+                    ) : null}
+                  </div>
                 ) : filteredCustomers.length ? (
                   filteredCustomers.map((customer) => {
                     const isSelected = String(customer.id) === String(selectedCustomerId);
@@ -920,6 +957,12 @@ function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
             </div>
           </div>
         )}
+
+        {submitError ? (
+          <div className="rounded-xl border border-rose-300/30 bg-rose-400/10 px-4 py-3 text-sm font-semibold text-rose-100" role="alert">
+            {submitError}
+          </div>
+        ) : null}
 
         <div className="flex flex-col-reverse gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-end">
           <button

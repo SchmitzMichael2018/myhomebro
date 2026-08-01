@@ -332,6 +332,7 @@ test("Estimates landing page lists lifecycle stages and opens existing records",
   await expect(page.getByText("Estimate Assistant")).toHaveCount(0);
   await expect(page.getByText("Human approval required")).toHaveCount(0);
   await expect(page.getByTestId("estimates-queue-summary")).toContainText("Estimate Queue");
+  await expect(page.getByTestId("estimates-create-header")).toBeVisible();
   await expect(page.getByTestId("estimates-queue-summary")).toContainText("Next Priority");
   await expect(page.getByPlaceholder("Search estimates")).toBeVisible();
   await expect(page.getByRole("combobox").filter({ hasText: "All customers" })).toBeVisible();
@@ -377,6 +378,147 @@ test("Estimates landing page lists lifecycle stages and opens existing records",
   const hasHorizontalOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   expect(hasHorizontalOverflow).toBe(false);
 });
+
+test("Estimates header and empty state open the shared creation flow without duplicate creates", async ({
+  page,
+}) => {
+  await installBaseMocks(page);
+  let createCount = 0;
+
+  await page.route(/\/api\/projects\/proposals\/?$/, async (route) => {
+    if (route.request().method() === "POST") {
+      createCount += 1;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ proposal: { ...proposal, id: 88 }, created: true }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+  await page.route("**/api/projects/homeowners**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(customerPayload),
+    });
+  });
+  await page.route("**/api/projects/proposals/88/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ...proposal, id: 88 }),
+    });
+  });
+
+  await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
+  const headerAction = page.getByTestId("estimates-create-header");
+  const emptyAction = page.getByTestId("estimates-create-empty");
+  await expect(headerAction).toBeVisible();
+  await expect(emptyAction).toBeVisible();
+
+  await headerAction.click();
+  await expect(page).toHaveURL(/\/app\/estimates\?create=estimate$/);
+  await expect(page.getByRole("heading", { name: "Create Estimate" })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/estimates$/);
+  await expect(page.getByRole("heading", { name: "Create Estimate" })).toHaveCount(0);
+
+  await emptyAction.click();
+  await expect(page).toHaveURL(/\/app\/estimates\?create=estimate$/);
+  await page.getByTestId("dashboard-estimate-new-tab").click();
+  await page.getByTestId("dashboard-estimate-new-customer").fill("Morgan Reed");
+  await page.getByTestId("dashboard-estimate-new-title").fill("Exterior estimate");
+  const launch = page.getByTestId("dashboard-estimate-launch");
+  await launch.dblclick();
+
+  await expect(page).toHaveURL(/\/app\/estimates\/88$/);
+  expect(createCount).toBe(1);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/app\/estimates$/);
+});
+
+test("Estimate creation reports customer permission and create permission failures", async ({
+  page,
+}) => {
+  await installBaseMocks(page);
+  await page.route(/\/api\/projects\/proposals\/?$/, async (route) => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "Forbidden" }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: [] }),
+    });
+  });
+  await page.route("**/api/projects/homeowners**", async (route) => {
+    await route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Forbidden" }),
+    });
+  });
+
+  await page.goto("/app/estimates?create=estimate", {
+    waitUntil: "domcontentloaded",
+  });
+  await expect(
+    page.getByText(
+      "You do not have permission to view customers for estimate creation."
+    )
+  ).toBeVisible();
+
+  await page.getByTestId("dashboard-estimate-new-tab").click();
+  await page.getByTestId("dashboard-estimate-new-customer").fill("Morgan Reed");
+  await page.getByTestId("dashboard-estimate-new-title").fill("Exterior estimate");
+  await page.getByTestId("dashboard-estimate-launch").click();
+  await expect(
+    page.getByRole("alert").filter({
+      hasText: "You do not have permission to create estimates.",
+    })
+  ).toBeVisible();
+});
+
+for (const appearance of ["dark", "light"]) {
+  test(`Estimate creation action remains responsive in ${appearance} appearance`, async ({
+    page,
+  }) => {
+    await page.addInitScript((value) => {
+      window.localStorage.setItem("myhomebro.appearance.v1", value);
+    }, appearance);
+    await installBaseMocks(page);
+    await page.route(/\/api\/projects\/proposals\/?$/, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ results: appearance === "dark" ? [] : estimateListPayload.results }),
+      });
+    });
+
+    for (const width of [1440, 900, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
+      await expect(page.getByTestId("estimates-create-header")).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth
+        )
+      ).toBe(true);
+    }
+  });
+}
 
 test("Create Estimate from Opportunity opens Estimate Workspace", async ({ page }) => {
   await installBaseMocks(page);

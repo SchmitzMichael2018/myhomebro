@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { ArchiveRestore, ExternalLink, FileSignature, Search } from "lucide-react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { ArchiveRestore, ExternalLink, FileSignature, Plus, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
+import { DashboardEstimateModal } from "../components/ContractorDashboard.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 const TABS = [
@@ -174,6 +175,7 @@ function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
 
 export default function EstimatesPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("needs_estimate");
@@ -182,6 +184,8 @@ export default function EstimatesPage() {
   const [projectTypeFilter, setProjectTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [updatedSince, setUpdatedSince] = useState("");
+  const createEstimateOpen = new URLSearchParams(location.search).get("create") === "estimate";
+  const createEstimateHref = "/app/estimates?create=estimate";
 
   async function loadEstimates() {
     setLoading(true);
@@ -282,18 +286,33 @@ export default function EstimatesPage() {
       toast.error("Could not restore estimate.");
     }
   };
+  const closeCreateEstimate = () => navigate("/app/estimates", { replace: true });
+  const onEstimateCreated = (estimate) => {
+    navigate(`/app/estimates/${estimate.id}`, { replace: true });
+  };
 
   return (
-    <ContractorPageSurface
-      eyebrow="Sales Pipeline"
-      title="Estimates"
-      subtitle="Review, prepare, and convert estimates into agreements."
-      variant="operational"
-    >
+    <>
+      <ContractorPageSurface
+        eyebrow="Sales Pipeline"
+        title="Estimates"
+        subtitle="Review, prepare, and convert estimates into agreements."
+        variant="operational"
+      >
       <section
         className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 px-4 py-3 text-white shadow-[0_18px_46px_rgba(2,8,23,0.24)]"
         data-testid="estimates-queue-summary"
       >
+        <div className="mb-3 flex justify-end">
+          <Link
+            to={createEstimateHref}
+            data-testid="estimates-create-header"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-300 px-4 py-2.5 text-sm font-black text-[#071a31] shadow-lg shadow-amber-950/20 transition hover:bg-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 focus-visible:ring-offset-2 focus-visible:ring-offset-[#061d42]"
+          >
+            <Plus size={17} aria-hidden="true" />
+            Create Estimate
+          </Link>
+        </div>
         <div className="grid gap-3 xl:grid-cols-[minmax(0,0.7fr)_repeat(4,minmax(7.5rem,0.18fr))_minmax(14rem,0.75fr)] xl:items-center">
           <div>
             <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Estimate Queue</div>
@@ -387,14 +406,30 @@ export default function EstimatesPage() {
           <div className="rounded-xl border border-dashed border-white/16 bg-[#061d42]/95 p-8 text-center">
             <div className="text-base font-black text-white">No estimates in this stage</div>
             <p className="mt-2 text-sm font-semibold text-sky-100/70">
-              Estimates created from opportunities, dashboard starts, customers, and property work orders will appear here automatically.
+              Start with an existing customer or capture a new customer request.
             </p>
             <p className="mt-2 text-sm text-sky-100/55">
               Missing scope, pricing, and handoff details will appear in the relevant estimate workspace.
             </p>
+            {!rows.length ? (
+              <Link
+                to={createEstimateHref}
+                data-testid="estimates-create-empty"
+                className="mt-5 hidden min-h-11 items-center justify-center gap-2 rounded-xl bg-amber-300 px-5 py-2.5 text-sm font-black text-[#071a31] shadow-lg shadow-amber-950/20 transition hover:bg-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-100 sm:inline-flex"
+              >
+                <Plus size={17} aria-hidden="true" />
+                Create your first estimate
+              </Link>
+            ) : null}
           </div>
         )}
       </section>
-    </ContractorPageSurface>
+      </ContractorPageSurface>
+      <DashboardEstimateModal
+        isOpen={createEstimateOpen}
+        onClose={closeCreateEstimate}
+        onCreated={onEstimateCreated}
+      />
+    </>
   );
 }
