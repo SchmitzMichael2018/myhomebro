@@ -30,6 +30,7 @@
     "@fullcalendar/react": "6.1.19",
     "@fullcalendar/timegrid": "6.1.19",
     "@googlemaps/js-api-loader": "^2.0.2",
+    "@stripe/connect-js": "3.4.6",
     "@stripe/react-stripe-js": "^3.10.0",
     "@stripe/stripe-js": "^7.9.0",
     "axios": "1.18.1",

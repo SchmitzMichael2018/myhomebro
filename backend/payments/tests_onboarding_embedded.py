@@ -11,6 +11,7 @@ from payments.models import ConnectedAccount
 from projects.models import Contractor
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class EmbeddedStripeOnboardingTests(TestCase):
     def setUp(self):
         user_model = get_user_model()
@@ -50,6 +51,7 @@ class EmbeddedStripeOnboardingTests(TestCase):
         self.assertEqual(payload["account_id"], "acct_custom_123")
         self.assertEqual(payload["client_secret"], "seti_client_secret_123")
         self.assertEqual(payload["resume_url"], "/app/onboarding/stripe")
+        self.assertEqual(response["Cache-Control"], "no-store")
         self.assertIn("onboarding", payload)
         self.assertEqual(payload["onboarding"]["business_name"], "Embedded Stripe Contractor")
 
@@ -107,6 +109,67 @@ class EmbeddedStripeOnboardingTests(TestCase):
         )
         connected.refresh_from_db()
         self.assertEqual(connected.stripe_account_id, "acct_existing_456")
+
+    @override_settings(
+        STRIPE_ENABLED=True,
+        STRIPE_API_KEY="sk_test_embedded",
+        FRONTEND_URL="https://app.example.test",
+    )
+    @patch("payments.views.onboarding.stripe.AccountLink.create")
+    @patch("payments.views.onboarding.stripe.Account.create")
+    def test_hosted_link_reuses_existing_account_and_secure_return_urls(
+        self,
+        mock_account_create,
+        mock_link_create,
+    ):
+        ConnectedAccount.objects.create(user=self.user, stripe_account_id="acct_existing_hosted")
+        mock_link_create.return_value = {"url": "https://connect.stripe.com/setup/test"}
+
+        response = self.client.post("/api/payments/onboarding/start/")
+
+        self.assertEqual(response.status_code, 200)
+        mock_account_create.assert_not_called()
+        mock_link_create.assert_called_once_with(
+            account="acct_existing_hosted",
+            refresh_url="https://app.example.test/app/onboarding/stripe",
+            return_url="https://app.example.test/app/onboarding/stripe",
+            type="account_onboarding",
+        )
+
+    @override_settings(STRIPE_ENABLED=True, STRIPE_API_KEY="sk_test_embedded")
+    @patch("payments.views.onboarding.stripe.AccountSession.create")
+    def test_account_session_error_is_safe_and_contains_no_secret(self, mock_create):
+        ConnectedAccount.objects.create(user=self.user, stripe_account_id="acct_safe_error")
+        mock_create.side_effect = RuntimeError("secret sk_test_do_not_expose client_secret_hidden")
+
+        response = self.client.post("/api/payments/onboarding/account-session/")
+
+        self.assertEqual(response.status_code, 502)
+        payload = response.json()
+        self.assertEqual(payload["support_reference"], "STRIPE-ACCOUNT-SESSION")
+        self.assertNotIn("sk_test", str(payload))
+        self.assertNotIn("client_secret", str(payload))
+
+    @override_settings(STRIPE_ENABLED=True, STRIPE_API_KEY="sk_test_embedded")
+    @patch("payments.views.onboarding.stripe.AccountSession.create")
+    def test_account_session_is_scoped_to_authenticated_owner(self, mock_create):
+        user_model = get_user_model()
+        other_user = user_model.objects.create_user(email="other@example.com", password="testpass123")
+        Contractor.objects.create(user=other_user, business_name="Other Contractor")
+        ConnectedAccount.objects.create(user=self.user, stripe_account_id="acct_owner_only")
+        ConnectedAccount.objects.create(user=other_user, stripe_account_id="acct_other_only")
+        mock_create.return_value = {"client_secret": "seti_safe_test_value"}
+        other_client = APIClient()
+        other_client.force_authenticate(user=other_user)
+
+        response = other_client.post("/api/payments/onboarding/account-session/")
+
+        self.assertEqual(response.status_code, 200)
+        mock_create.assert_called_once_with(
+            account="acct_other_only",
+            components={"account_onboarding": {"enabled": True}},
+        )
+        self.assertNotEqual(response.json()["account_id"], "acct_owner_only")
 
     @override_settings(STRIPE_ENABLED=True, STRIPE_API_KEY="sk_test_embedded")
     def test_status_uses_embedded_resume_url_when_not_started(self):

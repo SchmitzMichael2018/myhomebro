@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 from django.conf import settings
 from rest_framework import permissions, status
@@ -50,7 +51,11 @@ def _get_site_urls() -> Tuple[str, str]:
 
 def _stripe_return_url() -> str:
     frontend, _site = _get_site_urls()
-    return f"{frontend}/app/onboarding/stripe"
+    return_url = f"{frontend}/app/onboarding/stripe"
+    parsed = urlparse(return_url)
+    if parsed.scheme != "https" and parsed.hostname not in {"localhost", "127.0.0.1"}:
+        raise RuntimeError("Stripe onboarding return URL must use HTTPS.")
+    return return_url
 
 
 def _stripe_embedded_resume_url() -> str:
@@ -167,6 +172,17 @@ def _create_account_session(acct_id: str) -> dict:
         components={"account_onboarding": {"enabled": True}},
     )
     return session
+
+
+def _stripe_error_response(reference: str) -> Response:
+    """Return a stable support reference without exposing provider details."""
+    return Response(
+        {
+            "detail": "Stripe setup is temporarily unavailable.",
+            "support_reference": reference,
+        },
+        status=status.HTTP_502_BAD_GATEWAY,
+    )
 
 
 def _status_payload(acct: Optional[dict], profile: ConnectedAccount, user) -> dict:
@@ -342,11 +358,10 @@ class OnboardingStart(APIView):
         if not _stripe_enabled():
             return Response({"detail": "Stripe disabled"}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, profile = _get_user_and_profile(request)
-        acct_id = _create_or_get_connect_account_id(profile, user)
-        return_url = _stripe_return_url()
-
         try:
+            user, profile = _get_user_and_profile(request)
+            acct_id = _create_or_get_connect_account_id(profile, user)
+            return_url = _stripe_return_url()
             link = stripe.AccountLink.create(
                 account=acct_id,
                 refresh_url=return_url,
@@ -354,8 +369,8 @@ class OnboardingStart(APIView):
                 type="account_onboarding",
             )
             return Response({"url": link["url"], "onboarding_url": link["url"], "account_id": acct_id}, status=200)
-        except Exception as exc:
-            return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            return _stripe_error_response("STRIPE-ONBOARDING-LINK")
 
 
 class OnboardingManage(APIView):
@@ -369,14 +384,13 @@ class OnboardingManage(APIView):
         if not _stripe_enabled():
             return Response({"detail": "Stripe disabled"}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, profile = _get_user_and_profile(request)
-        acct_id = _create_or_get_connect_account_id(profile, user)
-        return_url = _stripe_return_url()
-
         try:
+            user, profile = _get_user_and_profile(request)
+            acct_id = _create_or_get_connect_account_id(profile, user)
+            return_url = _stripe_return_url()
             acct = stripe.Account.retrieve(acct_id)
-        except Exception as exc:
-            return Response({"detail": f"Stripe error retrieving account: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            return _stripe_error_response("STRIPE-ACCOUNT-STATUS")
 
         _sync_flags_from_stripe(profile, acct)
         _sync_contractor_from_connected_account(user, acct_id, acct)
@@ -402,8 +416,8 @@ class OnboardingManage(APIView):
             try:
                 login = stripe.Account.create_login_link(acct_id)
                 return Response({"manage_url": login["url"], "account_id": acct_id}, status=200)
-            except Exception as exc:
-                return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+            except Exception:
+                return _stripe_error_response("STRIPE-MANAGE-LINK")
 
 
 class OnboardingLoginLink(APIView):
@@ -417,13 +431,12 @@ class OnboardingLoginLink(APIView):
         if not _stripe_enabled():
             return Response({"detail": "Stripe disabled"}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, profile = _get_user_and_profile(request)
-        acct_id = _create_or_get_connect_account_id(profile, user)
-
         try:
+            user, profile = _get_user_and_profile(request)
+            acct_id = _create_or_get_connect_account_id(profile, user)
             acct = stripe.Account.retrieve(acct_id)
-        except Exception as exc:
-            return Response({"detail": f"Stripe error retrieving account: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            return _stripe_error_response("STRIPE-ACCOUNT-STATUS")
 
         _sync_flags_from_stripe(profile, acct)
         _sync_contractor_from_connected_account(user, acct_id, acct)
@@ -431,8 +444,8 @@ class OnboardingLoginLink(APIView):
         try:
             login = stripe.Account.create_login_link(acct_id)
             return Response({"login_url": login["url"], "url": login["url"], "account_id": acct_id}, status=200)
-        except Exception as exc:
-            return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            return _stripe_error_response("STRIPE-LOGIN-LINK")
 
 
 class OnboardingAccountSession(APIView):
@@ -446,18 +459,17 @@ class OnboardingAccountSession(APIView):
         if not _stripe_enabled():
             return Response({"detail": "Stripe disabled"}, status=status.HTTP_400_BAD_REQUEST)
 
-        user, profile = _get_user_and_profile(request)
-        acct_id = _create_or_get_connect_account_id(profile, user)
-
         try:
+            user, profile = _get_user_and_profile(request)
+            acct_id = _create_or_get_connect_account_id(profile, user)
             session = _create_account_session(acct_id)
-        except Exception as exc:
-            return Response({"detail": f"Stripe error: {exc}"}, status=status.HTTP_502_BAD_GATEWAY)
+        except Exception:
+            return _stripe_error_response("STRIPE-ACCOUNT-SESSION")
 
         contractor = _get_fresh_contractor(user)
         if contractor is not None:
             update_stripe_onboarding_status(contractor, save=True)
-        return Response(
+        response = Response(
             {
                 "account_id": acct_id,
                 "client_secret": session.get("client_secret"),
@@ -466,3 +478,5 @@ class OnboardingAccountSession(APIView):
             },
             status=status.HTTP_200_OK,
         )
+        response["Cache-Control"] = "no-store"
+        return response

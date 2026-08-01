@@ -16,13 +16,13 @@ const FAQ_KEYS = ["ssn_why", "is_safe", "when_paid", "no_ein", "personal_account
 function GuidanceCard({ children, tone = "default" }) {
   const cls =
     tone === "info"
-      ? "border-sky-200 bg-sky-50"
+      ? "border-[var(--mhb-status-recommended-border)] bg-[var(--mhb-status-recommended-bg)]"
       : tone === "success"
-      ? "border-emerald-200 bg-emerald-50"
-      : "border-slate-200 bg-slate-50";
+      ? "border-[var(--mhb-status-complete-border)] bg-[var(--mhb-status-complete-bg)]"
+      : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-interactive)]";
   return (
     <div className={`rounded-2xl border px-4 py-4 ${cls}`}>
-      <div className="text-sm leading-6 text-slate-700">{children}</div>
+      <div className="text-sm leading-6 text-[var(--mhb-text-secondary)]">{children}</div>
     </div>
   );
 }
@@ -45,7 +45,7 @@ export default function StripeGuidanceSidebar({ step = "", entityType = null, on
       data-testid="stripe-guidance-sidebar"
     >
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--mhb-text-muted)]">
           What to expect
         </div>
         <div className="mt-3 space-y-3">
@@ -56,7 +56,7 @@ export default function StripeGuidanceSidebar({ step = "", entityType = null, on
           {entityText ? (
             <GuidanceCard tone="info">
               {entityLabel ? (
-                <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
+                <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--mhb-status-recommended-text)]">
                   {entityLabel}
                 </div>
               ) : null}
@@ -66,7 +66,7 @@ export default function StripeGuidanceSidebar({ step = "", entityType = null, on
 
           {stepText !== STRIPE_GUIDANCE.step.default || step ? (
             <GuidanceCard tone="info">
-              <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-sky-700">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--mhb-status-recommended-text)]">
                 Current step
               </div>
               {stepText}
@@ -76,7 +76,7 @@ export default function StripeGuidanceSidebar({ step = "", entityType = null, on
       </div>
 
       <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--mhb-text-muted)]">
           Common questions
         </div>
         <div className="mt-3 space-y-2">
@@ -92,14 +92,14 @@ export default function StripeGuidanceSidebar({ step = "", entityType = null, on
                   data-testid={`stripe-faq-${key}`}
                   className={`w-full rounded-xl border px-3 py-2 text-left text-sm font-semibold transition ${
                     isOpen
-                      ? "border-indigo-200 bg-indigo-50 text-indigo-800"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                      ? "border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-selected)] text-[var(--mhb-text-primary)]"
+                      : "border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] text-[var(--mhb-text-secondary)] hover:border-[var(--mhb-border-strong)] hover:bg-[var(--mhb-surface-interactive-hover)]"
                   }`}
                 >
                   {item.q}
                 </button>
                 {isOpen ? (
-                  <div className="mt-1 rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-3 text-sm leading-6 text-indigo-900">
+                  <div className="mt-1 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] px-3 py-3 text-sm leading-6 text-[var(--mhb-text-secondary)]">
                     {item.a}
                   </div>
                 ) : null}
