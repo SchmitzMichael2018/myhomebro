@@ -22,13 +22,16 @@ class ErrorBoundary extends React.Component {
 
   render() {
     if (this.state.hasError) {
+      const eyebrow = this.props.eyebrow || "Workspace error";
+      const title = this.props.title || "This workspace could not finish loading.";
+      const description = this.props.description || "Refresh the page and try again. If the problem continues, open Support and include what you were trying to review or prepare.";
       return (
         <div className="flex min-h-[60vh] items-center justify-center p-6">
           <section className="w-full max-w-xl rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center shadow-sm">
-            <div className="text-xs font-black uppercase tracking-[0.16em] text-rose-700">Workspace error</div>
-            <h1 className="mt-2 text-2xl font-black text-rose-950">This workspace could not finish loading.</h1>
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-rose-700">{eyebrow}</div>
+            <h1 className="mt-2 text-2xl font-black text-rose-950">{title}</h1>
             <p className="mt-3 text-sm leading-6 text-rose-900">
-              Refresh the page and try again. If the problem continues, open Support and include what you were trying to review or prepare.
+              {description}
             </p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <button

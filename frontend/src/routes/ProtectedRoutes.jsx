@@ -5,6 +5,7 @@ import { Route, Navigate, Outlet } from "react-router-dom";
 import RequireAuth from "./RequireAuth.jsx";
 import AuthenticatedLayout from "../layouts/AuthenticatedLayout.jsx";
 import ContractorOnboardingGate from "./ContractorOnboardingGate.jsx";
+import ErrorBoundary from "../components/ErrorBoundary.jsx";
 
 const ContractorDashboard = lazy(() => import("../components/ContractorDashboard.jsx"));
 
@@ -266,7 +267,7 @@ export function protectedRoutes() {
           <Route path="customers/:id/edit" element={<CustomerEdit />} />
           <Route path="customers/:id" element={<CustomerWorkspacePage />} />
 
-          <Route path="calendar" element={<Calendar />} />
+          <Route path="calendar" element={<ErrorBoundary eyebrow="Calendar error" title="Calendar could not finish loading." description="Retry the Calendar workspace. If it still does not load, open Support; your schedule data has not been changed."><Calendar /></ErrorBoundary>} />
           <Route path="expenses" element={<Expenses />} />
           <Route path="disputes" element={<Disputes />} />
           <Route path="warranties" element={<WarrantyDashboardPage />} />

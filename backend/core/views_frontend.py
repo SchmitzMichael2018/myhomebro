@@ -2,6 +2,7 @@
 import os
 import logging
 import re
+import secrets
 from pathlib import Path
 
 from django.shortcuts import render
@@ -42,10 +43,15 @@ def spa(request, *args, **kwargs):
             or getattr(settings, "GOOGLE_PLACES_API_KEY", "")
             or os.getenv("GOOGLE_PLACES_API_KEY", "")
         )
+        # FullCalendar 6 injects its official component CSS into a trusted
+        # style element and reads CSSStyleSheet.cssRules during module load.
+        # Its supported CSP integration discovers this per-response nonce via
+        # meta[name="csp-nonce"].
+        csp_nonce = secrets.token_urlsafe(24)
         return render(
             request,
             "index.html",
-            {"google_maps_api_key": google_maps_api_key},
+            {"google_maps_api_key": google_maps_api_key, "csp_nonce": csp_nonce},
         )
     except Exception as exc:
         return HttpResponseServerError(f"SPA render error: {exc}")
