@@ -152,7 +152,7 @@ export default function AccountSettings() {
   };
 
   return (
-    <div className="mt-6 max-w-3xl">
+    <div className="max-w-2xl">
       <Card theme="operational">
         <h2 className="mb-4 text-lg font-semibold text-[var(--mhb-text-primary)]">Account & Login</h2>
         <p className="mb-4 text-sm text-[var(--mhb-text-muted)]">
@@ -160,8 +160,8 @@ export default function AccountSettings() {
         </p>
 
         {/* EMAIL CHANGE */}
-        <div className="mb-8 border-b border-gray-200 pb-6">
-          <h3 className="mb-3 text-sm font-semibold text-gray-800">
+        <div className="mb-8 border-b border-[var(--mhb-border-default)] pb-6">
+          <h3 className="mb-3 text-sm font-semibold text-[var(--mhb-text-primary)]">
             Change Email / Username
           </h3>
 
@@ -208,7 +208,7 @@ export default function AccountSettings() {
 
         {/* PASSWORD CHANGE */}
         <div>
-          <h3 className="mb-3 text-sm font-semibold text-gray-800">Change Password</h3>
+          <h3 className="mb-3 text-sm font-semibold text-[var(--mhb-text-primary)]">Change Password</h3>
 
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
             <PasswordInput

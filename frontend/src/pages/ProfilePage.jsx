@@ -1,7 +1,6 @@
 // src/pages/ProfilePage.jsx
 import React from "react";
 import ContractorProfile from "../components/ContractorProfile";
-import ProfileDangerZone from "../components/ProfileDangerZone";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 export default function ProfilePage() {
@@ -14,7 +13,6 @@ export default function ProfilePage() {
       variant="operational"
     >
       <ContractorProfile />
-      <ProfileDangerZone />
     </ContractorPageSurface>
   );
 }

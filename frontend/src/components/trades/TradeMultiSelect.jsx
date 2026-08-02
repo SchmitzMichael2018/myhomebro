@@ -58,11 +58,15 @@ export default function TradeMultiSelect({
   const [query, setQuery] = useState("");
   const selected = useMemo(() => normalizeSelectedTrades(value), [value]);
   const popularTrades = useMemo(() => {
-    const popular = catalog.filter((trade) => trade.popular);
+    const popular = catalog.filter(
+      (trade) => trade.popular && (!hideSelectedFromResults || !selected.some(
+        (item) => normalizeTradeText(item) === normalizeTradeText(trade.label)
+      ))
+    );
     return Number.isInteger(popularLimit) && popularLimit > 0
       ? popular.slice(0, popularLimit)
       : popular;
-  }, [catalog, popularLimit]);
+  }, [catalog, hideSelectedFromResults, popularLimit, selected]);
   const filteredTrades = useMemo(() => {
     const normalizedQuery = normalizeTradeText(query);
     return catalog.filter(
@@ -143,7 +147,7 @@ export default function TradeMultiSelect({
             disabled={disabled}
           />
           <div
-            className="mt-3 max-h-56 overflow-y-auto rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-2"
+            className="mt-3 max-h-56 overflow-y-auto rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-2 lg:max-h-none lg:overflow-visible"
             data-testid={`${testIdPrefix}-results`}
           >
             {filteredTrades.length ? (

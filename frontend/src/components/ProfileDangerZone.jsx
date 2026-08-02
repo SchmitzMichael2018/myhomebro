@@ -65,8 +65,13 @@ export default function ProfileDangerZone() {
   };
 
   return (
-    <section className="mt-10 border border-red-200 bg-red-50 rounded-lg p-5">
-      <h2 className="text-xl font-semibold text-red-700 mb-2">Danger Zone</h2>
+    <details className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-5" data-testid="profile-danger-zone">
+      <summary className="cursor-pointer text-base font-semibold text-[var(--mhb-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]">
+        Danger Zone
+        <span className="ml-2 text-sm font-normal text-[var(--mhb-text-muted)]">Account deletion controls</span>
+      </summary>
+      <section className="mt-5 rounded-xl border border-red-300 bg-red-50 p-4">
+      <h2 className="text-lg font-semibold text-red-800 mb-2">Delete contractor profile</h2>
       <p className="text-sm text-red-800 mb-3">
         Deleting your contractor profile will remove your business information and deactivate your account.
         You can optionally request a <strong>hard delete</strong>; this only succeeds if you have no related
@@ -108,6 +113,7 @@ export default function ProfileDangerZone() {
       >
         {busy ? "Deleting…" : "Delete my profile"}
       </button>
-    </section>
+      </section>
+    </details>
   );
 }

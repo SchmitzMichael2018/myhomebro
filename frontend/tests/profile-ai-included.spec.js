@@ -113,6 +113,28 @@ test('profile billing view renders with included AI wording', async ({ page }) =
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/profile-launch-solo-390.png', fullPage: true });
 
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByLabel('Business Name').fill('Demo Contracting Updated');
+  await expect(page.getByTestId('profile-save-bar')).toBeVisible();
+  await page.screenshot({ path: 'test-results/profile-sticky-save.png', fullPage: true });
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('Discard unsaved profile changes');
+    await dialog.dismiss();
+  });
+  await page.getByRole('button', { name: /Account & Login/ }).click();
+  await expect(page.getByRole('heading', { name: 'Business Profile' })).toBeVisible();
+  await page.getByRole('button', { name: 'Discard' }).click();
+  await expect(page.getByTestId('profile-save-bar')).toHaveCount(0);
+  await expect(page.getByLabel('Business Name')).toHaveValue('Demo Contracting');
+
+  await page.getByRole('button', { name: /Account & Login/ }).click();
+  await expect(page.getByRole('heading', { name: 'Account & Login' })).toBeVisible();
+  const dangerZone = page.getByTestId('profile-danger-zone');
+  await expect(dangerZone).not.toHaveAttribute('open', '');
+  await dangerZone.locator('summary').click();
+  await expect(page.getByRole('heading', { name: 'Delete contractor profile' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/profile-account-danger-zone.png', fullPage: true });
+
   await expect(page.getByRole('button', { name: /Plan & Billing/ })).toBeVisible();
   await page.getByRole('button', { name: /Plan & Billing/ }).click();
 

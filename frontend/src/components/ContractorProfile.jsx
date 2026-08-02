@@ -2,10 +2,11 @@
 // Business Profile + Account & Login with mini sidebar.
 // AI is included in the base experience.
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api";
 import AccountSettings from "./AccountSettings";
+import ProfileDangerZone from "./ProfileDangerZone";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
 import TradeMultiSelect from "./trades/TradeMultiSelect.jsx";
 import { buildBusinessLaunchChecklist, calculateProfileCompleteness } from "../lib/profileCompleteness.js";
@@ -19,6 +20,28 @@ const US_STATES = [
 ];
 
 const SERVICE_RADIUS_OPTIONS = [10, 25, 50, 100];
+
+function profileFormFromData(data = {}) {
+  return {
+    full_name: data.full_name || data.name || "",
+    email: data.email || data.user?.email || "",
+    business_name: data.business_name || "",
+    phone: data.phone || "",
+    address: String(data.address || data.address_line1 || ""),
+    city: data.city || "",
+    state: data.state || "",
+    zip: data.zip || "",
+    service_radius_miles: Number(data.service_radius_miles || 25),
+    accepts_diy_assistance: Boolean(data.accepts_diy_assistance),
+    accepts_consultation_only: Boolean(data.accepts_consultation_only),
+    accepts_inspection_only: Boolean(data.accepts_inspection_only),
+    license_number: data.license_number || "",
+    license_expiration_date: (data.license_expiration_date || data.license_expiration || "").slice(0, 10),
+    skills: Array.isArray(data.skills)
+      ? data.skills.map((skill) => typeof skill === "string" ? skill : skill.name || skill.title || "").filter(Boolean)
+      : typeof data.skills === "string" ? data.skills.split(",").map((skill) => skill.trim()).filter(Boolean) : [],
+  };
+}
 
 function isAiProActive() {
   return true;
@@ -258,6 +281,7 @@ export default function ContractorProfile() {
   const [success, setSuccess] = useState("");
 
   const [meData, setMeData] = useState(null);
+  const savedFormRef = useRef(null);
 
   // Google autocomplete search/display ONLY (helper)
   const [businessAddrSearch, setBusinessAddrSearch] = useState("");
@@ -304,6 +328,23 @@ export default function ContractorProfile() {
     () => US_STATES.map((s) => ({ value: s, label: s })),
     []
   );
+  const isDirty = Boolean(savedFormRef.current) && (
+    JSON.stringify(form) !== JSON.stringify(savedFormRef.current) ||
+    Boolean(logoFile || licenseFile || insuranceFile)
+  );
+
+  const applyProfileData = (data) => {
+    const nextForm = profileFormFromData(data);
+    setForm(nextForm);
+    savedFormRef.current = nextForm;
+    setBusinessAddrSearch("");
+    setLogoFile(null);
+    setLicenseFile(null);
+    setInsuranceFile(null);
+    setLogoPreview(data.logo || data.logo_url || null);
+    setLicenseUrl(data.license_file || data.license_document || null);
+    setInsuranceUrl(data.insurance_file || data.insurance_document || null);
+  };
 
   const refreshMe = async () => {
     const me = await api.get("/projects/contractors/me/");
@@ -325,41 +366,7 @@ export default function ContractorProfile() {
       try {
         const data = await refreshMe();
 
-        const addrLine1 = (data.address || data.address_line1 || "").toString();
-
-        setForm({
-          full_name: data.full_name || data.name || "",
-          email: data.email || (data.user && data.user.email) || "",
-          business_name: data.business_name || "",
-          phone: data.phone || "",
-          address: addrLine1,
-          city: data.city || "",
-          state: data.state || "",
-          zip: data.zip || "",
-          service_radius_miles: Number(data.service_radius_miles || 25),
-          accepts_diy_assistance: Boolean(data.accepts_diy_assistance),
-          accepts_consultation_only: Boolean(data.accepts_consultation_only),
-          accepts_inspection_only: Boolean(data.accepts_inspection_only),
-          license_number: data.license_number || "",
-          license_expiration_date:
-            (data.license_expiration_date || data.license_expiration || "").slice(0, 10),
-          skills: Array.isArray(data.skills)
-            ? data.skills
-                .map((s) => (typeof s === "string" ? s : (s.name || s.title || "")))
-                .filter(Boolean)
-            : typeof data.skills === "string"
-            ? data.skills.split(",").map((s) => s.trim()).filter(Boolean)
-            : [],
-        });
-
-        // Search helper can start empty; persisted address is shown in Street Address input.
-        setBusinessAddrSearch("");
-
-        setLogoPreview(data.logo || data.logo_url || null);
-
-        // file URLs from backend
-        setLicenseUrl(data.license_file || data.license_document || null);
-        setInsuranceUrl(data.insurance_file || data.insurance_document || null);
+        applyProfileData(data);
       } catch (e) {
         setError("Failed to load profile.");
       } finally {
@@ -368,6 +375,34 @@ export default function ContractorProfile() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event) => {
+      if (!isDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [isDirty]);
+
+  const discardChanges = () => {
+    if (savedFormRef.current) setForm(savedFormRef.current);
+    setLogoFile(null);
+    setLicenseFile(null);
+    setInsuranceFile(null);
+    setLogoPreview(meData?.logo || meData?.logo_url || null);
+    setLicenseUrl(meData?.license_file || meData?.license_document || null);
+    setInsuranceUrl(meData?.insurance_file || meData?.insurance_document || null);
+    setError("");
+  };
+
+  const selectTab = (tab) => {
+    if (tab === activeTab) return;
+    if (activeTab === "business" && isDirty && !window.confirm("Discard unsaved profile changes?")) return;
+    if (activeTab === "business" && isDirty) discardChanges();
+    setActiveTab(tab);
+  };
 
   useEffect(() => {
     if (activeTab !== "business") return undefined;
@@ -488,9 +523,13 @@ export default function ContractorProfile() {
       setSuccess("Profile saved.");
 
       try {
-        await refreshMe();
+        const data = await refreshMe();
+        applyProfileData(data);
       } catch {
-        // ignore
+        savedFormRef.current = form;
+        setLogoFile(null);
+        setLicenseFile(null);
+        setInsuranceFile(null);
       }
     } catch (err) {
       const msg =
@@ -709,7 +748,7 @@ export default function ContractorProfile() {
     }
 
     return (
-      <form onSubmit={handleSave}>
+      <form id="contractor-business-profile-form" onSubmit={handleSave} className="space-y-6">
         {/* Name & Email */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -926,7 +965,10 @@ export default function ContractorProfile() {
             selectedLabel="Selected trades"
             searchPlaceholder="Start typing to search for your trade..."
             testIdPrefix="contractor-profile-trade"
-            className="rounded-2xl bg-white p-4"
+            popularLimit={6}
+            selectedFirst
+            hideSelectedFromResults
+            className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-4"
           />
         </div>
 
@@ -1177,15 +1219,20 @@ export default function ContractorProfile() {
           </div>
         </div>
 
-        <div className="mt-6">
+        {isDirty ? <div className="sticky bottom-3 z-20 mt-6 flex flex-col gap-3 rounded-2xl border border-[var(--mhb-border-strong)] bg-[var(--mhb-surface-card)] p-3 shadow-xl sm:flex-row sm:items-center sm:justify-between" data-testid="profile-save-bar">
+          <p className="text-sm font-semibold text-[var(--mhb-text-primary)]" role="status">You have unsaved profile changes.</p>
+          <div className="flex gap-2">
+          <button type="button" onClick={discardChanges} disabled={saving} className="mhb-btn mhb-btn-secondary flex-1 sm:flex-none">Discard</button>
           <button
             type="submit"
             disabled={saving}
-            className="w-40 h-10 rounded bg-blue-700 text-white font-semibold hover:bg-blue-800 disabled:opacity-60"
+            className="mhb-btn mhb-btn-primary flex-1 sm:flex-none"
+            data-testid="profile-save-button"
           >
             {saving ? "Saving…" : "Save Profile"}
           </button>
-        </div>
+          </div>
+        </div> : null}
       </form>
     );
   };
@@ -1224,10 +1271,14 @@ export default function ContractorProfile() {
     <div className="flex justify-center">
       <Card theme="operational" className="w-full">
 
-        <ProfileCompletenessBar meData={meData} />
-        <BusinessLaunchChecklist meData={meData} />
+        {activeTab === "business" ? (
+          <div className="grid items-start gap-4 lg:grid-cols-2" data-testid="profile-summary-grid">
+            <ProfileCompletenessBar meData={meData} />
+            <BusinessLaunchChecklist meData={meData} />
+          </div>
+        ) : null}
 
-        {showSetupReminder ? (
+        {activeTab === "billing" && showSetupReminder ? (
           <div
             className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
             data-testid="profile-stripe-reminder"
@@ -1284,7 +1335,7 @@ export default function ContractorProfile() {
             <nav className="space-y-1">
               <button
                 type="button"
-                onClick={() => setActiveTab("business")}
+                onClick={() => selectTab("business")}
                 aria-current={activeTab === "business" ? "page" : undefined}
                 className={`mhb-profile-nav-tab flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "business"
@@ -1297,7 +1348,7 @@ export default function ContractorProfile() {
 
               <button
                 type="button"
-                onClick={() => setActiveTab("billing")}
+                onClick={() => selectTab("billing")}
                 aria-current={activeTab === "billing" ? "page" : undefined}
                 className={`mhb-profile-nav-tab flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "billing"
@@ -1315,7 +1366,7 @@ export default function ContractorProfile() {
 
               <button
                 type="button"
-                onClick={() => setActiveTab("account")}
+                onClick={() => selectTab("account")}
                 aria-current={activeTab === "account" ? "page" : undefined}
                 className={`mhb-profile-nav-tab flex w-full items-center justify-between rounded px-3 py-2 text-sm ${
                   activeTab === "account"
@@ -1341,7 +1392,10 @@ export default function ContractorProfile() {
                 {renderBilling()}
               </>
             ) : (
-              <AccountSettings />
+              <div className="space-y-6">
+                <AccountSettings />
+                <ProfileDangerZone />
+              </div>
             )}
           </div>
         </div>
