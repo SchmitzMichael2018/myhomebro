@@ -146,6 +146,7 @@ export default function StripeOnboarding() {
     zip: "",
     service_radius_miles: 25,
     skills: [],
+    custom_services: [],
   });
 
   const loadAll = useCallback(async () => {
@@ -171,6 +172,7 @@ export default function StripeOnboarding() {
         zip: me.zip || "",
         service_radius_miles: Number(me.service_radius_miles || onboardingData.service_radius_miles || 25),
         skills: Array.isArray(me.skills) ? me.skills : [],
+        custom_services: Array.isArray(me.custom_services) ? me.custom_services : [],
       });
 
       if (onboardingData?.show_soft_stripe_prompt) {
@@ -230,6 +232,7 @@ export default function StripeOnboarding() {
     await patchOnboarding({
       business_name: form.business_name,
       skills: form.skills,
+      custom_services: form.custom_services,
       contractor_onboarding_step: "region",
     });
   }
@@ -243,6 +246,7 @@ export default function StripeOnboarding() {
       zip: form.zip,
       service_radius_miles: form.service_radius_miles,
       skills: form.skills,
+      custom_services: form.custom_services,
       contractor_onboarding_step: "stripe",
     });
   }
@@ -334,6 +338,9 @@ export default function StripeOnboarding() {
           <TradeMultiSelect
             value={form.skills}
             onChange={(nextSkills) => setForm((current) => ({ ...current, skills: nextSkills }))}
+            customServices={form.custom_services}
+            onCustomServicesChange={(customServices) => setForm((current) => ({ ...current, custom_services: customServices }))}
+            allowCustomServices
             label="Find another service"
             helpText=""
             popularLabel="Popular services"
@@ -344,14 +351,14 @@ export default function StripeOnboarding() {
             hideSelectedFromResults
             popularLimit={8}
           />
-          {!form.skills.length ? (
+          {!form.skills.length && !form.custom_services.length ? (
             <p className="mt-5 text-sm font-medium text-[var(--mhb-text-secondary)]" id="onboarding-services-requirement">
               Select at least one service to continue.
             </p>
           ) : null}
           {renderStepActions({
             onContinue: handleContinueTrades,
-            continueDisabled: !form.skills.length,
+            continueDisabled: !form.skills.length && !form.custom_services.length,
             continueTestId: "contractor-onboarding-save-basics",
           })}
         </PrimaryCard>

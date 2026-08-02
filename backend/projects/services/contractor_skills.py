@@ -2,10 +2,34 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from typing import Any
+import re
 
 from django.utils.text import slugify
 
 from projects.models import Contractor, Skill
+
+
+def normalize_custom_services(raw_value: Any, canonical_names: Iterable[str] = ()) -> list[str]:
+    if not isinstance(raw_value, (list, tuple, set)):
+        raise ValueError("Enter a valid service list.")
+    values = raw_value
+    canonical = {" ".join(str(name).strip().split()).casefold() for name in canonical_names}
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        text = " ".join(str(item or "").strip().split())
+        key = text.casefold()
+        if not text:
+            raise ValueError("Enter a service name.")
+        if len(text) < 2 or len(text) > 80 or not re.search(r"[a-z0-9]", text, re.I):
+            raise ValueError("Use 2–80 characters.")
+        if re.search(r"<[^>]*>|https?://|www\.|\S+@\S+\.\S+|(?:\+?\d[\d ().-]{7,}\d)", text, re.I):
+            raise ValueError("Enter a service, not contact information.")
+        if key in seen or key in canonical:
+            raise ValueError("This service already exists.")
+        normalized.append(text)
+        seen.add(key)
+    return normalized
 
 
 def normalize_contractor_skill_names(raw_value: Any) -> list[str]:

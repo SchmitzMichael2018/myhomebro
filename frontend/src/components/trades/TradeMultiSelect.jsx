@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { TRADE_CATALOG } from "./tradeCatalog";
 
 function normalizeTradeText(value) {
@@ -22,6 +22,20 @@ function normalizeSelectedTrades(value) {
     next.push(text);
   }
   return next;
+}
+
+function validateCustomService(value, canonical = [], custom = []) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text) return { error: "Enter a service name." };
+  if (text.length < 2 || text.length > 80 || !/[a-z0-9]/i.test(text)) return { error: "Use 2–80 characters." };
+  if (/<[^>]*>|https?:\/\/|www\.|\S+@\S+\.\S+|(?:\+?\d[\d ().-]{7,}\d)/i.test(text)) {
+    return { error: "Enter a service, not contact information." };
+  }
+  const key = normalizeTradeText(text);
+  if ([...canonical, ...custom].some((item) => normalizeTradeText(item) === key)) {
+    return { error: "This service already exists." };
+  }
+  return { value: text };
 }
 
 function toTestId(label, suffix = "") {
@@ -54,8 +68,15 @@ export default function TradeMultiSelect({
   hideSelectedFromResults = false,
   className = "",
   disabled = false,
+  customServices = [],
+  onCustomServicesChange,
+  allowCustomServices = false,
 }) {
   const [query, setQuery] = useState("");
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customValue, setCustomValue] = useState("");
+  const [customError, setCustomError] = useState("");
+  const customInputRef = useRef(null);
   const selected = useMemo(() => normalizeSelectedTrades(value), [value]);
   const popularTrades = useMemo(() => {
     const popular = catalog.filter(
@@ -98,6 +119,25 @@ export default function TradeMultiSelect({
     if (disabled) return;
     const key = normalizeTradeText(labelText);
     emit(selected.filter((item) => normalizeTradeText(item) !== key));
+  }
+
+  function openCustom() {
+    setCustomOpen(true);
+    setCustomError("");
+    setTimeout(() => customInputRef.current?.focus(), 0);
+  }
+
+  function cancelCustom() {
+    setCustomOpen(false);
+    setCustomValue("");
+    setCustomError("");
+  }
+
+  function addCustom() {
+    const result = validateCustomService(customValue, catalog.map((item) => item.label), customServices);
+    if (result.error) return setCustomError(result.error);
+    onCustomServicesChange?.([...customServices, result.value]);
+    cancelCustom();
   }
 
   return (
@@ -182,6 +222,26 @@ export default function TradeMultiSelect({
               <div className="px-3 py-4 text-sm text-[var(--mhb-text-secondary)]">{emptyText}</div>
             )}
           </div>
+          {allowCustomServices ? (
+            <div className="mt-3 rounded-2xl border border-dashed border-[var(--mhb-border-default)] bg-[var(--mhb-surface-interactive)] p-3">
+              {!customOpen ? (
+                <button type="button" onClick={openCustom} className="text-sm font-semibold underline decoration-2 underline-offset-4 text-[var(--mhb-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]" data-testid={`${testIdPrefix}-custom-open`}>
+                  Can&apos;t find your service? Add another service
+                </button>
+              ) : (
+                <div>
+                  <label htmlFor={`${testIdPrefix}-custom-input`} className="text-sm font-semibold text-[var(--mhb-text-primary)]">Service name</label>
+                  <p className="mt-1 text-xs text-[var(--mhb-text-secondary)]">Examples: Epoxy flooring, cabinet refinishing, appliance installation</p>
+                  <input id={`${testIdPrefix}-custom-input`} ref={customInputRef} value={customValue} maxLength={80} onChange={(event) => { setCustomValue(event.target.value); setCustomError(""); }} onKeyDown={(event) => event.key === "Escape" && cancelCustom()} aria-invalid={Boolean(customError)} aria-describedby={`${testIdPrefix}-custom-help`} className="mt-2 h-12 w-full rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 text-[var(--mhb-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--mhb-border-focus)]" data-testid={`${testIdPrefix}-custom-input`} />
+                  <div id={`${testIdPrefix}-custom-help`} aria-live="polite" className="mt-1 min-h-5 text-sm text-[var(--mhb-status-blocked-text)]">{customError}</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button type="button" onClick={addCustom} className="mhb-btn mhb-btn-primary" data-testid={`${testIdPrefix}-custom-add`}>Add service</button>
+                    <button type="button" onClick={cancelCustom} className="mhb-btn mhb-btn-secondary">Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
 
         <div className={selectedFirst ? "-order-1" : ""}>
@@ -192,7 +252,7 @@ export default function TradeMultiSelect({
               aria-live="polite"
               data-testid={`${testIdPrefix}-count`}
             >
-              {selected.length} {selected.length === 1 ? "service" : "services"} selected
+              {selected.length + customServices.length} {selected.length + customServices.length === 1 ? "service" : "services"} selected
             </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2" data-testid={`${testIdPrefix}-selected`}>
@@ -215,9 +275,15 @@ export default function TradeMultiSelect({
                   </button>
                 </span>
               ))
-            ) : (
+            ) : !customServices.length ? (
               <div className="text-sm text-[var(--mhb-text-secondary)]">No services selected yet.</div>
-            )}
+            ) : null}
+            {customServices.map((service) => (
+              <span key={service} className="inline-flex items-center gap-2 rounded-full border border-[var(--mhb-border-selected)] bg-[var(--mhb-surface-control)] px-3 py-2 text-sm font-semibold text-[var(--mhb-text-primary)]" data-testid={`${testIdPrefix}-custom-chip-${toTestId(service)}`}>
+                {service}<span className="text-xs font-medium">Custom</span>
+                <button type="button" aria-label={`Remove ${service}`} onClick={() => onCustomServicesChange?.(customServices.filter((item) => item !== service))} className="rounded-full border border-current px-2 py-0.5">×</button>
+              </span>
+            ))}
           </div>
         </div>
       </div>
@@ -225,4 +291,4 @@ export default function TradeMultiSelect({
   );
 }
 
-export { normalizeTradeText, normalizeSelectedTrades, toTestId };
+export { normalizeTradeText, normalizeSelectedTrades, toTestId, validateCustomService };

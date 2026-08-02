@@ -40,6 +40,7 @@ function profileFormFromData(data = {}) {
     skills: Array.isArray(data.skills)
       ? data.skills.map((skill) => typeof skill === "string" ? skill : skill.name || skill.title || "").filter(Boolean)
       : typeof data.skills === "string" ? data.skills.split(",").map((skill) => skill.trim()).filter(Boolean) : [],
+    custom_services: Array.isArray(data.custom_services) ? data.custom_services : [],
   };
 }
 
@@ -225,6 +226,57 @@ function ProfileCompletenessBar({ meData }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+function licenseGuidanceLabel(item) {
+  if (item.required === true) return "Typically required";
+  if (item.source_type === "unknown" || item.contractor_license_status === "unknown") return "May require local review";
+  if (item.required === false) return "Not typically identified statewide";
+  return "Unknown";
+}
+
+function insuranceGuidanceLabel(item) {
+  if (item.insurance_required === true) return "Typically expected";
+  if (item.insurance_required === false) return "Not specifically flagged";
+  return "Unknown";
+}
+
+function ComplianceStatusRow({ label, status, detail }) {
+  const symbol = status === "Complete" ? "✓" : status === "Attention needed" ? "!" : "i";
+  return (
+    <div className="grid gap-1 border-b border-[var(--mhb-border-default)] py-2.5 last:border-0 sm:grid-cols-[minmax(9rem,0.7fr)_minmax(0,1.3fr)] sm:items-start">
+      <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">{label}</div>
+      <div className="flex min-w-0 items-start gap-2 text-sm text-[var(--mhb-text-secondary)]">
+        <span aria-hidden="true" className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full border border-[var(--mhb-border-strong)] text-xs font-bold">{symbol}</span>
+        <span><strong className="text-[var(--mhb-text-primary)]">{status}.</strong> {detail}</span>
+      </div>
+    </div>
+  );
+}
+
+function CompliancePanel({ requirements, customServices, state, records, loading, error, hasLicenseDocument, hasInsuranceDocument }) {
+  const reviewedCount = requirements.length + customServices.length;
+  const required = requirements.filter((item) => item.required === true);
+  const missingRequired = required.some((item) => !item.contractor_has_license_on_file);
+  const expired = records.filter((record) => String(record.status).toLowerCase() === "expired");
+  return (
+    <section data-testid="contractor-compliance-preview" className="mt-5 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-4 shadow-[var(--mhb-shadow-card)]">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[var(--mhb-text-primary)]">Licensing &amp; insurance</h3><p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{reviewedCount} {reviewedCount === 1 ? "service" : "services"} reviewed for {state || "your selected state"}.</p></div>{loading ? <span role="status" className="text-xs text-[var(--mhb-text-muted)]">Checking…</span> : null}</div>
+      {error ? <div role="alert" className="mt-3 rounded-xl border border-[var(--mhb-status-pending-border)] bg-[var(--mhb-status-pending-bg)] p-3 text-sm text-[var(--mhb-status-pending-text)]">{error}</div> : null}
+      <div className="mt-3" data-testid="compliance-summary-rows">
+        <ComplianceStatusRow label="License status" status={missingRequired ? "Attention needed" : required.length ? "Complete" : requirements.length ? "Optional" : "Unknown"} detail={missingRequired ? "A selected service is typically licensed and no current license is on file." : required.length ? "Required-service license documentation is on file." : requirements.length ? "No statewide requirement was identified by the available rules; local requirements may still apply." : "Select a state and canonical service to review available rules."} />
+        <ComplianceStatusRow label="Insurance status" status={hasInsuranceDocument ? "Complete" : "Attention needed"} detail={hasInsuranceDocument ? "Insurance certificate on file." : "Insurance certificate missing."} />
+        <ComplianceStatusRow label="Documents on file" status={hasLicenseDocument || hasInsuranceDocument ? "Complete" : "Attention needed"} detail={`${records.length} compliance ${records.length === 1 ? "record" : "records"} available.`} />
+        <ComplianceStatusRow label="Expiration alerts" status={expired.length ? "Attention needed" : "Complete"} detail={expired.length ? `${expired.length} expired ${expired.length === 1 ? "record needs" : "records need"} review.` : "No expired compliance records reported."} />
+        <ComplianceStatusRow label="Local requirement notice" status="Optional" detail="Local permits, registration, or licensing may still apply. Confirm requirements with the applicable authority." />
+      </div>
+      <details className="mt-3 border-t border-[var(--mhb-border-default)] pt-3" data-testid="compliance-trade-details"><summary className="cursor-pointer rounded-lg text-sm font-semibold text-[var(--mhb-text-primary)] underline decoration-2 underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-border-focus)]">View service-specific guidance</summary><div className="mt-3 space-y-2">
+        {requirements.map((item, idx) => <article key={`${item.trade_key || idx}-${item.state_code || state}`} className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-3" data-testid={`compliance-trade-${item.trade_key || idx}`}><div className="grid gap-2 text-sm sm:grid-cols-[minmax(8rem,1fr)_4rem_minmax(10rem,1.4fr)_minmax(9rem,1fr)]"><strong className="text-[var(--mhb-text-primary)]">{formatComplianceLabel(item.trade_key)}</strong><span className="text-[var(--mhb-text-secondary)]">{item.state_code || state || "Unknown"}</span><span className="text-[var(--mhb-text-secondary)]">{licenseGuidanceLabel(item)}</span><span className="text-[var(--mhb-text-secondary)]">{insuranceGuidanceLabel(item)}</span></div><details className="mt-2 text-sm text-[var(--mhb-text-secondary)]"><summary className="cursor-pointer font-semibold">Full guidance</summary><p className="mt-2">{item.message || "No automated statewide guidance is currently configured. Check state and local requirements."}</p><p className="mt-1">Document status: {item.contractor_has_license_on_file ? "License on file" : formatComplianceLabel(item.contractor_license_status || "unknown")}</p>{item.official_lookup_url ? <a href={item.official_lookup_url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block font-semibold underline">View official source</a> : null}</details></article>)}
+        {customServices.map((service) => <div key={service} className="rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] p-3 text-sm text-[var(--mhb-text-secondary)]"><strong className="text-[var(--mhb-text-primary)]">{service}</strong><span className="ml-2">Custom · No automated compliance guidance available</span></div>)}
+        {!reviewedCount ? <p className="text-sm text-[var(--mhb-text-secondary)]">Select a state and one or more services to see available guidance.</p> : null}
+      </div></details>
+    </section>
   );
 }
 
@@ -511,6 +563,7 @@ export default function ContractorProfile() {
 
       form.skills.forEach((s) => fd.append("skills", s));
       fd.append("skills_json", JSON.stringify(form.skills));
+      fd.append("custom_services_json", JSON.stringify(form.custom_services));
 
       if (logoFile) fd.append("logo", logoFile);
       if (licenseFile) fd.append("license_file", licenseFile);
@@ -747,6 +800,9 @@ export default function ContractorProfile() {
       return <div className="text-slate-600">Loading…</div>;
     }
 
+    const hasLicenseDocument = Boolean(licenseUrl || licenseFile || complianceRecords.some((record) => record.record_type === "license"));
+    const hasInsuranceDocument = Boolean(insuranceUrl || insuranceFile || insuranceStatus?.has_insurance);
+
     return (
       <form id="contractor-business-profile-form" onSubmit={handleSave} className="space-y-6">
         {/* Name & Email */}
@@ -959,6 +1015,9 @@ export default function ContractorProfile() {
           <TradeMultiSelect
             value={form.skills}
             onChange={(nextSkills) => setForm((current) => ({ ...current, skills: nextSkills }))}
+            customServices={form.custom_services}
+            onCustomServicesChange={(customServices) => setForm((current) => ({ ...current, custom_services: customServices }))}
+            allowCustomServices
             label="Search all trades"
             helpText="Select one or more trades you offer. These trades power compliance guidance and profile settings."
             popularLabel="Popular trades"
@@ -970,6 +1029,11 @@ export default function ContractorProfile() {
             hideSelectedFromResults
             className="rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-4"
           />
+          {form.custom_services.length ? (
+            <p className="mt-3 rounded-xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-interactive)] p-3 text-sm text-[var(--mhb-text-secondary)]" data-testid="custom-service-compliance-note">
+              No automated compliance guidance is available for custom services. Check applicable state and local requirements.
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -1017,9 +1081,19 @@ export default function ContractorProfile() {
           })}
         </div>
 
+        <CompliancePanel
+          requirements={complianceTradeRequirements}
+          customServices={form.custom_services}
+          state={form.state}
+          records={complianceRecords}
+          loading={compliancePreviewLoading}
+          error={compliancePreviewError}
+          hasLicenseDocument={hasLicenseDocument}
+          hasInsuranceDocument={hasInsuranceDocument}
+        />
         <div
-          data-testid="contractor-compliance-preview"
-          className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4"
+          data-testid="contractor-compliance-preview-legacy"
+          className="hidden"
         >
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -1092,11 +1166,14 @@ export default function ContractorProfile() {
         </div>
 
         {/* License fields */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+        <section className="mt-5 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-4" data-testid="license-details">
+        <h3 className="text-base font-semibold text-[var(--mhb-text-primary)]">License details</h3>
+        <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">Add applicable license information and its supporting document.</p>
+        <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label htmlFor="mhb-contractorprofile-1071" className="block text-sm font-semibold mb-1">License Number</label>
             <input id="mhb-contractorprofile-1071"
-              className="w-full h-10 rounded border border-slate-300 px-3"
+              className="h-10 w-full rounded border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 text-[var(--mhb-text-primary)] focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
               value={form.license_number}
               onChange={onChange("license_number")}
               placeholder="License #"
@@ -1106,15 +1183,23 @@ export default function ContractorProfile() {
             <label htmlFor="mhb-contractorprofile-1080" className="block text-sm font-semibold mb-1">License Expiration Date</label>
             <input id="mhb-contractorprofile-1080"
               type="date"
-              className="w-full h-10 rounded border border-slate-300 px-3"
+              className="h-10 w-full rounded border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-control)] px-3 text-[var(--mhb-text-primary)] focus:ring-2 focus:ring-[var(--mhb-border-focus)]"
               value={form.license_expiration_date || ""}
               onChange={onChange("license_expiration_date")}
             />
           </div>
         </div>
 
+        <div className="mt-4">
+          <label htmlFor="mhb-contractorprofile-1093" className="block text-sm font-semibold mb-1">License document (PDF or image)</label>
+          <input id="mhb-contractorprofile-1093" className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onLicense} aria-describedby="license-upload-help" />
+          <p id="license-upload-help" className="mt-1 text-xs text-[var(--mhb-text-secondary)]">Upload a PDF or image. Choosing a new file replaces the current document after Save.</p>
+          {licenseUrl ? <a href={licenseUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-semibold underline">View current license document</a> : null}
+        </div>
+        </section>
+
         {/* License & Insurance file uploads */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div className="hidden">
           <div>
             <label htmlFor="mhb-contractorprofile-1093" className="block text-sm font-semibold mb-1">
               License Document (PDF or image)
@@ -1149,6 +1234,15 @@ export default function ContractorProfile() {
             ) : null}
           </div>
         </div>
+
+        <section className="mt-4 rounded-2xl border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-inset)] p-4" data-testid="insurance-details">
+          <h3 className="text-base font-semibold text-[var(--mhb-text-primary)]">Insurance details</h3>
+          <p className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{insuranceStatus?.has_insurance ? "Insurance certificate on file." : "Insurance certificate missing."}</p>
+          <label htmlFor="profile-insurance-upload" className="mt-4 block text-sm font-semibold text-[var(--mhb-text-primary)]">Insurance certificate (PDF or image)</label>
+          <input id="profile-insurance-upload" className="mhb-file-upload" type="file" accept=".pdf,image/*" onChange={onInsurance} aria-describedby="insurance-upload-help" />
+          <p id="insurance-upload-help" className="mt-1 text-xs text-[var(--mhb-text-secondary)]">Upload a PDF or image. Choosing a new file replaces the current certificate after Save.</p>
+          {insuranceUrl ? <a href={insuranceUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block text-sm font-semibold underline">View current insurance document</a> : null}
+        </section>
 
         <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
           <div

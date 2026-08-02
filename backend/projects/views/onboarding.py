@@ -15,7 +15,7 @@ from projects.services.contractor_activation_analytics import (
     FUNNEL_EVENT_TRADE_SELECTED,
     track_activation_event,
 )
-from projects.services.contractor_skills import set_contractor_skills
+from projects.services.contractor_skills import normalize_custom_services, set_contractor_skills
 from projects.services.contractor_onboarding import (
     apply_onboarding_patch,
     build_onboarding_snapshot,
@@ -66,6 +66,16 @@ class ContractorOnboardingView(APIView):
                         context={"trade_count": len(objs)},
                         user=request.user,
                     )
+
+            if "custom_services" in request.data:
+                try:
+                    contractor.custom_services = normalize_custom_services(
+                        request.data.get("custom_services"),
+                        contractor.skills.values_list("name", flat=True),
+                    )
+                except ValueError as exc:
+                    return Response({"custom_services": [str(exc)]}, status=400)
+                contractor.save(update_fields=["custom_services"])
 
             if request.data.get("mark_first_project_started"):
                 track_activation_event(

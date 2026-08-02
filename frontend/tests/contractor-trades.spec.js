@@ -57,6 +57,7 @@ async function installTradeRoutes(page, { meSkills = ["HVAC", "Electrical"], onb
       license_number: "",
       license_expiration_date: "",
       skills: normalizeSkills(meSkills),
+      custom_services: [],
       compliance_records: [],
       compliance_trade_requirements: [],
       insurance_status: {
@@ -141,6 +142,7 @@ async function installTradeRoutes(page, { meSkills = ["HVAC", "Electrical"], onb
         state: extractMultipartField(body, "state") || state.me.state,
         zip: extractMultipartField(body, "zip") || state.me.zip,
         skills: extractMultipartSkills(body),
+        custom_services: JSON.parse(extractMultipartField(body, "custom_services_json") || "[]"),
       };
       state.profilePatchPayloads.push(payload);
       state.me = {
@@ -150,6 +152,7 @@ async function installTradeRoutes(page, { meSkills = ["HVAC", "Electrical"], onb
         state: payload.state || state.me.state,
         zip: payload.zip || state.me.zip,
         skills: normalizeSkills(payload.skills || []),
+        custom_services: payload.custom_services || [],
       };
     }
     await route.fulfill({
@@ -260,6 +263,35 @@ test("profile uses the shared trade multiselect and saves canonical trades", asy
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("contractor-onboarding-trade-chip-roofing")).toBeVisible();
   await expect(page.getByTestId("contractor-onboarding-trade-chip-electrical")).toBeVisible();
+});
+
+test("profile validates, persists and restores a custom service separately", async ({ page }) => {
+  const state = await installTradeRoutes(page, { meSkills: ["Electrical"] });
+  await page.goto("/app/profile", { waitUntil: "domcontentloaded" });
+
+  await page.getByTestId("contractor-profile-trade-custom-open").click();
+  const input = page.getByTestId("contractor-profile-trade-custom-input");
+  await page.getByTestId("contractor-profile-trade-custom-add").click();
+  await expect(page.getByText("Enter a service name.")).toBeVisible();
+  await input.fill(" roofing ");
+  await page.getByTestId("contractor-profile-trade-custom-add").click();
+  await expect(page.getByText("This service already exists.")).toBeVisible();
+  await page.screenshot({ path: "test-results/custom-service-validation.png", fullPage: true });
+  await input.fill("  Epoxy   Flooring ");
+  await page.screenshot({ path: "test-results/custom-service-entry.png", fullPage: true });
+  await page.getByTestId("contractor-profile-trade-custom-add").click();
+  await expect(page.getByTestId("contractor-profile-trade-custom-chip-epoxy-flooring")).toContainText("Custom");
+  await page.screenshot({ path: "test-results/custom-service-selected.png", fullPage: true });
+  await expect(page.getByTestId("custom-service-compliance-note")).toBeVisible();
+  await expect(page.getByTestId("profile-save-bar")).toBeVisible();
+  await page.getByRole("button", { name: "Save Profile" }).click();
+  await expect.poll(() => state.profilePatchPayloads.length).toBe(1);
+  expect(state.profilePatchPayloads[0].custom_services).toEqual(["Epoxy Flooring"]);
+  await page.reload();
+  await expect(page.getByTestId("contractor-profile-trade-custom-chip-epoxy-flooring")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "test-results/custom-service-390.png", fullPage: true });
 });
 
 test("stripe onboarding preloads saved trades and preserves them on save", async ({ page }) => {

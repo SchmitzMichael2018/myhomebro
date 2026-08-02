@@ -97,7 +97,7 @@ def _resolve_contractor(user):
 
 
 def _profile_defaults(contractor):
-    skills = [skill.name for skill in contractor.skills.all()]
+    skills = [skill.name for skill in contractor.skills.all()] + list(getattr(contractor, "custom_services", []) or [])
     return {
         "business_name_public": contractor.business_name or contractor.name or "",
         "city": contractor.city or "",

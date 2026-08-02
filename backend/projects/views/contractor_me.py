@@ -19,7 +19,7 @@ from projects.services.contractor_onboarding import (
     update_onboarding_progress,
     _coerce_service_radius_miles,
 )
-from projects.services.contractor_skills import set_contractor_skills
+from projects.services.contractor_skills import normalize_custom_services, set_contractor_skills
 from projects.services.profile_completion import build_profile_completion
 from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
@@ -186,6 +186,7 @@ class ContractorMeView(APIView):
             "license_file": _safe_url(c.license_file),
             "insurance_file": _safe_url(getattr(c, "insurance_file", None)),
             "skills": [s.name for s in c.skills.all()],
+            "custom_services": list(getattr(c, "custom_services", []) or []),
             "accepts_diy_assistance": bool(capability_flags["accepts_diy_assistance"]),
             "accepts_consultation_only": bool(getattr(c, "accepts_consultation_only", False)),
             "accepts_inspection_only": bool(getattr(c, "accepts_inspection_only", False)),
@@ -373,6 +374,22 @@ class ContractorMeView(APIView):
                     set_contractor_skills(c, skills_values)
             elif "skills" in data:
                 set_contractor_skills(c, data.get("skills"))
+
+            if "custom_services_json" in data or "custom_services" in data:
+                import json
+                raw_custom = data.get("custom_services_json", data.get("custom_services", []))
+                if isinstance(raw_custom, str):
+                    try:
+                        raw_custom = json.loads(raw_custom)
+                    except (TypeError, ValueError):
+                        return Response({"custom_services": ["Enter a valid service list."]}, status=400)
+                try:
+                    c.custom_services = normalize_custom_services(
+                        raw_custom,
+                        c.skills.values_list("name", flat=True),
+                    )
+                except ValueError as exc:
+                    return Response({"custom_services": [str(exc)]}, status=400)
 
             # files
             if "logo" in request.FILES:

@@ -31,7 +31,7 @@ def build_profile_completion(contractor, user, *, trade_requirements=None, publi
             ),
         ),
         ("service_area", "Service area", int(getattr(contractor, "service_radius_miles", 0) or 0) > 0),
-        ("trade_profile", "Trade profile", contractor.skills.exists()),
+        ("trade_profile", "Trade profile", contractor.skills.exists() or bool(getattr(contractor, "custom_services", []))),
     ]
     items = [
         {"key": key, "label": label, "required": True, "state": "complete" if complete else "incomplete"}

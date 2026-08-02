@@ -105,10 +105,24 @@ test('contractor profile shows state and trade compliance guidance', async ({ pa
   await page.getByTestId('contractor-profile-trade-search').fill('roof');
   await page.getByTestId('contractor-profile-trade-option-roofing').click();
 
-  await expect(page.getByTestId('contractor-compliance-preview')).toContainText('Electrical in TX');
-  await expect(page.getByTestId('contractor-compliance-preview')).toContainText(
-    'typically requires a state license'
-  );
+  const compliance = page.getByTestId('contractor-compliance-preview');
+  await expect(compliance).toContainText('1 service reviewed for TX');
+  await expect(compliance).toContainText('License status');
+  await expect(compliance).toContainText('Attention needed');
+  const details = page.getByTestId('compliance-trade-details');
+  await expect(details).not.toHaveAttribute('open', '');
+  await compliance.screenshot({ path: 'test-results/compliance-summary-collapsed.png' });
+  await details.locator('summary').first().click();
+  await expect(page.getByTestId('compliance-trade-electrical')).toContainText('Electrical');
+  await expect(page.getByTestId('compliance-trade-electrical')).toContainText('Typically required');
+  await page.getByTestId('compliance-trade-electrical').getByText('Full guidance').click();
+  await expect(page.getByTestId('compliance-trade-electrical')).toContainText('typically requires a state license');
+  await compliance.screenshot({ path: 'test-results/compliance-guidance-expanded.png' });
+  await page.getByTestId('license-details').screenshot({ path: 'test-results/compliance-license-details.png' });
+  await page.getByTestId('insurance-details').screenshot({ path: 'test-results/compliance-insurance-details.png' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/compliance-390.png', fullPage: true });
   await expect(page.getByTestId('contractor-insurance-status')).toContainText(
     'Insurance certificate missing'
   );
@@ -207,10 +221,11 @@ test('contractor profile shows cautious HVAC licensing guidance', async ({ page 
 
   await page.goto('/app/profile', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('contractor-compliance-preview')).toContainText('HVAC in TX');
-  await expect(page.getByTestId('contractor-compliance-preview')).toContainText(
-    'HVAC work commonly requires state or local licensing'
-  );
+  const details = page.getByTestId('compliance-trade-details');
+  await details.locator('summary').first().click();
+  await expect(page.getByTestId('compliance-trade-hvac')).toContainText('Not typically identified statewide');
+  await page.getByTestId('compliance-trade-hvac').getByText('Full guidance').click();
+  await expect(page.getByTestId('compliance-trade-hvac')).toContainText('HVAC work commonly requires state or local licensing');
 });
 
 test('public profile trust indicators stay conservative', async ({ page }) => {

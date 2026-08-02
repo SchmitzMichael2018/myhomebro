@@ -71,6 +71,7 @@ class ContractorDetailSerializer(serializers.ModelSerializer):
         fields = [
             "id", "business_name", "name", "email", "phone",
             "skills", "license_number", "license_expiration",
+            "custom_services",
             "logo", "license_file", "address",
             "stripe_account_id", "onboarding_status", "stripe_onboarding_status",
         ]

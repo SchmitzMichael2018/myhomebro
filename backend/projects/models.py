@@ -298,6 +298,7 @@ class Contractor(models.Model):
     service_radius_miles = models.PositiveIntegerField(choices=SERVICE_RADIUS_CHOICES, default=25)
 
     skills = models.ManyToManyField(Skill, blank=True)
+    custom_services = models.JSONField(default=list, blank=True)
     accepts_diy_assistance = models.BooleanField(default=False)
     accepts_consultation_only = models.BooleanField(default=False)
     accepts_hourly_help = models.BooleanField(default=False)
