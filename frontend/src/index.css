@@ -41,6 +41,61 @@
     @apply w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition duration-200;
   }
 
+  /* Explicit light control island for white panels inside the operational shell. */
+  .mhb-light-form-panel {
+    color: #0f172a;
+    color-scheme: light;
+  }
+
+  .mhb-light-form-panel :is(label, legend) {
+    color: #334155;
+  }
+
+  .mhb-light-form-panel :is(input, select, textarea) {
+    border-color: #cbd5e1;
+    background-color: #ffffff;
+    color: #0f172a;
+    caret-color: #1d4ed8;
+    color-scheme: light;
+  }
+
+  .mhb-light-form-panel :is(input, textarea)::placeholder {
+    color: #64748b;
+    opacity: 1;
+  }
+
+  .mhb-light-form-panel option {
+    background-color: #ffffff;
+    color: #0f172a;
+  }
+
+  .mhb-light-form-panel :is(input, select, textarea):focus-visible {
+    border-color: #2563eb;
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+
+  .mhb-light-form-panel :is(input, select, textarea):disabled,
+  .mhb-light-form-panel :is(input, select, textarea)[readonly] {
+    background-color: #f1f5f9;
+    color: #475569;
+    -webkit-text-fill-color: #475569;
+    opacity: 1;
+  }
+
+  .mhb-light-form-panel :is(input, select, textarea)::selection {
+    background-color: #bfdbfe;
+    color: #0f172a;
+  }
+
+  .mhb-light-form-panel :is(input, textarea):-webkit-autofill,
+  .mhb-light-form-panel :is(input, textarea):-webkit-autofill:hover,
+  .mhb-light-form-panel :is(input, textarea):-webkit-autofill:focus {
+    -webkit-text-fill-color: #0f172a !important;
+    caret-color: #1d4ed8;
+    box-shadow: 0 0 0 1000px #eff6ff inset !important;
+  }
+
   .primary-button {
     @apply rounded-lg px-4 py-2 font-semibold text-white bg-blue-600 hover:bg-blue-700 transition duration-300;
   }

@@ -235,7 +235,12 @@ export default function CustomerForm(){
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="p-6 bg-white rounded-xl shadow-md space-y-8" noValidate>
+      <form
+        onSubmit={handleSubmit}
+        className="mhb-light-form-panel p-6 bg-white rounded-xl shadow-md space-y-8"
+        data-testid="customer-create-form"
+        noValidate
+      >
         <div className="space-y-6">
           <h3 className="text-lg font-medium text-gray-900">Contact Information</h3>
 
