@@ -252,6 +252,40 @@ test('customer form consumes assistant prefill from route state', async ({ page 
   await expect(page.locator('input[name="city"]')).toHaveValue('Austin');
 });
 
+test('customer creation uses one contractor-scoped Project Assistant dock', async ({ page }) => {
+  await installBaseAuthMocks(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/app/customers/new', { waitUntil: 'domcontentloaded' });
+
+  await expect(page.getByTestId('customer-form-ai-entry')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Open Assistant' })).toHaveCount(0);
+
+  await page.getByTestId('assistant-dock-open-button').click();
+  const dock = page.getByTestId('assistant-desktop-dock');
+  await expect(dock).toBeVisible();
+  await expect(dock).toContainText('Project Assistant');
+  await expect(dock).toContainText('Customer setup');
+  await expect(dock).not.toContainText('Customer Portal');
+  await expect(dock).not.toContainText('Explain customer next steps');
+  await expect(dock).not.toContainText('agreement is nearly ready');
+  await expect(dock.getByRole('button', { name: 'Close', exact: true })).toHaveCount(1);
+});
+
+test('customer creation opens the same scoped assistant on narrow screens', async ({ page }) => {
+  await installBaseAuthMocks(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/app/customers/new', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('assistant-dock-open-button').click();
+  const sheet = page.getByTestId('assistant-mobile-sheet');
+  await expect(sheet).toBeVisible();
+  await expect(sheet).toContainText('Customer setup');
+  await expect(sheet).not.toContainText('Quick Capture');
+  await expect(sheet.getByRole('button', { name: 'Close', exact: true })).toHaveCount(1);
+  await page.getByTestId('assistant-mobile-sheet-close').click();
+  await expect(sheet).not.toBeVisible();
+});
+
 // ─── Templates Assistant: creation intent must never reach the orchestrator ───
 
 function installTemplatesPageRoutes(page) {

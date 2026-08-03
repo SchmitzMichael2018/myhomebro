@@ -9,6 +9,11 @@ import { buildAiContext } from "../lib/aiContext.js";
 import { checkJobHealth } from "../lib/jobHealthMonitor.js";
 import { draftCheckIn, draftSignatureFollowUp, draftMilestoneUpdate } from "../lib/actionDrafter.js";
 import api from "../api.js";
+import {
+  enforceAssistantRouteScope,
+  resolveProjectAssistantIdentity,
+  workspaceForAssistantRoute,
+} from "../lib/projectAssistantContext.js";
 
 const AssistantDockContext = createContext({
   openAssistant: () => {},
@@ -21,31 +26,19 @@ const AssistantDockContext = createContext({
   isMinimized: false,
 });
 
-function workspaceModeForRoute(route = "") {
-  const path = String(route || "").toLowerCase();
-  if (path.includes("/admin")) return "admin";
-  if (path.includes("/disputes")) return "disputes";
-  if (path.includes("/warrant")) return "warranty";
-  if (path.includes("/team") || path.includes("/assignments") || path.includes("/schedule")) return "team";
-  if (path.includes("/estimates") || path.includes("/proposals")) return "estimates";
-  if (path.includes("/customers") || path.includes("/customer-portal")) return "customer_portal";
-  if (path.includes("/properties") || path.includes("/property") || path.includes("/maintenance")) return "property_management";
-  if (path.includes("/marketing") || path.includes("/public-presence")) return "marketing";
-  if (path.includes("/insights") || path.includes("/business")) return "insights";
-  if (path.includes("/documents") || path.includes("/photos")) return "documents";
-  if (path.includes("/templates")) return "templates";
-  if (path.includes("/agreements") && path.includes("/wizard")) return "agreement_wizard";
-  if (path.includes("/agreements")) return "agreements";
-  if (path.includes("/milestones")) return "milestones";
-  if (path.includes("/invoices") || path.includes("/payments")) {
-    return "invoices";
-  }
-  if (path.includes("/dashboard")) return "dashboard";
-  if (path.includes("/opportunities") || path.includes("/bids")) return "leads";
-  return "general";
-}
-
 function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
+  if (workspaceMode === "customer_create") {
+    return {
+      headline: "Help with customer setup",
+      helperText: "Get help identifying the customer details needed to create this record.",
+      statusText: "New customer context loaded",
+      promptPlaceholder: 'Examples: "What customer details do I need?" or "Help me check this form."',
+      nextActionText: "Next: Review the customer details, then create the record when they are accurate.",
+      nextGuidanceTitle: "Customer setup guidance",
+      nextGuidance: "Project Assistant can explain the form and prepare suggestions. You review the details and create the customer.",
+    };
+  }
+
   if (workspaceMode === "agreement_wizard") {
     return {
       headline: "Review this agreement draft",
@@ -301,10 +294,12 @@ function defaultAssistantPanelForWorkspace(workspaceMode = "general") {
 
 function buildRouteContext(location) {
   const currentRoute = `${location.pathname}${location.search || ""}`;
-  const workspaceMode = workspaceModeForRoute(currentRoute);
+  const identity = resolveProjectAssistantIdentity(currentRoute);
+  const workspaceMode = identity.workspace;
   const aiContext = buildAiContext({ page: workspaceMode });
   return {
     current_route: currentRoute,
+    ...identity,
     page: workspaceMode,
     workspace_mode: workspaceMode,
     ai_panel: defaultAssistantPanelForWorkspace(workspaceMode),
@@ -314,7 +309,9 @@ function buildRouteContext(location) {
 }
 
 function copilotLabelForRoute(route = "") {
-  const workspaceMode = workspaceModeForRoute(route);
+  const workspaceMode = workspaceForAssistantRoute(route);
+  if (workspaceMode === "customer_create") return "Customer setup";
+  if (workspaceMode === "customers") return "Customers";
   if (workspaceMode === "agreement_wizard") return "Project Assistant for Agreement Creation";
   if (workspaceMode === "agreements") return "Project Assistant for Agreements";
   if (workspaceMode === "estimates") return "Project Assistant for Estimates";
@@ -437,7 +434,9 @@ const UNRELATED_ENTITY_CONTEXT_KEYS = [
 ];
 
 function sanitizeContextForWorkspace(context = {}, workspaceMode = "general") {
-  const clean = context && typeof context === "object" ? { ...context } : {};
+  let clean = context && typeof context === "object" ? { ...context } : {};
+  const routeIdentity = resolveProjectAssistantIdentity(clean.current_route || "");
+  clean = enforceAssistantRouteScope(clean, routeIdentity);
   if (workspaceMode === "marketing") {
     UNRELATED_ENTITY_CONTEXT_KEYS.forEach((key) => delete clean[key]);
     clean.workspace = "marketing";
@@ -670,6 +669,7 @@ function DesktopAssistantDock({
   const scrollRef = useRef(null);
   const hasBriefing = Array.isArray(context?.briefingItems) && context.briefingItems.length > 0;
   const hasHealthFlags = Array.isArray(healthFlags) && healthFlags.length > 0;
+  const isCustomerCreate = context?.workspace_mode === "customer_create";
 
   // Scroll to top whenever the dock opens, so panels are always visible first.
   useEffect(() => {
@@ -745,7 +745,7 @@ function DesktopAssistantDock({
                 context={context}
                 onAction={onAction}
                 onClose={onClose}
-                hideContextHeader={hasBriefing || hasHealthFlags}
+                hideContextHeader={isCustomerCreate || hasBriefing || hasHealthFlags}
               />
             </div>
           )}
@@ -755,14 +755,26 @@ function DesktopAssistantDock({
   );
 }
 
-function MobileAssistantSheet({ open, onClose, context, onAction }) {
+function MobileAssistantSheet({ open, onClose, title, context, onAction }) {
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const isMarketing = String(context?.workspace_mode || context?.workspace || context?.page || "") === "marketing";
+  const isCustomerCreate = String(context?.workspace_mode || context?.workspace || context?.page || "") === "customer_create";
   useEffect(() => { setShowQuickCapture(false); }, [context?.context_revision, isMarketing]);
   if (!open) return null;
   return (
     <div className="mhb-operational-overlay fixed inset-0 z-50 flex flex-col bg-white xl:hidden" data-testid="assistant-mobile-sheet">
-      {isMarketing && !showQuickCapture ? <>
+      {isCustomerCreate ? <>
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <div className="text-xs font-black uppercase tracking-wider text-slate-500">Project Assistant</div>
+            <div className="text-sm font-black text-slate-900">{title}</div>
+          </div>
+          <button type="button" data-testid="assistant-mobile-sheet-close" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <StartWithAIAssistant mode="dock" context={context} onAction={onAction} hideContextHeader />
+        </div>
+      </> : isMarketing && !showQuickCapture ? <>
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><div className="text-xs font-black uppercase tracking-wider text-slate-500">Project Assistant</div><div className="text-sm font-black text-slate-900">Marketing · {context?.active_step_label || "Overview"}</div></div><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button></div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4"><StartWithAIAssistant key={`mobile:${context?.context_revision || context?.current_route || "marketing"}`} mode="panel" context={context} onAction={onAction} onClose={onClose} /><button type="button" onClick={() => setShowQuickCapture(true)} className="mt-4 w-full rounded-lg border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700">Open Quick Capture</button></div>
       </> : <ProjectAssistantQuickCapture compact onClose={isMarketing ? () => setShowQuickCapture(false) : onClose} />}
@@ -944,7 +956,7 @@ export function AssistantDockProvider({ children }) {
         onClose={closeAssistant}
         onMinimize={minimizeAssistant}
       />
-      <MobileAssistantSheet open={open} onClose={closeAssistant} context={dockContext || routeContext} onAction={dockOnAction ?? pageAssistantOnAction} />
+      <MobileAssistantSheet open={open} onClose={closeAssistant} title={dockTitle} context={dockContext || routeContext} onAction={dockOnAction ?? pageAssistantOnAction} />
     </AssistantDockContext.Provider>
   );
 }

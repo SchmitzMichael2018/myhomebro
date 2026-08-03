@@ -858,13 +858,18 @@ export function buildUserFacingAiPanel({
     : safeText(panelConfig.nextActionText) ||
       safeText(plan?.follow_up_prompt) ||
       "Next: Review the suggested update and continue when you're ready.";
-  const coaching = buildCoachingState({
-    step,
-    context,
-    panelConfig,
-    plan,
-    isPlanning,
-  });
+  const workspace = safeText(context?.workspace_mode || context?.workspace || context?.page).toLowerCase();
+  const isAgreementWizardContext =
+    workspace === "agreement_wizard" || currentRoute.toLowerCase().includes("/agreements/") && currentRoute.toLowerCase().includes("/wizard");
+  const coaching = isAgreementWizardContext
+    ? buildCoachingState({
+        step,
+        context,
+        panelConfig,
+        plan,
+        isPlanning,
+      })
+    : null;
 
   return {
     headline: safeText(panelConfig.headline) || "Tell me what you want to do",

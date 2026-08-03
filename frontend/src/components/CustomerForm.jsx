@@ -8,7 +8,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
-import { StartWithAIEntry } from "./StartWithAIAssistant.jsx";
 import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
@@ -60,12 +59,6 @@ export default function CustomerForm(){
     [assistantHandoff]
   );
   const appliedAssistantSignatureRef = useRef("");
-  const assistantContext = {
-    current_route: "/app/customers/new",
-    lead_id: null,
-    lead_summary: {},
-  };
-
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "zip_code") return setForm((p) => ({ ...p, zip_code: formatZip(value) }));
@@ -181,14 +174,6 @@ export default function CustomerForm(){
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Create New Customer</h2>
-
-      <StartWithAIEntry
-        className="mb-6"
-        testId="customer-form-ai-entry"
-        title="Project Assistant for customer setup"
-        description="Get contextual help confirming the missing customer details before you finish this record."
-        context={assistantContext}
-      />
 
       {assistantBanner ? (
         <div
