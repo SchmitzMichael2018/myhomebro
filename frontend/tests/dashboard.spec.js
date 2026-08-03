@@ -18,7 +18,7 @@ function emptyResults() {
   return { results: [] };
 }
 
-async function mockDashboard(page, { proposalId = 501, onProposalCreate = null, agreementRows = [] } = {}) {
+async function mockDashboard(page, { proposalId = 501, onProposalCreate = null, agreementRows = [], customerResponse = null } = {}) {
   await page.addInitScript(() => {
     window.localStorage.setItem("access", "playwright-access-token");
     window.localStorage.setItem("mhb_last_login_ts", String(Date.now()));
@@ -84,10 +84,16 @@ async function mockDashboard(page, { proposalId = 501, onProposalCreate = null, 
     }
 
     if (path.endsWith("/api/projects/homeowners/")) {
+      const responseBody = customerResponse?.(url) || {
+        count: customers.length,
+        directory_total: customers.length,
+        directory_letters: ["T"],
+        results: customers,
+      };
       return route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ results: customers }),
+        body: JSON.stringify(responseBody),
       });
     }
 
@@ -352,6 +358,104 @@ test("Create Estimate launches workspace from an existing customer", async ({ pa
     scheduling_priority: "required",
   });
 });
+
+test("Create Estimate customer picker paginates, searches, and preserves selection", async ({ page }) => {
+  const directory = Array.from({ length: 30 }, (_, index) => ({
+    id: 200 + index,
+    company_name: `Company ${String(index + 1).padStart(2, "0")}`,
+    full_name: `Contact ${String(index + 1).padStart(2, "0")}`,
+    email: `contact${index + 1}@example.com`,
+    phone_number: `555-${String(index + 1).padStart(4, "0")}`,
+    street_address: `${index + 1} Main Street`,
+    city: "Austin",
+    state: "TX",
+    zip_code: "78701",
+  }));
+  const customerResponse = (url) => {
+    const query = (url.searchParams.get("q") || "").toLowerCase();
+    const letter = url.searchParams.get("starts_with") || "";
+    const pageNumber = Number(url.searchParams.get("page") || 1);
+    const pageSize = Number(url.searchParams.get("page_size") || 8);
+    const filtered = directory.filter((customer) => {
+      const display = customer.company_name || customer.full_name;
+      if (letter && !display.toUpperCase().startsWith(letter)) return false;
+      return !query || Object.values(customer).some((value) => String(value).toLowerCase().includes(query));
+    });
+    const start = (pageNumber - 1) * pageSize;
+    return {
+      count: filtered.length,
+      directory_total: directory.length,
+      directory_letters: ["C"],
+      results: filtered.slice(start, start + pageSize),
+    };
+  };
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await mockDashboard(page, { customerResponse });
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("dashboard-quick-action-create-estimate").click();
+
+  await expect(page.getByTestId("dashboard-estimate-customer-pagination")).toContainText("Showing 1–8 of 30");
+  await expect(page.getByTestId("dashboard-estimate-customer-pagination")).toContainText("Page 1 of 4");
+  await expect(page.getByTestId("dashboard-estimate-customer-alphabet")).toBeVisible();
+  await page.screenshot({ path: "test-results/estimate-customer-picker-desktop-page-1.png", fullPage: true });
+
+  await page.getByTestId("dashboard-estimate-customer-201").click();
+  await expect(page.getByTestId("dashboard-estimate-selected-customer")).toContainText("Company 02");
+  await expect(page.getByTestId("dashboard-estimate-existing-property")).toHaveValue("2 Main Street, Austin, TX, 78701");
+  await page.screenshot({ path: "test-results/estimate-customer-picker-selected.png", fullPage: true });
+
+  await page.getByRole("button", { name: "Next customer page" }).click();
+  await expect(page.getByTestId("dashboard-estimate-customer-pagination")).toContainText("Showing 9–16 of 30");
+  await expect(page.getByTestId("dashboard-estimate-selected-customer")).toContainText("remains selected");
+  await page.screenshot({ path: "test-results/estimate-customer-picker-desktop-page-2.png", fullPage: true });
+
+  await page.getByTestId("dashboard-estimate-customer-search").fill("Company 18");
+  await expect(page.getByTestId("dashboard-estimate-customer-217")).toBeVisible();
+  await expect(page.getByTestId("dashboard-estimate-customer-pagination")).toContainText("Page 1 of 1");
+  await expect(page.getByTestId("dashboard-estimate-selected-customer")).toContainText("Company 02");
+  await expect(page.getByTestId("dashboard-estimate-customer-alphabet")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/estimate-customer-picker-search.png", fullPage: true });
+
+  await page.getByTestId("dashboard-estimate-customer-search-clear").click();
+  await expect(page.getByTestId("dashboard-estimate-customer-pagination")).toContainText("Showing 1–8 of 30");
+  await page.getByRole("button", { name: "Show customers beginning with C" }).click();
+  await expect(page.getByRole("button", { name: "Show customers beginning with C" })).toHaveAttribute("aria-pressed", "true");
+  await page.screenshot({ path: "test-results/estimate-customer-picker-alphabet.png", fullPage: true });
+});
+
+for (const width of [900, 390]) {
+  test(`Create Estimate customer picker remains bounded and reachable at ${width}px`, async ({ page }) => {
+    const directory = Array.from({ length: 12 }, (_, index) => ({
+      id: 300 + index,
+      full_name: `Mobile Customer ${String(index + 1).padStart(2, "0")}`,
+      email: `mobile${index + 1}@example.com`,
+      street_address: `${index + 1} Pine Road`,
+      city: "Austin",
+      state: "TX",
+      zip_code: "78702",
+    }));
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await mockDashboard(page, {
+      customerResponse: (url) => {
+        const pageNumber = Number(url.searchParams.get("page") || 1);
+        const pageSize = Number(url.searchParams.get("page_size") || 8);
+        const start = (pageNumber - 1) * pageSize;
+        return { count: 12, directory_total: 12, directory_letters: ["M"], results: directory.slice(start, start + pageSize) };
+      },
+    });
+    await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("dashboard-quick-action-create-estimate").click();
+
+    await expect(page.getByRole("radiogroup", { name: "Existing customers" }).locator("label")).toHaveCount(8);
+    await expect(page.getByRole("button", { name: "Next customer page" })).toBeVisible();
+    await expect(page.getByTestId("dashboard-estimate-launch")).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    if (width === 390) {
+      await page.screenshot({ path: "test-results/estimate-customer-picker-mobile.png", fullPage: true });
+    }
+  });
+}
 
 test("Create Estimate launches workspace from a new customer capture", async ({ page }) => {
   let createPayload = null;

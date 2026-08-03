@@ -604,6 +604,13 @@ function formatCustomerAddress(customer) {
     .join(", ");
 }
 
+function customerDisplayName(customer) {
+  return String(customer?.company_name || "").trim() || String(customer?.full_name || "").trim() || "Unnamed customer";
+}
+
+const ESTIMATE_CUSTOMER_PAGE_SIZE = 8;
+const ESTIMATE_CUSTOMER_ALPHABET_THRESHOLD = 25;
+
 const emptyDashboardEstimateForm = {
   customer_name: "",
   customer_phone: "",
@@ -651,7 +658,14 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   const [customers, setCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [customerQuery, setCustomerQuery] = useState("");
+  const [debouncedCustomerQuery, setDebouncedCustomerQuery] = useState("");
+  const [customerPage, setCustomerPage] = useState(1);
+  const [customerCount, setCustomerCount] = useState(0);
+  const [customerDirectoryTotal, setCustomerDirectoryTotal] = useState(0);
+  const [customerLetters, setCustomerLetters] = useState([]);
+  const [customerLetter, setCustomerLetter] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [existingForm, setExistingForm] = useState({
     property_address: "",
     project_title: "",
@@ -669,7 +683,14 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     if (!isOpen) return;
     setMode("existing");
     setCustomerQuery("");
+    setDebouncedCustomerQuery("");
+    setCustomerPage(1);
+    setCustomerCount(0);
+    setCustomerDirectoryTotal(0);
+    setCustomerLetters([]);
+    setCustomerLetter("");
     setSelectedCustomerId("");
+    setSelectedCustomer(null);
     setExistingForm({
       property_address: "",
       project_title: "",
@@ -683,60 +704,59 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   }, [isOpen]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedCustomerQuery(customerQuery.trim()), 300);
+    return () => window.clearTimeout(timer);
+  }, [customerQuery]);
+
+  useEffect(() => {
     if (!isOpen || mode !== "existing") return;
-    let mounted = true;
+    const controller = new AbortController();
     (async () => {
       try {
         setLoadingCustomers(true);
         setCustomerLoadError("");
-        const { data } = await api.get("/projects/homeowners/", { params: { page_size: 50 } });
-        if (!mounted) return;
+        const { data } = await api.get("/projects/homeowners/", {
+          params: {
+            page: customerPage,
+            page_size: ESTIMATE_CUSTOMER_PAGE_SIZE,
+            ordering: "directory_name",
+            q: debouncedCustomerQuery || undefined,
+            starts_with: !debouncedCustomerQuery && customerLetter ? customerLetter : undefined,
+          },
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
         setCustomers(Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : []);
+        setCustomerCount(Number(data?.count ?? 0));
+        setCustomerDirectoryTotal(Number(data?.directory_total ?? data?.count ?? 0));
+        setCustomerLetters(Array.isArray(data?.directory_letters) ? data.directory_letters : []);
       } catch (error) {
+        if (controller.signal.aborted) return;
         console.error(error);
-        if (mounted) {
-          setCustomers([]);
-          setCustomerLoadError(
-            error?.response?.status === 403
-              ? "You do not have permission to view customers for estimate creation."
-              : "Customers could not be loaded. Retry before creating an estimate for an existing customer."
-          );
-        }
+        setCustomers([]);
+        setCustomerCount(0);
+        setCustomerLoadError(
+          error?.response?.status === 403
+            ? "You do not have permission to view customers for estimate creation."
+            : "Customers could not be loaded. Retry before creating an estimate for an existing customer."
+        );
       } finally {
-        if (mounted) setLoadingCustomers(false);
+        if (!controller.signal.aborted) setLoadingCustomers(false);
       }
     })();
-    return () => {
-      mounted = false;
-    };
-  }, [customerLoadAttempt, isOpen, mode]);
+    return () => controller.abort();
+  }, [customerLetter, customerLoadAttempt, customerPage, debouncedCustomerQuery, isOpen, mode]);
 
-  const filteredCustomers = useMemo(() => {
-    const q = customerQuery.trim().toLowerCase();
-    if (!q) return customers;
-    return customers.filter((customer) =>
-      [
-        customer?.full_name,
-        customer?.email,
-        customer?.phone_number,
-        formatCustomerAddress(customer),
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(q))
-    );
-  }, [customerQuery, customers]);
-
-  const selectedCustomer = useMemo(
-    () => customers.find((customer) => String(customer.id) === String(selectedCustomerId)) || null,
-    [customers, selectedCustomerId]
-  );
+  const customerPageCount = Math.max(1, Math.ceil(customerCount / ESTIMATE_CUSTOMER_PAGE_SIZE));
+  const customerRangeStart = customerCount ? (customerPage - 1) * ESTIMATE_CUSTOMER_PAGE_SIZE + 1 : 0;
+  const customerRangeEnd = Math.min(customerPage * ESTIMATE_CUSTOMER_PAGE_SIZE, customerCount);
 
   useEffect(() => {
     if (!selectedCustomer) return;
     const address = formatCustomerAddress(selectedCustomer);
     setExistingForm((current) => ({
       ...current,
-      property_address: current.property_address || address,
+      property_address: address,
     }));
   }, [selectedCustomer]);
 
@@ -880,13 +900,82 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
                 id="dashboard-estimate-customer-search"
                 data-testid="dashboard-estimate-customer-search"
                 value={customerQuery}
-                onChange={(event) => setCustomerQuery(event.target.value)}
-                className="mt-2 w-full rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
-                placeholder="Search by name, email, phone, or address"
+                onChange={(event) => {
+                  setCustomerQuery(event.target.value);
+                  setCustomerPage(1);
+                  setCustomerLetter("");
+                }}
+                className="mt-2 w-full rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 pr-10 text-sm font-semibold text-white placeholder:text-sky-100/55 focus:border-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                placeholder="Search name, company, contact, or address"
               />
-              <div className="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+              {customerQuery ? (
+                <button
+                  type="button"
+                  aria-label="Clear customer search"
+                  data-testid="dashboard-estimate-customer-search-clear"
+                  onClick={() => {
+                    setCustomerQuery("");
+                    setDebouncedCustomerQuery("");
+                    setCustomerPage(1);
+                  }}
+                  className="mt-2 rounded-lg border border-white/14 px-3 py-1.5 text-xs font-bold text-sky-100 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                >
+                  Clear customer search
+                </button>
+              ) : null}
+
+              {selectedCustomer ? (
+                <div className="mt-3 rounded-xl border border-amber-200/60 bg-amber-200/12 p-3" data-testid="dashboard-estimate-selected-customer">
+                  <div className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 flex-none text-amber-200" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-black uppercase tracking-[0.12em] text-amber-100">Selected customer</p>
+                      <p className="truncate text-sm font-black text-white" title={customerDisplayName(selectedCustomer)}>{customerDisplayName(selectedCustomer)}</p>
+                      {selectedCustomer.company_name && selectedCustomer.full_name ? (
+                        <p className="truncate text-xs text-sky-100/75" title={selectedCustomer.full_name}>{selectedCustomer.full_name}</p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById("dashboard-estimate-customer-search")?.focus()}
+                      className="rounded-lg border border-white/20 px-2 py-1 text-xs font-bold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                    >
+                      Change customer
+                    </button>
+                  </div>
+                  {!customers.some((customer) => String(customer.id) === String(selectedCustomerId)) ? (
+                    <p className="mt-2 text-xs text-sky-100/70">This customer remains selected while you browse other results.</p>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {!debouncedCustomerQuery && customerDirectoryTotal >= ESTIMATE_CUSTOMER_ALPHABET_THRESHOLD ? (
+                <div className="mt-3 hidden flex-wrap gap-1 sm:flex" aria-label="Customer alphabet filter" data-testid="dashboard-estimate-customer-alphabet">
+                  {"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((letter) => {
+                    const available = customerLetters.includes(letter);
+                    return (
+                      <button
+                        key={letter}
+                        type="button"
+                        aria-label={`Show customers beginning with ${letter}`}
+                        aria-pressed={customerLetter === letter}
+                        disabled={!available}
+                        onClick={() => {
+                          setCustomerLetter((current) => current === letter ? "" : letter);
+                          setCustomerPage(1);
+                        }}
+                        className="flex h-8 min-w-8 items-center justify-center rounded-md border border-white/12 px-1 text-xs font-bold text-sky-100 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:opacity-30 aria-pressed:border-amber-200 aria-pressed:bg-amber-200/18 aria-pressed:text-white"
+                      >
+                        {letter}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              <div className="mt-3 min-h-52 space-y-2" role="radiogroup" aria-label="Existing customers" aria-busy={loadingCustomers}>
                 {loadingCustomers ? (
-                  <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70">
+                  <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70" role="status" aria-live="polite">
                     Loading customers...
                   </div>
                 ) : customerLoadError ? (
@@ -902,35 +991,80 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
                       </button>
                     ) : null}
                   </div>
-                ) : filteredCustomers.length ? (
-                  filteredCustomers.map((customer) => {
+                ) : customers.length ? (
+                  customers.map((customer) => {
                     const isSelected = String(customer.id) === String(selectedCustomerId);
                     return (
-                      <button
+                      <label
                         key={customer.id}
-                        type="button"
                         data-testid={`dashboard-estimate-customer-${customer.id}`}
-                        onClick={() => setSelectedCustomerId(customer.id)}
-                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                        className={`block w-full cursor-pointer rounded-xl border px-3 py-3 text-left transition focus-within:ring-2 focus-within:ring-sky-300 ${
                           isSelected
                             ? "border-amber-200 bg-amber-200/18"
                             : "border-white/10 bg-white/7 hover:border-white/20 hover:bg-white/10"
                         }`}
                       >
-                        <span className="block text-sm font-black text-white">{customer.full_name || "Unnamed customer"}</span>
-                        <span className="mt-1 block text-xs font-semibold text-sky-100/70">
+                        <input
+                          type="radio"
+                          name="dashboard-estimate-customer"
+                          value={customer.id}
+                          checked={isSelected}
+                          onChange={() => {
+                            setSelectedCustomerId(customer.id);
+                            setSelectedCustomer(customer);
+                          }}
+                          className="sr-only"
+                        />
+                        <span className="flex items-center gap-2 text-sm font-black text-white">
+                          {isSelected ? <CheckCircle2 className="h-4 w-4 flex-none text-amber-200" aria-hidden="true" /> : null}
+                          <span className="truncate" title={customerDisplayName(customer)}>{customerDisplayName(customer)}</span>
+                          {isSelected ? <span className="sr-only">Selected</span> : null}
+                        </span>
+                        {customer.company_name && customer.full_name ? (
+                          <span className="mt-1 block truncate text-xs font-semibold text-sky-100/75" title={customer.full_name}>Contact: {customer.full_name}</span>
+                        ) : null}
+                        <span className="mt-1 block truncate text-xs font-semibold text-sky-100/70" title={[customer.email, customer.phone_number].filter(Boolean).join(" | ")}>
                           {[customer.email, customer.phone_number].filter(Boolean).join(" | ") || "No contact details"}
                         </span>
-                        <span className="mt-1 block text-xs text-sky-100/55">{formatCustomerAddress(customer) || "No property address saved"}</span>
-                      </button>
+                        <span className="mt-1 block truncate text-xs text-sky-100/65" title={formatCustomerAddress(customer)}>{formatCustomerAddress(customer) || "No property address saved"}</span>
+                      </label>
                     );
                   })
                 ) : (
-                  <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70">
-                    No matching customers found.
+                  <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70" role="status" aria-live="polite">
+                    No customers found.
                   </div>
                 )}
               </div>
+
+              {!loadingCustomers && !customerLoadError ? (
+                <div className="mt-3 border-t border-white/10 pt-3" data-testid="dashboard-estimate-customer-pagination">
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-sky-100/70" aria-live="polite">
+                    <span>Showing {customerRangeStart}–{customerRangeEnd} of {customerCount}</span>
+                    <span>Page {customerPage} of {customerPageCount}</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      aria-label="Previous customer page"
+                      disabled={customerPage <= 1}
+                      onClick={() => setCustomerPage((current) => Math.max(1, current - 1))}
+                      className="rounded-lg border border-white/14 px-3 py-2 text-sm font-bold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Next customer page"
+                      disabled={customerPage >= customerPageCount}
+                      onClick={() => setCustomerPage((current) => Math.min(customerPageCount, current + 1))}
+                      className="rounded-lg border border-white/14 px-3 py-2 text-sm font-bold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-2xl border border-white/10 bg-white/7 p-4">

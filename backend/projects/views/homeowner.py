@@ -5,8 +5,8 @@ from datetime import datetime, time
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, Max, Q, Sum
-from django.db.models.functions import Lower
+from django.db.models import Count, Max, Q, Sum, Value
+from django.db.models.functions import Coalesce, Lower, NullIf, Substr, Trim, Upper
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from rest_framework import viewsets, filters, permissions, status
@@ -114,7 +114,7 @@ class HomeownerViewSet(viewsets.ModelViewSet):
         if status_val and "status" in {f.name for f in Homeowner._meta.get_fields()}:
             qs = qs.filter(status__iexact=status_val)
 
-        # Optional search across best-effort fields
+        # Optional search across customer identity, contact, and property fields.
         q = (self.request.query_params.get("q") or "").strip()
         if q:
             model_fields = {f.name for f in Homeowner._meta.get_fields()}
@@ -129,6 +129,11 @@ class HomeownerViewSet(viewsets.ModelViewSet):
                 "email",
                 "phone",
                 "phone_number",
+                "street_address",
+                "address_line_2",
+                "city",
+                "state",
+                "zip_code",
             )
 
             search_fields = [f for f in search_candidates if f in model_fields]
@@ -138,8 +143,25 @@ class HomeownerViewSet(viewsets.ModelViewSet):
                     cond |= Q(**{f"{f}__icontains": q})
                 qs = qs.filter(cond)
 
-        # Safe ordering (fallback to -created_at then -id)
+        # The estimate/customer picker uses one deterministic display-name order:
+        # company name when present, otherwise the contact name, then stable ID.
         ordering = (self.request.query_params.get("ordering") or "-created_at").strip()
+        if ordering == "directory_name":
+            qs = qs.annotate(
+                _directory_name=Lower(
+                    Coalesce(
+                        NullIf(Trim("company_name"), Value("")),
+                        Trim("full_name"),
+                        Value(""),
+                    )
+                )
+            )
+            starts_with = (self.request.query_params.get("starts_with") or "").strip().upper()
+            if len(starts_with) == 1 and starts_with.isalpha():
+                qs = qs.filter(_directory_name__startswith=starts_with.lower())
+            return qs.order_by("_directory_name", Lower("full_name"), "id")
+
+        # Safe ordering (fallback to -created_at then -id)
         model_fields = {f.name for f in Homeowner._meta.get_fields()}
         if ordering.lstrip("-") in model_fields:
             if ordering.lstrip("-") == "id":
@@ -159,7 +181,27 @@ class HomeownerViewSet(viewsets.ModelViewSet):
             contractor = _get_contractor_for_user(request.user)
             attach_customer_directory_metrics(page, contractor)
             serializer = self.get_serializer(page, many=True)
-            return self.get_paginated_response(serializer.data)
+            response = self.get_paginated_response(serializer.data)
+            if request.query_params.get("ordering") == "directory_name":
+                display_name = Lower(
+                    Coalesce(
+                        NullIf(Trim("company_name"), Value("")),
+                        Trim("full_name"),
+                        Value(""),
+                    )
+                )
+                directory = Homeowner.objects.filter(created_by=contractor).annotate(
+                    _directory_name=display_name,
+                    _directory_initial=Upper(Substr(display_name, 1, 1)),
+                )
+                response.data["directory_total"] = directory.count()
+                response.data["directory_letters"] = list(
+                    directory.filter(_directory_initial__regex=r"^[A-Z]$")
+                    .order_by("_directory_initial")
+                    .values_list("_directory_initial", flat=True)
+                    .distinct()
+                )
+            return response
 
         contractor = _get_contractor_for_user(request.user)
         customers = list(queryset)
