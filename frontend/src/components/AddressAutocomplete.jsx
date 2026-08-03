@@ -245,6 +245,8 @@ export default function AddressAutocomplete({
   disabled = false,
   inputId,
   inputRef = null,
+  inputAriaDescribedBy = "",
+  inputAriaInvalid = undefined,
   testId = "",
   inputClassName = "",
   suggestionsClassName = "",
@@ -497,6 +499,8 @@ export default function AddressAutocomplete({
           ref={inputRef}
           id={inputId}
           aria-label="Google address search"
+          aria-describedby={inputAriaDescribedBy || undefined}
+          aria-invalid={inputAriaInvalid}
           autoComplete="off"
           className={
             inputClassName ||

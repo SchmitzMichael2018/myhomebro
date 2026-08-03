@@ -5,7 +5,6 @@
 import React, { lazy, Suspense, useEffect, useRef } from "react";
 import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
 import { clearExpiredConversations } from "./lib/conversationStorage.js";
-import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
 import { AppearanceProvider } from "./context/AppearanceContext.jsx";
 
@@ -36,6 +35,7 @@ import RouteLoadingFallback from "./components/RouteLoadingFallback.jsx";
 import { PwaInstallDialog } from "./components/PwaInstallAccess.jsx";
 import PwaStatus from "./components/PwaStatus.jsx";
 import { GuidedVideoProvider } from "./guided-video/GuidedVideoProvider.jsx";
+import AppToaster from "./components/AppToaster.jsx";
 
 import "./styles/ui.css";
 import "./styles/modal.css";
@@ -127,7 +127,7 @@ export default function App() {
         <PwaStatus />
 
         {/* Toasts */}
-        <Toaster position="top-right" />
+        <AppToaster />
         </GuidedVideoProvider>
       </BrowserRouter>
     </AuthProvider>

@@ -56,6 +56,7 @@ export default function CustomerForm(){
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [streetAddressError, setStreetAddressError] = useState("");
   const [assistantBanner, setAssistantBanner] = useState("");
   const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
   const assistantHandoffSignature = useMemo(
@@ -191,7 +192,17 @@ export default function CustomerForm(){
     e.preventDefault();
     setSaveError("");
 
-    if (!(form.street_address || "").trim()) return toast.error("Street address is required.");
+    if (!(form.street_address || "").trim()) {
+      const message = "Street address is required.";
+      setStreetAddressError(message);
+      focusCustomerField("street_address");
+      return toast.error(message, {
+        id: "customer-street-address-required",
+        // Focus and aria-describedby announce this field error once.
+        ariaProps: { role: "status", "aria-live": "off" },
+      });
+    }
+    setStreetAddressError("");
     if (!(form.city || "").trim()) return toast.error("City is required.");
     if (!isValidUSPhone(form.phone_number)) return toast.error("Enter a valid US phone (10 digits, or +1 then 10 digits).");
     if (!isValidZip(form.zip_code)) return toast.error("ZIP code must be 5 digits or 9 digits (ZIP+4).");
@@ -335,8 +346,13 @@ export default function CustomerForm(){
               <AddressAutocomplete
                 inputId="mhb-customerform-290"
                 inputRef={(node) => { fieldRefs.current.street_address = node; }}
+                inputAriaDescribedBy={streetAddressError ? "customer-street-address-error" : ""}
+                inputAriaInvalid={streetAddressError ? true : undefined}
                 value={form.street_address}
-                onChangeText={(text) => setForm((p) => ({ ...p, street_address: text }))}
+                onChangeText={(text) => {
+                  setForm((p) => ({ ...p, street_address: text }));
+                  if (String(text || "").trim()) setStreetAddressError("");
+                }}
                 onSelect={(a) => {
                   // Fill structured fields
                   setForm((p) => ({
@@ -364,6 +380,11 @@ export default function CustomerForm(){
                 }}
                 placeholder="Start typing the street address (pick from suggestions)…"
               />
+              {streetAddressError ? (
+                <p id="customer-street-address-error" className="mt-1 text-sm font-medium text-rose-700">
+                  {streetAddressError}
+                </p>
+              ) : null}
             </div>
 
             <div className="md:col-span-2">
