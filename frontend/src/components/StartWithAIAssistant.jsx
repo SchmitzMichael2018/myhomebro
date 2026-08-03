@@ -1343,6 +1343,7 @@ export default function StartWithAIAssistant({
   const isFieldAwareMode =
     isFieldAwareDescriptionMode || isFieldAwareMilestonesMode || isFieldAwareExclusionsMode;
   const isTemplatesPage = workspaceMode === "templates";
+  const isCustomerCreate = workspaceMode === "customer_create";
   const isAgreementWizardAssistant = workspaceMode === "agreement_wizard" && !isFieldAwareMode;
   const isTemplatesContextualMode =
     isTemplatesPage && isContextualMode && !isFieldAwareMode;
@@ -1359,6 +1360,7 @@ export default function StartWithAIAssistant({
   const [milestoneDrafts, setMilestoneDrafts] = useState([]);
   const [exclusionsDraft, setExclusionsDraft] = useState({ exclusions: [], assumptions: [] });
   const [projectAssistantNotice, setProjectAssistantNotice] = useState("");
+  const [customerReviewMessage, setCustomerReviewMessage] = useState("");
   const [serviceRecommendations, setServiceRecommendations] = useState([]);
   const [plan, setPlan] = useState(() =>
     produceStructuredAssistantPlan({
@@ -1388,15 +1390,16 @@ export default function StartWithAIAssistant({
     setMilestoneDrafts([]);
     setExclusionsDraft({ exclusions: [], assumptions: [] });
     setProjectAssistantNotice("");
+    setCustomerReviewMessage("");
   }, [workspaceRouteSignature]);
 
   useEffect(() => {
-    if (isAgreementWizardAssistant) return undefined;
+    if (isAgreementWizardAssistant || isCustomerCreate) return undefined;
     const handle = window.setTimeout(() => {
       inputRef.current?.focus();
     }, 0);
     return () => window.clearTimeout(handle);
-  }, [mode, contextSignature, isAgreementWizardAssistant]);
+  }, [mode, contextSignature, isAgreementWizardAssistant, isCustomerCreate]);
 
   useEffect(() => {
     if (!isContextualMode && !isAgreementWizardAssistant) {
@@ -1500,6 +1503,8 @@ export default function StartWithAIAssistant({
     ? "Generate reusable exclusions and assumptions for this template."
     : isTemplatesContextualMode
     ? "Ask for reusable workflow structure, milestones, exclusions, assumptions, or advisory pricing guidance."
+    : isCustomerCreate
+    ? "Ask about missing fields, contact formatting, or the service address. This assistant does not save the record."
     : isContextualMode
     ? "Get contextual help for the step you're on right now."
     : "Describe the work you want to start, plan, or organize.";
@@ -1637,6 +1642,20 @@ export default function StartWithAIAssistant({
       return;
     }
     if (!cleanPrompt) return;
+    if (isCustomerCreate) {
+      const formStatus = normalizedContext?.customer_form_status || {};
+      const labels = { full_name: "name", email: "email", phone: "phone", address: "service address" };
+      const missing = Object.entries(labels).filter(([key]) => formStatus[key] === "missing" || formStatus[key] === "incomplete").map(([, label]) => label);
+      const invalid = Object.entries(labels).filter(([key]) => formStatus[key] === "invalid").map(([, label]) => label);
+      const details = [
+        missing.length ? `Required details still missing: ${missing.join(", ")}.` : "No required details are missing.",
+        invalid.length ? `Invalid formatting still needs attention: ${invalid.join(", ")}.` : "The entered email, phone, and ZIP formats currently pass the form checks.",
+      ];
+      setCustomerReviewMessage(`This record is not saved yet. ${details.join(" ")} Company name and address line 2 are optional. Review the current entries, then use Create Customer when they are accurate.`);
+      setHistory((prev) => [...prev, { prompt: cleanPrompt, plan: { intent_label: "Customer record review" } }]);
+      setPrompt("");
+      return;
+    }
     if (isAgreementWizardAssistant) {
       const matchedAction = matchProjectAssistantPromptToAction(cleanPrompt, normalizedContext);
       if (matchedAction && typeof onAction === "function") {
@@ -2081,6 +2100,7 @@ export default function StartWithAIAssistant({
               <textarea
                 ref={inputRef}
                 data-testid={testId("start-with-ai-input")}
+                aria-label="Ask Project Assistant"
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 rows={4}
@@ -2136,6 +2156,12 @@ export default function StartWithAIAssistant({
               </div>
             </div>
           </form>
+        ) : null}
+
+        {isCustomerCreate && customerReviewMessage ? (
+          <ResultBlock title="Customer record review" testId={testId("customer-record-review")}>
+            <p className="text-sm leading-6 text-slate-700">{customerReviewMessage}</p>
+          </ResultBlock>
         ) : null}
 
         {!isAgreementWizardAssistant && userFacingPanel.feedback ? (
@@ -2349,7 +2375,7 @@ export default function StartWithAIAssistant({
               ) : null}
             </div>
           </ResultBlock>
-        ) : !isAgreementWizardAssistant && !isFieldAwareDescriptionMode ? (
+        ) : !isAgreementWizardAssistant && !isFieldAwareDescriptionMode && !isCustomerCreate ? (
           <ResultBlock title={userFacingPanel.nextActionTitle || "Next Action"}>
             <div
               className="text-sm font-medium text-slate-800"
@@ -2371,7 +2397,7 @@ export default function StartWithAIAssistant({
           </ResultBlock>
         ) : null}
 
-        {!isAgreementWizardAssistant && !isFieldAwareDescriptionMode && userFacingPanel.nextGuidance ? (
+        {!isAgreementWizardAssistant && !isFieldAwareDescriptionMode && !isCustomerCreate && userFacingPanel.nextGuidance ? (
           <ResultBlock
             title={userFacingPanel.nextGuidanceTitle || "What happens next"}
             testId={testId("start-with-ai-next-guidance")}

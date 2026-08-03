@@ -244,6 +244,7 @@ export default function AddressAutocomplete({
   placeholder = "Start typing an address...",
   disabled = false,
   inputId,
+  inputRef = null,
   testId = "",
   inputClassName = "",
   suggestionsClassName = "",
@@ -493,6 +494,7 @@ export default function AddressAutocomplete({
     <div className="relative w-full" data-testid={testId || undefined}>
       <div className="relative">
         <input
+          ref={inputRef}
           id={inputId}
           aria-label="Google address search"
           autoComplete="off"

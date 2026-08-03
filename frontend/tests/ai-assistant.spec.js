@@ -269,6 +269,9 @@ test('customer creation uses one contractor-scoped Project Assistant dock', asyn
   await expect(dock).not.toContainText('Explain customer next steps');
   await expect(dock).not.toContainText('agreement is nearly ready');
   await expect(dock.getByRole('button', { name: 'Close', exact: true })).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(dock).not.toBeVisible();
+  await expect(page.getByTestId('assistant-dock-open-button')).toBeFocused();
 });
 
 test('customer creation opens the same scoped assistant on narrow screens', async ({ page }) => {
@@ -284,6 +287,110 @@ test('customer creation opens the same scoped assistant on narrow screens', asyn
   await expect(sheet.getByRole('button', { name: 'Close', exact: true })).toHaveCount(1);
   await page.getByTestId('assistant-mobile-sheet-close').click();
   await expect(sheet).not.toBeVisible();
+});
+
+test('customer create assistant tracks safe live field state and focuses the next field', async ({ page }) => {
+  await installBaseAuthMocks(page);
+  let customerCreateRequests = 0;
+  await page.route('**/api/projects/homeowners/', async (route) => {
+    if (route.request().method() === 'POST') customerCreateRequests += 1;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 912, full_name: 'QA Homeowner' }) });
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/app/customers/new', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').click();
+
+  const dock = page.getByTestId('assistant-desktop-dock');
+  await expect(dock).toContainText('Create a complete customer record');
+  await expect(dock.getByTestId('customer-record-status')).toBeVisible();
+  await expect(dock.getByTestId('customer-status-full_name')).toContainText('Missing');
+  await expect(dock.getByTestId('customer-status-company_name')).toContainText('Optional');
+  await expect(dock).not.toContainText('Open the next step');
+  await expect(dock).not.toContainText(/funding|payment/i);
+  await page.screenshot({ path: 'test-results/customer-assistant-empty.png', fullPage: true });
+
+  await dock.getByTestId('customer-assistant-next-action').click();
+  await expect(page.locator('input[name="full_name"]')).toBeFocused();
+  await page.locator('input[name="full_name"]').fill('QA Homeowner');
+  await expect(dock.getByTestId('customer-status-full_name')).toContainText('Complete');
+
+  await dock.getByTestId('customer-assistant-next-action').click();
+  await expect(page.locator('input[name="email"]')).toBeFocused();
+  await page.locator('input[name="email"]').fill('invalid-email');
+  await expect(dock.getByTestId('customer-status-email')).toContainText('Invalid');
+  await page.locator('input[name="email"]').fill('qa@example.com');
+  await expect(dock.getByTestId('customer-status-email')).toContainText('Complete');
+
+  await page.locator('input[name="phone_number"]').fill('5555551212');
+  await page.locator('#mhb-customerform-290').fill('101 Main St');
+  await expect(dock.getByTestId('customer-status-address')).toContainText('Incomplete');
+  await page.screenshot({ path: 'test-results/customer-assistant-partial.png', fullPage: true });
+  await page.locator('input[name="city"]').fill('Austin');
+  await page.locator('select[name="state"]').selectOption('TX');
+  await expect(dock.getByTestId('customer-status-address')).toContainText('Complete');
+  await expect(dock.getByTestId('customer-assistant-next-action')).toContainText('Review and create customer');
+  await expect(dock).not.toContainText('Create estimate');
+  await page.screenshot({ path: 'test-results/customer-assistant-ready.png', fullPage: true });
+
+  await dock.getByLabel('Ask Project Assistant').fill('Review this customer record before I save it.');
+  await dock.getByTestId('start-with-ai-submit-dock').click();
+  await expect(dock.getByTestId('customer-record-review-dock')).toContainText('not saved yet');
+  expect(customerCreateRequests).toBe(0);
+
+  await dock.getByTestId('customer-assistant-next-action').click();
+  await expect(page.getByRole('button', { name: 'Create Customer', exact: true })).toBeFocused();
+});
+
+for (const width of [900, 390]) {
+  test(`customer create assistant has no document overflow at ${width}px`, async ({ page }) => {
+    await installBaseAuthMocks(page);
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await page.goto('/app/customers/new', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('assistant-dock-open-button').click();
+    await expect(page.getByTestId('assistant-mobile-sheet')).toBeVisible();
+    if (width === 390) await page.screenshot({ path: 'test-results/customer-assistant-390.png', fullPage: true });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+    expect(overflow).toBe(false);
+  });
+}
+
+test('customer creation still issues exactly one request and follows the existing redirect', async ({ page }) => {
+  await installBaseAuthMocks(page);
+  let customerCreateRequests = 0;
+  await page.route('**/api/projects/homeowners/', async (route) => {
+    if (route.request().method() === 'POST') customerCreateRequests += 1;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 912, full_name: 'QA Homeowner' }) });
+  });
+  await page.goto('/app/customers/new', { waitUntil: 'domcontentloaded' });
+  await page.locator('input[name="full_name"]').fill('QA Homeowner');
+  await page.locator('input[name="email"]').fill('qa@example.com');
+  await page.locator('input[name="phone_number"]').fill('5555551212');
+  await page.locator('#mhb-customerform-290').fill('101 Main St');
+  await page.locator('input[name="city"]').fill('Austin');
+  await page.locator('select[name="state"]').selectOption('TX');
+  await page.locator('form[novalidate]').evaluate((form) => form.requestSubmit());
+  await expect(page).toHaveURL(/\/app\/customers$/);
+  expect(customerCreateRequests).toBe(1);
+});
+
+test('failed customer creation keeps unsaved assistant context and form values', async ({ page }) => {
+  await installBaseAuthMocks(page);
+  await page.route('**/api/projects/homeowners/', async (route) => {
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ email: ['Already exists.'] }) });
+  });
+  await page.goto('/app/customers/new', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('assistant-dock-open-button').click();
+  await page.locator('input[name="full_name"]').fill('QA Homeowner');
+  await page.locator('input[name="email"]').fill('qa@example.com');
+  await page.locator('input[name="phone_number"]').fill('5555551212');
+  await page.locator('#mhb-customerform-290').fill('101 Main St');
+  await page.locator('input[name="city"]').fill('Austin');
+  await page.locator('select[name="state"]').selectOption('TX');
+  await page.locator('form[novalidate]').evaluate((form) => form.requestSubmit());
+  await expect(page).toHaveURL(/\/app\/customers\/new$/);
+  await expect(page.locator('input[name="full_name"]')).toHaveValue('QA Homeowner');
+  await expect(page.getByTestId('assistant-desktop-dock')).toContainText('The customer was not created');
+  await expect(page.getByTestId('assistant-desktop-dock')).not.toContainText('Create estimate');
 });
 
 // ─── Templates Assistant: creation intent must never reach the orchestrator ───

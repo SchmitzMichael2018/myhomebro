@@ -3,16 +3,18 @@
 // Still posts to canonical /projects/homeowners/
 // v2026-02-11 — Add Company Name field for subcontractor / GC customers
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import toast from "react-hot-toast";
 import AddressAutocomplete from "./AddressAutocomplete.jsx";
+import { useAssistantDock } from "./AssistantDock.jsx";
 import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
   mergeAssistantFields,
 } from "../lib/assistantHandoff.js";
+import { buildCustomerFormStatus } from "../lib/customerCreateAssistant.js";
 
 const US_STATES = [
   ["AL","Alabama"],["AK","Alaska"],["AZ","Arizona"],["AR","Arkansas"],["CA","California"],["CO","Colorado"],["CT","Connecticut"],["DE","Delaware"],
@@ -32,6 +34,7 @@ function isValidUSPhone(input){const d=String(input||"").replace(/\D/g,"");retur
 export default function CustomerForm(){
   const location = useLocation();
   const navigate = useNavigate();
+  const { updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
 
   // ✅ App route targets
   const LIST_ROUTE = "/app/customers";
@@ -52,6 +55,7 @@ export default function CustomerForm(){
   });
 
   const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [assistantBanner, setAssistantBanner] = useState("");
   const assistantHandoff = useMemo(() => getAssistantHandoff(location.state), [location.state]);
   const assistantHandoffSignature = useMemo(
@@ -59,6 +63,51 @@ export default function CustomerForm(){
     [assistantHandoff]
   );
   const appliedAssistantSignatureRef = useRef("");
+  const fieldRefs = useRef({});
+
+  const customerFormStatus = useMemo(
+    () => buildCustomerFormStatus(form, { isSaving, hasSaveError: Boolean(saveError) }),
+    [form, isSaving, saveError]
+  );
+
+  const focusCustomerField = useCallback((fieldName) => {
+    const field = fieldRefs.current[fieldName];
+    if (!field) return false;
+    field.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => field.focus(), 0);
+    return true;
+  }, []);
+
+  const handleAssistantAction = useCallback((action = {}) => {
+    const actionKey = action.assistant_action_key || action.action_key;
+    const targets = {
+      focus_customer_full_name: "full_name",
+      focus_customer_email: "email",
+      focus_customer_phone: "phone_number",
+      focus_customer_address: "street_address",
+      review_customer_form: "submit",
+    };
+    return targets[actionKey] ? focusCustomerField(targets[actionKey]) : false;
+  }, [focusCustomerField]);
+
+  useEffect(() => {
+    updateAssistantContext({
+      current_route: "/app/customers/new",
+      audience: "contractor",
+      workspace: "customer_create",
+      workspace_mode: "customer_create",
+      entity_type: "customer",
+      entity_id: null,
+      presentation: "dock",
+      record_state: customerFormStatus.lifecycle,
+      customer_form_status: customerFormStatus,
+    });
+  }, [customerFormStatus, updateAssistantContext]);
+
+  useEffect(() => {
+    updateAssistantOnAction(handleAssistantAction);
+    return () => updateAssistantOnAction(null);
+  }, [handleAssistantAction, updateAssistantOnAction]);
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "zip_code") return setForm((p) => ({ ...p, zip_code: formatZip(value) }));
@@ -140,6 +189,7 @@ export default function CustomerForm(){
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSaveError("");
 
     if (!(form.street_address || "").trim()) return toast.error("Street address is required.");
     if (!(form.city || "").trim()) return toast.error("City is required.");
@@ -153,6 +203,7 @@ export default function CustomerForm(){
       toast.success("Customer created successfully!");
       navigate(LIST_ROUTE);
     } catch (err) {
+      setSaveError(parseError(err));
       const status = err?.response?.status;
 
       if (status === 403) {
@@ -210,6 +261,7 @@ export default function CustomerForm(){
             <div>
               <label htmlFor="mhb-customerform-226" className="block text-sm font-medium text-gray-700">Full Name</label>
               <input id="mhb-customerform-226"
+                ref={(node) => { fieldRefs.current.full_name = node; }}
                 name="full_name"
                 value={form.full_name}
                 onChange={handleChange}
@@ -222,6 +274,7 @@ export default function CustomerForm(){
             <div>
               <label htmlFor="mhb-customerform-238" className="block text-sm font-medium text-gray-700">Email</label>
               <input id="mhb-customerform-238"
+                ref={(node) => { fieldRefs.current.email = node; }}
                 name="email"
                 type="email"
                 value={form.email}
@@ -235,6 +288,7 @@ export default function CustomerForm(){
             <div>
               <label htmlFor="mhb-customerform-251" className="block text-sm font-medium text-gray-700">Phone Number</label>
               <input id="mhb-customerform-251"
+                ref={(node) => { fieldRefs.current.phone_number = node; }}
                 name="phone_number"
                 type="tel"
                 value={form.phone_number}
@@ -275,6 +329,7 @@ export default function CustomerForm(){
               <label htmlFor="mhb-customerform-290" className="block text-sm font-medium text-gray-700">Street Address</label>
               <AddressAutocomplete
                 inputId="mhb-customerform-290"
+                inputRef={(node) => { fieldRefs.current.street_address = node; }}
                 value={form.street_address}
                 onChangeText={(text) => setForm((p) => ({ ...p, street_address: text }))}
                 onSelect={(a) => {
@@ -380,6 +435,7 @@ export default function CustomerForm(){
 
           <button
             type="submit"
+            ref={(node) => { fieldRefs.current.submit = node; }}
             disabled={isSaving}
             className="ml-3 py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm shadow disabled:bg-gray-400"
           >

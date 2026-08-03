@@ -26,6 +26,14 @@ describe("Project Assistant route context", () => {
     });
   });
 
+  it("preserves the actual customer portal audience and workspace", () => {
+    expect(resolveProjectAssistantIdentity("/customer-portal/projects/42")).toMatchObject({
+      audience: "customer",
+      workspace: "customer_portal",
+      entity_type: null,
+    });
+  });
+
   it("clears stale agreement and lead state from customer creation", () => {
     const identity = resolveProjectAssistantIdentity("/app/customers/new");
     expect(enforceAssistantRouteScope({

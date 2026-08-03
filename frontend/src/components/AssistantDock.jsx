@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowRight, ChevronDown, ChevronUp, ClipboardCopy, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, ChevronUp, CircleAlert, CircleDashed, ClipboardCopy, PanelRightClose, PanelRightOpen, Sparkles, Wand2 } from "lucide-react";
 
 import StartWithAIAssistant from "./StartWithAIAssistant.jsx";
 import { saferAssistantActionLabel } from "./ProjectAssistantExperience.jsx";
@@ -9,6 +9,7 @@ import { buildAiContext } from "../lib/aiContext.js";
 import { checkJobHealth } from "../lib/jobHealthMonitor.js";
 import { draftCheckIn, draftSignatureFollowUp, draftMilestoneUpdate } from "../lib/actionDrafter.js";
 import api from "../api.js";
+import { resolveCustomerNextAction } from "../lib/customerCreateAssistant.js";
 import {
   enforceAssistantRouteScope,
   resolveProjectAssistantIdentity,
@@ -653,6 +654,75 @@ function JobHealthPanel({ flags, onNavigate }) {
   );
 }
 
+const CUSTOMER_STATUS_ROWS = [
+  ["full_name", "Name"],
+  ["email", "Email"],
+  ["phone", "Phone"],
+  ["address", "Address"],
+  ["company_name", "Company name"],
+  ["status", "Status"],
+];
+
+function customerStatusLabel(key, value, formStatus) {
+  if (key === "status" && value === "complete") return formStatus.status_label || "Complete";
+  if (value === "optional_empty") return "Optional";
+  if (value === "incomplete") return "Incomplete";
+  if (value === "invalid") return "Invalid";
+  if (value === "complete") return "Complete";
+  return "Missing";
+}
+
+function CustomerCreateDockSummary({ context, onAction }) {
+  const formStatus = context?.customer_form_status || {};
+  const nextAction = resolveCustomerNextAction(formStatus);
+
+  return (
+    <div className="mb-4 space-y-4" data-testid="customer-create-assistant-summary">
+      <div>
+        <h2 className="text-lg font-bold text-slate-900">Create a complete customer record</h2>
+        <p className="mt-1 text-sm leading-6 text-slate-600">
+          Add accurate contact and address details so this customer can be used for estimates, agreements, and projects. Current entries are unsaved until you create the customer.
+        </p>
+      </div>
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4" aria-labelledby="customer-record-status-title">
+        <h3 id="customer-record-status-title" className="text-sm font-bold text-slate-900">Customer record status</h3>
+        <dl className="mt-3 space-y-2" data-testid="customer-record-status">
+          {CUSTOMER_STATUS_ROWS.map(([key, label]) => {
+            const value = formStatus[key] || (key === "company_name" ? "optional_empty" : "missing");
+            const statusLabel = customerStatusLabel(key, value, formStatus);
+            const StatusIcon = value === "complete" ? CheckCircle2 : value === "invalid" || value === "incomplete" ? CircleAlert : CircleDashed;
+            return (
+              <div key={key} data-testid={`customer-status-${key}`} className="flex items-center justify-between gap-3 text-sm">
+                <dt className="font-medium text-slate-700">{label}</dt>
+                <dd className="inline-flex items-center gap-1.5 font-semibold text-slate-800">
+                  <StatusIcon className="h-4 w-4" aria-hidden="true" />
+                  {statusLabel}
+                </dd>
+              </div>
+            );
+          })}
+        </dl>
+      </section>
+      <section aria-labelledby="customer-next-action-title">
+        <h3 id="customer-next-action-title" className="text-sm font-bold text-slate-900">Next action</h3>
+        {formStatus.lifecycle === "error" ? <p className="mt-1 text-sm text-rose-700">The customer was not created. Review the form and try again.</p> : null}
+        <button
+          type="button"
+          data-testid="customer-assistant-next-action"
+          disabled={nextAction.disabled}
+          onClick={() => onAction?.({ assistant_action_key: nextAction.actionKey, source: "customer_status" })}
+          className="mt-2 w-full rounded-xl bg-slate-900 px-4 py-3 text-left text-sm font-bold text-white hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-400"
+        >
+          Next: {nextAction.label}
+        </button>
+      </section>
+      <div className="text-xs leading-5 text-slate-500">
+        Try asking: “What customer details are still missing?” or “Review this customer record before I save it.”
+      </div>
+    </div>
+  );
+}
+
 // ── Desktop dock shell ────────────────────────────────────────────────────────
 
 function DesktopAssistantDock({
@@ -737,6 +807,7 @@ function DesktopAssistantDock({
                 flags={healthFlags}
                 onNavigate={(route) => { navigate(route); onClose(); }}
               />
+              {isCustomerCreate ? <CustomerCreateDockSummary context={context} onAction={onAction} /> : null}
               <StartWithAIAssistant
                 key={`${context?.workspace_mode || context?.page || "general"}:${
                   context?.current_route || ""
@@ -772,6 +843,7 @@ function MobileAssistantSheet({ open, onClose, title, context, onAction }) {
           <button type="button" data-testid="assistant-mobile-sheet-close" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <CustomerCreateDockSummary context={context} onAction={onAction} />
           <StartWithAIAssistant mode="dock" context={context} onAction={onAction} hideContextHeader />
         </div>
       </> : isMarketing && !showQuickCapture ? <>
@@ -794,6 +866,7 @@ export function AssistantDockProvider({ children }) {
   const [pageAssistantOnAction, setPageAssistantOnAction] = useState(null);
   const [pageAssistantContext, setPageAssistantContext] = useState(routeContext);
   const [healthFlags, setHealthFlags] = useState([]);
+  const returnFocusRef = useRef(null);
 
   // Fetch job health data when the dock opens in agreements workspace mode
   useEffect(() => {
@@ -838,6 +911,9 @@ export function AssistantDockProvider({ children }) {
 
   const openAssistant = useCallback(
     (options = {}) => {
+      if (routeContext.workspace_mode === "customer_create") {
+        returnFocusRef.current = document.activeElement;
+      }
       setOpen(true);
       setMinimized(false);
       const optionContext = sanitizeContextForWorkspace(options.context || routeContext, routeContext.workspace_mode);
@@ -915,7 +991,22 @@ export function AssistantDockProvider({ children }) {
   const closeAssistant = useCallback(() => {
     setOpen(false);
     setMinimized(false);
+    const returnTarget = returnFocusRef.current;
+    returnFocusRef.current = null;
+    if (returnTarget?.focus) window.setTimeout(() => returnTarget.focus(), 0);
   }, []);
+
+  useEffect(() => {
+    if (!open || routeWorkspaceMode !== "customer_create") return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeAssistant();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [closeAssistant, open, routeWorkspaceMode]);
 
   const minimizeAssistant = useCallback(() => {
     setMinimized((prev) => !prev);
