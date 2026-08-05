@@ -424,6 +424,71 @@ test("Create Estimate customer picker paginates, searches, and preserves selecti
   await page.screenshot({ path: "test-results/estimate-customer-picker-alphabet.png", fullPage: true });
 });
 
+for (const width of [1440, 900, 390]) {
+  test(`Create Estimate gives long-form project details adequate space at ${width}px`, async ({ page }) => {
+    let createCount = 0;
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 950 });
+    await mockDashboard(page, {
+      onProposalCreate: () => {
+        createCount += 1;
+      },
+    });
+    await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+    await page.getByTestId("dashboard-quick-action-create-estimate").click({ force: true });
+    await page.getByTestId("dashboard-estimate-customer-101").click();
+
+    const property = page.getByTestId("dashboard-estimate-existing-property");
+    const title = page.getByTestId("dashboard-estimate-existing-title");
+    const description = page.getByTestId("dashboard-estimate-existing-description");
+    const descriptionRow = page.getByTestId("dashboard-estimate-existing-description-row");
+    const detailsPanel = page.getByTestId("dashboard-estimate-existing-details-panel");
+    const customerPanel = page.getByTestId("dashboard-estimate-customer-panel");
+    const schedule = page.getByTestId("dashboard-estimate-existing-scheduling-grid");
+    const scheduleNote = page.getByTestId("dashboard-estimate-existing-scheduling-note");
+
+    await property.fill("120 Oak Street, Austin, TX, 78701");
+    await title.fill("Whole-home renovation estimate");
+    await description.fill("Kitchen and bath renovation.\nPreserve the existing floors.\nCoordinate work around customer access.");
+    await description.press("Enter");
+    await description.type("Include alternate cabinet pricing.");
+
+    await expect(property).toHaveValue("120 Oak Street, Austin, TX, 78701");
+    await expect(title).toHaveValue("Whole-home renovation estimate");
+    await expect(description).toHaveValue(/Kitchen and bath renovation\.\nPreserve the existing floors\.[\s\S]*Include alternate cabinet pricing\./);
+    expect(createCount).toBe(0);
+
+    const descriptionBox = await description.boundingBox();
+    const descriptionRowBox = await descriptionRow.boundingBox();
+    const scheduleBox = await schedule.boundingBox();
+    const scheduleNoteBox = await scheduleNote.boundingBox();
+    expect(descriptionBox.height).toBeGreaterThanOrEqual(176);
+    expect(descriptionBox.width / descriptionRowBox.width).toBeGreaterThanOrEqual(0.98);
+    expect(scheduleNoteBox.width / (scheduleBox.width - 24)).toBeGreaterThanOrEqual(0.95);
+    await expect(schedule).toHaveAttribute("aria-describedby", "dashboard-estimate-existing-scheduling-note");
+
+    if (width === 1440) {
+      const customerBox = await customerPanel.boundingBox();
+      const detailsBox = await detailsPanel.boundingBox();
+      expect(Math.abs(customerBox.y - detailsBox.y)).toBeLessThanOrEqual(2);
+      expect(detailsBox.width).toBeGreaterThan(customerBox.width);
+      expect(descriptionBox.width).toBeGreaterThan(600);
+    } else if (width === 900) {
+      expect(descriptionBox.width).toBeGreaterThan(700);
+    } else {
+      expect(descriptionBox.width).toBeGreaterThan(280);
+    }
+
+    const modal = page.getByRole("dialog", { name: "Create Estimate" });
+    expect(await modal.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+    await page.getByTestId("dashboard-estimate-launch").scrollIntoViewIfNeeded();
+    await expect(page.getByTestId("dashboard-estimate-launch")).toBeVisible();
+
+    const suffix = width === 1440 ? "desktop" : `${width}px`;
+    await page.screenshot({ path: `test-results/create-estimate-layout-${suffix}.png`, fullPage: true });
+  });
+}
+
 for (const width of [900, 390]) {
   test(`Create Estimate customer picker remains bounded and reachable at ${width}px`, async ({ page }) => {
     const directory = Array.from({ length: 12 }, (_, index) => ({

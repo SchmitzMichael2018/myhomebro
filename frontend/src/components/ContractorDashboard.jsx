@@ -841,7 +841,7 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     <Modal
       isOpen={isOpen}
       onRequestClose={onClose}
-      className="mx-auto mt-10 w-[94vw] max-w-4xl overflow-hidden rounded-3xl border border-slate-700 bg-[#071a31] text-white shadow-[0_30px_90px_rgba(2,8,23,0.55)] outline-none"
+      className="mx-auto mt-10 w-[94vw] max-w-6xl overflow-hidden rounded-3xl border border-slate-700 bg-[#071a31] text-white shadow-[0_30px_90px_rgba(2,8,23,0.55)] outline-none"
       overlayClassName="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/75 px-3 py-6"
       contentLabel="Create Estimate"
     >
@@ -891,8 +891,8 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
         </div>
 
         {mode === "existing" ? (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
-            <div className="rounded-2xl border border-white/10 bg-white/7 p-4">
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,0.76fr)_minmax(0,1.24fr)]">
+            <div className="rounded-2xl border border-white/10 bg-white/7 p-4" data-testid="dashboard-estimate-customer-panel">
               <label className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/72" htmlFor="dashboard-estimate-customer-search">
                 Customer
               </label>
@@ -973,7 +973,12 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
                 </div>
               ) : null}
 
-              <div className="mt-3 min-h-52 space-y-2" role="radiogroup" aria-label="Existing customers" aria-busy={loadingCustomers}>
+              <div
+                className={`mt-3 space-y-2 ${customerCount > 1 ? "min-h-52" : ""}`}
+                role="radiogroup"
+                aria-label="Existing customers"
+                aria-busy={loadingCustomers}
+              >
                 {loadingCustomers ? (
                   <div className="rounded-xl border border-dashed border-white/14 px-3 py-6 text-center text-sm font-semibold text-sky-100/70" role="status" aria-live="polite">
                     Loading customers...
@@ -1067,12 +1072,21 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
               ) : null}
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/7 p-4">
-              <div className="grid gap-4">
+            <div className="rounded-2xl border border-white/10 bg-white/7 p-4" data-testid="dashboard-estimate-existing-details-panel">
+              <div className="grid gap-4 md:grid-cols-2">
                 <FieldInput label="Property Address" name="property_address" value={existingForm.property_address} onChange={updateExisting} testId="dashboard-estimate-existing-property" />
                 <FieldInput label="Project Title" name="project_title" value={existingForm.project_title} onChange={updateExisting} required testId="dashboard-estimate-existing-title" />
                 <SchedulingFields form={existingForm} onChange={updateExisting} prefix="existing" />
-                <FieldTextarea label="Project Description" name="project_description" value={existingForm.project_description} onChange={updateExisting} testId="dashboard-estimate-existing-description" />
+                <div className="md:col-span-2" data-testid="dashboard-estimate-existing-description-row">
+                  <FieldTextarea
+                    label="Project Description"
+                    name="project_description"
+                    value={existingForm.project_description}
+                    onChange={updateExisting}
+                    placeholder="Describe the requested work, known conditions, customer priorities, and any important constraints."
+                    testId="dashboard-estimate-existing-description"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -1086,7 +1100,14 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
               <FieldInput label="Project Title" name="project_title" value={newForm.project_title} onChange={updateNew} required testId="dashboard-estimate-new-title" />
               <SchedulingFields form={newForm} onChange={updateNew} prefix="new" />
               <div className="md:col-span-2">
-                <FieldTextarea label="Project Description" name="project_description" value={newForm.project_description} onChange={updateNew} testId="dashboard-estimate-new-description" />
+                <FieldTextarea
+                  label="Project Description"
+                  name="project_description"
+                  value={newForm.project_description}
+                  onChange={updateNew}
+                  placeholder="Describe the requested work, known conditions, customer priorities, and any important constraints."
+                  testId="dashboard-estimate-new-description"
+                />
               </div>
             </div>
           </div>
@@ -1122,7 +1143,13 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
 
 function SchedulingFields({ form, onChange, prefix }) {
   return (
-    <div className="grid gap-4 rounded-xl border border-white/10 bg-slate-950/20 p-3 md:col-span-2 md:grid-cols-3">
+    <div
+      className="grid gap-4 rounded-xl border border-white/10 bg-slate-950/20 p-3 md:col-span-2 md:grid-cols-3"
+      role="group"
+      aria-label="Project scheduling"
+      aria-describedby={`dashboard-estimate-${prefix}-scheduling-note`}
+      data-testid={`dashboard-estimate-${prefix}-scheduling-grid`}
+    >
       <FieldSelect
         label="Project Start"
         name="project_start_type"
@@ -1165,9 +1192,13 @@ function SchedulingFields({ form, onChange, prefix }) {
         disabled={form.project_completion_type !== "specific_date"}
         testId={`dashboard-estimate-${prefix}-completion-date`}
       />
-      <div className="flex items-end text-xs font-semibold leading-5 text-sky-100/68">
+      <p
+        id={`dashboard-estimate-${prefix}-scheduling-note`}
+        className="rounded-lg border border-sky-200/10 bg-sky-100/5 px-3 py-2 text-xs font-semibold leading-5 text-sky-100/68 md:col-span-3"
+        data-testid={`dashboard-estimate-${prefix}-scheduling-note`}
+      >
         Structured scheduling feeds later milestone planning and Project Assistant analysis.
-      </div>
+      </p>
     </div>
   );
 }
@@ -1220,7 +1251,7 @@ function FieldTextarea({ label, testId, required = false, ...props }) {
         {...props}
         required={required}
         data-testid={testId}
-        className="mt-2 min-h-[112px] w-full rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
+        className="mt-2 min-h-44 w-full resize-y overflow-x-hidden rounded-xl border border-white/12 bg-slate-950/35 px-3 py-2.5 text-sm font-semibold leading-6 text-white placeholder:text-sky-100/55 focus:border-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
       />
     </label>
   );
