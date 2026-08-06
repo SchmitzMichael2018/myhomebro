@@ -15,6 +15,13 @@ export default function DateField({
   required = false,
   disabled = false,
   className = "",
+  pickerLabel = "Open calendar",
+  clearLabel = "",
+  onClear = null,
+  testId = "",
+  describedBy = "",
+  invalid = false,
+  buttonClassName = "",
   debug = false,   // set true to show a fuchsia outline for debugging
 }) {
   const inputRef = useRef(null);
@@ -36,7 +43,7 @@ export default function DateField({
             width: 1.8rem; height: 1.8rem;
           }
           [data-datefield] input[type="date"] {
-            padding-right: 2.9rem;
+            padding-right: ${onClear && value ? "5.2rem" : "2.9rem"};
           }
         `}
       </style>
@@ -52,15 +59,32 @@ export default function DateField({
         max={max}
         required={required}
         disabled={disabled}
+        aria-describedby={describedBy || undefined}
+        aria-invalid={invalid || undefined}
+        data-testid={testId || undefined}
         className={`w-full border rounded px-3 py-2 h-10 ${className}`}
       />
+
+      {onClear && value ? (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label={clearLabel || `Clear ${name || "date"}`}
+          disabled={disabled}
+          className={`absolute right-11 top-1/2 z-10 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded text-current opacity-75 hover:bg-white/10 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-35 ${buttonClassName}`}
+          title={clearLabel || "Clear date"}
+        >
+          <span aria-hidden="true" className="text-lg leading-none">×</span>
+        </button>
+      ) : null}
 
       <button
         type="button"
         onClick={openPicker}
-        aria-label="Open calendar"
-        className={`absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-8 h-8 rounded text-gray-600 hover:text-gray-800 z-50 ${debug ? "ring-2 ring-fuchsia-500" : ""}`}
-        title="Open calendar"
+        aria-label={pickerLabel}
+        disabled={disabled}
+        className={`absolute right-1 top-1/2 z-10 inline-flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-gray-600 hover:bg-black/5 hover:text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current disabled:cursor-not-allowed disabled:opacity-35 ${buttonClassName} ${debug ? "ring-2 ring-fuchsia-500" : ""}`}
+        title={pickerLabel}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M7 2v3M17 2v3M3 9h18M5 6h14a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2z"

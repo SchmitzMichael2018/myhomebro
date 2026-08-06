@@ -489,6 +489,96 @@ for (const width of [1440, 900, 390]) {
   });
 }
 
+for (const appearance of ["dark", "light"]) {
+  for (const width of [1440, 900, 390]) {
+    test(`Create Estimate native date controls work in ${appearance} appearance at ${width}px`, async ({ page }) => {
+      let createCount = 0;
+      let createPayload = null;
+      await page.addInitScript((theme) => {
+        window.localStorage.setItem("myhomebro.appearance.v1", theme);
+        window.__estimateDatePickerCalls = [];
+        HTMLInputElement.prototype.showPicker = function showPickerForTest() {
+          window.__estimateDatePickerCalls.push(this.name);
+          this.focus();
+        };
+      }, appearance);
+      await page.setViewportSize({ width, height: width === 390 ? 844 : 950 });
+      await mockDashboard(page, {
+        proposalId: 710,
+        onProposalCreate: (payload) => {
+          createCount += 1;
+          createPayload = payload;
+        },
+      });
+      await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+      await page.getByTestId("dashboard-quick-action-create-estimate").click({ force: true });
+      await page.getByTestId("dashboard-estimate-customer-101").click();
+      await page.getByTestId("dashboard-estimate-existing-title").fill("Scheduled kitchen estimate");
+      await page.getByTestId("dashboard-estimate-existing-description").fill("Preserve cabinets and update counters.");
+      await page.getByTestId("dashboard-estimate-existing-priority").selectOption("required");
+      await page.getByTestId("dashboard-estimate-existing-start-type").selectOption("specific_date");
+      await page.getByTestId("dashboard-estimate-existing-completion-type").selectOption("specific_date");
+
+      const start = page.getByTestId("dashboard-estimate-existing-start-date");
+      const completion = page.getByTestId("dashboard-estimate-existing-completion-date");
+      const startButton = page.getByRole("button", { name: "Choose start date" });
+      const completionButton = page.getByRole("button", { name: "Choose completion date" });
+      await expect(startButton).toBeVisible();
+      await expect(completionButton).toBeVisible();
+
+      await startButton.click();
+      await expect.poll(() => page.evaluate(() => window.__estimateDatePickerCalls)).toContain("project_start_date");
+      await start.fill("2026-09-10");
+      await completion.fill("2026-09-09");
+
+      await page.getByTestId("dashboard-estimate-launch").click();
+      await expect(page.locator("#dashboard-estimate-existing-completion-date-error")).toHaveText(
+        "Completion date cannot be before start date."
+      );
+      await expect(completion).toHaveAttribute("aria-invalid", "true");
+      expect(createCount).toBe(0);
+
+      await completion.fill("2026-09-20");
+      await completionButton.click();
+      await expect.poll(() => page.evaluate(() => window.__estimateDatePickerCalls)).toContain("project_completion_date");
+      await page.getByTestId("dashboard-estimate-customer-101").click();
+      await expect(start).toHaveValue("2026-09-10");
+      await expect(completion).toHaveValue("2026-09-20");
+      await expect(page.getByTestId("dashboard-estimate-existing-title")).toHaveValue("Scheduled kitchen estimate");
+      await expect(page.getByTestId("dashboard-estimate-existing-description")).toHaveValue("Preserve cabinets and update counters.");
+      await expect(page.getByTestId("dashboard-estimate-existing-priority")).toHaveValue("required");
+
+      await page.getByRole("button", { name: "Clear completion date" }).click();
+      await expect(completion).toHaveValue("");
+      await completion.fill("2026-09-21");
+
+      if (appearance === "dark" && width === 1440) {
+        await startButton.focus();
+        await page.screenshot({ path: "test-results/create-estimate-start-date-picker.png", fullPage: true });
+        await completionButton.focus();
+        await page.screenshot({ path: "test-results/create-estimate-completion-date-picker.png", fullPage: true });
+      }
+      if (appearance === "dark" && width === 390) {
+        await completionButton.scrollIntoViewIfNeeded();
+        await completionButton.focus();
+        await page.screenshot({ path: "test-results/create-estimate-date-picker-390px.png", fullPage: true });
+      }
+
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)).toBe(false);
+      await page.getByTestId("dashboard-estimate-launch").click();
+      await expect(page).toHaveURL(/\/app\/proposals\/710$/);
+      expect(createCount).toBe(1);
+      expect(createPayload).toMatchObject({
+        project_start_type: "specific_date",
+        project_start_date: "2026-09-10",
+        project_completion_type: "specific_date",
+        project_completion_date: "2026-09-21",
+        scheduling_priority: "required",
+      });
+    });
+  }
+}
+
 for (const width of [900, 390]) {
   test(`Create Estimate customer picker remains bounded and reachable at ${width}px`, async ({ page }) => {
     const directory = Array.from({ length: 12 }, (_, index) => ({

@@ -45,6 +45,7 @@ import { getContractorNextActions } from "../lib/contractorNextActions.js";
 import { isCaptureInboxEnabled } from "../lib/captureFlags.js";
 import { calculateProfileCompleteness } from "../lib/profileCompleteness.js";
 import { useAssistantDock } from "./AssistantDock.jsx";
+import DateField from "./DateField.jsx";
 import {
   Button,
   EmptyState,
@@ -676,6 +677,7 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   const [saving, setSaving] = useState(false);
   const [customerLoadError, setCustomerLoadError] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const [scheduleErrors, setScheduleErrors] = useState({ existing: {}, new: {} });
   const [customerLoadAttempt, setCustomerLoadAttempt] = useState(0);
   const submissionGuard = useRef(false);
 
@@ -700,6 +702,7 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     setNewForm(emptyDashboardEstimateForm);
     setCustomerLoadError("");
     setSubmitError("");
+    setScheduleErrors({ existing: {}, new: {} });
     submissionGuard.current = false;
   }, [isOpen]);
 
@@ -763,11 +766,19 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   const updateExisting = (event) => {
     const { name, value } = event.target;
     setExistingForm((current) => ({ ...current, [name]: value }));
+    if (name === "project_start_date" || name === "project_completion_date") {
+      setScheduleErrors((current) => ({ ...current, existing: {} }));
+      toast.dismiss("dashboard-estimate-date-error");
+    }
   };
 
   const updateNew = (event) => {
     const { name, value } = event.target;
     setNewForm((current) => ({ ...current, [name]: value }));
+    if (name === "project_start_date" || name === "project_completion_date") {
+      setScheduleErrors((current) => ({ ...current, new: {} }));
+      toast.dismiss("dashboard-estimate-date-error");
+    }
   };
 
   const submit = async (event) => {
@@ -794,6 +805,14 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
     }
     if (form.project_completion_type === "specific_date" && !form.project_completion_date) {
       toast.error("Choose a project completion date.");
+      return;
+    }
+    const dateErrors = validateEstimateScheduleDates(form);
+    if (Object.keys(dateErrors).length) {
+      setScheduleErrors((current) => ({ ...current, [mode]: dateErrors }));
+      toast.error(dateErrors.project_completion_date || dateErrors.project_start_date, {
+        id: "dashboard-estimate-date-error",
+      });
       return;
     }
 
@@ -1076,7 +1095,7 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
               <div className="grid gap-4 md:grid-cols-2">
                 <FieldInput label="Property Address" name="property_address" value={existingForm.property_address} onChange={updateExisting} testId="dashboard-estimate-existing-property" />
                 <FieldInput label="Project Title" name="project_title" value={existingForm.project_title} onChange={updateExisting} required testId="dashboard-estimate-existing-title" />
-                <SchedulingFields form={existingForm} onChange={updateExisting} prefix="existing" />
+                <SchedulingFields form={existingForm} onChange={updateExisting} prefix="existing" errors={scheduleErrors.existing} />
                 <div className="md:col-span-2" data-testid="dashboard-estimate-existing-description-row">
                   <FieldTextarea
                     label="Project Description"
@@ -1098,7 +1117,7 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
               <FieldInput label="Email" name="customer_email" type="email" value={newForm.customer_email} onChange={updateNew} testId="dashboard-estimate-new-email" />
               <FieldInput label="Property Address" name="property_address" value={newForm.property_address} onChange={updateNew} testId="dashboard-estimate-new-property" />
               <FieldInput label="Project Title" name="project_title" value={newForm.project_title} onChange={updateNew} required testId="dashboard-estimate-new-title" />
-              <SchedulingFields form={newForm} onChange={updateNew} prefix="new" />
+              <SchedulingFields form={newForm} onChange={updateNew} prefix="new" errors={scheduleErrors.new} />
               <div className="md:col-span-2">
                 <FieldTextarea
                   label="Project Description"
@@ -1141,7 +1160,31 @@ export function DashboardEstimateModal({ isOpen, onClose, onCreated }) {
   );
 }
 
-function SchedulingFields({ form, onChange, prefix }) {
+function isValidLocalDateString(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+  return candidate.getUTCFullYear() === year
+    && candidate.getUTCMonth() === month - 1
+    && candidate.getUTCDate() === day;
+}
+
+function validateEstimateScheduleDates(form = {}) {
+  const start = String(form.project_start_date || "");
+  const completion = String(form.project_completion_date || "");
+  if (start && !isValidLocalDateString(start)) {
+    return { project_start_date: "Enter a valid start date." };
+  }
+  if (completion && !isValidLocalDateString(completion)) {
+    return { project_completion_date: "Enter a valid completion date." };
+  }
+  if (start && completion && completion < start) {
+    return { project_completion_date: "Completion date cannot be before start date." };
+  }
+  return {};
+}
+
+function SchedulingFields({ form, onChange, prefix, errors = {} }) {
   return (
     <div
       className="grid gap-4 rounded-xl border border-white/10 bg-slate-950/20 p-3 md:col-span-2 md:grid-cols-3"
@@ -1158,13 +1201,15 @@ function SchedulingFields({ form, onChange, prefix }) {
         options={PROJECT_START_OPTIONS}
         testId={`dashboard-estimate-${prefix}-start-type`}
       />
-      <FieldInput
+      <FieldDateInput
         label="Start Date"
         name="project_start_date"
-        type="date"
         value={form.project_start_date}
         onChange={onChange}
         disabled={form.project_start_type !== "specific_date"}
+        error={errors.project_start_date}
+        pickerLabel="Choose start date"
+        clearLabel="Clear start date"
         testId={`dashboard-estimate-${prefix}-start-date`}
       />
       <FieldSelect
@@ -1183,13 +1228,15 @@ function SchedulingFields({ form, onChange, prefix }) {
         options={PROJECT_COMPLETION_OPTIONS}
         testId={`dashboard-estimate-${prefix}-completion-type`}
       />
-      <FieldInput
+      <FieldDateInput
         label="Completion Date"
         name="project_completion_date"
-        type="date"
         value={form.project_completion_date}
         onChange={onChange}
         disabled={form.project_completion_type !== "specific_date"}
+        error={errors.project_completion_date}
+        pickerLabel="Choose completion date"
+        clearLabel="Clear completion date"
         testId={`dashboard-estimate-${prefix}-completion-date`}
       />
       <p
@@ -1199,6 +1246,36 @@ function SchedulingFields({ form, onChange, prefix }) {
       >
         Structured scheduling feeds later milestone planning and Project Assistant analysis.
       </p>
+    </div>
+  );
+}
+
+function FieldDateInput({ label, testId, error = "", pickerLabel, clearLabel, name, value, onChange, disabled }) {
+  const inputId = `${testId}-input`;
+  const errorId = `${testId}-error`;
+  const clearDate = () => onChange({ target: { name, value: "" } });
+
+  return (
+    <div className="block min-w-0">
+      <label htmlFor={inputId} className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/72">
+        {label}
+      </label>
+      <DateField
+        id={inputId}
+        name={name}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        pickerLabel={pickerLabel}
+        clearLabel={clearLabel}
+        onClear={clearDate}
+        testId={testId}
+        describedBy={error ? errorId : ""}
+        invalid={Boolean(error)}
+        className="mt-2 border-white/12 bg-slate-950/35 text-sm font-semibold text-white [color-scheme:dark] focus:border-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 disabled:text-sky-100/50"
+        buttonClassName="text-sky-100 hover:bg-white/10 hover:text-white"
+      />
+      {error ? <p id={errorId} className="mt-1 text-xs font-semibold text-rose-200">{error}</p> : null}
     </div>
   );
 }
