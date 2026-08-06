@@ -743,23 +743,52 @@ function questionAnsweredByEvidence(question, { proposal, draft, photos }) {
   return false;
 }
 
+function clarificationSuggestion(question, { proposal, draft, photos }) {
+  if (!questionAnsweredByEvidence(question, { proposal, draft, photos })) return null;
+  const key = compactText(question.key).toLowerCase();
+  if (key.includes("photo")) return { answer: `${(photos || []).length} supporting photo${(photos || []).length === 1 ? "" : "s"} attached.`, source: "photos", label: "Suggested from photos" };
+  if (key.includes("square") || key.includes("measurement") || key.includes("footage")) {
+    const measurements = Array.isArray(proposal?.measurements) ? proposal.measurements : [];
+    const answer = measurements.map((item) => [item.label, item.quantity, item.unit, item.notes].filter(Boolean).join(" ")).filter(Boolean).join("\n");
+    return { answer, source: "measurements", label: "Suggested from measurements" };
+  }
+  if (key.includes("schedul") || key.includes("date") || key.includes("timeline")) {
+    return { answer: proposalScheduleSummary({ ...proposal, ...draft }), source: "scheduling", label: "Suggested from scheduling" };
+  }
+  const answer = compactText(draft?.included_work || draft?.site_visit_notes || proposal?.project_summary);
+  return answer ? { answer, source: "scope", label: "Suggested from scope notes" } : null;
+}
+
+function clarificationRecord(checklist, key) {
+  return (checklist || []).find((item) => item && typeof item === "object" && item.type === "clarification" && item.key === key) || null;
+}
+
 function buildClarificationRows({ selectedTemplate, proposal, draft, photos }) {
   const checklist = Array.isArray(draft?.quick_checklist) ? draft.quick_checklist : [];
   return templateQuestionRows(selectedTemplate).map((question) => {
     const completeKey = `clarification:${question.key}:complete`;
     const ignoredKey = `clarification:${question.key}:ignored`;
-    const autoComplete = questionAnsweredByEvidence(question, { proposal, draft, photos });
+    const suggestion = clarificationSuggestion(question, { proposal, draft, photos });
+    const record = clarificationRecord(checklist, question.key);
     const manuallyComplete = checklist.includes(completeKey);
-    const ignored = checklist.includes(ignoredKey);
+    const ignored = record?.status === "ignored" || checklist.includes(ignoredKey);
+    const accepted = record?.status === "complete";
+    const reopened = record?.status === "reopened";
+    const legacyComplete = manuallyComplete && !record;
+    const complete = ignored || accepted || legacyComplete;
     return {
       ...question,
       completeKey,
       ignoredKey,
-      autoComplete,
+      suggestion,
+      autoComplete: Boolean(suggestion) && !complete && !reopened,
       manuallyComplete,
       ignored,
-      complete: ignored || manuallyComplete || autoComplete,
-      status: ignored ? "Ignored" : manuallyComplete ? "Complete" : autoComplete ? "Auto-complete" : "Needs Answer",
+      answer: compactText(record?.answer),
+      source: compactText(record?.source || suggestion?.source),
+      sourceLabel: suggestion?.label || "",
+      complete,
+      status: ignored ? "Ignored" : complete ? "Complete" : reopened ? "Reopened" : suggestion ? "Suggested" : "Needs Answer",
       target: question.section || "site",
     };
   });
@@ -1003,6 +1032,10 @@ function Section({ id, active, title, children, description }) {
   );
 }
 
+function clarificationTargetLabel(target) {
+  return ({ measurements: "Open measurements", photos: "Upload photos", documents: "Open documents", scheduling: "View scheduling", scope: "Review scope notes", site: "Open site access" })[target] || "";
+}
+
 function ChecklistCard({ item, onOpen }) {
   return (
     <article
@@ -1129,6 +1162,12 @@ export default function ProposalWorkspacePage() {
   const [customerMatches, setCustomerMatches] = useState([]);
   const [saveAddressToCustomer, setSaveAddressToCustomer] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
+  const [clarificationEdits, setClarificationEdits] = useState({});
+  const [editingClarifications, setEditingClarifications] = useState({});
+  const [savingClarificationKey, setSavingClarificationKey] = useState("");
+  const [clarificationErrors, setClarificationErrors] = useState({});
+  const [showCompletedClarifications, setShowCompletedClarifications] = useState(false);
+  const [showIgnoredClarifications, setShowIgnoredClarifications] = useState(false);
 
   const photos = useMemo(
     () => (proposal?.attachments || []).filter((item) => item.attachment_type === "photo"),
@@ -1167,9 +1206,22 @@ export default function ProposalWorkspacePage() {
     () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
     [proposal, draft, totals, photos, documents, clarificationRows]
   );
+  const sortedClarificationRows = useMemo(() => [...clarificationRows].sort((a, b) => {
+    const rank = { "Needs Answer": 0, Reopened: 0, Suggested: 1, Complete: 2, Ignored: 3 };
+    return (rank[a.status] ?? 4) - (rank[b.status] ?? 4);
+  }), [clarificationRows]);
   const isReadOnlyHistory = Boolean(
     proposal && (compactText(proposal.status).toLowerCase() === "converted" || proposal.linked_agreement_id)
   );
+  useEffect(() => {
+    setClarificationEdits((previous) => {
+      const next = { ...previous };
+      for (const row of clarificationRows) {
+        if (!Object.prototype.hasOwnProperty.call(next, row.key)) next[row.key] = row.answer || row.suggestion?.answer || "";
+      }
+      return next;
+    });
+  }, [clarificationRows]);
   const overviewGroups = useMemo(
     () => buildOverviewGroups({ estimateChecklist, proposal, photos, documents, isReadOnlyHistory }),
     [estimateChecklist, proposal, photos, documents, isReadOnlyHistory]
@@ -1255,6 +1307,9 @@ export default function ProposalWorkspacePage() {
     const lineItems = Array.isArray(proposal.line_items) ? proposal.line_items : [];
     const measurements = Array.isArray(proposal.measurements) ? proposal.measurements : [];
     const attachments = Array.isArray(proposal.attachments) ? proposal.attachments : [];
+    const clarificationAnswers = Object.fromEntries(
+      clarificationRows.filter((row) => row.complete && !row.ignored && row.answer).map((row) => [row.key, row.answer])
+    );
     const classification = normalizeProposalClassificationForAgreement(
       workspaceProposal.project_type,
       workspaceProposal.project_subtype
@@ -1329,6 +1384,8 @@ export default function ProposalWorkspacePage() {
         excluded_work: workspaceProposal.excluded_work || "",
         assumptions: workspaceProposal.assumptions || "",
         allowances: workspaceProposal.allowances || "",
+        clarification_answers: clarificationAnswers,
+        scope_clarifications: clarificationAnswers,
       },
       assistantContext: {
         source: "proposal",
@@ -1418,6 +1475,7 @@ export default function ProposalWorkspacePage() {
     const walkthroughRequested = searchParams.get("walkthrough") === "1";
     if (requestedSection) {
       setActive(WORKSPACE_SECTION_IDS.has(requestedSection) ? requestedSection : "customer");
+      if (WORKSPACE_SECTION_IDS.has(requestedSection)) window.requestAnimationFrame(() => document.getElementById(requestedSection)?.scrollIntoView({ block: "start" }));
     }
     if (fromWalkthrough) {
       const taskKey = searchParams.get("task") || requestedSection || "overview";
@@ -1554,17 +1612,47 @@ export default function ProposalWorkspacePage() {
     }
   }
 
-  async function setClarificationState(row, state) {
+  async function persistClarification(row, status, answer = "") {
     if (blockReadOnlyHistory()) return;
+    const normalizedAnswer = compactText(answer);
+    if (status === "complete" && !normalizedAnswer) {
+      setClarificationErrors((previous) => ({ ...previous, [row.key]: "Enter an answer before saving." }));
+      return;
+    }
     const current = Array.isArray(draft.quick_checklist) ? draft.quick_checklist : [];
-    const withoutRow = current.filter((item) => item !== row.completeKey && item !== row.ignoredKey);
-    const next = state === "complete"
-      ? [...withoutRow, row.completeKey]
-      : state === "ignored"
-        ? [...withoutRow, row.ignoredKey]
-        : withoutRow;
-    patchDraft("quick_checklist", next);
-    await saveProposal({ quick_checklist: next }, "Clarification updated.");
+    const withoutRow = current.filter((item) => item !== row.completeKey && item !== row.ignoredKey && !(item && typeof item === "object" && item.type === "clarification" && item.key === row.key));
+    const record = { type: "clarification", key: row.key, status, answer: normalizedAnswer, source: row.source || row.suggestion?.source || "contractor", updated_at: new Date().toISOString() };
+    const next = [...withoutRow, record];
+    setSavingClarificationKey(row.key);
+    setClarificationErrors((previous) => ({ ...previous, [row.key]: "" }));
+    try {
+      const { data } = await api.patch(`/projects/proposals/${proposalId}/`, { quick_checklist: next });
+      setProposal(data);
+      setDraft((previous) => ({ ...previous, quick_checklist: data.quick_checklist || next }));
+      setClarificationEdits((previous) => ({ ...previous, [row.key]: normalizedAnswer }));
+      setEditingClarifications((previous) => ({ ...previous, [row.key]: status === "reopened" }));
+      if (status === "complete") setShowCompletedClarifications(true);
+      if (status === "ignored") setShowIgnoredClarifications(true);
+      toast.success(status === "reopened" ? "Question reopened." : status === "ignored" ? "Question ignored." : "Answer saved.");
+      if (status === "reopened") window.requestAnimationFrame(() => document.getElementById(`clarification-answer-${row.key}`)?.focus());
+    } catch (error) {
+      console.error(error);
+      setClarificationErrors((previous) => ({ ...previous, [row.key]: error?.response?.data?.detail || "Could not update this clarification." }));
+      toast.error("Could not update this clarification.");
+    } finally {
+      setSavingClarificationKey("");
+    }
+  }
+
+  function ignoreClarification(row) {
+    if (!window.confirm("Ignore this required clarification? Ignored questions count as resolved for estimate readiness.")) return;
+    persistClarification(row, "ignored", clarificationEdits[row.key] || row.answer || "");
+  }
+
+  function openClarificationSource(row) {
+    if (!clarificationTargetLabel(row.target)) return;
+    navigate(`/app/proposals/${proposalId}?section=clarifications`, { replace: true });
+    window.requestAnimationFrame(() => openWorkspaceSection(row.target));
   }
 
   async function addMeasurement(event) {
@@ -2253,33 +2341,59 @@ export default function ProposalWorkspacePage() {
 
           <Section id="clarifications" active={activeStep.key === "site_scope"} title="Clarification Questions">
             <div className="rounded-lg border border-white/10 bg-white/7 p-3 text-sm font-semibold text-sky-100/72" data-testid="proposal-clarification-intro">
-              Questions come from the selected or generated agreement template. Project Assistant auto-completes questions when measurements, photos, notes, or scope already answer them.
+              Questions come from the selected agreement template. Project Assistant may suggest answers from captured context, but the contractor must review and accept them.
+            </div>
+            <div className="mt-3 text-sm font-black text-sky-100/78" data-testid="proposal-clarification-summary" aria-live="polite">
+              {clarificationRows.filter((row) => row.status === "Needs Answer" || row.status === "Reopened").length} need answers · {clarificationRows.filter((row) => row.status === "Suggested").length} suggested · {clarificationRows.filter((row) => row.status === "Ignored").length} ignored
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button type="button" aria-expanded={showCompletedClarifications} onClick={() => setShowCompletedClarifications((value) => !value)} className="rounded-lg border border-white/14 bg-white/8 px-3 py-2 text-xs font-black text-white">{showCompletedClarifications ? "Hide" : "Show"} completed ({clarificationRows.filter((row) => row.status === "Complete").length})</button>
+              <button type="button" aria-expanded={showIgnoredClarifications} onClick={() => setShowIgnoredClarifications((value) => !value)} className="rounded-lg border border-white/14 bg-white/8 px-3 py-2 text-xs font-black text-white">{showIgnoredClarifications ? "Hide" : "Show"} ignored ({clarificationRows.filter((row) => row.status === "Ignored").length})</button>
             </div>
             <div className="mt-4 space-y-3" data-testid="proposal-clarification-questions">
-              {clarificationRows.map((row) => (
-                <article key={row.key} className={`rounded-xl border p-4 ${row.complete ? "border-emerald-200/30 bg-emerald-400/10" : "border-amber-200/30 bg-amber-400/10"}`}>
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-black text-white">{row.label}</h3>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.complete ? "bg-emerald-600 text-white" : "bg-amber-300 text-amber-950"}`} data-testid={`proposal-clarification-status-${row.key}`}>
-                          {row.status}
-                        </span>
+              {sortedClarificationRows.filter((row) => (row.status !== "Complete" || showCompletedClarifications) && (row.status !== "Ignored" || showIgnoredClarifications)).map((row) => {
+                const editable = row.status === "Needs Answer" || row.status === "Reopened" || editingClarifications[row.key];
+                const suggestedAnswer = row.suggestion?.answer || "";
+                const answerValue = clarificationEdits[row.key] ?? row.answer ?? suggestedAnswer;
+                const busy = savingClarificationKey === row.key;
+                const sourceAction = clarificationTargetLabel(row.target);
+                return (
+                  <article key={row.key} data-testid={`proposal-clarification-card-${row.key}`} className={`rounded-xl border p-4 ${row.ignored ? "border-slate-400/25 bg-slate-500/10" : row.complete ? "border-emerald-200/30 bg-emerald-400/10" : "border-amber-200/30 bg-amber-400/10"}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-black text-white">{row.label}</h3>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${row.ignored ? "bg-slate-500 text-white" : row.complete ? "bg-emerald-600 text-white" : "bg-amber-300 text-amber-950"}`} data-testid={`proposal-clarification-status-${row.key}`}>{row.status}</span>
+                        </div>
+                        <p className="mt-2 text-sm font-semibold text-sky-100/74">{row.question}</p>
+                        {row.status === "Suggested" ? (
+                          <div className="mt-3 rounded-lg border border-sky-200/20 bg-sky-400/10 p-3">
+                            <div className="text-xs font-black uppercase tracking-wide text-sky-100">Suggested · {row.sourceLabel}</div>
+                            <p className="mt-2 whitespace-pre-wrap text-sm font-semibold text-white">{suggestedAnswer}</p>
+                            <p className="mt-2 text-xs font-bold text-amber-100">Review this answer before accepting it. This suggestion is unaccepted and does not satisfy readiness.</p>
+                          </div>
+                        ) : null}
+                        {editable ? (
+                          <div className="mt-3">
+                            <label htmlFor={`clarification-answer-${row.key}`} className="text-sm font-black text-white">Answer</label>
+                            <textarea id={`clarification-answer-${row.key}`} data-testid={`proposal-clarification-answer-${row.key}`} rows={3} value={answerValue} onChange={(event) => setClarificationEdits((previous) => ({ ...previous, [row.key]: event.target.value }))} aria-describedby={clarificationErrors[row.key] ? `clarification-error-${row.key}` : undefined} className="mt-1 w-full rounded-lg border border-white/14 bg-slate-950/40 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/40 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/25" placeholder="Enter the contractor-reviewed answer" />
+                            <div className="mt-1 text-xs font-semibold text-sky-100/55">Plain text; line breaks are preserved.</div>
+                          </div>
+                        ) : row.answer ? <p className="mt-3 whitespace-pre-wrap rounded-lg bg-slate-950/30 p-3 text-sm font-semibold text-white">{row.answer}</p> : row.complete ? <p className="mt-3 text-xs font-bold text-amber-100">Previously completed before answer text was supported. Reopen to add an answer.</p> : null}
+                        {clarificationErrors[row.key] ? <p id={`clarification-error-${row.key}`} role="alert" className="mt-2 text-sm font-bold text-rose-200">{clarificationErrors[row.key]}</p> : null}
                       </div>
-                      <p className="mt-2 text-sm font-semibold text-sky-100/74">{row.question}</p>
-                      {row.autoComplete ? (
-                        <p className="mt-2 text-xs font-bold text-emerald-800">Auto-completed from captured estimate details.</p>
-                      ) : null}
                     </div>
-                    <div className="flex shrink-0 flex-wrap gap-2">
-                      <button type="button" onClick={() => setActive(row.target)} className="rounded-lg border border-white/16 bg-white/10 px-3 py-2 text-xs font-black text-white">Jump</button>
-                      <button type="button" data-testid={`proposal-clarification-complete-${row.key}`} onClick={() => setClarificationState(row, "complete")} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white">Mark Complete</button>
-                      <button type="button" onClick={() => setClarificationState(row, "ignored")} className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white">Ignore</button>
-                      <button type="button" onClick={() => setClarificationState(row, "open")} className="rounded-lg border border-white/16 bg-white/10 px-3 py-2 text-xs font-black text-white">Reopen</button>
+                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                      {row.status === "Suggested" && !editable ? <button type="button" disabled={busy} data-testid={`proposal-clarification-accept-${row.key}`} onClick={() => persistClarification(row, "complete", suggestedAnswer)} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>Accept answer</button> : null}
+                      {editable ? <button type="button" disabled={busy} data-testid={`proposal-clarification-save-${row.key}`} onClick={() => persistClarification(row, "complete", answerValue)} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>{busy ? "Saving…" : "Save answer"}</button> : null}
+                      {(row.status === "Suggested" || row.status === "Complete") && !editable ? <button type="button" onClick={() => setEditingClarifications((previous) => ({ ...previous, [row.key]: true }))} className="rounded-lg border border-white/16 bg-white/10 px-3 py-2 text-xs font-black text-white">Edit answer</button> : null}
+                      {(row.status === "Complete" || row.status === "Ignored") ? <button type="button" disabled={busy} data-testid={`proposal-clarification-reopen-${row.key}`} onClick={() => persistClarification(row, "reopened", row.answer || answerValue)} className="rounded-lg border border-white/16 bg-white/10 px-3 py-2 text-xs font-black text-white">Reopen</button> : null}
+                      {!row.complete ? <button type="button" disabled={busy} data-testid={`proposal-clarification-ignore-${row.key}`} onClick={() => ignoreClarification(row)} className="rounded-lg border border-white/16 bg-white/8 px-3 py-2 text-xs font-black text-white">Ignore</button> : null}
+                      {sourceAction ? <button type="button" onClick={() => openClarificationSource(row)} className="rounded-lg border border-white/16 bg-white/8 px-3 py-2 text-xs font-black text-white">{row.status === "Suggested" ? "View source" : sourceAction}</button> : null}
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           </Section>
 

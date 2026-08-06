@@ -816,9 +816,15 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("estimate-workflow-step-site_scope").click();
   await expect(page.getByTestId("proposal-clarification-questions")).toContainText("Square footage");
   await expect(page.getByTestId("proposal-clarification-questions")).toContainText("Material responsibility");
-  await page.getByTestId("proposal-clarification-complete-square_footage").click();
-  await page.getByTestId("proposal-clarification-complete-material_responsibility").click();
-  await page.getByTestId("proposal-clarification-complete-permit_responsibility").click();
+  await page.getByTestId("proposal-clarification-save-square_footage").click();
+  await expect(page.getByText("Enter an answer before saving.")).toBeVisible();
+  await page.getByTestId("proposal-clarification-answer-square_footage").fill("120 square feet");
+  await page.getByTestId("proposal-clarification-save-square_footage").click();
+  await expect(page.getByTestId("proposal-clarification-status-square_footage")).toContainText("Complete");
+  await page.getByTestId("proposal-clarification-answer-material_responsibility").fill("Contractor supplies standard materials.");
+  await page.getByTestId("proposal-clarification-save-material_responsibility").click();
+  await page.getByTestId("proposal-clarification-answer-permit_responsibility").fill("Contractor will confirm permit requirements.");
+  await page.getByTestId("proposal-clarification-save-permit_responsibility").click();
 
   await page.getByTestId("enter-walkthrough-mode").click();
   await expect(page.getByTestId("proposal-walkthrough-mode")).toBeVisible();
@@ -958,4 +964,73 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$200.00");
   await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Demo, prep, and install.");
   await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Crew labor");
+});
+
+test("Clarification Questions support suggestions, editing, navigation, ignore, and reopen", async ({ page }) => {
+  await installBaseMocks(page);
+  await installAgreementWizardMocks(page);
+  let patchCount = 0;
+  let currentProposal = {
+    ...proposal,
+    measurements: [{ id: 91, label: "Floor area", location: "Bathroom", quantity: "120.00", unit: "sq ft", notes: "Measured onsite" }],
+    quick_checklist: [
+      { type: "clarification", key: "permit_responsibility", status: "ignored", answer: "", source: "contractor" },
+    ],
+  };
+  await page.route("**/api/projects/proposals/42/", async (route) => {
+    if (route.request().method() === "PATCH") {
+      patchCount += 1;
+      currentProposal = { ...currentProposal, ...route.request().postDataJSON() };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentProposal) });
+  });
+
+  await page.goto("/app/proposals/42?section=clarifications", { waitUntil: "domcontentloaded" });
+  const squareCard = page.getByTestId("proposal-clarification-card-square_footage");
+  await expect(squareCard).toContainText("Suggested");
+  await expect(squareCard).toContainText("Suggested from measurements");
+  await expect(squareCard).toContainText("Review this answer before accepting it.");
+  await expect(page.getByTestId("proposal-clarification-answer-material_responsibility")).toBeVisible();
+  await page.screenshot({ path: "test-results/clarification-needs-and-suggested.png", fullPage: true });
+  await page.screenshot({ path: "test-results/clarification-auto-suggestion.png", fullPage: true });
+  await page.getByTestId("proposal-clarification-answer-material_responsibility").fill("Contractor supplies finish materials.");
+  await page.getByTestId("proposal-clarification-save-material_responsibility").click();
+  expect(patchCount).toBe(1);
+  await expect(page.getByText("Jump", { exact: true })).toHaveCount(0);
+  await squareCard.getByRole("button", { name: "View source" }).click();
+  await expect(page).toHaveURL(/section=measurements/);
+  await page.goBack();
+  await expect(page).toHaveURL(/section=clarifications/);
+
+  await page.getByTestId("proposal-clarification-accept-square_footage").click();
+  expect(patchCount).toBe(2);
+  await expect(page.getByTestId("proposal-clarification-status-square_footage")).toContainText("Complete");
+  await page.screenshot({ path: "test-results/clarification-completed.png", fullPage: true });
+  const acceptedProgress = Number((await page.getByTestId("estimate-header-progress").innerText()).replace(/[^0-9]/g, ""));
+
+  await squareCard.getByRole("button", { name: "Edit answer" }).click();
+  await page.getByTestId("proposal-clarification-answer-square_footage").fill("122 square feet after field verification");
+  await page.screenshot({ path: "test-results/clarification-editing.png", fullPage: true });
+  await page.getByTestId("proposal-clarification-save-square_footage").click();
+  expect(patchCount).toBe(3);
+  await expect(squareCard).toContainText("122 square feet after field verification");
+
+  await page.getByTestId("proposal-clarification-reopen-square_footage").click();
+  expect(patchCount).toBe(4);
+  await expect(page.getByTestId("proposal-clarification-status-square_footage")).toContainText("Reopened");
+  await expect(page.getByTestId("proposal-clarification-answer-square_footage")).toBeFocused();
+  await page.screenshot({ path: "test-results/clarification-reopened.png", fullPage: true });
+  const reopenedProgress = Number((await page.getByTestId("estimate-header-progress").innerText()).replace(/[^0-9]/g, ""));
+  expect(reopenedProgress).toBeLessThan(acceptedProgress);
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("proposal-clarification-ignore-square_footage").click();
+  expect(patchCount).toBe(5);
+  await expect(page.getByTestId("proposal-clarification-status-square_footage")).toContainText("Ignored");
+  await page.getByTestId("proposal-clarification-reopen-square_footage").click();
+  expect(patchCount).toBe(6);
+  await expect(page.getByTestId("proposal-clarification-status-square_footage")).toContainText("Reopened");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "test-results/clarification-mobile-390.png", fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
 });
