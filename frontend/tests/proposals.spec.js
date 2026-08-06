@@ -578,7 +578,7 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await page.getByTestId("estimate-workflow-step-pricing").click();
   await expect(page).toHaveURL(/section=estimate/);
   await expect(page.getByTestId("estimate-step-panel-pricing")).toContainText("Estimate Pricing");
-  await expect(page.getByTestId("estimate-step-panel-pricing")).toContainText("Incidentals & Allowances");
+  await expect(page.getByTestId("estimate-step-panel-pricing")).toContainText("Adjustments");
   await expect(page.getByTestId("proposal-section-customer")).toHaveCount(0);
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("estimate-workflow-step-pricing")).toHaveAttribute("aria-selected", "true");
@@ -733,6 +733,7 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
 });
 
 test("Estimate Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {
+  test.setTimeout(60_000);
   await installBaseMocks(page);
   await installAgreementWizardMocks(page);
   let currentProposal = { ...proposal };
@@ -926,6 +927,9 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Pricing");
   await expect(page.getByTestId("proposal-section-estimate")).not.toContainText("Estimate Line Items");
   await expect(page.getByTestId("proposal-section-estimate")).not.toContainText(/milestone/i);
+  await page.screenshot({ path: "test-results/pricing-empty.png", fullPage: true });
+  await page.getByTestId("pricing-empty-add").click();
+  await page.screenshot({ path: "test-results/pricing-adding-item.png", fullPage: true });
   await expect(page.getByTestId("proposal-section-estimate")).toContainText("Cost Categories");
   await expect(page.getByTestId("proposal-section-estimate")).toContainText("Pricing Adjustments");
   await page.getByTestId("proposal-line-category").selectOption("labor");
@@ -933,17 +937,47 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-line-quantity").fill("10");
   await page.getByTestId("proposal-line-unit").fill("hours");
   await page.getByTestId("proposal-line-unit-price").fill("75");
-  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /add/i }).click();
+  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /save item/i }).click();
   await expect(page.getByTestId("proposal-line-item-list")).toContainText("Crew labor");
   await expect(page.getByTestId("proposal-estimate-totals")).toContainText("$750.00");
+  await page.screenshot({ path: "test-results/pricing-populated.png", fullPage: true });
 
+  await page.getByTestId("pricing-add-another").click();
   await page.getByTestId("proposal-line-category").selectOption("incidentals_reserve");
   await page.getByTestId("proposal-line-description").fill("Incidentals reserve");
   await page.getByTestId("proposal-line-quantity").fill("1");
   await page.getByTestId("proposal-line-unit").fill("reserve");
   await page.getByTestId("proposal-line-unit-price").fill("200");
-  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /add/i }).click();
+  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /save item/i }).click();
   await expect(page.getByTestId("proposal-estimate-totals")).toContainText("$950.00");
+  await page.screenshot({ path: "test-results/pricing-adjustments-expanded.png", fullPage: true });
+  await page.screenshot({ path: "test-results/pricing-completed.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "test-results/pricing-mobile-390.png", fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  await page.setViewportSize({ width: 1280, height: 900 });
+
+  let pricingAssistantPayload;
+  await page.route("**/api/projects/assistant/orchestrate/", async (route) => {
+    pricingAssistantPayload = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ message: "Review the saved pricing before continuing." }) });
+  });
+  await page.getByTestId("assistant-dock-open-button").click();
+  await page.getByTestId("start-with-ai-input-dock").fill("Explain my current estimate pricing");
+  await page.getByTestId("start-with-ai-submit-dock").click();
+  await expect.poll(() => pricingAssistantPayload?.context?.active_workspace).toBe("pricing");
+  expect(pricingAssistantPayload.context).toMatchObject({
+    proposal_id: "42",
+    entity_type: "proposal",
+    entity_id: "42",
+    proposal_summary: {
+      line_item_count: 2,
+      subtotal: "750.00",
+      total: "950.00",
+      pricing_complete: true,
+    },
+  });
+  await page.getByTestId("assistant-desktop-dock-close").click();
 
   await page.getByTestId("estimate-workflow-step-site_scope").click();
   await page.getByTestId("proposal-included-work").fill("Demo, prep, and install.");
@@ -1033,4 +1067,56 @@ test("Clarification Questions support suggestions, editing, navigation, ignore, 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: "test-results/clarification-mobile-390.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+});
+
+test("Pricing validates, preserves failed edits, and guards deletion", async ({ page }) => {
+  await installBaseMocks(page);
+  await installAgreementWizardMocks(page);
+  let failPatch = true;
+  let patchRequests = 0;
+  let deleteRequests = 0;
+  let currentProposal = {
+    ...proposal,
+    line_items: [{ id: 20, category: "labor", category_label: "Labor", description: "Crew labor", quantity: "2.00", unit: "hours", unit_price: "75.00", total: "150.00", notes: "" }],
+    totals: { subtotal: "150.00", tax: "0.00", discounts: "0.00", incidentals_reserve: "0.00", total: "150.00", line_item_count: 1 },
+  };
+  await page.route("**/api/projects/proposals/42/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentProposal) });
+  });
+  await page.route("**/api/projects/proposals/42/line-items/20/", async (route) => {
+    if (route.request().method() === "PATCH") {
+      patchRequests += 1;
+      if (failPatch) return route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ unit_price: ["Enter a valid unit price."] }) });
+      const payload = route.request().postDataJSON();
+      const lineItem = { ...currentProposal.line_items[0], ...payload, total: "180.00" };
+      currentProposal = { ...currentProposal, line_items: [lineItem], totals: { ...currentProposal.totals, subtotal: "180.00", total: "180.00" } };
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ line_item: lineItem, totals: currentProposal.totals }) });
+    }
+    deleteRequests += 1;
+    currentProposal = { ...currentProposal, line_items: [], totals: { subtotal: "0.00", tax: "0.00", discounts: "0.00", incidentals_reserve: "0.00", total: "0.00", line_item_count: 0 } };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ totals: currentProposal.totals }) });
+  });
+
+  await page.goto("/app/proposals/42?section=estimate", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("proposal-line-item-list").getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByTestId("proposal-line-description")).toHaveValue("Crew labor");
+  await page.getByTestId("proposal-line-unit-price").fill("90");
+  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: "Save item" }).click();
+  expect(patchRequests).toBe(1);
+  await expect(page.getByTestId("proposal-line-unit-price")).toHaveValue("90");
+  await expect(page.getByRole("alert")).toContainText("Could not save line item");
+
+  failPatch = false;
+  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: "Save item" }).click();
+  expect(patchRequests).toBe(2);
+  await expect(page.getByTestId("proposal-estimate-totals")).toContainText("$180.00");
+
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.getByTestId("proposal-line-item-list").getByRole("button", { name: "Remove" }).click();
+  expect(deleteRequests).toBe(0);
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("proposal-line-item-list").getByRole("button", { name: "Remove" }).click();
+  expect(deleteRequests).toBe(1);
+  await expect(page.getByTestId("pricing-empty-state")).toContainText("Add pricing to continue");
+  await expect(page.getByTestId("estimate-workflow-step-pricing")).toHaveAttribute("aria-label", /Not started|Needs attention/);
 });

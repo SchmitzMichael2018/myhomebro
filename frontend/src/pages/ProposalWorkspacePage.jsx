@@ -4,6 +4,7 @@ import { AlertTriangle, Camera, Check, CheckCircle2, Circle, FileSignature, File
 import toast from "react-hot-toast";
 
 import api from "../api";
+import { useAssistantDock } from "../components/AssistantDock.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 
@@ -1141,6 +1142,7 @@ export default function ProposalWorkspacePage() {
   const { proposalId } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { updateAssistantContext } = useAssistantDock();
   const [proposal, setProposal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1149,6 +1151,10 @@ export default function ProposalWorkspacePage() {
   const [measurementForm, setMeasurementForm] = useState(EMPTY_MEASUREMENT);
   const [lineItemForm, setLineItemForm] = useState(EMPTY_LINE_ITEM);
   const [editingLineItemId, setEditingLineItemId] = useState(null);
+  const [pricingEditorOpen, setPricingEditorOpen] = useState(false);
+  const [pricingAdjustmentsOpen, setPricingAdjustmentsOpen] = useState(false);
+  const [lineItemSaving, setLineItemSaving] = useState(false);
+  const [lineItemErrors, setLineItemErrors] = useState({});
   const [uploading, setUploading] = useState(false);
   const [walkthroughMode, setWalkthroughMode] = useState(false);
   const [walkthroughTask, setWalkthroughTask] = useState(null);
@@ -1178,6 +1184,12 @@ export default function ProposalWorkspacePage() {
     [proposal]
   );
   const totals = proposal?.totals || {};
+  const coreLineItems = useMemo(() => (proposal?.line_items || []).filter((item) => COST_CATEGORY_VALUES.has(item.category)), [proposal]);
+  const adjustmentLineItems = useMemo(() => (proposal?.line_items || []).filter((item) => PRICING_ADJUSTMENT_VALUES.has(item.category)), [proposal]);
+  const pricingAdjustmentImpact = useMemo(() => adjustmentLineItems.reduce((sum, item) => {
+    const amount = moneyToNumber(item.total);
+    return sum + (item.category === "discount" ? -Math.abs(amount) : amount);
+  }, 0), [adjustmentLineItems]);
   const clarificationRows = useMemo(
     () => buildClarificationRows({ selectedTemplate, proposal, draft, photos }),
     [selectedTemplate, proposal, draft, photos]
@@ -1232,6 +1244,31 @@ export default function ProposalWorkspacePage() {
     estimateChecklist.items.find((item) => item.key === "ready");
   const activeStepIndex = Math.max(0, WORKSPACE_STEPS.findIndex((step) => step.sections.some(([key]) => key === active)));
   const activeStep = WORKSPACE_STEPS[activeStepIndex];
+  useEffect(() => {
+    if (!proposal || activeStep.key !== "pricing") return;
+    updateAssistantContext({
+      workspace_mode: "estimates",
+      page: "estimates",
+      active_workspace: "pricing",
+      entity_type: "proposal",
+      entity_id: proposalId,
+      proposal_id: proposalId,
+      proposal_summary: {
+        line_item_count: (proposal.line_items || []).length,
+        subtotal: totals.subtotal,
+        total: totals.total,
+        pricing_complete: estimateChecklist.items.find((item) => item.key === "pricing")?.complete || false,
+        pricing_blockers: estimateChecklist.items.find((item) => item.key === "pricing")?.missing || [],
+        scope: {
+          title: proposal.title || draft.title || "",
+          description: proposal.description || draft.description || "",
+          included_work: proposal.included_work || draft.included_work || "",
+          excluded_work: proposal.excluded_work || draft.excluded_work || "",
+          assumptions: proposal.assumptions || draft.assumptions || "",
+        },
+      },
+    });
+  }, [activeStep.key, draft, estimateChecklist.items, proposal, proposalId, totals, updateAssistantContext]);
   function blockReadOnlyHistory() {
     if (!isReadOnlyHistory) return false;
     toast.error("Converted estimates are read-only history. Open the linked agreement for active work.");
@@ -1683,15 +1720,37 @@ export default function ProposalWorkspacePage() {
   function resetLineItemForm() {
     setLineItemForm(EMPTY_LINE_ITEM);
     setEditingLineItemId(null);
+    setPricingEditorOpen(false);
+    setLineItemErrors({});
   }
 
   function patchLineItemForm(key, value) {
     setLineItemForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function openPricingEditor(category = "labor") {
+    setLineItemForm({ ...EMPTY_LINE_ITEM, category });
+    setEditingLineItemId(null);
+    setLineItemErrors({});
+    setPricingEditorOpen(true);
+    if (PRICING_ADJUSTMENT_VALUES.has(category)) setPricingAdjustmentsOpen(true);
+    window.requestAnimationFrame(() => document.getElementById("pricing-item-editor")?.scrollIntoView({ block: "center", behavior: "smooth" }));
+  }
+
   async function submitLineItem(event) {
     event.preventDefault();
     if (blockReadOnlyHistory()) return;
+    if (lineItemSaving) return;
+    const errors = {};
+    if (!compactText(lineItemForm.description)) errors.description = "Description is required.";
+    if (lineItemForm.quantity === "" || !Number.isFinite(Number(lineItemForm.quantity))) errors.quantity = "Enter a valid quantity.";
+    if (lineItemForm.unit_price === "" || !Number.isFinite(Number(lineItemForm.unit_price))) errors.unit_price = "Enter a valid unit price.";
+    if (Object.keys(errors).length) {
+      setLineItemErrors(errors);
+      return;
+    }
+    setLineItemErrors({});
+    setLineItemSaving(true);
     try {
       if (editingLineItemId) {
         const { data } = await api.patch(`/projects/proposals/${proposalId}/line-items/${editingLineItemId}/`, lineItemForm);
@@ -1713,7 +1772,16 @@ export default function ProposalWorkspacePage() {
       resetLineItemForm();
     } catch (error) {
       console.error(error);
-      toast.error("Could not save line item.");
+      const responseErrors = error?.response?.data || {};
+      setLineItemErrors({
+        description: responseErrors?.description?.[0] || "",
+        quantity: responseErrors?.quantity?.[0] || "",
+        unit_price: responseErrors?.unit_price?.[0] || "",
+        form: responseErrors?.detail || "Could not save line item. Your entries have been preserved.",
+      });
+      toast.error("Could not save line item. Your entries have been preserved.");
+    } finally {
+      setLineItemSaving(false);
     }
   }
 
@@ -1727,10 +1795,14 @@ export default function ProposalWorkspacePage() {
       unit_price: item.unit_price || "",
       notes: item.notes || "",
     });
+    setLineItemErrors({});
+    setPricingEditorOpen(true);
+    window.requestAnimationFrame(() => document.getElementById("pricing-item-editor")?.scrollIntoView({ block: "center", behavior: "smooth" }));
   }
 
   async function deleteLineItem(id) {
     if (blockReadOnlyHistory()) return;
+    if (!window.confirm("Remove this pricing item? The estimate total and readiness may change.")) return;
     try {
       const { data } = await api.delete(`/projects/proposals/${proposalId}/line-items/${id}/`);
       setProposal((prev) => ({
@@ -2685,10 +2757,29 @@ export default function ProposalWorkspacePage() {
           </Section>
 
           <Section id="estimate" active={activeStep.key === "pricing"} title="Estimate Pricing">
-            <div className="rounded-lg border border-sky-200/18 bg-sky-400/10 p-3 text-sm font-semibold text-sky-100/78">
-              Build the labor, materials, equipment, subcontractor costs, and adjustments that make up this estimate. Pricing remains editable when carried into the Agreement Wizard.
+            <div className="flex flex-col gap-4 rounded-xl border border-white/10 bg-white/7 p-4 lg:flex-row lg:items-start lg:justify-between" data-testid="pricing-header">
+              <div>
+                <p className="text-sm font-semibold text-sky-100/78">Build the estimate total from labor, materials, and supported adjustments.</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs font-black uppercase tracking-wide">
+                  <span className={`rounded-full px-2.5 py-1 ${(proposal.line_items || []).length ? "bg-emerald-400/15 text-emerald-100" : "bg-amber-300/15 text-amber-100"}`}>{(proposal.line_items || []).length ? "Pricing complete" : "Pricing needs attention"}</span>
+                  <span className="rounded-full bg-white/8 px-2.5 py-1 text-sky-100/70">{(proposal.line_items || []).length} item{(proposal.line_items || []).length === 1 ? "" : "s"}</span>
+                </div>
+              </div>
+              <dl className="grid min-w-64 grid-cols-2 gap-x-6 gap-y-2 text-right text-sm tabular-nums" data-testid="proposal-estimate-totals" aria-label="Estimate totals">
+                <dt className="text-sky-100/60">Subtotal</dt><dd className="font-black text-white">{money(totals.subtotal)}</dd>
+                <dt className="text-sky-100/60">Tax</dt><dd className="font-black text-white">{money(totals.tax)}</dd>
+                <dt className="text-sky-100/60">Incidentals reserve</dt><dd className="font-black text-white">{money(totals.incidentals_reserve)}</dd>
+                <dt className="text-sky-100/60">Discounts</dt><dd className="font-black text-white">-{money(totals.discounts)}</dd>
+                <dt className="border-t border-white/12 pt-2 font-black text-white">Estimate total</dt><dd className="border-t border-white/12 pt-2 text-lg font-black text-amber-200">{money(totals.total)}</dd>
+              </dl>
             </div>
-            <form onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-6" data-testid="proposal-line-item-form">
+
+            {pricingEditorOpen ? (
+            <form id="pricing-item-editor" onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-xl border border-sky-200/18 bg-slate-950/30 p-4 md:grid-cols-6" data-testid="proposal-line-item-form" aria-busy={lineItemSaving}>
+              <div className="md:col-span-6">
+                <h3 className="text-lg font-black text-white">{editingLineItemId ? "Edit pricing item" : "Add pricing item"}</h3>
+                <p className="mt-1 text-sm font-semibold text-sky-100/65">The server calculates line totals as quantity × unit price.</p>
+              </div>
               <div className="md:col-span-6 grid gap-2 sm:grid-cols-2">
                 <div className="rounded-lg border border-white/10 bg-slate-950/24 px-3 py-2">
                   <div className="text-xs font-black uppercase tracking-[0.12em] text-sky-100/55">Cost Categories</div>
@@ -2699,9 +2790,9 @@ export default function ProposalWorkspacePage() {
                   <div className="mt-1 text-sm font-semibold text-sky-100/72">Allowances, incidentals reserve, tax, and discounts.</div>
                 </div>
               </div>
-              <select
+              <label className="md:col-span-2"><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Category</span><select
                 data-testid="proposal-line-category"
-                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none md:col-span-2"
+                className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white focus:border-sky-300 focus:outline-none"
                 value={lineItemForm.category}
                 onChange={(event) => patchLineItemForm("category", event.target.value)}
               >
@@ -2715,45 +2806,47 @@ export default function ProposalWorkspacePage() {
                     <option key={value} value={value}>{label}</option>
                   ))}
                 </optgroup>
-              </select>
-              <input
+              </select></label>
+              <label className="md:col-span-4"><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Description</span><input
                 data-testid="proposal-line-description"
-                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none md:col-span-4"
+                className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Description"
                 value={lineItemForm.description}
                 onChange={(event) => patchLineItemForm("description", event.target.value)}
-              />
-              <input
+                aria-invalid={Boolean(lineItemErrors.description)} aria-describedby={lineItemErrors.description ? "pricing-description-error" : undefined}
+              />{lineItemErrors.description ? <span id="pricing-description-error" className="mt-1 block text-xs font-bold text-rose-200">{lineItemErrors.description}</span> : null}</label>
+              <label><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Quantity</span><input
                 data-testid="proposal-line-quantity"
-                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
+                inputMode="decimal" className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Qty"
                 value={lineItemForm.quantity}
                 onChange={(event) => patchLineItemForm("quantity", event.target.value)}
-              />
-              <input
+              />{lineItemErrors.quantity ? <span className="mt-1 block text-xs font-bold text-rose-200">{lineItemErrors.quantity}</span> : null}</label>
+              <label><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Unit</span><input
                 data-testid="proposal-line-unit"
-                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
+                className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Unit"
                 value={lineItemForm.unit}
                 onChange={(event) => patchLineItemForm("unit", event.target.value)}
-              />
-              <input
+              /></label>
+              <label><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Unit price</span><input
                 data-testid="proposal-line-unit-price"
-                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
+                inputMode="decimal" className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Unit price"
                 value={lineItemForm.unit_price}
                 onChange={(event) => patchLineItemForm("unit_price", event.target.value)}
-              />
-              <input
+              />{lineItemErrors.unit_price ? <span className="mt-1 block text-xs font-bold text-rose-200">{lineItemErrors.unit_price}</span> : null}</label>
+              <label className="md:col-span-2"><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Notes (optional)</span><input
                 data-testid="proposal-line-notes"
-                className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none md:col-span-2"
+                className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
                 placeholder="Notes"
                 value={lineItemForm.notes}
                 onChange={(event) => patchLineItemForm("notes", event.target.value)}
-              />
-              <div className="flex gap-2">
-                <button type="submit" className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">
-                  <Plus size={16} /> {editingLineItemId ? "Update" : "Add"}
+              /></label>
+              {lineItemErrors.form ? <div role="alert" className="md:col-span-6 text-sm font-bold text-rose-200">{lineItemErrors.form}</div> : null}
+              <div className="flex gap-2 md:col-span-6">
+                <button type="submit" disabled={lineItemSaving} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>
+                  <Save size={16} /> {lineItemSaving ? "Saving…" : "Save item"}
                 </button>
                 {editingLineItemId ? (
                   <button type="button" onClick={resetLineItemForm} className="rounded-lg border border-white/16 px-3 py-2 text-sm font-bold text-white">
@@ -2762,11 +2855,12 @@ export default function ProposalWorkspacePage() {
                 ) : null}
               </div>
             </form>
+            ) : null}
 
             <div className="mt-4 overflow-hidden rounded-lg border border-white/10" data-testid="proposal-line-item-list">
-              {(proposal.line_items || []).length ? (
+              {coreLineItems.length ? (
                 <div className="divide-y divide-white/10">
-                  {(proposal.line_items || []).map((item) => (
+                  {coreLineItems.map((item) => (
                     <div key={item.id} className="grid gap-3 bg-white/7 p-3 md:grid-cols-[minmax(0,1fr)_120px_120px_120px_auto] md:items-center">
                       <div className="min-w-0">
                         <div className="text-xs font-black uppercase tracking-wide text-sky-100/55">{item.category_label}</div>
@@ -2784,41 +2878,32 @@ export default function ProposalWorkspacePage() {
                   ))}
                 </div>
               ) : (
-                <div className="border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No estimate pricing entries yet. Add labor, materials, allowances, or incidentals before creating an agreement.</div>
+                <div className="border border-dashed border-white/16 bg-white/6 p-6 text-center" data-testid="pricing-empty-state">
+                  <h3 className="text-lg font-black text-white">Add pricing to continue</h3>
+                  <p className="mt-1 text-sm font-semibold text-sky-100/70">Add at least one priced item to build the estimate total.</p>
+                  {!pricingEditorOpen ? <button type="button" data-testid="pricing-empty-add" onClick={() => openPricingEditor()} className={`mt-4 ${ESTIMATE_PRIMARY_GOLD_BUTTON}`}><Plus size={16} /> Add pricing item</button> : null}
+                </div>
               )}
             </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5" data-testid="proposal-estimate-totals">
-              {[
-                ["Subtotal", totals.subtotal],
-                ["Tax", totals.tax],
-                ["Discounts", totals.discounts],
-                ["Incidentals & Allowances", totals.incidentals_reserve],
-                ["Total", totals.total],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-lg bg-slate-950 px-3 py-3 text-white">
-                  <div className="text-xs font-bold uppercase tracking-wide text-slate-400">{label}</div>
-                  <div className="mt-1 text-lg font-black">{money(value)}</div>
-                </div>
-              ))}
-            </div>
+            {coreLineItems.length && !pricingEditorOpen ? <button type="button" data-testid="pricing-add-another" onClick={() => openPricingEditor()} className="mt-4 rounded-lg border border-white/16 bg-white/8 px-3 py-2 text-sm font-black text-white hover:bg-white/12"><Plus size={16} className="mr-2 inline" />Add another item</button> : null}
+            {(proposal.line_items || []).length && !pricingEditorOpen ? <button type="button" data-testid="pricing-continue-review" onClick={() => openWorkspaceStep(3)} className={`mt-4 ${ESTIMATE_PRIMARY_GOLD_BUTTON}`}>Continue to Review</button> : null}
           </Section>
 
-          <Section id="incidentals" active={activeStep.key === "pricing"} title="Incidentals & Allowances">
-            <div className="rounded-xl bg-slate-950 p-4 text-white">
-              <div className="text-xs font-black uppercase tracking-wide text-slate-400">Current reserve</div>
-              <div className="mt-1 text-3xl font-black">{money(totals.incidentals_reserve)}</div>
-              <p className="mt-2 text-sm font-semibold text-slate-300">
-                Incidentals, allowances, tax, discounts, and reserve adjustments stay in estimate pricing and pass to the Agreement Wizard as editable pricing inputs.
-              </p>
-              <button
-                type="button"
-                onClick={() => setActive("estimate")}
-                className="mt-4 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-black text-white hover:bg-white/15"
-              >
-                Edit Reserve Line Item
-              </button>
-            </div>
+          <Section id="incidentals" active={activeStep.key === "pricing"} title="Adjustments" description="Optional tax, discounts, allowances, and incidentals remain separate from core job pricing.">
+            <details open={pricingAdjustmentsOpen} onToggle={(event) => setPricingAdjustmentsOpen(event.currentTarget.open)} className="rounded-xl border border-white/10 bg-slate-950/30 p-4" data-testid="pricing-adjustments">
+              <summary className="cursor-pointer text-sm font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300">
+                Adjustments · {adjustmentLineItems.length} item{adjustmentLineItems.length === 1 ? "" : "s"}{adjustmentLineItems.length ? ` · ${money(pricingAdjustmentImpact)}` : ""}
+              </summary>
+              <div className="mt-4 space-y-2">
+                {adjustmentLineItems.length ? adjustmentLineItems.map((item) => (
+                  <div key={item.id} className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/7 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div><div className="text-xs font-black uppercase tracking-wide text-sky-100/55">{item.category_label}</div><div className="font-bold text-white">{item.description}</div><div className="text-sm text-sky-100/65">{item.quantity} {item.unit} × {money(item.unit_price)} = <span className="font-black text-white">{money(item.total)}</span></div></div>
+                    <div className="flex gap-2"><button type="button" onClick={() => editLineItem(item)} className="rounded-lg border border-white/16 px-3 py-2 text-sm font-bold text-white">Edit</button><button type="button" onClick={() => deleteLineItem(item.id)} className="rounded-lg border border-rose-200/30 px-3 py-2 text-sm font-bold text-rose-200">Remove</button></div>
+                  </div>
+                )) : <p className="text-sm font-semibold text-sky-100/65">No optional adjustments. Tax is represented only by explicit tax line items; no rate or jurisdiction is configured here.</p>}
+                {!pricingEditorOpen ? <button type="button" onClick={() => openPricingEditor("allowance")} className="rounded-lg border border-white/16 bg-white/8 px-3 py-2 text-sm font-black text-white">Add adjustment</button> : null}
+              </div>
+            </details>
           </Section>
 
           <Section id="scope" active={activeStep.key === "site_scope"} title="Scope Notes, Exclusions, and Assumptions">
@@ -2896,7 +2981,7 @@ export default function ProposalWorkspacePage() {
             <button type="button" disabled={activeStepIndex === 0} onClick={() => openWorkspaceStep(activeStepIndex - 1)} className="rounded-lg border border-white/14 bg-white/8 px-4 py-2 text-sm font-black text-white hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40" data-testid="estimate-workflow-previous">
               Previous
             </button>
-            {activeStepIndex < WORKSPACE_STEPS.length - 1 ? (
+            {activeStepIndex < WORKSPACE_STEPS.length - 1 && activeStepIndex !== 2 ? (
               <button type="button" onClick={handleStepPrimaryAction} className={`${ESTIMATE_PRIMARY_GOLD_BUTTON} flex-1 sm:flex-none`} data-testid="estimate-workflow-next">
                 {stepPrimaryLabel()}
               </button>
