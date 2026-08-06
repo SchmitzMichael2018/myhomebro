@@ -52,7 +52,18 @@ const WORKFLOW_GROUPS = [
   },
 ];
 
-const NAV = [["overview", "Project Overview"], ...WORKFLOW_GROUPS.flatMap((group) => group.sections)];
+const WORKSPACE_STEPS = [
+  {
+    ...WORKFLOW_GROUPS[0],
+    number: 1,
+    sections: [["overview", "Overview"], ["assistant", "Project Assistant"], ...WORKFLOW_GROUPS[0].sections],
+  },
+  { ...WORKFLOW_GROUPS[1], number: 2, label: "Scope" },
+  { ...WORKFLOW_GROUPS[2], number: 3 },
+  { ...WORKFLOW_GROUPS[3], number: 4 },
+];
+
+const WORKSPACE_SECTION_IDS = new Set(WORKSPACE_STEPS.flatMap((step) => step.sections.map(([key]) => key)));
 
 const SECTION_DESCRIPTIONS = {
   overview: "Confirm required readiness, missing items, and the next action before turning estimate work into an agreement.",
@@ -1190,6 +1201,8 @@ export default function ProposalWorkspacePage() {
     estimateChecklist.items.find((item) => item.key === "ready");
   const recommendedSectionKey = highestPriorityItem?.target || "";
   const activeSectionStatus = navItemForSection(active, estimateChecklist, isReadOnlyHistory);
+  const activeStepIndex = Math.max(0, WORKSPACE_STEPS.findIndex((step) => step.sections.some(([key]) => key === active)));
+  const activeStep = WORKSPACE_STEPS[activeStepIndex];
   const opportunityReference = [
     proposal?.source_type ? `${proposal.source_type} #${proposal.source_id || proposal.contractor_opportunity_id || "-"}` : "",
     proposal?.estimate_appointment_id ? `Appointment #${proposal.estimate_appointment_id}` : "",
@@ -1199,6 +1212,19 @@ export default function ProposalWorkspacePage() {
     if (!isReadOnlyHistory) return false;
     toast.error("Converted estimates are read-only history. Open the linked agreement for active work.");
     return true;
+  }
+
+  function openWorkspaceSection(sectionKey) {
+    const nextSection = WORKSPACE_SECTION_IDS.has(sectionKey) ? sectionKey : "overview";
+    setActive(nextSection);
+    navigate(`/app/proposals/${proposalId}?section=${encodeURIComponent(nextSection)}`);
+  }
+
+  function openWorkspaceStep(stepIndex) {
+    const step = WORKSPACE_STEPS[stepIndex];
+    if (!step) return;
+    const currentSectionInStep = step.sections.some(([key]) => key === active) ? active : step.sections[0][0];
+    openWorkspaceSection(currentSectionInStep);
   }
 
   function createAgreementFromProposal() {
@@ -1378,7 +1404,7 @@ export default function ProposalWorkspacePage() {
     const fromWalkthrough = searchParams.get("from") === "walkthrough";
     const walkthroughRequested = searchParams.get("walkthrough") === "1";
     if (requestedSection) {
-      setActive(requestedSection);
+      setActive(WORKSPACE_SECTION_IDS.has(requestedSection) ? requestedSection : "overview");
     }
     if (fromWalkthrough) {
       const taskKey = searchParams.get("task") || requestedSection || "overview";
@@ -1391,6 +1417,7 @@ export default function ProposalWorkspacePage() {
     } else {
       setWalkthroughTask(null);
       setWalkthroughMode(false);
+      if (!requestedSection) setActive("overview");
     }
   }, [searchParams]);
 
@@ -1974,7 +2001,7 @@ export default function ProposalWorkspacePage() {
           <div className="grid min-w-[14rem] gap-3 sm:grid-cols-3 xl:grid-cols-1">
             <div className="rounded-xl border border-white/10 bg-white/8 p-3">
               <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Readiness</div>
-              <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.percent}%</div>
+              <div className="mt-1 text-2xl font-black text-white" data-testid="estimate-header-progress">{estimateChecklist.percent}%</div>
             </div>
             <div className="rounded-xl border border-white/10 bg-white/8 p-3">
               <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Missing</div>
@@ -1988,97 +2015,78 @@ export default function ProposalWorkspacePage() {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)_280px]" data-testid="proposal-workspace">
-        <aside className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_24px_70px_rgba(2,8,23,0.3)] lg:sticky lg:top-4 lg:self-start" data-testid="proposal-nav">
-          <div className="mb-3 px-1">
-            <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Estimate progress</div>
-            <div className="mt-1 text-sm font-semibold text-sky-100/68">{estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete</div>
-          </div>
-          <nav className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            <button
-              type="button"
-              data-testid="proposal-nav-overview"
-              onClick={() => setActive("overview")}
-              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
-                active === "overview"
-                  ? "border-sky-300/45 bg-sky-400/16 text-white shadow-[0_12px_32px_rgba(14,165,233,0.12)]"
-                  : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <NavStatusIcon tone={estimateChecklist.readyMinimum ? "complete" : "warning"} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-black">Project Overview</span>
-              </span>
-            </button>
-            <button
-              type="button"
-              data-testid="proposal-nav-assistant"
-              onClick={() => setActive("assistant")}
-              className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
-                active === "assistant"
-                  ? "border-sky-300/45 bg-sky-400/16 text-white shadow-[0_12px_32px_rgba(14,165,233,0.12)]"
-                  : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
-              }`}
-            >
-              <NavStatusIcon tone={estimateChecklist.requiredMissing.length ? "warning" : "complete"} />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-black">Project Assistant</span>
-                <span className="block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-sky-100/45">Guidance</span>
-              </span>
-            </button>
-            {WORKFLOW_GROUPS.map((group) => (
-              <div key={group.key} className="space-y-1.5">
-                <div className="flex items-center gap-2 px-1 text-[10px] font-black uppercase tracking-[0.18em] text-sky-100/45">
-                  <NavStatusIcon {...workflowGroupStatus(group, estimateChecklist, proposal, photos, documents, isReadOnlyHistory)} />
-                  <span>{group.label}</span>
-                </div>
-                {group.sections.map(([key, label]) => {
-              const sectionItem = sectionChecklistItemForNav(key, estimateChecklist, proposal, photos, documents);
-              const isBlocked = key === "ready" && isReadOnlyHistory;
-              const tone = statusToneFromItem(sectionItem, isBlocked);
-              const statusLabel = statusLabelFromTone(tone, sectionItem?.required);
-              const isRecommended = key === recommendedSectionKey && active !== key;
+      <div className="space-y-4" data-testid="proposal-workspace">
+        <section className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_24px_70px_rgba(2,8,23,0.3)] md:p-4" data-testid="proposal-nav">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4" role="tablist" aria-label="Estimate workflow steps" data-testid="estimate-workflow-tabs">
+            {WORKSPACE_STEPS.map((step, index) => {
+              const selected = index === activeStepIndex;
+              const status = workflowGroupStatus(WORKFLOW_GROUPS[index], estimateChecklist, proposal, photos, documents, isReadOnlyHistory);
               return (
                 <button
-                  key={key}
+                  key={step.key}
                   type="button"
-                  data-testid={`proposal-nav-${key}`}
-                  aria-label={`${label}: ${sectionItem?.required ? "Required" : "Optional"}, ${statusLabel}${isRecommended ? ", next recommended section" : ""}`}
-                  title={`${sectionItem?.required ? "Required" : "Optional"} - ${statusLabel}${isRecommended ? " - Next" : ""}`}
-                  onClick={() => setActive(key)}
-                  className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
-                    active === key
-                      ? "border-sky-300/45 bg-sky-400/16 text-white shadow-[0_12px_32px_rgba(14,165,233,0.12)]"
-                      : isRecommended
-                        ? "border-amber-200/42 bg-amber-300/10 text-white shadow-[inset_3px_0_0_rgba(251,191,36,0.78)] hover:bg-amber-300/14"
-                        : "border-white/10 bg-white/6 text-sky-100/78 hover:border-white/22 hover:bg-white/10 hover:text-white"
-                  }`}
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls="estimate-step-workspace"
+                  data-testid={`estimate-workflow-step-${step.key}`}
+                  onClick={() => openWorkspaceStep(index)}
+                  className={`flex min-h-14 items-center gap-3 rounded-xl border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${selected ? "border-amber-200/50 bg-amber-300 text-slate-950 shadow-sm" : "border-white/12 bg-white/7 text-white hover:border-white/24 hover:bg-white/11"}`}
                 >
-                  <NavStatusIcon tone={tone} label={statusLabel} />
-                  <RequiredMarker required={sectionItem?.required} />
+                  <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black ${selected ? "bg-slate-950 text-amber-200" : "bg-white/10 text-white"}`}>{step.number}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-black">{label}</span>
-                    {!sectionItem?.required ? (
-                      <span className="block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-sky-100/45">Optional</span>
-                    ) : null}
+                    <span className="block truncate text-sm font-black">{step.label}</span>
+                    <span className={`block truncate text-[10px] font-bold uppercase tracking-wide ${selected ? "text-slate-700" : "text-sky-100/55"}`}>{status.label}</span>
                   </span>
-                  {isRecommended ? <span className="rounded-full bg-amber-300/18 px-2 py-0.5 text-[10px] font-black uppercase text-amber-100">Next</span> : null}
                 </button>
               );
-                })}
-              </div>
-            ))}
-          </nav>
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-white/10 px-1 pt-3 text-[10px] font-bold text-sky-100/55" data-testid="proposal-nav-legend">
-            <span><span className="text-amber-200" aria-hidden="true">*</span> Required</span>
-            <span><CheckCircle2 className="inline h-3 w-3 text-emerald-200" aria-hidden="true" /> Complete</span>
-            <span><AlertTriangle className="inline h-3 w-3 text-amber-200" aria-hidden="true" /> Needs attention</span>
-            <span><Circle className="inline h-3 w-3 text-sky-100/45" aria-hidden="true" /> Optional</span>
-            <span><Lock className="inline h-3 w-3 text-rose-200" aria-hidden="true" /> Blocked</span>
+            })}
           </div>
-        </aside>
 
-        <main className="min-w-0 space-y-4">
+          <div className="mt-4 border-t border-white/10 pt-4">
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Step {activeStep.number} of 4</div>
+                <h2 className="mt-1 text-lg font-black text-white">{activeStep.label}</h2>
+                <p className="mt-1 max-w-3xl text-sm font-semibold text-sky-100/68">{activeStep.purpose}</p>
+              </div>
+              <div className="text-xs font-bold text-sky-100/55">{estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete</div>
+            </div>
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label={`${activeStep.label} sections`} data-testid="estimate-step-sections">
+              {activeStep.sections.map(([key, label]) => {
+                const sectionItem = key === "overview" || key === "assistant" ? activeSectionStatus : sectionChecklistItemForNav(key, estimateChecklist, proposal, photos, documents);
+                const isBlocked = key === "ready" && isReadOnlyHistory;
+                const tone = key === "overview" ? (estimateChecklist.readyMinimum ? "complete" : "warning") : key === "assistant" ? (estimateChecklist.requiredMissing.length ? "warning" : "complete") : statusToneFromItem(sectionItem, isBlocked);
+                const statusLabel = statusLabelFromTone(tone, sectionItem?.required);
+                const isRecommended = key === recommendedSectionKey && active !== key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={active === key}
+                    data-testid={`proposal-nav-${key}`}
+                    aria-label={`${label}: ${sectionItem?.required ? "Required" : "Optional"}, ${statusLabel}${isRecommended ? ", next recommended section" : ""}`}
+                    onClick={() => openWorkspaceSection(key)}
+                    className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${active === key ? "border-sky-300/45 bg-sky-400/18 text-white" : isRecommended ? "border-amber-200/40 bg-amber-300/10 text-amber-50" : "border-white/10 bg-white/6 text-sky-100/75 hover:bg-white/10 hover:text-white"}`}
+                  >
+                    <NavStatusIcon tone={tone} label={statusLabel} />
+                    <span>{label}</span>
+                    {isRecommended ? <span className="rounded-full bg-amber-300/18 px-2 py-0.5 text-[10px] uppercase text-amber-100">Next</span> : null}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-bold text-sky-100/55" data-testid="proposal-nav-legend">
+              <span><span className="text-amber-200" aria-hidden="true">*</span> Required</span>
+              <span><CheckCircle2 className="inline h-3 w-3 text-emerald-200" aria-hidden="true" /> Complete</span>
+              <span><AlertTriangle className="inline h-3 w-3 text-amber-200" aria-hidden="true" /> Needs attention</span>
+              <span><Circle className="inline h-3 w-3 text-sky-100/45" aria-hidden="true" /> Optional</span>
+              <span><Lock className="inline h-3 w-3 text-rose-200" aria-hidden="true" /> Blocked</span>
+            </div>
+          </div>
+        </section>
+
+        <main id="estimate-step-workspace" className="min-w-0 space-y-4">
           {walkthroughTask ? (
             <div
               className="rounded-2xl border border-sky-200/18 bg-[#061d42]/95 p-4 text-white shadow-[0_18px_48px_rgba(2,8,23,0.24)]"
@@ -2861,76 +2869,20 @@ export default function ProposalWorkspacePage() {
           </Section>
         </main>
 
-        <aside className="rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-4 text-white shadow-[0_24px_70px_rgba(2,8,23,0.34)] lg:sticky lg:top-4 lg:self-start" data-testid="proposal-summary-rail">
-          <div className="text-xs font-semibold uppercase tracking-wide text-amber-100/80">Context Summary</div>
-          <div className="mt-2 text-lg font-bold">{proposal.customer_name || "Customer"}</div>
-          <div className="mt-1 text-sm text-slate-300">{proposal.service_location || "No service location"}</div>
-          <div className="mt-4 rounded-lg bg-white/10 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold uppercase text-slate-400">Progress</span>
-              <span className="text-lg font-black" data-testid="estimate-summary-progress">{estimateChecklist.percent}%</span>
-            </div>
-            <div className="mt-1 text-xs font-semibold text-sky-100/62">
-              {estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full rounded-full bg-emerald-400" style={{ width: `${estimateChecklist.percent}%` }} />
-            </div>
-            <div className={`mt-2 text-xs font-black ${estimateChecklist.readyMinimum ? "text-emerald-200" : "text-amber-200"}`}>
-              {estimateChecklist.readyMinimum ? "Ready for Agreement" : `${estimateChecklist.requiredMissing.length} required readiness item${estimateChecklist.requiredMissing.length === 1 ? "" : "s"} missing`}
-            </div>
+        <footer className="flex flex-col gap-3 rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-4 text-white shadow-[0_18px_48px_rgba(2,8,23,0.24)] sm:flex-row sm:items-center sm:justify-between" data-testid="estimate-workflow-footer">
+          <div className="min-w-0">
+            <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Current step</div>
+            <div className="mt-1 text-sm font-black">{activeStep.number}. {activeStep.label}</div>
           </div>
-          <div className="mt-4 rounded-lg bg-white/10 p-3">
-            <div className="text-xs font-semibold uppercase text-slate-400">Next action</div>
-            <div className="mt-1 text-sm font-bold">{highestPriorityItem?.complete ? "Review in Agreement Wizard" : highestPriorityItem?.action || "Finish required items"}</div>
-            {highestPriorityItem && !highestPriorityItem.complete ? (
-              <button type="button" onClick={() => setActive(highestPriorityItem.target || "overview")} className="mt-2 text-xs font-black text-blue-200">
-                Open section
-              </button>
-            ) : null}
+          <div className="flex gap-2">
+            <button type="button" disabled={activeStepIndex === 0} onClick={() => openWorkspaceStep(activeStepIndex - 1)} className="rounded-lg border border-white/14 bg-white/8 px-4 py-2 text-sm font-black text-white hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40" data-testid="estimate-workflow-previous">
+              Previous
+            </button>
+            <button type="button" disabled={activeStepIndex === WORKSPACE_STEPS.length - 1} onClick={() => openWorkspaceStep(activeStepIndex + 1)} className={ESTIMATE_PRIMARY_GOLD_BUTTON} data-testid="estimate-workflow-next">
+              Next step
+            </button>
           </div>
-          <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-scheduling">
-            <div className="text-xs font-semibold uppercase text-slate-400">Scheduling</div>
-            <div className="mt-1 text-sm font-bold">{proposalScheduleSummary({ ...proposal, ...draft })}</div>
-            <button type="button" onClick={() => setActive("scheduling")} className="mt-2 text-xs font-black text-blue-200">Edit scheduling</button>
-          </div>
-          <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-template">
-            <div className="text-xs font-semibold uppercase text-slate-400">Template</div>
-            <div className="mt-1 text-sm font-bold">{selectedTemplate?.name || "Searching templates"}</div>
-            <button type="button" onClick={() => setActive("assistant")} className="mt-2 text-xs font-black text-blue-200">Open Project Assistant</button>
-          </div>
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-            <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{proposal.measurements?.length || 0}</div><div className="text-xs text-slate-300">Measures</div></div>
-            <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{photos.length}</div><div className="text-xs text-slate-300">Photos</div></div>
-            <div className="rounded-lg bg-white/10 p-2"><div className="text-lg font-bold">{documents.length}</div><div className="text-xs text-slate-300">Docs</div></div>
-          </div>
-          <div className="mt-4 rounded-lg bg-white/10 p-3" data-testid="proposal-summary-totals">
-            <div className="text-xs font-semibold uppercase text-slate-400">Estimate Total</div>
-            <div className="mt-1 text-2xl font-black">{money(totals.total)}</div>
-            <div className="mt-3 space-y-1 text-sm text-slate-300">
-              <div className="flex justify-between gap-3"><span>Subtotal</span><span className="font-bold text-white">{money(totals.subtotal)}</span></div>
-              <div className="flex justify-between gap-3"><span>Tax</span><span className="font-bold text-white">{money(totals.tax)}</span></div>
-              <div className="flex justify-between gap-3"><span>Incidentals</span><span className="font-bold text-white">{money(totals.incidentals_reserve)}</span></div>
-              <div className="flex justify-between gap-3"><span>Discounts</span><span className="font-bold text-white">-{money(totals.discounts)}</span></div>
-            </div>
-          </div>
-          <button
-            type="button"
-            data-testid="proposal-summary-create-agreement"
-            onClick={createAgreementFromProposal}
-            disabled={!estimateChecklist.readyMinimum}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-black text-white hover:bg-white/15 focus-visible:text-white active:text-white disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
-          >
-            <FileSignature size={16} /> Create Agreement from Estimate
-          </button>
-          <div className="mt-2 text-xs leading-5 text-slate-400">
-            Opens the existing Agreement Wizard with this estimate checklist as editable draft input.
-          </div>
-          <div className="mt-3 flex items-start gap-2 rounded-lg border border-white/10 bg-white/6 p-2 text-xs leading-5 text-slate-300">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-sky-100/70" aria-hidden="true" />
-            <span>Prepared outputs still require contractor review.</span>
-          </div>
-        </aside>
+        </footer>
       </div>
     </ContractorPageSurface>
   );

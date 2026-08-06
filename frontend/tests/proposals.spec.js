@@ -562,28 +562,32 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
 
   await expect(page.getByTestId("proposal-workspace-header")).toContainText("Bathroom Remodel");
   await expect(page.getByTestId("proposal-workspace-header")).toContainText("New Lead Customer");
-  await expect(page.getByTestId("proposal-nav-overview")).toContainText("Project Overview");
-  await expect(page.getByTestId("proposal-nav")).toContainText("Project");
-  await expect(page.getByTestId("proposal-nav")).toContainText("Site & Scope");
-  await expect(page.getByTestId("proposal-nav")).toContainText("Pricing");
-  await expect(page.getByTestId("proposal-nav")).toContainText("Review");
-  const navText = (await page.getByTestId("proposal-nav").innerText()).toLowerCase();
-  expect(navText.indexOf("customer & contact")).toBeLessThan(navText.indexOf("site & scope"));
-  expect(navText.indexOf("site & scope")).toBeLessThan(navText.indexOf("estimate pricing"));
-  expect(navText.indexOf("pricing")).toBeLessThan(navText.indexOf("ready for agreement"));
+  await expect(page.getByTestId("proposal-nav-overview")).toContainText("Overview");
+  const workflowTabs = page.getByTestId("estimate-workflow-tabs");
+  await expect(workflowTabs.getByRole("tab")).toHaveCount(4);
+  await expect(page.getByTestId("estimate-workflow-step-project")).toContainText("1");
+  await expect(page.getByTestId("estimate-workflow-step-site_scope")).toContainText("2");
+  await expect(page.getByTestId("estimate-workflow-step-pricing")).toContainText("3");
+  await expect(page.getByTestId("estimate-workflow-step-review")).toContainText("4");
+  await expect(page.getByTestId("estimate-workflow-step-project")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("proposal-nav-site")).toHaveCount(0);
+  await page.getByTestId("estimate-workflow-next").click();
+  await expect(page).toHaveURL(/section=site/);
+  await expect(page.getByTestId("estimate-workflow-step-site_scope")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("proposal-nav-overview")).toHaveCount(0);
+  await page.goBack();
+  await expect(page.getByTestId("estimate-workflow-step-project")).toHaveAttribute("aria-selected", "true");
+  await page.getByTestId("estimate-workflow-step-pricing").click();
+  await expect(page.getByTestId("proposal-nav-estimate")).toBeVisible();
   await expect(page.getByTestId("proposal-nav-estimate")).toContainText("Estimate Pricing");
   await expect(page.getByTestId("proposal-nav-incidentals")).toContainText("Incidentals & Allowances");
-  await expect(page.getByTestId("proposal-nav")).not.toContainText("Line Items");
+  await page.getByTestId("estimate-workflow-step-project").click();
   await expect(page.getByTestId("proposal-nav-legend")).toContainText("Required");
   await expect(page.getByTestId("proposal-nav-legend")).toContainText("Complete");
   await expect(page.getByTestId("proposal-nav-legend")).toContainText("Needs attention");
   await expect(page.getByTestId("proposal-nav-customer")).toHaveAttribute("aria-label", /Required, Complete/);
-  await expect(page.getByTestId("proposal-nav-estimate")).toHaveAttribute("aria-label", /Required, Needs attention/);
-  await expect(page.getByTestId("proposal-nav-clarifications")).toHaveAttribute("aria-label", /Required, Needs attention, next recommended section/);
   await expect(page.getByTestId("proposal-nav-appointment")).toHaveAttribute("aria-label", /Optional/);
-  await expect(page.getByTestId("proposal-nav-appointment")).not.toHaveAttribute("title", /Required/);
-  await expect(page.getByTestId("proposal-nav-clarifications")).toContainText("Next");
-  await expect(page.getByTestId("proposal-nav-overview")).toHaveClass(/border-sky-300/);
+  await expect(page.getByTestId("proposal-nav-overview")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Project Overview" })).toBeVisible();
   await expect(page.getByTestId("estimate-checklist-progress")).toContainText("readiness requirements complete");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Site & Scope");
@@ -657,6 +661,7 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   expect(disabledGoldStyle.descendantColors.every((color) => color === disabledGoldStyle.color)).toBe(true);
 
   await expect(page.getByTestId("project-assistant-human-approval")).toHaveCount(0);
+  await page.getByTestId("estimate-workflow-step-project").click();
   await page.getByTestId("proposal-nav-assistant").click();
   await expect(page.getByTestId("proposal-assistant-guidance")).toContainText("Project Assistant");
   await expect(page.getByTestId("proposal-assistant-approval-reminder")).toContainText("Contractor approval is required");
@@ -683,6 +688,7 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...proposal, id: 45, status: "converted", status_label: "Converted", linked_agreement_id: 450 }) });
   });
   await page.goto("/app/proposals/45", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("estimate-workflow-step-review").click();
   await expect(page.getByTestId("proposal-nav-ready")).toHaveAttribute("aria-label", /Required, Blocked/);
 });
 
@@ -746,14 +752,14 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   });
 
   await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("proposal-nav-site")).toBeVisible();
+  await expect(page.getByTestId("estimate-workflow-step-project")).toBeVisible();
   await expect(page.getByTestId("estimate-checklist-progress")).toContainText("%");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Customer");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Project Address");
   await expect(page.getByTestId("estimate-checklist-sections")).toContainText("Estimate Pricing");
   await expect(page.getByTestId("estimate-overview-row-customer")).toContainText("Done");
   await expect(page.getByTestId("estimate-ready-status")).toContainText("Required items missing");
-  const initialProgress = Number((await page.getByTestId("estimate-summary-progress").innerText()).replace("%", ""));
+  const initialProgress = Number((await page.getByTestId("estimate-header-progress").innerText()).replace("%", ""));
 
   await page.getByTestId("proposal-nav-customer").click();
   await expect(page.getByTestId("proposal-project-address-workflow")).toContainText("Select Existing Property");
@@ -772,13 +778,13 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-schedule-priority").selectOption("required");
   await page.getByTestId("proposal-save-scheduling").click();
   await expect(page.getByTestId("proposal-scheduling-summary")).toContainText("priority Required");
-  await expect(page.getByTestId("proposal-summary-scheduling")).toContainText("Required");
 
   await page.getByTestId("proposal-nav-assistant").click();
   await expect(page.getByTestId("proposal-template-recommendation")).toContainText("Recommended agreement template");
   await expect(page.getByTestId("proposal-template-recommendation")).toContainText("Bathroom Refresh Template");
   await page.getByTestId("proposal-use-template").click();
 
+  await page.getByTestId("estimate-workflow-step-site_scope").click();
   await page.getByTestId("proposal-nav-clarifications").click();
   await expect(page.getByTestId("proposal-clarification-questions")).toContainText("Square footage");
   await expect(page.getByTestId("proposal-clarification-questions")).toContainText("Material responsibility");
@@ -856,6 +862,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("exit-walkthrough-mode").evaluate((button) => button.click());
   await expect(page.getByTestId("proposal-workspace")).toBeVisible();
 
+  await page.getByTestId("estimate-workflow-step-site_scope").click();
   await page.getByTestId("proposal-nav-site").click();
   await expect(page.getByTestId("proposal-mobile-capture-actions")).toContainText("Take Photo");
   await page.getByTestId("proposal-site-notes").fill("Customer wants fixtures preserved.");
@@ -885,6 +892,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   });
   await expect(page.getByTestId("proposal-document-list")).toContainText("upload.txt");
 
+  await page.getByTestId("estimate-workflow-step-pricing").click();
   await page.getByTestId("proposal-nav-estimate").click();
   await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Pricing");
   await expect(page.getByTestId("proposal-section-estimate")).not.toContainText("Estimate Line Items");
@@ -907,21 +915,23 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-line-unit-price").fill("200");
   await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /add/i }).click();
   await expect(page.getByTestId("proposal-estimate-totals")).toContainText("$950.00");
-  await expect(page.getByTestId("proposal-summary-totals")).toContainText("$950.00");
 
+  await page.getByTestId("estimate-workflow-step-site_scope").click();
   await page.getByTestId("proposal-nav-scope").click();
   await page.getByTestId("proposal-included-work").fill("Demo, prep, and install.");
   await page.getByTestId("proposal-save-scope").click();
 
+  await page.getByTestId("estimate-workflow-step-project").click();
   await page.getByTestId("proposal-nav-overview").click();
-  const completedProgress = Number((await page.getByTestId("estimate-summary-progress").innerText()).replace("%", ""));
+  const completedProgress = Number((await page.getByTestId("estimate-header-progress").innerText()).replace("%", ""));
   expect(completedProgress).toBeGreaterThan(initialProgress);
   await expect(page.getByTestId("estimate-ready-status")).toContainText("Estimate Ready");
 
+  await page.getByTestId("estimate-workflow-step-review").click();
   await page.getByTestId("proposal-nav-history").click();
   await expect(page.getByTestId("proposal-history")).toContainText("Estimate created");
 
-  await page.getByTestId("proposal-summary-create-agreement").click();
+  await page.getByTestId("proposal-create-agreement-action").click();
   await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
   await expect(page.getByTestId("agreement-assistant-prefill-banner")).toContainText("Estimate checklist data prefilled");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
