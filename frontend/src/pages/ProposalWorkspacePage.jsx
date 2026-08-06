@@ -56,7 +56,6 @@ const WORKSPACE_STEPS = [
   {
     ...WORKFLOW_GROUPS[0],
     number: 1,
-    sections: [["overview", "Overview"], ["assistant", "Project Assistant"], ...WORKFLOW_GROUPS[0].sections],
   },
   { ...WORKFLOW_GROUPS[1], number: 2, label: "Scope" },
   { ...WORKFLOW_GROUPS[2], number: 3 },
@@ -382,26 +381,6 @@ function readinessTone(status) {
   if (status === "Complete") return "border-emerald-300/28 bg-emerald-400/10 text-emerald-50";
   if (status === "In Progress") return "border-amber-300/32 bg-amber-400/10 text-amber-50";
   return "border-white/12 bg-white/7 text-sky-100/78";
-}
-
-function navItemForSection(key, estimateChecklist, isReadOnlyHistory) {
-  if (key === "assistant") {
-    return estimateChecklist.requiredMissing.length ? { status: "Needs attention", tone: "warning" } : { status: "Ready", tone: "complete" };
-  }
-  if (key === "ready") {
-    if (isReadOnlyHistory) return { status: "Blocked", tone: "blocked" };
-    return estimateChecklist.readyMinimum ? { status: "Complete", tone: "complete" } : { status: "Blocked", tone: "blocked" };
-  }
-  if (["notes", "history", "appointment", "incidentals"].includes(key)) {
-    return { status: "Optional", tone: "optional" };
-  }
-  const checklistItem = estimateChecklist.items.find((item) => item.target === key || item.key === key);
-  if (!checklistItem) return { status: "Optional", tone: "optional" };
-  if (checklistItem.complete) return { status: "Complete", tone: "complete" };
-  if (checklistItem.required) return { status: "Needs attention", tone: "warning" };
-  return checklistItem.status === "In Progress"
-    ? { status: "In progress", tone: "warning" }
-    : { status: "Not started", tone: "empty" };
 }
 
 function sectionChecklistItemForNav(key, estimateChecklist, proposal, photos, documents) {
@@ -1132,7 +1111,7 @@ export default function ProposalWorkspacePage() {
   const [proposal, setProposal] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [active, setActive] = useState("overview");
+  const [active, setActive] = useState("customer");
   const [draft, setDraft] = useState({});
   const [measurementForm, setMeasurementForm] = useState(EMPTY_MEASUREMENT);
   const [lineItemForm, setLineItemForm] = useState(EMPTY_LINE_ITEM);
@@ -1199,15 +1178,8 @@ export default function ProposalWorkspacePage() {
     estimateChecklist.requiredMissing[0] ||
     estimateChecklist.items.find((item) => !item.complete) ||
     estimateChecklist.items.find((item) => item.key === "ready");
-  const recommendedSectionKey = highestPriorityItem?.target || "";
-  const activeSectionStatus = navItemForSection(active, estimateChecklist, isReadOnlyHistory);
   const activeStepIndex = Math.max(0, WORKSPACE_STEPS.findIndex((step) => step.sections.some(([key]) => key === active)));
   const activeStep = WORKSPACE_STEPS[activeStepIndex];
-  const opportunityReference = [
-    proposal?.source_type ? `${proposal.source_type} #${proposal.source_id || proposal.contractor_opportunity_id || "-"}` : "",
-    proposal?.estimate_appointment_id ? `Appointment #${proposal.estimate_appointment_id}` : "",
-  ].filter(Boolean).join(" | ");
-
   function blockReadOnlyHistory() {
     if (!isReadOnlyHistory) return false;
     toast.error("Converted estimates are read-only history. Open the linked agreement for active work.");
@@ -1215,9 +1187,10 @@ export default function ProposalWorkspacePage() {
   }
 
   function openWorkspaceSection(sectionKey) {
-    const nextSection = WORKSPACE_SECTION_IDS.has(sectionKey) ? sectionKey : "overview";
+    const nextSection = WORKSPACE_SECTION_IDS.has(sectionKey) ? sectionKey : "customer";
     setActive(nextSection);
     navigate(`/app/proposals/${proposalId}?section=${encodeURIComponent(nextSection)}`);
+    window.requestAnimationFrame(() => document.getElementById(nextSection)?.scrollIntoView({ block: "start", behavior: "smooth" }));
   }
 
   function openWorkspaceStep(stepIndex) {
@@ -1225,6 +1198,46 @@ export default function ProposalWorkspacePage() {
     if (!step) return;
     const currentSectionInStep = step.sections.some(([key]) => key === active) ? active : step.sections[0][0];
     openWorkspaceSection(currentSectionInStep);
+  }
+
+  function handleStepKeyDown(event, stepIndex) {
+    let nextIndex = stepIndex;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (stepIndex + 1) % WORKSPACE_STEPS.length;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (stepIndex - 1 + WORKSPACE_STEPS.length) % WORKSPACE_STEPS.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = WORKSPACE_STEPS.length - 1;
+    else return;
+    event.preventDefault();
+    openWorkspaceStep(nextIndex);
+    window.requestAnimationFrame(() => document.querySelector(`[data-testid="estimate-workflow-step-${WORKSPACE_STEPS[nextIndex].key}"]`)?.focus());
+  }
+
+  function handleStepPrimaryAction() {
+    if (activeStepIndex === 0) return openWorkspaceStep(1);
+    if (activeStepIndex === 1) {
+      const clarificationItem = checklistItemByKey(estimateChecklist.items, "clarifications");
+      if (!clarificationItem?.complete) return openWorkspaceSection("clarifications");
+      const scopeItem = checklistItemByKey(estimateChecklist.items, "scope");
+      if (!scopeItem?.complete) return openWorkspaceSection("scope");
+      return openWorkspaceStep(2);
+    }
+    if (activeStepIndex === 2) {
+      const pricingItem = checklistItemByKey(estimateChecklist.items, "pricing");
+      if (!pricingItem?.complete) return openWorkspaceSection("estimate");
+      return openWorkspaceStep(3);
+    }
+    return undefined;
+  }
+
+  function stepPrimaryLabel() {
+    if (activeStepIndex === 0) return "Continue to Scope";
+    if (activeStepIndex === 1) {
+      if (!checklistItemByKey(estimateChecklist.items, "clarifications")?.complete) return "Review questions";
+      if (!checklistItemByKey(estimateChecklist.items, "scope")?.complete) return "Add scope notes";
+      return "Continue to Pricing";
+    }
+    if (!checklistItemByKey(estimateChecklist.items, "pricing")?.complete) return "Add pricing";
+    return "Continue to Review";
   }
 
   function createAgreementFromProposal() {
@@ -1404,7 +1417,7 @@ export default function ProposalWorkspacePage() {
     const fromWalkthrough = searchParams.get("from") === "walkthrough";
     const walkthroughRequested = searchParams.get("walkthrough") === "1";
     if (requestedSection) {
-      setActive(WORKSPACE_SECTION_IDS.has(requestedSection) ? requestedSection : "overview");
+      setActive(WORKSPACE_SECTION_IDS.has(requestedSection) ? requestedSection : "customer");
     }
     if (fromWalkthrough) {
       const taskKey = searchParams.get("task") || requestedSection || "overview";
@@ -1417,9 +1430,12 @@ export default function ProposalWorkspacePage() {
     } else {
       setWalkthroughTask(null);
       setWalkthroughMode(false);
-      if (!requestedSection) setActive("overview");
+      if (!requestedSection) {
+        setActive("customer");
+        navigate(`/app/proposals/${proposalId}?section=customer`, { replace: true });
+      }
     }
-  }, [searchParams]);
+  }, [navigate, proposalId, searchParams]);
 
   useEffect(() => {
     if (!walkthroughMode || !walkthroughScrollY) return;
@@ -1947,15 +1963,6 @@ export default function ProposalWorkspacePage() {
           </button>
           <button
             type="button"
-            data-testid="proposal-create-agreement-action"
-            disabled={!estimateChecklist.readyMinimum || isReadOnlyHistory}
-            className={ESTIMATE_PRIMARY_GOLD_BUTTON}
-            onClick={createAgreementFromProposal}
-          >
-            <FileSignature size={16} /> Create Agreement from Estimate
-          </button>
-          <button
-            type="button"
             className="rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-bold text-white shadow-sm hover:bg-white/15"
             onClick={() => navigate("/app/opportunities")}
           >
@@ -1969,50 +1976,13 @@ export default function ProposalWorkspacePage() {
           This estimate has been converted and remains available as read-only history. The linked agreement is now the active operational record.
         </div>
       ) : null}
-      <div
-        className="mb-4 rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-4 text-white shadow-[0_24px_70px_rgba(2,8,23,0.34)] md:p-5"
-        data-testid="proposal-workspace-header"
-      >
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-start">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full border px-3 py-1 text-xs font-black uppercase ${estimateChecklist.readyMinimum ? "border-emerald-200/35 bg-emerald-400/12 text-emerald-100" : "border-amber-200/35 bg-amber-400/12 text-amber-100"}`}>
-                {estimateChecklist.readyMinimum ? "Ready for agreement" : "Preparing estimate"}
-              </span>
-              <span className="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-xs font-bold text-sky-100/80">
-                {proposal.status_label || proposal.status || "Draft"}
-              </span>
-              {isReadOnlyHistory ? (
-                <span className="rounded-full border border-emerald-200/35 bg-emerald-400/12 px-3 py-1 text-xs font-bold text-emerald-100">
-                  Converted history
-                </span>
-              ) : null}
-            </div>
-            <h2 className="mt-3 truncate text-2xl font-black text-white md:text-3xl">
-              {proposal.project_title || "Untitled estimate"}
-            </h2>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm font-semibold text-sky-100/78">
-              <span>{proposal.customer_name || "Customer not set"}</span>
-              <span>{proposal.service_location || "No project address"}</span>
-              {opportunityReference ? <span>{opportunityReference}</span> : null}
-              <span>Updated {formatDateTime(proposal.updated_at)}</span>
-            </div>
-          </div>
-          <div className="grid min-w-[14rem] gap-3 sm:grid-cols-3 xl:grid-cols-1">
-            <div className="rounded-xl border border-white/10 bg-white/8 p-3">
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Readiness</div>
-              <div className="mt-1 text-2xl font-black text-white" data-testid="estimate-header-progress">{estimateChecklist.percent}%</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/8 p-3">
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Missing</div>
-              <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.requiredMissing.length}</div>
-            </div>
-            <div className="rounded-xl border border-white/10 bg-white/8 p-3">
-              <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Value</div>
-              <div className="mt-1 text-2xl font-black text-white">{money(totals.total)}</div>
-            </div>
-          </div>
-        </div>
+      <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-sky-200/14 bg-[#061d42]/95 px-4 py-3 text-sm font-black text-white shadow-sm" data-testid="proposal-workspace-header" aria-live="polite">
+        <span data-testid="estimate-header-progress">{estimateChecklist.percent}% ready</span>
+        <span aria-hidden="true">·</span>
+        <span>{estimateChecklist.requiredMissing.length} required item{estimateChecklist.requiredMissing.length === 1 ? "" : "s"} remaining</span>
+        <span aria-hidden="true">·</span>
+        <span>{money(totals.total)}</span>
+        {isReadOnlyHistory ? <span className="ml-auto text-emerald-200">Converted history</span> : null}
       </div>
 
       <div className="space-y-4" data-testid="proposal-workspace">
@@ -2028,8 +1998,11 @@ export default function ProposalWorkspacePage() {
                   role="tab"
                   aria-selected={selected}
                   aria-controls="estimate-step-workspace"
+                  aria-label={`${step.number}. ${step.label}: ${status.label}`}
                   data-testid={`estimate-workflow-step-${step.key}`}
                   onClick={() => openWorkspaceStep(index)}
+                  onKeyDown={(event) => handleStepKeyDown(event, index)}
+                  tabIndex={selected ? 0 : -1}
                   className={`flex min-h-14 items-center gap-3 rounded-xl border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${selected ? "border-amber-200/50 bg-amber-300 text-slate-950 shadow-sm" : "border-white/12 bg-white/7 text-white hover:border-white/24 hover:bg-white/11"}`}
                 >
                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-black ${selected ? "bg-slate-950 text-amber-200" : "bg-white/10 text-white"}`}>{step.number}</span>
@@ -2042,51 +2015,10 @@ export default function ProposalWorkspacePage() {
             })}
           </div>
 
-          <div className="mt-4 border-t border-white/10 pt-4">
-            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Step {activeStep.number} of 4</div>
-                <h2 className="mt-1 text-lg font-black text-white">{activeStep.label}</h2>
-                <p className="mt-1 max-w-3xl text-sm font-semibold text-sky-100/68">{activeStep.purpose}</p>
-              </div>
-              <div className="text-xs font-bold text-sky-100/55">{estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete</div>
-            </div>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label={`${activeStep.label} sections`} data-testid="estimate-step-sections">
-              {activeStep.sections.map(([key, label]) => {
-                const sectionItem = key === "overview" || key === "assistant" ? activeSectionStatus : sectionChecklistItemForNav(key, estimateChecklist, proposal, photos, documents);
-                const isBlocked = key === "ready" && isReadOnlyHistory;
-                const tone = key === "overview" ? (estimateChecklist.readyMinimum ? "complete" : "warning") : key === "assistant" ? (estimateChecklist.requiredMissing.length ? "warning" : "complete") : statusToneFromItem(sectionItem, isBlocked);
-                const statusLabel = statusLabelFromTone(tone, sectionItem?.required);
-                const isRecommended = key === recommendedSectionKey && active !== key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={active === key}
-                    data-testid={`proposal-nav-${key}`}
-                    aria-label={`${label}: ${sectionItem?.required ? "Required" : "Optional"}, ${statusLabel}${isRecommended ? ", next recommended section" : ""}`}
-                    onClick={() => openWorkspaceSection(key)}
-                    className={`inline-flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 ${active === key ? "border-sky-300/45 bg-sky-400/18 text-white" : isRecommended ? "border-amber-200/40 bg-amber-300/10 text-amber-50" : "border-white/10 bg-white/6 text-sky-100/75 hover:bg-white/10 hover:text-white"}`}
-                  >
-                    <NavStatusIcon tone={tone} label={statusLabel} />
-                    <span>{label}</span>
-                    {isRecommended ? <span className="rounded-full bg-amber-300/18 px-2 py-0.5 text-[10px] uppercase text-amber-100">Next</span> : null}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] font-bold text-sky-100/55" data-testid="proposal-nav-legend">
-              <span><span className="text-amber-200" aria-hidden="true">*</span> Required</span>
-              <span><CheckCircle2 className="inline h-3 w-3 text-emerald-200" aria-hidden="true" /> Complete</span>
-              <span><AlertTriangle className="inline h-3 w-3 text-amber-200" aria-hidden="true" /> Needs attention</span>
-              <span><Circle className="inline h-3 w-3 text-sky-100/45" aria-hidden="true" /> Optional</span>
-              <span><Lock className="inline h-3 w-3 text-rose-200" aria-hidden="true" /> Blocked</span>
-            </div>
-          </div>
+          <p className="mt-3 border-t border-white/10 pt-3 text-sm font-semibold text-sky-100/68">{activeStep.purpose}</p>
         </section>
 
-        <main id="estimate-step-workspace" className="min-w-0 space-y-4">
+        <main id="estimate-step-workspace" role="tabpanel" aria-label={`${activeStep.label} estimate step`} tabIndex={0} className="min-w-0 space-y-4 outline-none focus-visible:ring-2 focus-visible:ring-sky-300" data-testid={`estimate-step-panel-${activeStep.key}`}>
           {walkthroughTask ? (
             <div
               className="rounded-2xl border border-sky-200/18 bg-[#061d42]/95 p-4 text-white shadow-[0_18px_48px_rgba(2,8,23,0.24)]"
@@ -2112,32 +2044,8 @@ export default function ProposalWorkspacePage() {
             </div>
           ) : null}
 
-          <Section id="overview" active={active === "overview"} title="Project Overview">
-            <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4 text-white" data-testid="estimate-checklist-progress">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-xs font-black uppercase tracking-[0.2em] text-blue-200/80">Estimate Readiness</div>
-                  <div className="mt-1 text-3xl font-black">{estimateChecklist.percent}%</div>
-                  <div className="mt-1 text-sm font-semibold text-slate-300">
-                    {estimateChecklist.completedCount} of {estimateChecklist.items.length} readiness requirements complete
-                  </div>
-                </div>
-                <div className={`rounded-xl px-4 py-3 text-sm font-black ${estimateChecklist.readyMinimum ? "bg-emerald-400 text-emerald-950" : "bg-amber-300 text-amber-950"}`} data-testid="estimate-ready-status">
-                  {estimateChecklist.readyMinimum ? "Estimate Ready" : "Required items missing"}
-                </div>
-              </div>
-              <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-emerald-400" style={{ width: `${estimateChecklist.percent}%` }} />
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-3 xl:grid-cols-2" data-testid="estimate-checklist-sections">
-              {overviewGroups.map((group) => (
-                <OverviewWorkflowGroup key={group.key} group={group} onOpen={setActive} />
-              ))}
-            </div>
-
-            <div className="mt-4 rounded-xl border border-white/10 bg-white/7 p-4">
+          <Section id="overview" active={activeStep.key === "project"} title="Estimate Status" description="Keep the estimate lifecycle status current while project details are prepared.">
+            <div className="rounded-xl border border-white/10 bg-white/7 p-4">
               <div className="flex flex-wrap items-center gap-3">
                 <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(proposal.status)}`} data-testid="proposal-status">
                   {proposal.status_label}
@@ -2173,7 +2081,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="assistant" active={active === "assistant"} title="Project Assistant">
+          <Section id="assistant" active={false} title="Project Assistant">
             <div className="rounded-2xl border border-sky-200/16 bg-slate-950/42 p-4 text-white" data-testid="proposal-assistant-guidance">
               <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(15rem,0.45fr)] lg:items-start">
                 <div>
@@ -2343,7 +2251,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="clarifications" active={active === "clarifications"} title="Clarification Questions">
+          <Section id="clarifications" active={activeStep.key === "site_scope"} title="Clarification Questions">
             <div className="rounded-lg border border-white/10 bg-white/7 p-3 text-sm font-semibold text-sky-100/72" data-testid="proposal-clarification-intro">
               Questions come from the selected or generated agreement template. Project Assistant auto-completes questions when measurements, photos, notes, or scope already answer them.
             </div>
@@ -2375,7 +2283,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="appointment" active={active === "appointment"} title="Estimate Appointment">
+          <Section id="appointment" active={activeStep.key === "project"} title="Estimate Appointment">
             {proposal.appointment ? (
               <InfoGrid
                 rows={[
@@ -2394,7 +2302,7 @@ export default function ProposalWorkspacePage() {
             )}
           </Section>
 
-          <Section id="customer" active={active === "customer"} title="Customer & Contact">
+          <Section id="customer" active={activeStep.key === "project"} title="Customer & Contact">
             <InfoGrid
               rows={[
                 ["Customer", proposal.customer_name],
@@ -2487,7 +2395,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="scheduling" active={active === "scheduling"} title="Project Scheduling">
+          <Section id="scheduling" active={activeStep.key === "project"} title="Project Scheduling">
             <div className="rounded-xl bg-slate-950 p-4 text-white" data-testid="proposal-scheduling-summary">
               <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-200/80">Structured scheduling inputs</div>
               <div className="mt-2 text-lg font-black">{proposalScheduleSummary({ ...proposal, ...draft })}</div>
@@ -2549,7 +2457,7 @@ export default function ProposalWorkspacePage() {
             </button>
           </Section>
 
-          <Section id="site" active={active === "site"} title="Site Access, Conditions, and Requests">
+          <Section id="site" active={activeStep.key === "site_scope"} title="Site Access, Conditions, and Requests">
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="proposal-mobile-capture-actions">
               <button type="button" onClick={() => setActive("photos")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800"><Camera size={16} /> Take Photo</button>
               <button type="button" onClick={() => setActive("measurements")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"><Ruler size={16} /> Add Measurement</button>
@@ -2591,7 +2499,7 @@ export default function ProposalWorkspacePage() {
             </button>
           </Section>
 
-          <Section id="measurements" active={active === "measurements"} title="Measurements">
+          <Section id="measurements" active={activeStep.key === "site_scope"} title="Measurements">
             <form onSubmit={addMeasurement} className="grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-5" data-testid="proposal-measurement-form">
               {["label", "location", "quantity", "unit"].map((key) => (
                 <input
@@ -2631,7 +2539,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="photos" active={active === "photos"} title="Photos">
+          <Section id="photos" active={activeStep.key === "site_scope"} title="Photos">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white">
               <Camera size={16} /> {uploading ? "Uploading..." : "Upload Photo"}
               <input type="file" accept="image/*" className="hidden" data-testid="proposal-photo-upload" onChange={(event) => uploadAttachment(event, "photo")} />
@@ -2647,7 +2555,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="documents" active={active === "documents"} title="Documents">
+          <Section id="documents" active={activeStep.key === "site_scope"} title="Documents">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white">
               <FileUp size={16} /> {uploading ? "Uploading..." : "Upload Document"}
               <input type="file" className="hidden" data-testid="proposal-document-upload" onChange={(event) => uploadAttachment(event, "document")} />
@@ -2662,7 +2570,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="estimate" active={active === "estimate"} title="Estimate Pricing">
+          <Section id="estimate" active={activeStep.key === "pricing"} title="Estimate Pricing">
             <div className="rounded-lg border border-sky-200/18 bg-sky-400/10 p-3 text-sm font-semibold text-sky-100/78">
               Build the labor, materials, equipment, subcontractor costs, and adjustments that make up this estimate. Pricing remains editable when carried into the Agreement Wizard.
             </div>
@@ -2782,7 +2690,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="incidentals" active={active === "incidentals"} title="Incidentals & Allowances">
+          <Section id="incidentals" active={activeStep.key === "pricing"} title="Incidentals & Allowances">
             <div className="rounded-xl bg-slate-950 p-4 text-white">
               <div className="text-xs font-black uppercase tracking-wide text-slate-400">Current reserve</div>
               <div className="mt-1 text-3xl font-black">{money(totals.incidentals_reserve)}</div>
@@ -2799,7 +2707,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="scope" active={active === "scope"} title="Scope Notes, Exclusions, and Assumptions">
+          <Section id="scope" active={activeStep.key === "site_scope"} title="Scope Notes, Exclusions, and Assumptions">
             <div className="grid gap-4 md:grid-cols-2">
               <TextAreaField label="Included work" testId="proposal-included-work" value={draft.included_work} onChange={(value) => patchDraft("included_work", value)} />
               <TextAreaField label="Excluded work" value={draft.excluded_work} onChange={(value) => patchDraft("excluded_work", value)} />
@@ -2822,7 +2730,7 @@ export default function ProposalWorkspacePage() {
             </button>
           </Section>
 
-          <Section id="ready" active={active === "ready"} title="Ready for Agreement">
+          <Section id="ready" active={activeStep.key === "review"} title="Ready for Agreement">
             <div className={`rounded-xl border p-4 ${estimateChecklist.readyMinimum ? "border-emerald-200/30 bg-emerald-400/10 text-emerald-100" : "border-amber-200/30 bg-amber-400/10 text-amber-100"}`}>
               <div className="text-lg font-black" data-testid="estimate-ready-review-status">
                 {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Finish required checklist items"}
@@ -2844,7 +2752,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
-          <Section id="notes" active={active === "notes"} title="Internal Notes">
+          <Section id="notes" active={activeStep.key === "review"} title="Internal Notes">
             <TextAreaField label="Contractor notes" testId="proposal-internal-notes" value={draft.internal_notes} onChange={(value) => patchDraft("internal_notes", value)} rows={8} />
             <button
               type="button"
@@ -2857,7 +2765,7 @@ export default function ProposalWorkspacePage() {
             </button>
           </Section>
 
-          <Section id="history" active={active === "history"} title="History">
+          <Section id="history" active={activeStep.key === "review"} title="History">
             <div className="space-y-2" data-testid="proposal-history">
               {(proposal.activity || []).length ? proposal.activity.map((item) => (
                 <div key={item.id} className="rounded-lg border border-white/10 bg-white/7 p-3">
@@ -2869,18 +2777,16 @@ export default function ProposalWorkspacePage() {
           </Section>
         </main>
 
-        <footer className="flex flex-col gap-3 rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-4 text-white shadow-[0_18px_48px_rgba(2,8,23,0.24)] sm:flex-row sm:items-center sm:justify-between" data-testid="estimate-workflow-footer">
-          <div className="min-w-0">
-            <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Current step</div>
-            <div className="mt-1 text-sm font-black">{activeStep.number}. {activeStep.label}</div>
-          </div>
-          <div className="flex gap-2">
+        <footer className="sticky bottom-2 z-10 flex justify-end rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_18px_48px_rgba(2,8,23,0.34)]" data-testid="estimate-workflow-footer">
+          <div className="flex w-full gap-2 sm:w-auto">
             <button type="button" disabled={activeStepIndex === 0} onClick={() => openWorkspaceStep(activeStepIndex - 1)} className="rounded-lg border border-white/14 bg-white/8 px-4 py-2 text-sm font-black text-white hover:bg-white/12 disabled:cursor-not-allowed disabled:opacity-40" data-testid="estimate-workflow-previous">
               Previous
             </button>
-            <button type="button" disabled={activeStepIndex === WORKSPACE_STEPS.length - 1} onClick={() => openWorkspaceStep(activeStepIndex + 1)} className={ESTIMATE_PRIMARY_GOLD_BUTTON} data-testid="estimate-workflow-next">
-              Next step
-            </button>
+            {activeStepIndex < WORKSPACE_STEPS.length - 1 ? (
+              <button type="button" onClick={handleStepPrimaryAction} className={`${ESTIMATE_PRIMARY_GOLD_BUTTON} flex-1 sm:flex-none`} data-testid="estimate-workflow-next">
+                {stepPrimaryLabel()}
+              </button>
+            ) : null}
           </div>
         </footer>
       </div>
