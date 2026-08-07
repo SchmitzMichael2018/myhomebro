@@ -17,6 +17,30 @@ function hasManualOffsets(milestones = []) {
   });
 }
 
+export function offsetToProjectDay(offset) {
+  if (offset === "" || offset == null) return null;
+  const value = Number(offset);
+  if (!Number.isInteger(value) || value < 0) return null;
+  return value + 1;
+}
+
+export function projectDayToOffset(day) {
+  if (day === "" || day == null) return null;
+  const value = Number(day);
+  if (!Number.isInteger(value) || value < 1) return null;
+  return value - 1;
+}
+
+export function estimateTemplateTimelineDays(milestones = []) {
+  const rows = Array.isArray(milestones) ? milestones : [];
+  return rows.reduce((latestDay, row) => {
+    const offset = projectDayToOffset(offsetToProjectDay(row?.start_offset));
+    const duration = Number(row?.duration_days ?? row?.recommended_duration_days);
+    if (offset == null || !Number.isInteger(duration) || duration < 1) return latestDay;
+    return Math.max(latestDay, offset + duration);
+  }, 0);
+}
+
 export function computeSequentialOffsets(milestones = []) {
   const rows = Array.isArray(milestones) ? milestones : [];
   let currentOffset = 0;
@@ -46,4 +70,3 @@ export function needsSequentialOffsets(milestones = []) {
   if (hasManualOffsets(rows)) return false;
   return rows.some((row) => row?.start_offset == null || row?.start_offset === "" || Number(row.start_offset) === 0);
 }
-

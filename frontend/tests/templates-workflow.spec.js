@@ -2104,14 +2104,20 @@ test('template schedule auto-sequence button computes sequential offsets from du
   await page.getByTestId('templates-milestone-title-3').fill('Cleanup');
 
   await page.getByTestId('templates-tab-schedule').click();
+  const timingSection = page.locator('.mhb-template-section-card').filter({ hasText: 'Workflow Timing' }).first();
+  await expect(page.getByText('Start Offset')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Auto-schedule milestones' })).toBeVisible();
+  await timingSection.screenshot({ path: 'test-results/template-workflow-timing-default.png' });
   await page.getByTestId('templates-milestone-duration-1').fill('2');
   await page.getByTestId('templates-milestone-duration-2').fill('3');
   await page.getByTestId('templates-milestone-duration-3').fill('1');
   await page.getByTestId('templates-auto-sequence-timeline').click();
 
-  await expect(page.getByTestId('templates-milestone-start-offset-1')).toHaveValue('0');
-  await expect(page.getByTestId('templates-milestone-start-offset-2')).toHaveValue('2');
-  await expect(page.getByTestId('templates-milestone-start-offset-3')).toHaveValue('5');
+  await expect(page.getByTestId('templates-milestone-start-offset-1')).toHaveValue('1');
+  await expect(page.getByTestId('templates-milestone-start-offset-2')).toHaveValue('3');
+  await expect(page.getByTestId('templates-milestone-start-offset-3')).toHaveValue('6');
+  await expect(page.getByTestId('templates-timeline-summary')).toContainText('6 days');
+  await timingSection.screenshot({ path: 'test-results/template-workflow-timing-auto-scheduled.png' });
 
   await page.getByTestId('templates-save-button').click();
 
@@ -2119,6 +2125,33 @@ test('template schedule auto-sequence button computes sequential offsets from du
     const saved = store.templates.find((row) => row.name === 'Auto Sequence Template');
     return saved ? saved.milestones.map((row) => row.start_offset) : null;
   }).toEqual([0, 2, 5]);
+
+  await page.getByTestId('templates-edit-button').click();
+  await page.getByTestId('templates-tab-schedule').click();
+  await page.getByTestId('templates-milestone-start-offset-1').fill('2');
+  await expect(page.getByTestId('templates-milestone-start-offset-1')).toHaveValue('2');
+  await timingSection.screenshot({ path: 'test-results/template-workflow-timing-edited-start-day.png' });
+  page.once('dialog', async (dialog) => {
+    expect(dialog.message()).toContain('replace customized start days');
+    await dialog.dismiss();
+  });
+  await page.getByTestId('templates-auto-sequence-timeline').click();
+  await expect(page.getByTestId('templates-milestone-start-offset-1')).toHaveValue('2');
+  await page.getByTestId('templates-save-button').click();
+  await expect.poll(() => {
+    const saved = store.templates.find((row) => row.name === 'Auto Sequence Template');
+    return saved?.milestones?.[0]?.start_offset;
+  }).toBe(1);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'Auto Sequence Template' }).click();
+  await page.getByTestId('templates-tab-schedule').click();
+  await expect(page.getByRole('cell', { name: 'Day 2' })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.locator('.mhb-template-section-card').filter({ hasText: 'Workflow Timing' }).first().screenshot({
+    path: 'test-results/template-workflow-timing-390.png',
+  });
 });
 
 test('template AI-generated milestones still render while type controls stay hidden', async ({

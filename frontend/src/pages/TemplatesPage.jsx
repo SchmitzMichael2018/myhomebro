@@ -19,7 +19,13 @@ import {
   buildTemplateInsightLines,
   deriveTemplateInsights,
 } from "../lib/templateInsights.js";
-import { computeSequentialOffsets, needsSequentialOffsets } from "../lib/templateScheduling.js";
+import {
+  computeSequentialOffsets,
+  estimateTemplateTimelineDays,
+  needsSequentialOffsets,
+  offsetToProjectDay,
+  projectDayToOffset,
+} from "../lib/templateScheduling.js";
 
 function safeTrim(v) {
   return v == null ? "" : String(v).trim();
@@ -65,30 +71,10 @@ function toPositiveInt(v) {
   return Math.round(n);
 }
 
-function toDayNumber(v) {
-  if (v === "" || v == null) return null;
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n);
-}
-
 function dayLabel(v) {
   const n = toPositiveInt(v);
   if (!n) return "";
   return `${n} day${n === 1 ? "" : "s"}`;
-}
-
-function offsetLabel(v) {
-  if (v === "" || v == null) return "—";
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0) return "—";
-  return `${n} day${n === 1 ? "" : "s"} after start`;
-}
-
-function startDayLabel(v) {
-  const n = toDayNumber(v);
-  if (n == null) return "—";
-  return `Day ${n}`;
 }
 
 function hasAnyPricing(m) {
@@ -1087,6 +1073,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       { percent: 0, low: 0, high: 0 }
     );
   }, [currentMilestones]);
+  const estimatedTimelineDays = useMemo(
+    () => estimateTemplateTimelineDays(currentMilestones),
+    [currentMilestones]
+  );
 
   const generatedPricingGuidance = generatedAiDraft?.pricing || null;
   const generatedMaterials = Array.isArray(generatedAiDraft?.materials)
@@ -1211,7 +1201,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           index: index + 1,
           title: safeTrim(row?.title),
           description: safeTrim(row?.description),
+          project_start_day: offsetToProjectDay(row?.start_offset),
+          duration_days: toPositiveInt(row?.duration_days ?? row?.recommended_duration_days),
         })),
+        estimated_timeline_days: estimatedTimelineDays || null,
       },
       ai_panel: {
         headline: "Review this template workflow",
@@ -1239,6 +1232,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     currentHeader,
     currentMilestones,
     editMode,
+    estimatedTimelineDays,
     generatedAiDraft,
     location.pathname,
     location.search,
@@ -1688,9 +1682,26 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   }
 
   function autoSequenceTimeline() {
-    setEditMilestones((prev) => computeSequentialOffsets(prev));
+    const sequenced = computeSequentialOffsets(currentMilestones);
+    const changesManualTiming = currentMilestones.some((row, index) => {
+      const currentOffset = row?.start_offset;
+      const currentDuration = row?.duration_days ?? row?.recommended_duration_days;
+      return (
+        (currentOffset !== "" && currentOffset != null && Number(currentOffset) !== sequenced[index]?.start_offset) ||
+        (currentDuration !== "" && currentDuration != null && Number(currentDuration) !== sequenced[index]?.duration_days)
+      );
+    });
+    if (
+      changesManualTiming &&
+      !window.confirm(
+        "Auto-schedule milestones in order using their durations? This will replace customized start days."
+      )
+    ) {
+      return;
+    }
+    setEditMilestones(sequenced);
     setHasUnsavedChanges(true);
-    toast.success("Timeline sequenced.");
+    toast.success("Milestones auto-scheduled. Review and save the template.");
   }
 
   function addMilestone() {
@@ -4261,6 +4272,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                   <div className="mb-2 text-xs text-slate-500">
                     These are optional timing hints. Flexible workflows can stay light here and let the agreement calculate the live schedule later.
                   </div>
+                  <div id="templates-start-day-help" className="mb-3 text-xs text-slate-500">
+                    Day 1 is the project start date. Timing uses calendar days and does not assign actual dates until a project starts.
+                  </div>
                   {(editMode || creatingNew) ? (
                     <div className="mb-3">
                       <button
@@ -4269,61 +4283,86 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                         data-testid="templates-auto-sequence-timeline"
                       >
-                        Auto Sequence Timeline
+                        Auto-schedule milestones
                       </button>
+                      <div className="mt-1 text-xs text-slate-500">
+                        Schedule milestones in order using their durations.
+                      </div>
                     </div>
                   ) : null}
 
-                  <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+                  <div className="mhb-template-timing-table overflow-x-auto rounded-lg border border-slate-200 bg-white">
                     <table className="w-full text-sm">
                       <thead className="bg-slate-50">
                         <tr className="text-left [&>*]:px-3 [&>*]:py-2">
                           <th>Milestone</th>
-                          <th>Start Offset</th>
-                          <th>Duration</th>
+                          <th>Starts</th>
+                          <th>Duration (days)</th>
                         </tr>
                       </thead>
                       <tbody>
                         {currentMilestones.map((m, idx) => (
                           <tr key={m?.id || `s-${idx}`} className="border-t">
-                            <td className="px-3 py-2 font-medium text-slate-900">
+                            <td className="px-3 py-2 font-medium text-slate-900" data-label="Milestone">
                               {m?.title || `Milestone ${idx + 1}`}
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-2" data-label="Starts">
                               {(editMode || creatingNew) ? (
-                                <input
-                                  type="number"
-                                  min="0"
-                                  className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.start_offset ?? ""}
-                                  data-testid={`templates-milestone-start-offset-${idx + 1}`}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, {
-                                      start_offset: e.target.value,
-                                      recommended_days_from_start:
-                                        e.target.value === "" ? "" : Number(e.target.value) + 1,
-                                    })
-                                  }
-                                />
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs text-slate-500" aria-hidden="true">Day</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    inputMode="numeric"
+                                    aria-label={`Start day for ${m?.title || `milestone ${idx + 1}`}`}
+                                    aria-describedby="templates-start-day-help"
+                                    className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+                                    value={offsetToProjectDay(m?.start_offset) ?? ""}
+                                    data-testid={`templates-milestone-start-offset-${idx + 1}`}
+                                    onChange={(e) => {
+                                      const offset = projectDayToOffset(e.target.value);
+                                      updateMilestone(idx, {
+                                        start_offset: offset ?? "",
+                                        recommended_days_from_start: offset == null ? "" : offset + 1,
+                                      });
+                                    }}
+                                  />
+                                </div>
                               ) : (
-                                offsetLabel(m?.start_offset ?? (m?.recommended_days_from_start != null ? Number(m.recommended_days_from_start) - 1 : ""))
+                                offsetToProjectDay(
+                                  m?.start_offset ??
+                                    (m?.recommended_days_from_start != null
+                                      ? Number(m.recommended_days_from_start) - 1
+                                      : "")
+                                ) != null
+                                  ? `Day ${offsetToProjectDay(
+                                      m?.start_offset ?? Number(m?.recommended_days_from_start) - 1
+                                    )}`
+                                  : "—"
                               )}
                             </td>
-                            <td className="px-3 py-2">
+                            <td className="px-3 py-2" data-label="Duration">
                               {(editMode || creatingNew) ? (
-                                <input
-                                  type="number"
-                                  min="1"
-                                  className="w-24 rounded border border-slate-300 px-2 py-1 text-sm"
-                                  value={m?.duration_days || m?.recommended_duration_days || ""}
-                                  data-testid={`templates-milestone-duration-${idx + 1}`}
-                                  onChange={(e) =>
-                                    updateMilestone(idx, {
-                                      duration_days: e.target.value,
-                                      recommended_duration_days: e.target.value,
-                                    })
-                                  }
-                                />
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    inputMode="numeric"
+                                    aria-label={`Duration in days for ${m?.title || `milestone ${idx + 1}`}`}
+                                    className="w-20 rounded border border-slate-300 px-2 py-1 text-sm"
+                                    value={m?.duration_days || m?.recommended_duration_days || ""}
+                                    data-testid={`templates-milestone-duration-${idx + 1}`}
+                                    onChange={(e) =>
+                                      updateMilestone(idx, {
+                                        duration_days: e.target.value,
+                                        recommended_duration_days: e.target.value,
+                                      })
+                                    }
+                                  />
+                                  <span className="text-xs text-slate-500">days</span>
+                                </div>
                               ) : (
                                 dayLabel(m?.duration_days || m?.recommended_duration_days) || "—"
                               )}
@@ -4332,6 +4371,22 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3" aria-live="polite">
+                    <div className="text-sm font-semibold text-slate-900" data-testid="templates-timeline-summary">
+                      Estimated template timeline: {estimatedTimelineDays ? dayLabel(estimatedTimelineDays) : "Not configured"}
+                    </div>
+                    <div className="mt-2 space-y-1 text-xs text-slate-600">
+                      {currentMilestones.map((row, idx) => {
+                        const projectDay = offsetToProjectDay(row?.start_offset);
+                        const duration = dayLabel(row?.duration_days ?? row?.recommended_duration_days);
+                        return (
+                          <div key={row?.id || `timeline-summary-${idx}`}>
+                            {row?.title || `Milestone ${idx + 1}`} — {projectDay ? `Day ${projectDay}` : "Start day not set"} · {duration || "Duration not set"}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </SectionCard>
               ) : null}

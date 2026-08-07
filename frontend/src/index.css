@@ -2052,6 +2052,61 @@
     .mhb-templates-studio .mhb-template-suggestion-action {
       flex: 1 1 100%;
     }
+
+    .mhb-templates-studio .mhb-template-timing-table {
+      overflow: visible;
+      border: 0 !important;
+      background: transparent !important;
+    }
+
+    .mhb-templates-studio .mhb-template-timing-table table,
+    .mhb-templates-studio .mhb-template-timing-table tbody,
+    .mhb-templates-studio .mhb-template-timing-table tr,
+    .mhb-templates-studio .mhb-template-timing-table td {
+      display: block;
+      width: 100%;
+    }
+
+    .mhb-templates-studio .mhb-template-timing-table thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .mhb-templates-studio .mhb-template-timing-table tr {
+      margin-bottom: 0.75rem;
+      overflow: hidden;
+      border: 1px solid var(--mhb-border-default) !important;
+      border-radius: 0.75rem;
+      background: var(--mhb-surface-card);
+    }
+
+    .mhb-templates-studio .mhb-template-timing-table td {
+      display: flex;
+      min-width: 0;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      border-top: 1px solid var(--mhb-border-divider);
+    }
+
+    .mhb-templates-studio .mhb-template-timing-table td:first-child {
+      border-top: 0;
+    }
+
+    .mhb-templates-studio .mhb-template-timing-table td::before {
+      content: attr(data-label);
+      flex: 0 0 auto;
+      color: var(--mhb-text-muted);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
   }
 }
 
