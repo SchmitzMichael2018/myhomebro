@@ -288,6 +288,25 @@ async function installAgreementWizardMocks(page) {
       }),
     });
   });
+  await page.route("**/api/projects/templates/5/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: 5,
+        name: "Bathroom Refresh Template",
+        default_clarifications: [
+          { key: "square_footage", label: "Square footage", question: "What square footage should the estimate use?", section: "measurements" },
+          { key: "material_responsibility", label: "Material responsibility", question: "Who supplies fixtures and finish materials?", section: "site" },
+          { key: "permit_responsibility", label: "Permit responsibility", question: "Are permits or HOA approvals required?", section: "scope" },
+        ],
+        milestones: [
+          { id: 501, title: "Demolition", description: "Remove existing finishes.", suggested_amount_fixed: "500.00" },
+          { id: 502, title: "Installation", description: "Install selected fixtures.", suggested_amount_fixed: "1250.00" },
+        ],
+      }),
+    });
+  });
 }
 
 function calculateTotals(items) {
@@ -898,8 +917,8 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("proposal-workspace")).toBeVisible();
 
   await page.getByTestId("estimate-workflow-step-site_scope").click();
-  await expect(page.getByTestId("proposal-mobile-capture-actions")).toContainText("Take Photo");
-  await page.getByTestId("proposal-site-notes").fill("Customer wants fixtures preserved.");
+  await expect(page.getByTestId("proposal-site-navigation-actions")).toContainText("Go to Photos");
+  await page.getByTestId("proposal-access-notes").fill("Customer wants fixtures preserved.");
   await page.getByTestId("proposal-save-site-visit").click();
 
   await page.getByTestId("proposal-measurement-label").fill("Fence length");
@@ -1067,6 +1086,83 @@ test("Clarification Questions support suggestions, editing, navigation, ignore, 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.screenshot({ path: "test-results/clarification-mobile-390.png", fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+});
+
+test("Scope canonical sources and template pricing copy workflow", async ({ page }) => {
+  test.setTimeout(60_000);
+  await installBaseMocks(page);
+  await installAgreementWizardMocks(page);
+  await page.route("**/api/projects/templates/5/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      id: 5,
+      name: "Bathroom Refresh Template",
+      default_clarifications: [
+        { key: "square_footage", label: "Square footage", question: "What square footage should the estimate use?", section: "measurements" },
+        { key: "existing_photos", label: "Existing photos", question: "Are project photos available?", section: "photos" },
+        { key: "material_responsibility", label: "Material responsibility", question: "Who supplies fixtures and finish materials?", section: "site" },
+        { key: "permit_responsibility", label: "Permit responsibility", question: "Are permits or HOA approvals required?", section: "scope" },
+      ],
+      milestones: [
+        { id: 501, title: "Demolition", description: "Remove existing finishes.", suggested_amount_fixed: "500.00" },
+        { id: 502, title: "Installation", description: "Install selected fixtures.", suggested_amount_fixed: "1250.00" },
+      ],
+    }) });
+  });
+  const scopedProposal = {
+    ...proposal,
+    measurements: [{ id: 91, label: "Floor area", location: "Bathroom", quantity: "120.00", unit: "sq ft", notes: "Measured onsite" }],
+    attachments: [{ id: 71, attachment_type: "photo", original_name: "existing.jpg", caption: "Existing bathroom", url: "/media/existing.jpg" }],
+    line_items: [],
+    totals: calculateTotals([]),
+  };
+  await page.route("**/api/projects/proposals/42/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(scopedProposal) });
+  });
+  let applyCount = 0;
+  const copiedItems = [
+    { id: 801, category: "other", category_label: "Other", description: "Demolition", quantity: "1.00", unit: "item", unit_price: "500.00", total: "500.00", notes: "Remove existing finishes." },
+    { id: 802, category: "other", category_label: "Other", description: "Installation", quantity: "1.00", unit: "item", unit_price: "1250.00", total: "1250.00", notes: "Install selected fixtures." },
+  ];
+  await page.route("**/api/projects/proposals/42/apply-template-pricing/", async (route) => {
+    applyCount += 1;
+    expect(route.request().postDataJSON()).toMatchObject({ template_id: 5, mode: "replace", confirm_replace: true });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ detail: "Pricing copied from Bathroom Refresh Template", line_items: copiedItems, totals: calculateTotals(copiedItems) }) });
+  });
+
+  await page.goto("/app/proposals/42?section=clarifications", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("proposal-clarification-card-square_footage")).toContainText("Suggested from measurements");
+  await expect(page.getByTestId("proposal-clarification-answer-square_footage")).toHaveCount(0);
+  await expect(page.getByTestId("proposal-clarification-card-existing_photos")).toContainText("1 supporting photo attached");
+  await page.screenshot({ path: "test-results/scope-source-backed-clarification.png", fullPage: true });
+
+  await page.getByTestId("site-go-measurements").click();
+  await expect(page).toHaveURL(/section=measurements/);
+  await expect(page.getByTestId("proposal-measurement-form")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/section=clarifications/);
+  await page.screenshot({ path: "test-results/scope-simplified.png", fullPage: true });
+  await page.getByTestId("site-go-photos").click();
+  await expect(page).toHaveURL(/section=photos/);
+  await page.goBack();
+  await page.getByTestId("site-go-documents").click();
+  await expect(page).toHaveURL(/section=documents/);
+  await expect(page.getByTestId("proposal-site-navigation-actions")).not.toContainText(/Quick Note|Voice Note/);
+  await page.screenshot({ path: "test-results/scope-site-navigation.png", fullPage: true });
+
+  await page.getByTestId("estimate-workflow-step-pricing").click();
+  await expect(page.getByTestId("template-pricing-availability")).toContainText("2 reusable fixed-price items available");
+  await page.screenshot({ path: "test-results/pricing-template-available.png", fullPage: true });
+  await page.getByTestId("apply-template-pricing-open").click();
+  await expect(page.getByTestId("template-pricing-preview")).toContainText("$1,750.00");
+  await page.screenshot({ path: "test-results/pricing-template-preview.png", fullPage: true });
+  await page.getByTestId("apply-template-pricing-confirm").click();
+  await expect(page.getByTestId("template-pricing-receipt")).toContainText("Pricing copied from Bathroom Refresh Template");
+  await expect(page.getByTestId("proposal-line-item-list")).toContainText("Demolition");
+  expect(applyCount).toBe(1);
+  await page.screenshot({ path: "test-results/pricing-template-populated.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  await page.screenshot({ path: "test-results/scope-mobile-390.png", fullPage: true });
 });
 
 test("Pricing validates, preserves failed edits, and guards deletion", async ({ page }) => {

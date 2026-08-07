@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Camera, Check, CheckCircle2, Circle, FileSignature, FileUp, Lock, Mail, Mic, Phone, Plus, Ruler, Save, ShieldCheck, StickyNote, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -1165,6 +1165,12 @@ export default function ProposalWorkspacePage() {
   const [templateRecommendation, setTemplateRecommendation] = useState(null);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [templateChoice, setTemplateChoice] = useState("pending");
+  const [templatePricingPreviewOpen, setTemplatePricingPreviewOpen] = useState(false);
+  const [templatePricingMode, setTemplatePricingMode] = useState("add");
+  const [templatePricingApplying, setTemplatePricingApplying] = useState(false);
+  const [templatePricingReceipt, setTemplatePricingReceipt] = useState("");
+  const templatePricingDialogRef = useRef(null);
+  const templatePricingTriggerRef = useRef(null);
   const [customerMatches, setCustomerMatches] = useState([]);
   const [saveAddressToCustomer, setSaveAddressToCustomer] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
@@ -1186,6 +1192,34 @@ export default function ProposalWorkspacePage() {
   const totals = proposal?.totals || {};
   const coreLineItems = useMemo(() => (proposal?.line_items || []).filter((item) => COST_CATEGORY_VALUES.has(item.category)), [proposal]);
   const adjustmentLineItems = useMemo(() => (proposal?.line_items || []).filter((item) => PRICING_ADJUSTMENT_VALUES.has(item.category)), [proposal]);
+  const templatePricingItems = useMemo(() => (selectedTemplate?.milestones || []).filter((item) => Number(item.suggested_amount_fixed) > 0), [selectedTemplate]);
+  const templatePricingSubtotal = useMemo(() => templatePricingItems.reduce((sum, item) => sum + Number(item.suggested_amount_fixed || 0), 0), [templatePricingItems]);
+  useEffect(() => {
+    if (!templatePricingPreviewOpen) return undefined;
+    const dialog = templatePricingDialogRef.current;
+    const returnFocusTarget = templatePricingTriggerRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') || []);
+    window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setTemplatePricingPreviewOpen(false);
+        window.requestAnimationFrame(() => templatePricingTriggerRef.current?.focus());
+      } else if (event.key === "Tab") {
+        const controls = focusable();
+        if (!controls.length) return;
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.requestAnimationFrame(() => returnFocusTarget?.focus());
+    };
+  }, [templatePricingPreviewOpen]);
   const pricingAdjustmentImpact = useMemo(() => adjustmentLineItems.reduce((sum, item) => {
     const amount = moneyToNumber(item.total);
     return sum + (item.category === "discount" ? -Math.abs(amount) : amount);
@@ -1245,11 +1279,24 @@ export default function ProposalWorkspacePage() {
   const activeStepIndex = Math.max(0, WORKSPACE_STEPS.findIndex((step) => step.sections.some(([key]) => key === active)));
   const activeStep = WORKSPACE_STEPS[activeStepIndex];
   useEffect(() => {
-    if (!proposal || activeStep.key !== "pricing") return;
+    if (!proposal || !["site_scope", "pricing"].includes(activeStep.key)) return;
+    const scopeSources = {
+      measurements: (proposal.measurements || []).map((item) => ({ label: item.label, quantity: item.quantity, unit: item.unit, location: item.location })),
+      photo_count: photos.length,
+      document_count: documents.length,
+      access_notes: draft.access_notes || "",
+      risk_notes: draft.risk_notes || "",
+      site_conditions: draft.site_conditions || "",
+      customer_requests: draft.customer_requests || "",
+      included_work: proposal.included_work || draft.included_work || "",
+      excluded_work: proposal.excluded_work || draft.excluded_work || "",
+      assumptions: proposal.assumptions || draft.assumptions || "",
+      allowances: proposal.allowances || draft.allowances || "",
+    };
     updateAssistantContext({
       workspace_mode: "estimates",
       page: "estimates",
-      active_workspace: "pricing",
+      active_workspace: activeStep.key === "pricing" ? "pricing" : "scope",
       entity_type: "proposal",
       entity_id: proposalId,
       proposal_id: proposalId,
@@ -1266,9 +1313,17 @@ export default function ProposalWorkspacePage() {
           excluded_work: proposal.excluded_work || draft.excluded_work || "",
           assumptions: proposal.assumptions || draft.assumptions || "",
         },
+        scope_sources: scopeSources,
+        template_pricing: {
+          available: templatePricingItems.length > 0,
+          template_id: selectedTemplate?.id || null,
+          template_name: selectedTemplate?.name || "",
+          item_count: templatePricingItems.length,
+          requires_approval: true,
+        },
       },
     });
-  }, [activeStep.key, draft, estimateChecklist.items, proposal, proposalId, totals, updateAssistantContext]);
+  }, [activeStep.key, documents.length, draft, estimateChecklist.items, photos.length, proposal, proposalId, selectedTemplate, templatePricingItems.length, totals, updateAssistantContext]);
   function blockReadOnlyHistory() {
     if (!isReadOnlyHistory) return false;
     toast.error("Converted estimates are read-only history. Open the linked agreement for active work.");
@@ -1573,7 +1628,15 @@ export default function ProposalWorkspacePage() {
       const match = normalizeTemplateRecommendation(data, sourceProposal);
       setTemplateRecommendation(match);
       if (match) {
-        setSelectedTemplate(match);
+        let detailedMatch = match;
+        try {
+          const detailResponse = await api.get(`/projects/templates/${match.id}/`);
+          detailedMatch = { ...match, ...detailResponse.data };
+        } catch (detailError) {
+          console.warn("Template detail unavailable for estimate pricing.", detailError);
+        }
+        setTemplateRecommendation(detailedMatch);
+        setSelectedTemplate(detailedMatch);
         setTemplateChoice("recommended");
       } else {
         setSelectedTemplate(fallbackTemplateForProposal(sourceProposal));
@@ -1678,6 +1741,31 @@ export default function ProposalWorkspacePage() {
       toast.error("Could not update this clarification.");
     } finally {
       setSavingClarificationKey("");
+    }
+  }
+
+  function openTemplatePricingPreview() {
+    setTemplatePricingMode((proposal?.line_items || []).length ? "add" : "replace");
+    setTemplatePricingPreviewOpen(true);
+  }
+
+  async function applyTemplatePricing() {
+    if (templatePricingApplying || !selectedTemplate?.id || !templatePricingItems.length) return;
+    setTemplatePricingApplying(true);
+    try {
+      const { data } = await api.post(`/projects/proposals/${proposalId}/apply-template-pricing/`, {
+        template_id: selectedTemplate.id,
+        mode: templatePricingMode,
+        confirm_replace: templatePricingMode === "replace",
+      });
+      setProposal((previous) => ({ ...previous, line_items: data.line_items, totals: data.totals }));
+      setTemplatePricingReceipt(data.detail || `Pricing copied from ${selectedTemplate.name}`);
+      setTemplatePricingPreviewOpen(false);
+      toast.success(data.detail || "Template pricing copied.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not copy template pricing.");
+    } finally {
+      setTemplatePricingApplying(false);
     }
   }
 
@@ -2643,10 +2731,10 @@ export default function ProposalWorkspacePage() {
             </button>
           </Section>
 
-          <Section id="site" active={activeStep.key === "site_scope"} title="Site Access, Conditions, and Requests">
-            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5" data-testid="proposal-mobile-capture-actions">
-              <button type="button" onClick={() => setActive("photos")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800"><Camera size={16} /> Take Photo</button>
-              <button type="button" onClick={() => setActive("measurements")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"><Ruler size={16} /> Add Measurement</button>
+          <Section id="site" active={activeStep.key === "site_scope"} title="Site Access & Conditions">
+            <div className="mb-4 flex flex-wrap gap-2" data-testid="proposal-site-navigation-actions">
+              <button type="button" data-testid="site-go-photos" onClick={() => openWorkspaceSection("photos")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-50 px-3 py-2 text-sm font-bold text-blue-800"><Camera size={16} /> Go to Photos</button>
+              <button type="button" data-testid="site-go-measurements" onClick={() => openWorkspaceSection("measurements")} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800"><Ruler size={16} /> Add measurement</button>
               {String(import.meta.env.VITE_CAPTURE_MEASUREMENT_ENABLED || "").toLowerCase() === "true" ? (
                 <button
                   type="button"
@@ -2657,13 +2745,10 @@ export default function ProposalWorkspacePage() {
                   <Ruler size={16} /> Measure a Space
                 </button>
               ) : null}
-              <button type="button" onClick={() => patchDraft("site_visit_notes", `${draft.site_visit_notes || ""}${draft.site_visit_notes ? "\n" : ""}`)} className="inline-flex items-center justify-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800"><StickyNote size={16} /> Quick Note</button>
-              <button type="button" disabled className="rounded-lg border border-white/10 bg-white/6 px-3 py-2 text-sm font-bold text-sky-100/38">Voice Note</button>
-              <button type="button" onClick={() => setActive("documents")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/14 bg-white/8 px-3 py-2 text-sm font-bold text-white hover:bg-white/12"><FileUp size={16} /> Attach File</button>
+              <button type="button" data-testid="site-go-documents" onClick={() => openWorkspaceSection("documents")} className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/14 bg-white/8 px-3 py-2 text-sm font-bold text-white hover:bg-white/12"><FileUp size={16} /> Attach document</button>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
-              <TextAreaField label="General notes" testId="proposal-site-notes" value={draft.site_visit_notes} onChange={(value) => patchDraft("site_visit_notes", value)} />
-              <TextAreaField label="Access notes" value={draft.access_notes} onChange={(value) => patchDraft("access_notes", value)} />
+              <TextAreaField label="Access instructions" testId="proposal-access-notes" value={draft.access_notes} onChange={(value) => patchDraft("access_notes", value)} />
               <TextAreaField label="Risk notes" value={draft.risk_notes} onChange={(value) => patchDraft("risk_notes", value)} />
               <TextAreaField label="Customer requests" value={draft.customer_requests} onChange={(value) => patchDraft("customer_requests", value)} />
               <TextAreaField label="Conditions" value={draft.site_conditions} onChange={(value) => patchDraft("site_conditions", value)} />
@@ -2672,20 +2757,20 @@ export default function ProposalWorkspacePage() {
               type="button"
               data-testid="proposal-save-site-visit"
               onClick={() => saveProposal({
-                site_visit_notes: draft.site_visit_notes,
                 access_notes: draft.access_notes,
                 risk_notes: draft.risk_notes,
                 customer_requests: draft.customer_requests,
                 site_conditions: draft.site_conditions,
-              }, "Site visit saved.")}
+              }, "Site access saved.")}
               disabled={saving}
               className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
             >
-              <Save size={16} /> Save Site Visit
+              <Save size={16} /> Save site access
             </button>
           </Section>
 
           <Section id="measurements" active={activeStep.key === "site_scope"} title="Measurements">
+            <div className="mb-3 text-sm font-black text-sky-100/75" aria-live="polite">{(proposal.measurements || []).length} measurement{(proposal.measurements || []).length === 1 ? "" : "s"}</div>
             <form onSubmit={addMeasurement} className="grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-5" data-testid="proposal-measurement-form">
               {["label", "location", "quantity", "unit"].map((key) => (
                 <input
@@ -2726,6 +2811,7 @@ export default function ProposalWorkspacePage() {
           </Section>
 
           <Section id="photos" active={activeStep.key === "site_scope"} title="Photos">
+            <div className="mb-3 text-sm font-black text-sky-100/75" aria-live="polite">{photos.length} photo{photos.length === 1 ? "" : "s"}</div>
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white">
               <Camera size={16} /> {uploading ? "Uploading..." : "Upload Photo"}
               <input type="file" accept="image/*" className="hidden" data-testid="proposal-photo-upload" onChange={(event) => uploadAttachment(event, "photo")} />
@@ -2742,6 +2828,7 @@ export default function ProposalWorkspacePage() {
           </Section>
 
           <Section id="documents" active={activeStep.key === "site_scope"} title="Documents">
+            <div className="mb-3 text-sm font-black text-sky-100/75" aria-live="polite">{documents.length} document{documents.length === 1 ? "" : "s"}</div>
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold text-white">
               <FileUp size={16} /> {uploading ? "Uploading..." : "Upload Document"}
               <input type="file" className="hidden" data-testid="proposal-document-upload" onChange={(event) => uploadAttachment(event, "document")} />
@@ -2773,6 +2860,17 @@ export default function ProposalWorkspacePage() {
                 <dt className="border-t border-white/12 pt-2 font-black text-white">Estimate total</dt><dd className="border-t border-white/12 pt-2 text-lg font-black text-amber-200">{money(totals.total)}</dd>
               </dl>
             </div>
+
+            {selectedTemplate?.id ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-slate-950/25 p-3" data-testid="template-pricing-availability">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-black text-white">{selectedTemplate.name}</div>
+                  <div className="text-xs font-semibold text-sky-100/65">{templatePricingItems.length ? `${templatePricingItems.length} reusable fixed-price item${templatePricingItems.length === 1 ? "" : "s"} available.` : "This template does not include reusable pricing."}</div>
+                </div>
+                {templatePricingItems.length ? <button ref={templatePricingTriggerRef} type="button" data-testid="apply-template-pricing-open" onClick={openTemplatePricingPreview} className="rounded-lg border border-amber-200/30 bg-white/8 px-3 py-2 text-sm font-black text-amber-100 hover:bg-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">Apply template pricing</button> : null}
+              </div>
+            ) : null}
+            {templatePricingReceipt ? <p className="mt-3 text-sm font-black text-emerald-100" role="status" data-testid="template-pricing-receipt">{templatePricingReceipt}</p> : null}
 
             {pricingEditorOpen ? (
             <form id="pricing-item-editor" onSubmit={submitLineItem} className="mt-4 grid gap-3 rounded-xl border border-sky-200/18 bg-slate-950/30 p-4 md:grid-cols-6" data-testid="proposal-line-item-form" aria-busy={lineItemSaving}>
@@ -2975,6 +3073,23 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
         </main>
+
+        {templatePricingPreviewOpen ? (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTemplatePricingPreviewOpen(false); }}>
+            <section ref={templatePricingDialogRef} role="dialog" aria-modal="true" aria-labelledby="template-pricing-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/14 bg-[#071d3d] p-5 text-white shadow-2xl" data-testid="template-pricing-preview">
+              <div className="flex items-start justify-between gap-3">
+                <div><h2 id="template-pricing-title" className="text-xl font-black">Preview template pricing</h2><p className="mt-1 text-sm font-semibold text-sky-100/70">Copies saved fixed-price milestone guidance from {selectedTemplate?.name}. The template is never changed.</p></div>
+                <button type="button" aria-label="Close template pricing preview" onClick={() => setTemplatePricingPreviewOpen(false)} className="rounded-lg border border-white/14 p-2 text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300"><X size={18} /></button>
+              </div>
+              <div className="mt-4 space-y-2">
+                {templatePricingItems.map((item) => <div key={item.id} className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/7 p-3 sm:flex-row sm:items-start sm:justify-between"><div><div className="font-black">{item.title}</div>{item.description ? <div className="text-sm font-semibold text-sky-100/65">{item.description}</div> : null}<div className="text-xs font-bold text-sky-100/50">1 item × {money(item.suggested_amount_fixed)}</div></div><div className="font-black tabular-nums">{money(item.suggested_amount_fixed)}</div></div>)}
+              </div>
+              <div className="mt-4 flex justify-between border-t border-white/12 pt-3 text-sm"><span className="font-black">Preview subtotal</span><span className="font-black tabular-nums">{money(templatePricingSubtotal)}</span></div>
+              {(proposal.line_items || []).length ? <fieldset className="mt-4 space-y-2"><legend className="text-sm font-black">Existing pricing found</legend><label className="flex items-start gap-2 rounded-lg border border-white/10 p-3"><input type="radio" name="template-pricing-mode" value="add" checked={templatePricingMode === "add"} onChange={() => setTemplatePricingMode("add")} /><span><strong>Add template items</strong><span className="block text-xs text-sky-100/65">Keep existing pricing and append these copies.</span></span></label><label className="flex items-start gap-2 rounded-lg border border-rose-200/20 p-3"><input type="radio" name="template-pricing-mode" value="replace" checked={templatePricingMode === "replace"} onChange={() => setTemplatePricingMode("replace")} /><span><strong>Replace existing pricing</strong><span className="block text-xs text-rose-100/70">Remove current items and replace them with these copies.</span></span></label></fieldset> : null}
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setTemplatePricingPreviewOpen(false)} className="rounded-lg border border-white/14 px-4 py-2 text-sm font-black">Cancel</button><button type="button" data-testid="apply-template-pricing-confirm" disabled={templatePricingApplying} onClick={applyTemplatePricing} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>{templatePricingApplying ? "Copying…" : templatePricingMode === "replace" && (proposal.line_items || []).length ? "Confirm replacement" : "Copy pricing items"}</button></div>
+            </section>
+          </div>
+        ) : null}
 
         <footer className="sticky bottom-2 z-10 flex justify-end rounded-2xl border border-sky-200/14 bg-[#061d42]/95 p-3 text-white shadow-[0_18px_48px_rgba(2,8,23,0.34)]" data-testid="estimate-workflow-footer">
           <div className="flex w-full gap-2 sm:w-auto">

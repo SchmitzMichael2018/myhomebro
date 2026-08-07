@@ -13,6 +13,7 @@ from projects.models_contractor_discovery import (
     OpportunityEstimateAppointment,
 )
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
+from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.services.contractor_directory import normalize_business_name
 
 
@@ -302,3 +303,51 @@ class ProposalWorkspaceFoundationTests(TestCase):
         response = self.client.get(f"/api/projects/proposals/{proposal.id}/")
 
         self.assertEqual(response.status_code, 404)
+
+    def test_template_pricing_is_copied_atomically_without_mutating_template(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen Refresh")
+        ProposalLineItem.objects.create(proposal=proposal, description="Existing", quantity=1, unit_price=100)
+        template = ProjectTemplate.objects.create(contractor=self.contractor, name="Kitchen Template")
+        milestone = ProjectTemplateMilestone.objects.create(
+            template=template,
+            title="Cabinet installation",
+            description="Install selected cabinets.",
+            suggested_amount_fixed="1250.00",
+        )
+
+        missing_confirmation = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/apply-template-pricing/",
+            {"template_id": template.id, "mode": "replace"},
+            format="json",
+        )
+        self.assertEqual(missing_confirmation.status_code, 400)
+        self.assertEqual(proposal.line_items.count(), 1)
+
+        response = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/apply-template-pricing/",
+            {"template_id": template.id, "mode": "replace", "confirm_replace": True},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data["line_items"]), 1)
+        self.assertEqual(response.data["totals"]["total"], "1250.00")
+        copied = proposal.line_items.get()
+        self.assertNotEqual(copied.id, milestone.id)
+        self.assertEqual(copied.description, milestone.title)
+        copied.description = "Contractor edit"
+        copied.save()
+        milestone.refresh_from_db()
+        self.assertEqual(milestone.title, "Cabinet installation")
+
+    def test_template_pricing_rejects_another_contractors_template(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen Refresh")
+        template = ProjectTemplate.objects.create(contractor=self.other_contractor, name="Private Template")
+        ProjectTemplateMilestone.objects.create(template=template, title="Private price", suggested_amount_fixed="500.00")
+
+        response = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/apply-template-pricing/",
+            {"template_id": template.id, "mode": "add"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(proposal.line_items.exists())

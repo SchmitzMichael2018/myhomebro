@@ -4,6 +4,7 @@ import secrets
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
 from django.utils import timezone
@@ -14,6 +15,7 @@ from rest_framework.views import APIView
 from projects.models import Homeowner
 from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
+from projects.models_templates import ProjectTemplate
 from projects.views.contractor_bids import (
     _appointment_key,
     _resolve_contractor,
@@ -734,6 +736,71 @@ class ProposalLineItemListCreateView(APIView):
             },
             status=201,
         )
+
+
+class ProposalTemplatePricingApplyView(APIView):
+    """Copy reusable fixed-price template milestones into an estimate atomically."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, proposal_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        proposal = get_object_or_404(Proposal.objects.filter(contractor=contractor), pk=proposal_id)
+        template_id = request.data.get("template_id")
+        template = get_object_or_404(
+            ProjectTemplate.objects.prefetch_related("milestones").filter(
+                Q(contractor=contractor) | Q(is_system_template=True, is_published=True),
+                is_active=True,
+            ),
+            pk=template_id,
+        )
+        mode = _safe_text(request.data.get("mode")) or "add"
+        if mode not in {"add", "replace"}:
+            return Response({"mode": ["Choose add or replace."]}, status=400)
+        if mode == "replace" and not request.data.get("confirm_replace"):
+            return Response({"detail": "Confirm replacement before removing existing pricing."}, status=400)
+
+        reusable = [
+            milestone for milestone in template.milestones.all()
+            if milestone.suggested_amount_fixed is not None and milestone.suggested_amount_fixed > 0
+        ]
+        if not reusable:
+            return Response({"detail": "This template does not include reusable pricing."}, status=400)
+
+        with transaction.atomic():
+            if mode == "replace":
+                proposal.line_items.all().delete()
+            created = [
+                ProposalLineItem.objects.create(
+                    proposal=proposal,
+                    category=ProposalLineItem.CATEGORY_OTHER,
+                    description=milestone.title,
+                    quantity=Decimal("1.00"),
+                    unit="item",
+                    unit_price=milestone.suggested_amount_fixed,
+                    notes=(milestone.description or milestone.pricing_source_note or "")[:2000],
+                )
+                for milestone in reusable
+            ]
+            _activity(
+                proposal,
+                ProposalActivity.EVENT_LINE_ITEM_ADDED,
+                f"Pricing copied from {template.name}",
+                actor=request.user,
+                metadata={"template_id": template.id, "mode": mode, "line_item_ids": [item.id for item in created]},
+            )
+
+        proposal = _proposal_queryset(contractor).get(pk=proposal.pk)
+        return Response({
+            "detail": f"Pricing copied from {template.name}",
+            "template_id": template.id,
+            "template_name": template.name,
+            "mode": mode,
+            "line_items": [_serialize_line_item(item) for item in proposal.line_items.all()],
+            "totals": _proposal_totals(proposal),
+        })
 
 
 class ProposalLineItemDetailView(APIView):
