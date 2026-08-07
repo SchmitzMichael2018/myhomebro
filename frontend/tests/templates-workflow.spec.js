@@ -1100,12 +1100,41 @@ test('templates route and sidebar access support creating and editing reusable t
   );
   await page.getByTestId('templates-tab-pricing').click();
   await expect(page.getByTestId('templates-ai-suggest-pricing-structure-button')).toBeVisible();
+  await page.locator('[data-sonner-toast]').evaluateAll((nodes) => nodes.forEach((node) => node.remove()));
+  await page.screenshot({ path: 'test-results/template-pricing-before-suggestion.png', fullPage: true });
   await page.getByTestId('templates-ai-suggest-pricing-structure-button').click();
   await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText(
     'No dollar pricing is stored'
   );
   await expect(page.getByTestId('templates-pricing-structure-preview')).not.toContainText('$0');
-  await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText('suggested');
+  await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText('Suggested');
+  await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText('Current');
+  await expect(page.getByTestId('templates-pricing-structure-preview')).toContainText('Not configured');
+  await expect(page.getByTestId('templates-milestone-allocation-enabled-1')).not.toBeChecked();
+  await expect(page.getByTestId('templates-milestone-allocation-enabled-2')).not.toBeChecked();
+  await page.screenshot({ path: 'test-results/template-pricing-suggestion-review.png', fullPage: true });
+  for (const width of [1440, 1024, 900, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await expect(page.getByTestId('templates-pricing-structure-preview')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    if (width === 390) {
+      await page.getByTestId('templates-pricing-structure-preview').screenshot({
+        path: 'test-results/template-pricing-suggestion-review-390.png',
+      });
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByTestId('templates-pricing-suggestion-actions').getByRole('button', { name: 'Cancel' }).click();
+  await expect(page.getByTestId('templates-pricing-structure-preview')).toHaveCount(0);
+  await expect(page.getByTestId('templates-milestone-allocation-enabled-1')).not.toBeChecked();
+  await page.getByTestId('templates-ai-suggest-pricing-structure-button').click();
+  await page.getByRole('checkbox', { name: 'Apply allocation suggestion for Install, align & close out' }).uncheck();
+  await page.getByTestId('templates-apply-selected-pricing-suggestions').click();
+  await expect(page.getByTestId('templates-milestone-allocation-enabled-1')).toBeChecked();
+  await expect(page.getByTestId('templates-milestone-allocation-enabled-2')).not.toBeChecked();
+  await page.screenshot({ path: 'test-results/template-pricing-apply-selected.png', fullPage: true });
+  await page.getByTestId('templates-ai-suggest-pricing-structure-button').click();
+  await page.getByTestId('templates-apply-all-pricing-suggestions').click();
   await expect(page.getByTestId('templates-milestone-percent-1')).not.toHaveValue('');
   await expect(page.getByTestId('templates-milestone-percent-2')).not.toHaveValue('');
   await expect(page.getByTestId('templates-milestone-min-percent-1')).not.toHaveValue('');
@@ -1122,8 +1151,9 @@ test('templates route and sidebar access support creating and editing reusable t
     expect(row.suggested).toBeLessThanOrEqual(row.max);
   }
   expect(allocationRows[1].suggested).toBeGreaterThan(allocationRows[0].suggested);
-  await expect(page.getByText('Suggested total:')).toBeVisible();
+  await expect(page.getByText('Allocation total:')).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
+  await page.screenshot({ path: 'test-results/template-pricing-current-allocation-total.png', fullPage: true });
   await expect(page.getByText('Min total:')).toHaveCount(0);
   await expect(page.getByText('Max total:')).toHaveCount(0);
   await expect(page.getByTestId('templates-allocation-warning')).toHaveCount(0);
@@ -1153,9 +1183,10 @@ test('templates route and sidebar access support creating and editing reusable t
   await page.getByTestId('templates-tab-milestones').click();
   await expect(page.getByText('2. Install, align & close out')).toBeVisible();
   await page.getByTestId('templates-tab-pricing').click();
-  await expect(page.getByText('Suggested Allocation Summary')).toBeVisible();
-  await expect(page.getByText('Suggested total:')).toBeVisible();
+  await expect(page.getByText('Allocation summary')).toBeVisible();
+  await expect(page.getByText('Allocation total:')).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
+  await page.screenshot({ path: 'test-results/template-pricing-resumed-draft.png', fullPage: true });
 });
 
 test('template allocation suggestions create valid flooring milestone percentages', async ({ page }) => {
@@ -1193,6 +1224,7 @@ test('template allocation suggestions create valid flooring milestone percentage
 
   await page.getByTestId('templates-tab-pricing').click();
   await page.getByTestId('templates-ai-suggest-pricing-structure-button').click();
+  await page.getByTestId('templates-apply-all-pricing-suggestions').click();
 
   const rows = await page.evaluate(() => {
     return [1, 2, 3, 4].map((idx) => ({
@@ -1211,7 +1243,7 @@ test('template allocation suggestions create valid flooring milestone percentage
   expect(rows[2].suggested).toBeGreaterThan(rows[0].suggested);
   expect(rows[2].suggested).toBeGreaterThan(rows[1].suggested);
   expect(rows[2].suggested).toBeGreaterThan(rows[3].suggested);
-  await expect(page.getByText('Suggested total:')).toBeVisible();
+  await expect(page.getByText('Allocation total:')).toBeVisible();
   await expect(page.getByText('100%')).toBeVisible();
   await expect(page.getByText('Min total:')).toHaveCount(0);
   await expect(page.getByText('Max total:')).toHaveCount(0);

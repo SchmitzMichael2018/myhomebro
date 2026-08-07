@@ -734,11 +734,11 @@ function buildPricingStructureSuggestion(milestones) {
   };
 }
 
-function applyPricingStructureToMilestones(milestones, suggestionRows) {
+function applyPricingStructureToMilestones(milestones, suggestionRows, applyAll = false) {
   const rows = Array.isArray(suggestionRows) ? suggestionRows : [];
   return (Array.isArray(milestones) ? milestones : []).map((row, idx) => {
     const suggestion = rows[idx];
-    if (!suggestion) return row;
+    if (!suggestion || (!applyAll && !suggestion.selected)) return row;
     return {
       ...row,
       pricing_advisory: true,
@@ -757,8 +757,14 @@ function buildPricingStructureSuggestionPreview(milestones) {
   const suggestion = buildPricingStructureSuggestion(milestones);
   return {
     ...suggestion,
-    rows: suggestion.rows.map((row) => ({
+    rows: suggestion.rows.map((row, idx) => ({
       ...row,
+      index: idx,
+      selected: true,
+      current: {
+        enabled: !!milestones?.[idx]?.pricing_advisory,
+        percent: milestones?.[idx]?.suggested_amount_percent ?? "",
+      },
       allocationLabel: `${percentOrDash(row.suggested)} suggested (${percentOrDash(row.min)}-${percentOrDash(row.max)})`,
     })),
   };
@@ -814,6 +820,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   const draftNameInputRef = React.useRef(null);
   const projectSuggestionRef = React.useRef(null);
   const milestoneSuggestionRef = React.useRef(null);
+  const pricingSuggestionRef = React.useRef(null);
+  const pricingSuggestionTriggerRef = React.useRef(null);
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
@@ -1465,6 +1473,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   }, [milestoneRewritePreview]);
 
   useEffect(() => {
+    if (pricingStructurePreview?.rows?.length) pricingSuggestionRef.current?.focus();
+  }, [pricingStructurePreview]);
+
+  useEffect(() => {
     if (!aiBusy) {
       setAiGenerationStageIndex(-1);
       return;
@@ -1875,10 +1887,31 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   function handleSuggestPricingStructure() {
     const suggestion = buildPricingStructureSuggestionPreview(currentMilestones);
     setPricingStructurePreview(suggestion);
-    setEditMilestones((prev) => applyPricingStructureToMilestones(prev, suggestion.rows));
-    setHasUnsavedChanges(true);
     setActiveTab("pricing");
-    toast.success("Suggested allocation percentages filled. Review and save the template.");
+  }
+
+  function closePricingStructurePreview() {
+    setPricingStructurePreview(null);
+    window.requestAnimationFrame(() => pricingSuggestionTriggerRef.current?.focus());
+  }
+
+  function applyPricingStructurePreview(applyAll = false) {
+    if (!pricingStructurePreview?.rows?.length) return;
+    const selectedCount = applyAll
+      ? pricingStructurePreview.rows.length
+      : pricingStructurePreview.rows.filter((row) => row.selected).length;
+    if (!selectedCount) {
+      toast.error("Select at least one milestone allocation to apply.");
+      return;
+    }
+    setEditMilestones((previous) =>
+      applyPricingStructureToMilestones(previous, pricingStructurePreview.rows, applyAll)
+    );
+    setPricingStructurePreview(null);
+    setHasUnsavedChanges(true);
+    toast.success(
+      `${selectedCount} allocation suggestion${selectedCount === 1 ? "" : "s"} applied. Save the draft to persist changes.`
+    );
   }
 
   async function handleDeleteTemplate(template) {
@@ -3859,11 +3892,16 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     Percentages describe how project value is typically distributed across milestones.
                   </div>
 
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Allocation guidance
+                  </div>
+
                   {(editMode || creatingNew) ? (
                     <div className="mb-4 flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={handleSuggestPricingStructure}
+                        ref={pricingSuggestionTriggerRef}
                         data-testid="templates-ai-suggest-pricing-structure-button"
                         className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                       >
@@ -3873,39 +3911,97 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                   ) : null}
 
                   {pricingStructurePreview ? (
-                    <div
+                    <dialog
+                      open
+                      ref={pricingSuggestionRef}
+                      tabIndex={-1}
+                      aria-labelledby="template-pricing-suggestion-title"
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") closePricingStructurePreview();
+                      }}
                       data-testid="templates-pricing-structure-preview"
-                      className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3"
+                      className="mhb-template-suggestion-review relative inset-auto mb-4 m-0 w-full max-w-none text-left outline-none"
                     >
-                      <div className="text-xs font-semibold uppercase tracking-wide text-amber-900">
-                        Suggested allocation structure
+                      <div id="template-pricing-suggestion-title" className="mhb-template-suggestion-heading">
+                        Review allocation suggestions
                       </div>
-                      <div className="mt-2 text-sm leading-6 text-amber-950">
+                      <div className="px-4 pb-1 text-sm leading-6 text-[var(--mhb-text-secondary)]">
                         {pricingStructurePreview.message}
                       </div>
                       {pricingStructurePreview.rows.length ? (
-                        <div className="mt-3 space-y-2">
+                        <div className="mhb-template-suggestion-list">
                           {pricingStructurePreview.rows.map((row, idx) => (
-                            <div key={`pricing-${idx}`} className="rounded-lg border border-amber-100 bg-white px-3 py-2">
-                              <div className="text-sm font-semibold text-slate-900">
-                                {row.title}
-                              </div>
-                              <div className="mt-1 text-xs text-slate-700">
-                                Suggested allocation role: {row.structure}
-                              </div>
-                              {row.allocationLabel ? (
-                                <div className="mt-1 text-xs font-semibold text-amber-900">
-                                  {row.allocationLabel}
-                                </div>
-                              ) : null}
-                              <div className="mt-1 text-xs text-slate-500">
-                                {row.note}
-                              </div>
+                            <div
+                              key={`pricing-${idx}`}
+                              data-testid={`templates-pricing-suggestion-card-${idx + 1}`}
+                              data-selected={row.selected ? "true" : "false"}
+                              className={`mhb-template-suggestion-card${row.selected ? " is-selected" : ""}`}
+                            >
+                              <label className="mhb-template-suggestion-selector">
+                                <input
+                                  type="checkbox"
+                                  checked={!!row.selected}
+                                  onChange={(event) =>
+                                    setPricingStructurePreview((current) => ({
+                                      ...current,
+                                      rows: current.rows.map((item, itemIndex) =>
+                                        itemIndex === idx ? { ...item, selected: event.target.checked } : item
+                                      ),
+                                    }))
+                                  }
+                                  className="mhb-template-suggestion-checkbox"
+                                  aria-label={`Apply allocation suggestion for ${row.title}`}
+                                />
+                                <span className="mhb-template-suggestion-comparison">
+                                  <span className="mhb-template-suggestion-current">
+                                    <span className="mhb-template-suggestion-label">Current</span>
+                                    <span className="mhb-template-suggestion-title">{row.title}</span>
+                                    <span className="mhb-template-suggestion-copy">
+                                      {row.current?.enabled && row.current?.percent !== ""
+                                        ? percentOrDash(row.current.percent)
+                                        : "Not configured"}
+                                    </span>
+                                  </span>
+                                  <span className="mhb-template-suggestion-proposed">
+                                    <span className="mhb-template-suggestion-label">Suggested</span>
+                                    <span className="mhb-template-suggestion-title">{percentOrDash(row.suggested)}</span>
+                                    <span className="mhb-template-suggestion-copy">
+                                      Typical range: {percentOrDash(row.min)}–{percentOrDash(row.max)}
+                                    </span>
+                                    <span className="mhb-template-suggestion-copy">Role: {row.structure}</span>
+                                  </span>
+                                </span>
+                              </label>
                             </div>
                           ))}
                         </div>
                       ) : null}
-                    </div>
+                      <div className="mhb-template-suggestion-actions" data-testid="templates-pricing-suggestion-actions">
+                        <button
+                          type="button"
+                          onClick={() => applyPricingStructurePreview(false)}
+                          data-testid="templates-apply-selected-pricing-suggestions"
+                          className="mhb-template-suggestion-action is-primary"
+                        >
+                          Apply selected
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => applyPricingStructurePreview(true)}
+                          data-testid="templates-apply-all-pricing-suggestions"
+                          className="mhb-template-suggestion-action is-secondary"
+                        >
+                          Apply all
+                        </button>
+                        <button
+                          type="button"
+                          onClick={closePricingStructurePreview}
+                          className="mhb-template-suggestion-action is-tertiary"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </dialog>
                   ) : null}
 
                   {generatedPricingGuidance ? (
@@ -3924,6 +4020,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       </div>
                     </div>
                   ) : null}
+
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Current template allocation
+                  </div>
 
                   <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
                     <table className="w-full text-sm">
@@ -4093,20 +4193,40 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </table>
                   </div>
 
-                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div
+                    className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+                    aria-live="polite"
+                    data-testid="templates-allocation-summary"
+                  >
                     <div className="text-xs font-semibold uppercase tracking-wide text-slate-700">
-                      Suggested Allocation Summary
+                      Allocation summary
                     </div>
 
                     {currentMilestones.some((row) => row?.pricing_advisory) ? (
                       <>
                         <div className="mt-2 flex flex-wrap gap-3 text-sm">
                           <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
-                            Suggested total:{" "}
+                            Allocation total:{" "}
                             <span className="font-semibold text-slate-900">
                               {percentOrDash(pricingTotals.percent)}
                             </span>
                           </div>
+                          <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                            {currentMilestones.filter((row) => row?.pricing_advisory).length} of {currentMilestones.length} milestones configured
+                          </div>
+                          {pricingTotals.percent < 100 ? (
+                            <div className="rounded border border-slate-200 bg-white px-3 py-2 text-slate-700">
+                              {percentOrDash(100 - pricingTotals.percent)} remaining
+                            </div>
+                          ) : pricingTotals.percent > 100 ? (
+                            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-red-800">
+                              {percentOrDash(pricingTotals.percent - 100)} over
+                            </div>
+                          ) : (
+                            <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-800">
+                              Pricing configured
+                            </div>
+                          )}
                         </div>
                         {pricingTotals.percent > 100 ? (
                           <div
