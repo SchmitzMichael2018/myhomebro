@@ -68,6 +68,11 @@ const nextActionCategoryStyles = {
   money: "border-emerald-300/30 bg-emerald-300/12 text-emerald-100",
   customer: "border-amber-300/30 bg-amber-300/12 text-amber-100",
   marketing: "border-pink-300/30 bg-pink-300/12 text-pink-100",
+  launch: "border-cyan-300/30 bg-cyan-300/12 text-cyan-100",
+  sales: "border-amber-300/30 bg-amber-300/12 text-amber-100",
+  execution: "border-violet-300/30 bg-violet-300/12 text-violet-100",
+  finance: "border-emerald-300/30 bg-emerald-300/12 text-emerald-100",
+  risk: "border-rose-300/30 bg-rose-300/12 text-rose-100",
   operations: "border-white/20 bg-white/10 text-white",
 };
 const nextActionPriorityStyles = {
@@ -90,6 +95,11 @@ function nextActionCategoryLabel(category) {
   if (value === "money") return "Money";
   if (value === "customer") return "Customer";
   if (value === "marketing") return "Marketing";
+  if (value === "launch") return "Launch";
+  if (value === "sales") return "Sales";
+  if (value === "execution") return "Execution";
+  if (value === "finance" || value === "money") return "Finance";
+  if (value === "risk" || value === "attention") return "Risk / Follow-up";
   return "Operations";
 }
 
@@ -3187,6 +3197,8 @@ export default function ContractorDashboard() {
         payoutHistorySummary,
         payoutHistoryRecent,
         activityFeed,
+        prioritySummary: activationSummary?.priority_summary,
+        stripeReady: activationSummary?.priority_summary?.stripe_ready,
       }),
     [
       agreements,
@@ -3198,6 +3210,7 @@ export default function ContractorDashboard() {
       payoutHistoryRecent,
       payoutHistorySummary,
       sanitizedNextBestAction,
+      activationSummary?.priority_summary,
     ]
   );
   const heroAction = useMemo(() => {
@@ -3353,7 +3366,7 @@ export default function ContractorDashboard() {
     ];
   }, [activationSummary, contractorNextActions, dismissedNextActionKeys, heroBand]);
   const visibleNextActionCards = useMemo(
-    () => nextActionCards.slice(0, showAllNextActions ? 10 : 5),
+    () => nextActionCards.slice(0, showAllNextActions ? 10 : 3),
     [nextActionCards, showAllNextActions]
   );
   const contextualGuide = useMemo(() => {
@@ -4128,7 +4141,7 @@ export default function ContractorDashboard() {
                   label={nextActionCards.length ? `${nextActionCards.length} active` : "Caught up"}
                   data-testid="dashboard-priority-count"
                 />
-                {nextActionCards.length > 5 ? (
+                {nextActionCards.length > 3 ? (
                   <Button
                     theme="operational"
                     variant="ghost"
@@ -4232,16 +4245,18 @@ export default function ContractorDashboard() {
                         >
                           Snooze
                         </Button>
-                        <Button
-                          theme="operational"
-                          variant="icon"
-                          data-testid={`dashboard-next-action-dismiss-${item.key}`}
-                          onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
-                          className="ml-auto !h-8 !w-8 !rounded-full"
-                          aria-label={`Dismiss ${item.title}`}
-                        >
-                          <X className="h-4 w-4" aria-hidden="true" />
-                        </Button>
+                        {item.dismissible ? (
+                          <Button
+                            theme="operational"
+                            variant="icon"
+                            data-testid={`dashboard-next-action-dismiss-${item.key}`}
+                            onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
+                            className="ml-auto !h-8 !w-8 !rounded-full"
+                            aria-label={`Dismiss ${item.title}`}
+                          >
+                            <X className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        ) : null}
                       </div>
                     </article>
                   );
@@ -4251,8 +4266,8 @@ export default function ContractorDashboard() {
               <EmptyState
                 data-testid="dashboard-next-actions-empty"
                 theme="operational"
-                title="Great job!"
-                description="You're all caught up."
+                title="You’re caught up"
+                description="No required actions need your attention right now."
                 className="!items-stretch !rounded-2xl !bg-white/8 !p-5"
                 primaryAction={(
                   <div className="grid w-full gap-2 md:grid-cols-2 xl:grid-cols-4">

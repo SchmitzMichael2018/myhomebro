@@ -181,6 +181,8 @@ function buildAction({
   receivedAt = "",
   updatedAt = "",
   blocking = false,
+  optional = false,
+  dismissible = false,
 }) {
   const recommendedUrl = safeText(navigationTarget) || "/app/dashboard";
   const normalizedPriority = safeNumber(priorityScore);
@@ -209,6 +211,8 @@ function buildAction({
     updated_at: safeText(updatedAt),
     recommended_url: recommendedUrl,
     blocking: Boolean(blocking),
+    optional: Boolean(optional),
+    dismissible: Boolean(dismissible || optional),
   };
 }
 
@@ -272,6 +276,28 @@ function mapNextBestAction(nextBestAction) {
   });
 }
 
+function mapPrioritySummary(prioritySummary) {
+  const action = prioritySummary?.launch_action;
+  if (!action?.key || !action?.title) return null;
+  return buildAction({
+    key: action.key,
+    dedupeKey: action.key,
+    title: action.title,
+    description: action.description,
+    buttonLabel: action.action_label,
+    navigationTarget: action.destination,
+    priorityScore: action.rank ?? 50,
+    category: action.category || "launch",
+    source: "priority_summary",
+    actionType: action.key,
+    reason: action.reason,
+    blocking: Boolean(action.blocking),
+    optional: Boolean(action.optional),
+    dismissible: Boolean(action.optional),
+    project: action.project_title,
+  });
+}
+
 export function getContractorNextActions({
   nextBestAction = null,
   agreements = [],
@@ -280,6 +306,8 @@ export function getContractorNextActions({
   drawRequests = [],
   publicLeads = [],
   activityFeed = [],
+  prioritySummary = null,
+  stripeReady = null,
 } = {}) {
   const actions = [];
 
@@ -287,6 +315,9 @@ export function getContractorNextActions({
   if (mappedNextBestAction) {
     actions.push(mappedNextBestAction);
   }
+
+  const mappedPrioritySummary = mapPrioritySummary(prioritySummary);
+  if (mappedPrioritySummary) actions.push(mappedPrioritySummary);
 
   const planningAlerts = [...(Array.isArray(agreements) ? agreements : [])].filter((agreement) => {
     const status = normalizeStatus(agreement?.planning_validation_status || agreement?.planning_validation_summary?.status);
@@ -546,21 +577,30 @@ export function getContractorNextActions({
     );
   });
   if (awaitingFunding.length) {
+    const requiresPaymentSetup = stripeReady === false;
     actions.push(
       buildAction({
-        key: "agreements-awaiting-funding",
+        key: requiresPaymentSetup ? "finance:payment-setup" : "agreements-awaiting-funding",
         dedupeKey: "agreements-awaiting-funding",
-        title: "Fund agreement escrow",
-        description: `${countLabel(awaitingFunding.length, "agreement")} ${isAre(awaitingFunding.length)} waiting on funding.`,
-        buttonLabel: "Open agreements",
-        navigationTarget: "/app/agreements?focus=needs_attention&filter=awaiting_funding",
-        priorityScore: 82,
-        category: "money",
+        title: requiresPaymentSetup ? "Finish payment setup for active work" : "Fund agreement escrow",
+        description: requiresPaymentSetup
+          ? `${countLabel(awaitingFunding.length, "signed agreement")} ${isAre(awaitingFunding.length)} waiting for payment setup.`
+          : `${countLabel(awaitingFunding.length, "agreement")} ${isAre(awaitingFunding.length)} waiting on funding.`,
+        buttonLabel: requiresPaymentSetup ? "Finish payment setup" : "Open agreements",
+        navigationTarget: requiresPaymentSetup
+          ? "/app/onboarding/stripe"
+          : "/app/agreements?focus=needs_attention&filter=awaiting_funding",
+        priorityScore: requiresPaymentSetup ? 88 : 82,
+        category: "finance",
         source: "payments",
         dataTestId: "dashboard-needs-attention-item-awaiting_funding",
-        actionType: "collect_escrow_funding",
-        summary: `${countLabel(awaitingFunding.length, "agreement")} ${isAre(awaitingFunding.length)} waiting on escrow funding.`,
-        reason: "Funding protects the work before active milestones begin.",
+        actionType: requiresPaymentSetup ? "complete_payment_setup" : "collect_escrow_funding",
+        summary: requiresPaymentSetup
+          ? "Payment setup is needed before this signed work can be funded."
+          : `${countLabel(awaitingFunding.length, "agreement")} ${isAre(awaitingFunding.length)} waiting on escrow funding.`,
+        reason: requiresPaymentSetup
+          ? "This recommendation appears because signed work is waiting for funding; payment setup is not a general launch requirement."
+          : "Funding protects the work before active milestones begin.",
         estimatedEffort: "4 minutes",
         urgency: "Today",
         blocking: true,
@@ -642,6 +682,54 @@ export function getContractorNextActions({
         urgency: "Critical",
         value: sumAmount(invoiceDisputed),
         blocking: true,
+      })
+    );
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const scheduledMilestones = [...(Array.isArray(milestones) ? milestones : [])]
+    .filter((milestone) => !isMilestoneCompleted(milestone) && !isMilestoneRework(milestone))
+    .map((milestone) => ({
+      milestone,
+      due: parseDateAny(
+        milestone?.completion_date || milestone?.due_date || milestone?.scheduled_end || milestone?.end_date
+      ),
+    }))
+    .filter((entry) => entry.due)
+    .map((entry) => {
+      entry.due.setHours(0, 0, 0, 0);
+      return entry;
+    })
+    .sort((left, right) => left.due.getTime() - right.due.getTime());
+  const overdueMilestone = scheduledMilestones.find((entry) => entry.due < today);
+  const dueTodayMilestone = scheduledMilestones.find((entry) => entry.due.getTime() === today.getTime());
+  const scheduledPriority = overdueMilestone || dueTodayMilestone;
+  if (scheduledPriority?.milestone?.id) {
+    const row = scheduledPriority.milestone;
+    const overdue = scheduledPriority === overdueMilestone;
+    const projectName = pickFirst(row?.project_title, row?.agreement_title, row?.agreement?.title);
+    actions.push(
+      buildAction({
+        key: `execution:milestone-${overdue ? "overdue" : "due-today"}:${row.id}`,
+        dedupeKey: `milestone:${row.id}`,
+        title: overdue ? `Complete overdue milestone: ${safeText(row?.title) || "Milestone"}` : `${safeText(row?.title) || "Milestone"} is due today`,
+        description: overdue
+          ? "This milestone is past its scheduled completion date and needs attention."
+          : "Review progress and complete or update this milestone today.",
+        buttonLabel: "Open milestone",
+        navigationTarget: `/app/milestones/${row.id}`,
+        priorityScore: overdue ? 98 : 90,
+        category: "execution",
+        source: "milestones",
+        actionType: overdue ? "complete_overdue_milestone" : "review_milestone_due_today",
+        reason: overdue
+          ? "Overdue project work can affect customer expectations, dependent milestones, and payment timing."
+          : "Keeping today’s scheduled work current protects the project timeline.",
+        urgency: overdue ? "Critical" : "Today",
+        project: projectName,
+        updatedAt: row?.updated_at,
+        blocking: overdue,
       })
     );
   }
@@ -779,7 +867,9 @@ export function getContractorNextActions({
     );
   }
 
-  const remainingActivitySlots = Math.max(0, FALLBACK_ACTIVITY_LIMIT - actions.length);
+  const remainingActivitySlots = mappedPrioritySummary
+    ? 0
+    : Math.max(0, FALLBACK_ACTIVITY_LIMIT - actions.length);
   if (remainingActivitySlots > 0) {
     const activityActions = [...(Array.isArray(activityFeed) ? activityFeed : [])]
       .filter((item) => !isStatusConfirmationItem(item))

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
-from projects.models import Agreement, Contractor
+from projects.models import Agreement, Contractor, Homeowner
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
+from projects.models_proposals import Proposal
+from projects.models_templates import ProjectTemplate
 
 
 SECTION_PREFILLED_PROFILE = "prefilled_profile"
@@ -55,6 +57,119 @@ def _has_prefilled_profile(contractor: Contractor) -> bool:
     }:
         return True
     return ContractorDirectoryEntry.objects.filter(claimed_by_contractor=contractor).exists()
+
+
+def _build_priority_summary(contractor: Contractor) -> dict[str, Any]:
+    active_template_count = ProjectTemplate.objects.filter(
+        contractor=contractor,
+        lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE,
+        is_active=True,
+    ).count()
+    customer_count = Homeowner.objects.filter(created_by=contractor).count()
+    active_proposals = (
+        Proposal.objects.filter(contractor=contractor)
+        .exclude(status__in=[Proposal.STATUS_CONVERTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED])
+        .select_related("contractor_opportunity", "contractor_opportunity__converted_agreement")
+        .annotate(line_item_count=Count("line_items"))
+    )
+    active_estimate_count = active_proposals.count()
+    latest_estimate = active_proposals.order_by("-updated_at", "-id").first()
+    agreement_count = Agreement.objects.filter(contractor=contractor).count()
+
+    launch_action: dict[str, Any] | None = None
+    if active_template_count == 0:
+        launch_action = {
+            "key": "launch:first-template",
+            "category": "launch",
+            "rank": 50,
+            "title": "Create your first reusable template",
+            "description": "Set up a common project once so future estimates and agreements are faster and more consistent.",
+            "reason": "Reusable templates can prefill milestones, descriptions, pricing guidance, timing, and materials for future estimates and agreements.",
+            "action_label": "Create template",
+            "destination": "/app/templates",
+            "optional": True,
+            "blocking": False,
+        }
+    elif customer_count == 0:
+        launch_action = {
+            "key": "launch:first-customer",
+            "category": "launch",
+            "rank": 50,
+            "title": "Add your first customer",
+            "description": "Create a customer record so you can start an estimate and keep project details organized.",
+            "reason": "A customer record connects estimates, agreements, projects, and communication.",
+            "action_label": "Add customer",
+            "destination": "/app/customers/new",
+            "optional": False,
+            "blocking": False,
+        }
+    elif active_estimate_count == 0 and agreement_count == 0:
+        launch_action = {
+            "key": "launch:first-estimate",
+            "category": "sales",
+            "rank": 55,
+            "title": "Create your first estimate",
+            "description": "Use your template and customer details to build a reusable estimate workflow.",
+            "reason": "An estimate carries customer, scope, pricing, and schedule details toward an agreement.",
+            "action_label": "Create estimate",
+            "destination": "/app/estimates?create=estimate",
+            "optional": False,
+            "blocking": False,
+        }
+    elif latest_estimate is not None:
+        project_name = (latest_estimate.project_title or "this estimate").strip()
+        linked_agreement_id = getattr(latest_estimate.contractor_opportunity, "converted_agreement_id", None)
+        if latest_estimate.status == Proposal.STATUS_READY and not linked_agreement_id:
+            launch_action = {
+                "key": f"sales:agreement-ready:{latest_estimate.id}",
+                "category": "sales",
+                "rank": 84,
+                "title": f"Create agreement for {project_name}",
+                "description": "This estimate is ready for agreement review and conversion.",
+                "reason": "The estimate has reached its ready state and can move into the existing Agreement Wizard.",
+                "action_label": "Create agreement",
+                "destination": f"/app/proposals/{latest_estimate.id}?section=ready",
+                "optional": False,
+                "blocking": True,
+                "entity_id": latest_estimate.id,
+            }
+        elif latest_estimate.line_item_count == 0:
+            launch_action = {
+                "key": f"sales:estimate-pricing:{latest_estimate.id}",
+                "category": "sales",
+                "rank": 83,
+                "title": f"Add pricing to {project_name}",
+                "description": "Add estimate pricing before reviewing agreement readiness.",
+                "reason": "Pricing is required before this estimate can become an agreement.",
+                "action_label": "Add pricing",
+                "destination": f"/app/proposals/{latest_estimate.id}?section=estimate",
+                "optional": False,
+                "blocking": True,
+                "entity_id": latest_estimate.id,
+            }
+        elif latest_estimate.status in {Proposal.STATUS_DRAFT, Proposal.STATUS_SITE_VISIT, Proposal.STATUS_IN_PROGRESS}:
+            launch_action = {
+                "key": f"sales:estimate-review:{latest_estimate.id}",
+                "category": "sales",
+                "rank": 80,
+                "title": f"Review estimate readiness for {project_name}",
+                "description": "Review the remaining estimate requirements and prepare the next agreement step.",
+                "reason": "A complete estimate keeps scope, pricing, and customer expectations together before agreement conversion.",
+                "action_label": "Review estimate",
+                "destination": f"/app/proposals/{latest_estimate.id}?section=ready",
+                "optional": False,
+                "blocking": True,
+                "entity_id": latest_estimate.id,
+            }
+
+    return {
+        "active_contractor_template_count": active_template_count,
+        "customer_count": customer_count,
+        "active_estimate_count": active_estimate_count,
+        "agreement_count": agreement_count,
+        "stripe_ready": bool(contractor.stripe_connected),
+        "launch_action": launch_action,
+    }
 
 
 def _infer_activation_type(
@@ -108,6 +223,7 @@ def build_contractor_activation_summary(contractor: Contractor | None, *, mark_s
             "latest_agreement_url": "",
             "should_show_activation_guide": False,
             "guide_sections": {},
+            "priority_summary": {},
         }
 
     opportunities = _opportunity_queryset(contractor)
@@ -208,6 +324,7 @@ def build_contractor_activation_summary(contractor: Contractor | None, *, mark_s
         "latest_agreement_url": f"/app/agreements/{latest_agreement_id}/wizard?step=1" if latest_agreement_id else "",
         "should_show_activation_guide": should_show,
         "guide_sections": guide_sections,
+        "priority_summary": _build_priority_summary(contractor),
     }
 
 

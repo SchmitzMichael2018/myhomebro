@@ -1,12 +1,15 @@
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from projects.models import Agreement, Contractor, Homeowner, Project
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
+from projects.models_proposals import Proposal, ProposalLineItem
+from projects.models_templates import ProjectTemplate
 from projects.services.contractor_directory import normalize_business_name
 
 
+@override_settings(SECURE_SSL_REDIRECT=False)
 class ContractorActivationSummaryTests(TestCase):
     def setUp(self):
         User = get_user_model()
@@ -32,6 +35,16 @@ class ContractorActivationSummaryTests(TestCase):
             state="TX",
             claimed=True,
             claimed_by_contractor=contractor,
+        )
+
+    def _template(self, *, status=ProjectTemplate.LifecycleStatus.ACTIVE, contractor=None, is_system=False):
+        return ProjectTemplate.objects.create(
+            contractor=None if is_system else (contractor or self.contractor),
+            name=f"{'System' if is_system else 'Contractor'} {status} Template",
+            lifecycle_status=status,
+            is_active=True,
+            is_system=is_system,
+            is_system_template=is_system,
         )
 
     def test_traditional_signup_gets_traditional_onboarding_only(self):
@@ -154,3 +167,73 @@ class ContractorActivationSummaryTests(TestCase):
         self.assertEqual(response.data["pending_opportunity_count"], 0)
         self.assertFalse(response.data["has_pending_opportunities"])
         self.assertFalse(response.data["guide_sections"]["public_leads"]["visible"])
+
+    def test_priority_summary_recommends_active_contractor_template_first(self):
+        self._template(is_system=True)
+        self._template(status=ProjectTemplate.LifecycleStatus.DRAFT)
+
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+
+        summary = response.data["priority_summary"]
+        self.assertEqual(summary["active_contractor_template_count"], 0)
+        self.assertEqual(summary["launch_action"]["key"], "launch:first-template")
+        self.assertEqual(summary["launch_action"]["destination"], "/app/templates")
+        self.assertTrue(summary["launch_action"]["optional"])
+
+    def test_priority_summary_advances_from_template_to_customer_to_estimate(self):
+        self._template()
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+        self.assertEqual(response.data["priority_summary"]["launch_action"]["key"], "launch:first-customer")
+
+        Homeowner.objects.create(created_by=self.contractor, full_name="First Customer")
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+        self.assertEqual(response.data["priority_summary"]["launch_action"]["key"], "launch:first-estimate")
+        self.assertEqual(
+            response.data["priority_summary"]["launch_action"]["destination"],
+            "/app/estimates?create=estimate",
+        )
+
+    def test_priority_summary_routes_incomplete_and_ready_estimates_to_exact_steps(self):
+        self._template()
+        Homeowner.objects.create(created_by=self.contractor, full_name="Estimate Customer")
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_DASHBOARD,
+            source_id=901,
+            project_title="Bathroom Remodel",
+            status=Proposal.STATUS_IN_PROGRESS,
+        )
+
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+        action = response.data["priority_summary"]["launch_action"]
+        self.assertEqual(action["key"], f"sales:estimate-pricing:{proposal.id}")
+        self.assertEqual(action["destination"], f"/app/proposals/{proposal.id}?section=estimate")
+
+        ProposalLineItem.objects.create(
+            proposal=proposal,
+            description="Installation labor",
+            quantity=1,
+            unit_price=1000,
+        )
+        proposal.status = Proposal.STATUS_READY
+        proposal.save(update_fields=["status", "updated_at"])
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+        action = response.data["priority_summary"]["launch_action"]
+        self.assertEqual(action["key"], f"sales:agreement-ready:{proposal.id}")
+        self.assertEqual(action["destination"], f"/app/proposals/{proposal.id}?section=ready")
+
+    def test_other_contractor_records_do_not_complete_launch_sequence(self):
+        self._template(contractor=self.other_contractor)
+        Homeowner.objects.create(created_by=self.other_contractor, full_name="Other Customer")
+        Proposal.objects.create(
+            contractor=self.other_contractor,
+            source_type=Proposal.SOURCE_DASHBOARD,
+            source_id=902,
+            project_title="Hidden Estimate",
+        )
+
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+        summary = response.data["priority_summary"]
+        self.assertEqual(summary["active_contractor_template_count"], 0)
+        self.assertEqual(summary["customer_count"], 0)
+        self.assertEqual(summary["active_estimate_count"], 0)

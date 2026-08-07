@@ -26,10 +26,11 @@ async function mockAuth(page) {
       contentType: 'application/json',
       body: JSON.stringify({
         id: 7,
-        business_name: '',
-        city: '',
-        state: '',
-        skills: [],
+        business_name: 'Playwright Contracting',
+        phone: '512-555-0199',
+        city: 'Austin',
+        state: 'TX',
+        skills: ['General Contractor'],
         contractor_onboarding_status: 'complete',
         marketplace_verification_status: 'unverified',
         stripe_connected: false,
@@ -56,6 +57,21 @@ async function mockAuth(page) {
             },
           ],
         },
+      }),
+    });
+  });
+
+  await page.route('**/api/projects/contractors/onboarding/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        required_onboarding_complete: true,
+        step: 'complete',
+        business_name: 'Playwright Contracting',
+        trade_count: 1,
+        service_region_label: 'Austin, TX',
+        profile_basics_complete: true,
       }),
     });
   });
@@ -486,13 +502,16 @@ test("Today's priorities feed prioritizes leads, dedupes actions, and deep-links
   await expect(page.getByTestId('dashboard-next-action-meta-website-lead:501-received')).toContainText('Jun 25');
   await expect(page.getByTestId('dashboard-next-actions').getByText('New Website Lead')).toHaveCount(1);
   await expect(actionItems.nth(1)).toContainText('Draft agreement ready to send');
+  await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Release approved payment');
+  await page.getByRole('button', { name: 'View all actions' }).click();
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('Release approved payment');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText('Fast responses improve close rate.');
 
   await page.getByTestId('dashboard-next-action-snooze-agreement-draft:301').click();
   await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Draft agreement ready to send');
 
-  await page.getByTestId('dashboard-next-action-dismiss-invoice-approved:701').click();
+  await expect(page.getByTestId('dashboard-next-action-dismiss-invoice-approved:701')).toHaveCount(0);
+  await page.getByTestId('dashboard-next-action-snooze-invoice-approved:701').click();
   await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('Release approved payment');
 
   await page.getByTestId('dashboard-work-not-started').hover();
@@ -502,11 +521,6 @@ test("Today's priorities feed prioritizes leads, dedupes actions, and deep-links
   await expect(page.getByTestId('dashboard-work-not-started-view-all')).toContainText('View all Not Started');
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('dashboard-work-not-started-preview')).toHaveCount(0);
-
-  await page.getByTestId('dashboard-work-invoiced').focus();
-  await expect(page.getByTestId('dashboard-work-invoiced-preview')).toContainText('No items in this stage.');
-  await page.getByTestId('dashboard-work-invoiced').blur();
-  await expect(page.getByTestId('dashboard-work-invoiced-preview')).toHaveCount(0);
 
   await page.getByTestId('dashboard-next-action-button-website-lead:501').click();
   await expect(page).toHaveURL(/\/app\/opportunities\?source=website$/);
@@ -584,7 +598,8 @@ test("Today's priorities feed hides snoozed actions and shows growth suggestions
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
 
   await expect(page.getByTestId('dashboard-next-actions')).not.toContainText('New Website Lead');
-  await expect(page.getByTestId('dashboard-next-actions-empty')).toContainText('Great job!');
+  await expect(page.getByTestId('dashboard-next-actions-empty')).toContainText('You’re caught up');
+  await expect(page.getByTestId('dashboard-next-actions-empty')).toContainText('No required actions need your attention right now.');
   await expect(page.getByTestId('dashboard-growth-suggestion-improve-website')).toBeVisible();
   await expect(page.getByTestId('dashboard-growth-suggestion-request-reviews')).toBeVisible();
   await expect(page.getByTestId('dashboard-growth-suggestion-upload-portfolio')).toBeVisible();
