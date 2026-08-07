@@ -1405,7 +1405,23 @@ test('template builder saves and restores an unfinished draft and reviews milest
   await expect(review).toContainText('Current');
   await expect(review).toContainText('No description yet.');
   await expect(review).toContainText('Suggestion');
-  await page.screenshot({ path: 'test-results/template-builder-ai-suggestion-review.png', fullPage: true });
+  await expect(review).toHaveClass(/mhb-template-suggestion-review/);
+  const suggestionCard = page.getByTestId('templates-milestone-suggestion-card-1');
+  await expect(suggestionCard).toHaveAttribute('data-selected', 'true');
+  await expect(suggestionCard).toHaveClass(/is-selected/);
+  await expect(page.getByTestId('templates-milestone-suggestion-actions')).toBeVisible();
+  await page.screenshot({ path: 'test-results/template-builder-dark-review-surface.png', fullPage: true });
+  await suggestionCard.screenshot({ path: 'test-results/template-builder-dark-selected-milestone.png' });
+  for (const width of [1440, 1024, 900, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await expect(review).toBeVisible();
+    await expect(page.getByTestId('templates-milestone-suggestion-actions')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    if (width === 390) {
+      await review.screenshot({ path: 'test-results/template-builder-dark-review-mobile.png' });
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
   await page.getByTestId('templates-apply-all-descriptions').click();
   await expect(page.getByTestId('templates-milestone-description-1')).not.toHaveValue('');

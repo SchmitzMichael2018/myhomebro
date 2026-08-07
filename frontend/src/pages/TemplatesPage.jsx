@@ -3618,15 +3618,20 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                             if (event.key === "Escape") setMilestoneRewritePreview(null);
                           }}
                           data-testid="templates-milestone-improvement-preview"
-                          className="relative inset-auto mb-4 m-0 w-full max-w-none rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-left outline-none focus:ring-2 focus:ring-sky-600"
+                          className="mhb-template-suggestion-review relative inset-auto mb-4 m-0 w-full max-w-none text-left outline-none"
                         >
-                          <div id="template-milestone-suggestion-title" className="text-xs font-semibold uppercase tracking-wide text-sky-900">
+                          <div id="template-milestone-suggestion-title" className="mhb-template-suggestion-heading">
                             Review milestone wording suggestions
                           </div>
-                          <div className="mt-2 space-y-2">
+                          <div className="mhb-template-suggestion-list">
                             {milestoneRewritePreview.map((row, idx) => (
-                              <div key={`rewrite-${idx}`} className="rounded-lg border border-sky-100 bg-white px-3 py-2">
-                                <label className="flex items-start gap-3">
+                              <div
+                                key={`rewrite-${idx}`}
+                                data-testid={`templates-milestone-suggestion-card-${idx + 1}`}
+                                data-selected={row.selected ? "true" : "false"}
+                                className={`mhb-template-suggestion-card${row.selected ? " is-selected" : ""}`}
+                              >
+                                <label className="mhb-template-suggestion-selector">
                                   <input
                                     type="checkbox"
                                     checked={row.selected}
@@ -3637,35 +3642,39 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                                         )
                                       )
                                     }
-                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600"
+                                    className="mhb-template-suggestion-checkbox"
                                     aria-label={`Apply suggestion for ${row.current?.title || `milestone ${idx + 1}`}`}
                                   />
-                                  <span className="min-w-0 flex-1">
-                                    <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Current</span>
-                                    <span className="block text-sm font-semibold text-slate-900">
-                                      {row.current?.title || `Milestone ${idx + 1}`}
+                                  <span className="mhb-template-suggestion-comparison">
+                                    <span className="mhb-template-suggestion-current">
+                                      <span className="mhb-template-suggestion-label">Current</span>
+                                      <span className="mhb-template-suggestion-title">
+                                        {row.current?.title || `Milestone ${idx + 1}`}
+                                      </span>
+                                      <span className="mhb-template-suggestion-copy">
+                                        {row.current?.description || "No description yet."}
+                                      </span>
                                     </span>
-                                    <span className="mt-1 block text-xs leading-5 text-slate-600">
-                                      {row.current?.description || "No description yet."}
-                                    </span>
-                                    <span className="mt-3 block text-xs font-semibold uppercase tracking-wide text-sky-800">Suggestion</span>
-                                    {row.suggested?.title !== row.current?.title ? (
-                                      <span className="block text-sm font-semibold text-slate-900">{row.suggested?.title}</span>
-                                    ) : null}
-                                    <span className="mt-1 block text-xs leading-5 text-slate-700">
-                                      {row.suggested?.description || "Reusable description suggestion pending."}
+                                    <span className="mhb-template-suggestion-proposed">
+                                      <span className="mhb-template-suggestion-label">Suggestion</span>
+                                      {row.suggested?.title !== row.current?.title ? (
+                                        <span className="mhb-template-suggestion-title">{row.suggested?.title}</span>
+                                      ) : null}
+                                      <span className="mhb-template-suggestion-copy">
+                                        {row.suggested?.description || "Reusable description suggestion pending."}
+                                      </span>
                                     </span>
                                   </span>
                                 </label>
                               </div>
                             ))}
                           </div>
-                          <div className="mt-3 flex flex-wrap gap-2">
+                          <div className="mhb-template-suggestion-actions" data-testid="templates-milestone-suggestion-actions">
                             <button
                               type="button"
                               onClick={applyMilestoneRewritePreview}
                               data-testid="templates-apply-milestone-improvements"
-                              className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800"
+                              className="mhb-template-suggestion-action is-primary"
                             >
                               Apply selected
                             </button>
@@ -3673,14 +3682,14 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               type="button"
                               onClick={applyAllSuggestedDescriptions}
                               data-testid="templates-apply-all-descriptions"
-                              className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                              className="mhb-template-suggestion-action is-secondary"
                             >
                               Apply all descriptions
                             </button>
                             <button
                               type="button"
                               onClick={() => setMilestoneRewritePreview(null)}
-                              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              className="mhb-template-suggestion-action is-tertiary"
                             >
                               Cancel
                             </button>
