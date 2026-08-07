@@ -5,8 +5,10 @@ import toast from "react-hot-toast";
 
 import api from "../api";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
+import UnitSelect from "../components/UnitSelect.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
+import { customUnitError, recognizeUnit, unitDisplay, unitValueForSave } from "../lib/units.js";
 
 const WORKFLOW_GROUPS = [
   {
@@ -750,7 +752,7 @@ function clarificationSuggestion(question, { proposal, draft, photos }) {
   if (key.includes("photo")) return { answer: `${(photos || []).length} supporting photo${(photos || []).length === 1 ? "" : "s"} attached.`, source: "photos", label: "Suggested from photos" };
   if (key.includes("square") || key.includes("measurement") || key.includes("footage")) {
     const measurements = Array.isArray(proposal?.measurements) ? proposal.measurements : [];
-    const answer = measurements.map((item) => [item.label, item.quantity, item.unit, item.notes].filter(Boolean).join(" ")).filter(Boolean).join("\n");
+    const answer = measurements.map((item) => [item.label, item.quantity, unitDisplay(item.unit), item.notes].filter(Boolean).join(" ")).filter(Boolean).join("\n");
     return { answer, source: "measurements", label: "Suggested from measurements" };
   }
   if (key.includes("schedul") || key.includes("date") || key.includes("timeline")) {
@@ -1149,6 +1151,7 @@ export default function ProposalWorkspacePage() {
   const [active, setActive] = useState("customer");
   const [draft, setDraft] = useState({});
   const [measurementForm, setMeasurementForm] = useState(EMPTY_MEASUREMENT);
+  const [measurementUnitError, setMeasurementUnitError] = useState("");
   const [lineItemForm, setLineItemForm] = useState(EMPTY_LINE_ITEM);
   const [editingLineItemId, setEditingLineItemId] = useState(null);
   const [pricingEditorOpen, setPricingEditorOpen] = useState(false);
@@ -1783,8 +1786,11 @@ export default function ProposalWorkspacePage() {
   async function addMeasurement(event) {
     event?.preventDefault?.();
     if (blockReadOnlyHistory()) return;
+    const unitError = measurementForm.unit && !recognizeUnit(measurementForm.unit) ? customUnitError(measurementForm.unit) : "";
+    if (unitError) { setMeasurementUnitError(unitError); return; }
+    setMeasurementUnitError("");
     try {
-      const { data } = await api.post(`/projects/proposals/${proposalId}/measurements/`, measurementForm);
+      const { data } = await api.post(`/projects/proposals/${proposalId}/measurements/`, { ...measurementForm, unit: unitValueForSave(measurementForm.unit) });
       setProposal((prev) => ({ ...prev, measurements: [...(prev?.measurements || []), data] }));
       setMeasurementForm(EMPTY_MEASUREMENT);
       setWalkthroughMeasurementOpen(false);
@@ -1833,6 +1839,7 @@ export default function ProposalWorkspacePage() {
     if (!compactText(lineItemForm.description)) errors.description = "Description is required.";
     if (lineItemForm.quantity === "" || !Number.isFinite(Number(lineItemForm.quantity))) errors.quantity = "Enter a valid quantity.";
     if (lineItemForm.unit_price === "" || !Number.isFinite(Number(lineItemForm.unit_price))) errors.unit_price = "Enter a valid unit price.";
+    if (lineItemForm.unit && !recognizeUnit(lineItemForm.unit)) errors.unit = customUnitError(lineItemForm.unit);
     if (Object.keys(errors).length) {
       setLineItemErrors(errors);
       return;
@@ -1841,7 +1848,7 @@ export default function ProposalWorkspacePage() {
     setLineItemSaving(true);
     try {
       if (editingLineItemId) {
-        const { data } = await api.patch(`/projects/proposals/${proposalId}/line-items/${editingLineItemId}/`, lineItemForm);
+        const { data } = await api.patch(`/projects/proposals/${proposalId}/line-items/${editingLineItemId}/`, { ...lineItemForm, unit: unitValueForSave(lineItemForm.unit) });
         setProposal((prev) => ({
           ...prev,
           totals: data.totals || prev?.totals,
@@ -1849,7 +1856,7 @@ export default function ProposalWorkspacePage() {
         }));
         toast.success("Line item updated.");
       } else {
-        const { data } = await api.post(`/projects/proposals/${proposalId}/line-items/`, lineItemForm);
+        const { data } = await api.post(`/projects/proposals/${proposalId}/line-items/`, { ...lineItemForm, unit: unitValueForSave(lineItemForm.unit) });
         setProposal((prev) => ({
           ...prev,
           totals: data.totals || prev?.totals,
@@ -1864,6 +1871,7 @@ export default function ProposalWorkspacePage() {
       setLineItemErrors({
         description: responseErrors?.description?.[0] || "",
         quantity: responseErrors?.quantity?.[0] || "",
+        unit: responseErrors?.unit?.[0] || "",
         unit_price: responseErrors?.unit_price?.[0] || "",
         form: responseErrors?.detail || "Could not save line item. Your entries have been preserved.",
       });
@@ -2072,7 +2080,7 @@ export default function ProposalWorkspacePage() {
             <section className="rounded-2xl bg-white p-4 text-slate-950 shadow-xl" data-testid="walkthrough-measurement-panel">
               <h2 className="text-lg font-black">Add Measurement</h2>
               <form onSubmit={addMeasurement} className="mt-3 grid gap-3 sm:grid-cols-2">
-                {["label", "location", "quantity", "unit"].map((key) => (
+                {["label", "location", "quantity"].map((key) => (
                   <input
                     key={key}
                     data-testid={`walkthrough-measurement-${key}`}
@@ -2082,6 +2090,7 @@ export default function ProposalWorkspacePage() {
                     onChange={(event) => setMeasurementForm((prev) => ({ ...prev, [key]: event.target.value }))}
                   />
                 ))}
+                <UnitSelect tone="light" label="Unit" testId="walkthrough-measurement-unit" value={measurementForm.unit} onChange={(value) => setMeasurementForm((prev) => ({ ...prev, unit: value }))} error={measurementUnitError} />
                 <textarea
                   className="min-h-24 rounded-xl border border-slate-300 px-4 py-3 text-base font-semibold sm:col-span-2"
                   placeholder="Notes"
@@ -2164,7 +2173,7 @@ export default function ProposalWorkspacePage() {
                     {recentMeasurements.map((item) => (
                       <button key={item.id} type="button" onClick={() => openWalkthroughSection({ key: "measurements", title: "Measurements", target: "measurements", action: "Add measurement", summary: "Review captured measurements." })} className="w-full rounded-xl bg-slate-100 px-3 py-2 text-left">
                         <div className="font-black">{item.label}</div>
-                        <div className="text-sm font-semibold text-slate-600">{item.quantity} {item.unit} - {field(item.location)}</div>
+                        <div className="text-sm font-semibold text-slate-600">{item.quantity} {unitDisplay(item.unit)} - {field(item.location)}</div>
                       </button>
                     ))}
                   </div>
@@ -2772,7 +2781,7 @@ export default function ProposalWorkspacePage() {
           <Section id="measurements" active={activeStep.key === "site_scope"} title="Measurements">
             <div className="mb-3 text-sm font-black text-sky-100/75" aria-live="polite">{(proposal.measurements || []).length} measurement{(proposal.measurements || []).length === 1 ? "" : "s"}</div>
             <form onSubmit={addMeasurement} className="grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-5" data-testid="proposal-measurement-form">
-              {["label", "location", "quantity", "unit"].map((key) => (
+              {["label", "location", "quantity"].map((key) => (
                 <input
                   key={key}
                   data-testid={`proposal-measurement-${key}`}
@@ -2782,6 +2791,7 @@ export default function ProposalWorkspacePage() {
                   onChange={(event) => setMeasurementForm((prev) => ({ ...prev, [key]: event.target.value }))}
                 />
               ))}
+              <UnitSelect label="Unit" testId="proposal-measurement-unit" value={measurementForm.unit} onChange={(value) => setMeasurementForm((prev) => ({ ...prev, unit: value }))} error={measurementUnitError} />
               <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-bold text-white">
                 <Plus size={16} /> Add
               </button>
@@ -2797,7 +2807,7 @@ export default function ProposalWorkspacePage() {
                 <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/7 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="font-bold text-white">{item.label}</div>
-                    <div className="text-sm text-sky-100/70">{field(item.location)} - {item.quantity} {item.unit}</div>
+                    <div className="text-sm text-sky-100/70">{field(item.location)} - {item.quantity} {unitDisplay(item.unit)}</div>
                     {item.notes ? <div className="text-sm text-sky-100/55">{item.notes}</div> : null}
                   </div>
                   <button type="button" onClick={() => deleteMeasurement(item.id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700">
@@ -2920,13 +2930,7 @@ export default function ProposalWorkspacePage() {
                 value={lineItemForm.quantity}
                 onChange={(event) => patchLineItemForm("quantity", event.target.value)}
               />{lineItemErrors.quantity ? <span className="mt-1 block text-xs font-bold text-rose-200">{lineItemErrors.quantity}</span> : null}</label>
-              <label><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Unit</span><input
-                data-testid="proposal-line-unit"
-                className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
-                placeholder="Unit"
-                value={lineItemForm.unit}
-                onChange={(event) => patchLineItemForm("unit", event.target.value)}
-              /></label>
+              <UnitSelect label="Unit" testId="proposal-line-unit" value={lineItemForm.unit} onChange={(value) => patchLineItemForm("unit", value)} error={lineItemErrors.unit} />
               <label><span className="text-xs font-black uppercase tracking-wide text-sky-100/60">Unit price</span><input
                 data-testid="proposal-line-unit-price"
                 inputMode="decimal" className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
@@ -2965,7 +2969,7 @@ export default function ProposalWorkspacePage() {
                         <div className="font-bold text-white">{item.description}</div>
                         {item.notes ? <div className="text-sm text-sky-100/55">{item.notes}</div> : null}
                       </div>
-                      <div className="text-sm font-semibold text-sky-100/72">{item.quantity} {item.unit}</div>
+                      <div className="text-sm font-semibold text-sky-100/72">{item.quantity} {unitDisplay(item.unit)}</div>
                       <div className="text-sm font-semibold text-sky-100/72">{money(item.unit_price)}</div>
                       <div className="text-base font-black text-white">{money(item.total)}</div>
                       <div className="flex gap-2">
@@ -2995,7 +2999,7 @@ export default function ProposalWorkspacePage() {
               <div className="mt-4 space-y-2">
                 {adjustmentLineItems.length ? adjustmentLineItems.map((item) => (
                   <div key={item.id} className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/7 p-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div><div className="text-xs font-black uppercase tracking-wide text-sky-100/55">{item.category_label}</div><div className="font-bold text-white">{item.description}</div><div className="text-sm text-sky-100/65">{item.quantity} {item.unit} × {money(item.unit_price)} = <span className="font-black text-white">{money(item.total)}</span></div></div>
+                    <div><div className="text-xs font-black uppercase tracking-wide text-sky-100/55">{item.category_label}</div><div className="font-bold text-white">{item.description}</div><div className="text-sm text-sky-100/65">{item.quantity} {unitDisplay(item.unit)} × {money(item.unit_price)} = <span className="font-black text-white">{money(item.total)}</span></div></div>
                     <div className="flex gap-2"><button type="button" onClick={() => editLineItem(item)} className="rounded-lg border border-white/16 px-3 py-2 text-sm font-bold text-white">Edit</button><button type="button" onClick={() => deleteLineItem(item.id)} className="rounded-lg border border-rose-200/30 px-3 py-2 text-sm font-bold text-rose-200">Remove</button></div>
                   </div>
                 )) : <p className="text-sm font-semibold text-sky-100/65">No optional adjustments. Tax is represented only by explicit tax line items; no rate or jurisdiction is configured here.</p>}

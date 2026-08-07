@@ -888,7 +888,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("walkthrough-measurement-label").fill("Fence length");
   await page.getByTestId("walkthrough-measurement-location").fill("Back yard");
   await page.getByTestId("walkthrough-measurement-quantity").fill("42");
-  await page.getByTestId("walkthrough-measurement-unit").fill("ft");
+  await page.getByTestId("walkthrough-measurement-unit").selectOption("ft");
   await page.getByTestId("walkthrough-measurement-panel").getByRole("button", { name: /save measurement/i }).click();
   await expect(page.getByTestId("walkthrough-recent-captures")).toContainText("Fence length");
 
@@ -924,7 +924,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-measurement-label").fill("Fence length");
   await page.getByTestId("proposal-measurement-location").fill("Back yard");
   await page.getByTestId("proposal-measurement-quantity").fill("42");
-  await page.getByTestId("proposal-measurement-unit").fill("ft");
+  await page.getByTestId("proposal-measurement-unit").selectOption("ft");
   await page.getByTestId("proposal-measurement-form").getByRole("button", { name: /add/i }).click();
   await expect(page.getByTestId("proposal-measurement-list")).toContainText("Fence length");
 
@@ -954,7 +954,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-line-category").selectOption("labor");
   await page.getByTestId("proposal-line-description").fill("Crew labor");
   await page.getByTestId("proposal-line-quantity").fill("10");
-  await page.getByTestId("proposal-line-unit").fill("hours");
+  await page.getByTestId("proposal-line-unit").selectOption("hr");
   await page.getByTestId("proposal-line-unit-price").fill("75");
   await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /save item/i }).click();
   await expect(page.getByTestId("proposal-line-item-list")).toContainText("Crew labor");
@@ -965,7 +965,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-line-category").selectOption("incidentals_reserve");
   await page.getByTestId("proposal-line-description").fill("Incidentals reserve");
   await page.getByTestId("proposal-line-quantity").fill("1");
-  await page.getByTestId("proposal-line-unit").fill("reserve");
+  await page.getByTestId("proposal-line-unit").selectOption("ea");
   await page.getByTestId("proposal-line-unit-price").fill("200");
   await page.getByTestId("proposal-line-item-form").getByRole("button", { name: /save item/i }).click();
   await expect(page.getByTestId("proposal-estimate-totals")).toContainText("$950.00");
@@ -1138,6 +1138,7 @@ test("Scope canonical sources and template pricing copy workflow", async ({ page
   await page.getByTestId("site-go-measurements").click();
   await expect(page).toHaveURL(/section=measurements/);
   await expect(page.getByTestId("proposal-measurement-form")).toBeVisible();
+  await expect(page.getByTestId("proposal-measurement-list")).toContainText("120.00 SF");
   await page.goBack();
   await expect(page).toHaveURL(/section=clarifications/);
   await page.screenshot({ path: "test-results/scope-simplified.png", fullPage: true });
@@ -1196,6 +1197,7 @@ test("Pricing validates, preserves failed edits, and guards deletion", async ({ 
   await page.goto("/app/proposals/42?section=estimate", { waitUntil: "domcontentloaded" });
   await page.getByTestId("proposal-line-item-list").getByRole("button", { name: "Edit" }).click();
   await expect(page.getByTestId("proposal-line-description")).toHaveValue("Crew labor");
+  await expect(page.getByTestId("proposal-line-unit")).toHaveValue("hr");
   await page.getByTestId("proposal-line-unit-price").fill("90");
   await page.getByTestId("proposal-line-item-form").getByRole("button", { name: "Save item" }).click();
   expect(patchRequests).toBe(1);
@@ -1215,4 +1217,11 @@ test("Pricing validates, preserves failed edits, and guards deletion", async ({ 
   expect(deleteRequests).toBe(1);
   await expect(page.getByTestId("pricing-empty-state")).toContainText("Add pricing to continue");
   await expect(page.getByTestId("estimate-workflow-step-pricing")).toHaveAttribute("aria-label", /Not started|Needs attention/);
+  await page.getByTestId("pricing-empty-add").click();
+  await page.getByTestId("proposal-line-description").fill("Custom unit example");
+  await page.getByTestId("proposal-line-quantity").fill("1");
+  await page.getByTestId("proposal-line-unit-price").fill("25");
+  await page.getByTestId("proposal-line-unit").selectOption("other");
+  await page.getByTestId("proposal-line-item-form").getByRole("button", { name: "Save item" }).click();
+  await expect(page.getByText("Enter a custom unit.")).toBeVisible();
 });

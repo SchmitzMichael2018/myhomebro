@@ -147,6 +147,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
             format="json",
         )
         self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["unit"], "ft")
         measurement_id = created.data["id"]
         self.assertEqual(ProposalMeasurement.objects.count(), 1)
 
@@ -213,8 +214,17 @@ class ProposalWorkspaceFoundationTests(TestCase):
             format="json",
         )
         self.assertEqual(labor.status_code, 201)
+        self.assertEqual(labor.data["line_item"]["unit"], "hr")
         self.assertEqual(labor.data["line_item"]["total"], "750.00")
         self.assertEqual(labor.data["totals"]["subtotal"], "750.00")
+
+        invalid_unit = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/line-items/",
+            {"description": "Unsafe", "quantity": "1", "unit": "https://example.com", "unit_price": "1"},
+            format="json",
+        )
+        self.assertEqual(invalid_unit.status_code, 400)
+        self.assertIn("unit", invalid_unit.data)
 
         tax = self.client.post(
             f"/api/projects/proposals/{proposal.id}/line-items/",

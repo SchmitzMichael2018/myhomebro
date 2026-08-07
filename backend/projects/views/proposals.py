@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import secrets
 from decimal import Decimal, InvalidOperation
 
@@ -23,6 +24,29 @@ from projects.views.contractor_bids import (
     _safe_text,
     _serialize_estimate_appointment,
 )
+
+PROPOSAL_UNIT_ALIASES = {
+    "each": "ea", "item": "ea", "items": "ea", "lump sum": "ls", "lump-sum": "ls",
+    "hour": "hr", "hours": "hr", "hrs": "hr", "days": "day", "inch": "in", "inches": "in",
+    "foot": "ft", "feet": "ft", "linear feet": "lf", "linear foot": "lf", "linear ft": "lf", "lin ft": "lf",
+    "square feet": "sf", "square foot": "sf", "sq ft": "sf", "sqft": "sf", "square yards": "sy", "square yard": "sy",
+    "cubic feet": "cf", "cubic foot": "cf", "cubic yards": "cy", "cubic yard": "cy", "pound": "lb", "pounds": "lb",
+    "lbs": "lb", "tons": "ton", "gallon": "gal", "gallons": "gal",
+}
+PROPOSAL_UNIT_CODES = {"ea", "ls", "hr", "day", "in", "ft", "lf", "sf", "sy", "cf", "cy", "lb", "ton", "gal", "sheet", "roll", "bag", "box", "fixture", "room", "assembly", "trip", "bundle"}
+
+
+def _normalize_proposal_unit(value):
+    unit = " ".join(_safe_text(value).split())
+    if not unit:
+        return "", None
+    lower = unit.lower()
+    normalized = PROPOSAL_UNIT_ALIASES.get(lower, lower if lower in PROPOSAL_UNIT_CODES else unit)
+    if len(normalized) > 30:
+        return "", "Custom unit must be 30 characters or fewer."
+    if re.search(r"[<>]|https?://|www\.|\S+@\S+|\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b", normalized, re.I):
+        return "", "Enter a unit without markup, URLs, or contact information."
+    return normalized, None
 
 
 def _format_datetime(value):
@@ -614,12 +638,15 @@ class ProposalMeasurementListCreateView(APIView):
             quantity = Decimal(str(request.data.get("quantity")))
         except (InvalidOperation, TypeError):
             return Response({"quantity": ["Enter a valid quantity."]}, status=400)
+        unit, unit_error = _normalize_proposal_unit(request.data.get("unit"))
+        if unit_error:
+            return Response({"unit": [unit_error]}, status=400)
         measurement = ProposalMeasurement.objects.create(
             proposal=proposal,
             label=label,
             location=_safe_text(request.data.get("location")),
             quantity=quantity,
-            unit=_safe_text(request.data.get("unit")),
+            unit=unit,
             notes=_safe_text(request.data.get("notes")),
         )
         _activity(proposal, ProposalActivity.EVENT_MEASUREMENT_ADDED, f"Measurement added: {measurement.label}", actor=request.user)
@@ -643,9 +670,13 @@ class ProposalMeasurementDetailView(APIView):
         measurement, error = self._measurement(request, proposal_id, measurement_id)
         if error:
             return error
-        for field in ["label", "location", "unit", "notes"]:
+        for field in ["label", "location", "notes"]:
             if field in request.data:
                 setattr(measurement, field, _safe_text(request.data.get(field)))
+        if "unit" in request.data:
+            measurement.unit, unit_error = _normalize_proposal_unit(request.data.get("unit"))
+            if unit_error:
+                return Response({"unit": [unit_error]}, status=400)
         if "quantity" in request.data:
             try:
                 measurement.quantity = Decimal(str(request.data.get("quantity")))
@@ -709,6 +740,9 @@ class ProposalLineItemListCreateView(APIView):
         except ValueError:
             errors["unit_price"] = ["Enter a valid unit price."]
             unit_price = Decimal("0")
+        unit, unit_error = _normalize_proposal_unit(request.data.get("unit"))
+        if unit_error:
+            errors["unit"] = [unit_error]
         if errors:
             return Response(errors, status=400)
 
@@ -717,7 +751,7 @@ class ProposalLineItemListCreateView(APIView):
             category=category,
             description=description,
             quantity=quantity,
-            unit=_safe_text(request.data.get("unit")),
+            unit=unit,
             unit_price=unit_price,
             notes=_safe_text(request.data.get("notes")),
         )
@@ -778,7 +812,7 @@ class ProposalTemplatePricingApplyView(APIView):
                     category=ProposalLineItem.CATEGORY_OTHER,
                     description=milestone.title,
                     quantity=Decimal("1.00"),
-                    unit="item",
+                    unit="ea",
                     unit_price=milestone.suggested_amount_fixed,
                     notes=(milestone.description or milestone.pricing_source_note or "")[:2000],
                 )
@@ -842,7 +876,9 @@ class ProposalLineItemDetailView(APIView):
             except ValueError:
                 errors["unit_price"] = ["Enter a valid unit price."]
         if "unit" in request.data:
-            item.unit = _safe_text(request.data.get("unit"))
+            item.unit, unit_error = _normalize_proposal_unit(request.data.get("unit"))
+            if unit_error:
+                errors["unit"] = [unit_error]
         if "notes" in request.data:
             item.notes = _safe_text(request.data.get("notes"))
         if errors:
