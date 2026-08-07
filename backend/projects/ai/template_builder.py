@@ -999,6 +999,94 @@ def improve_template_description(
     }
 
 
+def improve_template_milestone_descriptions(
+    *,
+    name: str,
+    project_type: str,
+    project_subtype: str,
+    milestones: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Return description-only milestone proposals without changing count or application state."""
+    client = _require_openai_client()
+    model = _model_name()
+    normalized = [
+        {
+            "index": idx,
+            "title": _safe_str(row.get("title")) or f"Milestone {idx + 1}",
+            "description": _safe_str(row.get("description")),
+        }
+        for idx, row in enumerate(milestones[:30])
+    ]
+    system = (
+        "You draft reusable construction milestone descriptions for contractors.\n"
+        "Return exactly one row for each supplied milestone, in the same order.\n"
+        "Preserve every milestone title and the milestone count.\n"
+        "Each suggested_description must describe only that reusable phase in 1-3 concise sentences.\n"
+        "Do not include assumptions, exclusions, pricing, scheduling, measurements, customer names, addresses, "
+        "product selections, site-specific conditions, analysis, or introductory text.\n"
+        "Return only JSON."
+    )
+    schema = {
+        "name": "template_milestone_description_suggestions",
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "milestones": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "index": {"type": "integer"},
+                            "title": {"type": "string"},
+                            "suggested_description": {"type": "string"},
+                        },
+                        "required": ["index", "title", "suggested_description"],
+                    },
+                }
+            },
+            "required": ["milestones"],
+        },
+    }
+    response = client.responses.create(
+        model=model,
+        input=[
+            {"role": "system", "content": system},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "template_name": name,
+                        "project_type": project_type,
+                        "project_subtype": project_subtype,
+                        "milestones": normalized,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+        text={"format": {"type": "json_schema", "name": schema["name"], "schema": schema["schema"], "strict": True}},
+    )
+    payload = json.loads(getattr(response, "output_text", "") or "{}")
+    rows = payload.get("milestones") if isinstance(payload.get("milestones"), list) else []
+    by_index = {_safe_int(row.get("index"), -1): row for row in rows if isinstance(row, dict)}
+    suggestions = []
+    for source in normalized:
+        proposal = by_index.get(source["index"], {})
+        description = _safe_str(proposal.get("suggested_description"))
+        if not description:
+            raise RuntimeError("AI returned an incomplete milestone description set.")
+        suggestions.append(
+            {
+                "index": source["index"],
+                "title": source["title"],
+                "suggested_description": description,
+            }
+        )
+    return {"intent": "improve_milestone_descriptions", "milestones": suggestions, "_model": model}
+
+
 def suggest_template_type_subtype(
     *,
     name: str,

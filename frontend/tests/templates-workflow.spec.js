@@ -13,6 +13,7 @@ function buildTemplate({
   description = '',
   exclusions_text = '',
   assumptions_text = '',
+  lifecycle_status = 'active',
   milestones = [],
 }) {
   return {
@@ -21,6 +22,7 @@ function buildTemplate({
     owner_type,
     is_system,
     is_active: true,
+    lifecycle_status,
     visibility,
     source_label: is_system ? 'system' : visibility,
     project_type,
@@ -357,6 +359,26 @@ async function installCommonRoutes(page) {
 }
 
 async function installTemplateRoutes(page, store) {
+  await page.route('**/api/projects/templates/ai/improve-milestone-descriptions/', async (route) => {
+    const payload = route.request().postDataJSON();
+    const rows = Array.isArray(payload?.milestones) ? payload.milestones : [];
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        intent: 'improve_milestone_descriptions',
+        milestones: rows.map((row, index) => ({
+          index: row.index ?? index,
+          title: row.title,
+          suggested_description:
+            String(row.title || '').toLowerCase().includes('demolition')
+              ? 'Protect adjacent surfaces, remove included fixtures and finishes, dispose of debris, and prepare exposed areas for the next approved phase.'
+              : `Complete the reusable ${String(row.title || 'milestone').toLowerCase()} phase within the approved template scope.`,
+        })),
+      }),
+    });
+  });
+
   await page.route('**/api/projects/templates/ai/improve-description/', async (route) => {
     const payload = route.request().postDataJSON();
     const projectType = String(payload?.project_type || '').trim();
@@ -686,6 +708,7 @@ async function installTemplateRoutes(page, store) {
         description: payload.description,
         exclusions_text: payload.exclusions_text || '',
         assumptions_text: payload.assumptions_text || '',
+        lifecycle_status: payload.lifecycle_status || 'active',
         milestones: (Array.isArray(payload.milestones) ? payload.milestones : []).map((row, idx) => ({
           ...row,
           id: store.nextMilestoneId++,
@@ -1365,6 +1388,55 @@ test('AI can recommend and apply a matching template in step 1 while keeping the
   await expect(page.getByText('3 milestones').first()).toBeVisible();
 });
 
+test('template builder saves and restores an unfinished draft and reviews milestone descriptions before apply', async ({ page }) => {
+  await installWorkflowMocks(page);
+  await page.goto('/app/templates', { waitUntil: 'domcontentloaded' });
+
+  await page.getByTestId('templates-new-draft-button').click();
+  await page.getByTestId('templates-name-input').fill('Bathroom Remodel Draft');
+  await page.getByTestId('templates-project-type-input').fill('Remodeling');
+  await page.getByTestId('templates-project-subtype-input').fill('Bathroom Remodel');
+  await page.getByTestId('templates-tab-milestones').click();
+  await page.getByTestId('templates-milestone-title-1').fill('Demolition');
+  await page.screenshot({ path: 'test-results/template-builder-unsaved-draft.png', fullPage: true });
+
+  await page.getByTestId('templates-generate-milestone-description-1').click();
+  const review = page.getByTestId('templates-milestone-improvement-preview');
+  await expect(review).toContainText('Current');
+  await expect(review).toContainText('No description yet.');
+  await expect(review).toContainText('Suggestion');
+  await page.screenshot({ path: 'test-results/template-builder-ai-suggestion-review.png', fullPage: true });
+  await expect(page.getByTestId('templates-milestone-description-1')).toHaveValue('');
+  await page.getByTestId('templates-apply-all-descriptions').click();
+  await expect(page.getByTestId('templates-milestone-description-1')).not.toHaveValue('');
+  await page.screenshot({ path: 'test-results/template-builder-applied-description.png', fullPage: true });
+
+  await page.getByTestId('templates-save-draft-button').click();
+  await expect(page.getByText('Draft saved.')).toBeVisible();
+  await expect(page.getByTestId('templates-unsaved-draft-badge')).toContainText('Draft — saved');
+  await page.screenshot({ path: 'test-results/template-builder-saved-draft.png', fullPage: true });
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const savedDraftCard = page.locator('[data-testid^="template-discovery-card-"]').filter({ hasText: 'Bathroom Remodel Draft' });
+  await expect(savedDraftCard).toContainText('Saved draft');
+  await savedDraftCard.click();
+  await page.getByTestId('templates-edit-button').click();
+  await expect(page.getByTestId('templates-detail-name')).toContainText('Bathroom Remodel Draft');
+  await page.getByTestId('templates-tab-milestones').click();
+  await page.screenshot({ path: 'test-results/template-builder-resumed-draft.png', fullPage: true });
+  await expect(page.getByTestId('templates-milestone-title-1')).toHaveValue('Demolition');
+  await expect(page.getByTestId('templates-milestone-description-1')).not.toHaveValue('');
+  await expect(page.getByTestId('templates-save-draft-button')).toBeVisible();
+  await expect(page.getByTestId('templates-discard-draft-button')).toBeVisible();
+
+  for (const width of [1440, 1024, 900, 390]) {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await expect(page.getByTestId('templates-save-draft-button')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    await page.screenshot({ path: `test-results/template-builder-${width}.png`, fullPage: true });
+  }
+});
+
 test('template AI top action generates a draft from a prompt and template context', async ({
   page,
 }) => {
@@ -1384,9 +1456,9 @@ test('template AI top action generates a draft from a prompt and template contex
 
   await expect(page.getByTestId('templates-draft-editor')).toBeVisible();
   await expect(page.getByTestId('templates-ai-unsaved-banner')).toContainText(
-    'Review and edit below, then click Save Template'
+    'Save a draft to continue later, or create the template when it is ready'
   );
-  await expect(page.getByTestId('templates-unsaved-draft-badge')).toContainText('Unsaved Draft');
+  await expect(page.getByTestId('templates-unsaved-draft-badge')).toContainText('Draft');
   await expect(page.getByTestId('templates-save-button')).toBeVisible();
   await expect(page.getByTestId('templates-detail-name')).toContainText('Deck Build Template');
   await expect(page.getByTestId('templates-generated-ai-summary')).toContainText('About 12 working days');
@@ -1766,7 +1838,7 @@ test('new template draft opens a blank editor immediately', async ({ page }) => 
   await expect(page.getByTestId('templates-save-button')).toBeVisible();
   await expect(page.getByTestId('templates-name-input')).toHaveValue('');
   await expect(page.getByTestId('templates-description-input')).toHaveValue('');
-  await expect(page.getByText('Unsaved Draft')).toBeVisible();
+  await expect(page.getByTestId('templates-unsaved-draft-badge')).toContainText('Draft');
 });
 
 test('template inline AI can improve description field text', async ({ page }) => {
@@ -1782,6 +1854,8 @@ test('template inline AI can improve description field text', async ({ page }) =
   await expect(page.getByTestId('templates-description-input')).toHaveValue('');
 
   await page.getByTestId('templates-ai-improve-description-button').click();
+  await expect(page.getByTestId('templates-description-input')).toHaveValue('');
+  await page.getByTestId('templates-apply-project-suggestion').click();
 
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
     /Scope of Work/
@@ -1796,15 +1870,14 @@ test('template inline AI can improve description field text', async ({ page }) =
     /Contractor Responsibilities/
   );
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/Exclusions/i);
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
-    /Customer Responsibilities/
-  );
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
-    /Contractor Responsibilities/
-  );
-  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
-    /The following are not included unless explicitly added/
-  );
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('');
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('');
+  await page.getByRole('button', { name: 'Suggest assumptions' }).click();
+  await page.getByTestId('templates-apply-project-suggestion').click();
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(/Customer Responsibilities/);
+  await page.getByRole('button', { name: 'Suggest exclusions' }).click();
+  await page.getByTestId('templates-apply-project-suggestion').click();
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(/not included unless explicitly added/);
 });
 
 test('template AI improves shed build descriptions into structured contractor scope', async ({
@@ -1821,6 +1894,7 @@ test('template AI improves shed build descriptions into structured contractor sc
   await page.getByTestId('templates-description-input').fill('Backyard shed build scope.');
 
   await page.getByTestId('templates-ai-improve-description-button').click();
+  await page.getByTestId('templates-apply-project-suggestion').click();
 
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
     /Scope of Work/
@@ -1835,15 +1909,8 @@ test('template AI improves shed build descriptions into structured contractor sc
   await expect(page.getByTestId('templates-description-input')).toHaveValue(
     /Optional Components/
   );
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
-    /Customer Responsibilities/
-  );
-  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue(
-    /Contractor Responsibilities/
-  );
-  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue(
-    /The following are not included unless explicitly added/
-  );
+  await expect(page.getByTestId('templates-assumptions-input')).toHaveValue('');
+  await expect(page.getByTestId('templates-exclusions-input')).toHaveValue('');
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/efficiency/i);
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue(/adaptable/i);
   await expect(page.getByTestId('templates-description-input')).not.toHaveValue(
@@ -1868,6 +1935,8 @@ test('template inline AI can suggest type and subtype from the current scope', a
     .fill('Reusable deck build scope covering layout, framing, decking, rails, and closeout.');
 
   await page.getByTestId('templates-ai-suggest-button').click();
+  await expect(page.getByTestId('templates-project-type-input')).toHaveValue('');
+  await page.getByTestId('templates-apply-project-suggestion').click();
 
   await expect(page.getByTestId('templates-project-type-input')).toHaveValue('Outdoor');
   await expect(page.getByTestId('templates-project-subtype-input')).toHaveValue('Deck Build');

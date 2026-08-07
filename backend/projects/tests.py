@@ -18458,6 +18458,63 @@ class TemplateMarketplaceDiscoveryTests(TestCase):
         detail = self.client.get(f"/api/projects/templates/{self.private_template.id}/")
         self.assertEqual(detail.status_code, 403)
 
+    def test_contractor_draft_is_owned_resumable_and_not_applicable_until_finalized(self):
+        system_template = ProjectTemplate.objects.get(
+            is_system=True,
+            benchmark_match_key="remodel:kitchen_remodel",
+        )
+        source_name = system_template.name
+        source_milestones = list(system_template.milestones.values_list("title", "description"))
+
+        create_response = self.client.post(
+            "/api/projects/templates/",
+            {
+                "source_template_id": system_template.id,
+                "name": "Bathroom Working Draft",
+                "lifecycle_status": "draft",
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, 201)
+        draft_id = create_response.json()["id"]
+        draft = ProjectTemplate.objects.get(pk=draft_id)
+        self.assertEqual(draft.contractor_id, self.contractor.id)
+        self.assertEqual(draft.lifecycle_status, ProjectTemplate.LifecycleStatus.DRAFT)
+        self.assertEqual(draft.source_system_template_id, system_template.id)
+
+        mine_response = self.client.get("/api/projects/templates/discover/", {"source": "mine"})
+        self.assertEqual(mine_response.status_code, 200)
+        self.assertIn(draft_id, {row["id"] for row in mine_response.json()["results"]})
+
+        other_client = _use_secure_requests(APIClient())
+        other_client.force_authenticate(user=self.other_user)
+        self.assertEqual(other_client.get(f"/api/projects/templates/{draft_id}/").status_code, 403)
+
+        agreement = self._agreement()
+        blocked_apply = self.client.post(
+            f"/api/projects/agreements/{agreement.id}/apply-template/",
+            {"template_id": draft_id},
+            format="json",
+        )
+        self.assertEqual(blocked_apply.status_code, 400)
+        self.assertIn("Finish this draft", str(blocked_apply.json()))
+
+        finalize_response = self.client.patch(
+            f"/api/projects/templates/{draft_id}/",
+            {"lifecycle_status": "active"},
+            format="json",
+        )
+        self.assertEqual(finalize_response.status_code, 200)
+        draft.refresh_from_db()
+        self.assertEqual(draft.lifecycle_status, ProjectTemplate.LifecycleStatus.ACTIVE)
+
+        system_template.refresh_from_db()
+        self.assertEqual(system_template.name, source_name)
+        self.assertEqual(
+            list(system_template.milestones.values_list("title", "description")),
+            source_milestones,
+        )
+
     def test_system_template_can_be_cloned_into_private_contractor_template(self):
         system_template = ProjectTemplate.objects.get(
             is_system=True,
@@ -19893,6 +19950,32 @@ class AIOrchestratorTests(TestCase):
             accepted_by_user=self.sub_user,
             accepted_at=timezone.now(),
         )
+
+    def test_template_milestone_description_request_stays_narrow(self):
+        result = orchestrate_user_request(
+            contractor=self.contractor,
+            payload={
+                "input": "Give me descriptions for these milestones",
+                "context": {
+                    "audience": "contractor",
+                    "workspace": "template_builder",
+                    "active_tab": "milestones",
+                    "template_status": "draft",
+                    "milestone_summary": {
+                        "milestones": [
+                            {"title": "Demolition", "description": ""},
+                            {"title": "Rough-In", "description": ""},
+                        ]
+                    },
+                },
+            },
+        )
+
+        self.assertEqual(result["primary_intent"], "template_milestone_descriptions")
+        self.assertEqual(len(result["suggestions"]), 2)
+        self.assertIn("Demolition", result["suggestions"][0])
+        self.assertNotIn("assumption", " ".join(result["suggestions"]).lower())
+        self.assertNotIn("exclusion", " ".join(result["suggestions"]).lower())
 
     def test_orchestrator_selects_agreement_builder_for_resume_request(self):
         result = orchestrate_user_request(
@@ -29926,6 +30009,45 @@ class TemplateRecommendationRelevanceTests(TestCase):
 
 
 class TemplateAIGenerationTests(TestCase):
+    def test_milestone_description_job_returns_only_ordered_structured_descriptions(self):
+        from projects.ai.template_builder import improve_template_milestone_descriptions
+
+        fake_payload = {
+            "milestones": [
+                {
+                    "index": 0,
+                    "title": "Demolition",
+                    "suggested_description": "Protect adjacent surfaces, remove included finishes, dispose of debris, and prepare exposed areas for the next phase.",
+                },
+                {
+                    "index": 1,
+                    "title": "Rough-In",
+                    "suggested_description": "Complete the reusable plumbing and electrical rough-in work included in the approved template scope.",
+                },
+            ]
+        }
+        fake_client = SimpleNamespace(
+            responses=SimpleNamespace(create=lambda **kwargs: SimpleNamespace(output_text=json.dumps(fake_payload)))
+        )
+        with patch("projects.ai.template_builder._require_openai_client", return_value=fake_client), patch(
+            "projects.ai.template_builder._model_name", return_value="test-model"
+        ):
+            result = improve_template_milestone_descriptions(
+                name="Bathroom Remodel",
+                project_type="Remodel",
+                project_subtype="Bathroom Remodel",
+                milestones=[
+                    {"title": "Demolition", "description": ""},
+                    {"title": "Rough-In", "description": "Existing rough work."},
+                ],
+            )
+
+        self.assertEqual(result["intent"], "improve_milestone_descriptions")
+        self.assertEqual(len(result["milestones"]), 2)
+        self.assertEqual(set(result["milestones"][0]), {"index", "title", "suggested_description"})
+        self.assertNotIn("assumptions", result)
+        self.assertNotIn("exclusions", result)
+
     def test_create_template_from_scope_returns_structured_guidance_bundle(self):
         from projects.ai.template_builder import create_template_from_scope
 

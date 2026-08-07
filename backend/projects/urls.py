@@ -181,6 +181,7 @@ from .views.template_views import (
     TemplateSuggestPricingView,
     TemplateApplyPricingView,
     TemplateImproveDescriptionView,
+    TemplateImproveMilestoneDescriptionsView,
     TemplateListCreateView,
     TemplateSuggestTypeSubtypeView,
     TemplateCreateFromScopeView,
@@ -1145,6 +1146,11 @@ urlpatterns = [
         "business/contractor/drilldown/",
         BusinessDashboardDrilldownAPIView.as_view(),
         name="contractor_business_drilldown",
+    ),
+    path(
+        "templates/ai/improve-milestone-descriptions/",
+        TemplateImproveMilestoneDescriptionsView.as_view(),
+        name="template-ai-improve-milestone-descriptions",
     ),
     path(
         "business/contractor/insights-goals/",

@@ -124,10 +124,17 @@ def _candidate_queryset(contractor: Contractor | None):
         ],
     )
     owned_filter = Q(contractor=contractor) if contractor is not None else Q(pk__in=[])
+    active_filter = Q(lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE)
+    owned_draft_filter = (
+        Q(contractor=contractor, lifecycle_status=ProjectTemplate.LifecycleStatus.DRAFT)
+        if contractor is not None
+        else Q(pk__in=[])
+    )
     return (
         get_template_detail_queryset()
         .filter(Q(is_system_template=True, is_published=True) | owned_filter | visibility_filter)
         .filter(is_active=True)
+        .filter(active_filter | owned_draft_filter)
     )
 
 
@@ -143,11 +150,11 @@ def _apply_primary_filters(
     if source == "mine":
         queryset = queryset.filter(is_system_template=False, contractor=contractor)
     elif source == "system":
-        queryset = queryset.filter(is_system_template=True, is_published=True)
+        queryset = queryset.filter(is_system_template=True, is_published=True, lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE)
     elif source == "regional":
-        queryset = queryset.filter(is_system_template=False, visibility=ProjectTemplate.Visibility.REGIONAL, allow_discovery=True)
+        queryset = queryset.filter(is_system_template=False, visibility=ProjectTemplate.Visibility.REGIONAL, allow_discovery=True, lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE)
     elif source == "public":
-        queryset = queryset.filter(is_system_template=False, visibility=ProjectTemplate.Visibility.PUBLIC, allow_discovery=True)
+        queryset = queryset.filter(is_system_template=False, visibility=ProjectTemplate.Visibility.PUBLIC, allow_discovery=True, lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE)
 
     if project_type:
         queryset = queryset.filter(project_type__iexact=project_type)

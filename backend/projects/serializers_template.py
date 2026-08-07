@@ -70,6 +70,7 @@ class ProjectTemplateListSerializer(serializers.ModelSerializer):
             "is_system_template",
             "is_published",
             "is_active",
+            "lifecycle_status",
             "visibility",
             "allow_discovery",
             "discoverable",
@@ -199,6 +200,7 @@ class ProjectTemplateDetailSerializer(serializers.ModelSerializer):
             "is_system_template",
             "is_published",
             "is_active",
+            "lifecycle_status",
             "visibility",
             "allow_discovery",
             "discoverable",
@@ -301,6 +303,7 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
             "workflow_profile",
             "project_materials_hint",
             "is_active",
+            "lifecycle_status",
             "normalized_region_key",
             "is_system",
             "is_published",
@@ -323,6 +326,12 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
 
         if is_admin:
             is_system_requested = True
+
+        lifecycle_status = validated_data.get("lifecycle_status", ProjectTemplate.LifecycleStatus.ACTIVE)
+        if is_system_requested:
+            validated_data["lifecycle_status"] = ProjectTemplate.LifecycleStatus.ACTIVE
+        elif lifecycle_status not in ProjectTemplate.LifecycleStatus.values:
+            raise serializers.ValidationError({"lifecycle_status": "Invalid template lifecycle status."})
 
         if source_template_id:
             from projects.services.template_apply import duplicate_template_for_contractor
@@ -406,6 +415,9 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
         is_system_requested = bool(validated_data.pop("is_system", False))
         is_published_requested = validated_data.pop("is_published", None)
         is_admin = self._is_admin_request()
+
+        if instance.is_system_template:
+            validated_data["lifecycle_status"] = ProjectTemplate.LifecycleStatus.ACTIVE
 
         if is_system_requested and not is_admin:
             validated_data.pop("is_system", None)

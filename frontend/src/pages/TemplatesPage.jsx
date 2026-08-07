@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import {
   buildAssistantHandoffSignature,
   getAssistantHandoff,
@@ -25,6 +26,7 @@ function safeTrim(v) {
 }
 
 const TEMPLATE_AI_PERMISSION_MESSAGE = "AI tools are available to contractors and admins";
+const TEMPLATE_DRAFT_STORAGE_PREFIX = "myhomebro:template-builder:draft:v1";
 
 function formatTemplateAiError(error, fallbackMessage) {
   const detail = safeTrim(error?.response?.data?.detail || error?.response?.data?.error);
@@ -764,7 +766,9 @@ function buildPricingStructureSuggestionPreview(milestones) {
 
 export default function TemplatesPage({ adminMode = false } = {}) {
   const location = useLocation();
+  const { user } = useAuth();
   const { updateAssistantContext, updateAssistantOnAction } = useAssistantDock();
+  const templateDraftStorageKey = `${TEMPLATE_DRAFT_STORAGE_PREFIX}:${user?.id || user?.email || "anonymous"}`;
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -788,6 +792,9 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   const [editMode, setEditMode] = useState(false);
   const [creatingNew, setCreatingNew] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [assistantPrefillBanner, setAssistantPrefillBanner] = useState("");
   const [templateAiPrompt, setTemplateAiPrompt] = useState("");
   const [assistantField, setAssistantField] = useState("description");
@@ -801,14 +808,20 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   const [aiGenerationRecoveryMode, setAiGenerationRecoveryMode] = useState(false);
   const [aiGenerationRecoveryNote, setAiGenerationRecoveryNote] = useState("");
   const saveButtonRef = React.useRef(null);
+  const templateSaveInFlightRef = React.useRef(false);
+  const draftSaveInFlightRef = React.useRef(false);
   const editorPanelRef = React.useRef(null);
   const draftNameInputRef = React.useRef(null);
+  const projectSuggestionRef = React.useRef(null);
+  const milestoneSuggestionRef = React.useRef(null);
 
   const [editHeader, setEditHeader] = useState(buildBlankHeader());
   const [editMilestones, setEditMilestones] = useState([buildBlankMilestone(1)]);
   const [milestoneRewritePreview, setMilestoneRewritePreview] = useState(null);
+  const [milestoneSuggestionBusy, setMilestoneSuggestionBusy] = useState(null);
   const [milestoneCountPreview, setMilestoneCountPreview] = useState(null);
   const [pricingStructurePreview, setPricingStructurePreview] = useState(null);
+  const [projectSetupSuggestion, setProjectSetupSuggestion] = useState(null);
 
   const [aiBusy, setAiBusy] = useState(false);
   const [materialsRefreshing, setMaterialsRefreshing] = useState(false);
@@ -847,6 +860,60 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     );
   }, [assistantHandoff]);
   const isSystemDiscovery = !adminMode && discoverySource === "system";
+
+  useEffect(() => {
+    if (adminMode) return;
+    try {
+      const raw = window.localStorage.getItem(templateDraftStorageKey);
+      if (!raw) return;
+      const draft = JSON.parse(raw);
+      if (!draft || !draft.header || !Array.isArray(draft.milestones)) return;
+      setSelectedId(null);
+      setSelectedDetail(null);
+      setCreatingNew(true);
+      setEditMode(true);
+      setActiveTab(draft.activeTab || "setup");
+      setEditHeader({ ...buildBlankHeader(), ...draft.header });
+      setEditMilestones(
+        draft.milestones.length
+          ? draft.milestones.map((row, idx) => normalizeMilestoneForEdit(row, idx))
+          : [buildBlankMilestone(1)]
+      );
+      setDraftSourceTemplateId(draft.sourceTemplateId || null);
+      setDraftSavedAt(draft.savedAt || null);
+      setHasUnsavedChanges(false);
+      setAssistantPrefillBanner("Your saved template draft was restored. Continue editing or create the reusable template when ready.");
+    } catch {
+      window.localStorage.removeItem(templateDraftStorageKey);
+    }
+  }, [adminMode, templateDraftStorageKey]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || (!creatingNew && !editMode)) return undefined;
+    const warnBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, [creatingNew, editMode, hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges || (!creatingNew && !editMode)) return undefined;
+    const message = "You have unsaved template changes. Leave without saving a draft?";
+    const guardAppNavigation = (event) => {
+      const link = event.target?.closest?.("a[href]");
+      if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+      if (!window.confirm(message)) {
+        event.preventDefault();
+        event.stopPropagation();
+      } else {
+        setHasUnsavedChanges(false);
+      }
+    };
+    document.addEventListener("click", guardAppNavigation, true);
+    return () => document.removeEventListener("click", guardAppNavigation, true);
+  }, [creatingNew, editMode, hasUnsavedChanges]);
 
   function clearTemplateSuggestionPreviews() {
     setMilestoneRewritePreview(null);
@@ -989,9 +1056,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   const isSelectedBuiltIn =
     !!selectedDetail &&
     (selectedDetail?.is_system || selectedDetail?.owner_type === "system");
+  const isPersistedDraft = selectedDetail?.lifecycle_status === "draft";
 
   const currentHeader = editHeader;
   const currentMilestones = editMilestones;
+  const completedMilestoneDescriptions = currentMilestones.filter((row) => safeTrim(row?.description)).length;
   const previewClarifications = normalizeClarifications(
     currentHeader?.default_clarifications
   );
@@ -1096,10 +1165,13 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     const templateName = safeTrim(currentHeader?.name) || safeTrim(selectedDetail?.name);
     const workflowProfile = normalizeWorkflowProfile(currentHeader?.workflow_profile);
     return {
+      audience: adminMode ? "admin" : "contractor",
+      workspace: "template_builder",
       page: "templates",
       workspace_mode: "templates",
       current_route: `${location.pathname}${location.search || ""}`,
       active_tab: activeTab,
+      template_status: creatingNew || selectedDetail?.lifecycle_status === "draft" ? "draft" : "active",
       template_id: selectedDetail?.id || null,
       template_name: templateName,
       project_type: safeTrim(currentHeader?.project_type),
@@ -1127,6 +1199,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       milestone_summary: {
         count: currentMilestones.length,
         suggested_titles: currentMilestones.map((row) => safeTrim(row?.title)).filter(Boolean),
+        milestones: currentMilestones.map((row, index) => ({
+          index: index + 1,
+          title: safeTrim(row?.title),
+          description: safeTrim(row?.description),
+        })),
       },
       ai_panel: {
         headline: "Review this template workflow",
@@ -1149,6 +1226,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     };
   }, [
     activeTab,
+    adminMode,
     creatingNew,
     currentHeader,
     currentMilestones,
@@ -1194,6 +1272,8 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     setActiveTab("setup");
     setDraftSourceTemplateId(null);
     setDraftIsSystemTemplate(false);
+    setDraftSavedAt(null);
+    setHasUnsavedChanges(false);
   }
 
   function startNewTemplate() {
@@ -1377,6 +1457,14 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   }, [generatedAiDraft]);
 
   useEffect(() => {
+    if (projectSetupSuggestion) projectSuggestionRef.current?.focus();
+  }, [projectSetupSuggestion]);
+
+  useEffect(() => {
+    if (milestoneRewritePreview?.length) milestoneSuggestionRef.current?.focus();
+  }, [milestoneRewritePreview]);
+
+  useEffect(() => {
     if (!aiBusy) {
       setAiGenerationStageIndex(-1);
       return;
@@ -1543,6 +1631,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   }
 
   function cancelEditMode() {
+    if (hasUnsavedChanges && !window.confirm("Discard unsaved template changes?")) return;
     if (creatingNew) {
       setEditHeader(buildBlankHeader());
       setEditMilestones([buildBlankMilestone(1)]);
@@ -1550,6 +1639,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       setCreatingNew(false);
       setDraftSourceTemplateId(null);
       setDraftIsSystemTemplate(Boolean(adminMode));
+      setHasUnsavedChanges(false);
       return;
     }
 
@@ -1561,10 +1651,12 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     );
     setEditMode(false);
     setDraftIsSystemTemplate(false);
+    setHasUnsavedChanges(false);
   }
 
   function updateHeader(field, value) {
     setEditHeader((prev) => ({ ...prev, [field]: value }));
+    setHasUnsavedChanges(true);
   }
 
   function updateMilestone(index, patch) {
@@ -1580,15 +1672,18 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           : row
       )
     );
+    setHasUnsavedChanges(true);
   }
 
   function autoSequenceTimeline() {
     setEditMilestones((prev) => computeSequentialOffsets(prev));
+    setHasUnsavedChanges(true);
     toast.success("Timeline sequenced.");
   }
 
   function addMilestone() {
     setEditMilestones((prev) => [...prev, buildBlankMilestone(prev.length + 1)]);
+    setHasUnsavedChanges(true);
   }
 
   function removeMilestone(index) {
@@ -1604,20 +1699,163 @@ export default function TemplatesPage({ adminMode = false } = {}) {
               : row?.recommended_days_from_start,
         }))
     );
+    setHasUnsavedChanges(true);
   }
 
-  function handleImproveMilestoneLanguage() {
-    const preview = buildMilestoneImprovementSuggestions(currentMilestones, currentHeader);
-    setMilestoneRewritePreview(preview);
-    setMilestoneCountPreview(null);
-    setActiveTab("milestones");
+  async function saveContractorDraft() {
+    if (draftSaveInFlightRef.current) return;
+    if (!safeTrim(currentHeader?.name)) {
+      toast.error("Add a template name before saving the draft.");
+      setActiveTab("setup");
+      return;
+    }
+    try {
+      draftSaveInFlightRef.current = true;
+      setSavingDraft(true);
+      const milestoneRows = currentMilestones.filter((row) => safeTrim(row?.title));
+      const payload = buildTemplatePayload(currentHeader, milestoneRows, {
+        source_template_id: draftSourceTemplateId || undefined,
+        is_system: false,
+      });
+      payload.lifecycle_status = "draft";
+      const persistedDraft = selectedDetail?.lifecycle_status === "draft";
+      const { data } = persistedDraft
+        ? await api.patch(`/projects/templates/${selectedDetail.id}/`, payload)
+        : await api.post("/projects/templates/", payload);
+      setSelectedId(data?.id || null);
+      setSelectedDetail(data);
+      setEditHeader(normalizeHeaderForEdit(data));
+      setEditMilestones(
+        Array.isArray(data?.milestones) && data.milestones.length
+          ? data.milestones.map((row, idx) => normalizeMilestoneForEdit(row, idx))
+          : [buildBlankMilestone(1)]
+      );
+      setCreatingNew(false);
+      setEditMode(true);
+      setDraftSourceTemplateId(null);
+      const savedAt = data?.updated_at || new Date().toISOString();
+      setDraftSavedAt(savedAt);
+      setHasUnsavedChanges(false);
+      window.localStorage.removeItem(templateDraftStorageKey);
+      await loadTemplates({ source: "mine" });
+      setDiscoverySource("mine");
+      toast.success(persistedDraft ? "Draft updated." : "Draft saved.");
+    } catch (error) {
+      toast.error(
+        error?.response?.data?.detail ||
+          error?.response?.data?.name?.[0] ||
+          "Draft could not be saved. Your current changes are still open."
+      );
+    } finally {
+      draftSaveInFlightRef.current = false;
+      setSavingDraft(false);
+    }
+  }
+
+  async function discardContractorDraft() {
+    if (!window.confirm("Discard this unfinished template draft? This cannot be undone.")) return;
+    try {
+      setSavingDraft(true);
+      if (selectedDetail?.lifecycle_status === "draft" && selectedDetail?.id) {
+        await api.delete(`/projects/templates/${selectedDetail.id}/`);
+      }
+      window.localStorage.removeItem(templateDraftStorageKey);
+      setDraftSavedAt(null);
+      setHasUnsavedChanges(false);
+      clearTemplateSelection();
+      await loadTemplates({ source: "mine" });
+      toast.success("Draft discarded.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Draft could not be discarded.");
+    } finally {
+      setSavingDraft(false);
+    }
+  }
+
+  async function requestMilestoneDescriptionSuggestions(indexes) {
+    const requestedRows = indexes.map((index) => ({
+      index,
+      title: safeTrim(currentMilestones[index]?.title),
+      description: safeTrim(currentMilestones[index]?.description),
+    }));
+    const { data } = await api.post("/projects/templates/ai/improve-milestone-descriptions/", {
+      intent: indexes.length === 1 ? "generate_milestone_description" : "improve_milestone_descriptions",
+      name: currentHeader?.name,
+      project_type: currentHeader?.project_type,
+      project_subtype: currentHeader?.project_subtype,
+      milestones: requestedRows,
+    });
+    const suggestions = Array.isArray(data?.milestones) ? data.milestones : [];
+    if (suggestions.length !== requestedRows.length) throw new Error("Incomplete milestone suggestions returned.");
+    return indexes.map((sourceIndex, responseIndex) => {
+      const row = currentMilestones[sourceIndex];
+      return {
+        index: sourceIndex,
+        current: { ...row },
+        suggested: {
+          ...row,
+          title: suggestions[responseIndex]?.title || row?.title,
+          description: suggestions[responseIndex]?.suggested_description || "",
+        },
+        selected: true,
+      };
+    });
+  }
+
+  async function handleGenerateMilestoneDescription(index) {
+    if (milestoneSuggestionBusy !== null || aiBusy) return;
+    setMilestoneSuggestionBusy(index);
+    try {
+      setMilestoneRewritePreview(await requestMilestoneDescriptionSuggestions([index]));
+      setMilestoneCountPreview(null);
+    } catch (error) {
+      toast.error(formatTemplateAiError(error, "Could not generate that milestone description."));
+    } finally {
+      setMilestoneSuggestionBusy(null);
+    }
+  }
+
+  async function handleImproveMilestoneLanguage() {
+    if (milestoneSuggestionBusy !== null || aiBusy) return;
+    setMilestoneSuggestionBusy("all");
+    try {
+      const indexes = currentMilestones.map((_, index) => index);
+      setMilestoneRewritePreview(await requestMilestoneDescriptionSuggestions(indexes));
+      setMilestoneCountPreview(null);
+      setActiveTab("milestones");
+    } catch (error) {
+      toast.error(formatTemplateAiError(error, "Could not improve milestone descriptions."));
+    } finally {
+      setMilestoneSuggestionBusy(null);
+    }
   }
 
   function applyMilestoneRewritePreview() {
     if (!Array.isArray(milestoneRewritePreview) || !milestoneRewritePreview.length) return;
-    setEditMilestones(milestoneRewritePreview.map((row, idx) => normalizeMilestoneForEdit(row, idx)));
+    setEditMilestones((previous) =>
+      previous.map((row, idx) => {
+        const proposal = milestoneRewritePreview.find((item) => item.index === idx);
+        return proposal?.selected ? normalizeMilestoneForEdit(proposal.suggested, idx) : row;
+      })
+    );
     setMilestoneRewritePreview(null);
+    setHasUnsavedChanges(true);
     toast.success("Milestone wording updated. Review and save the template.");
+  }
+
+  function applyAllSuggestedDescriptions() {
+    if (!Array.isArray(milestoneRewritePreview)) return;
+    setEditMilestones((previous) =>
+      previous.map((row, idx) => {
+        const proposal = milestoneRewritePreview.find((item) => item.index === idx);
+        return proposal
+          ? normalizeMilestoneForEdit({ ...row, description: proposal.suggested.description }, idx)
+          : row;
+      })
+    );
+    setMilestoneRewritePreview(null);
+    setHasUnsavedChanges(true);
+    toast.success("Suggested descriptions applied. Review and save the template.");
   }
 
   function handleSuggestMilestoneCount() {
@@ -1630,6 +1868,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     if (!milestoneCountPreview?.proposed?.length) return;
     setEditMilestones(milestoneCountPreview.proposed.map((row, idx) => normalizeMilestoneForEdit(row, idx)));
     setMilestoneCountPreview(null);
+    setHasUnsavedChanges(true);
     toast.success("Milestone plan updated. Review and save the template.");
   }
 
@@ -1637,6 +1876,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     const suggestion = buildPricingStructureSuggestionPreview(currentMilestones);
     setPricingStructurePreview(suggestion);
     setEditMilestones((prev) => applyPricingStructureToMilestones(prev, suggestion.rows));
+    setHasUnsavedChanges(true);
     setActiveTab("pricing");
     toast.success("Suggested allocation percentages filled. Review and save the template.");
   }
@@ -1732,6 +1972,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
   }
 
   async function saveTemplateEdits() {
+    if (templateSaveInFlightRef.current) return;
     const hasBlankTitle = currentMilestones.some((m) => !safeTrim(m?.title));
     if (hasBlankTitle) {
       toast.error("Each milestone needs a title before saving.");
@@ -1745,6 +1986,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
     }
 
     try {
+      templateSaveInFlightRef.current = true;
       setSavingTemplate(true);
       const milestonesForSave = needsSequentialOffsets(currentMilestones)
         ? computeSequentialOffsets(currentMilestones)
@@ -1754,6 +1996,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         is_system: draftIsSystemTemplate,
         is_published: draftIsSystemTemplate ? Boolean(selectedDetail?.is_published) : undefined,
       });
+      payload.lifecycle_status = "active";
 
       if (creatingNew) {
         const { data } = await api.post("/projects/templates/", payload);
@@ -1777,7 +2020,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         setDraftSourceTemplateId(null);
         setCreatingNew(false);
         setEditMode(copiedFromSystem);
+        window.localStorage.removeItem(templateDraftStorageKey);
+        setDraftSavedAt(null);
+        setHasUnsavedChanges(false);
       } else {
+        const finalizingDraft = selectedDetail?.lifecycle_status === "draft";
         const { data } = await api.patch(
           `/projects/templates/${selectedDetail.id}/`,
           payload
@@ -1790,10 +2037,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         setAiGenerationPartialSections([]);
         setAiGenerationRecoveryMode(false);
         setAiGenerationRecoveryNote("");
-        toast.success("Template updated.");
+        toast.success(finalizingDraft ? "Template created and added to your library." : "Template updated.");
         await loadTemplates();
         setEditMode(false);
         setDraftSourceTemplateId(null);
+        setHasUnsavedChanges(false);
       }
     } catch (e) {
       toast.error(
@@ -1802,6 +2050,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
           "Could not save template."
       );
     } finally {
+      templateSaveInFlightRef.current = false;
       setSavingTemplate(false);
     }
   }
@@ -1825,11 +2074,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
       });
 
       const sections = normalizeTemplateScopeSections(data);
-      updateHeader("description", sections.descriptionScope || "");
-      updateHeader("default_scope", sections.descriptionScope || "");
-      updateHeader("assumptions_text", sections.assumptions || "");
-      updateHeader("exclusions_text", sections.exclusions || "");
-      toast.success("Description improved.");
+      setProjectSetupSuggestion({
+        target: "description",
+        label: safeTrim(currentHeader?.description) ? "Improved description" : "Generated description",
+        value: sections.descriptionScope || "",
+      });
     } catch (e) {
       toast.error(formatTemplateAiError(e, "Could not improve description."));
     } finally {
@@ -1851,14 +2100,58 @@ export default function TemplatesPage({ adminMode = false } = {}) {
         })),
       });
 
-      updateHeader("project_type", data?.project_type || "");
-      updateHeader("project_subtype", data?.project_subtype || "");
-      toast.success("Type / subtype suggested.");
+      setProjectSetupSuggestion({
+        target: "classification",
+        label: "Suggested type and subtype",
+        value: {
+          project_type: data?.project_type || "",
+          project_subtype: data?.project_subtype || "",
+        },
+      });
     } catch (e) {
       toast.error(formatTemplateAiError(e, "Could not suggest type / subtype."));
     } finally {
       setAiBusy(false);
     }
+  }
+
+  async function handleAiSuggestProjectField(target) {
+    if (aiBusy) return;
+    try {
+      setAiBusy(true);
+      const { data } = await api.post("/projects/templates/ai/improve-description/", {
+        name: currentHeader?.name,
+        project_type: currentHeader?.project_type,
+        project_subtype: currentHeader?.project_subtype,
+        description: currentHeader?.description,
+        intent: target === "exclusions_text" ? "suggest_exclusions" : "suggest_assumptions",
+      });
+      const sections = normalizeTemplateScopeSections(data);
+      setProjectSetupSuggestion({
+        target,
+        label: target === "exclusions_text" ? "Suggested exclusions" : "Suggested assumptions",
+        value: target === "exclusions_text" ? sections.exclusions : sections.assumptions,
+      });
+    } catch (error) {
+      toast.error(formatTemplateAiError(error, "Could not prepare that suggestion."));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  function applyProjectSetupSuggestion() {
+    if (!projectSetupSuggestion) return;
+    if (projectSetupSuggestion.target === "classification") {
+      updateHeader("project_type", projectSetupSuggestion.value?.project_type || "");
+      updateHeader("project_subtype", projectSetupSuggestion.value?.project_subtype || "");
+    } else {
+      updateHeader(projectSetupSuggestion.target, projectSetupSuggestion.value || "");
+      if (projectSetupSuggestion.target === "description") {
+        updateHeader("default_scope", projectSetupSuggestion.value || "");
+      }
+    }
+    setProjectSetupSuggestion(null);
+    toast.success("Suggestion applied. Save the draft when ready.");
   }
 
   async function handleAiCreateFromScope(seed = null) {
@@ -2349,6 +2642,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               {tpl?.name || "Template"}
                             </div>
                             <OptionBadge ownerType={ownerType} />
+                            {tpl?.lifecycle_status === "draft" ? (
+                              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-900">
+                                Saved draft
+                              </span>
+                            ) : null}
                             {ownerType !== "system" ? (
                               <VisibilityBadge visibility={tpl?.visibility || tpl?.source_label} />
                             ) : null}
@@ -2455,6 +2753,30 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
                 {(editMode || creatingNew) ? (
                   <>
+                    {(creatingNew || isPersistedDraft) && !adminMode ? (
+                      <button
+                        type="button"
+                        onClick={saveContractorDraft}
+                        data-testid="templates-save-draft-button"
+                        disabled={savingTemplate || savingDraft}
+                        className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-xs font-semibold text-indigo-800 hover:bg-indigo-50 disabled:opacity-60"
+                      >
+                        {savingDraft ? "Saving…" : "Save draft"}
+                      </button>
+                    ) : null}
+
+                    {(creatingNew || isPersistedDraft) && !adminMode ? (
+                      <button
+                        type="button"
+                        onClick={discardContractorDraft}
+                        data-testid="templates-discard-draft-button"
+                        disabled={savingTemplate || savingDraft}
+                        className="rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60"
+                      >
+                        Discard draft
+                      </button>
+                    ) : null}
+
                     <button
                       type="button"
                       onClick={cancelEditMode}
@@ -2477,7 +2799,15 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                           : "bg-indigo-600 hover:bg-indigo-700"
                       }`}
                     >
-                      {savingTemplate ? "Saving…" : creatingNew ? (adminMode && draftIsSystemTemplate ? "Create System Template" : "Create Template") : "Save Template"}
+                      {savingTemplate
+                        ? isPersistedDraft || creatingNew
+                          ? "Creating…"
+                          : "Saving…"
+                        : creatingNew || isPersistedDraft
+                        ? adminMode && draftIsSystemTemplate
+                          ? "Create System Template"
+                          : "Create template"
+                        : "Save Template"}
                     </button>
                   </>
                 ) : null}
@@ -2638,7 +2968,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                 >
                   <div className="font-semibold">AI draft generated</div>
                   <div className="mt-1">
-                    Review and edit below, then click Save Template to add it to your template library.
+                    Review and edit below. Save a draft to continue later, or create the template when it is ready for your library.
                   </div>
                 </div>
               ) : null}
@@ -2723,12 +3053,16 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     <h2 data-testid="templates-detail-name" className="text-lg font-bold text-slate-900">
                       {safeTrim(currentHeader?.name) || "Untitled Template"}
                     </h2>
-                    {creatingNew ? (
+                    {creatingNew || isPersistedDraft ? (
                       <span
                         data-testid="templates-unsaved-draft-badge"
                         className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800"
                       >
-                        Unsaved Draft
+                        {hasUnsavedChanges
+                          ? "Draft — unsaved changes"
+                          : draftSavedAt || selectedDetail?.updated_at
+                          ? `Draft — saved ${new Date(draftSavedAt || selectedDetail.updated_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
+                          : "Draft — not saved"}
                       </span>
                     ) : null}
                     {!creatingNew ? (
@@ -2840,6 +3174,46 @@ export default function TemplatesPage({ adminMode = false } = {}) {
 
               {activeTab === "setup" ? (
                 <SectionCard title="Project Setup">
+                  {projectSetupSuggestion ? (
+                    <dialog
+                      open
+                      ref={projectSuggestionRef}
+                      tabIndex={-1}
+                      aria-labelledby="template-project-suggestion-title"
+                      data-testid="templates-project-setup-suggestion"
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") setProjectSetupSuggestion(null);
+                      }}
+                      className="relative inset-auto mb-4 m-0 w-full max-w-none rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-left outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      <h3 id="template-project-suggestion-title" className="text-sm font-semibold text-indigo-950">
+                        {projectSetupSuggestion.label}
+                      </h3>
+                      <div className="mt-2 whitespace-pre-wrap text-sm text-slate-800">
+                        {projectSetupSuggestion.target === "classification"
+                          ? `${projectSetupSuggestion.value?.project_type || "—"} / ${projectSetupSuggestion.value?.project_subtype || "—"}`
+                          : projectSetupSuggestion.value || "No suggestion was returned."}
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={applyProjectSetupSuggestion}
+                          disabled={!projectSetupSuggestion.value}
+                          data-testid="templates-apply-project-suggestion"
+                          className="rounded-lg bg-indigo-700 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+                        >
+                          Apply suggestion
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setProjectSetupSuggestion(null)}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </dialog>
+                  ) : null}
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
                       <label htmlFor="mhb-templatespage-2845" className="mb-1 block text-sm font-medium">Template Name</label>
@@ -2919,7 +3293,7 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                             data-testid="templates-ai-improve-description-button"
                             className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60"
                           >
-                            {aiBusy ? "Working…" : "✨ Improve Description"}
+                            {aiBusy ? "Working…" : safeTrim(currentHeader?.description) ? "Improve description" : "Generate description"}
                           </button>
                         ) : null}
                       </div>
@@ -2944,7 +3318,14 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
 
                     <div className="md:col-span-2">
-                      <label htmlFor="mhb-templatespage-2947" className="mb-1 block text-sm font-medium">Exclusions</label>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label htmlFor="mhb-templatespage-2947" className="block text-sm font-medium">Exclusions</label>
+                        {(editMode || creatingNew) ? (
+                          <button type="button" onClick={() => handleAiSuggestProjectField("exclusions_text")} disabled={aiBusy} className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                            Suggest exclusions
+                          </button>
+                        ) : null}
+                      </div>
                       <textarea id="mhb-templatespage-2947"
                         data-testid="templates-exclusions-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -2961,7 +3342,14 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                     </div>
 
                     <div className="md:col-span-2">
-                      <label htmlFor="mhb-templatespage-2964" className="mb-1 block text-sm font-medium">Assumptions</label>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label htmlFor="mhb-templatespage-2964" className="block text-sm font-medium">Assumptions</label>
+                        {(editMode || creatingNew) ? (
+                          <button type="button" onClick={() => handleAiSuggestProjectField("assumptions_text")} disabled={aiBusy} className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 disabled:opacity-60">
+                            Suggest assumptions
+                          </button>
+                        ) : null}
+                      </div>
                       <textarea id="mhb-templatespage-2964"
                         data-testid="templates-assumptions-input"
                         className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
@@ -3185,6 +3573,10 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                   <div className="mb-2 text-xs text-slate-500">
                     Define reusable project phases. Keep descriptions general — project-specific details will be captured later.
                   </div>
+                  <div data-testid="templates-milestone-description-completeness" className="mb-3 text-xs font-semibold text-slate-700">
+                    {currentMilestones.length} milestone{currentMilestones.length === 1 ? "" : "s"} · {completedMilestoneDescriptions} of {currentMilestones.length} descriptions complete
+                    {completedMilestoneDescriptions < currentMilestones.length ? " · Recommended" : ""}
+                  </div>
 
                   {(editMode || creatingNew) ? (
                     <>
@@ -3200,10 +3592,11 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                         <button
                           type="button"
                           onClick={handleImproveMilestoneLanguage}
+                          disabled={milestoneSuggestionBusy !== null || aiBusy}
                           data-testid="templates-ai-improve-milestones-button"
                           className="rounded-lg border border-indigo-200 bg-white px-3 py-2 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                         >
-                          Improve Milestone Titles & Descriptions
+                          {milestoneSuggestionBusy === "all" ? "Preparing suggestions…" : "Improve Milestone Titles & Descriptions"}
                         </button>
                         <button
                           type="button"
@@ -3216,22 +3609,54 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                       </div>
 
                       {Array.isArray(milestoneRewritePreview) && milestoneRewritePreview.length ? (
-                        <div
+                        <dialog
+                          open
+                          ref={milestoneSuggestionRef}
+                          tabIndex={-1}
+                          aria-labelledby="template-milestone-suggestion-title"
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") setMilestoneRewritePreview(null);
+                          }}
                           data-testid="templates-milestone-improvement-preview"
-                          className="mb-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3"
+                          className="relative inset-auto mb-4 m-0 w-full max-w-none rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-left outline-none focus:ring-2 focus:ring-sky-600"
                         >
-                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">
+                          <div id="template-milestone-suggestion-title" className="text-xs font-semibold uppercase tracking-wide text-sky-900">
                             Review milestone wording suggestions
                           </div>
                           <div className="mt-2 space-y-2">
                             {milestoneRewritePreview.map((row, idx) => (
                               <div key={`rewrite-${idx}`} className="rounded-lg border border-sky-100 bg-white px-3 py-2">
-                                <div className="text-sm font-semibold text-slate-900">
-                                  {idx + 1}. {row?.title || `Milestone ${idx + 1}`}
-                                </div>
-                                <div className="mt-1 text-xs leading-5 text-slate-700">
-                                  {row?.description || "Reusable description suggestion pending."}
-                                </div>
+                                <label className="flex items-start gap-3">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.selected}
+                                    onChange={(event) =>
+                                      setMilestoneRewritePreview((current) =>
+                                        current.map((item, itemIndex) =>
+                                          itemIndex === idx ? { ...item, selected: event.target.checked } : item
+                                        )
+                                      )
+                                    }
+                                    className="mt-1 h-4 w-4 rounded border-slate-300 text-sky-700 focus:ring-sky-600"
+                                    aria-label={`Apply suggestion for ${row.current?.title || `milestone ${idx + 1}`}`}
+                                  />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Current</span>
+                                    <span className="block text-sm font-semibold text-slate-900">
+                                      {row.current?.title || `Milestone ${idx + 1}`}
+                                    </span>
+                                    <span className="mt-1 block text-xs leading-5 text-slate-600">
+                                      {row.current?.description || "No description yet."}
+                                    </span>
+                                    <span className="mt-3 block text-xs font-semibold uppercase tracking-wide text-sky-800">Suggestion</span>
+                                    {row.suggested?.title !== row.current?.title ? (
+                                      <span className="block text-sm font-semibold text-slate-900">{row.suggested?.title}</span>
+                                    ) : null}
+                                    <span className="mt-1 block text-xs leading-5 text-slate-700">
+                                      {row.suggested?.description || "Reusable description suggestion pending."}
+                                    </span>
+                                  </span>
+                                </label>
                               </div>
                             ))}
                           </div>
@@ -3242,17 +3667,25 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               data-testid="templates-apply-milestone-improvements"
                               className="rounded-lg bg-sky-700 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-800"
                             >
-                              Apply Suggested Wording
+                              Apply selected
+                            </button>
+                            <button
+                              type="button"
+                              onClick={applyAllSuggestedDescriptions}
+                              data-testid="templates-apply-all-descriptions"
+                              className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-semibold text-sky-800 hover:bg-sky-100"
+                            >
+                              Apply all descriptions
                             </button>
                             <button
                               type="button"
                               onClick={() => setMilestoneRewritePreview(null)}
                               className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
                             >
-                              Dismiss
+                              Cancel
                             </button>
                           </div>
-                        </div>
+                        </dialog>
                       ) : null}
 
                       {milestoneCountPreview ? (
@@ -3340,7 +3773,22 @@ export default function TemplatesPage({ adminMode = false } = {}) {
                               </div>
 
                               <div className="md:col-span-4">
-                                <label htmlFor={`template-milestone-${idx}-description`} className="mb-1 block text-xs font-semibold text-slate-700">Description</label>
+                                <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                                  <label htmlFor={`template-milestone-${idx}-description`} className="block text-xs font-semibold text-slate-700">Description</label>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGenerateMilestoneDescription(idx)}
+                                    disabled={milestoneSuggestionBusy === idx}
+                                    data-testid={`templates-generate-milestone-description-${idx + 1}`}
+                                    className="rounded-md border border-indigo-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-60"
+                                  >
+                                    {milestoneSuggestionBusy === idx
+                                      ? "Preparing…"
+                                      : safeTrim(m?.description)
+                                      ? "Improve description"
+                                      : "Generate description"}
+                                  </button>
+                                </div>
                                 <textarea
                                   id={`template-milestone-${idx}-description`}
                                   data-testid={`templates-milestone-description-${idx + 1}`}

@@ -22,6 +22,10 @@ class ProjectTemplate(models.Model):
         PUBLIC = "public", "Public"
         SYSTEM = "system", "System"
 
+    class LifecycleStatus(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        ACTIVE = "active", "Active"
+
     contractor = models.ForeignKey(
         "projects.Contractor",
         on_delete=models.CASCADE,
@@ -85,6 +89,13 @@ class ProjectTemplate(models.Model):
         help_text="Whether this system template is visible to contractors.",
     )
     is_active = models.BooleanField(default=True, db_index=True)
+    lifecycle_status = models.CharField(
+        max_length=16,
+        choices=LifecycleStatus.choices,
+        default=LifecycleStatus.ACTIVE,
+        db_index=True,
+        help_text="Contractor drafts are saved but unavailable to template application workflows until finalized.",
+    )
     visibility = models.CharField(
         max_length=24,
         choices=Visibility.choices,
@@ -164,6 +175,7 @@ class ProjectTemplate(models.Model):
             self.is_system_template = True
             if self.contractor_id is not None:
                 self.contractor = None
+            self.lifecycle_status = self.LifecycleStatus.ACTIVE
         else:
             self.is_system = False
             self.is_system_template = False

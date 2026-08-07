@@ -109,8 +109,11 @@ def _normalize_orchestrator_context(context: dict[str, Any]) -> dict[str, Any]:
     workspace = _safe_text(context.get("workspace") or context.get("workspace_mode") or context.get("page")).lower()
     normalized = {
         "schema_version": _safe_int(context.get("schema_version"), 1),
+        "audience": _safe_text(context.get("audience")).lower(),
         "workspace": workspace,
         "workspace_mode": workspace,
+        "active_tab": _safe_text(context.get("active_tab")).lower(),
+        "template_status": _safe_text(context.get("template_status")).lower(),
         "active_step": _safe_text(context.get("active_step")).lower(),
         "active_step_label": _safe_text(context.get("active_step_label")),
         "context_revision": _safe_text(context.get("context_revision")),
@@ -276,6 +279,13 @@ def _intent_from_request(normalized_request: dict[str, Any], context: dict[str, 
         return preferred
 
     text = _safe_text(normalized_request.get("input")).lower()
+    if (
+        context.get("workspace") == "template_builder"
+        and context.get("active_tab") == "milestones"
+        and "description" in text
+        and any(token in text for token in ("milestone", "milestones", "these", "generate", "give me", "improve"))
+    ):
+        return "template_milestone_descriptions"
     if any(token in text for token in ("maintenance", "recurring", "monthly", "quarterly", "service plan")):
         return "maintenance_contract"
     if any(token in text for token in ("onboarding", "finish setup", "first project", "first agreement", "why do i need stripe", "connect stripe", "help me finish setup")):
@@ -1131,6 +1141,36 @@ def _navigation_specialist(runtime: OrchestratorRuntimeContext) -> dict[str, Any
     }
 
 
+def _template_milestone_description_specialist(runtime: OrchestratorRuntimeContext) -> dict[str, Any]:
+    rows = _safe_list(_safe_dict(runtime.request_context.get("milestone_summary")).get("milestones"))
+    descriptions = []
+    for index, row in enumerate(rows, start=1):
+        item = _safe_dict(row)
+        title = _safe_text(item.get("title")) or f"Milestone {index}"
+        current = _safe_text(item.get("description"))
+        suggestion = current or f"Complete the reusable {title.lower()} phase within the approved template scope and prepare the work for the next applicable phase."
+        descriptions.append(f"{index}. {title}\n{suggestion}")
+    return {
+        "routine_name": "template_milestone_descriptions",
+        "intent": "template_milestone_descriptions",
+        "recommended_action": {
+            "type": "review",
+            "label": "Review milestone descriptions",
+            "action_key": "review_template_milestone_descriptions",
+            "navigation_target": "/app/templates",
+        },
+        "available_actions": [],
+        "required_missing_fields": [],
+        "warnings": [],
+        "suggestions": descriptions or ["Add milestone titles before requesting descriptions."],
+        "handoff_payload": {},
+        "preview_data": {"milestone_descriptions": descriptions},
+        "confidence": "high" if descriptions else "medium",
+        "confidence_reasoning": "The response used only the current Template Builder milestone titles and descriptions.",
+        "source_metadata": {"workspace": "template_builder", "active_tab": "milestones"},
+    }
+
+
 SPECIALIST_BUILDERS = {
     "lead_intake": _lead_intake_specialist,
     "agreement_builder": _agreement_builder_specialist,
@@ -1141,6 +1181,7 @@ SPECIALIST_BUILDERS = {
     "maintenance_contract": _maintenance_contract_specialist,
     "contractor_onboarding": _contractor_onboarding_specialist,
     "navigation_resume": _navigation_specialist,
+    "template_milestone_descriptions": _template_milestone_description_specialist,
 }
 
 
@@ -1157,6 +1198,7 @@ INTENT_ROUTINES = {
     "maintenance_contract": ["maintenance_contract"],
     "contractor_onboarding": ["contractor_onboarding"],
     "navigate_app": ["navigation_resume"],
+    "template_milestone_descriptions": ["template_milestone_descriptions"],
 }
 
 

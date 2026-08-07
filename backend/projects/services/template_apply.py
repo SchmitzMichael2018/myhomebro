@@ -753,6 +753,11 @@ def duplicate_template_for_contractor(
         is_system_template=bool(is_system),
         is_published=bool(is_published) if is_system else False,
         is_active=is_active,
+        lifecycle_status=(
+            ProjectTemplate.LifecycleStatus.ACTIVE
+            if is_system
+            else template_data.get("lifecycle_status", ProjectTemplate.LifecycleStatus.ACTIVE)
+        ),
         visibility=ProjectTemplate.Visibility.SYSTEM if is_system else ProjectTemplate.Visibility.PRIVATE,
         allow_discovery=bool(is_published) if is_system else False,
         source_system_template=source_template if source_template.is_system_template or source_template.is_system else None,

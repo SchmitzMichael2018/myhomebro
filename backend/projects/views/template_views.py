@@ -13,6 +13,7 @@ from django.utils.dateparse import parse_date
 
 from projects.ai.template_builder import (
     create_template_from_scope,
+    improve_template_milestone_descriptions,
     improve_template_description,
     suggest_template_type_subtype,
 )
@@ -83,6 +84,7 @@ class TemplateListCreateView(APIView):
         include_inactive = (
             request.query_params.get("include_inactive", "false").lower() == "true"
         )
+        include_drafts = request.query_params.get("include_drafts", "false").lower() == "true"
 
         if is_admin:
             qs = _template_queryset()
@@ -107,6 +109,8 @@ class TemplateListCreateView(APIView):
 
         if not include_inactive:
             qs = qs.filter(is_active=True)
+        if not include_drafts:
+            qs = qs.filter(lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE)
 
         if q:
             qs = qs.filter(
@@ -323,6 +327,8 @@ class ApplyTemplateToAgreementView(APIView):
 
         if not can_access_template(template, contractor):
             raise PermissionDenied("You do not have access to this template.")
+        if template.lifecycle_status != ProjectTemplate.LifecycleStatus.ACTIVE:
+            raise ValidationError("Finish this draft before applying it to an agreement.")
 
         return self._apply_template(
             request=request,
@@ -449,6 +455,8 @@ class ApplyTemplateToNewAgreementView(APIView):
 
             if not can_access_template(template, contractor):
                 raise PermissionDenied("You do not have access to this template.")
+            if template.lifecycle_status != ProjectTemplate.LifecycleStatus.ACTIVE:
+                raise ValidationError("Finish this draft before applying it to an agreement.")
 
             return ApplyTemplateToAgreementView()._apply_template(
                 request=request,
@@ -1003,6 +1011,27 @@ class TemplateCreateFromScopeView(APIView):
         return Response(result, status=status.HTTP_200_OK)
 
 
+class TemplateImproveMilestoneDescriptionsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        if not user_can_use_template_ai(request.user):
+            raise PermissionDenied("AI tools are available to contractors and admins")
+        milestones = request.data.get("milestones")
+        if not isinstance(milestones, list) or not milestones:
+            raise ValidationError({"milestones": "Provide at least one milestone."})
+        try:
+            result = improve_template_milestone_descriptions(
+                name=_safe_str(request.data.get("name")),
+                project_type=_safe_str(request.data.get("project_type")),
+                project_subtype=_safe_str(request.data.get("project_subtype")),
+                milestones=milestones,
+            )
+        except Exception as exc:
+            raise ValidationError(str(exc))
+        return Response(result, status=status.HTTP_200_OK)
+
+
 class TemplateDiscoverView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -1048,6 +1077,8 @@ class TemplateVisibilityUpdateView(APIView):
             raise PermissionDenied("System templates are managed through the system seed/admin path.")
         if not is_admin and template.contractor_id != contractor.id:
             raise PermissionDenied("You do not have permission to update this template.")
+        if template.lifecycle_status == ProjectTemplate.LifecycleStatus.DRAFT:
+            raise ValidationError("Finish this draft before changing template visibility.")
 
         visibility = _safe_str(request.data.get("visibility")).lower() or ProjectTemplate.Visibility.PRIVATE
         if visibility not in {
