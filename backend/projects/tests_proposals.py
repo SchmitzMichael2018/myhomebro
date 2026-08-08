@@ -388,3 +388,34 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(select_response.status_code, 404)
         self.assertEqual(apply_response.status_code, 404)
         self.assertFalse(proposal.line_items.exists())
+
+    def test_reviewed_percentage_pricing_is_applied_atomically(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen Refresh")
+        template = ProjectTemplate.objects.create(contractor=self.contractor, name="Allocation Template")
+        ProjectTemplateMilestone.objects.create(template=template, title="Demolition", suggested_amount_percent="25.00")
+
+        response = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/apply-template-pricing/",
+            {
+                "template_id": template.id,
+                "mode": "add",
+                "target_subtotal": "20000.00",
+                "pricing_items": [{
+                    "category": ProposalLineItem.CATEGORY_LABOR,
+                    "description": "Demolition labor",
+                    "quantity": "1",
+                    "unit": "ls",
+                    "unit_price": "5000.00",
+                    "notes": "Template milestone: Demolition (25%)",
+                }],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["totals"]["subtotal"], "5000.00")
+        item = proposal.line_items.get()
+        self.assertEqual(item.category, ProposalLineItem.CATEGORY_LABOR)
+        self.assertEqual(item.unit, "ls")
+        template.refresh_from_db()
+        self.assertEqual(template.milestones.get().suggested_amount_percent, 25)

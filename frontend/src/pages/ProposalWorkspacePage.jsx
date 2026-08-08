@@ -9,6 +9,7 @@ import UnitSelect from "../components/UnitSelect.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 import { customUnitError, recognizeUnit, unitDisplay, unitValueForSave } from "../lib/units.js";
+import { buildMilestoneAllocations, getTemplatePricingState } from "../lib/templatePricingState.js";
 
 const WORKFLOW_GROUPS = [
   {
@@ -1177,6 +1178,13 @@ export default function ProposalWorkspacePage() {
   const [templatePickerSearch, setTemplatePickerSearch] = useState("");
   const [templateOptions, setTemplateOptions] = useState([]);
   const [templateSelecting, setTemplateSelecting] = useState(false);
+  const [templateViewOpen, setTemplateViewOpen] = useState(false);
+  const [allocationOpen, setAllocationOpen] = useState(false);
+  const [allocationStep, setAllocationStep] = useState(1);
+  const [targetSubtotal, setTargetSubtotal] = useState("");
+  const [allocationRows, setAllocationRows] = useState([]);
+  const [allocationApplying, setAllocationApplying] = useState(false);
+  const templateViewTriggerRef = useRef(null);
   const templatePricingDialogRef = useRef(null);
   const templatePricingTriggerRef = useRef(null);
   const templatePickerDialogRef = useRef(null);
@@ -1204,6 +1212,7 @@ export default function ProposalWorkspacePage() {
   const adjustmentLineItems = useMemo(() => (proposal?.line_items || []).filter((item) => PRICING_ADJUSTMENT_VALUES.has(item.category)), [proposal]);
   const templatePricingItems = useMemo(() => (selectedTemplate?.milestones || []).filter((item) => Number(item.suggested_amount_fixed) > 0), [selectedTemplate]);
   const templateAllocationItems = useMemo(() => (selectedTemplate?.milestones || []).filter((item) => Number(item.suggested_amount_percent) > 0), [selectedTemplate]);
+  const templatePricingState = useMemo(() => getTemplatePricingState({ template: selectedTemplate, proposal }), [selectedTemplate, proposal]);
   const templatePricingSubtotal = useMemo(() => templatePricingItems.reduce((sum, item) => sum + Number(item.suggested_amount_fixed || 0), 0), [templatePricingItems]);
   const filteredTemplateOptions = useMemo(() => {
     const query = compactText(templatePickerSearch).toLowerCase();
@@ -1253,6 +1262,18 @@ export default function ProposalWorkspacePage() {
     document.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("keydown", onKeyDown); window.requestAnimationFrame(() => returnTarget?.focus()); };
   }, [templatePickerOpen]);
+  useEffect(() => {
+    if (!templateViewOpen && !allocationOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setTemplateViewOpen(false);
+      setAllocationOpen(false);
+      window.requestAnimationFrame(() => templateViewTriggerRef.current?.focus());
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [templateViewOpen, allocationOpen]);
   const pricingAdjustmentImpact = useMemo(() => adjustmentLineItems.reduce((sum, item) => {
     const amount = moneyToNumber(item.total);
     return sum + (item.category === "discount" ? -Math.abs(amount) : amount);
@@ -1827,6 +1848,64 @@ export default function ProposalWorkspacePage() {
   function openTemplatePricingPreview() {
     setTemplatePricingMode("add");
     setTemplatePricingPreviewOpen(true);
+  }
+
+  function openAllocationBuilder() {
+    setTargetSubtotal("");
+    setAllocationRows([]);
+    setAllocationStep(1);
+    setTemplatePricingMode("add");
+    setAllocationOpen(true);
+  }
+
+  function previewAllocations() {
+    const rows = buildMilestoneAllocations(selectedTemplate, targetSubtotal);
+    if (!rows.length) { toast.error("Enter a target estimate subtotal greater than zero."); return; }
+    setAllocationRows(rows.map((row) => ({
+      ...row,
+      category: "other",
+      pricingDescription: row.title,
+      quantity: "1",
+      unit: "ls",
+      unitPrice: row.amount.toFixed(2),
+      selected: true,
+    })));
+    setAllocationStep(2);
+  }
+
+  function patchAllocationRow(index, patch) {
+    setAllocationRows((current) => current.map((row, rowIndex) => rowIndex === index ? { ...row, ...patch } : row));
+  }
+
+  async function applyAllocationPricing() {
+    if (allocationApplying) return;
+    const selectedRows = allocationRows.filter((row) => row.selected);
+    if (!selectedRows.length) { toast.error("Select at least one reviewed pricing row."); return; }
+    setAllocationApplying(true);
+    try {
+      const { data } = await api.post(`/projects/proposals/${proposalId}/apply-template-pricing/`, {
+        template_id: selectedTemplate.id,
+        mode: templatePricingMode,
+        confirm_replace: templatePricingMode === "replace",
+        target_subtotal: targetSubtotal,
+        pricing_items: selectedRows.map((row) => ({
+          category: row.category,
+          description: row.pricingDescription,
+          quantity: row.quantity,
+          unit: row.unit,
+          unit_price: row.unitPrice,
+          notes: `Template milestone: ${row.title} (${row.percent}%)`,
+        })),
+      });
+      setProposal((previous) => ({ ...previous, line_items: data.line_items, totals: data.totals, pricing_template_name: data.template_name }));
+      setTemplatePricingReceipt(data.detail);
+      setAllocationOpen(false);
+      toast.success(data.detail);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || error?.response?.data?.pricing_items?.[0] || "Could not apply reviewed pricing.");
+    } finally {
+      setAllocationApplying(false);
+    }
   }
 
   async function applyTemplatePricing() {
@@ -2954,13 +3033,14 @@ export default function ProposalWorkspacePage() {
                   <div className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/55">Template</div>
                   <div className="text-sm font-black text-white">{selectedTemplate.name}</div>
                   <div className="text-xs font-semibold text-sky-100/65">{[selectedTemplate.project_type, selectedTemplate.project_subtype].filter(Boolean).join(" · ") || "General project"} · {selectedTemplate.is_system_template ? "System Template" : "My Template"} · Active</div>
-                  <div className="mt-1 text-xs font-bold text-sky-100/75">{templatePricingItems.length ? `Reusable pricing available · ${templatePricingItems.length} item${templatePricingItems.length === 1 ? "" : "s"} · ${money(templatePricingSubtotal)}` : templateAllocationItems.length ? "Pricing allocation guidance available — no fixed reusable prices." : "This template does not include reusable pricing."}</div>
+                  <div className="mt-1 text-xs font-bold text-sky-100/75">{templatePricingState.pricingApplied ? `Pricing started from ${selectedTemplate.name} · template-derived items are edited independently from the source.` : templatePricingItems.length ? `Pricing guidance available · ${templatePricingItems.length} reusable priced milestone${templatePricingItems.length === 1 ? "" : "s"} · ${money(templatePricingSubtotal)}` : templateAllocationItems.length ? "Pricing basis needed · allocation guidance is available, but this template does not store project-specific dollar prices." : "Selected template · this template does not include reusable pricing guidance."}</div>
                   {proposal?.pricing_template_name && proposal.pricing_template_name !== selectedTemplate.name ? <div role="status" className="mt-2 text-xs font-bold text-amber-100">This estimate already contains pricing copied from {proposal.pricing_template_name}. Existing items will remain unless you explicitly replace them during pricing preview.</div> : null}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <a href={`/app/templates?template=${selectedTemplate.id}`} className="rounded-lg border border-white/14 px-3 py-2 text-sm font-black text-white underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">View template</a>
+                  <button ref={templateViewTriggerRef} type="button" onClick={() => setTemplateViewOpen(true)} className="rounded-lg border border-white/14 px-3 py-2 text-sm font-black text-white underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">View template</button>
                   <button ref={templatePickerTriggerRef} type="button" onClick={openTemplatePicker} className="rounded-lg border border-white/14 px-3 py-2 text-sm font-black text-white">Change template</button>
                   {templatePricingItems.length ? <button ref={templatePricingTriggerRef} type="button" data-testid="apply-template-pricing-open" onClick={openTemplatePricingPreview} className="rounded-lg border border-amber-200/30 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">Apply template pricing</button> : null}
+                  {!templatePricingItems.length && templateAllocationItems.length ? <button type="button" data-testid="build-template-pricing" onClick={openAllocationBuilder} className="rounded-lg border border-amber-200/30 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950">Build pricing from template</button> : null}
                 </div>
               </> : <>
                 <div className="min-w-0 flex-1"><div className="text-sm font-black text-white">Template</div><div className="text-sm font-semibold text-sky-100/70">Apply a reusable template to speed up pricing.</div></div>
@@ -3165,6 +3245,24 @@ export default function ProposalWorkspacePage() {
           </Section>
         </main>
 
+        {templateViewOpen ? (
+          <div className="fixed inset-0 z-[82] flex items-center justify-center bg-slate-950/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTemplateViewOpen(false); }}>
+            <section role="dialog" aria-modal="true" aria-labelledby="template-view-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/14 bg-[#071d3d] p-4 text-white shadow-2xl sm:p-5" data-testid="estimate-template-view">
+              <div className="flex items-start justify-between gap-3"><div><h2 id="template-view-title" className="text-xl font-black">{selectedTemplate?.name}</h2><p className="mt-1 text-sm font-semibold text-sky-100/65">{[selectedTemplate?.project_type, selectedTemplate?.project_subtype].filter(Boolean).join(" · ")} · {selectedTemplate?.is_system_template ? "System Template" : "My Template"}</p></div><button type="button" aria-label="Close template details" onClick={() => setTemplateViewOpen(false)} className="rounded-lg border border-white/14 p-2"><X size={18} /></button></div>
+              <section className="mt-5"><h3 className="font-black">Milestones · {selectedTemplate?.milestones?.length || 0}</h3><div className="mt-2 space-y-2">{(selectedTemplate?.milestones || []).map((item) => <article key={item.id} className="rounded-xl border border-white/10 bg-white/7 p-3"><div className="font-black">{item.title}</div>{item.description ? <p className="mt-1 text-sm text-sky-100/70">{item.description}</p> : null}<div className="mt-2 flex flex-wrap gap-2 text-xs font-bold text-sky-100/65">{Number(item.suggested_amount_fixed) > 0 ? <span>Fixed {money(item.suggested_amount_fixed)}</span> : null}{Number(item.suggested_amount_percent) > 0 ? <span>{item.suggested_amount_percent}% allocation</span> : null}{item.recommended_days_from_start != null ? <span>Day {Number(item.recommended_days_from_start) + 1}</span> : null}{item.recommended_duration_days ? <span>{item.recommended_duration_days} days</span> : null}</div>{item.materials_hint ? <p className="mt-2 text-xs text-sky-100/60">Materials: {item.materials_hint}</p> : null}</article>)}</div></section>
+              {selectedTemplate?.project_materials_hint ? <section className="mt-4 rounded-xl border border-white/10 bg-white/7 p-3"><h3 className="font-black">Materials guidance</h3><p className="mt-1 text-sm text-sky-100/70">{selectedTemplate.project_materials_hint}</p></section> : null}
+              <div className="mt-5 flex flex-wrap justify-end gap-2">{!selectedTemplate?.is_system_template ? <a href={`/app/templates?template=${selectedTemplate?.id}`} className="rounded-lg border border-white/14 px-3 py-2 text-sm font-black text-white">Open full Template Builder</a> : null}<button type="button" onClick={() => { setTemplateViewOpen(false); openTemplatePicker(); }} className="rounded-lg border border-white/14 px-3 py-2 text-sm font-black">Change template</button>{templatePricingItems.length ? <button type="button" onClick={() => { setTemplateViewOpen(false); openTemplatePricingPreview(); }} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>Preview & apply pricing</button> : templateAllocationItems.length ? <button type="button" onClick={() => { setTemplateViewOpen(false); openAllocationBuilder(); }} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>Use pricing guidance</button> : <button type="button" onClick={() => { setTemplateViewOpen(false); openPricingEditor(); }} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>Add pricing manually</button>}</div>
+            </section>
+          </div>
+        ) : null}
+        {allocationOpen ? (
+          <div className="fixed inset-0 z-[83] flex items-center justify-center bg-slate-950/80 p-3 sm:p-4" role="presentation">
+            <section role="dialog" aria-modal="true" aria-labelledby="allocation-title" className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-white/14 bg-[#071d3d] p-4 text-white shadow-2xl sm:p-5" data-testid="template-allocation-builder">
+              <div className="flex items-start justify-between gap-3"><div><h2 id="allocation-title" className="text-xl font-black">Build pricing from template</h2><p className="mt-1 text-sm font-semibold text-sky-100/70">{allocationStep === 1 ? "Step 1 — Pricing basis" : "Step 2 — Milestone budgets and cost categories"}</p></div><button type="button" aria-label="Close pricing builder" onClick={() => setAllocationOpen(false)} className="rounded-lg border border-white/14 p-2"><X size={18} /></button></div>
+              {allocationStep === 1 ? <div className="mt-5"><label className="block"><span className="font-black">What do you expect to charge for this project?</span><span className="mt-1 block text-sm font-semibold text-sky-100/65">Target estimate subtotal</span><input data-testid="target-estimate-subtotal" inputMode="decimal" value={targetSubtotal} onChange={(event) => setTargetSubtotal(event.target.value)} className="mt-2 w-full rounded-lg border border-white/14 bg-slate-950/35 px-3 py-3 text-lg font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300" /></label><p className="mt-2 text-sm text-sky-100/65">MyHomeBro will use saved milestone allocations to create a starting pricing plan. You can edit everything before saving. Tax, discounts, allowances, and incidentals remain separate.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setAllocationOpen(false)} className="rounded-lg border border-white/14 px-4 py-2 font-black">Cancel</button><button type="button" onClick={previewAllocations} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>Review milestone allocation</button></div></div> : <div className="mt-5"><div className="mb-4 grid gap-2 rounded-xl border border-white/10 bg-white/7 p-3 sm:grid-cols-3"><div><span className="block text-xs text-sky-100/55">Target subtotal</span><strong>{money(targetSubtotal)}</strong></div><div><span className="block text-xs text-sky-100/55">Total allocated</span><strong>{money(allocationRows.reduce((sum, row) => sum + row.amount, 0))}</strong></div><div><span className="block text-xs text-sky-100/55">Remaining / over</span><strong>{money(Number(targetSubtotal || 0) - allocationRows.reduce((sum, row) => sum + row.amount, 0))}</strong></div></div><p className="mb-3 text-sm font-semibold text-sky-100/70">Milestone budgets describe project phases. Cost categories describe what each reviewed line pays for. Review every row before applying.</p>{(proposal?.line_items || []).length ? <fieldset className="mb-4 rounded-xl border border-amber-200/20 p-3"><legend className="px-1 text-sm font-black">This estimate already contains pricing</legend><label className="mt-2 flex gap-2"><input type="radio" name="allocation-mode" checked={templatePricingMode === "add"} onChange={() => setTemplatePricingMode("add")} />Add template pricing and keep current items</label><label className="mt-2 flex gap-2"><input type="radio" name="allocation-mode" checked={templatePricingMode === "replace"} onChange={() => setTemplatePricingMode("replace")} />Replace existing pricing after confirmation</label></fieldset> : null}<div className="space-y-3">{allocationRows.map((row, index) => <article key={row.milestoneId} className="rounded-xl border border-white/10 bg-white/7 p-3"><label className="flex items-start gap-2"><input type="checkbox" checked={row.selected} onChange={(event) => patchAllocationRow(index, { selected: event.target.checked })} /><span><strong>{row.title}</strong><span className="block text-xs text-sky-100/60">Milestone budget · {row.percent}% · {money(row.amount)}</span></span></label><div className="mt-3 grid gap-2 md:grid-cols-4"><label><span className="text-xs font-black">Cost category</span><select value={row.category} onChange={(event) => patchAllocationRow(index, { category: event.target.value })} className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/40 px-2 py-2">{LINE_ITEM_CATEGORIES.filter(([value]) => COST_CATEGORY_VALUES.has(value)).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="md:col-span-2"><span className="text-xs font-black">Pricing description</span><input value={row.pricingDescription} onChange={(event) => patchAllocationRow(index, { pricingDescription: event.target.value })} className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/40 px-2 py-2" /></label><label><span className="text-xs font-black">Flat price</span><input inputMode="decimal" value={row.unitPrice} onChange={(event) => patchAllocationRow(index, { unitPrice: event.target.value })} className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/40 px-2 py-2" /></label></div><div className="mt-2 text-xs text-sky-100/55">Quantity 1 · Unit LS (Lump Sum). No quantity or unit price was guessed from market data.</div></article>)}</div><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setAllocationStep(1)} className="rounded-lg border border-white/14 px-4 py-2 font-black">Back</button><button type="button" onClick={() => setAllocationOpen(false)} className="rounded-lg border border-white/14 px-4 py-2 font-black">Keep current pricing / Cancel</button><button type="button" disabled={allocationApplying} onClick={applyAllocationPricing} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>{allocationApplying ? "Applying…" : templatePricingMode === "replace" ? "Confirm replacement" : "Apply selected pricing"}</button></div></div>}
+            </section>
+          </div>
+        ) : null}
         {templatePickerOpen ? (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTemplatePickerOpen(false); }}>
             <section ref={templatePickerDialogRef} role="dialog" aria-modal="true" aria-labelledby="template-picker-title" className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/14 bg-[#071d3d] text-white shadow-2xl" data-testid="pricing-template-picker">

@@ -821,6 +821,65 @@ class ProposalTemplatePricingApplyView(APIView):
         if mode == "replace" and not request.data.get("confirm_replace"):
             return Response({"detail": "Confirm replacement before removing existing pricing."}, status=400)
 
+        reviewed_items = request.data.get("pricing_items")
+        if reviewed_items is not None:
+            if not isinstance(reviewed_items, list) or not reviewed_items:
+                return Response({"pricing_items": ["Review at least one pricing item before applying."]}, status=400)
+            prepared = []
+            for index, row in enumerate(reviewed_items):
+                if not isinstance(row, dict):
+                    return Response({"pricing_items": [f"Item {index + 1} is invalid."]}, status=400)
+                category = _safe_text(row.get("category"))
+                if category not in dict(ProposalLineItem.CATEGORY_CHOICES):
+                    return Response({"pricing_items": [f"Choose a category for item {index + 1}."]}, status=400)
+                description = _safe_text(row.get("description"))
+                if not description:
+                    return Response({"pricing_items": [f"Enter a description for item {index + 1}."]}, status=400)
+                try:
+                    quantity = _to_decimal(row.get("quantity", "1"), "quantity")
+                    unit_price = _to_decimal(row.get("unit_price"), "unit_price")
+                except ValueError:
+                    return Response({"pricing_items": [f"Enter valid pricing for item {index + 1}."]}, status=400)
+                unit, unit_error = _normalize_proposal_unit(row.get("unit") or "ls")
+                if unit_error:
+                    return Response({"pricing_items": [f"Item {index + 1}: {unit_error}"]}, status=400)
+                if quantity <= 0 or unit_price < 0:
+                    return Response({"pricing_items": [f"Item {index + 1} must use a positive quantity and non-negative price."]}, status=400)
+                prepared.append({
+                    "category": category,
+                    "description": description,
+                    "quantity": quantity,
+                    "unit": unit,
+                    "unit_price": unit_price,
+                    "notes": _safe_text(row.get("notes"))[:2000],
+                })
+
+            with transaction.atomic():
+                if mode == "replace":
+                    proposal.line_items.all().delete()
+                created = [ProposalLineItem.objects.create(proposal=proposal, **row) for row in prepared]
+                _activity(
+                    proposal,
+                    ProposalActivity.EVENT_LINE_ITEM_ADDED,
+                    f"Pricing built from {template.name} allocation guidance",
+                    actor=request.user,
+                    metadata={"template_id": template.id, "mode": mode, "line_item_ids": [item.id for item in created], "basis": _safe_text(request.data.get("target_subtotal"))},
+                )
+                proposal.selected_template = template
+                proposal.selected_template_name_snapshot = template.name
+                proposal.selected_template_source_snapshot = "system" if template.is_system_template else "contractor"
+                proposal.pricing_template_name_snapshot = template.name
+                proposal.save(update_fields=["selected_template", "selected_template_name_snapshot", "selected_template_source_snapshot", "pricing_template_name_snapshot", "updated_at"])
+            proposal = _proposal_queryset(contractor).get(pk=proposal.pk)
+            return Response({
+                "detail": f"Pricing built from {template.name}",
+                "template_id": template.id,
+                "template_name": template.name,
+                "mode": mode,
+                "line_items": [_serialize_line_item(item) for item in proposal.line_items.all()],
+                "totals": _proposal_totals(proposal),
+            })
+
         reusable = [
             milestone for milestone in template.milestones.all()
             if milestone.suggested_amount_fixed is not None and milestone.suggested_amount_fixed > 0

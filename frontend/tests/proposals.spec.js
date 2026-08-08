@@ -1115,7 +1115,10 @@ test("Scope canonical sources and template pricing copy workflow", async ({ page
     ]) });
   });
   await page.route("**/api/projects/templates/6/", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: 6, name: "Built-in Bathroom", project_type: "Bathroom", lifecycle_status: "active", is_active: true, is_system_template: true, milestone_count: 3, milestones: [] }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: 6, name: "Built-in Bathroom", project_type: "Bathroom", lifecycle_status: "active", is_active: true, is_system_template: true, milestone_count: 2, project_materials_hint: "Tile and fixtures", milestones: [
+      { id: 601, title: "Demolition", description: "Remove existing finishes.", suggested_amount_percent: "25.00", recommended_days_from_start: 0, recommended_duration_days: 2 },
+      { id: 602, title: "Installation", description: "Install selected finishes.", suggested_amount_percent: "75.00", recommended_days_from_start: 2, recommended_duration_days: 5, materials_hint: "Tile and setting materials" },
+    ] }) });
   });
   const scopedProposal = {
     ...proposal,
@@ -1160,7 +1163,7 @@ test("Scope canonical sources and template pricing copy workflow", async ({ page
   await page.screenshot({ path: "test-results/scope-site-navigation.png", fullPage: true });
 
   await page.getByTestId("estimate-workflow-step-pricing").click();
-  await expect(page.getByTestId("template-pricing-availability")).toContainText("Reusable pricing available");
+  await expect(page.getByTestId("template-pricing-availability")).toContainText("Pricing guidance available");
   await page.getByRole("button", { name: "Change template" }).click();
   await expect(page.getByTestId("pricing-template-picker")).toContainText("My Templates");
   await expect(page.getByTestId("pricing-template-picker")).toContainText("Built-in Templates");
@@ -1168,7 +1171,25 @@ test("Scope canonical sources and template pricing copy workflow", async ({ page
   await expect(page.getByTestId("pricing-template-option-5")).toBeVisible();
   await expect(page.getByTestId("pricing-template-option-6")).toHaveCount(0);
   await page.screenshot({ path: "test-results/pricing-template-picker.png", fullPage: true });
-  await page.getByRole("button", { name: "Close template picker" }).click();
+  await page.getByPlaceholder("Search name, type, or subtype").fill("");
+  await page.getByTestId("pricing-template-option-6").click();
+  await expect(page.getByTestId("template-pricing-availability")).toContainText("Pricing basis needed");
+  const estimateUrl = page.url();
+  await page.getByRole("button", { name: "View template" }).click();
+  await expect(page.getByTestId("estimate-template-view")).toContainText("Demolition");
+  await expect(page.getByTestId("estimate-template-view")).toContainText("Day 1");
+  await expect(page).toHaveURL(estimateUrl);
+  await page.screenshot({ path: "test-results/pricing-template-view.png", fullPage: true });
+  await page.getByRole("button", { name: "Use pricing guidance" }).click();
+  await page.getByTestId("target-estimate-subtotal").fill("20000");
+  await page.screenshot({ path: "test-results/pricing-basis-prompt.png", fullPage: true });
+  await page.getByRole("button", { name: "Review milestone allocation" }).click();
+  await expect(page.getByTestId("template-allocation-builder")).toContainText("$5,000.00");
+  await expect(page.getByTestId("template-allocation-builder")).toContainText("$15,000.00");
+  await page.screenshot({ path: "test-results/pricing-allocation-review.png", fullPage: true });
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.getByRole("button", { name: "Change template" }).click();
+  await page.getByTestId("pricing-template-option-5").click();
   await page.screenshot({ path: "test-results/pricing-template-available.png", fullPage: true });
   await page.getByTestId("apply-template-pricing-open").click();
   await expect(page.getByTestId("template-pricing-preview")).toContainText("$1,750.00");
