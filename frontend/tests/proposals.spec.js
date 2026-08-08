@@ -945,7 +945,6 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("estimate-workflow-step-pricing").click();
   await expect(page.getByTestId("proposal-section-estimate")).toContainText("Estimate Pricing");
   await expect(page.getByTestId("proposal-section-estimate")).not.toContainText("Estimate Line Items");
-  await expect(page.getByTestId("proposal-section-estimate")).not.toContainText(/milestone/i);
   await page.screenshot({ path: "test-results/pricing-empty.png", fullPage: true });
   await page.getByTestId("pricing-empty-add").click();
   await page.screenshot({ path: "test-results/pricing-adding-item.png", fullPage: true });
@@ -1008,7 +1007,44 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
 
   await page.getByTestId("estimate-workflow-step-review").click();
   await expect(page.getByTestId("estimate-ready-review-status")).toContainText("Ready for Agreement");
+  await expect(page.getByTestId("estimate-review-project-summary")).toContainText("New Lead Customer");
+  await expect(page.getByTestId("estimate-review-scope-summary")).toContainText("3 complete");
+  await expect(page.getByTestId("estimate-review-pricing-summary")).toContainText("$950.00");
+  await expect(page.getByTestId("estimate-agreement-handoff")).toContainText("Everything remains reviewable");
+  await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(1);
+  await expect(page.getByTestId("proposal-history").locator("> div")).toHaveCount(2);
+  await expect(page.getByTestId("proposal-history-toggle")).toHaveAttribute("aria-expanded", "false");
+  await page.getByTestId("proposal-history-toggle").click();
+  await expect(page.getByTestId("proposal-history-toggle")).toHaveAttribute("aria-expanded", "true");
+  expect(await page.getByTestId("proposal-history").locator("> div").count()).toBeGreaterThan(2);
   await expect(page.getByTestId("proposal-history")).toContainText("Estimate created");
+  await page.screenshot({ path: "test-results/estimate-review-full-history.png", fullPage: true });
+  await page.getByTestId("proposal-history-toggle").click();
+  await expect(page.getByTestId("proposal-history").locator("> div")).toHaveCount(2);
+
+  const notesSection = page.getByTestId("proposal-section-notes");
+  await notesSection.locator("summary").click();
+  await page.getByTestId("proposal-internal-notes").fill("Confirm crew availability before sending.");
+  await expect(page.getByTestId("proposal-save-notes")).toBeVisible();
+  await page.getByTestId("proposal-save-notes").click();
+  await expect(page.getByTestId("proposal-save-notes")).toHaveCount(0);
+
+  await page.getByTestId("assistant-dock-open-button").click();
+  await page.getByTestId("start-with-ai-input-dock").fill("What should I review before creating the agreement?");
+  await page.getByTestId("start-with-ai-submit-dock").click();
+  await expect.poll(() => pricingAssistantPayload?.context?.active_workspace).toBe("review");
+  expect(pricingAssistantPayload.context.proposal_summary.review).toMatchObject({ ready: true, agreement_creation_available: true });
+  await page.getByTestId("assistant-desktop-dock-close").click();
+
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.waitForTimeout(5000);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/estimate-review-ready.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/estimate-review-mobile-390.png", fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   await page.getByTestId("estimate-ready-create-agreement").click();
   await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);

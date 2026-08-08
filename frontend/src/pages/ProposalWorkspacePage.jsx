@@ -291,6 +291,21 @@ function statusTone(status) {
   return "border-white/14 bg-white/8 text-sky-100/78";
 }
 
+function activityDisplay(item) {
+  const message = String(item?.message || "Estimate updated");
+  const detail = message.includes(":") ? message.split(":").slice(1).join(":").trim() : "";
+  const labels = {
+    line_item_added: "Pricing item added",
+    line_item_updated: "Pricing item updated",
+    line_item_removed: "Pricing item removed",
+    site_visit_updated: "Site details updated",
+    scope_edited: "Scope details updated",
+    notes_edited: "Internal notes updated",
+    created: "Estimate created",
+  };
+  return { label: labels[item?.event_type] || item?.event_label || message, detail };
+}
+
 function safeHref(kind, value, subject = "", body = "") {
   const text = String(value || "").trim();
   if (!text) return "";
@@ -1198,6 +1213,7 @@ export default function ProposalWorkspacePage() {
   const [clarificationErrors, setClarificationErrors] = useState({});
   const [showCompletedClarifications, setShowCompletedClarifications] = useState(false);
   const [showIgnoredClarifications, setShowIgnoredClarifications] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
 
   const photos = useMemo(
     () => (proposal?.attachments || []).filter((item) => item.attachment_type === "photo"),
@@ -1306,6 +1322,8 @@ export default function ProposalWorkspacePage() {
     () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
     [proposal, draft, totals, photos, documents, clarificationRows]
   );
+  const notesDirty = String(draft.internal_notes || "") !== String(proposal?.internal_notes || "");
+  const recentActivity = useMemo(() => (proposal?.activity || []).slice(0, historyExpanded ? 50 : 2), [proposal, historyExpanded]);
   const sortedClarificationRows = useMemo(() => [...clarificationRows].sort((a, b) => {
     const rank = { "Needs Answer": 0, Reopened: 0, Suggested: 1, Complete: 2, Ignored: 3 };
     return (rank[a.status] ?? 4) - (rank[b.status] ?? 4);
@@ -1333,7 +1351,7 @@ export default function ProposalWorkspacePage() {
   const activeStepIndex = Math.max(0, WORKSPACE_STEPS.findIndex((step) => step.sections.some(([key]) => key === active)));
   const activeStep = WORKSPACE_STEPS[activeStepIndex];
   useEffect(() => {
-    if (!proposal || !["site_scope", "pricing"].includes(activeStep.key)) return;
+    if (!proposal || !["site_scope", "pricing", "review"].includes(activeStep.key)) return;
     const scopeSources = {
       measurements: (proposal.measurements || []).map((item) => ({ label: item.label, quantity: item.quantity, unit: item.unit, location: item.location })),
       photo_count: photos.length,
@@ -1350,7 +1368,7 @@ export default function ProposalWorkspacePage() {
     updateAssistantContext({
       workspace_mode: "estimates",
       page: "estimates",
-      active_workspace: activeStep.key === "pricing" ? "pricing" : "scope",
+      active_workspace: activeStep.key,
       entity_type: "proposal",
       entity_id: proposalId,
       proposal_id: proposalId,
@@ -1375,6 +1393,16 @@ export default function ProposalWorkspacePage() {
           item_count: templatePricingItems.length,
           requires_approval: true,
         },
+        review: activeStep.key === "review" ? {
+          ready: estimateChecklist.readyMinimum,
+          blockers: estimateChecklist.requiredMissing.map((item) => item.title),
+          customer: proposal.customer_name || "",
+          project_title: proposal.project_title || "",
+          clarification_complete_count: clarificationRows.filter((row) => row.complete).length,
+          clarification_unresolved_count: clarificationRows.filter((row) => !row.complete).length,
+          recent_activity: (proposal.activity || []).slice(0, 2).map((item) => activityDisplay(item).label),
+          agreement_creation_available: estimateChecklist.readyMinimum && !isReadOnlyHistory,
+        } : undefined,
       },
     });
   }, [activeStep.key, documents.length, draft, estimateChecklist.items, photos.length, proposal, proposalId, selectedTemplate, templatePricingItems.length, totals, updateAssistantContext]);
@@ -3198,50 +3226,61 @@ export default function ProposalWorkspacePage() {
             </button>
           </Section>
 
-          <Section id="ready" active={activeStep.key === "review"} title="Ready for Agreement">
-            <div className={`rounded-xl border p-4 ${estimateChecklist.readyMinimum ? "border-emerald-200/30 bg-emerald-400/10 text-emerald-100" : "border-amber-200/30 bg-amber-400/10 text-amber-100"}`}>
-              <div className="text-lg font-black" data-testid="estimate-ready-review-status">
-                {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Finish required checklist items"}
-              </div>
-              <div className="mt-1 text-sm font-semibold">
-                {estimateChecklist.readyMinimum
-                  ? "The minimum estimate checklist is complete. The contractor still reviews and edits everything in the Agreement Wizard."
-                  : `Missing: ${estimateChecklist.requiredMissing.map((item) => item.title).join(", ")}`}
-              </div>
-              <button
-                type="button"
-                data-testid="estimate-ready-create-agreement"
-                onClick={createAgreementFromProposal}
-                disabled={!estimateChecklist.readyMinimum}
-                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-slate-400"
-              >
-                <FileSignature size={16} /> Create Agreement from Estimate
-              </button>
-            </div>
-          </Section>
-
-          <Section id="notes" active={activeStep.key === "review"} title="Internal Notes">
-            <TextAreaField label="Contractor notes" testId="proposal-internal-notes" value={draft.internal_notes} onChange={(value) => patchDraft("internal_notes", value)} rows={8} />
-            <button
-              type="button"
-              data-testid="proposal-save-notes"
-              onClick={() => saveProposal({ internal_notes: draft.internal_notes }, "Notes saved.")}
-              disabled={saving}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
-            >
-              <Save size={16} /> Save Notes
-            </button>
-          </Section>
-
-          <Section id="history" active={activeStep.key === "review"} title="History">
-            <div className="space-y-2" data-testid="proposal-history">
-              {(proposal.activity || []).length ? proposal.activity.map((item) => (
-                <div key={item.id} className="rounded-lg border border-white/10 bg-white/7 p-3">
-                  <div className="font-bold text-white">{item.message}</div>
-                  <div className="text-xs font-semibold text-sky-100/55">{formatDateTime(item.created_at)}</div>
+          <Section id="ready" active={activeStep.key === "review"} title="Agreement Review" description="Confirm the estimate is complete, then continue into the existing Agreement Wizard.">
+            <div className="space-y-5" data-testid="estimate-review-workspace">
+              <div role="status" className={`rounded-xl border p-4 ${estimateChecklist.readyMinimum ? "border-emerald-200/30 bg-emerald-400/10" : "border-amber-200/30 bg-amber-400/10"}`}>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div className={`text-lg font-black ${estimateChecklist.readyMinimum ? "text-emerald-100" : "text-amber-100"}`} data-testid="estimate-ready-review-status">
+                      {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Agreement blockers remain"}
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-sky-50/80">
+                      {estimateChecklist.readyMinimum ? "This estimate is ready to create an agreement." : "Resolve the remaining required items before creating the agreement."}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-left sm:text-right"><span className="block text-xs font-black uppercase tracking-wide text-sky-100/55">Estimate total</span><strong className="text-xl text-white">{money(totals.total)}</strong></div>
                 </div>
-              )) : <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No estimate activity has been recorded yet. Updates, revisions, and conversion events will appear here.</div>}
+                {!estimateChecklist.readyMinimum ? <div className="mt-4 border-t border-amber-100/15 pt-3" data-testid="estimate-review-blockers"><div className="text-xs font-black uppercase tracking-wide text-amber-100/75">Required before handoff</div><div className="mt-2 flex flex-wrap gap-2">{estimateChecklist.requiredMissing.map((item) => <button key={item.key} type="button" onClick={() => openWorkspaceSection(item.target)} className="rounded-lg border border-amber-100/25 bg-slate-950/25 px-3 py-2 text-left text-sm font-bold text-amber-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300">{item.title}</button>)}</div></div> : null}
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-3" data-testid="estimate-review-summaries">
+                <article className="rounded-xl border border-white/10 bg-white/7 p-4" data-testid="estimate-review-project-summary">
+                  <div className="flex items-start justify-between gap-2"><h3 className="font-black text-white">Project</h3><button type="button" onClick={() => openWorkspaceStep(0)} className="rounded-md px-2 py-1 text-xs font-black text-sky-200 underline decoration-sky-300/50 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">Edit</button></div>
+                  <dl className="mt-3 space-y-2 text-sm"><div><dt className="text-xs font-bold text-sky-100/50">Customer</dt><dd className="font-bold text-white">{proposal.customer_name || "Not selected"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Property</dt><dd className="font-semibold text-sky-50/80">{proposal.project_address || proposal.property_address || draft.project_address || "Not provided"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Project</dt><dd className="font-semibold text-sky-50/80">{proposal.title || draft.title || "Untitled estimate"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Schedule</dt><dd className="font-semibold text-sky-50/80">{proposalScheduleSummary({ ...proposal, ...draft })}</dd></div></dl>
+                </article>
+                <article className="rounded-xl border border-white/10 bg-white/7 p-4" data-testid="estimate-review-scope-summary">
+                  <div className="flex items-start justify-between gap-2"><h3 className="font-black text-white">Scope</h3><button type="button" onClick={() => openWorkspaceStep(1)} className="rounded-md px-2 py-1 text-xs font-black text-sky-200 underline decoration-sky-300/50 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">Edit</button></div>
+                  <dl className="mt-3 space-y-2 text-sm"><div><dt className="text-xs font-bold text-sky-100/50">Clarifications</dt><dd className="font-semibold text-sky-50/80">{clarificationRows.filter((row) => row.complete).length} complete · {clarificationRows.filter((row) => !row.complete).length} unresolved</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Site records</dt><dd className="font-semibold text-sky-50/80">{(proposal.measurements || []).length} measurements · {photos.length} photos · {documents.length} documents</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Scope definition</dt><dd className="font-semibold text-sky-50/80">{[draft.included_work, draft.excluded_work, draft.assumptions, draft.allowances].filter((value) => compactText(value)).length} of 4 scope note areas completed</dd></div></dl>
+                </article>
+                <article className="rounded-xl border border-white/10 bg-white/7 p-4" data-testid="estimate-review-pricing-summary">
+                  <div className="flex items-start justify-between gap-2"><h3 className="font-black text-white">Pricing</h3><button type="button" onClick={() => openWorkspaceStep(2)} className="rounded-md px-2 py-1 text-xs font-black text-sky-200 underline decoration-sky-300/50 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">Edit</button></div>
+                  <dl className="mt-3 space-y-2 text-sm"><div><dt className="text-xs font-bold text-sky-100/50">Pricing items</dt><dd className="font-bold text-white">{(proposal.line_items || []).length}</dd></div><div className="flex justify-between gap-3"><dt className="text-sky-100/60">Subtotal</dt><dd className="font-bold text-white">{money(totals.subtotal)}</dd></div>{Number(totals.tax || 0) ? <div className="flex justify-between gap-3"><dt className="text-sky-100/60">Tax</dt><dd className="font-bold text-white">{money(totals.tax)}</dd></div> : null}{Number(totals.incidentals_reserve || 0) ? <div className="flex justify-between gap-3"><dt className="text-sky-100/60">Incidentals</dt><dd className="font-bold text-white">{money(totals.incidentals_reserve)}</dd></div> : null}{Number(totals.discounts || 0) ? <div className="flex justify-between gap-3"><dt className="text-sky-100/60">Discounts</dt><dd className="font-bold text-white">−{money(totals.discounts)}</dd></div> : null}<div className="flex justify-between gap-3 border-t border-white/10 pt-2"><dt className="font-black text-white">Total</dt><dd className="font-black text-white">{money(totals.total)}</dd></div>{proposal.pricing_template_name ? <div><dt className="text-xs font-bold text-sky-100/50">Pricing source</dt><dd className="font-semibold text-sky-50/80">{proposal.pricing_template_name}</dd></div> : null}</dl>
+                </article>
+              </div>
+
+              <section className="rounded-xl border border-sky-300/20 bg-slate-950/30 p-4" aria-labelledby="agreement-handoff-title" data-testid="estimate-agreement-handoff">
+                <h3 id="agreement-handoff-title" className="font-black text-white">Agreement handoff</h3>
+                <p className="mt-1 text-sm font-semibold text-sky-100/70">The wizard starts with the saved customer, project, scope, accepted clarifications, pricing, schedule, and selected template guidance. Everything remains reviewable before an agreement is created.</p>
+                <button type="button" data-testid="estimate-ready-create-agreement" onClick={createAgreementFromProposal} disabled={!estimateChecklist.readyMinimum || isReadOnlyHistory} aria-describedby={!estimateChecklist.readyMinimum ? "agreement-action-disabled-reason" : undefined} className={`mt-4 ${ESTIMATE_PRIMARY_GOLD_BUTTON} disabled:cursor-not-allowed disabled:opacity-50`}><FileSignature size={16} /> Create Agreement from Estimate</button>
+                {!estimateChecklist.readyMinimum ? <p id="agreement-action-disabled-reason" className="mt-2 text-sm font-semibold text-amber-100">Complete the required items listed above to continue.</p> : null}
+              </section>
             </div>
+          </Section>
+
+          <Section id="notes" active={activeStep.key === "review"} title="Internal Notes" description="Optional contractor-only context. These notes are not included in the customer agreement handoff.">
+            <details className="rounded-xl border border-white/10 bg-white/5 p-4">
+              <summary className="cursor-pointer font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300">Add or review internal notes</summary>
+              <div className="mt-4"><TextAreaField label="Contractor notes" testId="proposal-internal-notes" value={draft.internal_notes} onChange={(value) => patchDraft("internal_notes", value)} rows={5} />
+                {notesDirty ? <button type="button" data-testid="proposal-save-notes" onClick={() => saveProposal({ internal_notes: draft.internal_notes }, "Notes saved.")} disabled={saving} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-60"><Save size={16} /> {saving ? "Saving…" : "Save Notes"}</button> : <p className="mt-3 text-xs font-bold text-sky-100/55">Notes are saved.</p>}
+              </div>
+            </details>
+          </Section>
+
+          <Section id="history" active={activeStep.key === "review"} title="Recent Activity" description="The two latest estimate events are shown by default. The complete recorded history remains available.">
+            <div className="space-y-2" data-testid="proposal-history">
+              {(proposal.activity || []).length ? recentActivity.map((item) => { const display = activityDisplay(item); return <div key={item.id} className="rounded-lg border border-white/10 bg-white/7 p-3"><div className="font-bold text-white">{display.label}</div>{display.detail && display.detail !== display.label ? <div className="mt-0.5 text-sm font-semibold text-sky-100/65">{display.detail}</div> : null}<div className="mt-1 text-xs font-semibold text-sky-100/55">{formatDateTime(item.created_at)}</div></div>; }) : <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">No estimate activity has been recorded yet. Updates, revisions, and conversion events will appear here.</div>}
+            </div>
+            {(proposal.activity || []).length > 2 ? <button type="button" data-testid="proposal-history-toggle" aria-expanded={historyExpanded} onClick={() => setHistoryExpanded((value) => !value)} className="mt-3 rounded-lg border border-white/16 bg-white/7 px-3 py-2 text-sm font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300">{historyExpanded ? "Show recent activity" : `View full history (${proposal.activity.length})`}</button> : null}
           </Section>
         </main>
 
