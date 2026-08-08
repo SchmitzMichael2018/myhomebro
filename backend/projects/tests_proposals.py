@@ -133,6 +133,70 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(proposal.status, Proposal.STATUS_SITE_VISIT)
         self.assertTrue(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_STATUS_UPDATED).exists())
 
+    def test_project_identity_contact_and_address_are_proposal_owned_and_patchable(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            project_title="Kitchen Refresh",
+            customer_preferred_contact="",
+            service_location="123 Main St, Austin, TX 78701",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/",
+            {
+                "project_title": "Primary Kitchen Renovation",
+                "customer_preferred_contact": "email",
+                "service_location": "456 Project Lane, Austin, TX 78702",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.project_title, "Primary Kitchen Renovation")
+        self.assertEqual(proposal.customer_preferred_contact, "email")
+        self.assertEqual(proposal.service_location, "456 Project Lane, Austin, TX 78702")
+        self.assertEqual(response.data["project_title"], "Primary Kitchen Renovation")
+        self.assertEqual(response.data["customer_preferred_contact"], "email")
+
+    def test_project_preferred_contact_rejects_unknown_values(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            project_title="Kitchen Refresh",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/",
+            {"customer_preferred_contact": "carrier-pigeon"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.customer_preferred_contact, "")
+
+    def test_project_preferred_contact_accepts_supported_estimate_preferences(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            project_title="Kitchen Refresh",
+        )
+
+        for preference in ("email", "text", "phone", ""):
+            with self.subTest(preference=preference or "no-preference"):
+                response = self.client.patch(
+                    f"/api/projects/proposals/{proposal.id}/",
+                    {"customer_preferred_contact": preference},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.data["customer_preferred_contact"], preference)
+
     def test_measurement_crud(self):
         proposal = Proposal.objects.create(
             contractor=self.contractor,

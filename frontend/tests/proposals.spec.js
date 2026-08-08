@@ -817,8 +817,19 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("estimate-step-panel-project")).toContainText("Customer & Contact");
   const initialProgress = Number((await page.getByTestId("estimate-header-progress").innerText()).replace(/[^0-9]/g, ""));
 
+  await page.getByTestId("proposal-project-title").fill("Primary Bathroom Renovation");
+  expect(await page.getByTestId("proposal-preferred-contact").locator("option").evaluateAll((options) => options.map((option) => option.textContent))).toEqual(["No preference", "Email", "Text", "Phone"]);
+  await page.getByTestId("proposal-preferred-contact").selectOption("email");
+  await expect(page.getByText("Applies to this estimate only; the customer profile is not changed.")).toBeVisible();
+  await page.getByTestId("proposal-save-project-identity").click();
+  await expect(page.getByTestId("proposal-project-identity")).toContainText("Project details are saved.");
+  await page.screenshot({ path: "test-results/estimate-project-identity-contact.png", fullPage: true });
+
   await expect(page.getByTestId("proposal-project-address-workflow")).toContainText("Select Existing Property");
   await page.getByTestId("proposal-existing-property-select").selectOption("123 Main St, Austin, TX, 78701");
+  await expect(page.getByTestId("proposal-existing-property-select")).toHaveValue("123 Main St, Austin, TX, 78701");
+  await expect(page.getByTestId("proposal-project-address-input")).toHaveValue("123 Main St, Austin, TX, 78701");
+  await page.screenshot({ path: "test-results/estimate-project-existing-property.png", fullPage: true });
   await page.getByTestId("proposal-project-address-input").fill("456 Project Lane, Austin, TX");
   await page.getByTestId("proposal-save-address-to-customer").check();
   await page.getByTestId("proposal-save-project-address").click();
@@ -832,6 +843,16 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-schedule-priority").selectOption("required");
   await page.getByTestId("proposal-save-scheduling").click();
   await expect(page.getByTestId("proposal-scheduling-summary")).toContainText("priority Required");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("proposal-project-title")).toHaveValue("Primary Bathroom Renovation");
+  await expect(page.getByTestId("proposal-preferred-contact")).toHaveValue("email");
+  await expect(page.getByTestId("proposal-project-address-input")).toHaveValue("456 Project Lane, Austin, TX");
+  await expect(page.getByTestId("proposal-project-address-workflow")).toContainText("This saved estimate address is used for readiness and Review.");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({ path: "test-results/estimate-project-mobile-390.png", fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  await page.setViewportSize({ width: 1280, height: 900 });
 
   await page.getByTestId("estimate-workflow-step-site_scope").click();
   await expect(page.getByTestId("proposal-clarification-questions")).toContainText("Square footage");
@@ -1008,6 +1029,14 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("estimate-workflow-step-review").click();
   await expect(page.getByTestId("estimate-ready-review-status")).toContainText("Ready for Agreement");
   await expect(page.getByTestId("estimate-review-project-summary")).toContainText("New Lead Customer");
+  await expect(page.getByTestId("estimate-review-project-summary")).toContainText("456 Project Lane, Austin, TX");
+  await expect(page.getByTestId("estimate-review-project-summary")).toContainText("Primary Bathroom Renovation");
+  await expect(page.getByTestId("estimate-review-project-summary")).toContainText("Email");
+  await page.getByTestId("estimate-review-project-summary").getByRole("button", { name: "Edit" }).click();
+  await expect(page).toHaveURL(/section=customer/);
+  await expect(page.getByTestId("proposal-project-title")).toHaveValue("Primary Bathroom Renovation");
+  await page.goBack();
+  await expect(page.getByTestId("estimate-review-project-summary")).toBeVisible();
   await expect(page.getByTestId("estimate-review-scope-summary")).toContainText("3 complete");
   await expect(page.getByTestId("estimate-review-pricing-summary")).toContainText("$950.00");
   await expect(page.getByTestId("estimate-agreement-handoff")).toContainText("Everything remains reviewable");
@@ -1034,6 +1063,13 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("start-with-ai-submit-dock").click();
   await expect.poll(() => pricingAssistantPayload?.context?.active_workspace).toBe("review");
   expect(pricingAssistantPayload.context.proposal_summary.review).toMatchObject({ ready: true, agreement_creation_available: true });
+  expect(pricingAssistantPayload.context.proposal_summary.project).toMatchObject({
+    customer: "New Lead Customer",
+    title: "Primary Bathroom Renovation",
+    service_location: "456 Project Lane, Austin, TX",
+    preferred_contact: "email",
+    schedule_complete: true,
+  });
   await page.getByTestId("assistant-desktop-dock-close").click();
 
   await page.setViewportSize({ width: 1440, height: 1000 });

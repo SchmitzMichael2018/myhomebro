@@ -56,6 +56,17 @@ const WORKFLOW_GROUPS = [
   },
 ];
 
+const PREFERRED_CONTACT_OPTIONS = [
+  ["", "No preference"],
+  ["email", "Email"],
+  ["text", "Text"],
+  ["phone", "Phone"],
+];
+
+function preferredContactLabel(value) {
+  return PREFERRED_CONTACT_OPTIONS.find(([key]) => key === String(value || "").trim().toLowerCase())?.[1] || "No preference";
+}
+
 const WORKSPACE_STEPS = [
   {
     ...WORKFLOW_GROUPS[0],
@@ -1318,6 +1329,10 @@ export default function ProposalWorkspacePage() {
     }
     return options;
   }, [customerMatches]);
+  const projectAddress = compactText(draft.service_location || proposal?.service_location);
+  const selectedExistingProperty = propertyOptions.some((option) => option.value === projectAddress) ? projectAddress : "";
+  const projectDetailsDirty = compactText(draft.project_title) !== compactText(proposal?.project_title)
+    || compactText(draft.customer_preferred_contact).toLowerCase() !== compactText(proposal?.customer_preferred_contact).toLowerCase();
   const estimateChecklist = useMemo(
     () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
     [proposal, draft, totals, photos, documents, clarificationRows]
@@ -1351,7 +1366,7 @@ export default function ProposalWorkspacePage() {
   const activeStepIndex = Math.max(0, WORKSPACE_STEPS.findIndex((step) => step.sections.some(([key]) => key === active)));
   const activeStep = WORKSPACE_STEPS[activeStepIndex];
   useEffect(() => {
-    if (!proposal || !["site_scope", "pricing", "review"].includes(activeStep.key)) return;
+    if (!proposal || !["project", "site_scope", "pricing", "review"].includes(activeStep.key)) return;
     const scopeSources = {
       measurements: (proposal.measurements || []).map((item) => ({ label: item.label, quantity: item.quantity, unit: item.unit, location: item.location })),
       photo_count: photos.length,
@@ -1373,13 +1388,20 @@ export default function ProposalWorkspacePage() {
       entity_id: proposalId,
       proposal_id: proposalId,
       proposal_summary: {
+        project: {
+          customer: proposal.customer_name || "",
+          title: draft.project_title || proposal.project_title || "",
+          service_location: draft.service_location || proposal.service_location || "",
+          preferred_contact: draft.customer_preferred_contact || proposal.customer_preferred_contact || "",
+          schedule_complete: estimateChecklist.items.find((item) => item.key === "scheduling")?.complete || false,
+        },
         line_item_count: (proposal.line_items || []).length,
         subtotal: totals.subtotal,
         total: totals.total,
         pricing_complete: estimateChecklist.items.find((item) => item.key === "pricing")?.complete || false,
         pricing_blockers: estimateChecklist.items.find((item) => item.key === "pricing")?.missing || [],
         scope: {
-          title: proposal.title || draft.title || "",
+          title: draft.project_title || proposal.project_title || "",
           description: proposal.description || draft.description || "",
           included_work: proposal.included_work || draft.included_work || "",
           excluded_work: proposal.excluded_work || draft.excluded_work || "",
@@ -1609,6 +1631,7 @@ export default function ProposalWorkspacePage() {
       setProposal(data);
       setDraft({
         status: data.status || "draft",
+        project_title: data.project_title || "",
         customer_preferred_contact: data.customer_preferred_contact || "",
         site_visit_notes: data.site_visit_notes || "",
         access_notes: data.access_notes || "",
@@ -1786,8 +1809,12 @@ export default function ProposalWorkspacePage() {
       setProposal(data);
       setDraft((prev) => ({ ...prev, service_location: data.service_location || address }));
       if (saveAddressToCustomer && matchedCustomer?.id) {
+        const customerAddressFields = parseServiceLocationForAgreement(address);
         await api.patch(`/projects/homeowners/${matchedCustomer.id}/`, {
-          street_address: address,
+          street_address: customerAddressFields.address_line1 || address,
+          city: customerAddressFields.city || "",
+          state: customerAddressFields.state || "",
+          zip_code: customerAddressFields.postal_code || "",
         });
         toast.success("Project address saved to estimate and customer profile.");
       } else {
@@ -2775,16 +2802,30 @@ export default function ProposalWorkspacePage() {
                 ["Customer", proposal.customer_name],
                 ["Phone", proposal.customer_phone],
                 ["Email", proposal.customer_email],
-                ["Project Address", draft.service_location || proposal.service_location],
-                ["Preferred contact", draft.customer_preferred_contact || "Not set"],
+                ["Project Address", projectAddress || "Not provided"],
+                ["Preferred contact", preferredContactLabel(draft.customer_preferred_contact)],
               ]}
             />
+            <div className="mt-4 grid gap-4 rounded-xl border border-white/10 bg-white/7 p-4 md:grid-cols-2" data-testid="proposal-project-identity">
+              <label className="block">
+                <span className="text-sm font-semibold text-sky-100/78">Project Title</span>
+                <input data-testid="proposal-project-title" value={draft.project_title || ""} onChange={(event) => patchDraft("project_title", event.target.value)} placeholder="e.g. Primary Bathroom Renovation" maxLength={255} className="mt-1 w-full rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none focus:ring-2 focus:ring-sky-300/20" />
+                <span className="mt-1 block text-xs font-semibold text-sky-100/55">Used to identify this estimate and shown in Review.</span>
+              </label>
+              <div>
+                <SelectField label="Preferred Contact" testId="proposal-preferred-contact" value={draft.customer_preferred_contact} onChange={(value) => patchDraft("customer_preferred_contact", value)} options={PREFERRED_CONTACT_OPTIONS} />
+                <span className="mt-1 block text-xs font-semibold text-sky-100/55">Applies to this estimate only; the customer profile is not changed.</span>
+              </div>
+              <div className="md:col-span-2">
+                {projectDetailsDirty ? <button type="button" data-testid="proposal-save-project-identity" disabled={saving} onClick={() => saveProposal({ project_title: draft.project_title, customer_preferred_contact: draft.customer_preferred_contact }, "Project details saved.")} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>{saving ? "Saving…" : "Save Project Details"}</button> : <p className="text-xs font-bold text-sky-100/55">Project details are saved.</p>}
+              </div>
+            </div>
             <div className="mt-4 rounded-xl border border-white/10 bg-white/7 p-4" data-testid="proposal-project-address-workflow">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h3 className="text-sm font-black text-white">Project Address</h3>
                   <p className="mt-1 text-sm font-semibold text-sky-100/70">
-                    Every estimate needs a project address before it can move to the Agreement Wizard.
+                    {projectAddress ? "This saved estimate address is used for readiness and Review. Select a saved property or edit it below." : "Choose a saved property or enter a new project address before agreement handoff."}
                   </p>
                 </div>
                 {matchedCustomer ? (
@@ -2798,7 +2839,7 @@ export default function ProposalWorkspacePage() {
                   <span className="text-xs font-black uppercase tracking-wide text-sky-100/55">Select Existing Property</span>
                   <select
                     data-testid="proposal-existing-property-select"
-                    value=""
+                    value={selectedExistingProperty}
                     onChange={(event) => {
                       if (event.target.value) patchDraft("service_location", event.target.value);
                     }}
@@ -2833,7 +2874,7 @@ export default function ProposalWorkspacePage() {
                   disabled={!matchedCustomer}
                   onChange={(event) => setSaveAddressToCustomer(event.target.checked)}
                 />
-                Save new project address back to customer profile
+                Save this address to customer profile
               </label>
               <button
                 type="button"
@@ -3246,7 +3287,7 @@ export default function ProposalWorkspacePage() {
               <div className="grid gap-3 lg:grid-cols-3" data-testid="estimate-review-summaries">
                 <article className="rounded-xl border border-white/10 bg-white/7 p-4" data-testid="estimate-review-project-summary">
                   <div className="flex items-start justify-between gap-2"><h3 className="font-black text-white">Project</h3><button type="button" onClick={() => openWorkspaceStep(0)} className="rounded-md px-2 py-1 text-xs font-black text-sky-200 underline decoration-sky-300/50 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">Edit</button></div>
-                  <dl className="mt-3 space-y-2 text-sm"><div><dt className="text-xs font-bold text-sky-100/50">Customer</dt><dd className="font-bold text-white">{proposal.customer_name || "Not selected"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Property</dt><dd className="font-semibold text-sky-50/80">{proposal.project_address || proposal.property_address || draft.project_address || "Not provided"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Project</dt><dd className="font-semibold text-sky-50/80">{proposal.title || draft.title || "Untitled estimate"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Schedule</dt><dd className="font-semibold text-sky-50/80">{proposalScheduleSummary({ ...proposal, ...draft })}</dd></div></dl>
+                  <dl className="mt-3 space-y-2 text-sm"><div><dt className="text-xs font-bold text-sky-100/50">Customer</dt><dd className="font-bold text-white">{proposal.customer_name || "Not selected"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Property</dt><dd className="font-semibold text-sky-50/80">{proposal.service_location || "Not provided"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Project</dt><dd className="font-semibold text-sky-50/80">{proposal.project_title || "Untitled estimate"}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Preferred Contact</dt><dd className="font-semibold text-sky-50/80">{preferredContactLabel(proposal.customer_preferred_contact)}</dd></div><div><dt className="text-xs font-bold text-sky-100/50">Schedule</dt><dd className="font-semibold text-sky-50/80">{proposalScheduleSummary({ ...proposal, ...draft })}</dd></div></dl>
                 </article>
                 <article className="rounded-xl border border-white/10 bg-white/7 p-4" data-testid="estimate-review-scope-summary">
                   <div className="flex items-start justify-between gap-2"><h3 className="font-black text-white">Scope</h3><button type="button" onClick={() => openWorkspaceStep(1)} className="rounded-md px-2 py-1 text-xs font-black text-sky-200 underline decoration-sky-300/50 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">Edit</button></div>

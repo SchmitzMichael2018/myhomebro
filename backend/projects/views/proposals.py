@@ -292,6 +292,12 @@ def _snapshot_from_row(row: dict) -> dict:
         "customer_name": _safe_text(row.get("customer_name") or snapshot.get("customer_name")),
         "customer_email": _safe_text(row.get("customer_email") or snapshot.get("customer_email")),
         "customer_phone": _safe_text(row.get("customer_phone") or snapshot.get("customer_phone")),
+        "customer_preferred_contact": _safe_text(
+            row.get("preferred_contact_method")
+            or row.get("customer_preferred_contact")
+            or snapshot.get("preferred_contact_method")
+            or snapshot.get("customer_preferred_contact")
+        ),
         "service_location": _safe_text(row.get("location") or snapshot.get("location") or snapshot.get("service_location") or row.get("service_location")),
         "project_start_type": _safe_text(snapshot.get("project_start_type")) or Proposal.PROJECT_START_FLEXIBLE,
         "project_start_date": snapshot.get("project_start_date") or None,
@@ -515,6 +521,7 @@ class ProposalDetailView(APIView):
 
     EDITABLE_FIELDS = {
         "status",
+        "project_title",
         "service_location",
         "project_start_type",
         "project_start_date",
@@ -607,10 +614,16 @@ class ProposalDetailView(APIView):
                 value = request.data.get(field)
                 if not isinstance(value, list):
                     return Response({"quick_checklist": ["Checklist must be a list."]}, status=400)
+            elif field == "customer_preferred_contact":
+                value = _safe_text(request.data.get(field)).lower()
+                if value not in {"", "email", "text", "phone"}:
+                    return Response({"customer_preferred_contact": ["Choose Email, Text, Phone, or No preference."]}, status=400)
             elif field in schedule_values:
                 value = schedule_values[field]
             else:
                 value = _safe_text(request.data.get(field))
+                if field == "project_title" and len(value) > 255:
+                    return Response({"project_title": ["Project title must be 255 characters or fewer."]}, status=400)
             setattr(proposal, field, value)
             update_fields.append(field)
 
