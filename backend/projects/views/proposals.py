@@ -205,6 +205,10 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "id": proposal.id,
         "status": proposal.status,
         "status_label": _proposal_status_label(proposal.status),
+        "selected_template_id": proposal.selected_template_id,
+        "selected_template_name": proposal.selected_template_name_snapshot,
+        "selected_template_source": proposal.selected_template_source_snapshot,
+        "pricing_template_name": proposal.pricing_template_name_snapshot,
         "source_type": proposal.source_type,
         "source_id": proposal.source_id,
         "contractor_opportunity_id": proposal.contractor_opportunity_id,
@@ -262,6 +266,7 @@ def _proposal_queryset(contractor):
     return (
         Proposal.objects.filter(contractor=contractor)
         .select_related(
+            "selected_template",
             "contractor_opportunity",
             "contractor_opportunity__converted_agreement",
             "contractor_opportunity__converted_agreement__project",
@@ -548,6 +553,25 @@ class ProposalDetailView(APIView):
             return error
 
         update_fields = []
+        if "selected_template_id" in request.data:
+            contractor = proposal.contractor
+            template_id = request.data.get("selected_template_id")
+            template = get_object_or_404(
+                ProjectTemplate.objects.filter(
+                    Q(contractor=contractor) | Q(is_system_template=True, is_published=True),
+                    lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE,
+                    is_active=True,
+                ),
+                pk=template_id,
+            )
+            proposal.selected_template = template
+            proposal.selected_template_name_snapshot = template.name
+            proposal.selected_template_source_snapshot = "system" if template.is_system_template else "contractor"
+            update_fields.extend([
+                "selected_template",
+                "selected_template_name_snapshot",
+                "selected_template_source_snapshot",
+            ])
         previous_status = proposal.status
         schedule_fields = {
             "project_start_type",
@@ -786,6 +810,7 @@ class ProposalTemplatePricingApplyView(APIView):
         template = get_object_or_404(
             ProjectTemplate.objects.prefetch_related("milestones").filter(
                 Q(contractor=contractor) | Q(is_system_template=True, is_published=True),
+                lifecycle_status=ProjectTemplate.LifecycleStatus.ACTIVE,
                 is_active=True,
             ),
             pk=template_id,
@@ -825,6 +850,17 @@ class ProposalTemplatePricingApplyView(APIView):
                 actor=request.user,
                 metadata={"template_id": template.id, "mode": mode, "line_item_ids": [item.id for item in created]},
             )
+            proposal.selected_template = template
+            proposal.selected_template_name_snapshot = template.name
+            proposal.selected_template_source_snapshot = "system" if template.is_system_template else "contractor"
+            proposal.pricing_template_name_snapshot = template.name
+            proposal.save(update_fields=[
+                "selected_template",
+                "selected_template_name_snapshot",
+                "selected_template_source_snapshot",
+                "pricing_template_name_snapshot",
+                "updated_at",
+            ])
 
         proposal = _proposal_queryset(contractor).get(pk=proposal.pk)
         return Response({

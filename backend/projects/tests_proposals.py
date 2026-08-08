@@ -344,6 +344,9 @@ class ProposalWorkspaceFoundationTests(TestCase):
         copied = proposal.line_items.get()
         self.assertNotEqual(copied.id, milestone.id)
         self.assertEqual(copied.description, milestone.title)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.selected_template_id, template.id)
+        self.assertEqual(proposal.pricing_template_name_snapshot, template.name)
         copied.description = "Contractor edit"
         copied.save()
         milestone.refresh_from_db()
@@ -360,4 +363,28 @@ class ProposalWorkspaceFoundationTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, 404)
+        self.assertFalse(proposal.line_items.exists())
+
+    def test_draft_template_cannot_be_selected_or_applied_to_estimate(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen Refresh")
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Unfinished Template",
+            lifecycle_status=ProjectTemplate.LifecycleStatus.DRAFT,
+        )
+        ProjectTemplateMilestone.objects.create(template=template, title="Draft price", suggested_amount_fixed="500.00")
+
+        select_response = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/",
+            {"selected_template_id": template.id},
+            format="json",
+        )
+        apply_response = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/apply-template-pricing/",
+            {"template_id": template.id, "mode": "add"},
+            format="json",
+        )
+
+        self.assertEqual(select_response.status_code, 404)
+        self.assertEqual(apply_response.status_code, 404)
         self.assertFalse(proposal.line_items.exists())

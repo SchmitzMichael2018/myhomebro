@@ -92,6 +92,16 @@ class Proposal(models.Model):
     source_type = models.CharField(max_length=32, choices=SOURCE_CHOICES, db_index=True)
     source_id = models.PositiveIntegerField(db_index=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_DRAFT, db_index=True)
+    selected_template = models.ForeignKey(
+        "projects.ProjectTemplate",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="estimate_proposals",
+    )
+    selected_template_name_snapshot = models.CharField(max_length=255, blank=True, default="")
+    selected_template_source_snapshot = models.CharField(max_length=32, blank=True, default="")
+    pricing_template_name_snapshot = models.CharField(max_length=255, blank=True, default="")
 
     project_title = models.CharField(max_length=255, blank=True, default="")
     project_summary = models.TextField(blank=True, default="")

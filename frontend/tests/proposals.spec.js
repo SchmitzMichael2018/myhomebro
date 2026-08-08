@@ -1108,6 +1108,15 @@ test("Scope canonical sources and template pricing copy workflow", async ({ page
       ],
     }) });
   });
+  await page.route(/\/api\/projects\/templates\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([
+      { id: 5, name: "Bathroom Refresh Template", project_type: "Bathroom", project_subtype: "Refresh", lifecycle_status: "active", is_active: true, is_system_template: false, milestone_count: 2 },
+      { id: 6, name: "Built-in Bathroom", project_type: "Bathroom", lifecycle_status: "active", is_active: true, is_system_template: true, milestone_count: 3 },
+    ]) });
+  });
+  await page.route("**/api/projects/templates/6/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: 6, name: "Built-in Bathroom", project_type: "Bathroom", lifecycle_status: "active", is_active: true, is_system_template: true, milestone_count: 3, milestones: [] }) });
+  });
   const scopedProposal = {
     ...proposal,
     measurements: [{ id: 91, label: "Floor area", location: "Bathroom", quantity: "120.00", unit: "sq ft", notes: "Measured onsite" }],
@@ -1125,7 +1134,7 @@ test("Scope canonical sources and template pricing copy workflow", async ({ page
   ];
   await page.route("**/api/projects/proposals/42/apply-template-pricing/", async (route) => {
     applyCount += 1;
-    expect(route.request().postDataJSON()).toMatchObject({ template_id: 5, mode: "replace", confirm_replace: true });
+    expect(route.request().postDataJSON()).toMatchObject({ template_id: 5, mode: "add", confirm_replace: false });
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ detail: "Pricing copied from Bathroom Refresh Template", line_items: copiedItems, totals: calculateTotals(copiedItems) }) });
   });
 
@@ -1151,7 +1160,15 @@ test("Scope canonical sources and template pricing copy workflow", async ({ page
   await page.screenshot({ path: "test-results/scope-site-navigation.png", fullPage: true });
 
   await page.getByTestId("estimate-workflow-step-pricing").click();
-  await expect(page.getByTestId("template-pricing-availability")).toContainText("2 reusable fixed-price items available");
+  await expect(page.getByTestId("template-pricing-availability")).toContainText("Reusable pricing available");
+  await page.getByRole("button", { name: "Change template" }).click();
+  await expect(page.getByTestId("pricing-template-picker")).toContainText("My Templates");
+  await expect(page.getByTestId("pricing-template-picker")).toContainText("Built-in Templates");
+  await page.getByPlaceholder("Search name, type, or subtype").fill("Refresh");
+  await expect(page.getByTestId("pricing-template-option-5")).toBeVisible();
+  await expect(page.getByTestId("pricing-template-option-6")).toHaveCount(0);
+  await page.screenshot({ path: "test-results/pricing-template-picker.png", fullPage: true });
+  await page.getByRole("button", { name: "Close template picker" }).click();
   await page.screenshot({ path: "test-results/pricing-template-available.png", fullPage: true });
   await page.getByTestId("apply-template-pricing-open").click();
   await expect(page.getByTestId("template-pricing-preview")).toContainText("$1,750.00");

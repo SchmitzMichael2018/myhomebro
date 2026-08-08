@@ -1172,8 +1172,15 @@ export default function ProposalWorkspacePage() {
   const [templatePricingMode, setTemplatePricingMode] = useState("add");
   const [templatePricingApplying, setTemplatePricingApplying] = useState(false);
   const [templatePricingReceipt, setTemplatePricingReceipt] = useState("");
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [templatePickerLoading, setTemplatePickerLoading] = useState(false);
+  const [templatePickerSearch, setTemplatePickerSearch] = useState("");
+  const [templateOptions, setTemplateOptions] = useState([]);
+  const [templateSelecting, setTemplateSelecting] = useState(false);
   const templatePricingDialogRef = useRef(null);
   const templatePricingTriggerRef = useRef(null);
+  const templatePickerDialogRef = useRef(null);
+  const templatePickerTriggerRef = useRef(null);
   const [customerMatches, setCustomerMatches] = useState([]);
   const [saveAddressToCustomer, setSaveAddressToCustomer] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
@@ -1196,7 +1203,12 @@ export default function ProposalWorkspacePage() {
   const coreLineItems = useMemo(() => (proposal?.line_items || []).filter((item) => COST_CATEGORY_VALUES.has(item.category)), [proposal]);
   const adjustmentLineItems = useMemo(() => (proposal?.line_items || []).filter((item) => PRICING_ADJUSTMENT_VALUES.has(item.category)), [proposal]);
   const templatePricingItems = useMemo(() => (selectedTemplate?.milestones || []).filter((item) => Number(item.suggested_amount_fixed) > 0), [selectedTemplate]);
+  const templateAllocationItems = useMemo(() => (selectedTemplate?.milestones || []).filter((item) => Number(item.suggested_amount_percent) > 0), [selectedTemplate]);
   const templatePricingSubtotal = useMemo(() => templatePricingItems.reduce((sum, item) => sum + Number(item.suggested_amount_fixed || 0), 0), [templatePricingItems]);
+  const filteredTemplateOptions = useMemo(() => {
+    const query = compactText(templatePickerSearch).toLowerCase();
+    return templateOptions.filter((item) => !query || `${item.name} ${item.project_type || ""} ${item.project_subtype || ""}`.toLowerCase().includes(query));
+  }, [templateOptions, templatePickerSearch]);
   useEffect(() => {
     if (!templatePricingPreviewOpen) return undefined;
     const dialog = templatePricingDialogRef.current;
@@ -1223,6 +1235,24 @@ export default function ProposalWorkspacePage() {
       window.requestAnimationFrame(() => returnFocusTarget?.focus());
     };
   }, [templatePricingPreviewOpen]);
+  useEffect(() => {
+    if (!templatePickerOpen) return undefined;
+    const dialog = templatePickerDialogRef.current;
+    const returnTarget = templatePickerTriggerRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll('button:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') || []);
+    window.requestAnimationFrame(() => focusable()[0]?.focus());
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") { event.preventDefault(); setTemplatePickerOpen(false); }
+      if (event.key !== "Tab") return;
+      const controls = focusable();
+      if (!controls.length) return;
+      const first = controls[0]; const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("keydown", onKeyDown); window.requestAnimationFrame(() => returnTarget?.focus()); };
+  }, [templatePickerOpen]);
   const pricingAdjustmentImpact = useMemo(() => adjustmentLineItems.reduce((sum, item) => {
     const amount = moneyToNumber(item.total);
     return sum + (item.category === "discount" ? -Math.abs(amount) : amount);
@@ -1549,7 +1579,14 @@ export default function ProposalWorkspacePage() {
         project_completion_date: data.project_completion_date || "",
         scheduling_priority: data.scheduling_priority || "flexible",
       });
-      loadTemplateRecommendation(data);
+      if (data.selected_template_id) {
+        api.get(`/projects/templates/${data.selected_template_id}/`).then((response) => {
+          setSelectedTemplate(response.data);
+          setTemplateChoice("selected");
+        }).catch(() => loadTemplateRecommendation(data));
+      } else {
+        loadTemplateRecommendation(data);
+      }
       loadCustomerMatches(data);
     } catch (error) {
       console.error(error);
@@ -1747,8 +1784,48 @@ export default function ProposalWorkspacePage() {
     }
   }
 
+  async function openTemplatePicker() {
+    setTemplatePickerOpen(true);
+    setTemplatePickerLoading(true);
+    setTemplatePickerSearch("");
+    try {
+      const { data } = await api.get("/projects/templates/", { params: { include_drafts: false } });
+      const rows = Array.isArray(data?.results) ? data.results : Array.isArray(data) ? data : [];
+      const details = await Promise.all(rows.map(async (row) => {
+        try { const response = await api.get(`/projects/templates/${row.id}/`); return { ...row, ...response.data }; }
+        catch { return row; }
+      }));
+      setTemplateOptions(details.filter((item) => item.lifecycle_status === "active" && item.is_active !== false).sort((a, b) => {
+        const owner = Number(Boolean(a.is_system_template)) - Number(Boolean(b.is_system_template));
+        return owner || String(a.name || "").localeCompare(String(b.name || ""));
+      }));
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not load templates.");
+    } finally {
+      setTemplatePickerLoading(false);
+    }
+  }
+
+  async function choosePricingTemplate(template) {
+    if (templateSelecting) return;
+    setTemplateSelecting(true);
+    try {
+      const { data } = await api.patch(`/projects/proposals/${proposalId}/`, { selected_template_id: template.id });
+      setProposal(data);
+      setSelectedTemplate(template);
+      setTemplateChoice("selected");
+      setTemplatePricingReceipt("");
+      setTemplatePickerOpen(false);
+      toast.success(`${template.name} selected. Pricing was not changed.`);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not select this template.");
+    } finally {
+      setTemplateSelecting(false);
+    }
+  }
+
   function openTemplatePricingPreview() {
-    setTemplatePricingMode((proposal?.line_items || []).length ? "add" : "replace");
+    setTemplatePricingMode("add");
     setTemplatePricingPreviewOpen(true);
   }
 
@@ -2871,15 +2948,25 @@ export default function ProposalWorkspacePage() {
               </dl>
             </div>
 
-            {selectedTemplate?.id ? (
-              <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-slate-950/25 p-3" data-testid="template-pricing-availability">
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-slate-950/25 p-4" data-testid="template-pricing-availability">
+              {selectedTemplate?.id ? <>
                 <div className="min-w-0 flex-1">
+                  <div className="text-xs font-black uppercase tracking-[0.14em] text-sky-100/55">Template</div>
                   <div className="text-sm font-black text-white">{selectedTemplate.name}</div>
-                  <div className="text-xs font-semibold text-sky-100/65">{templatePricingItems.length ? `${templatePricingItems.length} reusable fixed-price item${templatePricingItems.length === 1 ? "" : "s"} available.` : "This template does not include reusable pricing."}</div>
+                  <div className="text-xs font-semibold text-sky-100/65">{[selectedTemplate.project_type, selectedTemplate.project_subtype].filter(Boolean).join(" · ") || "General project"} · {selectedTemplate.is_system_template ? "System Template" : "My Template"} · Active</div>
+                  <div className="mt-1 text-xs font-bold text-sky-100/75">{templatePricingItems.length ? `Reusable pricing available · ${templatePricingItems.length} item${templatePricingItems.length === 1 ? "" : "s"} · ${money(templatePricingSubtotal)}` : templateAllocationItems.length ? "Pricing allocation guidance available — no fixed reusable prices." : "This template does not include reusable pricing."}</div>
+                  {proposal?.pricing_template_name && proposal.pricing_template_name !== selectedTemplate.name ? <div role="status" className="mt-2 text-xs font-bold text-amber-100">This estimate already contains pricing copied from {proposal.pricing_template_name}. Existing items will remain unless you explicitly replace them during pricing preview.</div> : null}
                 </div>
-                {templatePricingItems.length ? <button ref={templatePricingTriggerRef} type="button" data-testid="apply-template-pricing-open" onClick={openTemplatePricingPreview} className="rounded-lg border border-amber-200/30 bg-white/8 px-3 py-2 text-sm font-black text-amber-100 hover:bg-white/12 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">Apply template pricing</button> : null}
-              </div>
-            ) : null}
+                <div className="flex flex-wrap gap-2">
+                  <a href={`/app/templates?template=${selectedTemplate.id}`} className="rounded-lg border border-white/14 px-3 py-2 text-sm font-black text-white underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300">View template</a>
+                  <button ref={templatePickerTriggerRef} type="button" onClick={openTemplatePicker} className="rounded-lg border border-white/14 px-3 py-2 text-sm font-black text-white">Change template</button>
+                  {templatePricingItems.length ? <button ref={templatePricingTriggerRef} type="button" data-testid="apply-template-pricing-open" onClick={openTemplatePricingPreview} className="rounded-lg border border-amber-200/30 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200">Apply template pricing</button> : null}
+                </div>
+              </> : <>
+                <div className="min-w-0 flex-1"><div className="text-sm font-black text-white">Template</div><div className="text-sm font-semibold text-sky-100/70">Apply a reusable template to speed up pricing.</div></div>
+                <button ref={templatePickerTriggerRef} type="button" data-testid="choose-pricing-template" onClick={openTemplatePicker} className="rounded-lg border border-amber-200/30 bg-amber-300 px-3 py-2 text-sm font-black text-slate-950">Choose template</button>
+              </>}
+            </div>
             {templatePricingReceipt ? <p className="mt-3 text-sm font-black text-emerald-100" role="status" data-testid="template-pricing-receipt">{templatePricingReceipt}</p> : null}
 
             {pricingEditorOpen ? (
@@ -2983,7 +3070,7 @@ export default function ProposalWorkspacePage() {
                 <div className="border border-dashed border-white/16 bg-white/6 p-6 text-center" data-testid="pricing-empty-state">
                   <h3 className="text-lg font-black text-white">Add pricing to continue</h3>
                   <p className="mt-1 text-sm font-semibold text-sky-100/70">Add at least one priced item to build the estimate total.</p>
-                  {!pricingEditorOpen ? <button type="button" data-testid="pricing-empty-add" onClick={() => openPricingEditor()} className={`mt-4 ${ESTIMATE_PRIMARY_GOLD_BUTTON}`}><Plus size={16} /> Add pricing item</button> : null}
+                  {!pricingEditorOpen ? <div className="mt-4 flex flex-wrap justify-center gap-2">{templatePricingItems.length ? <button type="button" onClick={openTemplatePricingPreview} className={ESTIMATE_PRIMARY_GOLD_BUTTON}>Apply template pricing</button> : <button type="button" data-testid="pricing-empty-add" onClick={() => openPricingEditor()} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><Plus size={16} /> Add pricing item</button>}{templatePricingItems.length ? <button type="button" data-testid="pricing-empty-add" onClick={() => openPricingEditor()} className="rounded-lg border border-white/16 px-3 py-2 text-sm font-black text-white">Add pricing item</button> : <button type="button" onClick={openTemplatePicker} className="rounded-lg border border-white/16 px-3 py-2 text-sm font-black text-white">Choose another template</button>}</div> : null}
                 </div>
               )}
             </div>
@@ -3078,6 +3165,27 @@ export default function ProposalWorkspacePage() {
           </Section>
         </main>
 
+        {templatePickerOpen ? (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTemplatePickerOpen(false); }}>
+            <section ref={templatePickerDialogRef} role="dialog" aria-modal="true" aria-labelledby="template-picker-title" className="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-white/14 bg-[#071d3d] text-white shadow-2xl" data-testid="pricing-template-picker">
+              <header className="flex items-start justify-between gap-3 border-b border-white/12 p-4 sm:p-5"><div><h2 id="template-picker-title" className="text-xl font-black">Choose template</h2><p className="mt-1 text-sm font-semibold text-sky-100/70">Selecting a template changes estimate context only. Pricing is copied only after preview and confirmation.</p></div><button type="button" aria-label="Close template picker" onClick={() => setTemplatePickerOpen(false)} className="rounded-lg border border-white/14 p-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300"><X size={18} /></button></header>
+              <div className="border-b border-white/10 p-4"><label className="block"><span className="text-sm font-black">Search templates</span><input value={templatePickerSearch} onChange={(event) => setTemplatePickerSearch(event.target.value)} placeholder="Search name, type, or subtype" className="mt-1 w-full rounded-lg border border-white/14 bg-slate-950/35 px-3 py-2 text-white placeholder:text-sky-100/45 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300" /></label></div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+                {templatePickerLoading ? <p role="status" className="text-sm font-semibold text-sky-100/70">Loading templates…</p> : [false, true].map((systemGroup) => {
+                  const rows = filteredTemplateOptions.filter((item) => Boolean(item.is_system_template) === systemGroup);
+                  if (!rows.length) return null;
+                  return <section key={String(systemGroup)} className="mb-5"><h3 className="mb-2 text-sm font-black uppercase tracking-[0.14em] text-sky-100/60">{systemGroup ? "Built-in Templates" : "My Templates"}</h3><div className="grid gap-2 sm:grid-cols-2">{rows.map((item) => {
+                    const fixed = (item.milestones || []).filter((row) => Number(row.suggested_amount_fixed) > 0);
+                    const percent = (item.milestones || []).filter((row) => Number(row.suggested_amount_percent) > 0);
+                    const pricingLabel = fixed.length ? "Reusable pricing available" : percent.length ? "Percentage guidance only" : "No reusable pricing";
+                    return <button key={item.id} type="button" disabled={templateSelecting} onClick={() => choosePricingTemplate(item)} className="rounded-xl border border-white/12 bg-white/7 p-3 text-left hover:border-sky-300/45 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-300" data-testid={`pricing-template-option-${item.id}`}><span className="block font-black text-white">{item.name}</span><span className="mt-1 block text-xs font-semibold text-sky-100/60">{[item.project_type, item.project_subtype].filter(Boolean).join(" · ") || "General project"} · {item.milestone_count || item.milestones?.length || 0} milestones</span><span className="mt-2 inline-flex rounded-full border border-white/12 px-2 py-1 text-xs font-black text-sky-100">{pricingLabel}</span></button>;
+                  })}</div></section>;
+                })}
+                {!templatePickerLoading && !filteredTemplateOptions.length ? <p className="text-sm font-semibold text-sky-100/70">No active templates match your search.</p> : null}
+              </div>
+            </section>
+          </div>
+        ) : null}
         {templatePricingPreviewOpen ? (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTemplatePricingPreviewOpen(false); }}>
             <section ref={templatePricingDialogRef} role="dialog" aria-modal="true" aria-labelledby="template-pricing-title" className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-white/14 bg-[#071d3d] p-5 text-white shadow-2xl" data-testid="template-pricing-preview">
