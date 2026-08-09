@@ -224,6 +224,22 @@ class ProposalReviewVersion(models.Model):
         return f"Proposal #{self.proposal_id} review v{self.version}"
 
 
+class ProposalPortalActivation(models.Model):
+    """Single-use portal setup invitation issued from an estimate review."""
+
+    review = models.OneToOneField(ProposalReviewVersion, on_delete=models.CASCADE, related_name="portal_activation")
+    email = models.EmailField(db_index=True)
+    nonce = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Portal activation for {self.email}"
+
+
 class ProposalMeasurement(models.Model):
     proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name="measurements")
     label = models.CharField(max_length=160)

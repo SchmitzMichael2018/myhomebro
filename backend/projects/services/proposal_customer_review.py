@@ -4,11 +4,12 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core import signing
 from django.db import transaction
 from django.utils import timezone
 
-from projects.models_proposals import Proposal, ProposalActivity, ProposalLineItem, ProposalReviewVersion
+from projects.models_proposals import Proposal, ProposalActivity, ProposalLineItem, ProposalPortalActivation, ProposalReviewVersion
 from projects.services.invites_delivery import send_postmark_email
 
 
@@ -18,6 +19,10 @@ ACKNOWLEDGEMENT = (
     "This does not sign or execute the agreement."
 )
 TOKEN_MAX_AGE_SECONDS = 60 * 60 * 24 * 45
+ACTIVATION_TOKEN_SALT = "myhomebro.proposal-portal-activation.v1"
+ACTIVATION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
+PORTAL_TOKEN_SALT = "myhomebro.customer-portal"
+User = get_user_model()
 
 
 class ReviewAccessError(Exception):
@@ -99,6 +104,44 @@ def token_for(review: ProposalReviewVersion) -> str:
     )
 
 
+def portal_token_for_email(email: str) -> str:
+    return signing.dumps({"email": email.strip().lower()}, salt=PORTAL_TOKEN_SALT, compress=True)
+
+
+def activation_token_for(activation: ProposalPortalActivation) -> str:
+    return signing.dumps(
+        {"purpose": "proposal_portal_activation", "activation_id": activation.id, "email": activation.email, "nonce": str(activation.nonce)},
+        salt=ACTIVATION_TOKEN_SALT,
+        compress=True,
+    )
+
+
+def resolve_activation_token(token: str, *, lock=False) -> ProposalPortalActivation:
+    try:
+        payload = signing.loads(token, salt=ACTIVATION_TOKEN_SALT, max_age=ACTIVATION_MAX_AGE_SECONDS)
+    except signing.BadSignature as exc:
+        raise ReviewAccessError("This account setup link is invalid or expired.") from exc
+    if payload.get("purpose") != "proposal_portal_activation":
+        raise ReviewAccessError("This account setup link is invalid or expired.")
+    queryset = ProposalPortalActivation.objects.select_related("review", "review__proposal")
+    if lock:
+        queryset = queryset.select_for_update()
+    activation = queryset.filter(pk=payload.get("activation_id"), email__iexact=payload.get("email", ""), nonce=payload.get("nonce")).first()
+    if not activation or activation.used_at:
+        raise ReviewAccessError("This account setup link has already been used or is no longer valid.")
+    return activation
+
+
+def portal_access(review: ProposalReviewVersion, request=None) -> dict:
+    email = review.customer_email.strip().lower()
+    user = User.objects.filter(email__iexact=email).first()
+    base = (getattr(settings, "SITE_URL", "") or (request.build_absolute_uri("/") if request else "https://www.myhomebro.com")).rstrip("/")
+    if user and user.has_usable_password() and user.is_active:
+        return {"account_exists": True, "status": "active", "url": f"{base}/portal", "label": "Open MyHomeBro"}
+    activation, _ = ProposalPortalActivation.objects.get_or_create(review=review, defaults={"email": email})
+    return {"account_exists": False, "status": "setup_pending", "url": f"{base}/activate-customer/{activation_token_for(activation)}", "label": "Create MyHomeBro Account"}
+
+
 def resolve_token(token: str, *, lock=False) -> ProposalReviewVersion:
     try:
         payload = signing.loads(token, salt=TOKEN_SALT, max_age=TOKEN_MAX_AGE_SECONDS)
@@ -120,7 +163,7 @@ def resolve_token(token: str, *, lock=False) -> ProposalReviewVersion:
     return review
 
 
-def public_review_payload(review: ProposalReviewVersion) -> dict:
+def public_review_payload(review: ProposalReviewVersion, request=None) -> dict:
     return {
         "version": review.version,
         "status": review.decision if review.decision != ProposalReviewVersion.DECISION_PENDING else review.proposal.status,
@@ -132,6 +175,7 @@ def public_review_payload(review: ProposalReviewVersion) -> dict:
         "revision_request_message": review.revision_request_message,
         "decline_reason": review.decline_reason,
         "estimate": review.snapshot,
+        "portal": portal_access(review, request=request),
     }
 
 
@@ -166,13 +210,15 @@ def send_review(*, proposal: Proposal, request, resend=False) -> tuple[ProposalR
     token = token_for(review)
     base = (getattr(settings, "SITE_URL", "") or request.build_absolute_uri("/")).rstrip("/")
     url = f"{base}/estimate-review/{token}"
+    portal = portal_access(review, request=request)
+    secondary_copy = "Keep estimates, agreements, project updates, payments, and documents together in MyHomeBro."
     ok, message = send_postmark_email(
         to_email=review.customer_email,
         subject=f"Review your estimate for {proposal.project_title or 'your project'}",
-        text_body=f"Review your estimate from {review.snapshot['contractor']['name']}:\n\n{url}",
-        html_body=f"<p>Review your estimate from {review.snapshot['contractor']['name']}.</p><p><a href=\"{url}\">Review estimate</a></p>",
+        text_body=f"Your estimate is ready.\n\n{review.snapshot['contractor']['name']} has sent an estimate for {proposal.project_title}.\n\nReview Estimate:\n{url}\n\n{secondary_copy}\n{portal['label']}:\n{portal['url']}\n\nYou can review and respond without creating an account.",
+        html_body=f"<h2>Your estimate is ready</h2><p>{review.snapshot['contractor']['name']} has sent an estimate for {proposal.project_title}.</p><p><a href=\"{url}\">Review Estimate</a></p><hr><p>{secondary_copy}</p><p><a href=\"{portal['url']}\">{portal['label']}</a></p><p><small>You can review and respond without creating an account.</small></p>",
     )
     delivery = {"email": {"attempted": True, "ok": ok, "message": message}, "sms": {"attempted": False, "ok": False, "message": "SMS not sent without verified consent."}}
     review.delivery_state = delivery
     review.save(update_fields=["delivery_state"])
-    return review, {"review_url": url, "delivery": delivery}
+    return review, {"review_url": url, "delivery": delivery, "portal": portal}

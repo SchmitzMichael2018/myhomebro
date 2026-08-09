@@ -5,6 +5,9 @@ import secrets
 from decimal import Decimal, InvalidOperation
 
 from django.db import IntegrityError, transaction
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
@@ -21,10 +24,13 @@ from projects.services.proposal_customer_review import (
     ReviewAccessError,
     build_customer_snapshot,
     public_review_payload,
+    portal_token_for_email,
+    resolve_activation_token,
     resolve_token,
     send_review,
     token_for,
 )
+User = get_user_model()
 from projects.models_templates import ProjectTemplate
 from projects.services.proposal_pricing_benchmark import build_proposal_pricing_benchmark
 from projects.views.contractor_bids import (
@@ -698,7 +704,7 @@ class ProposalSendReviewView(APIView):
             review, result = send_review(proposal=proposal, request=request, resend=bool(request.data.get("resend")))
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"proposal": _serialize_proposal(_proposal_queryset(contractor).get(pk=proposal.pk), request=request), "review": public_review_payload(review), **result})
+        return Response({"proposal": _serialize_proposal(_proposal_queryset(contractor).get(pk=proposal.pk), request=request), "review": public_review_payload(review, request=request), **result})
 
 
 class PublicProposalReviewView(APIView):
@@ -727,7 +733,7 @@ class PublicProposalReviewView(APIView):
                     review.proposal.status = Proposal.STATUS_VIEWED
                     review.proposal.save(update_fields=["status", "updated_at"])
                 _activity(review.proposal, ProposalActivity.EVENT_ESTIMATE_VIEWED, "Estimate viewed by customer", metadata={"review_version": review.version})
-        return Response(public_review_payload(review))
+        return Response(public_review_payload(review, request=request))
 
     def post(self, request, token):
         action = _safe_text(request.data.get("action")).lower()
@@ -746,7 +752,7 @@ class PublicProposalReviewView(APIView):
                 proposal.save(update_fields=["status", "updated_at"])
                 return Response({"detail": "This estimate is no longer valid. Contact the contractor for an updated estimate."}, status=410)
             if review.decision != ProposalReviewVersion.DECISION_PENDING:
-                return Response(public_review_payload(review))
+                return Response(public_review_payload(review, request=request))
             now = timezone.now()
             if action == "accept":
                 if request.data.get("acknowledgement") != ACKNOWLEDGEMENT:
@@ -755,8 +761,7 @@ class PublicProposalReviewView(APIView):
                 review.acceptance_acknowledgement = ACKNOWLEDGEMENT
                 review.accepted_by = _safe_text(request.data.get("customer_name")) or proposal.customer_name
                 proposal.status = Proposal.STATUS_ACCEPTED
-                event = ProposalActivity.EVENT_ESTIMATE_ACCEPTED
-                message = "Estimate accepted by customer"
+                event, message = ProposalActivity.EVENT_ESTIMATE_ACCEPTED, "Estimate accepted by customer"
             elif action == "request_changes":
                 detail = _safe_text(request.data.get("message"))
                 if not detail:
@@ -764,20 +769,66 @@ class PublicProposalReviewView(APIView):
                 review.decision = ProposalReviewVersion.DECISION_REVISION_REQUESTED
                 review.revision_request_message = detail
                 proposal.status = Proposal.STATUS_REVISION_REQUESTED
-                event = ProposalActivity.EVENT_ESTIMATE_REVISION_REQUESTED
-                message = "Customer requested estimate changes"
+                event, message = ProposalActivity.EVENT_ESTIMATE_REVISION_REQUESTED, "Customer requested estimate changes"
             else:
                 review.decision = ProposalReviewVersion.DECISION_DECLINED
                 review.decline_reason = _safe_text(request.data.get("reason"))[:80]
                 proposal.status = Proposal.STATUS_DECLINED
-                event = ProposalActivity.EVENT_ESTIMATE_DECLINED
-                message = "Estimate declined by customer"
+                event, message = ProposalActivity.EVENT_ESTIMATE_DECLINED, "Estimate declined by customer"
             review.decided_at = now
             review.save(update_fields=["decision", "decided_at", "accepted_by", "acceptance_acknowledgement", "decline_reason", "revision_request_message"])
             proposal.save(update_fields=["status", "updated_at"])
             _activity(proposal, event, message, metadata={"review_version": review.version})
-        return Response(public_review_payload(review))
+        return Response(public_review_payload(review, request=request))
 
+
+class ProposalPortalActivationView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def _activation(self, token, lock=False):
+        try:
+            return resolve_activation_token(token, lock=lock), None
+        except ReviewAccessError as exc:
+            return None, Response({"detail": str(exc)}, status=403)
+
+    def get(self, request, token):
+        activation, error = self._activation(token)
+        if error:
+            return error
+        existing = User.objects.filter(email__iexact=activation.email).first()
+        return Response({
+            "email": activation.email,
+            "account_exists": bool(existing and existing.has_usable_password() and existing.is_active),
+            "estimate_url": f"/estimate-review/{token_for(activation.review)}",
+        })
+
+    def post(self, request, token):
+        password = request.data.get("password") or ""
+        if password != (request.data.get("password_confirm") or ""):
+            return Response({"password_confirm": ["Passwords do not match."]}, status=400)
+        with transaction.atomic():
+            activation, error = self._activation(token, lock=True)
+            if error:
+                return error
+            user = User.objects.select_for_update().filter(email__iexact=activation.email).first()
+            if user and user.has_usable_password() and user.is_active:
+                return Response({"detail": "An account already exists for this email. Sign in instead."}, status=409)
+            try:
+                validate_password(password, user=user)
+            except DjangoValidationError as exc:
+                return Response({"password": list(exc.messages)}, status=400)
+            if user is None:
+                user = User.objects.create_user(email=activation.email, password=password, is_verified=True, is_active=True)
+            else:
+                user.set_password(password)
+                user.is_active = True
+                user.is_verified = True
+                user.save(update_fields=["password", "is_active", "is_verified"])
+            activation.used_at = timezone.now()
+            activation.save(update_fields=["used_at"])
+        portal_token = portal_token_for_email(activation.email)
+        return Response({"ok": True, "detail": "Your MyHomeBro account is ready.", "portal_url": f"/portal/{portal_token}"})
 
 class ProposalPricingBenchmarkView(APIView):
     permission_classes = [IsAuthenticated]

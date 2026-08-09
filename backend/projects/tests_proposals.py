@@ -14,12 +14,13 @@ from projects.models_contractor_discovery import (
     ContractorOpportunity,
     OpportunityEstimateAppointment,
 )
-from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalReviewVersion
-from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, token_for
+from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalPortalActivation, ProposalReviewVersion
+from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, portal_access, token_for
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
 from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
 from projects.services.contractor_directory import normalize_business_name
+from projects.views.customer_portal import _estimate_rows
 
 
 class ProposalBenchmarkClassificationTests(TestCase):
@@ -410,6 +411,41 @@ class ProposalWorkspaceFoundationTests(TestCase):
         current = proposal.review_versions.get(version=2); current.expires_at = timezone.now() - timedelta(minutes=1); current.save()
         response = public.post(f"/api/projects/proposal-reviews/{token_for(current)}/", {"action": "accept", "acknowledgement": ACKNOWLEDGEMENT}, format="json")
         self.assertEqual(response.status_code, 410)
+
+    def test_estimate_activation_creates_verified_account_without_temporary_password_and_is_single_use(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, status=Proposal.STATUS_SENT, project_title="Kitchen", customer_email="CASEY@example.com")
+        review = ProposalReviewVersion.objects.create(proposal=proposal, version=1, customer_email="casey@example.com", snapshot={})
+        portal = portal_access(review)
+        self.assertFalse(portal["account_exists"])
+        activation = ProposalPortalActivation.objects.get(review=review)
+        token = activation_token_for(activation)
+        public = APIClient(); _use_secure_requests(public)
+        created = public.post(f"/api/projects/proposal-portal-activations/{token}/", {"password": "Unique-customer-pass-937!", "password_confirm": "Unique-customer-pass-937!"}, format="json")
+        self.assertEqual(created.status_code, 200)
+        customer_user = get_user_model().objects.get(email__iexact="casey@example.com")
+        self.assertTrue(customer_user.is_verified)
+        self.assertTrue(customer_user.check_password("Unique-customer-pass-937!"))
+        replay = public.post(f"/api/projects/proposal-portal-activations/{token}/", {"password": "Different-pass-938!", "password_confirm": "Different-pass-938!"}, format="json")
+        self.assertEqual(replay.status_code, 403)
+        self.assertEqual(get_user_model().objects.filter(email__iexact="CASEY@example.com").count(), 1)
+
+    def test_existing_portal_account_is_reused_case_insensitively(self):
+        get_user_model().objects.create_user(email="casey@example.com", password="Existing-pass-937!", is_verified=True)
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, status=Proposal.STATUS_SENT, project_title="Kitchen", customer_email="CASEY@EXAMPLE.COM")
+        review = ProposalReviewVersion.objects.create(proposal=proposal, version=1, customer_email="casey@example.com", snapshot={})
+        portal = portal_access(review)
+        self.assertTrue(portal["account_exists"])
+        self.assertEqual(portal["label"], "Open MyHomeBro")
+        self.assertFalse(ProposalPortalActivation.objects.filter(review=review).exists())
+
+    def test_portal_estimates_are_email_scoped_and_customer_safe(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, status=Proposal.STATUS_SENT, project_title="Kitchen", customer_email="casey@example.com", internal_notes="never expose")
+        ProposalReviewVersion.objects.create(proposal=proposal, version=1, customer_email="casey@example.com", snapshot={"contractor": {"name": "Builder"}, "project": {"title": "Kitchen", "property": "123 Main"}, "pricing": {"total": "500.00"}})
+        own = _estimate_rows("CASEY@example.com")
+        other = _estimate_rows("different@example.com")
+        self.assertEqual(len(own), 1)
+        self.assertEqual(other, [])
+        self.assertNotIn("never expose", str(own))
 
     def test_project_identity_contact_and_address_are_proposal_owned_and_patchable(self):
         proposal = Proposal.objects.create(

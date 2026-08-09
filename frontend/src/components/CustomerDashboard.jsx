@@ -15,6 +15,7 @@ import DIYProjectPlanner from "./DIYProjectPlanner.jsx";
 const BASE_TABS = [
   ["overview", "Overview", LayoutDashboard],
   ["requests", "Requests", Inbox],
+  ["estimates", "Estimates", FileText],
   ["projects", "Projects", FolderKanban],
   ["diy-planner", "DIY Planner", Hammer],
   ["property", "Property", Home],
@@ -3480,6 +3481,10 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           }}
         />
       );
+    }
+    if (activeTab === "estimates") {
+      const estimates = Array.isArray(portal?.estimates) ? portal.estimates : [];
+      return <section className="rounded-3xl border border-slate-700 bg-slate-900/75 p-5 shadow-xl" data-testid="customer-portal-estimates"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-200">Estimates</p><h2 className="mt-1 text-2xl font-bold text-white">Your project estimates</h2><p className="mt-2 text-sm text-slate-300">Review the same secure estimate versions sent by your contractors.</p></div>{estimates.length ? <div className="mt-5 grid gap-4 lg:grid-cols-2">{estimates.map((estimate, index) => { const converted = estimate.status === "converted" && estimate.agreement_url; const actionLabel = converted ? "View Agreement" : estimate.status === "accepted" ? "View Accepted Estimate" : estimate.status === "revision_requested" ? "View Change Request" : estimate.status === "declined" ? "View Declined Estimate" : estimate.status === "sent" || estimate.status === "viewed" ? "Review Estimate" : "View Estimate"; return <article key={`${estimate.review_url}-${index}`} className="rounded-2xl border border-white/10 bg-slate-950/55 p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><h3 className="text-lg font-black text-white">{estimate.project_title}</h3><p className="mt-1 text-sm text-slate-300">{estimate.contractor_name}</p></div><span className="rounded-full border border-sky-300/25 bg-sky-400/10 px-2.5 py-1 text-xs font-bold text-sky-100">{estimate.status_label}</span></div>{estimate.property ? <p className="mt-3 text-sm text-slate-300">{estimate.property}</p> : null}<div className="mt-4 flex items-end justify-between gap-3"><div><span className="block text-xs font-bold uppercase tracking-wide text-slate-400">Estimate total</span><strong className="text-xl text-white">{moneyLabel(estimate.total)}</strong></div><a href={converted ? estimate.agreement_url : estimate.review_url} className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-black text-slate-950">{actionLabel}</a></div></article>; })}</div> : <div className="mt-5 rounded-2xl border border-dashed border-slate-600 p-6 text-sm text-slate-300">Customer-facing estimates will appear here after a contractor sends one to your verified email.</div>}</section>;
     }
     if (activeTab === "diy-planner") {
       return (

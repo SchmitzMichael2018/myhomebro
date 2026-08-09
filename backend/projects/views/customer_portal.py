@@ -97,6 +97,8 @@ from projects.models_amendment_request import AmendmentRequest, AmendmentRequest
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
+from projects.models_proposals import ProposalReviewVersion
+from projects.services.proposal_customer_review import token_for as proposal_review_token
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
     bid_next_action,
@@ -416,6 +418,7 @@ def _request_has_records(email: str) -> bool:
             DrawRequest.objects.filter(Q(agreement__homeowner__email__iexact=email) | Q(agreement__project__homeowner__email__iexact=email)).exists(),
             CustomerRequest.objects.filter(customer_email__iexact=email).exists(),
             PropertyProfile.objects.filter(customer_email__iexact=email).exists(),
+            ProposalReviewVersion.objects.filter(customer_email__iexact=email).exists(),
         ]
     )
 
@@ -3807,6 +3810,40 @@ def _customer_name(email: str) -> str:
     return email
 
 
+def _estimate_rows(email: str) -> list[dict]:
+    """Email-scoped, customer-safe estimate cards backed only by immutable reviews."""
+    versions = (
+        ProposalReviewVersion.objects.filter(customer_email__iexact=email)
+        .select_related("proposal", "proposal__contractor", "proposal__contractor__user", "proposal__converted_agreement")
+        .order_by("proposal_id", "-version")
+    )
+    latest_by_proposal = {}
+    for review in versions:
+        latest_by_proposal.setdefault(review.proposal_id, review)
+    rows = []
+    for review in latest_by_proposal.values():
+        snapshot = review.snapshot or {}
+        project = snapshot.get("project") or {}
+        pricing = snapshot.get("pricing") or {}
+        proposal = review.proposal
+        status_value = review.decision if review.decision != ProposalReviewVersion.DECISION_PENDING else proposal.status
+        if review.expires_at and review.expires_at <= timezone.now() and status_value in {"sent", "viewed"}:
+            status_value = "expired"
+        agreement = proposal.converted_agreement
+        rows.append({
+            "project_title": _safe_text(project.get("title")) or "Project estimate",
+            "contractor_name": _safe_text((snapshot.get("contractor") or {}).get("name")) or "Your contractor",
+            "property": _safe_text(project.get("property")),
+            "total": _safe_text(pricing.get("total")) or "0.00",
+            "sent_at": _safe_dt(review.sent_at),
+            "status": status_value,
+            "status_label": status_value.replace("_", " ").title(),
+            "review_url": f"/estimate-review/{proposal_review_token(review)}",
+            "agreement_url": f"/agreements/magic/{agreement.homeowner_access_token}" if agreement and agreement.homeowner_access_token else "",
+        })
+    return sorted(rows, key=lambda row: row.get("sent_at") or "", reverse=True)
+
+
 def _build_customer_portal_payload(email: str, request=None) -> dict:
     _ensure_portal_workflow_notifications(email)
     bid_rows = _bid_rows(email)
@@ -3825,6 +3862,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
     property_work_order_rows = _property_work_orders_for_email(email)
     property_intelligence = build_property_intelligence(email)
     recommendations = build_customer_recommendations(email, property_intelligence=property_intelligence)
+    estimate_rows = _estimate_rows(email)
 
     summary = {
         "active_requests": sum(1 for row in request_rows if row.get("status") not in {"converted", "converted_to_project", "archived", "closed"}),
@@ -3833,6 +3871,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "active_agreements": sum(1 for row in agreement_rows if row.get("status") not in {"archived", "cancelled"}),
         "payments": len(payment_rows),
         "documents": len(document_rows),
+        "estimates": len(estimate_rows),
         "maintenance_work_orders": len(maintenance_work_order_rows),
         "tenant_maintenance_requests": len(tenant_maintenance_request_rows),
         "property_work_orders": len(property_work_order_rows),
@@ -3851,6 +3890,7 @@ def _build_customer_portal_payload(email: str, request=None) -> dict:
         "projects": project_rows,
         "bids": bid_rows,
         "agreements": agreement_rows,
+        "estimates": estimate_rows,
         "payments": payment_rows,
         "maintenance_work_orders": maintenance_work_order_rows,
         "tenant_maintenance_requests": tenant_maintenance_request_rows,

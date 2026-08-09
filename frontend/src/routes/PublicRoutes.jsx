@@ -39,6 +39,7 @@ const CustomerAccountOnboardingPage = lazy(() => import("../pages/CustomerAccoun
 const EmailVerifiedPage = lazy(() => import("../pages/EmailVerifiedPage.jsx"));
 const PublicCaptureQrPage = lazy(() => import("../pages/PublicCaptureQrPage.jsx"));
 const PublicEstimateReviewPage = lazy(() => import("../pages/PublicEstimateReviewPage.jsx"));
+const CustomerPortalActivationPage = lazy(() => import("../pages/CustomerPortalActivationPage.jsx"));
 
 function PortalTokenRedirect() {
   const { token = "" } = useParams();
@@ -65,6 +66,7 @@ export default function PublicRoutes() {
       {/* Public signature / magic links */}
       <Route path="/agreements/sign/:id" element={<HomeownerSign />} />
       <Route path="/estimate-review/:token" element={<PublicEstimateReviewPage />} />
+      <Route path="/activate-customer/:token" element={<CustomerPortalActivationPage />} />
 
       {/* Customer portal */}
       <Route path="/portal" element={<CustomerPortalPage />} />
