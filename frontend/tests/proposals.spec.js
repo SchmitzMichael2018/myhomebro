@@ -768,6 +768,21 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentProposal) });
   });
+  await page.route("**/api/projects/proposals/42/pricing-benchmark/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        available: true,
+        advisory_only: true,
+        current_total: "950.00",
+        classification: { project_family_key: "bathroom_remodel", scope_mode: "remodel", match_description: "Bathroom Remodel · remodel" },
+        contractor: { available: true, count: 6, p25: "700.00", median: "825.00", p75: "900.00", position: "above", confidence: "medium" },
+        regional: { available: false, reason: "insufficient_comparable_data", minimum_required: 5 },
+        pricing_provenance: { type: "contractor_entered", template_name: "" },
+      }),
+    });
+  });
   await page.route("**/api/projects/proposals/42/measurements/", async (route) => {
     const measurement = { id: 9, label: "Fence length", location: "Back yard", quantity: "42.00", unit: "ft", notes: "Along rear line" };
     currentProposal = { ...currentProposal, measurements: [measurement] };
@@ -1039,6 +1054,10 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("estimate-review-project-summary")).toBeVisible();
   await expect(page.getByTestId("estimate-review-scope-summary")).toContainText("3 complete");
   await expect(page.getByTestId("estimate-review-pricing-summary")).toContainText("$950.00");
+  await expect(page.getByTestId("pricing-benchmark-card")).toContainText("Pricing Benchmark");
+  await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Above your historical range");
+  await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Based on 6 completed comparable projects");
+  await expect(page.getByTestId("pricing-benchmark-market")).toContainText("Insufficient comparable MyHomeBro data");
   await expect(page.getByTestId("estimate-agreement-handoff")).toContainText("Everything remains reviewable");
   await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(1);
   await expect(page.getByTestId("proposal-history").locator("> div")).toHaveCount(2);
@@ -1062,7 +1081,14 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("start-with-ai-input-dock").fill("What should I review before creating the agreement?");
   await page.getByTestId("start-with-ai-submit-dock").click();
   await expect.poll(() => pricingAssistantPayload?.context?.active_workspace).toBe("review");
-  expect(pricingAssistantPayload.context.proposal_summary.review).toMatchObject({ ready: true, agreement_creation_available: true });
+  expect(pricingAssistantPayload.context.proposal_summary.review).toMatchObject({
+    ready: true,
+    agreement_creation_available: true,
+    pricing_benchmark: {
+      contractor: { count: 6, position: "above" },
+      regional: { available: false, minimum_required: 5 },
+    },
+  });
   expect(pricingAssistantPayload.context.proposal_summary.project).toMatchObject({
     customer: "New Lead Customer",
     title: "Primary Bathroom Renovation",

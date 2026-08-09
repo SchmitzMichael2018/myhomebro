@@ -14,7 +14,121 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
+from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
+from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE
 from projects.services.contractor_directory import normalize_business_name
+
+
+class ProposalPricingBenchmarkTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(email="benchmark@example.com", password="test-pass")
+        self.contractor = Contractor.objects.create(user=self.user, business_name="Benchmark Builder")
+        self.other_user = User.objects.create_user(email="benchmark-other@example.com", password="test-pass")
+        self.other_contractor = Contractor.objects.create(user=self.other_user, business_name="Other Builder")
+        self.entry = ContractorDirectoryEntry.objects.create(
+            business_name="Benchmark Builder",
+            normalized_name=normalize_business_name("Benchmark Builder"),
+            claimed=True,
+            claimed_by_contractor=self.contractor,
+        )
+        self.opportunity = ContractorOpportunity.objects.create(
+            directory_entry=self.entry,
+            project_title="Bathroom Remodel",
+            project_type="Remodel",
+            project_subtype="Bathroom",
+            project_description="Renovate the bathroom.",
+            project_city="Austin",
+            project_state="TX",
+        )
+        self.proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            contractor_opportunity=self.opportunity,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            project_title="Bathroom Remodel",
+            project_type="Remodel",
+            project_subtype="Bathroom",
+            project_summary="Renovate the bathroom.",
+        )
+        ProposalLineItem.objects.create(
+            proposal=self.proposal,
+            category=ProposalLineItem.CATEGORY_LABOR,
+            description="Bathroom work",
+            quantity=1,
+            unit_price="16500.00",
+        )
+        self.client = APIClient()
+        _use_secure_requests(self.client)
+        self.client.force_authenticate(self.user)
+
+    @property
+    def url(self):
+        return f"/api/projects/proposals/{self.proposal.id}/pricing-benchmark/"
+
+    def _contractor_aggregate(self, count=6):
+        return ContractorBenchmarkAggregate.objects.create(
+            contractor=self.contractor,
+            project_family_key="bathroom_remodel",
+            scope_mode="remodel",
+            sample_size=count,
+            p25_project_value="13500.00",
+            p50_project_value="14600.00",
+            p75_project_value="15800.00",
+        )
+
+    def _regional_aggregate(self, count):
+        return RegionalBenchmarkAggregate.objects.create(
+            region_key="US-TX-AUSTIN",
+            region_label="Austin, TX",
+            region_granularity="city",
+            project_family_key="bathroom_remodel",
+            scope_mode="remodel",
+            sample_size=count,
+            p25_project_value="14200.00",
+            p50_project_value="15500.00",
+            p75_project_value="17400.00",
+        )
+
+    def test_owned_proposal_returns_contractor_position_without_raw_records(self):
+        self._contractor_aggregate()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["contractor"]["position"], "above")
+        self.assertEqual(response.data["current_total"], "16500.00")
+        serialized = str(response.data).lower()
+        self.assertNotIn("customer", serialized)
+        self.assertNotIn("contractor_id", serialized)
+        self.assertNotIn("project_id", serialized)
+
+    def test_other_contractor_cannot_access_proposal(self):
+        self.client.force_authenticate(self.other_user)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+
+    def test_regional_values_are_fully_suppressed_below_minimum(self):
+        for count in (1, 2, 4):
+            RegionalBenchmarkAggregate.objects.all().delete()
+            self._regional_aggregate(count)
+            regional = self.client.get(self.url).data["regional"]
+            self.assertEqual(regional, {
+                "available": False,
+                "reason": "insufficient_comparable_data",
+                "minimum_required": MIN_REGIONAL_BENCHMARK_SAMPLE,
+            })
+
+    def test_regional_values_are_exposed_at_privacy_threshold(self):
+        self._regional_aggregate(MIN_REGIONAL_BENCHMARK_SAMPLE)
+        regional = self.client.get(self.url).data["regional"]
+        self.assertTrue(regional["available"])
+        self.assertEqual(regional["count"], 5)
+        self.assertEqual(regional["position"], "within")
+
+    def test_unstructured_proposal_location_is_not_claimed_as_geography(self):
+        self.proposal.contractor_opportunity = None
+        self.proposal.service_location = "somewhere near downtown"
+        self.proposal.save(update_fields=["contractor_opportunity", "service_location"])
+        response = self.client.get(self.url)
+        self.assertFalse(response.data["regional"]["available"])
 
 
 def _use_secure_requests(client):

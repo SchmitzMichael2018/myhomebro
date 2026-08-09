@@ -17,6 +17,7 @@ from projects.models import Homeowner
 from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
 from projects.models_templates import ProjectTemplate
+from projects.services.proposal_pricing_benchmark import build_proposal_pricing_benchmark
 from projects.views.contractor_bids import (
     _appointment_key,
     _resolve_contractor,
@@ -553,7 +554,6 @@ class ProposalDetailView(APIView):
         if error:
             return error
         return Response(_serialize_proposal(proposal, request=request))
-
     def patch(self, request, proposal_id):
         proposal, error = self._get_proposal(request, proposal_id)
         if error:
@@ -647,6 +647,17 @@ class ProposalDetailView(APIView):
 
         proposal = _proposal_queryset(proposal.contractor).get(pk=proposal.pk)
         return Response(_serialize_proposal(proposal, request=request))
+
+
+class ProposalPricingBenchmarkView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, proposal_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        proposal = get_object_or_404(_proposal_queryset(contractor), pk=proposal_id)
+        return Response(build_proposal_pricing_benchmark(proposal))
 
 
 class ProposalMeasurementListCreateView(APIView):

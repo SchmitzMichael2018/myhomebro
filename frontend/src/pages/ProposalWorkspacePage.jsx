@@ -244,6 +244,60 @@ function money(value) {
     : "$0.00";
 }
 
+function benchmarkPositionCopy(position, subject) {
+  if (position === "below") return `Below ${subject} range`;
+  if (position === "above") return `Above ${subject} range`;
+  if (position === "within") return `Within ${subject} range`;
+  return "Position unavailable";
+}
+
+function benchmarkAdvice(position) {
+  if (position === "below") return "This estimate is below your completed-project range for similar work. Review whether labor, materials, subcontractor work, allowances, or project conditions are fully captured.";
+  if (position === "above") return "This estimate is above your completed-project range. The higher amount may still be appropriate when scope, finishes, site conditions, or subcontractor requirements differ.";
+  if (position === "within") return "This estimate is generally aligned with your completed-project history for comparable work.";
+  return "";
+}
+
+function PricingBenchmarkCard({ benchmark, loading }) {
+  const section = (title, data, subject, market = false) => (
+    <article className="min-w-0 rounded-xl border border-white/10 bg-slate-950/30 p-4" data-testid={market ? "pricing-benchmark-market" : "pricing-benchmark-business"}>
+      <h4 className="font-black text-white">{title}</h4>
+      {data?.available ? (
+        <div className="mt-3 space-y-1 text-sm font-semibold text-sky-50/80">
+          <p className="text-lg font-black tabular-nums text-white">{money(data.p25)}–{money(data.p75)}</p>
+          <p className="font-black text-sky-100">{benchmarkPositionCopy(data.position, subject)}</p>
+          <p>Median: {money(data.median)}</p>
+          <p>Based on {data.count} {market ? "anonymized " : ""}completed comparable project{data.count === 1 ? "" : "s"}</p>
+          {market && data.region_label ? <p>{data.region_label} region</p> : null}
+          <p>Confidence: {String(data.confidence || "low").replace("medium", "Moderate").replace("high", "High").replace("low", "Low")}</p>
+          {data.reference_only ? <p className="text-sky-100/65">Historical reference only; one project does not establish a reliable range.</p> : null}
+          {!market && !data.reference_only ? <p className="mt-2 border-t border-white/10 pt-2 text-sky-100/70">{benchmarkAdvice(data.position)}</p> : null}
+        </div>
+      ) : (
+        <div className="mt-3 text-sm font-semibold text-sky-100/70">
+          <p className="font-black text-white">{market ? "Insufficient comparable MyHomeBro data" : "Not enough completed comparable projects yet."}</p>
+          <p className="mt-1">{market ? "More completed comparable projects are needed before a reliable anonymous market range can be shown." : "As you complete more projects, MyHomeBro will build a stronger pricing history for your business."}</p>
+        </div>
+      )}
+    </article>
+  );
+  return (
+    <section className="rounded-xl border border-sky-300/20 bg-white/7 p-4" aria-labelledby="pricing-benchmark-title" data-testid="pricing-benchmark-card">
+      <h3 id="pricing-benchmark-title" className="font-black text-white">Pricing Benchmark</h3>
+      <p className="mt-1 text-sm font-semibold text-sky-100/70">Compare this estimate with your completed project history and anonymized MyHomeBro project data.</p>
+      {loading ? <p role="status" className="mt-4 text-sm font-semibold text-sky-100/70">Loading pricing benchmark…</p> : benchmark ? (
+        <>
+          <p className="mt-3 text-xs font-bold text-sky-100/55">{benchmark.classification?.match_description} · Advisory only</p>
+          <div className="mt-4 grid min-w-0 gap-3 md:grid-cols-2">
+            {section("Your Business", benchmark.contractor, "your historical")}
+            {section("MyHomeBro Market", benchmark.regional, "the MyHomeBro regional", true)}
+          </div>
+        </>
+      ) : <p className="mt-4 text-sm font-semibold text-sky-100/70">Pricing benchmark is temporarily unavailable. Agreement creation is unaffected.</p>}
+    </section>
+  );
+}
+
 function moneyToNumber(value) {
   const amount = Number.parseFloat(String(value || "0").replace(/[^0-9.-]/g, ""));
   return Number.isFinite(amount) ? amount : 0;
@@ -1225,6 +1279,8 @@ export default function ProposalWorkspacePage() {
   const [showCompletedClarifications, setShowCompletedClarifications] = useState(false);
   const [showIgnoredClarifications, setShowIgnoredClarifications] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(false);
+  const [pricingBenchmark, setPricingBenchmark] = useState(null);
+  const [pricingBenchmarkLoading, setPricingBenchmarkLoading] = useState(false);
 
   const photos = useMemo(
     () => (proposal?.attachments || []).filter((item) => item.attachment_type === "photo"),
@@ -1366,6 +1422,16 @@ export default function ProposalWorkspacePage() {
   const activeStepIndex = Math.max(0, WORKSPACE_STEPS.findIndex((step) => step.sections.some(([key]) => key === active)));
   const activeStep = WORKSPACE_STEPS[activeStepIndex];
   useEffect(() => {
+    if (!proposal || activeStep.key !== "review") return;
+    let activeRequest = true;
+    setPricingBenchmarkLoading(true);
+    api.get(`/projects/proposals/${proposalId}/pricing-benchmark/`)
+      .then(({ data }) => { if (activeRequest) setPricingBenchmark(data); })
+      .catch(() => { if (activeRequest) setPricingBenchmark(null); })
+      .finally(() => { if (activeRequest) setPricingBenchmarkLoading(false); });
+    return () => { activeRequest = false; };
+  }, [activeStep.key, proposalId, proposal, totals.total]);
+  useEffect(() => {
     if (!proposal || !["project", "site_scope", "pricing", "review"].includes(activeStep.key)) return;
     const scopeSources = {
       measurements: (proposal.measurements || []).map((item) => ({ label: item.label, quantity: item.quantity, unit: item.unit, location: item.location })),
@@ -1424,10 +1490,11 @@ export default function ProposalWorkspacePage() {
           clarification_unresolved_count: clarificationRows.filter((row) => !row.complete).length,
           recent_activity: (proposal.activity || []).slice(0, 2).map((item) => activityDisplay(item).label),
           agreement_creation_available: estimateChecklist.readyMinimum && !isReadOnlyHistory,
+          pricing_benchmark: pricingBenchmark || undefined,
         } : undefined,
       },
     });
-  }, [activeStep.key, documents.length, draft, estimateChecklist.items, photos.length, proposal, proposalId, selectedTemplate, templatePricingItems.length, totals, updateAssistantContext]);
+  }, [activeStep.key, documents.length, draft, estimateChecklist.items, photos.length, pricingBenchmark, proposal, proposalId, selectedTemplate, templatePricingItems.length, totals, updateAssistantContext]);
   function blockReadOnlyHistory() {
     if (!isReadOnlyHistory) return false;
     toast.error("Converted estimates are read-only history. Open the linked agreement for active work.");
@@ -3298,6 +3365,8 @@ export default function ProposalWorkspacePage() {
                   <dl className="mt-3 space-y-2 text-sm"><div><dt className="text-xs font-bold text-sky-100/50">Pricing items</dt><dd className="font-bold text-white">{(proposal.line_items || []).length}</dd></div><div className="flex justify-between gap-3"><dt className="text-sky-100/60">Subtotal</dt><dd className="font-bold text-white">{money(totals.subtotal)}</dd></div>{Number(totals.tax || 0) ? <div className="flex justify-between gap-3"><dt className="text-sky-100/60">Tax</dt><dd className="font-bold text-white">{money(totals.tax)}</dd></div> : null}{Number(totals.incidentals_reserve || 0) ? <div className="flex justify-between gap-3"><dt className="text-sky-100/60">Incidentals</dt><dd className="font-bold text-white">{money(totals.incidentals_reserve)}</dd></div> : null}{Number(totals.discounts || 0) ? <div className="flex justify-between gap-3"><dt className="text-sky-100/60">Discounts</dt><dd className="font-bold text-white">−{money(totals.discounts)}</dd></div> : null}<div className="flex justify-between gap-3 border-t border-white/10 pt-2"><dt className="font-black text-white">Total</dt><dd className="font-black text-white">{money(totals.total)}</dd></div>{proposal.pricing_template_name ? <div><dt className="text-xs font-bold text-sky-100/50">Pricing source</dt><dd className="font-semibold text-sky-50/80">{proposal.pricing_template_name}</dd></div> : null}</dl>
                 </article>
               </div>
+
+              <PricingBenchmarkCard benchmark={pricingBenchmark} loading={pricingBenchmarkLoading} />
 
               <section className="rounded-xl border border-sky-300/20 bg-slate-950/30 p-4" aria-labelledby="agreement-handoff-title" data-testid="estimate-agreement-handoff">
                 <h3 id="agreement-handoff-title" className="font-black text-white">Agreement handoff</h3>
