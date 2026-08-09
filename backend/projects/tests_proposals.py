@@ -1,4 +1,5 @@
 from datetime import timedelta
+from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -15,8 +16,82 @@ from projects.models_contractor_discovery import (
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
-from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE
+from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
 from projects.services.contractor_directory import normalize_business_name
+
+
+class ProposalBenchmarkClassificationTests(TestCase):
+    def _proposal(self, *, title="", project_type="", project_subtype="", summary="", template=None, opportunity=None):
+        return SimpleNamespace(
+            project_title=title,
+            project_type=project_type,
+            project_subtype=project_subtype,
+            project_summary=summary,
+            selected_template=template,
+            selected_template_name_snapshot=getattr(template, "name", "") if template else "",
+            contractor_opportunity=opportunity,
+        )
+
+    def test_bathroom_remodel_template_outranks_repair_like_scope_text(self):
+        template = SimpleNamespace(
+            name="Bathroom Remodel",
+            project_type="Remodel",
+            project_subtype="Bathroom Remodel",
+            benchmark_match_key="remodel:bathroom_remodel",
+            source_system_template=None,
+        )
+        classification, _ = classify_proposal_benchmark(self._proposal(
+            title="Bathroom Remodel",
+            project_type="Bathroom",
+            project_subtype="Refresh",
+            summary="Repair damaged drywall and replace a fixture during the full renovation.",
+            template=template,
+        ))
+        self.assertEqual(classification["project_family_key"], "bathroom_remodel")
+        self.assertEqual(classification["scope_mode"], "remodel")
+        self.assertEqual(classification["match_description"], "Bathroom Remodel · Remodel")
+        self.assertEqual(classification["classification_source"], "template_benchmark_metadata")
+
+    def test_actual_bathroom_repair_remains_repair(self):
+        classification, _ = classify_proposal_benchmark(self._proposal(
+            title="Bathroom leak repair",
+            project_type="Bathroom",
+            project_subtype="Repair",
+            summary="Fix a localized shower leak.",
+        ))
+        self.assertEqual((classification["project_family_key"], classification["scope_mode"]), ("bathroom_remodel", "repair"))
+
+    def test_representative_project_taxonomy(self):
+        cases = [
+            ({"project_type": "Kitchen Remodel", "project_subtype": "Full Kitchen Remodel"}, ("kitchen_remodel", "remodel")),
+            ({"project_type": "Roofing", "project_subtype": "Roof Replacement"}, ("roofing", "replacement")),
+            ({"project_type": "Plumbing", "project_subtype": "Leak Repair"}, ("plumbing", "repair")),
+            ({"project_type": "Electrical", "project_subtype": "Electrical Repair"}, ("electrical", "repair")),
+            ({"project_type": "Flooring", "project_subtype": "Flooring Installation"}, ("flooring", "install")),
+            ({"project_type": "Painting", "project_subtype": "Interior Painting"}, ("painting", "interior")),
+            ({"project_type": "Handyman", "project_subtype": "General Handyman Work"}, ("handyman", "general")),
+        ]
+        for fields, expected in cases:
+            with self.subTest(fields=fields):
+                classification, _ = classify_proposal_benchmark(self._proposal(**fields))
+                self.assertEqual((classification["project_family_key"], classification["scope_mode"]), expected)
+
+    def test_custom_template_inherits_source_benchmark_metadata(self):
+        source = SimpleNamespace(
+            benchmark_match_key="remodel:bathroom_remodel",
+            project_type="Remodel",
+            project_subtype="Bathroom Remodel",
+        )
+        template = SimpleNamespace(
+            name="My Primary Bath Workflow",
+            benchmark_match_key="",
+            project_type="",
+            project_subtype="",
+            source_system_template=source,
+        )
+        classification, _ = classify_proposal_benchmark(self._proposal(summary="Repair drywall", template=template))
+        self.assertEqual(classification["scope_mode"], "remodel")
+        self.assertEqual(classification["classification_source"], "source_template_benchmark_metadata")
 
 
 class ProposalPricingBenchmarkTests(TestCase):
@@ -100,6 +175,36 @@ class ProposalPricingBenchmarkTests(TestCase):
         self.assertNotIn("customer", serialized)
         self.assertNotIn("contractor_id", serialized)
         self.assertNotIn("project_id", serialized)
+
+    def test_bathroom_template_selects_remodel_aggregate_despite_repair_wording(self):
+        template = ProjectTemplate.objects.create(
+            name="Bathroom Remodel",
+            project_type="Remodel",
+            project_subtype="Bathroom Remodel",
+            benchmark_match_key="remodel:bathroom_remodel",
+            is_system=True,
+            is_published=True,
+        )
+        self.proposal.selected_template = template
+        self.proposal.selected_template_name_snapshot = template.name
+        self.proposal.project_summary = "Repair localized drywall while completing the bathroom renovation."
+        self.proposal.save(update_fields=["selected_template", "selected_template_name_snapshot", "project_summary"])
+        ContractorBenchmarkAggregate.objects.create(
+            contractor=self.contractor,
+            project_family_key="bathroom_remodel",
+            scope_mode="remodel",
+            template_used=template.name,
+            sample_size=5,
+            p25_project_value="14000.00",
+            p50_project_value="15000.00",
+            p75_project_value="17000.00",
+        )
+        response = self.client.get(self.url)
+        self.assertEqual(response.data["classification"]["scope_mode"], "remodel")
+        self.assertEqual(response.data["classification"]["classification_source"], "template_benchmark_metadata")
+        self.assertEqual(response.data["classification"]["match_description"], "Bathroom Remodel · Remodel")
+        self.assertTrue(response.data["contractor"]["available"])
+        self.assertEqual(response.data["contractor"]["position"], "within")
 
     def test_other_contractor_cannot_access_proposal(self):
         self.client.force_authenticate(self.other_user)

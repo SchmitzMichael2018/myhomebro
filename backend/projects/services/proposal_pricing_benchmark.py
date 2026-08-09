@@ -10,6 +10,21 @@ from projects.services.regional_benchmarks import resolve_regional_benchmark
 
 MIN_REGIONAL_BENCHMARK_SAMPLE = 5
 
+SCOPE_MODE_LABELS = {
+    "repair": "Repair",
+    "replacement": "Replacement",
+    "remodel": "Remodel",
+    "install": "Installation",
+    "install_removal": "Installation and removal",
+    "interior": "Interior",
+    "exterior": "Exterior",
+    "interior_exterior": "Interior and exterior",
+    "shed": "Shed",
+    "garage": "Garage",
+    "outdoor_structure": "Outdoor structure",
+    "general": "General scope",
+}
+
 
 def _text(value: Any) -> str:
     return "" if value is None else str(value).strip()
@@ -52,24 +67,91 @@ def _confidence(sample_size: int, *, regional: bool = False, granularity: str = 
     return "low"
 
 
-def _classification(proposal) -> tuple[dict[str, str], str]:
+def _inferred_classification(*, title: str = "", project_type: str = "", project_subtype: str = "", description: str = ""):
     family = infer_project_intelligence(
-        project_title=proposal.project_title,
-        project_type=proposal.project_type,
-        project_subtype=proposal.project_subtype,
-        description=proposal.project_summary,
+        project_title=title,
+        project_type=project_type,
+        project_subtype=project_subtype,
+        description=description,
     )
     family_key = _text(family.get("key")) or "general"
     family_label = _text(family.get("label")) or family_key.replace("_", " ").title()
     scope_mode = infer_project_scope_mode(
-        text=" ".join(filter(None, [proposal.project_title, proposal.project_type, proposal.project_subtype, proposal.project_summary])),
+        text=" ".join(filter(None, [title, project_type, project_subtype, description])),
         family_key=family_key,
     )
+    return family_key, family_label, scope_mode
+
+
+def _benchmark_key_scope_mode(benchmark_match_key: str) -> str:
+    prefix = _text(benchmark_match_key).lower().split(":", 1)[0]
+    return prefix if prefix in SCOPE_MODE_LABELS else ""
+
+
+def _meaningful_structured_values(project_type: str, project_subtype: str) -> bool:
+    values = {_text(project_type).lower(), _text(project_subtype).lower()}
+    return bool(values - {"", "general", "custom", "other", "project"})
+
+
+def classify_proposal_benchmark(proposal) -> tuple[dict[str, str], str]:
+    """Classify comparable work from strongest structured source to weakest text."""
+    template = getattr(proposal, "selected_template", None)
+    source_template = getattr(template, "source_system_template", None) if template is not None else None
+    template_name = _text(getattr(template, "name", "")) or _text(getattr(proposal, "selected_template_name_snapshot", ""))
+    benchmark_key = _text(getattr(template, "benchmark_match_key", "")) or _text(getattr(source_template, "benchmark_match_key", ""))
+    template_type = _text(getattr(template, "project_type", "")) or _text(getattr(source_template, "project_type", ""))
+    template_subtype = _text(getattr(template, "project_subtype", "")) or _text(getattr(source_template, "project_subtype", ""))
+
+    if benchmark_key:
+        family_key, family_label, inferred_mode = _inferred_classification(
+            title=template_name,
+            project_type=template_type,
+            project_subtype=template_subtype or benchmark_key.replace(":", " ").replace("_", " "),
+        )
+        scope_mode = _benchmark_key_scope_mode(benchmark_key) or inferred_mode
+        source = "template_benchmark_metadata" if _text(getattr(template, "benchmark_match_key", "")) else "source_template_benchmark_metadata"
+    elif template is not None and _meaningful_structured_values(template_type, template_subtype):
+        family_key, family_label, scope_mode = _inferred_classification(
+            title=template_name,
+            project_type=template_type,
+            project_subtype=template_subtype,
+        )
+        source = "selected_template"
+    elif _meaningful_structured_values(getattr(proposal, "project_type", ""), getattr(proposal, "project_subtype", "")):
+        family_key, family_label, scope_mode = _inferred_classification(
+            project_type=proposal.project_type,
+            project_subtype=proposal.project_subtype,
+        )
+        source = "proposal_project_type"
+    else:
+        opportunity = getattr(proposal, "contractor_opportunity", None)
+        opportunity_type = _text(getattr(opportunity, "project_type", ""))
+        opportunity_subtype = _text(getattr(opportunity, "project_subtype", ""))
+        if opportunity is not None and _meaningful_structured_values(opportunity_type, opportunity_subtype):
+            family_key, family_label, scope_mode = _inferred_classification(
+                project_type=opportunity_type,
+                project_subtype=opportunity_subtype,
+            )
+            source = "opportunity_project_type"
+        elif template_name:
+            family_key, family_label, scope_mode = _inferred_classification(title=template_name)
+            source = "selected_template_name"
+        else:
+            family_key, family_label, scope_mode = _inferred_classification(
+                title=proposal.project_title,
+                project_type=proposal.project_type,
+                project_subtype=proposal.project_subtype,
+                description=proposal.project_summary,
+            )
+            source = "proposal_text" if family_key != "general" else "general_fallback"
+
+    scope_label = SCOPE_MODE_LABELS.get(scope_mode, scope_mode.replace("_", " ").title() or "General scope")
     return {
         "project_family_key": family_key,
         "scope_mode": scope_mode,
-        "match_description": f"{family_label} · {scope_mode.replace('_', ' ')}",
-    }, _text(proposal.selected_template_name_snapshot)
+        "match_description": f"{family_label} · {scope_label}",
+        "classification_source": source,
+    }, template_name
 
 
 def _location(proposal) -> dict[str, str]:
@@ -102,7 +184,7 @@ def _unavailable(reason: str, **extra) -> dict[str, Any]:
 
 def build_proposal_pricing_benchmark(proposal) -> dict[str, Any]:
     """Return presentation-safe aggregate pricing context for one owned Proposal."""
-    classification, template_name = _classification(proposal)
+    classification, template_name = classify_proposal_benchmark(proposal)
     total = _proposal_total(proposal)
     contractor_aggregate = _contractor_aggregate(proposal, classification, template_name)
 

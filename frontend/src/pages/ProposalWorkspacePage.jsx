@@ -287,7 +287,10 @@ function PricingBenchmarkCard({ benchmark, loading }) {
       <p className="mt-1 text-sm font-semibold text-sky-100/70">Compare this estimate with your completed project history and anonymized MyHomeBro project data.</p>
       {loading ? <p role="status" className="mt-4 text-sm font-semibold text-sky-100/70">Loading pricing benchmark…</p> : benchmark ? (
         <>
-          <p className="mt-3 text-xs font-bold text-sky-100/55">{benchmark.classification?.match_description} · Advisory only</p>
+          <div className="mt-3 text-xs font-bold text-sky-100/55" data-testid="pricing-benchmark-classification">
+            <p>{benchmark.classification?.match_description}</p>
+            <p>Advisory only</p>
+          </div>
           <div className="mt-4 grid min-w-0 gap-3 md:grid-cols-2">
             {section("Your Business", benchmark.contractor, "your historical")}
             {section("MyHomeBro Market", benchmark.regional, "the MyHomeBro regional", true)}

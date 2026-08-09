@@ -268,6 +268,7 @@ def _proposal_queryset(contractor):
         Proposal.objects.filter(contractor=contractor)
         .select_related(
             "selected_template",
+            "selected_template__source_system_template",
             "contractor_opportunity",
             "contractor_opportunity__converted_agreement",
             "contractor_opportunity__converted_agreement__project",

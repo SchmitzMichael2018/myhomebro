@@ -776,7 +776,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
         available: true,
         advisory_only: true,
         current_total: "950.00",
-        classification: { project_family_key: "bathroom_remodel", scope_mode: "remodel", match_description: "Bathroom Remodel · remodel" },
+        classification: { project_family_key: "bathroom_remodel", scope_mode: "remodel", match_description: "Bathroom Remodel · Remodel", classification_source: "template_benchmark_metadata" },
         contractor: { available: true, count: 6, p25: "700.00", median: "825.00", p75: "900.00", position: "above", confidence: "medium" },
         regional: { available: false, reason: "insufficient_comparable_data", minimum_required: 5 },
         pricing_provenance: { type: "contractor_entered", template_name: "" },
@@ -1055,6 +1055,8 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("estimate-review-scope-summary")).toContainText("3 complete");
   await expect(page.getByTestId("estimate-review-pricing-summary")).toContainText("$950.00");
   await expect(page.getByTestId("pricing-benchmark-card")).toContainText("Pricing Benchmark");
+  await expect(page.getByTestId("pricing-benchmark-classification").locator("p").nth(0)).toHaveText("Bathroom Remodel · Remodel");
+  await expect(page.getByTestId("pricing-benchmark-classification").locator("p").nth(1)).toHaveText("Advisory only");
   await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Above your historical range");
   await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Based on 6 completed comparable projects");
   await expect(page.getByTestId("pricing-benchmark-market")).toContainText("Insufficient comparable MyHomeBro data");
