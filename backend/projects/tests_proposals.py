@@ -1,5 +1,6 @@
 from datetime import timedelta
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -13,7 +14,8 @@ from projects.models_contractor_discovery import (
     ContractorOpportunity,
     OpportunityEstimateAppointment,
 )
-from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
+from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalReviewVersion
+from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, token_for
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
 from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
@@ -351,6 +353,63 @@ class ProposalWorkspaceFoundationTests(TestCase):
         proposal.refresh_from_db()
         self.assertEqual(proposal.status, Proposal.STATUS_SITE_VISIT)
         self.assertTrue(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_STATUS_UPDATED).exists())
+
+    def test_customer_lifecycle_status_cannot_be_manually_impersonated(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen")
+        for status in (Proposal.STATUS_VIEWED, Proposal.STATUS_ACCEPTED, Proposal.STATUS_DECLINED, Proposal.STATUS_REVISION_REQUESTED):
+            with self.subTest(status=status):
+                response = self.client.patch(f"/api/projects/proposals/{proposal.id}/", {"status": status}, format="json")
+                self.assertEqual(response.status_code, 400)
+
+    @patch("projects.services.proposal_customer_review.send_postmark_email", return_value=(True, "sent"))
+    def test_send_view_and_accept_are_versioned_private_and_idempotent(self, _email):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id,
+            status=Proposal.STATUS_READY, project_title="Kitchen Refresh", project_summary="Customer-safe summary",
+            customer_name="Casey Homeowner", customer_email="casey@example.com", service_location="123 Main St",
+            internal_notes="private note", risk_notes="private risk",
+        )
+        ProposalLineItem.objects.create(proposal=proposal, category="labor", description="Installation", quantity=1, unit_price=500, notes="private margin")
+        sent = self.client.post(f"/api/projects/proposals/{proposal.id}/send-review/", {}, format="json")
+        self.assertEqual(sent.status_code, 200)
+        review = ProposalReviewVersion.objects.get(proposal=proposal)
+        self.assertEqual(review.version, 1)
+        snapshot_text = str(review.snapshot)
+        self.assertNotIn("private note", snapshot_text)
+        self.assertNotIn("private risk", snapshot_text)
+        self.assertNotIn("private margin", snapshot_text)
+
+        public = APIClient()
+        _use_secure_requests(public)
+        token = token_for(review)
+        viewed = public.get(f"/api/projects/proposal-reviews/{token}/")
+        self.assertEqual(viewed.status_code, 200)
+        proposal.refresh_from_db(); review.refresh_from_db()
+        viewed_at = review.viewed_at
+        self.assertEqual(proposal.status, Proposal.STATUS_VIEWED)
+        self.assertIsNotNone(viewed_at)
+        public.get(f"/api/projects/proposal-reviews/{token}/")
+        review.refresh_from_db(); self.assertEqual(review.viewed_at, viewed_at)
+
+        accepted = public.post(f"/api/projects/proposal-reviews/{token}/", {"action": "accept", "acknowledgement": ACKNOWLEDGEMENT}, format="json")
+        self.assertEqual(accepted.status_code, 200)
+        repeated = public.post(f"/api/projects/proposal-reviews/{token}/", {"action": "accept", "acknowledgement": ACKNOWLEDGEMENT}, format="json")
+        self.assertEqual(repeated.status_code, 200)
+        proposal.refresh_from_db(); review.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.STATUS_ACCEPTED)
+        self.assertEqual(review.acceptance_acknowledgement, ACKNOWLEDGEMENT)
+        self.assertEqual(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_ESTIMATE_ACCEPTED).count(), 1)
+
+    def test_stale_and_expired_review_versions_cannot_be_accepted(self):
+        proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, status=Proposal.STATUS_SENT, project_title="Kitchen", customer_email="casey@example.com")
+        stale = ProposalReviewVersion.objects.create(proposal=proposal, version=1, customer_email=proposal.customer_email, snapshot={})
+        ProposalReviewVersion.objects.create(proposal=proposal, version=2, customer_email=proposal.customer_email, snapshot={})
+        public = APIClient(); _use_secure_requests(public)
+        response = public.post(f"/api/projects/proposal-reviews/{token_for(stale)}/", {"action": "accept", "acknowledgement": ACKNOWLEDGEMENT}, format="json")
+        self.assertEqual(response.status_code, 409)
+        current = proposal.review_versions.get(version=2); current.expires_at = timezone.now() - timedelta(minutes=1); current.save()
+        response = public.post(f"/api/projects/proposal-reviews/{token_for(current)}/", {"action": "accept", "acknowledgement": ACKNOWLEDGEMENT}, format="json")
+        self.assertEqual(response.status_code, 410)
 
     def test_project_identity_contact_and_address_are_proposal_owned_and_patchable(self):
         proposal = Proposal.objects.create(

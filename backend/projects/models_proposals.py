@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.db import models
+import uuid
 
 
 class Proposal(models.Model):
@@ -147,6 +148,14 @@ class Proposal(models.Model):
     allowances = models.TextField(blank=True, default="")
     internal_notes = models.TextField(blank=True, default="")
 
+    converted_agreement = models.OneToOneField(
+        "projects.Agreement",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="source_proposal",
+    )
+
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -172,6 +181,47 @@ class Proposal(models.Model):
 
     def __str__(self) -> str:
         return f"Proposal #{self.pk} - {self.project_title or self.source_type}"
+
+
+class ProposalReviewVersion(models.Model):
+    """Immutable customer-facing estimate snapshot and its decision receipt."""
+
+    DECISION_PENDING = "pending"
+    DECISION_ACCEPTED = "accepted"
+    DECISION_DECLINED = "declined"
+    DECISION_REVISION_REQUESTED = "revision_requested"
+    DECISION_CHOICES = [
+        (DECISION_PENDING, "Pending"),
+        (DECISION_ACCEPTED, "Accepted"),
+        (DECISION_DECLINED, "Declined"),
+        (DECISION_REVISION_REQUESTED, "Revision requested"),
+    ]
+
+    proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name="review_versions")
+    version = models.PositiveIntegerField()
+    access_nonce = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    customer_email = models.EmailField()
+    snapshot = models.JSONField(default=dict)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    viewed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    decision = models.CharField(max_length=24, choices=DECISION_CHOICES, default=DECISION_PENDING)
+    decided_at = models.DateTimeField(null=True, blank=True)
+    accepted_by = models.CharField(max_length=255, blank=True, default="")
+    acceptance_acknowledgement = models.TextField(blank=True, default="")
+    decline_reason = models.CharField(max_length=80, blank=True, default="")
+    revision_request_message = models.TextField(blank=True, default="")
+    delivery_state = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-version"]
+        constraints = [
+            models.UniqueConstraint(fields=["proposal", "version"], name="uniq_proposal_review_version"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Proposal #{self.proposal_id} review v{self.version}"
 
 
 class ProposalMeasurement(models.Model):
@@ -308,6 +358,12 @@ class ProposalActivity(models.Model):
     EVENT_LINE_ITEM_ADDED = "line_item_added"
     EVENT_LINE_ITEM_UPDATED = "line_item_updated"
     EVENT_LINE_ITEM_REMOVED = "line_item_removed"
+    EVENT_ESTIMATE_SENT = "estimate_sent"
+    EVENT_ESTIMATE_VIEWED = "estimate_viewed"
+    EVENT_ESTIMATE_ACCEPTED = "estimate_accepted"
+    EVENT_ESTIMATE_DECLINED = "estimate_declined"
+    EVENT_ESTIMATE_REVISION_REQUESTED = "estimate_revision_requested"
+    EVENT_AGREEMENT_OVERRIDE = "agreement_override"
     EVENT_CHOICES = [
         (EVENT_CREATED, "Proposal Created"),
         (EVENT_APPOINTMENT_LINKED, "Appointment Linked"),
@@ -324,6 +380,12 @@ class ProposalActivity(models.Model):
         (EVENT_LINE_ITEM_ADDED, "Line Item Added"),
         (EVENT_LINE_ITEM_UPDATED, "Line Item Updated"),
         (EVENT_LINE_ITEM_REMOVED, "Line Item Removed"),
+        (EVENT_ESTIMATE_SENT, "Estimate Sent"),
+        (EVENT_ESTIMATE_VIEWED, "Estimate Viewed"),
+        (EVENT_ESTIMATE_ACCEPTED, "Estimate Accepted"),
+        (EVENT_ESTIMATE_DECLINED, "Estimate Declined"),
+        (EVENT_ESTIMATE_REVISION_REQUESTED, "Estimate Revision Requested"),
+        (EVENT_AGREEMENT_OVERRIDE, "Agreement Review Override"),
     ]
 
     proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name="activity")

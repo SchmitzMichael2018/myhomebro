@@ -9,13 +9,22 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils.dateparse import parse_date
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from projects.models import Homeowner
 from projects.models_contractor_discovery import ContractorOpportunity, OpportunityEstimateAppointment
-from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement
+from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalReviewVersion
+from projects.services.proposal_customer_review import (
+    ACKNOWLEDGEMENT,
+    ReviewAccessError,
+    build_customer_snapshot,
+    public_review_payload,
+    resolve_token,
+    send_review,
+    token_for,
+)
 from projects.models_templates import ProjectTemplate
 from projects.services.proposal_pricing_benchmark import build_proposal_pricing_benchmark
 from projects.views.contractor_bids import (
@@ -196,7 +205,7 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
     appointment = getattr(proposal, "estimate_appointment", None)
     opportunity = getattr(proposal, "contractor_opportunity", None)
     customer_id = getattr(opportunity, "converted_customer_id", None)
-    linked_agreement = getattr(opportunity, "converted_agreement", None) if opportunity else None
+    linked_agreement = proposal.converted_agreement or (getattr(opportunity, "converted_agreement", None) if opportunity else None)
     linked_opportunity_title = getattr(opportunity, "project_title", "") if opportunity else ""
     linked_agreement_title = ""
     if linked_agreement is not None:
@@ -255,6 +264,18 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "created_at": _format_datetime(proposal.created_at),
         "updated_at": _format_datetime(proposal.updated_at),
     }
+    latest_review = proposal.review_versions.order_by("-version").first()
+    data["customer_review"] = ({
+        "version": latest_review.version,
+        "sent_at": _format_datetime(latest_review.sent_at),
+        "viewed_at": _format_datetime(latest_review.viewed_at),
+        "expires_at": _format_datetime(latest_review.expires_at),
+        "decision": latest_review.decision,
+        "decided_at": _format_datetime(latest_review.decided_at),
+        "decline_reason": latest_review.decline_reason,
+        "revision_request_message": latest_review.revision_request_message,
+        "delivery": latest_review.delivery_state,
+    } if latest_review else None)
     if include_related:
         data["measurements"] = [_serialize_measurement(item) for item in proposal.measurements.all()]
         data["line_items"] = [_serialize_line_item(item) for item in proposal.line_items.all()]
@@ -272,9 +293,11 @@ def _proposal_queryset(contractor):
             "contractor_opportunity",
             "contractor_opportunity__converted_agreement",
             "contractor_opportunity__converted_agreement__project",
+            "converted_agreement",
+            "converted_agreement__project",
             "estimate_appointment",
         )
-        .prefetch_related("measurements", "line_items", "attachments", "activity")
+        .prefetch_related("measurements", "line_items", "attachments", "activity", "review_versions")
     )
 
 
@@ -609,8 +632,8 @@ class ProposalDetailView(APIView):
                 continue
             if field == "status":
                 value = _safe_text(request.data.get(field))
-                if value not in dict(Proposal.STATUS_CHOICES):
-                    return Response({"status": ["Choose a valid proposal status."]}, status=400)
+                if value not in {Proposal.STATUS_DRAFT, Proposal.STATUS_SITE_VISIT, Proposal.STATUS_IN_PROGRESS, Proposal.STATUS_READY}:
+                    return Response({"status": ["Customer and system lifecycle states cannot be set manually."]}, status=400)
             elif field == "quick_checklist":
                 value = request.data.get(field)
                 if not isinstance(value, list):
@@ -648,6 +671,112 @@ class ProposalDetailView(APIView):
 
         proposal = _proposal_queryset(proposal.contractor).get(pk=proposal.pk)
         return Response(_serialize_proposal(proposal, request=request))
+
+
+class ProposalCustomerPreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, proposal_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        proposal = get_object_or_404(_proposal_queryset(contractor), pk=proposal_id)
+        latest = proposal.review_versions.order_by("-version").first()
+        snapshot = latest.snapshot if latest else build_customer_snapshot(proposal)
+        return Response({"preview": True, "version": latest.version if latest else None, "estimate": snapshot})
+
+
+class ProposalSendReviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, proposal_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        proposal = get_object_or_404(_proposal_queryset(contractor), pk=proposal_id)
+        try:
+            review, result = send_review(proposal=proposal, request=request, resend=bool(request.data.get("resend")))
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response({"proposal": _serialize_proposal(_proposal_queryset(contractor).get(pk=proposal.pk), request=request), "review": public_review_payload(review), **result})
+
+
+class PublicProposalReviewView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def _resolve(self, token, lock=False):
+        try:
+            return resolve_token(token, lock=lock), None
+        except ReviewAccessError as exc:
+            return None, Response({"detail": str(exc)}, status=404)
+
+    def get(self, request, token):
+        review, error = self._resolve(token)
+        if error:
+            return error
+        with transaction.atomic():
+            review = ProposalReviewVersion.objects.select_for_update().select_related("proposal").get(pk=review.pk)
+            current = review.proposal.review_versions.order_by("-version").first()
+            if current.pk != review.pk:
+                return Response({"detail": "A newer estimate is available. Ask your contractor for the latest review link."}, status=409)
+            if review.viewed_at is None:
+                review.viewed_at = timezone.now()
+                review.save(update_fields=["viewed_at"])
+                if review.proposal.status == Proposal.STATUS_SENT:
+                    review.proposal.status = Proposal.STATUS_VIEWED
+                    review.proposal.save(update_fields=["status", "updated_at"])
+                _activity(review.proposal, ProposalActivity.EVENT_ESTIMATE_VIEWED, "Estimate viewed by customer", metadata={"review_version": review.version})
+        return Response(public_review_payload(review))
+
+    def post(self, request, token):
+        action = _safe_text(request.data.get("action")).lower()
+        if action not in {"accept", "request_changes", "decline"}:
+            return Response({"action": ["Choose accept, request_changes, or decline."]}, status=400)
+        with transaction.atomic():
+            review, error = self._resolve(token, lock=True)
+            if error:
+                return error
+            proposal = Proposal.objects.select_for_update().get(pk=review.proposal_id)
+            latest = proposal.review_versions.order_by("-version").first()
+            if latest.pk != review.pk:
+                return Response({"detail": "This estimate version has been superseded."}, status=409)
+            if review.expires_at and review.expires_at <= timezone.now():
+                proposal.status = Proposal.STATUS_EXPIRED
+                proposal.save(update_fields=["status", "updated_at"])
+                return Response({"detail": "This estimate is no longer valid. Contact the contractor for an updated estimate."}, status=410)
+            if review.decision != ProposalReviewVersion.DECISION_PENDING:
+                return Response(public_review_payload(review))
+            now = timezone.now()
+            if action == "accept":
+                if request.data.get("acknowledgement") != ACKNOWLEDGEMENT:
+                    return Response({"acknowledgement": ["Confirm the estimate acknowledgement to continue."]}, status=400)
+                review.decision = ProposalReviewVersion.DECISION_ACCEPTED
+                review.acceptance_acknowledgement = ACKNOWLEDGEMENT
+                review.accepted_by = _safe_text(request.data.get("customer_name")) or proposal.customer_name
+                proposal.status = Proposal.STATUS_ACCEPTED
+                event = ProposalActivity.EVENT_ESTIMATE_ACCEPTED
+                message = "Estimate accepted by customer"
+            elif action == "request_changes":
+                detail = _safe_text(request.data.get("message"))
+                if not detail:
+                    return Response({"message": ["Tell the contractor what should change."]}, status=400)
+                review.decision = ProposalReviewVersion.DECISION_REVISION_REQUESTED
+                review.revision_request_message = detail
+                proposal.status = Proposal.STATUS_REVISION_REQUESTED
+                event = ProposalActivity.EVENT_ESTIMATE_REVISION_REQUESTED
+                message = "Customer requested estimate changes"
+            else:
+                review.decision = ProposalReviewVersion.DECISION_DECLINED
+                review.decline_reason = _safe_text(request.data.get("reason"))[:80]
+                proposal.status = Proposal.STATUS_DECLINED
+                event = ProposalActivity.EVENT_ESTIMATE_DECLINED
+                message = "Estimate declined by customer"
+            review.decided_at = now
+            review.save(update_fields=["decision", "decided_at", "accepted_by", "acceptance_acknowledgement", "decline_reason", "revision_request_message"])
+            proposal.save(update_fields=["status", "updated_at"])
+            _activity(proposal, event, message, metadata={"review_version": review.version})
+        return Response(public_review_payload(review))
 
 
 class ProposalPricingBenchmarkView(APIView):

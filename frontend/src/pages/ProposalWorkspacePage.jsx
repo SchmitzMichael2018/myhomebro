@@ -1230,6 +1230,8 @@ export default function ProposalWorkspacePage() {
   const [searchParams] = useSearchParams();
   const { updateAssistantContext } = useAssistantDock();
   const [proposal, setProposal] = useState(null);
+  const [customerPreview, setCustomerPreview] = useState(null);
+  const [reviewSending, setReviewSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState("customer");
@@ -1782,6 +1784,29 @@ export default function ProposalWorkspacePage() {
     setWalkthroughMode(false);
     setActive(task.target);
     navigate(`/app/proposals/${proposalId}?section=${encodeURIComponent(task.target)}&from=walkthrough&task=${encodeURIComponent(task.key)}`);
+  }
+
+  async function previewCustomerEstimate() {
+    try {
+      const { data } = await api.get(`/projects/proposals/${proposalId}/customer-preview/`);
+      setCustomerPreview(data.estimate);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Customer preview could not be loaded.");
+    }
+  }
+
+  async function sendEstimateToCustomer(resend = false) {
+    if (reviewSending) return;
+    setReviewSending(true);
+    try {
+      const { data } = await api.post(`/projects/proposals/${proposalId}/send-review/`, { resend });
+      setProposal(data.proposal);
+      setDraft((current) => ({ ...current, status: data.proposal.status }));
+      if (data.delivery?.email?.ok) toast.success(resend ? "Estimate resent to customer." : "Estimate sent to customer.");
+      else toast.error(data.delivery?.email?.message || "Estimate saved, but delivery failed. Copy the review link and contact the customer.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Estimate could not be sent.");
+    } finally { setReviewSending(false); }
   }
 
   async function returnToWalkthrough() {
@@ -2598,13 +2623,6 @@ export default function ProposalWorkspacePage() {
                   <option value="site_visit">Site Visit</option>
                   <option value="in_progress">Estimate In Progress</option>
                   <option value="ready">Estimate Ready</option>
-                  <option value="sent">Estimate Sent</option>
-                  <option value="viewed">Viewed</option>
-                  <option value="accepted">Accepted</option>
-                  <option value="declined">Declined</option>
-                  <option value="revision_requested">Revision Requested</option>
-                  <option value="expired">Expired</option>
-                  <option value="converted">Converted</option>
                 </select>
                 <button
                   type="button"
@@ -3372,9 +3390,15 @@ export default function ProposalWorkspacePage() {
               <PricingBenchmarkCard benchmark={pricingBenchmark} loading={pricingBenchmarkLoading} />
 
               <section className="rounded-xl border border-sky-300/20 bg-slate-950/30 p-4" aria-labelledby="agreement-handoff-title" data-testid="estimate-agreement-handoff">
-                <h3 id="agreement-handoff-title" className="font-black text-white">Agreement handoff</h3>
-                <p className="mt-1 text-sm font-semibold text-sky-100/70">The wizard starts with the saved customer, project, scope, accepted clarifications, pricing, schedule, and selected template guidance. Everything remains reviewable before an agreement is created.</p>
-                <button type="button" data-testid="estimate-ready-create-agreement" onClick={createAgreementFromProposal} disabled={!estimateChecklist.readyMinimum || isReadOnlyHistory} aria-describedby={!estimateChecklist.readyMinimum ? "agreement-action-disabled-reason" : undefined} className={`mt-4 ${ESTIMATE_PRIMARY_GOLD_BUTTON} disabled:cursor-not-allowed disabled:opacity-50`}><FileSignature size={16} /> Create Agreement from Estimate</button>
+                <h3 id="agreement-handoff-title" className="font-black text-white">Customer review</h3>
+                <p className="mt-1 text-sm font-semibold text-sky-100/70">Send the customer a private, versioned estimate before preparing the agreement. Acceptance approves the estimate as a basis for the agreement; it is not a signature.</p>
+                {proposal.customer_review ? <div className="mt-4 rounded-lg border border-white/12 bg-white/7 p-3 text-sm" data-testid="estimate-review-lifecycle"><strong className="block text-white">{proposal.status === "accepted" ? "Customer accepted this estimate" : proposal.status === "revision_requested" ? "Customer requested changes" : proposal.status === "declined" ? "Customer declined this estimate" : proposal.status === "viewed" ? "Viewed by customer · awaiting decision" : "Sent · awaiting customer review"}</strong>{proposal.customer_review.sent_at ? <span className="mt-1 block text-sky-100/65">Sent {formatDateTime(proposal.customer_review.sent_at)} · Version {proposal.customer_review.version}</span> : null}{proposal.customer_review.revision_request_message ? <p className="mt-2 text-sky-50">{proposal.customer_review.revision_request_message}</p> : null}{proposal.customer_review.decline_reason ? <p className="mt-2 text-sky-50">Reason: {proposal.customer_review.decline_reason}</p> : null}</div> : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button type="button" data-testid="estimate-customer-preview" onClick={previewCustomerEstimate} className="rounded-lg border border-white/18 bg-white/8 px-4 py-2 text-sm font-black text-white">Preview Customer Estimate</button>
+                  {["ready", "revision_requested", "declined", "expired"].includes(proposal.status) ? <button type="button" data-testid="estimate-send-customer" onClick={() => sendEstimateToCustomer(false)} disabled={!estimateChecklist.readyMinimum || reviewSending || isReadOnlyHistory} className={`${ESTIMATE_PRIMARY_GOLD_BUTTON} disabled:opacity-50`}><Mail size={16} /> {reviewSending ? "Sending…" : proposal.customer_review ? "Send Revised Estimate" : "Send Estimate to Customer"}</button> : null}
+                  {["sent", "viewed"].includes(proposal.status) ? <button type="button" data-testid="estimate-resend-customer" onClick={() => sendEstimateToCustomer(true)} disabled={reviewSending} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><Mail size={16} /> {reviewSending ? "Sending…" : "Resend"}</button> : null}
+                  {proposal.status === "accepted" ? <button type="button" data-testid="estimate-ready-create-agreement" onClick={createAgreementFromProposal} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><FileSignature size={16} /> Create Agreement</button> : null}
+                </div>
                 {!estimateChecklist.readyMinimum ? <p id="agreement-action-disabled-reason" className="mt-2 text-sm font-semibold text-amber-100">Complete the required items listed above to continue.</p> : null}
               </section>
             </div>
@@ -3396,6 +3420,8 @@ export default function ProposalWorkspacePage() {
             {(proposal.activity || []).length > 2 ? <button type="button" data-testid="proposal-history-toggle" aria-expanded={historyExpanded} onClick={() => setHistoryExpanded((value) => !value)} className="mt-3 rounded-lg border border-white/16 bg-white/7 px-3 py-2 text-sm font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300">{historyExpanded ? "Show recent activity" : `View full history (${proposal.activity.length})`}</button> : null}
           </Section>
         </main>
+
+        {customerPreview ? <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-3" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCustomerPreview(null); }}><section role="dialog" aria-modal="true" aria-labelledby="customer-preview-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/15 bg-[#071d3d] p-5 text-white shadow-2xl" data-testid="estimate-customer-preview-dialog"><div className="flex justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wide text-sky-200">Customer preview</p><h2 id="customer-preview-title" className="text-2xl font-black">{customerPreview.project?.title}</h2><p className="mt-1 text-sky-100/70">{customerPreview.project?.property}</p></div><button type="button" aria-label="Close customer preview" onClick={() => setCustomerPreview(null)} className="h-10 rounded-lg border border-white/15 p-2"><X /></button></div><div className="mt-5 space-y-4"><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Project description</h3><p className="mt-2 whitespace-pre-wrap text-sky-50/80">{customerPreview.project?.description || "No description provided."}</p></section><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Pricing</h3><div className="mt-2 space-y-2">{(customerPreview.pricing?.line_items || []).map((item, index) => <div key={`${item.description}-${index}`} className="flex justify-between gap-3 border-t border-white/10 pt-2"><span>{item.description}</span><strong>{money(item.total)}</strong></div>)}<div className="flex justify-between border-t border-white/20 pt-3 text-lg"><strong>Total</strong><strong>{money(customerPreview.pricing?.total)}</strong></div></div></section><p className="text-xs font-semibold text-sky-100/55">This preview excludes internal notes, Pricing Benchmark, activity, assistant context, and attachments.</p></div></section></div> : null}
 
         {templateViewOpen ? (
           <div className="fixed inset-0 z-[82] flex items-center justify-center bg-slate-950/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTemplateViewOpen(false); }}>
