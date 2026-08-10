@@ -15,11 +15,13 @@ from projects.models_contractor_discovery import (
     OpportunityEstimateAppointment,
 )
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalPortalActivation, ProposalReviewVersion
+from projects.models_sms import SMSConsent
 from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, token_for
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
 from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
 from projects.services.contractor_directory import normalize_business_name
+from projects.services.sms_service import handle_inbound_sms
 from projects.views.customer_portal import _estimate_rows
 
 
@@ -400,6 +402,104 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(proposal.status, Proposal.STATUS_ACCEPTED)
         self.assertEqual(review.acceptance_acknowledgement, ACKNOWLEDGEMENT)
         self.assertEqual(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_ESTIMATE_ACCEPTED).count(), 1)
+
+    @patch("projects.services.proposal_customer_review.send_compliant_sms")
+    @patch("projects.services.proposal_customer_review.send_postmark_email", return_value=(True, "sent"))
+    @patch("projects.services.sms_service._twilio_ready", return_value=True)
+    def test_review_delivery_supports_both_channels_and_persists_partial_failure(self, _ready, _email, sms):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id,
+            status=Proposal.STATUS_READY, project_title="Kitchen", customer_name="Casey",
+            customer_email="casey@example.com", customer_phone="5125550199",
+        )
+        SMSConsent.objects.create(phone_number_e164="+15125550199", can_send_sms=True, opted_out=False)
+        ProposalLineItem.objects.create(proposal=proposal, category="labor", description="Work", quantity=1, unit_price=500)
+        sms.return_value = {"ok": False, "status": "failed", "reason_code": "twilio_error", "twilio_sid": ""}
+        response = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/send-review/", {"channels": ["email", "sms"]}, format="json"
+        )
+        self.assertEqual(response.status_code, 200)
+        proposal.refresh_from_db()
+        review = ProposalReviewVersion.objects.get(proposal=proposal)
+        self.assertEqual(proposal.status, Proposal.STATUS_SENT)
+        self.assertTrue(review.delivery_state["email"]["ok"])
+        self.assertFalse(review.delivery_state["sms"]["ok"])
+        self.assertEqual(review.delivery_state["succeeded_channels"], ["email"])
+        self.assertNotIn("twilio_error", review.delivery_state["sms"]["message"])
+
+    @patch("projects.services.proposal_customer_review.send_sms_opt_in_request")
+    @patch("projects.services.sms_service._twilio_ready", return_value=True)
+    def test_review_sms_without_consent_waits_and_reuses_review_version(self, _ready, opt_in_request):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id,
+            status=Proposal.STATUS_READY, project_title="Kitchen", customer_name="Casey", customer_phone="5125550199",
+        )
+        ProposalLineItem.objects.create(proposal=proposal, category="labor", description="Work", quantity=1, unit_price=500)
+        opt_in_request.return_value = {"ok": True, "status": "consent_request_sent", "reason_code": "consent_pending", "detail": "Opt-in request sent.", "twilio_sid": "SM-CONSENT"}
+        first = self.client.post(f"/api/projects/proposals/{proposal.id}/send-review/", {"channels": ["sms"]}, format="json")
+        second = self.client.post(f"/api/projects/proposals/{proposal.id}/send-review/", {"channels": ["sms"]}, format="json")
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.STATUS_READY)
+        self.assertEqual(ProposalReviewVersion.objects.filter(proposal=proposal).count(), 1)
+        review = ProposalReviewVersion.objects.get(proposal=proposal)
+        self.assertEqual(review.delivery_state["sms"]["status"], "consent_pending")
+        self.assertIsNone(review.sent_at)
+
+    @patch("projects.services.proposal_customer_review.send_compliant_sms")
+    def test_yes_records_consent_and_releases_same_pending_review(self, sms):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id,
+            status=Proposal.STATUS_READY, project_title="Kitchen", customer_name="Casey", customer_phone="5125550199",
+        )
+        review = ProposalReviewVersion.objects.create(
+            proposal=proposal, version=1, customer_email="", snapshot={"contractor": {"name": "Builder"}},
+            expires_at=timezone.now() + timedelta(days=30), delivery_state={"sms": {"status": "consent_pending"}},
+        )
+        SMSConsent.objects.create(phone_number_e164="+15125550199", contractor=self.contractor, can_send_sms=False, consent_text_snapshot="estimate_transactional_opt_in_v1")
+        sms.return_value = {"ok": True, "status": "sent", "reason_code": "sent", "twilio_sid": "SM-ESTIMATE"}
+        result = handle_inbound_sms(from_phone="+15125550199", body="YES", message_sid="SM-INBOUND")
+        review.refresh_from_db(); proposal.refresh_from_db()
+        consent = SMSConsent.objects.get(phone_number_e164="+15125550199")
+        self.assertEqual(result["keyword"], "YES")
+        self.assertTrue(consent.can_send_sms)
+        self.assertEqual(consent.opted_in_source, SMSConsent.OPT_IN_SOURCE_ESTIMATE_DELIVERY)
+        self.assertEqual(review.delivery_state["sms"]["status"], "sent")
+        self.assertEqual(review.delivery_state["sms"]["consent_inbound_message_sid"], "SM-INBOUND")
+        self.assertEqual(proposal.status, Proposal.STATUS_SENT)
+        self.assertEqual(ProposalReviewVersion.objects.filter(proposal=proposal).count(), 1)
+
+    def test_stop_cancels_pending_estimate_sms_without_affecting_email(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id,
+            status=Proposal.STATUS_SENT, project_title="Kitchen", customer_phone="5125550199",
+        )
+        review = ProposalReviewVersion.objects.create(
+            proposal=proposal, version=1, customer_email="casey@example.com", snapshot={}, sent_at=timezone.now(),
+            delivery_state={"email": {"ok": True, "status": "sent"}, "sms": {"status": "consent_pending"}},
+        )
+        SMSConsent.objects.create(phone_number_e164="+15125550199", contractor=self.contractor, can_send_sms=False)
+        handle_inbound_sms(from_phone="+15125550199", body="STOP", message_sid="SM-STOP")
+        review.refresh_from_db()
+        self.assertEqual(review.delivery_state["sms"]["status"], "opted_out")
+        self.assertTrue(review.delivery_state["email"]["ok"])
+
+    @patch("projects.services.proposal_customer_review.send_compliant_sms")
+    def test_late_yes_cancels_stale_pending_review_without_sending(self, sms):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id,
+            status=Proposal.STATUS_EXPIRED, project_title="Old Kitchen", customer_phone="5125550199",
+        )
+        review = ProposalReviewVersion.objects.create(
+            proposal=proposal, version=1, customer_email="", snapshot={}, expires_at=timezone.now() - timedelta(minutes=1),
+            delivery_state={"sms": {"status": "consent_pending"}},
+        )
+        SMSConsent.objects.create(phone_number_e164="+15125550199", contractor=self.contractor, can_send_sms=False)
+        handle_inbound_sms(from_phone="+15125550199", body="YES", message_sid="SM-LATE")
+        review.refresh_from_db()
+        self.assertEqual(review.delivery_state["sms"]["status"], "cancelled")
+        sms.assert_not_called()
 
     def test_stale_and_expired_review_versions_cannot_be_accepted(self):
         proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, status=Proposal.STATUS_SENT, project_title="Kitchen", customer_email="casey@example.com")

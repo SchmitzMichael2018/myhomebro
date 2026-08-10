@@ -1232,6 +1232,8 @@ export default function ProposalWorkspacePage() {
   const [proposal, setProposal] = useState(null);
   const [customerPreview, setCustomerPreview] = useState(null);
   const [reviewSending, setReviewSending] = useState(false);
+  const [sendReviewOpen, setSendReviewOpen] = useState(false);
+  const [reviewChannels, setReviewChannels] = useState(["email"]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [active, setActive] = useState("customer");
@@ -1798,15 +1800,26 @@ export default function ProposalWorkspacePage() {
     }
   }
 
-  async function sendEstimateToCustomer(resend = false) {
+  function openSendEstimate() {
+    const eligibility = proposal.review_delivery_eligibility || {};
+    const preferred = String(proposal.customer_preferred_contact || "").toLowerCase();
+    const initial = preferred === "text" && eligibility.sms?.available ? ["sms"] : eligibility.email?.available ? ["email"] : eligibility.sms?.available ? ["sms"] : [];
+    setReviewChannels(initial);
+    setSendReviewOpen(true);
+  }
+
+  async function sendEstimateToCustomer(resend = false, channels = reviewChannels) {
     if (reviewSending) return;
     setReviewSending(true);
     try {
-      const { data } = await api.post(`/projects/proposals/${proposalId}/send-review/`, { resend });
+      const { data } = await api.post(`/projects/proposals/${proposalId}/send-review/`, { resend, channels });
       setProposal(data.proposal);
       setDraft((current) => ({ ...current, status: data.proposal.status }));
-      if (data.delivery?.email?.ok) toast.success(resend ? "Estimate resent to customer." : "Estimate sent to customer.");
-      else toast.error(data.delivery?.email?.message || "Estimate saved, but delivery failed. Copy the review link and contact the customer.");
+      const successes = data.delivery?.succeeded_channels || [];
+      if (successes.length) toast.success(`Estimate sent by ${successes.map((item) => item === "sms" ? "text" : item).join(" + ")}.`);
+      else if (data.delivery?.sms?.status === "consent_pending") toast.success("Opt-in request sent. The estimate will be texted after the customer replies YES.");
+      else toast.error("Estimate could not be delivered. Review the channel status and try again.");
+      setSendReviewOpen(false);
     } catch (error) {
       toast.error(error?.response?.data?.detail || "Estimate could not be sent.");
     } finally { setReviewSending(false); }
@@ -3358,16 +3371,16 @@ export default function ProposalWorkspacePage() {
             </button>
           </Section>
 
-          <Section id="ready" active={activeStep.key === "review"} title="Agreement Review" description="Confirm the estimate is complete, then continue into the existing Agreement Wizard.">
+          <Section id="ready" active={activeStep.key === "review"} title="Estimate Review" description="Confirm the estimate, then send a private review link to the customer.">
             <div className="space-y-5" data-testid="estimate-review-workspace">
               <div role="status" className={`rounded-xl border p-4 ${estimateChecklist.readyMinimum ? "border-emerald-200/30 bg-emerald-400/10" : "border-amber-200/30 bg-amber-400/10"}`}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <div className={`text-lg font-black ${estimateChecklist.readyMinimum ? "text-emerald-100" : "text-amber-100"}`} data-testid="estimate-ready-review-status">
-                      {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Agreement blockers remain"}
+                      {estimateChecklist.readyMinimum ? "Ready to Send" : "Estimate blockers remain"}
                     </div>
                     <p className="mt-1 text-sm font-semibold text-sky-50/80">
-                      {estimateChecklist.readyMinimum ? "This estimate is ready to create an agreement." : "Resolve the remaining required items before creating the agreement."}
+                      {estimateChecklist.readyMinimum ? "This estimate is complete and ready to send to the customer for review." : "Resolve the remaining required items before sending the estimate."}
                     </p>
                   </div>
                   <div className="shrink-0 text-left sm:text-right"><span className="block text-xs font-black uppercase tracking-wide text-sky-100/55">Estimate total</span><strong className="text-xl text-white">{money(totals.total)}</strong></div>
@@ -3395,11 +3408,12 @@ export default function ProposalWorkspacePage() {
               <section className="rounded-xl border border-sky-300/20 bg-slate-950/30 p-4" aria-labelledby="agreement-handoff-title" data-testid="estimate-agreement-handoff">
                 <h3 id="agreement-handoff-title" className="font-black text-white">Customer review</h3>
                 <p className="mt-1 text-sm font-semibold text-sky-100/70">Send the customer a private, versioned estimate before preparing the agreement. Acceptance approves the estimate as a basis for the agreement; it is not a signature.</p>
-                {proposal.customer_review ? <div className="mt-4 rounded-lg border border-white/12 bg-white/7 p-3 text-sm" data-testid="estimate-review-lifecycle"><strong className="block text-white">{proposal.status === "accepted" ? "Customer accepted this estimate" : proposal.status === "revision_requested" ? "Customer requested changes" : proposal.status === "declined" ? "Customer declined this estimate" : proposal.status === "viewed" ? "Viewed by customer · awaiting decision" : "Sent · awaiting customer review"}</strong>{proposal.customer_review.sent_at ? <span className="mt-1 block text-sky-100/65">Sent {formatDateTime(proposal.customer_review.sent_at)} · Version {proposal.customer_review.version}</span> : null}{proposal.customer_review.revision_request_message ? <p className="mt-2 text-sky-50">{proposal.customer_review.revision_request_message}</p> : null}{proposal.customer_review.decline_reason ? <p className="mt-2 text-sky-50">Reason: {proposal.customer_review.decline_reason}</p> : null}</div> : null}
+                <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2" data-testid="estimate-delivery-customer"><div><dt className="text-sky-100/55">Customer</dt><dd className="font-bold text-white">{proposal.customer_name || "Not provided"}</dd></div><div><dt className="text-sky-100/55">Preferred Contact</dt><dd className="font-bold text-white">{preferredContactLabel(proposal.customer_preferred_contact)}</dd></div><div><dt className="text-sky-100/55">Email</dt><dd className="font-bold text-white">{proposal.customer_email || "No valid email address"}</dd></div><div><dt className="text-sky-100/55">Phone</dt><dd className="font-bold text-white">{proposal.customer_phone || "No mobile number available"}</dd></div></dl>
+                {proposal.customer_review ? <div className="mt-4 rounded-lg border border-white/12 bg-white/7 p-3 text-sm" data-testid="estimate-review-lifecycle"><strong className="block text-white">{proposal.status === "accepted" ? "Customer accepted this estimate" : proposal.status === "revision_requested" ? "Customer requested changes" : proposal.status === "declined" ? "Customer declined this estimate" : proposal.status === "viewed" ? "Viewed by customer · awaiting decision" : proposal.customer_review.delivery?.sms?.status === "consent_pending" && !proposal.customer_review.sent_at ? "Waiting for customer SMS authorization" : "Sent to customer · awaiting review"}</strong>{proposal.customer_review.sent_at ? <span className="mt-1 block text-sky-100/65">Sent {formatDateTime(proposal.customer_review.sent_at)} · Version {proposal.customer_review.version}</span> : null}<div className="mt-3 flex flex-wrap gap-2" data-testid="estimate-delivery-status">{["email", "sms"].map((channel) => { const result = proposal.customer_review.delivery?.[channel]; if (!result?.attempted && !result?.status) return null; const pending = result.status === "consent_pending"; const optedOut = result.status === "opted_out"; return <span key={channel} className={`rounded-full border px-2 py-1 text-xs font-black ${result.ok ? "border-emerald-200/25 bg-emerald-400/10 text-emerald-100" : pending ? "border-amber-200/25 bg-amber-400/10 text-amber-100" : "border-rose-200/25 bg-rose-400/10 text-rose-100"}`}>{channel === "sms" ? "Text" : "Email"} · {result.ok ? "Sent" : pending ? "Waiting for opt-in" : optedOut ? "Customer opted out" : "Failed"}</span>; })}</div>{proposal.customer_review.delivery?.sms?.status === "consent_pending" ? <button type="button" onClick={openSendEstimate} className="mt-3 rounded-lg border border-white/14 px-3 py-2 text-xs font-black">Resend opt-in request</button> : null}{proposal.customer_review.revision_request_message ? <p className="mt-2 text-sky-50">{proposal.customer_review.revision_request_message}</p> : null}{proposal.customer_review.decline_reason ? <p className="mt-2 text-sky-50">Reason: {proposal.customer_review.decline_reason}</p> : null}</div> : null}
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button type="button" data-testid="estimate-customer-preview" onClick={previewCustomerEstimate} className="rounded-lg border border-white/18 bg-white/8 px-4 py-2 text-sm font-black text-white">Preview Customer Estimate</button>
-                  {["ready", "revision_requested", "declined", "expired"].includes(proposal.status) ? <button type="button" data-testid="estimate-send-customer" onClick={() => sendEstimateToCustomer(false)} disabled={!estimateChecklist.readyMinimum || reviewSending || isReadOnlyHistory} className={`${ESTIMATE_PRIMARY_GOLD_BUTTON} disabled:opacity-50`}><Mail size={16} /> {reviewSending ? "Sending…" : proposal.customer_review ? "Send Revised Estimate" : "Send Estimate to Customer"}</button> : null}
-                  {["sent", "viewed"].includes(proposal.status) ? <button type="button" data-testid="estimate-resend-customer" onClick={() => sendEstimateToCustomer(true)} disabled={reviewSending} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><Mail size={16} /> {reviewSending ? "Sending…" : "Resend"}</button> : null}
+                  {!['sent', 'viewed', 'accepted', 'converted'].includes(proposal.status) ? <button type="button" data-testid="estimate-send-customer" onClick={openSendEstimate} disabled={!estimateChecklist.readyMinimum || reviewSending || isReadOnlyHistory} className={`${ESTIMATE_PRIMARY_GOLD_BUTTON} disabled:opacity-50`}><Mail size={16} /> {reviewSending ? "Sending…" : proposal.customer_review ? "Send Revised Estimate" : "Send Estimate"}</button> : null}
+                  {["sent", "viewed"].includes(proposal.status) ? <button type="button" data-testid="estimate-resend-customer" onClick={openSendEstimate} disabled={reviewSending} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><Mail size={16} /> {reviewSending ? "Sending…" : "Resend"}</button> : null}
                   {proposal.status === "accepted" ? <button type="button" data-testid="estimate-ready-create-agreement" onClick={createAgreementFromProposal} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><FileSignature size={16} /> Create Agreement</button> : null}
                   {proposal.status === "converted" && proposal.linked_agreement_url ? <a data-testid="estimate-open-agreement" href={proposal.linked_agreement_url} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><FileSignature size={16} /> Open Agreement</a> : null}
                 </div>
@@ -3426,6 +3440,8 @@ export default function ProposalWorkspacePage() {
         </main>
 
         {customerPreview ? <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-3" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCustomerPreview(null); }}><section role="dialog" aria-modal="true" aria-labelledby="customer-preview-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/15 bg-[#071d3d] p-5 text-white shadow-2xl" data-testid="estimate-customer-preview-dialog"><div className="flex justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wide text-sky-200">Customer preview</p><h2 id="customer-preview-title" className="text-2xl font-black">{customerPreview.project?.title}</h2><p className="mt-1 text-sky-100/70">{customerPreview.project?.property}</p></div><button type="button" aria-label="Close customer preview" onClick={() => setCustomerPreview(null)} className="h-10 rounded-lg border border-white/15 p-2"><X /></button></div><div className="mt-5 space-y-4"><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Project description</h3><p className="mt-2 whitespace-pre-wrap text-sky-50/80">{customerPreview.project?.description || "No description provided."}</p></section><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Pricing</h3><div className="mt-2 space-y-2">{(customerPreview.pricing?.line_items || []).map((item, index) => <div key={`${item.description}-${index}`} className="flex justify-between gap-3 border-t border-white/10 pt-2"><span>{item.description}</span><strong>{money(item.total)}</strong></div>)}<div className="flex justify-between border-t border-white/20 pt-3 text-lg"><strong>Total</strong><strong>{money(customerPreview.pricing?.total)}</strong></div></div></section><p className="text-xs font-semibold text-sky-100/55">This preview excludes internal notes, Pricing Benchmark, activity, assistant context, and attachments.</p></div></section></div> : null}
+
+        {sendReviewOpen ? <div className="fixed inset-0 z-[95] flex items-center justify-center bg-slate-950/80 p-3" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSendReviewOpen(false); }}><section role="dialog" aria-modal="true" aria-labelledby="send-estimate-title" className="w-full max-w-lg rounded-2xl border border-white/15 bg-[#071d3d] p-5 text-white shadow-2xl" data-testid="estimate-send-dialog"><h2 id="send-estimate-title" className="text-xl font-black">Send Estimate to {proposal.customer_name || "Customer"}?</h2><fieldset className="mt-4 space-y-2"><legend className="mb-2 font-black">Delivery Method</legend>{[["email", "Email", proposal.review_delivery_eligibility?.email], ["sms", "Text", proposal.review_delivery_eligibility?.sms]].map(([value, label, eligibility]) => <label key={value} className={`flex min-h-12 items-start gap-3 rounded-xl border p-3 ${eligibility?.available ? "border-white/14 bg-white/7" : "border-white/8 bg-slate-950/25 text-sky-100/50"}`}><input type="checkbox" data-testid={`estimate-delivery-${value}`} checked={reviewChannels.includes(value)} disabled={!eligibility?.available} onChange={(event) => setReviewChannels((current) => event.target.checked ? [...current, value] : current.filter((item) => item !== value))} className="mt-1 h-4 w-4"/><span><strong className="block">{label} — {value === "email" ? proposal.customer_email : proposal.customer_phone}</strong>{value === "sms" && eligibility?.requires_opt_in ? <span className="block text-sm text-amber-100">SMS authorization required. MyHomeBro will send a one-time permission request; the estimate will be texted only after the customer replies YES.</span> : !eligibility?.available ? <span className="block text-sm">{eligibility?.reason}</span> : null}</span></label>)}</fieldset><p className="mt-4 text-sm text-sky-100/70">The customer can review the estimate directly without creating a MyHomeBro account. If they create an account, it will also be available in their Customer Portal.</p><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={() => setSendReviewOpen(false)} className="rounded-lg border border-white/14 px-4 py-2 font-black">Cancel</button><button type="button" data-testid="estimate-send-confirm" disabled={!reviewChannels.length || reviewSending} onClick={() => sendEstimateToCustomer(["sent", "viewed"].includes(proposal.status), reviewChannels)} className={`${ESTIMATE_PRIMARY_GOLD_BUTTON} disabled:opacity-45`}>{reviewSending ? "Sending…" : "Send Estimate"}</button></div></section></div> : null}
 
         {templateViewOpen ? (
           <div className="fixed inset-0 z-[82] flex items-center justify-center bg-slate-950/75 p-3 sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setTemplateViewOpen(false); }}>

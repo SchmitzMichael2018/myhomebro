@@ -27,6 +27,7 @@ from projects.services.proposal_customer_review import (
     portal_token_for_email,
     resolve_activation_token,
     resolve_token,
+    review_delivery_eligibility,
     send_review,
     token_for,
 )
@@ -285,6 +286,7 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "revision_request_message": latest_review.revision_request_message,
         "delivery": latest_review.delivery_state,
     } if latest_review else None)
+    data["review_delivery_eligibility"] = review_delivery_eligibility(proposal)
     if include_related:
         data["measurements"] = [_serialize_measurement(item) for item in proposal.measurements.all()]
         data["line_items"] = [_serialize_line_item(item) for item in proposal.line_items.all()]
@@ -705,7 +707,10 @@ class ProposalSendReviewView(APIView):
             return Response({"detail": "Contractor profile not found."}, status=404)
         proposal = get_object_or_404(_proposal_queryset(contractor), pk=proposal_id)
         try:
-            review, result = send_review(proposal=proposal, request=request, resend=bool(request.data.get("resend")))
+            review, result = send_review(
+                proposal=proposal, request=request, resend=bool(request.data.get("resend")),
+                channels=request.data.get("channels"),
+            )
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"proposal": _serialize_proposal(_proposal_queryset(contractor).get(pk=proposal.pk), request=request), "review": public_review_payload(review, request=request), **result})

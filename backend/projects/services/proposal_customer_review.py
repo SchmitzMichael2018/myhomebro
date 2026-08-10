@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from projects.models_proposals import Proposal, ProposalActivity, ProposalLineItem, ProposalPortalActivation, ProposalReviewVersion
 from projects.services.invites_delivery import send_postmark_email
+from projects.services.sms_service import get_sms_status_payload, normalize_phone_to_e164, send_compliant_sms, send_sms_opt_in_request
 
 
 TOKEN_SALT = "myhomebro.proposal-customer-review.v1"
@@ -179,46 +180,179 @@ def public_review_payload(review: ProposalReviewVersion, request=None) -> dict:
     }
 
 
-def send_review(*, proposal: Proposal, request, resend=False) -> tuple[ProposalReviewVersion, dict]:
-    if proposal.status not in ({Proposal.STATUS_SENT, Proposal.STATUS_VIEWED} if resend else {Proposal.STATUS_READY, Proposal.STATUS_REVISION_REQUESTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED}):
+def review_delivery_eligibility(proposal: Proposal) -> dict:
+    email = proposal.customer_email.strip().lower()
+    sms = get_sms_status_payload(phone_number=proposal.customer_phone)
+    return {
+        "email": {"available": bool(email), "address": email, "reason": "" if email else "No valid email address."},
+        "sms": {
+            "available": bool(sms["phone_number_e164"] and not sms["sms_opted_out"] and sms["twilio_configured"]),
+            "immediate": bool(sms["phone_number_e164"] and sms["sms_enabled"] and sms["twilio_configured"]),
+            "requires_opt_in": bool(sms["phone_number_e164"] and not sms["sms_enabled"] and not sms["sms_opted_out"] and sms["twilio_configured"]),
+            "phone": sms["phone_number_e164"],
+            "consent_on_file": sms["consent_on_file"],
+            "opted_out": sms["sms_opted_out"],
+            "twilio_configured": sms["twilio_configured"],
+            "reason": (
+                "No mobile number available." if not sms["phone_number_e164"] else
+                "Customer opted out of SMS." if sms["sms_opted_out"] else
+                "Text requires customer opt-in." if not sms["sms_enabled"] else
+                "Text delivery is temporarily unavailable." if not sms["twilio_configured"] else ""
+            ),
+        },
+    }
+
+
+def send_review(*, proposal: Proposal, request, resend=False, channels=None) -> tuple[ProposalReviewVersion, dict]:
+    initial_statuses = {Proposal.STATUS_DRAFT, Proposal.STATUS_SITE_VISIT, Proposal.STATUS_IN_PROGRESS, Proposal.STATUS_READY, Proposal.STATUS_REVISION_REQUESTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED}
+    if proposal.status not in ({Proposal.STATUS_SENT, Proposal.STATUS_VIEWED} if resend else initial_statuses):
         raise ValueError("Only a ready or revised estimate can be sent.")
-    if not proposal.customer_email:
-        raise ValueError("Customer email is required before sending.")
+    requested = list(dict.fromkeys(str(channel).strip().lower() for channel in (channels or ["email"])))
+    if not requested or any(channel not in {"email", "sms"} for channel in requested):
+        raise ValueError("Choose Email, Text, or Email + Text.")
+    eligibility = review_delivery_eligibility(proposal)
+    for channel in requested:
+        if not eligibility[channel]["available"]:
+            raise ValueError(eligibility[channel]["reason"])
+    if not proposal.customer_name.strip() or not proposal.project_title.strip() or not proposal.line_items.exists():
+        raise ValueError("Complete the customer, project title, and pricing before sending the estimate.")
     with transaction.atomic():
         locked = Proposal.objects.select_for_update().get(pk=proposal.pk)
         latest = locked.review_versions.order_by("-version").first()
-        if resend and latest:
+        current_snapshot = build_customer_snapshot(locked)
+        if latest and (resend or (locked.status in initial_statuses and latest.decision == ProposalReviewVersion.DECISION_PENDING and latest.snapshot == current_snapshot)):
             review = latest
         else:
             review = ProposalReviewVersion.objects.create(
                 proposal=locked,
                 version=(latest.version + 1 if latest else 1),
                 customer_email=locked.customer_email.strip().lower(),
-                snapshot=build_customer_snapshot(locked),
-                sent_at=timezone.now(),
+                snapshot=current_snapshot,
                 expires_at=timezone.now() + timedelta(days=30),
             )
-        locked.status = Proposal.STATUS_SENT
-        locked.save(update_fields=["status", "updated_at"])
-        ProposalActivity.objects.create(
-            proposal=locked,
-            event_type=ProposalActivity.EVENT_ESTIMATE_SENT,
-            message="Estimate resent to customer" if resend else "Estimate sent to customer",
-            actor=request.user,
-            metadata={"review_version": review.version},
-        )
     token = token_for(review)
     base = (getattr(settings, "SITE_URL", "") or request.build_absolute_uri("/")).rstrip("/")
     url = f"{base}/estimate-review/{token}"
     portal = portal_access(review, request=request)
     secondary_copy = "Keep estimates, agreements, project updates, payments, and documents together in MyHomeBro."
-    ok, message = send_postmark_email(
-        to_email=review.customer_email,
-        subject=f"Review your estimate for {proposal.project_title or 'your project'}",
-        text_body=f"Your estimate is ready.\n\n{review.snapshot['contractor']['name']} has sent an estimate for {proposal.project_title}.\n\nReview Estimate:\n{url}\n\n{secondary_copy}\n{portal['label']}:\n{portal['url']}\n\nYou can review and respond without creating an account.",
-        html_body=f"<h2>Your estimate is ready</h2><p>{review.snapshot['contractor']['name']} has sent an estimate for {proposal.project_title}.</p><p><a href=\"{url}\">Review Estimate</a></p><hr><p>{secondary_copy}</p><p><a href=\"{portal['url']}\">{portal['label']}</a></p><p><small>You can review and respond without creating an account.</small></p>",
-    )
-    delivery = {"email": {"attempted": True, "ok": ok, "message": message}, "sms": {"attempted": False, "ok": False, "message": "SMS not sent without verified consent."}}
+    previous = review.delivery_state or {}
+    delivery = {
+        "requested_channels": requested,
+        "email": previous.get("email", {"attempted": False, "ok": False}),
+        "sms": previous.get("sms", {"attempted": False, "ok": False}),
+    }
+    if "email" in requested:
+        ok, _provider_message = send_postmark_email(
+            to_email=review.customer_email,
+            subject=f"Review your estimate for {proposal.project_title or 'your project'}",
+            text_body=f"Your estimate is ready.\n\n{review.snapshot['contractor']['name']} has sent an estimate for {proposal.project_title}.\n\nReview Estimate:\n{url}\n\nA MyHomeBro account is not required to review this estimate.\n\n{secondary_copy}\n{portal['label']}:\n{portal['url']}",
+            html_body=f"<h2>Your estimate is ready</h2><p>{review.snapshot['contractor']['name']} has sent an estimate for {proposal.project_title}.</p><p><a href=\"{url}\">Review Estimate</a></p><p><strong>A MyHomeBro account is not required to review this estimate.</strong></p><hr><p>{secondary_copy}</p><p><a href=\"{portal['url']}\">{portal['label']}</a></p>",
+        )
+        delivery["email"] = {"attempted": True, "ok": ok, "status": "sent" if ok else "failed", "message": "Email sent." if ok else "Email could not be delivered.", "attempted_at": timezone.now().isoformat()}
+    if "sms" in requested and eligibility["sms"]["immediate"]:
+        company = review.snapshot["contractor"]["name"]
+        title = proposal.project_title or "your project"
+        sms_result = send_compliant_sms(
+            proposal.customer_phone,
+            f"{company} sent you an estimate for {title}. Review it securely here: {url} A MyHomeBro account is not required.",
+            category="customer_care",
+            dedupe_key=f"proposal-review:{review.id}:sms:{timezone.now().strftime('%Y%m%d%H%M')}",
+        )
+        delivery["sms"] = {
+            "attempted": True, "ok": sms_result["ok"], "status": sms_result["status"],
+            "message": "Text message sent." if sms_result["ok"] else "Text message could not be delivered.",
+            "reason_code": sms_result["reason_code"], "provider_id": sms_result["twilio_sid"],
+            "attempted_at": timezone.now().isoformat(),
+        }
+    elif "sms" in requested:
+        consent_request = send_sms_opt_in_request(
+            phone_number=proposal.customer_phone,
+            company_name=review.snapshot["contractor"]["name"], contractor=proposal.contractor,
+            dedupe_key=f"proposal-review-opt-in:{review.id}",
+        )
+        pending = consent_request["ok"] or consent_request["status"] == "duplicate"
+        delivery["sms"] = {
+            "attempted": False, "ok": False, "status": "consent_pending" if pending else consent_request["status"],
+            "message": "Waiting for customer opt-in." if pending else consent_request["detail"],
+            "reason_code": consent_request["reason_code"], "consent_request_sent": pending,
+            "consent_request_provider_id": consent_request["twilio_sid"], "attempted_at": timezone.now().isoformat(),
+            "phone_number_e164": eligibility["sms"]["phone"],
+        }
+    succeeded = [channel for channel in requested if delivery[channel].get("ok")]
+    delivery["succeeded_channels"] = succeeded
+    attempts = list(previous.get("attempts") or [])
+    attempts.append({
+        "attempted_at": timezone.now().isoformat(), "requested_channels": requested,
+        "results": {channel: {"ok": bool(delivery[channel].get("ok")), "status": delivery[channel].get("status", "failed")} for channel in requested},
+    })
+    delivery["attempts"] = attempts[-20:]
     review.delivery_state = delivery
-    review.save(update_fields=["delivery_state"])
+    if succeeded:
+        review.sent_at = review.sent_at or timezone.now()
+    review.save(update_fields=["delivery_state", "sent_at"])
+    if succeeded:
+        proposal.status = Proposal.STATUS_SENT
+        proposal.save(update_fields=["status", "updated_at"])
+        ProposalActivity.objects.create(
+            proposal=proposal, event_type=ProposalActivity.EVENT_ESTIMATE_SENT,
+            message="Estimate resent to customer" if resend else "Estimate sent to customer", actor=request.user,
+            metadata={"review_version": review.version, "requested_channels": requested, "succeeded_channels": succeeded},
+        )
     return review, {"review_url": url, "delivery": delivery, "portal": portal}
+
+
+def _pending_reviews_for_phone(phone_number: str):
+    normalized = normalize_phone_to_e164(phone_number)
+    rows = ProposalReviewVersion.objects.select_related("proposal", "proposal__contractor", "proposal__contractor__user").order_by("-created_at")[:200]
+    return [row for row in rows if normalize_phone_to_e164(row.proposal.customer_phone) == normalized and (row.delivery_state or {}).get("sms", {}).get("status") == "consent_pending"]
+
+
+def release_pending_estimate_sms(phone_number: str, *, message_sid: str = "") -> int:
+    """Release only current, actionable review versions after an inbound affirmative reply."""
+    sent = 0
+    now = timezone.now()
+    for review in _pending_reviews_for_phone(phone_number):
+        proposal = review.proposal
+        latest = proposal.review_versions.order_by("-version").first()
+        delivery = dict(review.delivery_state or {})
+        sms_state = dict(delivery.get("sms") or {})
+        if latest is None or latest.pk != review.pk or review.decision != ProposalReviewVersion.DECISION_PENDING or (review.expires_at and review.expires_at <= now) or proposal.status in {Proposal.STATUS_DECLINED, Proposal.STATUS_ACCEPTED, Proposal.STATUS_CONVERTED, Proposal.STATUS_EXPIRED}:
+            sms_state.update({"status": "cancelled", "message": "Pending text cancelled because this estimate is no longer current."})
+        else:
+            base = (getattr(settings, "SITE_URL", "") or "https://www.myhomebro.com").rstrip("/")
+            url = f"{base}/estimate-review/{token_for(review)}"
+            result = send_compliant_sms(
+                phone_number,
+                f"{review.snapshot['contractor']['name']} sent you an estimate for {proposal.project_title or 'your project'}. Review it securely here: {url} A MyHomeBro account is not required.",
+                category="customer_care", dedupe_key=f"proposal-review:{review.id}:sms",
+            )
+            sms_state.update({
+                "attempted": True, "ok": result["ok"], "status": "sent" if result["ok"] else result["status"],
+                "message": "Text message sent." if result["ok"] else "Text message could not be delivered.",
+                "reason_code": result["reason_code"], "provider_id": result["twilio_sid"],
+                "consent_granted_at": now.isoformat(), "consent_inbound_message_sid": message_sid,
+            })
+            if result["ok"]:
+                sent += 1
+                review.sent_at = review.sent_at or now
+                if proposal.status not in {Proposal.STATUS_SENT, Proposal.STATUS_VIEWED}:
+                    proposal.status = Proposal.STATUS_SENT
+                    proposal.save(update_fields=["status", "updated_at"])
+        delivery["sms"] = sms_state
+        delivery["succeeded_channels"] = list(dict.fromkeys((delivery.get("succeeded_channels") or []) + (["sms"] if sms_state.get("ok") else [])))
+        review.delivery_state = delivery
+        review.save(update_fields=["delivery_state", "sent_at"])
+    return sent
+
+
+def cancel_pending_estimate_sms(phone_number: str) -> int:
+    cancelled = 0
+    for review in _pending_reviews_for_phone(phone_number):
+        delivery = dict(review.delivery_state or {})
+        sms_state = dict(delivery.get("sms") or {})
+        sms_state.update({"status": "opted_out", "ok": False, "message": "Customer opted out of SMS."})
+        delivery["sms"] = sms_state
+        review.delivery_state = delivery
+        review.save(update_fields=["delivery_state"])
+        cancelled += 1
+    return cancelled

@@ -27,7 +27,8 @@ except Exception:  # pragma: no cover
 
 OPT_OUT_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "REVOKE", "OPTOUT"}
 HELP_KEYWORDS = {"HELP", "INFO"}
-OPT_IN_KEYWORDS = {"START", "UNSTOP"}
+OPT_IN_KEYWORDS = {"START", "UNSTOP", "YES"}
+ESTIMATE_OPT_IN_TEMPLATE_VERSION = "estimate_transactional_opt_in_v1"
 HELP_RESPONSE = (
     "MyHomeBro alerts: project updates, payments, and customer-care messages only. "
     "Reply STOP to opt out or START to opt back in. Help: support@myhomebro.com"
@@ -293,6 +294,7 @@ def get_sms_status_payload(*, phone_number: str | None = None, contractor: Contr
         "sms_opted_out": bool(consent.opted_out) if consent else False,
         "can_send_sms": bool(consent.can_send_sms) if consent else False,
         "consent_on_file": bool(consent),
+        "twilio_configured": bool(_twilio_ready()),
         "consent_text": consent.consent_text_snapshot if consent else SMS_OPT_IN_DISCLOSURE,
         "consent_source_page": consent.consent_source_page if consent else "",
         "quiet_hours": {
@@ -333,7 +335,7 @@ def set_sms_opt_in(
     consent.opted_out = False
     consent.opted_in_at = timezone.now()
     consent.opted_in_source = source
-    consent.last_inbound_keyword = "START" if source == SMSConsent.OPT_IN_SOURCE_INBOUND_START else consent.last_inbound_keyword
+    consent.last_inbound_keyword = "START" if source == SMSConsent.OPT_IN_SOURCE_INBOUND_START else "YES" if source == SMSConsent.OPT_IN_SOURCE_ESTIMATE_DELIVERY else consent.last_inbound_keyword
     if consent_text_snapshot:
         consent.consent_text_snapshot = consent_text_snapshot
     if consent_source_page:
@@ -610,6 +612,53 @@ def send_compliant_sms(
     return result
 
 
+def send_sms_opt_in_request(*, phone_number: str, company_name: str, contractor: Contractor | None = None, dedupe_key: str = "") -> dict[str, Any]:
+    """The sole pre-consent SMS exception: an explicit transactional opt-in request."""
+    normalized = normalize_phone_to_e164(phone_number)
+    consent = get_sms_consent(normalized)
+    result = {"ok": False, "status": "failed", "reason_code": "", "detail": "", "twilio_sid": "", "phone_number_e164": normalized}
+    if not normalized:
+        result.update({"reason_code": "invalid_phone", "detail": "A valid mobile number is required."})
+        return result
+    if consent and consent.opted_out:
+        result.update({"status": "opted_out", "reason_code": "opted_out", "detail": "Customer opted out of SMS."})
+        return result
+    if consent and consent.can_send_sms:
+        result.update({"status": "already_consented", "reason_code": "already_consented", "detail": "SMS consent is already active."})
+        return result
+    if not _twilio_ready():
+        result.update({"reason_code": "twilio_config_missing", "detail": "Text delivery is temporarily unavailable."})
+        return result
+    cache_key = _sms_dedupe_cache_key(phone_number_e164=normalized, dedupe_key=dedupe_key)
+    try:
+        if cache_key and cache.get(cache_key):
+            result.update({"status": "duplicate", "reason_code": "duplicate_recent", "detail": "An opt-in request was recently sent."})
+            return result
+    except Exception:
+        pass
+    body = (
+        f"MyHomeBro: {str(company_name or 'Your contractor')[:80]} would like to send you transactional project estimates, "
+        "agreements, appointment reminders, payment notices, and project updates by text. Reply YES to opt in. "
+        "Msg & data rates may apply. Reply STOP to cancel."
+    )
+    try:
+        message = _twilio_client().messages.create(to=normalized, body=body, messaging_service_sid=_messaging_service_sid())
+        sid = str(getattr(message, "sid", "") or "")
+        consent, _ = SMSConsent.objects.get_or_create(phone_number_e164=normalized)
+        if contractor and not consent.contractor_id:
+            consent.contractor = contractor
+        consent.consent_text_snapshot = f"{ESTIMATE_OPT_IN_TEMPLATE_VERSION}: {body}"
+        consent.consent_source_page = "estimate_delivery"
+        consent.save()
+        if cache_key:
+            cache.set(cache_key, True, timeout=60 * 60 * 24)
+        result.update({"ok": True, "status": "consent_request_sent", "reason_code": "consent_pending", "detail": "Opt-in request sent.", "twilio_sid": sid})
+        return result
+    except Exception:
+        result.update({"reason_code": "twilio_error", "detail": "Opt-in request could not be delivered."})
+        return result
+
+
 def maybe_send_sms_for_activity_event(event) -> dict[str, Any] | None:
     trigger_map = {
         "payment_released": lambda e: f"Your payment for Agreement #{e.agreement_id} has been released.",
@@ -643,15 +692,21 @@ def handle_inbound_sms(*, from_phone: str, body: str, message_sid: str = "") -> 
             source=SMSConsent.OPT_OUT_SOURCE_INBOUND_STOP,
             keyword=keyword,
         )
+        from projects.services.proposal_customer_review import cancel_pending_estimate_sms
+        cancel_pending_estimate_sms(normalized_phone)
         return {"message": STOP_RESPONSE, "keyword": "STOP", "phone_number_e164": normalized_phone}
     if keyword in OPT_IN_KEYWORDS:
         set_sms_opt_in(
             phone_number=normalized_phone,
             contractor=contractor,
             homeowner=homeowner,
-            source=SMSConsent.OPT_IN_SOURCE_INBOUND_START,
+            source=SMSConsent.OPT_IN_SOURCE_ESTIMATE_DELIVERY if keyword == "YES" else SMSConsent.OPT_IN_SOURCE_INBOUND_START,
+            consent_text_snapshot=(consent.consent_text_snapshot if consent else ""),
+            consent_source_page="estimate_delivery" if keyword == "YES" else "",
         )
-        return {"message": START_RESPONSE, "keyword": "START", "phone_number_e164": normalized_phone}
+        from projects.services.proposal_customer_review import release_pending_estimate_sms
+        release_pending_estimate_sms(normalized_phone, message_sid=message_sid)
+        return {"message": START_RESPONSE, "keyword": "YES" if keyword == "YES" else "START", "phone_number_e164": normalized_phone}
     if keyword in HELP_KEYWORDS:
         if consent is not None:
             consent.last_inbound_keyword = keyword

@@ -89,6 +89,10 @@ const proposal = {
   customer_email: "lead@example.com",
   customer_phone: "512-555-0100",
   customer_preferred_contact: "",
+  review_delivery_eligibility: {
+    email: { available: true, address: "lead@example.com", reason: "" },
+    sms: { available: true, immediate: false, requires_opt_in: true, phone: "+15125550100", consent_on_file: false, opted_out: false, twilio_configured: true, reason: "Text requires customer opt-in." },
+  },
   service_location: "123 Main St, Austin, TX",
   project_start_type: "flexible",
   project_start_date: "",
@@ -1044,7 +1048,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   expect(completedProgress).toBeGreaterThan(initialProgress);
 
   await page.getByTestId("estimate-workflow-step-review").click();
-  await expect(page.getByTestId("estimate-ready-review-status")).toContainText("Ready for Agreement");
+  await expect(page.getByTestId("estimate-ready-review-status")).toContainText("Ready to Send");
   await expect(page.getByTestId("estimate-review-project-summary")).toContainText("New Lead Customer");
   await expect(page.getByTestId("estimate-review-project-summary")).toContainText("456 Project Lane, Austin, TX");
   await expect(page.getByTestId("estimate-review-project-summary")).toContainText("Primary Bathroom Renovation");
@@ -1062,8 +1066,29 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Above your historical range");
   await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Based on 6 completed comparable projects");
   await expect(page.getByTestId("pricing-benchmark-market")).toContainText("Insufficient comparable MyHomeBro data");
-  await expect(page.getByTestId("estimate-agreement-handoff")).toContainText("Everything remains reviewable");
-  await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(1);
+  await expect(page.getByTestId("estimate-agreement-handoff")).toContainText("private, versioned estimate");
+  await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(0);
+  await page.getByTestId("estimate-send-customer").click();
+  await expect(page.getByTestId("estimate-send-dialog")).toContainText("Delivery Method");
+  await expect(page.getByTestId("estimate-delivery-email")).toBeChecked();
+  await expect(page.getByTestId("estimate-delivery-sms")).toBeEnabled();
+  await expect(page.getByTestId("estimate-send-dialog")).toContainText("SMS authorization required");
+  await page.screenshot({ path: "test-results/estimate-send-confirmation-consent-disabled.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "test-results/estimate-send-confirmation-mobile-390.png", fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.route("**/api/projects/proposals/42/send-review/", async (route) => {
+    const pendingProposal = { ...currentProposal, status: "ready", customer_review: { version: 1, sent_at: null, delivery: { email: { attempted: false, ok: false }, sms: { attempted: false, ok: false, status: "consent_pending", consent_request_sent: true } } } };
+    currentProposal = pendingProposal;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ proposal: pendingProposal, delivery: pendingProposal.customer_review.delivery }) });
+  });
+  await page.getByTestId("estimate-delivery-email").uncheck();
+  await page.getByTestId("estimate-delivery-sms").check();
+  await page.getByTestId("estimate-send-confirm").click();
+  await expect(page.getByTestId("estimate-review-lifecycle")).toContainText("Waiting for customer SMS authorization");
+  await expect(page.getByTestId("estimate-delivery-status")).toContainText("Waiting for opt-in");
+  await expect(page.getByRole("button", { name: "Resend opt-in request" })).toBeVisible();
   await expect(page.getByTestId("proposal-history").locator("> div")).toHaveCount(2);
   await expect(page.getByTestId("proposal-history-toggle")).toHaveAttribute("aria-expanded", "false");
   await page.getByTestId("proposal-history-toggle").click();
@@ -1112,13 +1137,6 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
   await page.setViewportSize({ width: 1280, height: 900 });
 
-  await page.getByTestId("estimate-ready-create-agreement").click();
-  await expect(page).toHaveURL(/\/app\/agreements\/new\/wizard\?step=1/);
-  await expect(page.getByTestId("agreement-assistant-prefill-banner")).toContainText("Estimate checklist data prefilled");
-  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
-  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$200.00");
-  await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Demo, prep, and install.");
-  await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Crew labor");
 });
 
 test("Clarification Questions support suggestions, editing, navigation, ignore, and reopen", async ({ page }) => {

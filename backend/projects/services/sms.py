@@ -35,7 +35,7 @@ OPT_OUT_KEYWORDS = {
     "OPTOUT",
 }
 HELP_KEYWORDS = {"HELP", "INFO"}
-OPT_IN_KEYWORDS = {"START", "UNSTOP"}
+OPT_IN_KEYWORDS = {"START", "UNSTOP", "YES"}
 
 
 def _twilio_enabled() -> bool:
