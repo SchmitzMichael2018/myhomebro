@@ -584,7 +584,8 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
 
   await expect(page).toHaveURL(/section=customer/);
-  await expect(page.getByTestId("proposal-workspace-header")).toContainText(/% ready/);
+  await expect(page.getByTestId("proposal-workspace-header")).toContainText("Not Ready to Send");
+  await expect(page.getByTestId("estimate-header-progress")).toContainText("Estimate completeness:");
   const topTabs = page.getByTestId("estimate-workflow-tabs");
   await expect(topTabs.getByRole("tab")).toHaveCount(4);
   await expect(page.locator('[role="tabpanel"]')).toHaveCount(1);
@@ -608,7 +609,7 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
 
   await page.getByTestId("estimate-workflow-step-review").click();
   await expect(page).toHaveURL(/section=ready/);
-  await expect(page.getByTestId("estimate-step-panel-review")).toContainText("Agreement blockers remain");
+  await expect(page.getByTestId("estimate-step-panel-review")).toContainText("Not Ready to Send");
   await expect(page.getByTestId("proposal-section-estimate")).toHaveCount(0);
   await page.goBack();
   await expect(page.getByTestId("estimate-workflow-step-pricing")).toHaveAttribute("aria-selected", "true");
@@ -834,7 +835,7 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
 
   await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("estimate-workflow-step-project")).toBeVisible();
-  await expect(page.getByTestId("estimate-header-progress")).toContainText("% ready");
+  await expect(page.getByTestId("estimate-header-progress")).toContainText("Estimate completeness:");
   await expect(page.getByTestId("estimate-step-panel-project")).toContainText("Customer & Contact");
   const initialProgress = Number((await page.getByTestId("estimate-header-progress").innerText()).replace(/[^0-9]/g, ""));
 
@@ -1049,6 +1050,9 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
 
   await page.getByTestId("estimate-workflow-step-review").click();
   await expect(page.getByTestId("estimate-ready-review-status")).toContainText("Ready to Send");
+  await expect(page.getByTestId("estimate-header-send-status")).toHaveText("Ready to Send");
+  await expect(page.getByTestId("proposal-workspace-header")).toContainText("0 blockers");
+  await expect(page.getByTestId("estimate-header-progress")).toContainText("Optional details remain");
   await expect(page.getByTestId("estimate-review-project-summary")).toContainText("New Lead Customer");
   await expect(page.getByTestId("estimate-review-project-summary")).toContainText("456 Project Lane, Austin, TX");
   await expect(page.getByTestId("estimate-review-project-summary")).toContainText("Primary Bathroom Renovation");
@@ -1112,12 +1116,15 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect.poll(() => pricingAssistantPayload?.context?.active_workspace).toBe("review");
   expect(pricingAssistantPayload.context.proposal_summary.review).toMatchObject({
     ready: true,
+    send_ready: true,
+    required_items_remaining: 0,
     agreement_creation_available: true,
     pricing_benchmark: {
       contractor: { count: 6, position: "above" },
       regional: { available: false, minimum_required: 5 },
     },
   });
+  expect(pricingAssistantPayload.context.proposal_summary.review.completeness_percent).toBeLessThan(100);
   expect(pricingAssistantPayload.context.proposal_summary.project).toMatchObject({
     customer: "New Lead Customer",
     title: "Primary Bathroom Renovation",

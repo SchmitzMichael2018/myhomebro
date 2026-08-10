@@ -49,7 +49,7 @@ const WORKFLOW_GROUPS = [
     label: "Review",
     purpose: "Confirm the estimate is complete and prepare it for agreement conversion.",
     sections: [
-      ["ready", "Ready for Agreement"],
+      ["ready", "Ready to Send"],
       ["notes", "Notes"],
       ["history", "History"],
     ],
@@ -1081,9 +1081,11 @@ function buildEstimateChecklist({ proposal, draft, totals, photos, documents, cl
   return {
     items,
     percent: checklistPercent(items),
+    completenessPercent: checklistPercent(items),
     readyMinimum,
+    sendReady: readyMinimum,
     completedCount: items.filter((item) => item.complete).length,
-    requiredMissing: items.filter((item) => item.required && !item.complete),
+    requiredMissing: items.filter((item) => item.required && item.key !== "ready" && !item.complete),
   };
 }
 
@@ -1490,6 +1492,9 @@ export default function ProposalWorkspacePage() {
         },
         review: activeStep.key === "review" ? {
           ready: estimateChecklist.readyMinimum,
+          send_ready: estimateChecklist.sendReady,
+          completeness_percent: estimateChecklist.completenessPercent,
+          required_items_remaining: estimateChecklist.requiredMissing.length,
           blockers: estimateChecklist.requiredMissing.map((item) => item.title),
           customer: proposal.customer_name || "",
           project_title: proposal.project_title || "",
@@ -2328,7 +2333,7 @@ export default function ProposalWorkspacePage() {
                   {estimateChecklist.percent}% complete
                 </span>
                 <span className={`rounded-full px-3 py-1 text-xs font-black ${estimateChecklist.readyMinimum ? "bg-emerald-400 text-emerald-950" : "bg-amber-300 text-amber-950"}`}>
-                  {estimateChecklist.readyMinimum ? "Ready for Agreement" : "Checklist in progress"}
+                  {estimateChecklist.sendReady ? "Ready to Send" : "Not Ready to Send"}
                 </span>
               </div>
             </div>
@@ -2556,11 +2561,12 @@ export default function ProposalWorkspacePage() {
         </div>
       ) : null}
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-sky-200/14 bg-[#061d42]/95 px-4 py-3 text-sm font-black text-white shadow-sm" data-testid="proposal-workspace-header" aria-live="polite">
-        <span data-testid="estimate-header-progress">{estimateChecklist.percent}% ready</span>
+        <span data-testid="estimate-header-send-status">{estimateChecklist.sendReady ? "Ready to Send" : "Not Ready to Send"}</span>
         <span aria-hidden="true">·</span>
-        <span>{estimateChecklist.requiredMissing.length} required item{estimateChecklist.requiredMissing.length === 1 ? "" : "s"} remaining</span>
+        <span>{estimateChecklist.sendReady ? "0 blockers" : `${estimateChecklist.requiredMissing.length} required item${estimateChecklist.requiredMissing.length === 1 ? "" : "s"} remaining`}</span>
         <span aria-hidden="true">·</span>
         <span>{money(totals.total)}</span>
+        <span className="basis-full text-xs font-semibold text-sky-100/65" data-testid="estimate-header-progress">Estimate completeness: {estimateChecklist.completenessPercent}%{estimateChecklist.sendReady && estimateChecklist.completenessPercent < 100 ? " · Optional details remain, but they are not required to send." : ""}</span>
         {isReadOnlyHistory ? <span className="ml-auto text-emerald-200">Converted history</span> : null}
       </div>
 
@@ -2677,8 +2683,8 @@ export default function ProposalWorkspacePage() {
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
                   <div className="rounded-xl border border-white/10 bg-white/8 p-3">
-                    <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Readiness</div>
-                    <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.percent}%</div>
+                    <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Estimate completeness</div>
+                    <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.completenessPercent}%</div>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-white/8 p-3">
                     <div className="text-xs font-black uppercase tracking-[0.16em] text-sky-100/55">Unresolved blockers</div>
@@ -2776,7 +2782,7 @@ export default function ProposalWorkspacePage() {
                     ["Suggested Questions", "clarifications", true],
                     ["Template Match", "assistant", true],
                     ["Generate Scope", "scope", !compactText(draft.included_work)],
-                    ["Estimate Readiness", "overview", true],
+                    ["Estimate Completeness", "overview", true],
                   ].map(([label, target, show]) => show ? (
                     <button
                       key={label}
@@ -2795,11 +2801,11 @@ export default function ProposalWorkspacePage() {
             <div className="mt-4 rounded-xl border border-white/10 bg-white/7 p-4" data-testid="proposal-readiness-missing">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <div className="text-xs font-black uppercase tracking-wide text-sky-100/58">Estimate Readiness</div>
-                  <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.percent}%</div>
+                  <div className="text-xs font-black uppercase tracking-wide text-sky-100/58">Estimate Completeness</div>
+                  <div className="mt-1 text-2xl font-black text-white">{estimateChecklist.completenessPercent}%</div>
                 </div>
                 <button type="button" onClick={() => setActive("overview")} className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-black text-white">
-                  Jump to Readiness
+                  Review completeness
                 </button>
               </div>
               {estimateChecklist.requiredMissing.length ? (
@@ -3377,11 +3383,12 @@ export default function ProposalWorkspacePage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <div className={`text-lg font-black ${estimateChecklist.readyMinimum ? "text-emerald-100" : "text-amber-100"}`} data-testid="estimate-ready-review-status">
-                      {estimateChecklist.readyMinimum ? "Ready to Send" : "Estimate blockers remain"}
+                      {estimateChecklist.sendReady ? "Ready to Send" : "Not Ready to Send"}
                     </div>
                     <p className="mt-1 text-sm font-semibold text-sky-50/80">
-                      {estimateChecklist.readyMinimum ? "This estimate is complete and ready to send to the customer for review." : "Resolve the remaining required items before sending the estimate."}
+                      {estimateChecklist.sendReady ? "All required information is complete." : "Resolve the remaining required items before sending the estimate."}
                     </p>
+                    {estimateChecklist.sendReady && estimateChecklist.completenessPercent < 100 ? <p className="mt-1 text-xs font-semibold text-sky-100/60">Optional details are still incomplete, but they are not required to send this estimate.</p> : null}
                   </div>
                   <div className="shrink-0 text-left sm:text-right"><span className="block text-xs font-black uppercase tracking-wide text-sky-100/55">Estimate total</span><strong className="text-xl text-white">{money(totals.total)}</strong></div>
                 </div>
