@@ -183,21 +183,42 @@ def public_review_payload(review: ProposalReviewVersion, request=None) -> dict:
 def review_delivery_eligibility(proposal: Proposal) -> dict:
     email = proposal.customer_email.strip().lower()
     sms = get_sms_status_payload(phone_number=proposal.customer_phone)
+    normalized_phone = sms["phone_number_e164"]
+    valid_phone = bool(normalized_phone.startswith("+") and normalized_phone[1:].isdigit() and 8 <= len(normalized_phone[1:]) <= 15)
+    latest = proposal.review_versions.order_by("-version").first()
+    pending = bool(latest and (latest.delivery_state or {}).get("sms", {}).get("status") == "consent_pending")
+    if not valid_phone:
+        sms_state = "no_phone"
+    elif sms["sms_opted_out"]:
+        sms_state = "opted_out"
+    elif not sms["twilio_configured"]:
+        sms_state = "provider_unavailable"
+    elif sms["sms_enabled"]:
+        sms_state = "ready"
+    elif pending:
+        sms_state = "consent_pending"
+    else:
+        sms_state = "consent_required"
+    sms_available = sms_state in {"ready", "consent_required", "consent_pending"}
     return {
         "email": {"available": bool(email), "address": email, "reason": "" if email else "No valid email address."},
         "sms": {
-            "available": bool(sms["phone_number_e164"] and not sms["sms_opted_out"] and sms["twilio_configured"]),
-            "immediate": bool(sms["phone_number_e164"] and sms["sms_enabled"] and sms["twilio_configured"]),
-            "requires_opt_in": bool(sms["phone_number_e164"] and not sms["sms_enabled"] and not sms["sms_opted_out"] and sms["twilio_configured"]),
-            "phone": sms["phone_number_e164"],
+            "state": sms_state,
+            "available": sms_available,
+            "immediate": sms_state == "ready",
+            "requires_opt_in": sms_state == "consent_required",
+            "can_request_consent": sms_state in {"consent_required", "consent_pending"},
+            "consent_active": sms_state == "ready",
+            "phone": normalized_phone,
             "consent_on_file": sms["consent_on_file"],
             "opted_out": sms["sms_opted_out"],
             "twilio_configured": sms["twilio_configured"],
             "reason": (
-                "No mobile number available." if not sms["phone_number_e164"] else
-                "Customer opted out of SMS." if sms["sms_opted_out"] else
-                "Text requires customer opt-in." if not sms["sms_enabled"] else
-                "Text delivery is temporarily unavailable." if not sms["twilio_configured"] else ""
+                "No valid mobile number." if sms_state == "no_phone" else
+                "Customer opted out of SMS." if sms_state == "opted_out" else
+                "Text delivery is temporarily unavailable." if sms_state == "provider_unavailable" else
+                "Waiting for customer opt-in." if sms_state == "consent_pending" else
+                "SMS authorization required." if sms_state == "consent_required" else "Text available."
             ),
         },
     }

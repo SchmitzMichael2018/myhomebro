@@ -55,7 +55,7 @@ def _twilio_ready() -> bool:
     return bool(
         (getattr(settings, "TWILIO_ACCOUNT_SID", None) or os.getenv("TWILIO_ACCOUNT_SID"))
         and (getattr(settings, "TWILIO_AUTH_TOKEN", None) or os.getenv("TWILIO_AUTH_TOKEN"))
-        and (getattr(settings, "TWILIO_MESSAGING_SERVICE_SID", None) or os.getenv("TWILIO_MESSAGING_SERVICE_SID"))
+        and (_messaging_service_sid() or _from_phone_number())
         and Client is not None
     )
 
@@ -72,6 +72,23 @@ def _messaging_service_sid() -> str:
         or os.getenv("TWILIO_MESSAGING_SERVICE_SID")
         or ""
     ).strip()
+
+
+def _from_phone_number() -> str:
+    return (
+        getattr(settings, "TWILIO_PHONE_NUMBER", None) or os.getenv("TWILIO_PHONE_NUMBER")
+        or getattr(settings, "TWILIO_FROM_NUMBER", None) or os.getenv("TWILIO_FROM_NUMBER") or ""
+    ).strip()
+
+
+def _twilio_send_kwargs(*, to: str, body: str) -> dict[str, str]:
+    payload = {"to": to, "body": body}
+    messaging_service_sid = _messaging_service_sid()
+    if messaging_service_sid:
+        payload["messaging_service_sid"] = messaging_service_sid
+    else:
+        payload["from_"] = _from_phone_number()
+    return payload
 
 
 def _activity_preview(body: str) -> str:
@@ -543,11 +560,7 @@ def send_compliant_sms(
         return result
 
     try:
-        message = _twilio_client().messages.create(
-            to=normalized_phone,
-            body=text,
-            messaging_service_sid=_messaging_service_sid(),
-        )
+        message = _twilio_client().messages.create(**_twilio_send_kwargs(to=normalized_phone, body=text))
         sid = str(getattr(message, "sid", "") or "")
         result.update({"ok": True, "blocked": False, "status": "sent", "reason_code": "sent", "detail": "SMS queued.", "twilio_sid": sid})
         if dedupe_key:
@@ -642,7 +655,7 @@ def send_sms_opt_in_request(*, phone_number: str, company_name: str, contractor:
         "Msg & data rates may apply. Reply STOP to cancel."
     )
     try:
-        message = _twilio_client().messages.create(to=normalized, body=body, messaging_service_sid=_messaging_service_sid())
+        message = _twilio_client().messages.create(**_twilio_send_kwargs(to=normalized, body=body))
         sid = str(getattr(message, "sid", "") or "")
         consent, _ = SMSConsent.objects.get_or_create(phone_number_e164=normalized)
         if contractor and not consent.contractor_id:

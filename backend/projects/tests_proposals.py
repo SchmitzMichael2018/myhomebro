@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -16,12 +16,13 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalPortalActivation, ProposalReviewVersion
 from projects.models_sms import SMSConsent
-from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, token_for
+from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, review_delivery_eligibility, token_for
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
 from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
 from projects.services.contractor_directory import normalize_business_name
 from projects.services.sms_service import handle_inbound_sms
+from projects.services import sms_service
 from projects.views.customer_portal import _estimate_rows
 
 
@@ -426,6 +427,36 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertFalse(review.delivery_state["sms"]["ok"])
         self.assertEqual(review.delivery_state["succeeded_channels"], ["email"])
         self.assertNotIn("twilio_error", review.delivery_state["sms"]["message"])
+
+    def test_sms_eligibility_exposes_explicit_channel_states(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=999, project_title="Kitchen",
+            customer_name="Casey", customer_phone="5125550199",
+        )
+        with patch("projects.services.sms_service._twilio_ready", return_value=True):
+            self.assertEqual(review_delivery_eligibility(proposal)["sms"]["state"], "consent_required")
+            consent = SMSConsent.objects.create(phone_number_e164="+15125550199", can_send_sms=True, opted_out=False)
+            self.assertEqual(review_delivery_eligibility(proposal)["sms"]["state"], "ready")
+            consent.can_send_sms = False; consent.save(update_fields=["can_send_sms"])
+            review = ProposalReviewVersion.objects.create(proposal=proposal, version=1, customer_email="", snapshot={}, delivery_state={"sms": {"status": "consent_pending"}})
+            self.assertEqual(review_delivery_eligibility(proposal)["sms"]["state"], "consent_pending")
+            consent.opted_out = True; consent.save(update_fields=["opted_out"])
+            self.assertEqual(review_delivery_eligibility(proposal)["sms"]["state"], "opted_out")
+            review.delete(); proposal.customer_phone = "not-a-phone"; proposal.save(update_fields=["customer_phone"])
+            self.assertEqual(review_delivery_eligibility(proposal)["sms"]["state"], "no_phone")
+        proposal.customer_phone = "5125550199"; proposal.save(update_fields=["customer_phone"])
+        consent.opted_out = False; consent.save(update_fields=["opted_out"])
+        with patch("projects.services.sms_service._twilio_ready", return_value=False):
+            self.assertEqual(review_delivery_eligibility(proposal)["sms"]["state"], "provider_unavailable")
+
+    @override_settings(
+        TWILIO_ACCOUNT_SID="AC-test", TWILIO_AUTH_TOKEN="token", TWILIO_MESSAGING_SERVICE_SID="",
+        TWILIO_PHONE_NUMBER="+15551234567", TWILIO_FROM_NUMBER="",
+    )
+    def test_twilio_sender_number_is_a_supported_provider_configuration(self):
+        with patch("projects.services.sms_service.Client", object()):
+            self.assertTrue(sms_service._twilio_ready())
+            self.assertEqual(sms_service._twilio_send_kwargs(to="+15125550199", body="Test")["from_"], "+15551234567")
 
     @patch("projects.services.proposal_customer_review.send_sms_opt_in_request")
     @patch("projects.services.sms_service._twilio_ready", return_value=True)

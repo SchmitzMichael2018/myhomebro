@@ -91,7 +91,7 @@ const proposal = {
   customer_preferred_contact: "",
   review_delivery_eligibility: {
     email: { available: true, address: "lead@example.com", reason: "" },
-    sms: { available: true, immediate: false, requires_opt_in: true, phone: "+15125550100", consent_on_file: false, opted_out: false, twilio_configured: true, reason: "Text requires customer opt-in." },
+    sms: { state: "consent_required", available: true, immediate: false, requires_opt_in: true, can_request_consent: true, consent_active: false, phone: "+15125550100", consent_on_file: false, opted_out: false, twilio_configured: true, reason: "SMS authorization required." },
   },
   service_location: "123 Main St, Austin, TX",
   project_start_type: "flexible",
