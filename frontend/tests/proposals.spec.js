@@ -604,7 +604,7 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
 
   await page.getByTestId("estimate-workflow-step-review").click();
   await expect(page).toHaveURL(/section=ready/);
-  await expect(page.getByTestId("estimate-step-panel-review")).toContainText("Ready for Agreement");
+  await expect(page.getByTestId("estimate-step-panel-review")).toContainText("Agreement blockers remain");
   await expect(page.getByTestId("proposal-section-estimate")).toHaveCount(0);
   await page.goBack();
   await expect(page.getByTestId("estimate-workflow-step-pricing")).toHaveAttribute("aria-selected", "true");
@@ -744,11 +744,13 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.route("**/api/projects/proposals/45/", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...proposal, id: 45, status: "converted", status_label: "Converted", linked_agreement_id: 450 }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ...proposal, id: 45, status: "converted", status_label: "Converted", linked_agreement_id: 450, linked_agreement_url: "/app/agreements/450" }) });
   });
   await page.goto("/app/proposals/45", { waitUntil: "domcontentloaded" });
   await page.getByTestId("estimate-workflow-step-review").click();
   await expect(page.getByTestId("proposal-nav-ready")).toHaveAttribute("aria-label", /Required, Blocked/);
+  await expect(page.getByTestId("estimate-open-agreement")).toHaveAttribute("href", "/app/agreements/450");
+  await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(0);
 });
 
 test("Estimate Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {

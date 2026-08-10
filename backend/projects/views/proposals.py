@@ -234,6 +234,9 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "linked_agreement_id": getattr(linked_agreement, "id", None),
         "linked_agreement_title": linked_agreement_title,
         "linked_agreement_url": f"/app/agreements/{linked_agreement.id}" if linked_agreement is not None else "",
+        "converted_at": _format_datetime(proposal.converted_at),
+        "conversion_method": proposal.conversion_method,
+        "converted_review_version": getattr(proposal.converted_review_version, "version", None),
         "customer_id": customer_id,
         "homeowner_id": customer_id,
         "estimate_appointment_id": proposal.estimate_appointment_id,
@@ -301,6 +304,7 @@ def _proposal_queryset(contractor):
             "contractor_opportunity__converted_agreement__project",
             "converted_agreement",
             "converted_agreement__project",
+            "converted_review_version",
             "estimate_appointment",
         )
         .prefetch_related("measurements", "line_items", "attachments", "activity", "review_versions")

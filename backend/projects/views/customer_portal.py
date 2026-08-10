@@ -97,7 +97,7 @@ from projects.models_amendment_request import AmendmentRequest, AmendmentRequest
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
-from projects.models_proposals import ProposalReviewVersion
+from projects.models_proposals import Proposal, ProposalReviewVersion
 from projects.services.proposal_customer_review import token_for as proposal_review_token
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
@@ -3826,7 +3826,7 @@ def _estimate_rows(email: str) -> list[dict]:
         project = snapshot.get("project") or {}
         pricing = snapshot.get("pricing") or {}
         proposal = review.proposal
-        status_value = review.decision if review.decision != ProposalReviewVersion.DECISION_PENDING else proposal.status
+        status_value = Proposal.STATUS_CONVERTED if proposal.status == Proposal.STATUS_CONVERTED else (review.decision if review.decision != ProposalReviewVersion.DECISION_PENDING else proposal.status)
         if review.expires_at and review.expires_at <= timezone.now() and status_value in {"sent", "viewed"}:
             status_value = "expired"
         agreement = proposal.converted_agreement

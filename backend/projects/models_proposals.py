@@ -155,6 +155,15 @@ class Proposal(models.Model):
         blank=True,
         related_name="source_proposal",
     )
+    converted_review_version = models.ForeignKey(
+        "projects.ProposalReviewVersion",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="converted_proposals",
+    )
+    converted_at = models.DateTimeField(null=True, blank=True)
+    conversion_method = models.CharField(max_length=24, blank=True, default="")
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -380,6 +389,7 @@ class ProposalActivity(models.Model):
     EVENT_ESTIMATE_DECLINED = "estimate_declined"
     EVENT_ESTIMATE_REVISION_REQUESTED = "estimate_revision_requested"
     EVENT_AGREEMENT_OVERRIDE = "agreement_override"
+    EVENT_AGREEMENT_CREATED = "agreement_created"
     EVENT_CHOICES = [
         (EVENT_CREATED, "Proposal Created"),
         (EVENT_APPOINTMENT_LINKED, "Appointment Linked"),
@@ -402,6 +412,7 @@ class ProposalActivity(models.Model):
         (EVENT_ESTIMATE_DECLINED, "Estimate Declined"),
         (EVENT_ESTIMATE_REVISION_REQUESTED, "Estimate Revision Requested"),
         (EVENT_AGREEMENT_OVERRIDE, "Agreement Review Override"),
+        (EVENT_AGREEMENT_CREATED, "Agreement Created"),
     ]
 
     proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name="activity")

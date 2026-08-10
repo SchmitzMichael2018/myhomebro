@@ -1454,6 +1454,9 @@ export default function AgreementWizard() {
       "Draft agreement. Details will be completed after template selection or manual entry.";
 
     const payload = {
+      ...(forDraftCreate && assistantHandoff.draftPayload?.source === "proposal" && assistantHandoff.draftPayload?.proposal_id
+        ? { source_proposal_id: Number(assistantHandoff.draftPayload.proposal_id) }
+        : {}),
       homeowner: dLocal.homeowner ? Number(dLocal.homeowner) : null,
       title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,
       project_title: forDraftCreate ? rawTitle || fallbackTitle : rawTitle,

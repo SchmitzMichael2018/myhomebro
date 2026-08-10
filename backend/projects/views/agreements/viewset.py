@@ -59,6 +59,11 @@ from projects.services.planning_validation import (
     revalidate_unsigned_pipeline_for_committed_agreement,
     validate_agreement_planning,
 )
+from projects.services.proposal_conversion import (
+    ProposalConversionError,
+    finalize_proposal_conversion,
+    prepare_proposal_conversion,
+)
 
 from projects.services.agreement_completion import (
     check_agreement_completion,
@@ -522,10 +527,31 @@ class AgreementViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            payload = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+            source_proposal_id = payload.pop("source_proposal_id", None)
+            conversion_context = None
+            if source_proposal_id not in (None, ""):
+                if contractor is None:
+                    raise ProposalConversionError("Only the owning contractor can convert an accepted estimate.", status_code=403)
+                try:
+                    source_proposal_id = int(source_proposal_id)
+                except (TypeError, ValueError):
+                    raise ProposalConversionError("Choose a valid source estimate.")
+                conversion_context = prepare_proposal_conversion(contractor=contractor, proposal_id=source_proposal_id)
+                if conversion_context.existing_agreement is not None:
+                    existing_serializer = self.get_serializer(conversion_context.existing_agreement)
+                    response_data = dict(existing_serializer.data)
+                    response_data["conversion"] = {
+                        "converted": True,
+                        "created": False,
+                        "agreement_id": conversion_context.existing_agreement.id,
+                        "agreement_route": f"/app/agreements/{conversion_context.existing_agreement.id}/wizard?step=1",
+                    }
+                    return Response(response_data, status=status.HTTP_200_OK)
+                payload.update(conversion_context.trusted_payload)
+
             payload, _created_project = ensure_project_for_agreement_payload(
-                payload=request.data.copy()
-                if hasattr(request.data, "copy")
-                else dict(request.data),
+                payload=payload,
                 contractor=contractor,
             )
 
@@ -547,6 +573,8 @@ class AgreementViewSet(viewsets.ModelViewSet):
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
             self.perform_create(serializer)
+            if conversion_context is not None:
+                finalize_proposal_conversion(context=conversion_context, agreement=serializer.instance, actor=user)
             if contractor is not None:
                 try:
                     mark_first_project_started(contractor)
@@ -587,9 +615,19 @@ class AgreementViewSet(viewsets.ModelViewSet):
             except Exception as e:
                 print("Warning: address sync failed on create:", repr(e), file=sys.stderr)
 
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            response_data = dict(serializer.data)
+            if conversion_context is not None:
+                response_data["conversion"] = {
+                    "converted": True,
+                    "created": True,
+                    "agreement_id": serializer.instance.id,
+                    "agreement_route": f"/app/agreements/{serializer.instance.id}/wizard?step=1",
+                }
+            headers = self.get_success_headers(response_data)
+            return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
+        except ProposalConversionError as e:
+            return Response({"detail": e.detail}, status=e.status_code)
         except ValueError as e:
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:

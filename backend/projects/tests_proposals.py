@@ -8,14 +8,14 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Contractor
+from projects.models import Agreement, Contractor, Homeowner
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorOpportunity,
     OpportunityEstimateAppointment,
 )
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalPortalActivation, ProposalReviewVersion
-from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, portal_access, token_for
+from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, token_for
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
 from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
@@ -446,6 +446,74 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(len(own), 1)
         self.assertEqual(other, [])
         self.assertNotIn("never expose", str(own))
+
+    def _accepted_proposal_for_conversion(self, *, source_id=None):
+        homeowner = Homeowner.objects.create(created_by=self.contractor, full_name="Casey Homeowner", email="casey@example.com")
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, contractor_opportunity=self.opportunity,
+            source_type=Proposal.SOURCE_OPPORTUNITY, source_id=source_id or self.opportunity.id,
+            status=Proposal.STATUS_ACCEPTED, project_title="Accepted Kitchen", project_summary="Approved description",
+            customer_name="Casey Homeowner", customer_email="casey@example.com", service_location="123 Main St",
+            included_work="Install cabinets", excluded_work="Appliances", assumptions="Clear access", allowances="Fixtures",
+        )
+        ProposalLineItem.objects.create(proposal=proposal, category="labor", description="Installation", quantity=1, unit_price=500)
+        review = ProposalReviewVersion.objects.create(
+            proposal=proposal, version=1, customer_email=proposal.customer_email,
+            snapshot=build_customer_snapshot(proposal), decision=ProposalReviewVersion.DECISION_ACCEPTED,
+            decided_at=timezone.now(), accepted_by="Casey Homeowner", acceptance_acknowledgement=ACKNOWLEDGEMENT,
+        )
+        return homeowner, proposal, review
+
+    def test_accepted_proposal_conversion_is_authoritative_transactional_and_idempotent(self):
+        homeowner, proposal, review = self._accepted_proposal_for_conversion()
+        payload = {
+            "source_proposal_id": proposal.id, "homeowner": homeowner.id, "project_title": "Tampered title",
+            "description": "Tampered scope", "total_cost": "9999.00", "is_draft": True, "wizard_step": 1, "step_status": "step1",
+        }
+        created = self.client.post("/api/projects/agreements/", payload, format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        agreement_id = created.data["id"]
+        agreement = Agreement.objects.get(pk=agreement_id)
+        proposal.refresh_from_db(); self.opportunity.refresh_from_db()
+        self.assertEqual(agreement.total_cost, 500)
+        self.assertIn("Install cabinets", agreement.description)
+        self.assertNotIn("Tampered", agreement.description)
+        self.assertEqual(proposal.converted_agreement, agreement)
+        self.assertEqual(proposal.converted_review_version, review)
+        self.assertEqual(proposal.status, Proposal.STATUS_CONVERTED)
+        self.assertEqual(proposal.conversion_method, "online")
+        self.assertEqual(self.opportunity.converted_agreement, agreement)
+
+        repeated = self.client.post("/api/projects/agreements/", payload, format="json")
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(repeated.data["id"], agreement_id)
+        self.assertFalse(repeated.data["conversion"]["created"])
+        self.assertEqual(Agreement.objects.filter(contractor=self.contractor).count(), 1)
+        self.assertEqual(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_AGREEMENT_CREATED).count(), 1)
+
+    def test_conversion_rejects_unaccepted_cross_owner_stale_and_post_acceptance_edits(self):
+        for index, status_value in enumerate((Proposal.STATUS_READY, Proposal.STATUS_SENT, Proposal.STATUS_VIEWED, Proposal.STATUS_REVISION_REQUESTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED), start=100):
+            proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=index, status=status_value, project_title="Blocked", customer_name="Casey", customer_email="casey@example.com")
+            response = self.client.post("/api/projects/agreements/", {"source_proposal_id": proposal.id, "is_draft": True, "wizard_step": 1}, format="json")
+            self.assertEqual(response.status_code, 409, status_value)
+
+        homeowner, accepted, _review = self._accepted_proposal_for_conversion(source_id=999)
+        accepted.included_work = "Changed after acceptance"
+        accepted.save(update_fields=["included_work", "updated_at"])
+        changed = self.client.post("/api/projects/agreements/", {"source_proposal_id": accepted.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1}, format="json")
+        self.assertEqual(changed.status_code, 409)
+        self.assertIn("changed after acceptance", changed.data["detail"].lower())
+
+        accepted.included_work = "Install cabinets"
+        accepted.save(update_fields=["included_work", "updated_at"])
+        ProposalReviewVersion.objects.create(proposal=accepted, version=2, customer_email=accepted.customer_email, snapshot=build_customer_snapshot(accepted))
+        stale = self.client.post("/api/projects/agreements/", {"source_proposal_id": accepted.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1}, format="json")
+        self.assertEqual(stale.status_code, 409)
+        self.assertIn("current estimate version", stale.data["detail"].lower())
+
+        foreign = Proposal.objects.create(contractor=self.other_contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=1000, status=Proposal.STATUS_ACCEPTED, project_title="Foreign", customer_name="Other", customer_email="other-customer@example.com")
+        denied = self.client.post("/api/projects/agreements/", {"source_proposal_id": foreign.id, "is_draft": True, "wizard_step": 1}, format="json")
+        self.assertEqual(denied.status_code, 404)
 
     def test_project_identity_contact_and_address_are_proposal_owned_and_patchable(self):
         proposal = Proposal.objects.create(

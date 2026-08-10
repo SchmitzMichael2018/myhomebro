@@ -1495,6 +1495,9 @@ export default function ProposalWorkspacePage() {
           clarification_unresolved_count: clarificationRows.filter((row) => !row.complete).length,
           recent_activity: (proposal.activity || []).slice(0, 2).map((item) => activityDisplay(item).label),
           agreement_creation_available: estimateChecklist.readyMinimum && !isReadOnlyHistory,
+          converted: proposal.status === "converted",
+          agreement_status: proposal.linked_agreement_id ? "draft" : "",
+          agreement_link_available: Boolean(proposal.linked_agreement_url),
           pricing_benchmark: pricingBenchmark || undefined,
         } : undefined,
       },
@@ -3398,6 +3401,7 @@ export default function ProposalWorkspacePage() {
                   {["ready", "revision_requested", "declined", "expired"].includes(proposal.status) ? <button type="button" data-testid="estimate-send-customer" onClick={() => sendEstimateToCustomer(false)} disabled={!estimateChecklist.readyMinimum || reviewSending || isReadOnlyHistory} className={`${ESTIMATE_PRIMARY_GOLD_BUTTON} disabled:opacity-50`}><Mail size={16} /> {reviewSending ? "Sending…" : proposal.customer_review ? "Send Revised Estimate" : "Send Estimate to Customer"}</button> : null}
                   {["sent", "viewed"].includes(proposal.status) ? <button type="button" data-testid="estimate-resend-customer" onClick={() => sendEstimateToCustomer(true)} disabled={reviewSending} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><Mail size={16} /> {reviewSending ? "Sending…" : "Resend"}</button> : null}
                   {proposal.status === "accepted" ? <button type="button" data-testid="estimate-ready-create-agreement" onClick={createAgreementFromProposal} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><FileSignature size={16} /> Create Agreement</button> : null}
+                  {proposal.status === "converted" && proposal.linked_agreement_url ? <a data-testid="estimate-open-agreement" href={proposal.linked_agreement_url} className={ESTIMATE_PRIMARY_GOLD_BUTTON}><FileSignature size={16} /> Open Agreement</a> : null}
                 </div>
                 {!estimateChecklist.readyMinimum ? <p id="agreement-action-disabled-reason" className="mt-2 text-sm font-semibold text-amber-100">Complete the required items listed above to continue.</p> : null}
               </section>
