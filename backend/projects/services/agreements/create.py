@@ -18,13 +18,6 @@ NON_MODEL_FIELDS = {
     "zip",
     "zip_code",
 
-    # project-prefixed aliases
-    "project_address_line1",
-    "project_address_line2",
-    "project_address_city",
-    "project_address_state",
-    "project_postal_code",
-
     # UI-only helpers
     "project_address_same_as_homeowner",
     "use_default_warranty",

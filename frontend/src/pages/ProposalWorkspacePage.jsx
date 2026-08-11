@@ -11,6 +11,7 @@ import CustomerConversation from "../components/CustomerConversation.jsx";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 import { customUnitError, recognizeUnit, unitDisplay, unitValueForSave } from "../lib/units.js";
 import { buildMilestoneAllocations, getTemplatePricingState } from "../lib/templatePricingState.js";
+import { parseFormattedUsAddress } from "../lib/agreementAddress.js";
 
 const WORKFLOW_GROUPS = [
   {
@@ -909,22 +910,7 @@ function normalizeProposalClassificationForAgreement(projectType, projectSubtype
 }
 
 function parseServiceLocationForAgreement(serviceLocation) {
-  const raw = compactText(serviceLocation);
-  if (!raw) return { address_line1: "", city: "", state: "", postal_code: "" };
-
-  const parts = raw.split(",").map((part) => compactText(part)).filter(Boolean);
-  if (parts.length < 3) {
-    return { address_line1: raw, city: "", state: "", postal_code: "" };
-  }
-
-  const stateZip = parts[parts.length - 1] || "";
-  const stateZipMatch = stateZip.match(/^([A-Za-z]{2})\s+(\d{5}(?:-\d{4})?)$/);
-  return {
-    address_line1: parts.slice(0, -2).join(", "),
-    city: parts[parts.length - 2] || "",
-    state: stateZipMatch ? stateZipMatch[1].toUpperCase() : stateZip,
-    postal_code: stateZipMatch ? stateZipMatch[2] : "",
-  };
+  return parseFormattedUsAddress(serviceLocation);
 }
 
 function normalizeTemplateRecommendation(data, proposal) {

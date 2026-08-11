@@ -21123,6 +21123,45 @@ class AgreementStep1RecurringFieldSaveTests(TestCase):
         self.assertEqual(agreement.service_window_notes, "")
         self.assertEqual(agreement.recurring_summary_label, "")
 
+    def test_manual_structured_project_address_persists_without_geocoder_validation(self):
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "is_draft": True,
+                "wizard_step": 1,
+                "homeowner": self.homeowner.id,
+                "project_title": "Made-up Address Draft",
+                "title": "Made-up Address Draft",
+                "description": "Test new-construction location.",
+                "address_line1": "123 Test Project Lane",
+                "address_line2": "Suite 4",
+                "address_city": "San Antonio",
+                "address_state": "TX",
+                "address_postal_code": "78245",
+                "payment_mode": "escrow",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        agreement = Agreement.objects.get(pk=response.json()["id"])
+        self.assertEqual(agreement.project_address_line1, "123 Test Project Lane")
+        self.assertEqual(agreement.project_address_line2, "Suite 4")
+        self.assertEqual(agreement.project_address_city, "San Antonio")
+        self.assertEqual(agreement.project_address_state, "TX")
+        self.assertEqual(agreement.project_postal_code, "78245")
+        from projects.services.pdf.agreement_pdf import _project_addr_from_agreement
+
+        self.assertEqual(
+            _project_addr_from_agreement(agreement),
+            "123 Test Project Lane Suite 4 San Antonio, TX 78245",
+        )
+        refreshed = self.client.get(f"/api/projects/agreements/{agreement.id}/")
+        self.assertEqual(refreshed.status_code, 200)
+        self.assertEqual(refreshed.data["project_address_city"], "San Antonio")
+        self.assertEqual(refreshed.data["project_address_state"], "TX")
+        self.assertEqual(refreshed.data["project_postal_code"], "78245")
+
     def test_standard_step1_create_persists_scope_of_work_and_step_status(self):
         response = self.client.post(
             "/api/projects/agreements/",

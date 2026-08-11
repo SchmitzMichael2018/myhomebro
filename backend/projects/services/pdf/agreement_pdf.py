@@ -288,9 +288,10 @@ def _project_addr_from_agreement(ag: Agreement) -> str:
     parts.append(line1.strip())
   if line2.strip():
     parts.append(line2.strip())
-  tail_parts = [p.strip() for p in (city, state, postal) if str(p).strip()]
-  if tail_parts:
-    parts.append(" ".join(tail_parts))
+  city_state = ", ".join(p.strip() for p in (city, state) if str(p).strip())
+  location = f"{city_state} {postal.strip()}".strip()
+  if location:
+    parts.append(location)
 
   return " ".join(parts)
 

@@ -130,7 +130,8 @@ function componentShortText(component) {
   ).trim();
 }
 
-function parseAddressComponentsFromPlace(place) {
+// eslint-disable-next-line react-refresh/only-export-components
+export function parseAddressComponentsFromPlace(place) {
   const comps = place?.addressComponents || place?.address_components || [];
 
   const formattedLine1 = firstAddressLineFromFormatted(
@@ -139,6 +140,7 @@ function parseAddressComponentsFromPlace(place) {
 
   const streetNumber = componentLongText(pickComponent(comps, "street_number"));
   const route = componentLongText(pickComponent(comps, "route"));
+  const line2 = componentLongText(pickComponent(comps, "subpremise"));
 
   let line1 = [streetNumber, route].filter(Boolean).join(" ").trim();
   if (formattedLine1) {
@@ -168,7 +170,7 @@ function parseAddressComponentsFromPlace(place) {
   const postal_code = postalSuffix ? `${postal}-${postalSuffix}` : postal;
   const country = componentShortText(pickComponent(comps, "country")) || "US";
 
-  return { line1, city, state, postal_code, country };
+  return { line1, line2, city, state, postal_code, country };
 }
 
 function getPredictionText(prediction) {
@@ -480,7 +482,6 @@ export default function AddressAutocomplete({
       onChangeText?.(selectedValue);
       onSelect?.({
         ...parts,
-        line2: "",
         formatted_address,
         place_id,
         lat,

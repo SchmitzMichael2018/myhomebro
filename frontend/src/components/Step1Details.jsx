@@ -5731,10 +5731,20 @@ export default function Step1Details({
 
     const name = e?.target?.name;
     const rawValue = e?.target?.value;
+    const preservesLiteralInput = [
+      "project_title",
+      "address_line1",
+      "address_line2",
+      "address_city",
+      "address_state",
+      "address_postal_code",
+      "project_start_date",
+      "incidentals_reserve_amount",
+    ].includes(name);
     const value =
       name === "homeowner"
         ? safeTrim(rawValue)
-        : name === "project_title"
+        : preservesLiteralInput
         ? rawValue
         : normalizeStep1FieldValue(rawValue);
     const nextEvent = name ? { target: { name, value }, currentTarget: { name, value } } : e;

@@ -1,7 +1,8 @@
 // frontend/src/components/step1/AddressSection.jsx
 
-import React from "react";
+import React, { useRef, useState } from "react";
 import AddressAutocomplete from "../AddressAutocomplete.jsx";
+import { lookupUsZip, normalizeUsPostalInput } from "../../lib/agreementAddress.js";
 
 export default function AddressSection({
   locked,
@@ -17,6 +18,35 @@ export default function AddressSection({
   schedulePatch,
   onLocalChange,
 }) {
+  const zipLookupSequence = useRef(0);
+  const currentAddressRef = useRef(dLocal);
+  currentAddressRef.current = dLocal;
+  const [zipLookupStatus, setZipLookupStatus] = useState("");
+
+  const resolveZip = async (postalCode) => {
+    if (!/^\d{5}$/.test(postalCode)) return;
+    const sequence = ++zipLookupSequence.current;
+    setZipLookupStatus("Looking up city and state…");
+    const result = await lookupUsZip(postalCode);
+    if (sequence !== zipLookupSequence.current) return;
+    if (!result) {
+      setZipLookupStatus("");
+      return;
+    }
+    const current = currentAddressRef.current;
+    const patch = {
+      address_city: current.address_city || result.city,
+      address_state: current.address_state || result.state,
+    };
+    setDLocal((latest) => ({
+      ...latest,
+      address_city: latest.address_city || patch.address_city,
+      address_state: latest.address_state || patch.address_state,
+    }));
+    patchAgreement(patch, { silent: true });
+    setZipLookupStatus("City and state filled from ZIP. You can still edit them.");
+  };
+
   return (
     <>
       <div className="md:col-span-2">
@@ -40,6 +70,7 @@ export default function AddressSection({
             if (locked) return;
 
             const nextLine1 = a.line1 || dLocal.address_line1 || "";
+            const nextLine2 = a.line2 || dLocal.address_line2 || "";
             const nextCity = a.city || dLocal.address_city || "";
             const nextState = a.state || dLocal.address_state || "";
             const nextZip = a.postal_code || dLocal.address_postal_code || "";
@@ -49,6 +80,7 @@ export default function AddressSection({
             setDLocal((s) => ({
               ...s,
               address_line1: nextLine1,
+              address_line2: nextLine2,
               address_city: nextCity,
               address_state: nextState,
               address_postal_code: nextZip,
@@ -57,6 +89,7 @@ export default function AddressSection({
             patchAgreement(
               {
                 address_line1: nextLine1,
+                address_line2: nextLine2,
                 address_city: nextCity,
                 address_state: nextState,
                 address_postal_code: nextZip,
@@ -76,6 +109,7 @@ export default function AddressSection({
                 };
                 saved.address_search = a.formatted_address || a.line1 || "";
                 saved.address_line1 = nextLine1;
+                saved.address_line2 = nextLine2;
                 saved.address_city = nextCity;
                 saved.address_state = nextState;
                 saved.address_postal_code = nextZip;
@@ -181,21 +215,32 @@ export default function AddressSection({
           ZIP / Postal Code <span className="text-red-500">*</span>
         </label>
         <input id="mhb-addresssection-179"
+          data-testid="agreement-address-postal-code"
           className="w-full rounded border px-3 py-2 text-sm"
           name="address_postal_code"
           value={dLocal.address_postal_code}
+          inputMode="numeric"
+          autoComplete="postal-code"
+          maxLength={10}
           onChange={
             locked
               ? undefined
               : (e) => {
-                  onLocalChange(e);
-                  schedulePatch({ address_postal_code: e.target.value });
+                  const nextPostalCode = normalizeUsPostalInput(e.target.value);
+                  onLocalChange({ target: { name: "address_postal_code", value: nextPostalCode } });
+                  schedulePatch({ address_postal_code: nextPostalCode });
+                  setZipLookupStatus("");
+                  if (/^\d{5}$/.test(nextPostalCode)) resolveZip(nextPostalCode);
                 }
           }
-          onBlur={() => persistAddressNow({ silent: true })}
+          onBlur={() => {
+            persistAddressNow({ silent: true });
+            resolveZip(dLocal.address_postal_code);
+          }}
           placeholder="ZIP / Postal code (e.g., 78249)"
           disabled={locked}
         />
+        {zipLookupStatus ? <div className="mt-1 text-xs text-slate-500" aria-live="polite">{zipLookupStatus}</div> : null}
       </div>
     </>
   );
