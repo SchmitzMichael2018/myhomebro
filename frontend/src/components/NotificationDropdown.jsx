@@ -21,15 +21,24 @@ export default function NotificationDropdown({
 
   const openNotification = async (notification) => {
     const target = notification?.action_url || notification?.link || "";
+    onClose?.();
     try {
       if (onMarkRead && notification?.id) {
         await onMarkRead(notification.id);
       }
+    } catch (error) {
+      console.error("Unable to mark notification read", error);
     } finally {
-      onClose?.();
-      if (target) {
-        navigate(target);
-      }
+      if (target) navigate(target);
+    }
+  };
+
+  const markReadOnly = async (notification) => {
+    if (!onMarkRead || !notification?.id) return;
+    try {
+      await onMarkRead(notification.id);
+    } catch (error) {
+      console.error("Unable to mark notification read", error);
     }
   };
 
@@ -79,6 +88,7 @@ export default function NotificationDropdown({
                 unread={!notification.is_read}
                 actionNeeded={Boolean(notification.action_needed)}
                 onOpen={openNotification}
+                onMarkRead={markReadOnly}
                 compact={compact}
                 data-testid={`notification-item-${notification.id}`}
               />
@@ -110,4 +120,3 @@ export default function NotificationDropdown({
     </div>
   );
 }
-

@@ -287,6 +287,18 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "revision_request_message": latest_review.revision_request_message,
         "delivery": latest_review.delivery_state,
     } if latest_review else None)
+    data["customer_review_history"] = [
+        {
+            "version": item.version,
+            "decision": item.decision,
+            "decided_at": _format_datetime(item.decided_at),
+            "revision_request_message": item.revision_request_message,
+            "decline_reason": item.decline_reason,
+            "accepted_by": item.accepted_by,
+        }
+        for item in proposal.review_versions.all()
+        if item.decision != ProposalReviewVersion.DECISION_PENDING
+    ]
     data["review_delivery_eligibility"] = review_delivery_eligibility(proposal)
     if include_related:
         data["measurements"] = [_serialize_measurement(item) for item in proposal.measurements.all()]

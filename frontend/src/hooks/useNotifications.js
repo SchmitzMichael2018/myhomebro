@@ -38,11 +38,20 @@ export default function useNotifications({ limit = 10 } = {}) {
   const markRead = useCallback(
     async (notificationId) => {
       if (!notificationId) return null;
-      const { data } = await api.post(`/notifications/${notificationId}/read/`);
-      await fetchNotifications();
-      return data;
+      const previous = notifications;
+      const target = previous.find((row) => row.id === notificationId);
+      setNotifications((current) => current.map((row) => row.id === notificationId ? { ...row, is_read: true } : row));
+      if (target && !target.is_read) setUnreadCount((current) => Math.max(0, current - 1));
+      try {
+        const { data } = await api.post(`/notifications/${notificationId}/read/`);
+        return data;
+      } catch (error) {
+        setNotifications(previous);
+        if (target && !target.is_read) setUnreadCount((current) => current + 1);
+        throw error;
+      }
     },
-    [fetchNotifications]
+    [notifications]
   );
 
   const markAllRead = useCallback(async () => {
@@ -64,4 +73,3 @@ export default function useNotifications({ limit = 10 } = {}) {
     [notifications, unreadCount, loading, fetchNotifications, markRead, markAllRead]
   );
 }
-

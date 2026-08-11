@@ -8,6 +8,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const wrapperRef = useRef(null);
   const { notifications, unreadCount, totalCount, loading, refresh, markRead, markAllRead } = useNotifications({ limit: 10 });
+  const unreadNotifications = notifications.filter((notification) => !notification.is_read);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -65,13 +66,13 @@ export default function NotificationBell() {
         <>
           <NotificationDropdown
             data-testid="notifications-panel"
-            items={notifications}
+            items={unreadNotifications}
             unreadCount={unreadCount}
             onClose={() => setOpen(false)}
             onMarkRead={markRead}
             onMarkAllRead={markAllRead}
             loading={loading}
-            emptyLabel={loading ? "Loading notifications..." : "No notifications yet."}
+            emptyLabel={loading ? "Loading notifications..." : totalCount > 0 ? "You're all caught up." : "No notifications yet."}
           />
           <div className="sr-only" data-testid="notifications-total-count">
             {totalCount}

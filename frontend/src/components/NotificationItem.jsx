@@ -47,6 +47,7 @@ export default function NotificationItem({
   unread = false,
   actionNeeded = false,
   onOpen,
+  onMarkRead,
   compact = false,
   className = "",
   "data-testid": testId,
@@ -68,14 +69,17 @@ export default function NotificationItem({
     }
   };
 
+  const markReadOnly = async (event) => {
+    event.stopPropagation();
+    if (typeof onMarkRead === "function") await onMarkRead(notification);
+  };
+
   return (
-    <button
-      type="button"
+    <div
       data-testid={testId}
-      onClick={handleClick}
-      className={`group w-full rounded-2xl border px-4 py-3 text-left transition hover:border-slate-300 hover:bg-slate-50 ${toneClass} ${className}`.trim()}
+      className={`group w-full rounded-2xl border text-left transition hover:border-slate-300 hover:bg-slate-50 ${toneClass} ${className}`.trim()}
     >
-      <div className="flex items-start gap-3">
+      <button type="button" onClick={handleClick} className="flex w-full items-start gap-3 rounded-2xl px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label={`${title}. ${notification?.action_label || "Open notification"}`}>
         <div
           className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${
             actionNeeded
@@ -119,7 +123,8 @@ export default function NotificationItem({
             </span>
           </div>
         </div>
-      </div>
-    </button>
+      </button>
+      {unread && typeof onMarkRead === "function" ? <div className="border-t border-slate-200/70 px-4 py-2 text-right"><button type="button" onClick={markReadOnly} className="min-h-9 rounded-lg px-3 text-xs font-bold text-indigo-700 hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label={`Mark ${title} as read`} data-testid={`${testId}-mark-read`}>Mark as read</button></div> : null}
+    </div>
   );
 }

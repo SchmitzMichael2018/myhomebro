@@ -453,6 +453,34 @@ class ProposalWorkspaceFoundationTests(TestCase):
                 from projects.services.notification_center import notification_action_label
                 self.assertEqual(notification_action_label(notification), action_label)
 
+    def test_proposal_detail_returns_versioned_customer_request_history(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=702,
+            status=Proposal.STATUS_REVISION_REQUESTED, project_title="Bathroom",
+            customer_name="Casey", customer_email="casey@example.com",
+        )
+        first_time = timezone.now() - timedelta(days=2)
+        second_time = timezone.now()
+        ProposalReviewVersion.objects.create(
+            proposal=proposal, version=1, customer_email=proposal.customer_email, snapshot={},
+            decision=ProposalReviewVersion.DECISION_REVISION_REQUESTED, decided_at=first_time,
+            revision_request_message="Request A",
+        )
+        ProposalReviewVersion.objects.create(
+            proposal=proposal, version=2, customer_email=proposal.customer_email, snapshot={},
+            decision=ProposalReviewVersion.DECISION_REVISION_REQUESTED, decided_at=second_time,
+            revision_request_message="Request B",
+        )
+
+        response = self.client.get(f"/api/projects/proposals/{proposal.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["customer_review"]["revision_request_message"], "Request B")
+        self.assertEqual(
+            [(row["version"], row["revision_request_message"]) for row in response.data["customer_review_history"]],
+            [(2, "Request B"), (1, "Request A")],
+        )
+
     @patch("projects.services.proposal_customer_review.send_compliant_sms")
     @patch("projects.services.proposal_customer_review.send_postmark_email", return_value=(True, "sent"))
     @patch("projects.services.sms_service._twilio_ready", return_value=True)
