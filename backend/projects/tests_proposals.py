@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner, Notification, CustomerConversation, ConversationMessage
+from projects.models import Agreement, Contractor, Homeowner, Milestone, Notification, CustomerConversation, ConversationMessage
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorOpportunity,
@@ -793,6 +793,31 @@ class ProposalWorkspaceFoundationTests(TestCase):
             "total": "16500.00",
         })
         self.assertEqual(review.snapshot, accepted_snapshot)
+        milestone = Milestone.objects.create(agreement=agreement, title="Bathroom work", amount="15000.00", order=1)
+        template = ProjectTemplate.objects.create(contractor=self.contractor, name="Bathroom Remodel")
+        ProjectTemplateMilestone.objects.create(template=template, title="Template default", suggested_amount_percent="100.00")
+        applied = self.client.post(
+            f"/api/projects/agreements/{agreement.id}/apply-template/",
+            {"template_id": template.id, "overwrite_existing": True, "copy_text_fields": True},
+            format="json",
+        )
+        self.assertEqual(applied.status_code, 200, applied.data)
+        milestone.refresh_from_db(); agreement.refresh_from_db()
+        self.assertEqual(list(agreement.milestones.values_list("id", flat=True)), [milestone.id])
+        self.assertEqual(milestone.amount, 15000)
+        self.assertEqual(agreement.incidentals_reserve_amount, 1500)
+        self.assertTrue(applied.data["result"]["payment_allocation_preserved"])
+
+        scope_patch = self.client.patch(
+            f"/api/projects/agreements/{agreement.id}/",
+            {"description": "AI-refined scope", "scope_of_work": "AI-refined scope"},
+            format="json",
+        )
+        self.assertEqual(scope_patch.status_code, 200, scope_patch.data)
+        milestone.refresh_from_db(); agreement.refresh_from_db()
+        self.assertEqual(milestone.amount, 15000)
+        self.assertEqual(agreement.total_cost, 15000)
+        self.assertEqual(agreement.incidentals_reserve_amount, 1500)
         review.snapshot = {**accepted_snapshot, "pricing": {**accepted_snapshot["pricing"], "total": "999.00"}}
         with self.assertRaisesRegex(ProposalConversionError, "does not reconcile"):
             _trusted_agreement_payload(review)

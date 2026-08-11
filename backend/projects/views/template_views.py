@@ -253,6 +253,12 @@ class ApplyTemplateToAgreementView(APIView):
 
         overwrite_existing = serializer.validated_data["overwrite_existing"]
         copy_text_fields = serializer.validated_data["copy_text_fields"]
+        replace_payment_allocation = serializer.validated_data.get("replace_payment_allocation", False)
+        preserve_estimate_allocation = bool(
+            getattr(agreement, "source_proposal", None)
+            and agreement.milestones.exists()
+            and not replace_payment_allocation
+        )
         try:
             before_lineage_state = build_agreement_edit_lineage_state(agreement)
         except Exception:
@@ -273,6 +279,7 @@ class ApplyTemplateToAgreementView(APIView):
                 auto_schedule=serializer.validated_data.get("auto_schedule", False),
                 spread_enabled=serializer.validated_data.get("spread_enabled", False),
                 spread_total=serializer.validated_data.get("spread_total"),
+                preserve_existing_milestones=preserve_estimate_allocation,
             )
         except ValueError as exc:
             raise ValidationError(str(exc))

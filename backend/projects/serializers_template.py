@@ -481,6 +481,7 @@ class ProjectTemplateCreateUpdateSerializer(serializers.ModelSerializer):
 class ApplyTemplateSerializer(serializers.Serializer):
     template_id = serializers.IntegerField()
     overwrite_existing = serializers.BooleanField(default=True)
+    replace_payment_allocation = serializers.BooleanField(default=False, required=False)
     copy_text_fields = serializers.BooleanField(default=True)
     application_mode = serializers.ChoiceField(
         choices=("enhance", "replace_scope", "replace_identity"),

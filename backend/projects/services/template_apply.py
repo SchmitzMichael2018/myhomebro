@@ -1050,6 +1050,7 @@ def apply_template_to_agreement(
     auto_schedule: bool = False,
     spread_enabled: bool = False,
     spread_total: Optional[Any] = None,
+    preserve_existing_milestones: bool = False,
 ) -> dict:
     application_mode = normalize_template_application_mode(application_mode)
     template_rows = list(template.milestones.all().order_by("sort_order", "id"))
@@ -1067,6 +1068,28 @@ def apply_template_to_agreement(
             row.sort_order = item["sort_order"]
 
     preclear_milestone_total = _milestone_sum(agreement)
+    if preserve_existing_milestones and agreement.milestones.exists():
+        _persist_selected_template(agreement, template)
+        if copy_text_fields:
+            _copy_template_text_fields(agreement, template, application_mode=application_mode)
+        agreement.save(update_fields=["selected_template", "selected_template_name_snapshot"])
+        return {
+            "template_id": template.id,
+            "template_name": template.name,
+            "application_mode": application_mode,
+            "selected_template_id": template.id,
+            "selected_template_name_snapshot": template.name,
+            "deleted_existing_count": 0,
+            "created_count": 0,
+            "milestone_ids": list(agreement.milestones.order_by("order", "id").values_list("id", flat=True)),
+            "start_date": agreement.start,
+            "end_date": agreement.end,
+            "applied_estimated_days": None,
+            "auto_schedule": False,
+            "spread_enabled": False,
+            "spread_total": None,
+            "payment_allocation_preserved": True,
+        }
     deleted_count = 0
     if overwrite_existing:
         deleted_count = _clear_existing_milestones(agreement)

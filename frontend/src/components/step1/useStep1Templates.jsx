@@ -961,6 +961,7 @@ export default function useStep1Templates({
         template_id: template.id,
         application_mode: options?.application_mode || "enhance",
         overwrite_existing: true,
+        replace_payment_allocation: Boolean(options?.replace_payment_allocation),
         copy_text_fields: true,
         estimated_days: applyOptions.estimated_days,
         auto_schedule: shouldAutoSchedule,

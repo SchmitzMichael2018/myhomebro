@@ -48,6 +48,7 @@ import { normalizeProjectClass } from "../utils/projectClass.js";
 import { buildAiContext, serializeAiContext } from "../lib/aiContext.js";
 import { isModelRefusal } from "../lib/aiResponseParser.js";
 import { formatGeneratedScopeAsBullets } from "../lib/scopeFormat.js";
+import { buildAiScopePatch, mergeAiScopeFields } from "../lib/agreementScopeMutation.js";
 import ScopeDiffView from "./ScopeDiffView.jsx";
 
 function PrettyJson({ data }) {
@@ -2991,12 +2992,13 @@ export default function Step1Details({
     const nextDescription =
       action === "append" && cur ? `${cur}\n\n${suggestion}` : suggestion;
 
-    setDLocal((s) => ({ ...s, description: nextDescription, scope_of_work: nextDescription }));
+    const scopePatch = buildAiScopePatch({ description: nextDescription, scope_of_work: nextDescription });
+    setDLocal((current) => mergeAiScopeFields(current, scopePatch));
     if (!isNewAgreement) {
       writeCache({ description: nextDescription, scope_of_work: nextDescription });
     }
 
-    await patchAgreement({ description: nextDescription, scope_of_work: nextDescription }, { silent: true });
+    await patchAgreement(scopePatch, { silent: true });
     setAiPreview("");
     if (appliedTemplateId) {
       setScopeTemplatePromptVisible(true);
@@ -4158,11 +4160,6 @@ export default function Step1Details({
           project_type_ref: null,
           project_subtype: "",
           project_subtype_ref: null,
-          selected_template: null,
-          selected_template_id: null,
-          selected_template_name_snapshot: "",
-          project_template_id: null,
-          template_id: null,
           description: roughDescription,
           scope_of_work: roughDescription,
           step_status: "step1",
@@ -4177,11 +4174,6 @@ export default function Step1Details({
       project_type_ref: null,
       project_subtype: "",
       project_subtype_ref: null,
-      selected_template: null,
-      selected_template_id: null,
-      selected_template_name_snapshot: "",
-      project_template_id: null,
-      template_id: null,
       description: roughDescription,
       scope_of_work: roughDescription,
     }));
@@ -4792,11 +4784,6 @@ export default function Step1Details({
       project_type_ref: null,
       project_subtype: "",
       project_subtype_ref: null,
-      selected_template: null,
-      selected_template_id: null,
-      selected_template_name_snapshot: "",
-      project_template_id: null,
-      template_id: null,
       description: "",
       scope_of_work: "",
       ...nextValues,
@@ -4818,11 +4805,6 @@ export default function Step1Details({
           project_subtype_ref: projectSubtypeRef,
           description: refinedDescription || dLocal?.description || "",
           scope_of_work: refinedDescription || dLocal?.description || "",
-          selected_template: null,
-          selected_template_id: null,
-          selected_template_name_snapshot: "",
-          project_template_id: null,
-          template_id: null,
           step_status: "step1",
         },
         { silent: true }
@@ -5356,11 +5338,6 @@ export default function Step1Details({
           project_subtype_ref: nextSubtypeRef,
           description: nextDescription || "",
           scope_of_work: nextDescription || "",
-          selected_template: null,
-          selected_template_id: null,
-          selected_template_name_snapshot: "",
-          project_template_id: null,
-          template_id: null,
           step_status: "step1",
         },
         { silent: true }
