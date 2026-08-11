@@ -2507,6 +2507,9 @@ class Notification(models.Model):
     EVENT_MILESTONE_PENDING_APPROVAL = "milestone_pending_approval"
     EVENT_PAYMENT_RELEASED = "payment_released"
     EVENT_ESTIMATE_VIEWED = "estimate_viewed"
+    EVENT_ESTIMATE_CUSTOMER_MESSAGE = "estimate_customer_message"
+    EVENT_AGREEMENT_CUSTOMER_MESSAGE = "agreement_customer_message"
+    EVENT_PROJECT_CUSTOMER_MESSAGE = "project_customer_message"
     EVENT_ESTIMATE_REVISION_REQUESTED = "estimate_revision_requested"
     EVENT_ESTIMATE_ACCEPTED = "estimate_accepted"
     EVENT_ESTIMATE_DECLINED = "estimate_declined"
@@ -2543,6 +2546,9 @@ class Notification(models.Model):
         (EVENT_MILESTONE_PENDING_APPROVAL, "Milestone Pending Approval"),
         (EVENT_PAYMENT_RELEASED, "Payment Released"),
         (EVENT_ESTIMATE_VIEWED, "Estimate Viewed"),
+        (EVENT_ESTIMATE_CUSTOMER_MESSAGE, "Estimate Customer Message"),
+        (EVENT_AGREEMENT_CUSTOMER_MESSAGE, "Agreement Customer Message"),
+        (EVENT_PROJECT_CUSTOMER_MESSAGE, "Project Customer Message"),
         (EVENT_ESTIMATE_REVISION_REQUESTED, "Estimate Revision Requested"),
         (EVENT_ESTIMATE_ACCEPTED, "Estimate Accepted"),
         (EVENT_ESTIMATE_DECLINED, "Estimate Declined"),
@@ -3382,3 +3388,4 @@ from .models_diy_planner import (  # noqa: E402,F401
     DIYProjectRequestLink,
     DIYProjectTask,
 )
+from .models_conversations import CustomerConversation, ConversationMessage  # noqa: E402,F401

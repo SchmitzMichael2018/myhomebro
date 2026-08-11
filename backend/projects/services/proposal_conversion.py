@@ -115,3 +115,5 @@ def finalize_proposal_conversion(*, context: ProposalConversionContext, agreemen
         actor=actor,
         metadata={"agreement_id": agreement.id, "review_version": context.review.version, "acceptance_method": "online"},
     )
+    from projects.services.customer_conversations import link_conversation_to_agreement
+    link_conversation_to_agreement(proposal, agreement)

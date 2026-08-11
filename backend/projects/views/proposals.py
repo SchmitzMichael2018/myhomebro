@@ -35,6 +35,7 @@ from projects.services.proposal_customer_review import (
 User = get_user_model()
 from projects.models_templates import ProjectTemplate
 from projects.services.proposal_pricing_benchmark import build_proposal_pricing_benchmark
+from projects.services.customer_conversations import add_contractor_reply, add_estimate_customer_message, conversation_for_proposal, serialize_conversation
 from projects.views.contractor_bids import (
     _appointment_key,
     _resolve_contractor,
@@ -805,6 +806,51 @@ class PublicProposalReviewView(APIView):
             notify_contractor_of_review_event(review, event)
         return Response(public_review_payload(review, request=request))
 
+
+class PublicProposalMessageView(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, token):
+        try:
+            with transaction.atomic():
+                review = resolve_token(token, lock=True)
+                latest = review.proposal.review_versions.order_by("-version").first()
+                if latest is None or latest.pk != review.pk:
+                    return Response({"detail": "Use the latest estimate review link to send a message."}, status=409)
+                conversation, _message, _created = add_estimate_customer_message(review=review, text=request.data.get("message"), dedupe_key=request.headers.get("Idempotency-Key", ""))
+        except ReviewAccessError as exc:
+            return Response({"detail": str(exc)}, status=404)
+        except ValueError as exc:
+            return Response({"message": [str(exc)]}, status=400)
+        return Response({"conversation": serialize_conversation(conversation, audience="customer")}, status=201)
+
+
+class ProposalMessageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _proposal(self, request, proposal_id):
+        contractor = _resolve_contractor(request.user)
+        return get_object_or_404(_proposal_queryset(contractor), pk=proposal_id) if contractor else None
+
+    def get(self, request, proposal_id):
+        proposal = self._proposal(request, proposal_id)
+        if proposal is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        conversation = conversation_for_proposal(proposal)
+        if conversation:
+            conversation.messages.filter(sender_type="customer", contractor_read_at__isnull=True).update(contractor_read_at=timezone.now())
+        return Response({"conversation": serialize_conversation(conversation, audience="contractor")})
+
+    def post(self, request, proposal_id):
+        proposal = self._proposal(request, proposal_id)
+        if proposal is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        try:
+            conversation, _message, _created = add_contractor_reply(proposal=proposal, user=request.user, text=request.data.get("message"), dedupe_key=request.headers.get("Idempotency-Key", ""))
+        except ValueError as exc:
+            return Response({"message": [str(exc)]}, status=400)
+        return Response({"conversation": serialize_conversation(conversation, audience="contractor")}, status=201)
 
 class ProposalPortalActivationView(APIView):
     permission_classes = [AllowAny]

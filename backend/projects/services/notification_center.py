@@ -22,6 +22,9 @@ ACTION_NEEDED_CATEGORIES = {
     Notification.EVENT_ESTIMATE_REVISION_REQUESTED,
     Notification.EVENT_ESTIMATE_ACCEPTED,
     Notification.EVENT_ESTIMATE_DECLINED,
+    Notification.EVENT_ESTIMATE_CUSTOMER_MESSAGE,
+    Notification.EVENT_AGREEMENT_CUSTOMER_MESSAGE,
+    Notification.EVENT_PROJECT_CUSTOMER_MESSAGE,
 }
 
 
@@ -56,6 +59,9 @@ ACTION_LABELS = {
     Notification.EVENT_ESTIMATE_REVISION_REQUESTED: "Review Requested Changes",
     Notification.EVENT_ESTIMATE_ACCEPTED: "Create Agreement",
     Notification.EVENT_ESTIMATE_DECLINED: "View Estimate",
+    Notification.EVENT_ESTIMATE_CUSTOMER_MESSAGE: "Reply",
+    Notification.EVENT_AGREEMENT_CUSTOMER_MESSAGE: "Reply",
+    Notification.EVENT_PROJECT_CUSTOMER_MESSAGE: "Reply",
 }
 
 

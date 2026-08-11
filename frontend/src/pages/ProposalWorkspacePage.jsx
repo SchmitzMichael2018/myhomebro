@@ -7,6 +7,7 @@ import api from "../api";
 import { useAssistantDock } from "../components/AssistantDock.jsx";
 import UnitSelect from "../components/UnitSelect.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import CustomerConversation from "../components/CustomerConversation.jsx";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 import { customUnitError, recognizeUnit, unitDisplay, unitValueForSave } from "../lib/units.js";
 import { buildMilestoneAllocations, getTemplatePricingState } from "../lib/templatePricingState.js";
@@ -3429,6 +3430,7 @@ export default function ProposalWorkspacePage() {
             </div>
           </Section>
 
+          {activeStep.key === "review" ? <CustomerConversation endpoint={`/projects/proposals/${proposal.id}/messages/`} title="Messages" /> : null}
           <Section id="notes" active={activeStep.key === "review"} title="Internal Notes" description="Optional contractor-only context. These notes are not included in the customer agreement handoff.">
             <details className="rounded-xl border border-white/10 bg-white/5 p-4">
               <summary className="cursor-pointer font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-sky-300">Add or review internal notes</summary>

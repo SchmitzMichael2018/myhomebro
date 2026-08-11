@@ -200,6 +200,7 @@ def resolve_token(token: str, *, lock=False) -> ProposalReviewVersion:
 
 
 def public_review_payload(review: ProposalReviewVersion, request=None) -> dict:
+    from projects.services.customer_conversations import conversation_for_proposal, serialize_conversation
     return {
         "version": review.version,
         "status": review.decision if review.decision != ProposalReviewVersion.DECISION_PENDING else review.proposal.status,
@@ -212,6 +213,7 @@ def public_review_payload(review: ProposalReviewVersion, request=None) -> dict:
         "decline_reason": review.decline_reason,
         "estimate": review.snapshot,
         "portal": portal_access(review, request=request),
+        "conversation": serialize_conversation(conversation_for_proposal(review.proposal), audience="customer"),
     }
 
 

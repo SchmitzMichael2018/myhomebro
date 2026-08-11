@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner, Notification
+from projects.models import Agreement, Contractor, Homeowner, Notification, CustomerConversation, ConversationMessage
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorOpportunity,
@@ -480,6 +480,55 @@ class ProposalWorkspaceFoundationTests(TestCase):
             [(row["version"], row["revision_request_message"]) for row in response.data["customer_review_history"]],
             [(2, "Request B"), (1, "Request A")],
         )
+
+    def test_estimate_question_is_idempotent_not_a_revision_and_contractor_can_reply(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=703,
+            status=Proposal.STATUS_SENT, project_title="Bathroom", customer_name="Casey Homeowner",
+            customer_email="casey@example.com",
+        )
+        review = ProposalReviewVersion.objects.create(proposal=proposal, version=1, customer_email=proposal.customer_email, snapshot={}, sent_at=timezone.now())
+        public = APIClient(); _use_secure_requests(public)
+        url = f"/api/projects/proposal-reviews/{token_for(review)}/messages/"
+        headers = {"HTTP_IDEMPOTENCY_KEY": "question-703"}
+        first = public.post(url, {"message": "Does <b>this</b> include cleanup?"}, format="json", **headers)
+        replay = public.post(url, {"message": "Does <b>this</b> include cleanup?"}, format="json", **headers)
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(replay.status_code, 201)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.STATUS_SENT)
+        conversation = CustomerConversation.objects.get(proposal=proposal)
+        self.assertEqual(conversation.messages.count(), 1)
+        self.assertEqual(conversation.messages.get().message_text, "Does this include cleanup?")
+        self.assertEqual(Notification.objects.filter(event_type=Notification.EVENT_ESTIMATE_CUSTOMER_MESSAGE).count(), 1)
+
+        with patch("projects.services.customer_conversations.send_postmark_email", return_value=(True, "sent")) as email:
+            reply = self.client.post(f"/api/projects/proposals/{proposal.id}/messages/", {"message": "Yes, cleanup is included."}, format="json", HTTP_IDEMPOTENCY_KEY="reply-703")
+        self.assertEqual(reply.status_code, 201)
+        self.assertEqual(conversation.messages.count(), 2)
+        self.assertTrue(conversation.messages.get(sender_type=ConversationMessage.SENDER_CUSTOMER).contractor_read_at)
+        email.assert_called_once()
+
+    def test_conversation_links_to_agreement_and_project_during_conversion(self):
+        homeowner, proposal, _review = self._accepted_proposal_for_conversion(source_id=704)
+        conversation = CustomerConversation.objects.create(
+            contractor=self.contractor, customer=homeowner, proposal=proposal,
+            customer_name=proposal.customer_name, customer_email=proposal.customer_email,
+        )
+        message = ConversationMessage.objects.create(
+            conversation=conversation, sender_type=ConversationMessage.SENDER_CUSTOMER,
+            sender_display_name=proposal.customer_name, message_text="Does cleanup include hauling?",
+            lifecycle_context=ConversationMessage.CONTEXT_ESTIMATE,
+        )
+        payload = {"source_proposal_id": proposal.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1}
+        response = self.client.post("/api/projects/agreements/", payload, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        conversation.refresh_from_db()
+        self.assertEqual(conversation.agreement_id, response.data["id"])
+        self.assertEqual(conversation.project_id, Agreement.objects.get(pk=response.data["id"]).project_id)
+        self.assertEqual(CustomerConversation.objects.filter(proposal=proposal).count(), 1)
+        self.assertEqual(conversation.messages.count(), 1)
+        self.assertEqual(conversation.messages.get(), message)
 
     @patch("projects.services.proposal_customer_review.send_compliant_sms")
     @patch("projects.services.proposal_customer_review.send_postmark_email", return_value=(True, "sent"))
