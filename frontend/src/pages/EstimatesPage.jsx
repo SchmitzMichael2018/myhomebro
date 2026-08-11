@@ -1,33 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { ArchiveRestore, ExternalLink, FileSignature, Plus, Search } from "lucide-react";
+import { ExternalLink, FileSignature, Plus, Search } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
 import { DashboardEstimateModal } from "../components/ContractorDashboard.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
-
-const TABS = [
-  { key: "needs_estimate", label: "Needs Estimate" },
-  { key: "in_progress", label: "In Progress" },
-  { key: "ready", label: "Ready for Agreement" },
-  { key: "converted", label: "Converted" },
-  { key: "archived", label: "Archived" },
-];
-
-const STATUS_LABELS = {
-  draft: "Draft",
-  site_visit: "Site Visit",
-  in_progress: "In Progress",
-  ready: "Ready",
-  sent: "Sent",
-  viewed: "Viewed",
-  accepted: "Accepted",
-  declined: "Declined",
-  revision_requested: "Revision Requested",
-  expired: "Expired",
-  converted: "Converted",
-};
+import { ESTIMATE_QUEUE_STAGES as TABS, ESTIMATE_STATUS_LABELS, estimateMatchesStage, estimateNextPriority, estimateQueueStage, estimateStageCounts } from "../lib/estimateQueue.js";
 
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
@@ -49,7 +28,7 @@ function formatDateTime(value) {
 }
 
 function statusLabel(value) {
-  return STATUS_LABELS[normalize(value)] || String(value || "Draft").replace(/_/g, " ");
+  return ESTIMATE_STATUS_LABELS[normalize(value)] || String(value || "Draft").replace(/_/g, " ");
 }
 
 function moneyToNumber(value) {
@@ -76,34 +55,30 @@ function readinessPercent(estimate) {
   return Math.round((complete / checks.length) * 100);
 }
 
-function tabForEstimate(estimate) {
-  const status = normalize(estimate?.status);
-  if (status === "converted" || estimate?.linked_agreement_id) return "converted";
-  if (["declined", "expired"].includes(status)) return "archived";
-  if (["ready", "sent", "viewed", "accepted"].includes(status)) return "ready";
-  if (["site_visit", "in_progress", "revision_requested"].includes(status)) return "in_progress";
-  return "needs_estimate";
-}
-
 function actionLabel(estimate, tabKey) {
   if (tabKey === "converted") return "Open Agreement";
-  if (tabKey === "archived") return "Restore";
-  if (tabKey === "ready") return "Create Agreement";
+  if (tabKey === "accepted") return "Create Agreement";
+  if (tabKey === "ready_to_send") return "Review & Send";
+  if (tabKey === "with_customer") return "Open Estimate";
+  if (tabKey === "closed") return normalize(estimate.status) === "expired" ? "Revise / Resend" : "Open Estimate";
   if (tabKey === "in_progress") return "Continue Estimate";
   return "Open Estimate";
 }
 
 function toneForTab(tabKey) {
-  if (tabKey === "converted" || tabKey === "ready") return "border-emerald-200/35 bg-emerald-400/12 text-emerald-100";
-  if (tabKey === "archived") return "border-white/14 bg-white/8 text-sky-100/78";
+  if (tabKey === "converted" || tabKey === "accepted") return "border-emerald-200/35 bg-emerald-400/12 text-emerald-100";
+  if (tabKey === "closed") return "border-white/14 bg-white/8 text-sky-100/78";
   if (tabKey === "in_progress") return "border-amber-200/35 bg-amber-400/12 text-amber-100";
   return "border-sky-200/35 bg-sky-400/12 text-sky-100";
 }
 
-function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
+function EstimateRow({ estimate, tabKey, onOpen, onAgreement }) {
   const readiness = readinessPercent(estimate);
   const nextAction = actionLabel(estimate, tabKey);
-  const action = tabKey === "converted" ? onAgreement : tabKey === "archived" ? onRestore : onOpen;
+  const action = tabKey === "converted" ? onAgreement : onOpen;
+  const review = estimate.customer_review || {};
+  const delivered = Array.isArray(review.delivery?.succeeded_channels) ? review.delivery.succeeded_channels : [];
+  const deliveryChannels = delivered.map((channel) => channel === "sms" ? "Text" : channel[0].toUpperCase() + channel.slice(1));
   return (
     <div
       data-testid={`estimate-row-${estimate.id}`}
@@ -156,6 +131,7 @@ function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
           {statusLabel(estimate.status)}
         </div>
         <div className="mt-2 text-xs font-semibold text-sky-100/55">Updated {formatDateTime(estimate.updated_at)}</div>
+        {tabKey === "with_customer" && review.sent_at ? <div className="mt-1 text-xs font-semibold text-sky-100/65">Sent{deliveryChannels.length ? ` by ${deliveryChannels.join(" + ")}` : ""} · {review.viewed_at ? `Viewed ${formatDateTime(review.viewed_at)}` : "Awaiting review"}</div> : null}
       </div>
 
       <div className="flex items-center lg:justify-end">
@@ -165,7 +141,7 @@ function EstimateRow({ estimate, tabKey, onOpen, onAgreement, onRestore }) {
           onClick={action}
           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-300 px-3 py-2 text-sm font-black text-white shadow-sm hover:bg-amber-200 focus-visible:text-white active:text-white lg:w-auto"
         >
-          {tabKey === "archived" ? <ArchiveRestore size={15} /> : tabKey === "converted" ? <ExternalLink size={15} /> : <FileSignature size={15} />}
+          {tabKey === "converted" ? <ExternalLink size={15} /> : <FileSignature size={15} />}
           {nextAction}
         </button>
       </div>
@@ -178,7 +154,8 @@ export default function EstimatesPage() {
   const location = useLocation();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("needs_estimate");
+  const requestedStage = new URLSearchParams(location.search).get("stage");
+  const [activeTab, setActiveTab] = useState(TABS.some(({ key }) => key === requestedStage) ? requestedStage : "all_active");
   const [search, setSearch] = useState("");
   const [customerFilter, setCustomerFilter] = useState("all");
   const [projectTypeFilter, setProjectTypeFilter] = useState("all");
@@ -205,7 +182,7 @@ export default function EstimatesPage() {
   }, []);
 
   const enriched = useMemo(
-    () => rows.map((row) => ({ ...row, tabKey: tabForEstimate(row), readiness: readinessPercent(row) })),
+    () => rows.map((row) => ({ ...row, tabKey: estimateQueueStage(row), readiness: readinessPercent(row) })),
     [rows]
   );
 
@@ -223,26 +200,16 @@ export default function EstimatesPage() {
   );
 
   const tabCounts = useMemo(() => {
-    const counts = Object.fromEntries(TABS.map((tab) => [tab.key, 0]));
-    for (const row of enriched) counts[row.tabKey] = (counts[row.tabKey] || 0) + 1;
-    return counts;
+    return estimateStageCounts(enriched);
   }, [enriched]);
   const queueSummary = useMemo(() => {
-    const blockers = enriched.filter((row) => row.tabKey !== "converted" && row.readiness < 100).length;
-    const priority =
-      tabCounts.needs_estimate > 0
-        ? "Complete customer, scope, pricing, and scheduling details."
-        : tabCounts.in_progress > 0
-          ? "Continue estimates already in progress before opening new work."
-          : tabCounts.ready > 0
-            ? "Review ready estimates and create agreements when appropriate."
-            : "No active estimate blockers in this queue.";
     return {
       needsEstimate: tabCounts.needs_estimate || 0,
       inProgress: tabCounts.in_progress || 0,
-      ready: tabCounts.ready || 0,
-      blockers,
-      priority,
+      readyToSend: tabCounts.ready_to_send || 0,
+      withCustomer: tabCounts.with_customer || 0,
+      accepted: tabCounts.accepted || 0,
+      priority: estimateNextPriority(enriched),
     };
   }, [enriched, tabCounts]);
 
@@ -250,7 +217,7 @@ export default function EstimatesPage() {
     const query = normalize(search);
     const since = updatedSince ? Date.parse(`${updatedSince}T00:00:00`) : 0;
     return enriched.filter((row) => {
-      if (row.tabKey !== activeTab) return false;
+      if (!query && !estimateMatchesStage(row, activeTab)) return false;
       if (customerFilter !== "all" && row.customer_name !== customerFilter) return false;
       if (projectTypeFilter !== "all" && row.project_type !== projectTypeFilter) return false;
       if (statusFilter !== "all" && row.status !== statusFilter) return false;
@@ -275,16 +242,11 @@ export default function EstimatesPage() {
     if (estimate.linked_agreement_id) navigate(`/app/agreements/${estimate.linked_agreement_id}`);
     else openEstimate(estimate);
   };
-  const restoreEstimate = async (estimate) => {
-    try {
-      const { data } = await api.patch(`/projects/proposals/${estimate.id}/`, { status: "draft" });
-      setRows((prev) => prev.map((row) => (row.id === estimate.id ? data : row)));
-      toast.success("Estimate restored.");
-      setActiveTab("needs_estimate");
-    } catch (error) {
-      console.error(error);
-      toast.error("Could not restore estimate.");
-    }
+  const selectTab = (stage) => {
+    setActiveTab(stage);
+    const params = new URLSearchParams(location.search);
+    if (stage === "all_active") params.delete("stage"); else params.set("stage", stage);
+    navigate({ pathname: location.pathname, search: params.toString() ? `?${params}` : "" }, { replace: true });
   };
   const closeCreateEstimate = () => navigate("/app/estimates", { replace: true });
   const onEstimateCreated = (estimate) => {
@@ -313,7 +275,7 @@ export default function EstimatesPage() {
             Create Estimate
           </Link>
         </div>
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,0.7fr)_repeat(4,minmax(7.5rem,0.18fr))_minmax(14rem,0.75fr)] xl:items-center">
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,0.7fr)_repeat(5,minmax(7rem,0.18fr))_minmax(14rem,0.75fr)] xl:items-center">
           <div>
             <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/80">Estimate Queue</div>
             <div className="mt-1 text-sm font-semibold text-sky-100/70">Final pricing and agreement actions require contractor approval.</div>
@@ -321,8 +283,9 @@ export default function EstimatesPage() {
           {[
             ["Needs Estimate", queueSummary.needsEstimate],
             ["In Progress", queueSummary.inProgress],
-            ["Ready", queueSummary.ready],
-            ["Blockers", queueSummary.blockers],
+            ["Ready to Send", queueSummary.readyToSend],
+            ["With Customer", queueSummary.withCustomer],
+            ["Accepted", queueSummary.accepted],
           ].map(([label, value]) => (
             <div key={label} className="rounded-xl border border-white/10 bg-white/7 px-3 py-2">
               <div className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-100/55">{label}</div>
@@ -375,7 +338,7 @@ export default function EstimatesPage() {
             key={tab.key}
             type="button"
             data-testid={`estimates-tab-${tab.key}`}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => selectTab(tab.key)}
             className={`inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-xl border px-3 py-2 text-sm font-black transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300/50 ${
               activeTab === tab.key
                 ? "border-sky-300/45 bg-sky-400/16 text-white"
@@ -396,10 +359,9 @@ export default function EstimatesPage() {
             <EstimateRow
               key={estimate.id}
               estimate={estimate}
-              tabKey={activeTab}
+              tabKey={estimate.tabKey}
               onOpen={() => openEstimate(estimate)}
               onAgreement={() => openAgreement(estimate)}
-              onRestore={() => restoreEstimate(estimate)}
             />
           ))
         ) : (
