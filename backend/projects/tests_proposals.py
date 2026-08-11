@@ -17,6 +17,7 @@ from projects.models_contractor_discovery import (
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalPortalActivation, ProposalReviewVersion
 from projects.models_sms import SMSConsent
 from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, review_delivery_eligibility, token_for
+from projects.services.proposal_conversion import ProposalConversionError, _trusted_agreement_payload
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
 from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
@@ -747,6 +748,54 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertFalse(repeated.data["conversion"]["created"])
         self.assertEqual(Agreement.objects.filter(contractor=self.contractor).count(), 1)
         self.assertEqual(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_AGREEMENT_CREATED).count(), 1)
+
+    def test_accepted_snapshot_commercial_basis_maps_reserve_without_double_counting(self):
+        homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=705)
+        proposal.line_items.all().delete()
+        ProposalLineItem.objects.create(
+            proposal=proposal, category=ProposalLineItem.CATEGORY_LABOR,
+            description="Approved work", quantity=1, unit_price="15000.00",
+        )
+        ProposalLineItem.objects.create(
+            proposal=proposal, category=ProposalLineItem.CATEGORY_INCIDENTALS_RESERVE,
+            description="Incidentals Reserve", quantity=1, unit_price="1500.00",
+        )
+        review.snapshot = build_customer_snapshot(proposal)
+        review.save(update_fields=["snapshot"])
+        accepted_snapshot = review.snapshot.copy()
+
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {
+                "source_proposal_id": proposal.id,
+                "homeowner": homeowner.id,
+                "total_cost": "1.00",
+                "incidentals_reserve_amount": "0.00",
+                "is_draft": True,
+                "wizard_step": 1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        agreement = Agreement.objects.get(pk=response.data["id"])
+        review.refresh_from_db()
+        self.assertEqual(agreement.total_cost, 15000)
+        self.assertEqual(agreement.incidentals_reserve_amount, 1500)
+        self.assertEqual(response.data["escrow_funding_summary"]["total_required"], "16500.00")
+        self.assertEqual(response.data["accepted_estimate_basis"], {
+            "proposal_id": proposal.id,
+            "review_version": 1,
+            "subtotal": "15000.00",
+            "tax": "0.00",
+            "discounts": "0.00",
+            "incidentals_reserve": "1500.00",
+            "total": "16500.00",
+        })
+        self.assertEqual(review.snapshot, accepted_snapshot)
+        review.snapshot = {**accepted_snapshot, "pricing": {**accepted_snapshot["pricing"], "total": "999.00"}}
+        with self.assertRaisesRegex(ProposalConversionError, "does not reconcile"):
+            _trusted_agreement_payload(review)
 
     def test_conversion_rejects_unaccepted_cross_owner_stale_and_post_acceptance_edits(self):
         for index, status_value in enumerate((Proposal.STATUS_READY, Proposal.STATUS_SENT, Proposal.STATUS_VIEWED, Proposal.STATUS_REVISION_REQUESTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED), start=100):

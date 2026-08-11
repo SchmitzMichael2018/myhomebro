@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 
 from projects.models_proposals import Proposal, ProposalActivity, ProposalReviewVersion
@@ -44,14 +45,29 @@ def _trusted_agreement_payload(review: ProposalReviewVersion) -> dict:
     project = snapshot.get("project") or {}
     pricing = snapshot.get("pricing") or {}
     schedule = project.get("schedule") or {}
+    try:
+        subtotal = Decimal(str(pricing.get("subtotal") or "0.00"))
+        tax = Decimal(str(pricing.get("tax") or "0.00"))
+        discounts = Decimal(str(pricing.get("discounts") or "0.00"))
+        reserve = Decimal(str(pricing.get("incidentals_reserve") or "0.00"))
+        accepted_total = Decimal(str(pricing.get("total") or "0.00"))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ProposalConversionError("The accepted estimate contains invalid pricing values.") from exc
+    commercial_base = subtotal + tax - discounts
+    if commercial_base + reserve != accepted_total:
+        raise ProposalConversionError(
+            "The accepted estimate pricing does not reconcile. Review subtotal, tax, discounts, reserve, and total before conversion."
+        )
     payload = {
         "title": project.get("title") or "Draft Agreement",
         "project_title": project.get("title") or "Draft Agreement",
         "description": _scope_from_snapshot(snapshot),
         "scope_of_work": _scope_from_snapshot(snapshot),
         "address_line1": project.get("property") or "",
-        "total_cost": str(pricing.get("total") or "0.00"),
-        "incidentals_reserve_amount": str(pricing.get("incidentals_reserve") or "0.00"),
+        # Agreement.total_cost is the milestone/commercial base. Funding and
+        # customer totals add the separately persisted incidentals reserve.
+        "total_cost": f"{commercial_base:.2f}",
+        "incidentals_reserve_amount": f"{reserve:.2f}",
     }
     if schedule.get("start_date"):
         payload["project_start_date"] = schedule["start_date"]

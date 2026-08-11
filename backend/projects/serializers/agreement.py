@@ -558,6 +558,7 @@ class AgreementPDFVersionSerializer(serializers.ModelSerializer):
 class AgreementSerializer(serializers.ModelSerializer):
     is_fully_signed = serializers.SerializerMethodField()
     signature_is_satisfied = serializers.SerializerMethodField()
+    accepted_estimate_basis = serializers.SerializerMethodField()
 
     project_title = serializers.SerializerMethodField()
     homeowner_name = serializers.SerializerMethodField()
@@ -705,6 +706,26 @@ class AgreementSerializer(serializers.ModelSerializer):
             return getattr(obj, "selected_template_id", None)
         except Exception:
             return None
+
+    def get_accepted_estimate_basis(self, obj):
+        """Read-only provenance from the immutable accepted Estimate version."""
+        try:
+            proposal = obj.source_proposal
+            review = proposal.converted_review_version
+        except Exception:
+            return None
+        if review is None:
+            return None
+        pricing = (review.snapshot or {}).get("pricing") or {}
+        return {
+            "proposal_id": proposal.id,
+            "review_version": review.version,
+            "subtotal": str(pricing.get("subtotal") or "0.00"),
+            "tax": str(pricing.get("tax") or "0.00"),
+            "discounts": str(pricing.get("discounts") or "0.00"),
+            "incidentals_reserve": str(pricing.get("incidentals_reserve") or "0.00"),
+            "total": str(pricing.get("total") or "0.00"),
+        }
 
     def _incidentals_summary(self, obj):
         try:

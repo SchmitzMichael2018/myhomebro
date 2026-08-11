@@ -30,6 +30,7 @@ import {
   validateHandoff,
 } from "../lib/assistantHandoff.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
+import { acceptedEstimateBasisSummary } from "../lib/agreementEstimateHandoff.js";
 import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
 import { getAgreementWizardHint } from "../lib/workflowHints.js";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
@@ -1941,20 +1942,25 @@ export default function AgreementWizard() {
     ]
   );
   const proposalHandoffSummary = useMemo(() => {
-    if (!isProposalAgreementHandoff) return null;
+    const acceptedBasis = agreement?.accepted_estimate_basis || {};
+    const acceptedSummary = acceptedEstimateBasisSummary({ accepted_estimate_basis: acceptedBasis });
+    if (!isProposalAgreementHandoff && !acceptedBasis.proposal_id) return null;
     const context = assistantHandoff.context || {};
     const draft = assistantHandoff.draftPayload || {};
     const estimate = assistantHandoff.estimatePreview || {};
     return {
-      proposalId: context.proposal_id || draft.proposal_id || "",
+      proposalId: acceptedSummary?.proposalId || context.proposal_id || draft.proposal_id || "",
+      reviewVersion: acceptedSummary?.reviewVersion || "",
       projectTitle: draft.project_title || context.project_title || dLocal.project_title || "",
       customerName: draft.customer_name || context.customer_name || "",
       total:
+        acceptedBasis.total ||
         draft.proposal_total ||
         context.proposal_total ||
         estimate.suggested_total_price ||
         "",
       incidentals:
+        acceptedBasis.incidentals_reserve ||
         draft.incidentals_reserve_amount ||
         context.incidentals_reserve_amount ||
         estimate.incidentals_reserve_amount ||
@@ -1964,8 +1970,12 @@ export default function AgreementWizard() {
         context.line_item_count ||
         (Array.isArray(draft.proposal_line_items) ? draft.proposal_line_items.length : 0) ||
         (Array.isArray(estimate.line_items) ? estimate.line_items.length : 0),
+      subtotal: acceptedSummary?.subtotal ?? draft.proposal_totals?.subtotal ?? "",
+      tax: acceptedSummary?.tax ?? draft.proposal_totals?.tax ?? "",
+      discounts: acceptedSummary?.discounts ?? draft.proposal_totals?.discounts ?? "",
+      reconciles: acceptedSummary?.reconciles ?? true,
     };
-  }, [assistantHandoff, dLocal.project_title, isProposalAgreementHandoff]);
+  }, [agreement?.accepted_estimate_basis, assistantHandoff, dLocal.project_title, isProposalAgreementHandoff]);
   const assistantDraftPayload = useMemo(
     () => ({
       ...(assistantHandoff.draftPayload || {}),
@@ -2296,7 +2306,7 @@ export default function AgreementWizard() {
         >
           <div className="md:col-span-4">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/80">
-              Estimate Prefill
+              Based on accepted Estimate{proposalHandoffSummary.reviewVersion ? ` v${proposalHandoffSummary.reviewVersion}` : ""}
             </div>
             <div className="mt-1 font-semibold text-white">
               Review the Estimate Workspace data first, then refine the contract, milestones, payment schedule, legal terms, and warranty before sending.
@@ -2304,12 +2314,21 @@ export default function AgreementWizard() {
             <div className="mt-1 text-xs font-semibold text-emerald-100/75">
               Fields remain editable. After this draft is created, the Agreement becomes the source of truth for incidentals reserve, milestones, signatures, and funding.
             </div>
+            {proposalHandoffSummary.reconciles === false ? (
+              <div className="mt-2 rounded-lg border border-amber-300/40 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-100" role="alert">
+                The accepted Estimate pricing does not reconcile. Stop and verify the source Estimate before editing this Agreement.
+              </div>
+            ) : null}
           </div>
           <div>
             <div className="text-xs font-semibold uppercase text-emerald-100/70">Estimate</div>
             <div className="font-bold text-white">
               {proposalHandoffSummary.proposalId ? `#${proposalHandoffSummary.proposalId}` : "Estimate"}
             </div>
+          </div>
+          <div>
+            <div className="text-xs font-semibold uppercase text-emerald-100/70">Subtotal</div>
+            <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.subtotal)}</div>
           </div>
           <div>
             <div className="text-xs font-semibold uppercase text-emerald-100/70">Total</div>
@@ -2319,6 +2338,14 @@ export default function AgreementWizard() {
             <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals Reserve</div>
             <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.incidentals)}</div>
           </div>
+          {Number(proposalHandoffSummary.tax || 0) || Number(proposalHandoffSummary.discounts || 0) ? (
+            <div>
+              <div className="text-xs font-semibold uppercase text-emerald-100/70">Adjustments</div>
+              <div className="font-bold text-white">
+                Tax {moneyLabel(proposalHandoffSummary.tax)} · Discounts −{moneyLabel(proposalHandoffSummary.discounts)}
+              </div>
+            </div>
+          ) : null}
           <div>
             <div className="text-xs font-semibold uppercase text-emerald-100/70">Line Items</div>
             <div className="font-bold text-white">{proposalHandoffSummary.lineItemCount || 0}</div>

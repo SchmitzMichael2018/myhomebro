@@ -14201,6 +14201,7 @@ class ProgressPaymentWorkflowTests(TestCase):
             payment_structure="progress",
             retainage_percent=Decimal("12.50"),
             total_cost=Decimal("8000.00"),
+            incidentals_reserve_amount=Decimal("1500.00"),
         )
         self.template.milestones.create(
             title="Template Milestone",
@@ -14218,6 +14219,7 @@ class ProgressPaymentWorkflowTests(TestCase):
         template_agreement.refresh_from_db()
         self.assertEqual(template_agreement.payment_structure, "progress")
         self.assertEqual(template_agreement.retainage_percent, Decimal("12.50"))
+        self.assertEqual(template_agreement.incidentals_reserve_amount, Decimal("1500.00"))
 
     def test_amendment_fee_delta_allocates_additional_fee_below_cap(self):
         refresh_agreement_fee_allocations(self.agreement)
@@ -15907,6 +15909,38 @@ class ProjectLearningFoundationTests(TestCase):
             "Match existing trim color.",
         )
         self.assertTrue(all(event.source == ContractorEditEvent.Source.CONTRACTOR for event in events.values()))
+
+    def test_ai_scope_update_does_not_change_agreement_financial_fields(self):
+        project = self._new_learning_project("AI Scope Financial Guard")
+        agreement = create_agreement_from_validated(
+            {
+                "project": project,
+                "contractor": self.contractor,
+                "homeowner": self.homeowner,
+                "project_title": "AI Scope Financial Guard",
+                "description": "Original scope",
+                "total_cost": Decimal("15000.00"),
+                "incidentals_reserve_amount": Decimal("1500.00"),
+            }
+        )
+        serializer = AgreementSerializer(
+            agreement,
+            data={
+                "description": "AI-refined scope only",
+                "ai_scope_input": {
+                    "questions": [{"key": "cleanup", "question": "Is cleanup included?"}],
+                    "answers": {"cleanup": "Yes"},
+                },
+            },
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        agreement.refresh_from_db()
+        self.assertEqual(agreement.description, "AI-refined scope only")
+        self.assertEqual(agreement.total_cost, Decimal("15000.00"))
+        self.assertEqual(agreement.incidentals_reserve_amount, Decimal("1500.00"))
 
     def test_milestone_endpoint_lineage_captures_milestone_and_pricing_changes(self):
         self.api_client.force_authenticate(user=self.contractor_user)
