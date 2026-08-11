@@ -214,18 +214,18 @@ export function buildProjectAssistantGuideState(summary = {}, actions = {}) {
 function ProjectAssistantGuide({ guide }) {
   return (
     <div
-      className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4"
+      className="rounded-2xl border border-slate-700 bg-slate-900 px-4 py-4 text-slate-100"
       data-testid="project-assistant-step-guide"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
             Step Guide
           </div>
-          <div className="mt-2 text-sm font-semibold text-slate-950">
+          <div className="mt-2 text-sm font-semibold text-white">
             {guide.status}
           </div>
-          <p className="mt-1 text-sm leading-6 text-slate-600">
+          <p className="mt-1 text-sm leading-6 text-slate-300">
             {guide.currentPurpose}
           </p>
         </div>
@@ -238,10 +238,10 @@ function ProjectAssistantGuide({ guide }) {
             key={item.step}
             className={`rounded-xl border px-3 py-3 ${
               item.status === "current"
-                ? "border-amber-300 bg-amber-50"
+                ? "border-amber-400/50 bg-amber-400/10"
                 : item.status === "complete"
-                ? "border-emerald-200 bg-emerald-50"
-                : "border-slate-200 bg-white"
+                ? "border-emerald-400/40 bg-emerald-400/10"
+                : "border-slate-700 bg-slate-800"
             }`}
             data-testid={`project-assistant-guide-step-${item.step}`}
           >
@@ -262,13 +262,13 @@ function ProjectAssistantGuide({ guide }) {
               <div>
                 <div
                   className={`text-sm font-semibold ${
-                    item.status === "current" ? "text-amber-950" : "text-slate-950"
+                    item.status === "current" ? "text-amber-200" : "text-slate-100"
                   }`}
                 >
                   Step {item.step}: {item.title}
                 </div>
                 {item.status === "current" ? (
-                  <div className="mt-1 text-xs leading-5 text-amber-900">
+                  <div className="mt-1 text-xs leading-5 text-amber-100/90">
                     {item.purpose}
                   </div>
                 ) : null}
@@ -278,11 +278,11 @@ function ProjectAssistantGuide({ guide }) {
         ))}
       </div>
 
-      <div className="mt-4 rounded-xl border border-white bg-white px-3 py-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+      <div className="mt-4 rounded-xl border border-slate-700 bg-slate-800 px-3 py-3">
+        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
           Needs attention
         </div>
-        <div className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
+        <div className="mt-2 space-y-1 text-sm leading-6 text-slate-200">
           {guide.attention.length ? (
             guide.attention.map((item, idx) => <div key={`${item}-${idx}`}>{item}</div>)
           ) : (

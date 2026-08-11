@@ -23,6 +23,7 @@ import useAgreementMilestoneAI from "./ai/useAgreementMilestoneAI.jsx";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { labelForTemplateMilestoneType } from "../lib/milestoneTypes.js";
+import { summarizeAcceptedEstimateAllocation } from "../lib/agreementMilestonePricing.js";
 
 // Superseded Step 2 panels remain dormant until their markup is removed separately.
 const SHOW_LEGACY_STEP2_PANELS = false;
@@ -1627,11 +1628,18 @@ export default function Step2Milestones({
       signature,
     };
   }, [effectiveMilestones]);
+  const acceptedEstimateBasis = agreementMeta?.accepted_estimate_basis || null;
+  const acceptedAllocation = summarizeAcceptedEstimateAllocation(acceptedEstimateBasis, total);
+  const acceptedCommercialBase = acceptedAllocation?.commercialBase ?? null;
+  const acceptedIncidentalsReserve = acceptedAllocation?.incidentalsReserve ?? 0;
+  const acceptedFundingTotal = acceptedAllocation?.fundingTotal ?? null;
+  const allocationDifference = acceptedAllocation ? acceptedAllocation.unallocated - acceptedAllocation.overallocated : 0;
   const milestonePricingSignature = useMemo(
     () => buildMilestonePricingSignature(effectiveMilestones),
     [effectiveMilestones]
   );
   const showPricingReviewPrompt =
+    !acceptedEstimateBasis &&
     pricingReviewState.count > 0 &&
     pricingReviewState.signature &&
     pricingReviewState.signature !== dismissedPricingReviewSignature;
@@ -4095,10 +4103,7 @@ export default function Step2Milestones({
       return;
     }
 
-    setRebalancePrompt({
-      targetTotal,
-      manualIds,
-    });
+    setRebalancePrompt({ targetTotal, manualIds, replacesAcceptedEstimate: Boolean(acceptedEstimateBasis) });
   }
 
   function applyRebalancedMilestones({ keepManualAmounts = false } = {}) {
@@ -5026,6 +5031,14 @@ export default function Step2Milestones({
         target_total: estimateBudgetValue || null,
         baseline_total: pricingBaselineTotal || null,
         has_range: hasPricingSummaryRange,
+        accepted_estimate: acceptedEstimateBasis,
+        commercial_base: acceptedCommercialBase,
+        incidentals_reserve: acceptedIncidentalsReserve,
+        funding_total: acceptedFundingTotal,
+        allocated_amount: total,
+        unallocated_amount: Math.max(0, allocationDifference),
+        overallocated_amount: Math.max(0, -allocationDifference),
+        current_allocation_matches_commercial_base: Math.abs(allocationDifference) < 0.005,
       },
       timeline_guidance: {
         available: Boolean(estimatePreview?.suggested_duration_days),
@@ -5050,6 +5063,11 @@ export default function Step2Milestones({
     [
       agreementId,
       agreementMeta,
+      acceptedCommercialBase,
+      acceptedEstimateBasis,
+      acceptedFundingTotal,
+      acceptedIncidentalsReserve,
+      allocationDifference,
       aiMilestonePreview.length,
       aiMilestonePreviewMode,
       canUpdateSelectedTemplate,
@@ -5894,12 +5912,26 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
+      {acceptedEstimateBasis ? (
+        <section className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-4 text-slate-100 shadow-sm" data-testid="step2-accepted-estimate-pricing-summary">
+          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">Accepted Estimate Basis · v{acceptedEstimateBasis.review_version}</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div><div className="text-xs text-slate-400">Commercial base</div><div className="font-semibold">{formatCurrency(acceptedCommercialBase)}</div></div>
+            <div><div className="text-xs text-slate-400">Incidentals Reserve</div><div className="font-semibold">{formatCurrency(acceptedIncidentalsReserve)}</div></div>
+            <div><div className="text-xs text-slate-400">Funding total</div><div className="font-semibold">{formatCurrency(acceptedFundingTotal)}</div></div>
+            <div><div className="text-xs text-slate-400">Milestones allocated</div><div className="font-semibold">{formatCurrency(total)}</div></div>
+            <div><div className="text-xs text-slate-400">Allocation status</div><div className={`font-semibold ${Math.abs(allocationDifference) < 0.005 ? "text-emerald-300" : "text-amber-300"}`}>{Math.abs(allocationDifference) < 0.005 ? "Fully allocated" : allocationDifference > 0 ? `${formatCurrency(allocationDifference)} unallocated` : `${formatCurrency(-allocationDifference)} overallocated`}</div></div>
+          </div>
+          <p className="mt-3 text-xs text-slate-400">The accepted Estimate remains unchanged. Alternative pricing is shown only when explicitly requested.</p>
+        </section>
+      ) : null}
+
       {showPricingReviewPrompt ? (
-        <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/85 px-4 py-3 shadow-sm">
+        <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="text-sm font-semibold text-indigo-950">Pricing suggestions are ready to review</div>
-              <div className="mt-1 text-xs text-indigo-800">
+              <div className="text-sm font-semibold text-white">Pricing suggestions are ready to review</div>
+              <div className="mt-1 text-xs text-slate-300">
                 {pricingReviewState.count} milestone{pricingReviewState.count === 1 ? "" : "s"} have new suggested amount{pricingReviewState.count === 1 ? "" : "s"}.
                 {pricingReviewState.count > 0 ? (
                   <>
@@ -5913,7 +5945,7 @@ export default function Step2Milestones({
               <button
                 type="button"
                 onClick={handleReviewSuggestedPricing}
-                className="rounded-lg border border-indigo-300 bg-white px-3 py-2 text-sm font-medium text-indigo-900 hover:bg-indigo-100"
+                className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
               >
                 Review Changes
               </button>
@@ -5928,7 +5960,7 @@ export default function Step2Milestones({
               <button
                 type="button"
                 onClick={() => setDismissedPricingReviewSignature(pricingReviewState.signature)}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-medium text-slate-100 hover:bg-slate-700"
               >
                 Dismiss
               </button>
@@ -6101,7 +6133,7 @@ export default function Step2Milestones({
           aria-live="polite"
         >
           <div className="text-sm font-semibold text-amber-950">
-            This will overwrite your current milestone plan.
+            {rebalancePrompt.replacesAcceptedEstimate ? "This will replace the payment allocation approved in the Estimate." : "This will overwrite your current milestone plan."}
           </div>
           <div className="mt-1 text-sm text-amber-900">
             {rebalancePrompt.manualIds.length
@@ -8762,6 +8794,7 @@ export default function Step2Milestones({
               </button>
             </div>
           </div>
+          {rebalancePrompt.replacesAcceptedEstimate ? <div className="mt-2 text-xs font-semibold text-amber-950">The accepted Estimate and Incidentals Reserve will remain unchanged.</div> : null}
         </div>
       ) : null}
 
