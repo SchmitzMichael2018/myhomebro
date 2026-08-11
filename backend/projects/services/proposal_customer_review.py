@@ -8,8 +8,11 @@ from django.contrib.auth import get_user_model
 from django.core import signing
 from django.db import transaction
 from django.utils import timezone
+from django.utils.html import strip_tags
 
 from projects.models_proposals import Proposal, ProposalActivity, ProposalLineItem, ProposalPortalActivation, ProposalReviewVersion
+from projects.models import Notification
+from projects.services.notification_center import create_notification
 from projects.services.invites_delivery import send_postmark_email
 from projects.services.sms_service import get_sms_status_payload, normalize_phone_to_e164, send_compliant_sms, send_sms_opt_in_request
 
@@ -28,6 +31,38 @@ User = get_user_model()
 
 class ReviewAccessError(Exception):
     pass
+
+
+def _notification_preview(value: str, limit: int = 140) -> str:
+    value = " ".join(strip_tags(str(value or "")).split())
+    return value if len(value) <= limit else f"{value[:limit - 1].rstrip()}…"
+
+
+def notify_contractor_of_review_event(review: ProposalReviewVersion, event_type: str):
+    proposal = review.proposal
+    customer = proposal.customer_name.strip() or "Your customer"
+    project = proposal.project_title.strip() or "this estimate"
+    title_body = {
+        Notification.EVENT_ESTIMATE_VIEWED: ("Estimate viewed", f"{customer} viewed the estimate for {project}."),
+        Notification.EVENT_ESTIMATE_REVISION_REQUESTED: ("Changes requested", f"{customer} requested changes to {project}."),
+        Notification.EVENT_ESTIMATE_ACCEPTED: ("Estimate accepted", f"{customer} accepted the estimate for {project}."),
+        Notification.EVENT_ESTIMATE_DECLINED: ("Estimate declined", f"{customer} declined the estimate for {project}."),
+    }
+    if event_type not in title_body:
+        return None, False
+    title, body = title_body[event_type]
+    preview = review.revision_request_message if event_type == Notification.EVENT_ESTIMATE_REVISION_REQUESTED else review.decline_reason if event_type == Notification.EVENT_ESTIMATE_DECLINED else ""
+    if preview:
+        body = f'{body} “{_notification_preview(preview)}”'
+    return create_notification(
+        contractor=proposal.contractor,
+        category=event_type,
+        title=title,
+        body=body,
+        link=f"/app/proposals/{proposal.id}?section=ready",
+        actor_display_name=customer,
+        dedupe_key=f"proposal_review:{review.id}:{event_type}",
+    )
 
 
 def _money(value) -> str:

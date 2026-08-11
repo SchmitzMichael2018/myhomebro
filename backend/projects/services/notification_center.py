@@ -19,6 +19,9 @@ ACTION_NEEDED_CATEGORIES = {
     Notification.EVENT_DISPUTE_OPENED,
     Notification.EVENT_DISPUTE_UPDATED,
     Notification.EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED,
+    Notification.EVENT_ESTIMATE_REVISION_REQUESTED,
+    Notification.EVENT_ESTIMATE_ACCEPTED,
+    Notification.EVENT_ESTIMATE_DECLINED,
 }
 
 
@@ -49,6 +52,10 @@ ACTION_LABELS = {
     Notification.EVENT_MAINTENANCE_WORK_ORDER_SCHEDULED: "Open Agreement",
     Notification.EVENT_MAINTENANCE_WORK_ORDER_COMPLETED: "Open Agreement",
     Notification.EVENT_MAINTENANCE_CONTRACT_CANCELLED: "Open Agreement",
+    Notification.EVENT_ESTIMATE_VIEWED: "View Estimate",
+    Notification.EVENT_ESTIMATE_REVISION_REQUESTED: "Review Requested Changes",
+    Notification.EVENT_ESTIMATE_ACCEPTED: "Create Agreement",
+    Notification.EVENT_ESTIMATE_DECLINED: "View Estimate",
 }
 
 
@@ -104,6 +111,7 @@ def create_notification(
     actor_user=None,
     actor_display_name: str = "",
     actor_email: str = "",
+    dedupe_key: str = "",
 ):
     category = str(category or "").strip() or Notification.EVENT_BID_AWARDED
 
@@ -123,6 +131,7 @@ def create_notification(
     body = str(body or "").strip()
     title = str(title or "").strip() or "Notification"
 
+    dedupe_key = str(dedupe_key or "").strip()
     lookup = {
         "contractor": contractor,
         "category": category,
@@ -136,6 +145,8 @@ def create_notification(
         lookup["user"] = user
     if link:
         lookup["link"] = link
+    if dedupe_key:
+        lookup = {"contractor": contractor, "dedupe_key": dedupe_key}
 
     defaults = {
         "event_type": category,
@@ -145,6 +156,7 @@ def create_notification(
         "actor_user": actor_user,
         "actor_display_name": actor_display_name,
         "actor_email": actor_email,
+        "dedupe_key": dedupe_key,
     }
 
     notification, created = Notification.objects.get_or_create(defaults=defaults, **lookup)
@@ -166,6 +178,7 @@ def create_notification(
             ("actor_user", actor_user),
             ("actor_display_name", actor_display_name),
             ("actor_email", actor_email),
+            ("dedupe_key", dedupe_key),
         ):
             if value is not None and getattr(notification, field_name, None) != value:
                 setattr(notification, field_name, value)

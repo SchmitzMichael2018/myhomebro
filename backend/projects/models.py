@@ -2506,6 +2506,10 @@ class Notification(models.Model):
     EVENT_INVOICE_APPROVED = "invoice_approved"
     EVENT_MILESTONE_PENDING_APPROVAL = "milestone_pending_approval"
     EVENT_PAYMENT_RELEASED = "payment_released"
+    EVENT_ESTIMATE_VIEWED = "estimate_viewed"
+    EVENT_ESTIMATE_REVISION_REQUESTED = "estimate_revision_requested"
+    EVENT_ESTIMATE_ACCEPTED = "estimate_accepted"
+    EVENT_ESTIMATE_DECLINED = "estimate_declined"
 
     EVENT_CHOICES = (
         (EVENT_SUBCONTRACTOR_COMMENT, "Subcontractor Comment"),
@@ -2538,6 +2542,10 @@ class Notification(models.Model):
         (EVENT_INVOICE_APPROVED, "Invoice Approved"),
         (EVENT_MILESTONE_PENDING_APPROVAL, "Milestone Pending Approval"),
         (EVENT_PAYMENT_RELEASED, "Payment Released"),
+        (EVENT_ESTIMATE_VIEWED, "Estimate Viewed"),
+        (EVENT_ESTIMATE_REVISION_REQUESTED, "Estimate Revision Requested"),
+        (EVENT_ESTIMATE_ACCEPTED, "Estimate Accepted"),
+        (EVENT_ESTIMATE_DECLINED, "Estimate Declined"),
     )
 
     user = models.ForeignKey(
@@ -2553,6 +2561,7 @@ class Notification(models.Model):
         related_name="notifications",
     )
     category = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    dedupe_key = models.CharField(max_length=255, blank=True, default="", db_index=True)
     link = models.CharField(max_length=500, blank=True, default="")
     event_type = models.CharField(max_length=64, choices=EVENT_CHOICES, db_index=True)
     agreement = models.ForeignKey(
@@ -2606,6 +2615,13 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ["-created_at", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["contractor", "dedupe_key"],
+                condition=~Q(dedupe_key=""),
+                name="uniq_notification_contractor_dedupe",
+            ),
+        ]
 
     def __str__(self):
         recipient = getattr(self.user, "email", None) or self.contractor_id or "notification"

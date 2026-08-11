@@ -30,6 +30,7 @@ from projects.services.proposal_customer_review import (
     review_delivery_eligibility,
     send_review,
     token_for,
+    notify_contractor_of_review_event,
 )
 User = get_user_model()
 from projects.models_templates import ProjectTemplate
@@ -742,6 +743,7 @@ class PublicProposalReviewView(APIView):
                     review.proposal.status = Proposal.STATUS_VIEWED
                     review.proposal.save(update_fields=["status", "updated_at"])
                 _activity(review.proposal, ProposalActivity.EVENT_ESTIMATE_VIEWED, "Estimate viewed by customer", metadata={"review_version": review.version})
+                notify_contractor_of_review_event(review, "estimate_viewed")
         return Response(public_review_payload(review, request=request))
 
     def post(self, request, token):
@@ -788,6 +790,7 @@ class PublicProposalReviewView(APIView):
             review.save(update_fields=["decision", "decided_at", "accepted_by", "acceptance_acknowledgement", "decline_reason", "revision_request_message"])
             proposal.save(update_fields=["status", "updated_at"])
             _activity(proposal, event, message, metadata={"review_version": review.version})
+            notify_contractor_of_review_event(review, event)
         return Response(public_review_payload(review, request=request))
 
 

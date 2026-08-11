@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner
+from projects.models import Agreement, Contractor, Homeowner, Notification
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorOpportunity,
@@ -403,6 +403,55 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(proposal.status, Proposal.STATUS_ACCEPTED)
         self.assertEqual(review.acceptance_acknowledgement, ACKNOWLEDGEMENT)
         self.assertEqual(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_ESTIMATE_ACCEPTED).count(), 1)
+        notifications = Notification.objects.filter(contractor=self.contractor).order_by("created_at")
+        self.assertEqual(notifications.count(), 2)
+        viewed_notification, accepted_notification = notifications
+        self.assertEqual(viewed_notification.event_type, Notification.EVENT_ESTIMATE_VIEWED)
+        self.assertEqual(accepted_notification.event_type, Notification.EVENT_ESTIMATE_ACCEPTED)
+        self.assertEqual(accepted_notification.link, f"/app/proposals/{proposal.id}?section=ready")
+        self.assertFalse(accepted_notification.is_read)
+        self.assertEqual(Notification.objects.filter(contractor=self.other_contractor).count(), 0)
+        unread = self.client.get("/api/notifications/unread-count/")
+        self.assertEqual(unread.status_code, 200)
+        self.assertEqual(unread.data["count"], 2)
+        bell_rows = self.client.get("/api/notifications/").data
+        accepted_row = next(row for row in bell_rows if row["event_type"] == Notification.EVENT_ESTIMATE_ACCEPTED)
+        self.assertEqual(accepted_row["action_label"], "Create Agreement")
+        self.assertEqual(accepted_row["action_url"], f"/app/proposals/{proposal.id}?section=ready")
+        marked = self.client.post(f"/api/notifications/{accepted_notification.id}/read/")
+        self.assertEqual(marked.status_code, 200)
+        self.assertTrue(marked.data["is_read"])
+        self.assertEqual(self.client.get("/api/notifications/unread-count/").data["count"], 1)
+
+    def test_revision_and_decline_notifications_are_safe_actionable_and_idempotent(self):
+        public = APIClient(); _use_secure_requests(public)
+        cases = [
+            ("request_changes", {"message": "  I'll do <b>cleanup</b>  "}, Notification.EVENT_ESTIMATE_REVISION_REQUESTED, "Changes requested", "Review Requested Changes"),
+            ("decline", {"reason": "Price"}, Notification.EVENT_ESTIMATE_DECLINED, "Estimate declined", "View Estimate"),
+        ]
+        for index, (action, payload, event_type, title, action_label) in enumerate(cases, start=700):
+            with self.subTest(action=action):
+                proposal = Proposal.objects.create(
+                    contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=index,
+                    status=Proposal.STATUS_SENT, project_title=f"Bathroom {index}", customer_name="Casey Homeowner",
+                    customer_email="casey@example.com",
+                )
+                review = ProposalReviewVersion.objects.create(
+                    proposal=proposal, version=1, customer_email=proposal.customer_email, snapshot={}, sent_at=timezone.now(),
+                )
+                token = token_for(review)
+                first = public.post(f"/api/projects/proposal-reviews/{token}/", {"action": action, **payload}, format="json")
+                replay = public.post(f"/api/projects/proposal-reviews/{token}/", {"action": action, **payload}, format="json")
+                self.assertEqual(first.status_code, 200)
+                self.assertEqual(replay.status_code, 200)
+                rows = Notification.objects.filter(contractor=self.contractor, event_type=event_type)
+                self.assertEqual(rows.count(), 1)
+                notification = rows.get()
+                self.assertEqual(notification.title, title)
+                self.assertNotIn("<b>", notification.message)
+                self.assertEqual(notification.link, f"/app/proposals/{proposal.id}?section=ready")
+                from projects.services.notification_center import notification_action_label
+                self.assertEqual(notification_action_label(notification), action_label)
 
     @patch("projects.services.proposal_customer_review.send_compliant_sms")
     @patch("projects.services.proposal_customer_review.send_postmark_email", return_value=(True, "sent"))
