@@ -3339,7 +3339,9 @@ export default function ContractorDashboard() {
     contractorNextActions,
   ]);
   const nextActionCards = useMemo(() => {
-    const activeActions = contractorNextActions.filter((action) => !dismissedNextActionKeys.has(action.key));
+    const activeActions = contractorNextActions.filter(
+      (action) => !dismissedNextActionKeys.has(action.snooze_key || action.key)
+    );
     if (activeActions.length) return activeActions.slice(0, 10);
     const traditionalSection = activationSummary?.guide_sections?.traditional_onboarding;
     if (traditionalSection?.visible && !traditionalSection.completed && !traditionalSection.dismissed) {
@@ -4241,7 +4243,7 @@ export default function ContractorDashboard() {
                           variant="ghost"
                           size="sm"
                           data-testid={`dashboard-next-action-snooze-${item.key}`}
-                          onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
+                          onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.snooze_key || item.key]))}
                         >
                           Snooze
                         </Button>
@@ -4250,7 +4252,7 @@ export default function ContractorDashboard() {
                             theme="operational"
                             variant="icon"
                             data-testid={`dashboard-next-action-dismiss-${item.key}`}
-                            onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.key]))}
+                            onClick={() => setDismissedNextActionKeys((current) => new Set([...current, item.snooze_key || item.key]))}
                             className="ml-auto !h-8 !w-8 !rounded-full"
                             aria-label={`Dismiss ${item.title}`}
                           >

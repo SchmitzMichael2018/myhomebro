@@ -183,6 +183,10 @@ function buildAction({
   blocking = false,
   optional = false,
   dismissible = false,
+  entityType = "",
+  entityId = null,
+  actionFamily = "",
+  specificity = 0,
 }) {
   const recommendedUrl = safeText(navigationTarget) || "/app/dashboard";
   const normalizedPriority = safeNumber(priorityScore);
@@ -213,6 +217,13 @@ function buildAction({
     blocking: Boolean(blocking),
     optional: Boolean(optional),
     dismissible: Boolean(dismissible || optional),
+    entity_type: safeText(entityType),
+    entity_id: entityId === null || typeof entityId === "undefined" ? null : safeText(entityId),
+    action_family: safeText(actionFamily),
+    specificity: safeNumber(specificity),
+    snooze_key: safeText(entityType) && entityId !== null && safeText(actionFamily)
+      ? `${safeText(entityType)}:${safeText(entityId)}:${safeText(actionFamily)}`
+      : safeText(key),
   };
 }
 
@@ -232,16 +243,24 @@ function sortActions(actions) {
 }
 
 function dedupeActions(actions) {
-  const seen = new Set();
-  const result = [];
+  const selected = new Map();
   for (const action of actions) {
     if (!action || !action.key) continue;
-    const dedupeKey = safeText(action.dedupeKey || action.navigationTarget || action.key);
-    if (seen.has(dedupeKey)) continue;
-    seen.add(dedupeKey);
-    result.push(action);
+    const entityKey = action.entity_type && action.entity_id
+      ? `${action.entity_type}:${action.entity_id}`
+      : "";
+    const dedupeKey = entityKey || safeText(action.dedupeKey || action.navigationTarget || action.key);
+    const current = selected.get(dedupeKey);
+    if (
+      !current ||
+      safeNumber(action.specificity) > safeNumber(current.specificity) ||
+      (safeNumber(action.specificity) === safeNumber(current.specificity) &&
+        safeNumber(action.priority_score) > safeNumber(current.priority_score))
+    ) {
+      selected.set(dedupeKey, action);
+    }
   }
-  return result;
+  return [...selected.values()];
 }
 
 function latestByDate(rows, datePicker) {
@@ -258,6 +277,11 @@ function latestByDate(rows, datePicker) {
 
 function mapNextBestAction(nextBestAction) {
   if (!nextBestAction?.title) return null;
+  const target = safeText(nextBestAction.navigation_target);
+  const agreementMatch = target.match(/\/app\/agreements\/(\d+)/);
+  const agreementId = agreementMatch?.[1] || null;
+  const actionType = safeText(nextBestAction.action_type) || "next_best_action";
+  const actionFamily = actionType === "send_first_agreement" ? "agreement_pre_send" : "";
   return buildAction({
     key: `next-best:${safeText(nextBestAction.action_type) || safeText(nextBestAction.title)}`,
     dedupeKey: safeText(nextBestAction.navigation_target) || safeText(nextBestAction.action_type) || safeText(nextBestAction.title),
@@ -269,10 +293,14 @@ function mapNextBestAction(nextBestAction) {
     category: nextBestAction.blocking_issue ? "operations" : "project",
     source: nextBestAction.source_system || "activity",
     dataTestId: "dashboard-next-best-action-primary",
-    actionType: nextBestAction.action_type || "next_best_action",
+    actionType,
     reason: nextBestAction.reason || nextBestAction.message,
     estimatedEffort: nextBestAction.estimated_effort || "3 minutes",
     blocking: Boolean(nextBestAction.blocking_issue),
+    entityType: agreementId ? "agreement" : "",
+    entityId: agreementId,
+    actionFamily,
+    specificity: agreementId ? 1 : 0,
   });
 }
 
@@ -364,6 +392,10 @@ export function getContractorNextActions({
         project: title,
         updatedAt: agreement?.planning_validation_checked_at || agreement?.updated_at,
         blocking: hardConflict,
+        entityType: "agreement",
+        entityId: agreement.id,
+        actionFamily: "agreement_planning",
+        specificity: 4,
       })
     );
   }
@@ -510,59 +542,54 @@ export function getContractorNextActions({
     return safeNumber(right?.id) - safeNumber(left?.id);
   });
 
-  const latestDraft = agreementRows.find((agreement) => normalizeStatus(agreement?.status) === "draft");
-  if (latestDraft?.id) {
-    const projectName = pickFirst(latestDraft?.title, latestDraft?.project_title, latestDraft?.project?.title, latestDraft?.name);
-    const customerName = pickFirst(latestDraft?.customer_name, latestDraft?.homeowner_name, latestDraft?.client_name, latestDraft?.customer?.name);
+  const draftAgreements = agreementRows.filter(
+    (agreement) => normalizeStatus(agreement?.status) === "draft" && agreement?.id
+  );
+  for (const draft of draftAgreements) {
+    const projectName = pickFirst(draft?.title, draft?.project_title, draft?.project?.title, draft?.name);
+    const customerName = pickFirst(draft?.customer_name, draft?.homeowner_name, draft?.client_name, draft?.customer?.name);
+    const contractorSigned = Boolean(draft?.signed_by_contractor || draft?.contractor_signed || draft?.signed_at_contractor);
+    const customerSigned = Boolean(draft?.signed_by_homeowner || draft?.homeowner_signed || draft?.signed_at_homeowner);
+    // Agreement has no persisted "sent" status today. Signature evidence is the
+    // only reliable indication that this draft has entered the signing phase.
+    const signaturePhaseStarted = contractorSigned || customerSigned;
+    const actionFamily = signaturePhaseStarted ? "agreement_signature" : "agreement_pre_send";
+    const displayName = projectName || `Agreement #${draft.id}`;
     actions.push(
       buildAction({
-        key: `agreement-draft:${latestDraft.id}`,
-        dedupeKey: `agreement:${latestDraft.id}`,
-        title: "Draft agreement ready to send",
-        description: "A draft agreement is ready for review and sending.",
-        buttonLabel: "Open draft",
-        navigationTarget: `/app/agreements/${latestDraft.id}/wizard?step=1`,
-        priorityScore: 87,
+        key: `agreement:${draft.id}:${actionFamily}`,
+        dedupeKey: `agreement:${draft.id}:${actionFamily}`,
+        title: signaturePhaseStarted
+          ? `${displayName} needs the remaining signature`
+          : `${displayName} agreement ready to send`,
+        description: signaturePhaseStarted
+          ? "The agreement has entered signing and is waiting for the remaining required signature."
+          : `Review the agreement and send it${customerName ? ` to ${customerName}` : " to the customer"}.`,
+        buttonLabel: signaturePhaseStarted ? "Review agreement" : "Open draft",
+        navigationTarget: signaturePhaseStarted
+          ? `/app/agreements/${draft.id}`
+          : `/app/agreements/${draft.id}/wizard?step=1`,
+        priorityScore: signaturePhaseStarted ? 89 : 87,
         category: "project",
         source: "agreements",
-        actionType: "send_draft_agreement",
-        summary: projectName ? `${projectName} is drafted and ready for review.` : "A draft agreement is ready for review.",
-        reason: "Sending the draft keeps the customer moving toward signature.",
-        estimatedEffort: "5 minutes",
+        actionType: signaturePhaseStarted ? "complete_agreement_signatures" : "send_draft_agreement",
+        summary: signaturePhaseStarted
+          ? `${displayName} is waiting for its remaining required signature.`
+          : `${displayName} is drafted and ready for review.`,
+        reason: signaturePhaseStarted
+          ? "Completing required signatures unlocks the agreement's next lifecycle step."
+          : "Sending the draft keeps the customer moving toward signature.",
+        estimatedEffort: signaturePhaseStarted ? "3 minutes" : "5 minutes",
         urgency: "Today",
         customer: customerName,
         project: projectName,
-        value: pickAmount(latestDraft?.total_amount, latestDraft?.amount, latestDraft?.contract_total, latestDraft?.project?.budget),
-        updatedAt: latestDraft?.updated_at || latestDraft?.created_at,
-      })
-    );
-  }
-
-  const awaitingSignature = agreementRows.filter(
-    (agreement) =>
-      !agreement?.signature_is_satisfied &&
-      !agreement?.is_fully_signed &&
-      !["signed", "completed", "cancelled", "archived"].includes(normalizeStatus(agreement?.status))
-  );
-  if (awaitingSignature.length) {
-    actions.push(
-      buildAction({
-        key: "agreements-awaiting-signature",
-        dedupeKey: "agreements-awaiting-signature",
-        title: "Review agreement signatures",
-        description: `${countLabel(awaitingSignature.length, "agreement")} ${isAre(awaitingSignature.length)} waiting on signature.`,
-        buttonLabel: "Open agreements",
-        navigationTarget: "/app/agreements?focus=needs_attention&filter=awaiting_signature",
-        priorityScore: 86,
-        category: "project",
-        source: "agreements",
-        dataTestId: "dashboard-needs-attention-item-awaiting_signature",
-        actionType: "follow_up_signature",
-        summary: `${countLabel(awaitingSignature.length, "agreement")} ${isAre(awaitingSignature.length)} waiting on signature.`,
-        reason: "Signed agreements unlock scheduled work and payment setup.",
-        estimatedEffort: "3 minutes",
-        urgency: "Today",
-        blocking: true,
+        value: pickAmount(draft?.total_amount, draft?.amount, draft?.contract_total, draft?.project?.budget),
+        updatedAt: draft?.updated_at || draft?.created_at,
+        blocking: signaturePhaseStarted,
+        entityType: "agreement",
+        entityId: draft.id,
+        actionFamily,
+        specificity: 3,
       })
     );
   }

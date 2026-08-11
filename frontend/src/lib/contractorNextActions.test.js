@@ -106,4 +106,90 @@ describe("getContractorNextActions", () => {
     const nonContextual = getContractorNextActions({ stripeReady: false });
     expect(nonContextual.some((action) => action.key === "finance:payment-setup")).toBe(false);
   });
+
+  it("returns one entity-specific pre-send priority for one unsigned draft", () => {
+    const actions = getContractorNextActions({
+      nextBestAction: {
+        action_type: "send_first_agreement",
+        title: "Send your next agreement",
+        navigation_target: "/app/agreements/42/wizard?step=1",
+        priority_score: 90,
+      },
+      agreements: [{ id: 42, status: "draft", project_title: "Bathroom Remodel", customer_name: "QA Homeowner", signature_is_satisfied: false }],
+    });
+
+    expect(actions.filter((action) => action.entity_type === "agreement")).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      key: "agreement:42:agreement_pre_send",
+      snooze_key: "agreement:42:agreement_pre_send",
+      title: "Bathroom Remodel agreement ready to send",
+      buttonLabel: "Open draft",
+      navigationTarget: "/app/agreements/42/wizard?step=1",
+    });
+    expect(actions.some((action) => action.title === "Review agreement signatures")).toBe(false);
+    expect(actions.some((action) => action.title === "Send your next agreement")).toBe(false);
+  });
+
+  it("returns one signature priority only after signing has started", () => {
+    const actions = getContractorNextActions({
+      agreements: [{
+        id: 43,
+        status: "draft",
+        project_title: "Kitchen Remodel",
+        signed_by_contractor: true,
+        signed_by_homeowner: false,
+        signature_is_satisfied: false,
+      }],
+    });
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      key: "agreement:43:agreement_signature",
+      action_family: "agreement_signature",
+      title: "Kitchen Remodel needs the remaining signature",
+      navigationTarget: "/app/agreements/43",
+    });
+  });
+
+  it("preserves one lifecycle priority for each distinct agreement", () => {
+    const actions = getContractorNextActions({
+      agreements: [
+        { id: 44, status: "draft", project_title: "Bath", signed_by_contractor: false, signed_by_homeowner: false },
+        { id: 45, status: "draft", project_title: "Kitchen", signed_by_contractor: true, signed_by_homeowner: false },
+      ],
+    });
+
+    expect(actions).toHaveLength(2);
+    expect(actions.map((action) => action.key).sort()).toEqual([
+      "agreement:44:agreement_pre_send",
+      "agreement:45:agreement_signature",
+    ]);
+  });
+
+  it("uses the action family as the snooze identity and changes it with lifecycle state", () => {
+    const draft = getContractorNextActions({ agreements: [{ id: 46, status: "draft" }] })[0];
+    const signing = getContractorNextActions({ agreements: [{ id: 46, status: "draft", signed_by_contractor: true }] })[0];
+
+    expect(draft.snooze_key).toBe("agreement:46:agreement_pre_send");
+    expect(signing.snooze_key).toBe("agreement:46:agreement_signature");
+  });
+
+  it("keeps a blocking planning action instead of a lower-value draft action", () => {
+    const actions = getContractorNextActions({
+      agreements: [{
+        id: 47,
+        status: "draft",
+        project_title: "Addition",
+        planning_validation_status: "hard_conflict",
+        planning_validation_summary: { reason: "Crew availability conflicts with the required start." },
+      }],
+    });
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      key: "planning-validation:47:hard_conflict",
+      action_family: "agreement_planning",
+      blocking: true,
+    });
+  });
 });
