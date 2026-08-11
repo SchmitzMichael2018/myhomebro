@@ -725,6 +725,7 @@ class AgreementSerializer(serializers.ModelSerializer):
             "discounts": str(pricing.get("discounts") or "0.00"),
             "incidentals_reserve": str(pricing.get("incidentals_reserve") or "0.00"),
             "total": str(pricing.get("total") or "0.00"),
+            "pricing_rows": pricing.get("line_items") or [],
         }
 
     def _incidentals_summary(self, obj):

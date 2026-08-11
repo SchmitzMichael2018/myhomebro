@@ -7628,6 +7628,16 @@ export default function Step2Milestones({
                                   currency: "USD",
                                 })}
                               </div>
+                              {m.accepted_estimate_amount != null ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs" data-testid={`step2-milestone-estimate-source-${m.id || idx + 1}`}>
+                                  <span className={`rounded-full px-2 py-0.5 font-semibold ${Math.abs(Number(m.amount || 0) - Number(m.accepted_estimate_amount || 0)) < 0.005 ? "bg-sky-100 text-sky-800" : "bg-amber-100 text-amber-900"}`}>
+                                    {Math.abs(Number(m.amount || 0) - Number(m.accepted_estimate_amount || 0)) < 0.005 ? `Estimate v${m.accepted_estimate_review_version}` : "Modified after Estimate"}
+                                  </span>
+                                  {Math.abs(Number(m.amount || 0) - Number(m.accepted_estimate_amount || 0)) >= 0.005 ? (
+                                    <span className="text-slate-600">Accepted {formatCurrency(Number(m.accepted_estimate_amount))}</span>
+                                  ) : null}
+                                </div>
+                              ) : null}
                             </div>
                             {dateRangeLabel ? (
                               <div

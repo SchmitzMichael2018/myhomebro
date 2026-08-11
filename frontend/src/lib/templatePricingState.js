@@ -36,6 +36,8 @@ export function buildMilestoneAllocations(template, targetSubtotal) {
       const amount = Math.round(target * percent) / 100;
       return {
         milestoneId: item.id,
+        milestoneKey: item.normalized_milestone_type || "",
+        milestoneOrder: item.sort_order,
         title: item.title || "Milestone",
         description: item.description || "",
         percent,

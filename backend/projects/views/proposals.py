@@ -136,6 +136,12 @@ def _serialize_line_item(item: ProposalLineItem) -> dict:
         "unit_price": _money(item.unit_price),
         "total": _money(item.total),
         "notes": item.notes,
+        "source_template_id": item.source_template_id,
+        "source_template_milestone_id": item.source_template_milestone_id,
+        "source_milestone_key": item.source_milestone_key,
+        "source_milestone_name": item.source_milestone_name,
+        "source_milestone_order": item.source_milestone_order,
+        "source_allocation_percent": _money(item.source_allocation_percent) if item.source_allocation_percent is not None else None,
         "created_at": _format_datetime(item.created_at),
         "updated_at": _format_datetime(item.updated_at),
     }
@@ -1101,6 +1107,7 @@ class ProposalTemplatePricingApplyView(APIView):
             if not isinstance(reviewed_items, list) or not reviewed_items:
                 return Response({"pricing_items": ["Review at least one pricing item before applying."]}, status=400)
             prepared = []
+            template_milestones = {row.id: row for row in template.milestones.all()}
             for index, row in enumerate(reviewed_items):
                 if not isinstance(row, dict):
                     return Response({"pricing_items": [f"Item {index + 1} is invalid."]}, status=400)
@@ -1120,6 +1127,11 @@ class ProposalTemplatePricingApplyView(APIView):
                     return Response({"pricing_items": [f"Item {index + 1}: {unit_error}"]}, status=400)
                 if quantity <= 0 or unit_price < 0:
                     return Response({"pricing_items": [f"Item {index + 1} must use a positive quantity and non-negative price."]}, status=400)
+                try:
+                    source_milestone_id = int(row.get("source_template_milestone_id"))
+                    source_milestone = template_milestones[source_milestone_id]
+                except (TypeError, ValueError, KeyError):
+                    return Response({"pricing_items": [f"Item {index + 1} must identify a milestone from the selected template."]}, status=400)
                 prepared.append({
                     "category": category,
                     "description": description,
@@ -1127,6 +1139,12 @@ class ProposalTemplatePricingApplyView(APIView):
                     "unit": unit,
                     "unit_price": unit_price,
                     "notes": _safe_text(row.get("notes"))[:2000],
+                    "source_template_id": template.id,
+                    "source_template_milestone_id": source_milestone.id,
+                    "source_milestone_key": source_milestone.normalized_milestone_type[:128],
+                    "source_milestone_name": source_milestone.title[:255],
+                    "source_milestone_order": source_milestone.sort_order,
+                    "source_allocation_percent": source_milestone.suggested_amount_percent,
                 })
 
             with transaction.atomic():

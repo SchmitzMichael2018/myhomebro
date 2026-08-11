@@ -16,7 +16,7 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalPortalActivation, ProposalReviewVersion
 from projects.models_sms import SMSConsent
-from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, review_delivery_eligibility, token_for
+from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, public_customer_snapshot, review_delivery_eligibility, token_for
 from projects.services.proposal_conversion import ProposalConversionError, _trusted_agreement_payload
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
@@ -791,6 +791,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
             "discounts": "0.00",
             "incidentals_reserve": "1500.00",
             "total": "16500.00",
+            "pricing_rows": review.snapshot["pricing"]["line_items"],
         })
         self.assertEqual(review.snapshot, accepted_snapshot)
         milestone = Milestone.objects.create(agreement=agreement, title="Bathroom work", amount="15000.00", order=1)
@@ -821,6 +822,45 @@ class ProposalWorkspaceFoundationTests(TestCase):
         review.snapshot = {**accepted_snapshot, "pricing": {**accepted_snapshot["pricing"], "total": "999.00"}}
         with self.assertRaisesRegex(ProposalConversionError, "does not reconcile"):
             _trusted_agreement_payload(review)
+
+    def test_latest_accepted_version_exact_lineage_creates_authoritative_milestone(self):
+        homeowner, proposal, first_review = self._accepted_proposal_for_conversion(source_id=706)
+        first_review.delete()
+        proposal.line_items.all().delete()
+        template = ProjectTemplate.objects.create(contractor=self.contractor, name="Bathroom allocation")
+        source = ProjectTemplateMilestone.objects.create(template=template, title="Demolition", sort_order=1, normalized_milestone_type="demolition", suggested_amount_percent="13.00")
+        line = ProposalLineItem.objects.create(
+            proposal=proposal, category=ProposalLineItem.CATEGORY_LABOR, description="Demolition",
+            quantity=1, unit_price="1950.00", source_template=template, source_template_milestone=source,
+            source_milestone_key="demolition", source_milestone_name="Demolition",
+            source_milestone_order=1, source_allocation_percent="13.00",
+        )
+        ProposalReviewVersion.objects.create(
+            proposal=proposal, version=1, customer_email=proposal.customer_email,
+            snapshot=build_customer_snapshot(proposal), decision=ProposalReviewVersion.DECISION_REVISION_REQUESTED,
+        )
+        line.unit_price = "1000.00"
+        line.save()
+        accepted = ProposalReviewVersion.objects.create(
+            proposal=proposal, version=2, customer_email=proposal.customer_email,
+            snapshot=build_customer_snapshot(proposal), decision=ProposalReviewVersion.DECISION_ACCEPTED,
+        )
+
+        response = self.client.post("/api/projects/agreements/", {
+            "source_proposal_id": proposal.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1,
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        milestone = Agreement.objects.get(pk=response.data["id"]).milestones.get()
+        self.assertEqual(milestone.amount, 1000)
+        self.assertEqual(milestone.accepted_estimate_amount, 1000)
+        self.assertEqual(milestone.accepted_estimate_review_version, 2)
+        self.assertEqual(milestone.accepted_estimate_line_item_id, line.id)
+        self.assertEqual(milestone.accepted_estimate_source_key, "demolition")
+        self.assertNotEqual(milestone.amount, 1950)
+        accepted.refresh_from_db()
+        self.assertEqual(accepted.snapshot["pricing"]["line_items"][0]["total"], "1000.00")
+        self.assertNotIn("source_template_milestone_id", public_customer_snapshot(accepted.snapshot)["pricing"]["line_items"][0])
 
     def test_conversion_rejects_unaccepted_cross_owner_stale_and_post_acceptance_edits(self):
         for index, status_value in enumerate((Proposal.STATUS_READY, Proposal.STATUS_SENT, Proposal.STATUS_VIEWED, Proposal.STATUS_REVISION_REQUESTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED), start=100):
@@ -1169,7 +1209,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
     def test_reviewed_percentage_pricing_is_applied_atomically(self):
         proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen Refresh")
         template = ProjectTemplate.objects.create(contractor=self.contractor, name="Allocation Template")
-        ProjectTemplateMilestone.objects.create(template=template, title="Demolition", suggested_amount_percent="25.00")
+        template_milestone = ProjectTemplateMilestone.objects.create(template=template, title="Demolition", sort_order=1, normalized_milestone_type="demolition", suggested_amount_percent="25.00")
 
         response = self.client.post(
             f"/api/projects/proposals/{proposal.id}/apply-template-pricing/",
@@ -1184,6 +1224,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
                     "unit": "ls",
                     "unit_price": "5000.00",
                     "notes": "Template milestone: Demolition (25%)",
+                    "source_template_milestone_id": template_milestone.id,
                 }],
             },
             format="json",
@@ -1194,5 +1235,8 @@ class ProposalWorkspaceFoundationTests(TestCase):
         item = proposal.line_items.get()
         self.assertEqual(item.category, ProposalLineItem.CATEGORY_LABOR)
         self.assertEqual(item.unit, "ls")
+        self.assertEqual(item.source_template_milestone, template_milestone)
+        self.assertEqual(item.source_milestone_name, "Demolition")
+        self.assertEqual(item.source_allocation_percent, 25)
         template.refresh_from_db()
         self.assertEqual(template.milestones.get().suggested_amount_percent, 25)

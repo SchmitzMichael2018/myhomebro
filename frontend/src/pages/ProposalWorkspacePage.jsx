@@ -2053,6 +2053,11 @@ export default function ProposalWorkspacePage() {
           unit: row.unit,
           unit_price: row.unitPrice,
           notes: `Template milestone: ${row.title} (${row.percent}%)`,
+          source_template_milestone_id: row.milestoneId,
+          source_milestone_key: row.milestoneKey,
+          source_milestone_name: row.title,
+          source_milestone_order: row.milestoneOrder,
+          source_allocation_percent: row.percent,
         })),
       });
       setProposal((previous) => ({ ...previous, line_items: data.line_items, totals: data.totals, pricing_template_name: data.template_name }));

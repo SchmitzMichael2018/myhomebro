@@ -85,6 +85,7 @@ def build_customer_snapshot(proposal: Proposal) -> dict:
         else:
             subtotal += amount
         safe_items.append({
+            "proposal_line_item_id": item.id,
             "category": item.category,
             "category_label": item.get_category_display(),
             "description": item.description,
@@ -92,6 +93,12 @@ def build_customer_snapshot(proposal: Proposal) -> dict:
             "unit": item.unit,
             "unit_price": _money(item.unit_price),
             "total": _money(item.total),
+            "source_template_id": item.source_template_id,
+            "source_template_milestone_id": item.source_template_milestone_id,
+            "source_milestone_key": item.source_milestone_key,
+            "source_milestone_name": item.source_milestone_name,
+            "source_milestone_order": item.source_milestone_order,
+            "source_allocation_percent": _money(item.source_allocation_percent) if item.source_allocation_percent is not None else None,
         })
     contractor = proposal.contractor
     return {
@@ -124,6 +131,23 @@ def build_customer_snapshot(proposal: Proposal) -> dict:
         },
         # Attachments are intentionally absent until an explicit customer-sharing flag exists.
     }
+
+
+def public_customer_snapshot(snapshot: dict) -> dict:
+    """Remove conversion-only provenance before returning an Estimate publicly."""
+    public = dict(snapshot or {})
+    pricing = dict(public.get("pricing") or {})
+    internal_keys = {
+        "proposal_line_item_id", "source_template_id", "source_template_milestone_id",
+        "source_milestone_key", "source_milestone_name", "source_milestone_order",
+        "source_allocation_percent",
+    }
+    pricing["line_items"] = [
+        {key: value for key, value in dict(row).items() if key not in internal_keys}
+        for row in (pricing.get("line_items") or [])
+    ]
+    public["pricing"] = pricing
+    return public
 
 
 def token_for(review: ProposalReviewVersion) -> str:
@@ -211,7 +235,7 @@ def public_review_payload(review: ProposalReviewVersion, request=None) -> dict:
         "acknowledgement": ACKNOWLEDGEMENT,
         "revision_request_message": review.revision_request_message,
         "decline_reason": review.decline_reason,
-        "estimate": review.snapshot,
+        "estimate": public_customer_snapshot(review.snapshot),
         "portal": portal_access(review, request=request),
         "conversation": serialize_conversation(conversation_for_proposal(review.proposal), audience="customer"),
     }

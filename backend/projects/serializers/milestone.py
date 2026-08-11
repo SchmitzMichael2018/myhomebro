@@ -276,6 +276,10 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "subcontractor_assignment_compliance",
             "subcontractor_milestone_agreement",
             "subcontractor_quote_request",
+            "accepted_estimate_amount",
+            "accepted_estimate_line_item_id",
+            "accepted_estimate_review_version",
+            "accepted_estimate_source_key",
         )
 
     # ------------------------ helpers (read) ------------------------ #

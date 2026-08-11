@@ -109,6 +109,46 @@ def prepare_proposal_conversion(*, contractor, proposal_id: int) -> ProposalConv
 def finalize_proposal_conversion(*, context: ProposalConversionContext, agreement, actor) -> None:
     """Finalize both lifecycle relationships inside the caller's atomic transaction."""
     proposal = context.proposal
+    from projects.models import Milestone
+
+    pricing_rows = ((context.review.snapshot or {}).get("pricing") or {}).get("line_items") or []
+    def mapping_identity(row):
+        if row.get("source_template_milestone_id"):
+            return f"id:{row['source_template_milestone_id']}"
+        if row.get("source_milestone_key"):
+            return f"key:{str(row['source_milestone_key']).strip().lower()}"
+        if row.get("source_milestone_order") and row.get("source_milestone_name"):
+            normalized_name = " ".join(str(row["source_milestone_name"]).strip().lower().split())
+            return f"order-name:{row['source_milestone_order']}:{normalized_name}"
+        return ""
+
+    mapped_rows = [row for row in pricing_rows if mapping_identity(row) and row.get("category") not in {"tax", "discount", "incidentals_reserve"}]
+    if mapped_rows and not agreement.milestones.exists():
+        grouped = {}
+        for row in mapped_rows:
+            identity = mapping_identity(row)
+            bucket = grouped.setdefault(identity, {"row": row, "amount": Decimal("0.00"), "line_item_ids": []})
+            bucket["amount"] += Decimal(str(row.get("total") or "0.00"))
+            bucket["line_item_ids"].append(row.get("proposal_line_item_id"))
+        ordered_groups = sorted(
+            grouped.values(),
+            key=lambda value: (value["row"].get("source_milestone_order") or 999999, value["row"].get("proposal_line_item_id") or 0),
+        )
+        for index, bucket in enumerate(ordered_groups, start=1):
+            row = bucket["row"]
+            amount = bucket["amount"]
+            Milestone.objects.create(
+                agreement=agreement,
+                order=index,
+                title=row.get("source_milestone_name") or row.get("description") or f"Milestone {index}",
+                description=row.get("description") or "",
+                amount=amount,
+                accepted_estimate_amount=amount,
+                accepted_estimate_line_item_id=bucket["line_item_ids"][0] if len(bucket["line_item_ids"]) == 1 else None,
+                accepted_estimate_review_version=context.review.version,
+                accepted_estimate_source_key=row.get("source_milestone_key") or str(row.get("source_template_milestone_id")),
+                pricing_source_note=f"Accepted Estimate v{context.review.version}",
+            )
     if proposal.converted_agreement_id and proposal.converted_agreement_id != agreement.id:
         raise ProposalConversionError("This estimate was already converted to another agreement.", status_code=409)
     proposal.converted_agreement = agreement

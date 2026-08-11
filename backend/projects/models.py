@@ -2102,6 +2102,10 @@ class Milestone(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
+    accepted_estimate_amount = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    accepted_estimate_line_item_id = models.PositiveIntegerField(null=True, blank=True)
+    accepted_estimate_review_version = models.PositiveIntegerField(null=True, blank=True)
+    accepted_estimate_source_key = models.CharField(max_length=128, blank=True, default="")
 
     start_date = models.DateField(null=True, blank=True)
     completion_date = models.DateField(null=True, blank=True)
