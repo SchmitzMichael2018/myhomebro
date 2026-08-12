@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from projects.models import Agreement, Contractor, Homeowner
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
-from projects.models_proposals import Proposal
+from projects.models_proposals import Proposal, ProposalReviewVersion
 from projects.models_templates import ProjectTemplate
 
 
@@ -69,7 +69,13 @@ def _build_priority_summary(contractor: Contractor) -> dict[str, Any]:
     active_proposals = (
         Proposal.objects.filter(contractor=contractor)
         .exclude(status__in=[Proposal.STATUS_CONVERTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED])
+        .filter(
+            converted_agreement__isnull=True,
+            converted_at__isnull=True,
+            contractor_opportunity__converted_agreement__isnull=True,
+        )
         .select_related("contractor_opportunity", "contractor_opportunity__converted_agreement")
+        .prefetch_related("review_versions")
         .annotate(line_item_count=Count("line_items"))
     )
     active_estimate_count = active_proposals.count()
@@ -118,8 +124,17 @@ def _build_priority_summary(contractor: Contractor) -> dict[str, Any]:
         }
     elif latest_estimate is not None:
         project_name = (latest_estimate.project_title or "this estimate").strip()
-        linked_agreement_id = getattr(latest_estimate.contractor_opportunity, "converted_agreement_id", None)
-        if latest_estimate.status == Proposal.STATUS_READY and not linked_agreement_id:
+        latest_review = latest_estimate.review_versions.order_by("-version").first()
+        accepted_review_is_current = bool(
+            latest_review
+            and latest_review.decision == ProposalReviewVersion.DECISION_ACCEPTED
+            and (latest_review.expires_at is None or latest_review.expires_at > timezone.now())
+        )
+        agreement_action_eligible = (
+            latest_estimate.status == Proposal.STATUS_READY
+            or (latest_estimate.status == Proposal.STATUS_ACCEPTED and accepted_review_is_current)
+        )
+        if agreement_action_eligible:
             launch_action = {
                 "key": f"sales:agreement-ready:{latest_estimate.id}",
                 "category": "sales",
@@ -132,6 +147,11 @@ def _build_priority_summary(contractor: Contractor) -> dict[str, Any]:
                 "optional": False,
                 "blocking": True,
                 "entity_id": latest_estimate.id,
+                "entity_type": "proposal",
+                "source_proposal_id": latest_estimate.id,
+                "agreement_id": None,
+                "lifecycle_root_key": f"proposal:{latest_estimate.id}",
+                "action_family": "proposal_create_agreement",
             }
         elif latest_estimate.line_item_count == 0:
             launch_action = {

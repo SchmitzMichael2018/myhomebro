@@ -1,10 +1,11 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models import Agreement, Contractor, Homeowner, Project
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
-from projects.models_proposals import Proposal, ProposalLineItem
+from projects.models_proposals import Proposal, ProposalLineItem, ProposalReviewVersion
 from projects.models_templates import ProjectTemplate
 from projects.services.contractor_directory import normalize_business_name
 
@@ -221,6 +222,67 @@ class ContractorActivationSummaryTests(TestCase):
         action = response.data["priority_summary"]["launch_action"]
         self.assertEqual(action["key"], f"sales:agreement-ready:{proposal.id}")
         self.assertEqual(action["destination"], f"/app/proposals/{proposal.id}?section=ready")
+
+    def test_accepted_estimate_without_agreement_remains_actionable(self):
+        self._template()
+        Homeowner.objects.create(created_by=self.contractor, full_name="Estimate Customer")
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=910,
+            project_title="Accepted Bathroom", status=Proposal.STATUS_ACCEPTED,
+        )
+        ProposalLineItem.objects.create(proposal=proposal, description="Work", quantity=1, unit_price=1000)
+        ProposalReviewVersion.objects.create(
+            proposal=proposal, version=1, customer_email="customer@example.com",
+            snapshot={}, decision=ProposalReviewVersion.DECISION_ACCEPTED, decided_at=timezone.now(),
+        )
+
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+
+        action = response.data["priority_summary"]["launch_action"]
+        self.assertEqual(action["key"], f"sales:agreement-ready:{proposal.id}")
+        self.assertEqual(action["source_proposal_id"], proposal.id)
+        self.assertEqual(action["action_family"], "proposal_create_agreement")
+
+    def test_converted_proposal_never_generates_create_agreement_priority(self):
+        self._template()
+        homeowner = Homeowner.objects.create(created_by=self.contractor, full_name="Estimate Customer")
+        project = Project.objects.create(contractor=self.contractor, homeowner=homeowner, title="Bathroom")
+        agreement = Agreement.objects.create(project=project, contractor=self.contractor, homeowner=homeowner, status="draft")
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=911,
+            project_title="Bathroom", status=Proposal.STATUS_ACCEPTED,
+            converted_agreement=agreement, converted_at=timezone.now(),
+        )
+        ProposalLineItem.objects.create(proposal=proposal, description="Work", quantity=1, unit_price=1000)
+
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+
+        summary = response.data["priority_summary"]
+        self.assertEqual(summary["active_estimate_count"], 0)
+        self.assertIsNone(summary["launch_action"])
+
+    def test_legacy_opportunity_agreement_link_suppresses_proposal_priority(self):
+        self._template()
+        homeowner = Homeowner.objects.create(created_by=self.contractor, full_name="Legacy Customer")
+        project = Project.objects.create(contractor=self.contractor, homeowner=homeowner, title="Legacy Bathroom")
+        agreement = Agreement.objects.create(project=project, contractor=self.contractor, homeowner=homeowner, status="draft")
+        entry = self._entry()
+        opportunity = ContractorOpportunity.objects.create(
+            directory_entry=entry, accepted_by_contractor=self.contractor,
+            homeowner_name="Legacy Customer", project_title="Legacy Bathroom",
+            status=ContractorOpportunity.STATUS_CONVERTED, converted_agreement=agreement,
+        )
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, contractor_opportunity=opportunity,
+            source_type=Proposal.SOURCE_OPPORTUNITY, source_id=opportunity.id,
+            project_title="Legacy Bathroom", status=Proposal.STATUS_READY,
+        )
+        ProposalLineItem.objects.create(proposal=proposal, description="Work", quantity=1, unit_price=1000)
+
+        response = self.client.get("/api/projects/contractor-activation-summary/")
+
+        self.assertEqual(response.data["priority_summary"]["active_estimate_count"], 0)
+        self.assertIsNone(response.data["priority_summary"]["launch_action"])
 
     def test_other_contractor_records_do_not_complete_launch_sequence(self):
         self._template(contractor=self.other_contractor)

@@ -187,6 +187,9 @@ function buildAction({
   entityId = null,
   actionFamily = "",
   specificity = 0,
+  sourceProposalId = null,
+  agreementId = null,
+  lifecycleRootKey = "",
 }) {
   const recommendedUrl = safeText(navigationTarget) || "/app/dashboard";
   const normalizedPriority = safeNumber(priorityScore);
@@ -221,6 +224,9 @@ function buildAction({
     entity_id: entityId === null || typeof entityId === "undefined" ? null : safeText(entityId),
     action_family: safeText(actionFamily),
     specificity: safeNumber(specificity),
+    source_proposal_id: sourceProposalId === null || typeof sourceProposalId === "undefined" ? null : safeText(sourceProposalId),
+    agreement_id: agreementId === null || typeof agreementId === "undefined" ? null : safeText(agreementId),
+    lifecycle_root_key: safeText(lifecycleRootKey),
     snooze_key: safeText(entityType) && entityId !== null && safeText(actionFamily)
       ? `${safeText(entityType)}:${safeText(entityId)}:${safeText(actionFamily)}`
       : safeText(key),
@@ -243,9 +249,19 @@ function sortActions(actions) {
 }
 
 function dedupeActions(actions) {
+  const downstreamProposalIds = new Set(
+    actions
+      .filter((action) => action?.entity_type === "agreement" && action?.source_proposal_id)
+      .map((action) => safeText(action.source_proposal_id))
+  );
   const selected = new Map();
   for (const action of actions) {
     if (!action || !action.key) continue;
+    if (
+      action.action_family === "proposal_create_agreement" &&
+      action.source_proposal_id &&
+      downstreamProposalIds.has(safeText(action.source_proposal_id))
+    ) continue;
     const entityKey = action.entity_type && action.entity_id
       ? `${action.entity_type}:${action.entity_id}`
       : "";
@@ -323,6 +339,13 @@ function mapPrioritySummary(prioritySummary) {
     optional: Boolean(action.optional),
     dismissible: Boolean(action.optional),
     project: action.project_title,
+    entityType: action.entity_type,
+    entityId: action.entity_id,
+    actionFamily: action.action_family,
+    sourceProposalId: action.source_proposal_id,
+    agreementId: action.agreement_id,
+    lifecycleRootKey: action.lifecycle_root_key,
+    specificity: 2,
   });
 }
 
@@ -590,6 +613,11 @@ export function getContractorNextActions({
         entityId: draft.id,
         actionFamily,
         specificity: 3,
+        sourceProposalId: draft?.accepted_estimate_basis?.proposal_id ?? draft?.source_proposal_id ?? null,
+        agreementId: draft.id,
+        lifecycleRootKey: draft?.accepted_estimate_basis?.proposal_id
+          ? `proposal:${draft.accepted_estimate_basis.proposal_id}`
+          : `agreement:${draft.id}`,
       })
     );
   }

@@ -174,6 +174,48 @@ describe("getContractorNextActions", () => {
     expect(signing.snooze_key).toBe("agreement:46:agreement_signature");
   });
 
+  it("prefers a linked draft agreement over its converted Proposal action", () => {
+    const actions = getContractorNextActions({
+      prioritySummary: { launch_action: {
+        key: "sales:agreement-ready:12", title: "Create agreement for Bathroom",
+        action_label: "Create agreement", destination: "/app/proposals/12?section=ready",
+        rank: 99, blocking: true, entity_type: "proposal", entity_id: 12,
+        source_proposal_id: 12, lifecycle_root_key: "proposal:12",
+        action_family: "proposal_create_agreement",
+      } },
+      agreements: [{
+        id: 48, status: "draft", project_title: "Bathroom",
+        accepted_estimate_basis: { proposal_id: 12, review_version: 2 },
+      }],
+    });
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      key: "agreement:48:agreement_pre_send",
+      source_proposal_id: "12",
+      lifecycle_root_key: "proposal:12",
+    });
+    expect(actions.some((action) => action.action_family === "proposal_create_agreement")).toBe(false);
+  });
+
+  it("keeps independent accepted Proposal and draft Agreement priorities", () => {
+    const actions = getContractorNextActions({
+      prioritySummary: { launch_action: {
+        key: "sales:agreement-ready:13", title: "Create agreement for Kitchen",
+        action_label: "Create agreement", destination: "/app/proposals/13?section=ready",
+        rank: 84, entity_type: "proposal", entity_id: 13,
+        source_proposal_id: 13, lifecycle_root_key: "proposal:13",
+        action_family: "proposal_create_agreement",
+      } },
+      agreements: [{ id: 49, status: "draft", project_title: "Bathroom", accepted_estimate_basis: { proposal_id: 12 } }],
+    });
+
+    expect(actions.map((action) => action.key).sort()).toEqual([
+      "agreement:49:agreement_pre_send",
+      "sales:agreement-ready:13",
+    ]);
+  });
+
   it("keeps a blocking planning action instead of a lower-value draft action", () => {
     const actions = getContractorNextActions({
       agreements: [{
