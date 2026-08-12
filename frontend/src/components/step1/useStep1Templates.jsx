@@ -390,6 +390,7 @@ export default function useStep1Templates({
   onTemplateApplied,
   refreshAgreement,
   projectFamilyContext = {},
+  disableRecommendations = false,
 }) {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesErr, setTemplatesErr] = useState("");
@@ -751,6 +752,10 @@ export default function useStep1Templates({
     let cancelled = false;
 
     async function recommendTemplateIfPossible() {
+      if (disableRecommendations) {
+        resetRecommendationState();
+        return;
+      }
       if (locked) return;
 
       if (!currentProjectType && !currentProjectSubtype && !currentTitle && !currentDescription) {
@@ -895,6 +900,7 @@ export default function useStep1Templates({
     currentProjectSubtype,
     currentTitle,
     currentDescription,
+    disableRecommendations,
     locked,
     resetRecommendationState,
     resolvedProjectFamily.project_family_key,

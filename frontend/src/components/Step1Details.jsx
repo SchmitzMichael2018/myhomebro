@@ -11,6 +11,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import api from "../api";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
+import { resolveAgreementSetupSource } from "../lib/agreementSetupSource.js";
 
 // Superseded Step 1 panels remain dormant until their markup is removed separately.
 const SHOW_LEGACY_STEP1_PANELS = false;
@@ -3607,6 +3608,25 @@ export default function Step1Details({
     );
   }
 
+  const sourceProposalId =
+    agreement?.source_proposal_id ||
+    agreement?.accepted_estimate_basis?.proposal_id ||
+    assistantDraftPayload?.proposal_id ||
+    null;
+  const persistedAgreementTemplateId =
+    agreement?.selected_template?.id || agreement?.selected_template_id || null;
+  const estimateTemplateId = isProposalHandoff
+    ? persistedAgreementTemplateId || assistantDraftPayload?.selected_template_id || null
+    : null;
+  const primarySetupSource = resolveAgreementSetupSource({
+    sourceProposalId,
+    estimateTemplateId,
+    savedTemplateId: persistedAgreementTemplateId,
+  });
+  const hasAuthoritativeEstimateTemplate = primarySetupSource === "estimate_provenance";
+  const hasSavedAgreementSetup = primarySetupSource === "saved_agreement_setup";
+  const allowAiSetupRecommendation = primarySetupSource === "ai_recommendation";
+
   const {
     templatesLoading,
     templatesErr,
@@ -3643,6 +3663,7 @@ export default function Step1Details({
     onTemplateApplied,
     refreshAgreement,
     projectFamilyContext: resolvedProjectFamily,
+    disableRecommendations: !allowAiSetupRecommendation,
   });
 
   useEffect(() => {
@@ -4215,11 +4236,6 @@ export default function Step1Details({
       dLocal?.selected_template_name_snapshot ||
       selectedTemplate?.name
   );
-  const hasAuthoritativeEstimateTemplate = Boolean(
-    isProposalHandoff &&
-      (agreement?.source_proposal_id || agreement?.accepted_estimate_basis?.proposal_id) &&
-      appliedTemplateId
-  );
   const canUpdateAppliedTemplate = Boolean(
     agreement?.selected_template?.can_update_from_agreement ||
       dLocal?.selected_template?.can_update_from_agreement ||
@@ -4501,6 +4517,7 @@ export default function Step1Details({
       pendingNoTemplateDraftPreview.scope
   );
   const shouldShowCompactTemplateRecommendation =
+    allowAiSetupRecommendation &&
     startMode === "ai" &&
     !isAiBuiltState &&
     !appliedTemplateId &&
@@ -4509,7 +4526,7 @@ export default function Step1Details({
     Boolean(aiRecommendedTemplate?.id) &&
     aiCompactRecommendationConfidence !== "low";
   const shouldShowAppliedTemplateSummary =
-    startMode !== "template" && Boolean(appliedTemplateId);
+    hasSavedAgreementSetup && startMode !== "template" && Boolean(appliedTemplateId);
   const shouldShowAiDraftNoTemplateNotice =
     false;
   const hasResolvedStep1Content = Boolean(
@@ -6147,6 +6164,7 @@ export default function Step1Details({
         ) : null}
 
         {isInitialInputState &&
+        allowAiSetupRecommendation &&
         startMode === "ai" &&
         assistantTemplateRecommendations.length &&
         !isNoTemplateFlow &&
@@ -7063,22 +7081,29 @@ export default function Step1Details({
             className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm"
           >
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-              Carried over from Estimate
+              Estimate Setup Carried Forward
             </div>
             <div className="mt-1 text-base font-semibold text-slate-900">
-              {appliedTemplateName || "Estimate template"}
+              {dLocal?.project_title || agreement?.project_title || agreement?.title || "Estimate setup"}
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <LeadContextField label="Template" value={appliedTemplateName || "Estimate template"} />
-              <LeadContextField label="Project Type" value={dLocal?.project_type || agreement?.project_type || "-"} />
+              <LeadContextField
+                label="Project Type"
+                value={
+                  [dLocal?.project_type || agreement?.project_type, dLocal?.project_subtype || agreement?.project_subtype]
+                    .filter(Boolean)
+                    .join(" · ") || "-"
+                }
+              />
             </div>
             <p className="mt-3 text-sm text-slate-700">
-              This setup is authoritative for the accepted Estimate. Other recommendations remain optional and are not applied automatically.
+              This Agreement uses the template and project setup selected in the Estimate. Review the Agreement details below.
             </p>
           </section>
         ) : null}
 
-        {hasLeadProposalContext && recommendedProjectSetup && !hasAuthoritativeEstimateTemplate && !isNoTemplateFlow && !step1NoTemplateBuilt ? (
+        {hasLeadProposalContext && recommendedProjectSetup && allowAiSetupRecommendation && !isNoTemplateFlow && !step1NoTemplateBuilt ? (
           <section
             data-testid="recommended-setup-card"
             className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"
