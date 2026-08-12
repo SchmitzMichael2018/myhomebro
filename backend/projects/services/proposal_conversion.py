@@ -21,6 +21,7 @@ class ProposalConversionContext:
     review: ProposalReviewVersion | None
     existing_agreement: object | None
     trusted_payload: dict
+    selected_template: object | None = None
 
 
 def _scope_from_snapshot(snapshot: dict) -> str:
@@ -87,7 +88,9 @@ def prepare_proposal_conversion(*, contractor, proposal_id: int) -> ProposalConv
     if proposal is None:
         raise ProposalConversionError("Accepted estimate not found.", status_code=404)
     if proposal.converted_agreement_id:
-        return ProposalConversionContext(proposal, proposal.converted_review_version, proposal.converted_agreement, {})
+        return ProposalConversionContext(
+            proposal, proposal.converted_review_version, proposal.converted_agreement, {}, proposal.selected_template
+        )
     if proposal.status != Proposal.STATUS_ACCEPTED:
         raise ProposalConversionError("Customer acceptance is required before creating an agreement.", status_code=409)
     if not proposal.customer_name or not proposal.customer_email:
@@ -103,7 +106,14 @@ def prepare_proposal_conversion(*, contractor, proposal_id: int) -> ProposalConv
     opportunity_agreement = getattr(proposal.contractor_opportunity, "converted_agreement", None)
     if opportunity_agreement is not None:
         raise ProposalConversionError("This opportunity already has a different agreement. Open that agreement or resolve the opportunity linkage before converting.", status_code=409)
-    return ProposalConversionContext(proposal, latest, None, _trusted_agreement_payload(latest))
+    trusted_payload = _trusted_agreement_payload(latest)
+    # Project taxonomy and setup are contractor-authored Estimate configuration,
+    # while pricing/scope continue to come from the immutable accepted snapshot.
+    trusted_payload.update({
+        "project_type": proposal.project_type,
+        "project_subtype": proposal.project_subtype,
+    })
+    return ProposalConversionContext(proposal, latest, None, trusted_payload, proposal.selected_template)
 
 
 def reconcile_opportunity_proposal_draft(*, opportunity, agreement) -> Proposal | None:
@@ -167,6 +177,12 @@ def finalize_proposal_conversion(*, context: ProposalConversionContext, agreemen
     from projects.models import Milestone
 
     pricing_rows = ((context.review.snapshot or {}).get("pricing") or {}).get("line_items") or []
+    if context.selected_template is not None:
+        agreement.selected_template = context.selected_template
+        agreement.selected_template_name_snapshot = (
+            context.proposal.selected_template_name_snapshot or context.selected_template.name
+        )
+        agreement.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
     def mapping_identity(row):
         if row.get("source_template_milestone_id"):
             return f"id:{row['source_template_milestone_id']}"

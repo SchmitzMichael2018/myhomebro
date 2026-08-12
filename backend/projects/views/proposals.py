@@ -633,6 +633,17 @@ class ProposalDetailView(APIView):
 
         update_fields = []
         if "selected_template_id" in request.data:
+            if proposal.status not in {
+                Proposal.STATUS_DRAFT,
+                Proposal.STATUS_SITE_VISIT,
+                Proposal.STATUS_IN_PROGRESS,
+                Proposal.STATUS_READY,
+                Proposal.STATUS_REVISION_REQUESTED,
+            }:
+                return Response(
+                    {"selected_template_id": ["The Estimate setup cannot change after it is sent to the customer."]},
+                    status=409,
+                )
             contractor = proposal.contractor
             template_id = request.data.get("selected_template_id")
             template = get_object_or_404(

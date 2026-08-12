@@ -4215,6 +4215,11 @@ export default function Step1Details({
       dLocal?.selected_template_name_snapshot ||
       selectedTemplate?.name
   );
+  const hasAuthoritativeEstimateTemplate = Boolean(
+    isProposalHandoff &&
+      (agreement?.source_proposal_id || agreement?.accepted_estimate_basis?.proposal_id) &&
+      appliedTemplateId
+  );
   const canUpdateAppliedTemplate = Boolean(
     agreement?.selected_template?.can_update_from_agreement ||
       dLocal?.selected_template?.can_update_from_agreement ||
@@ -7052,7 +7057,28 @@ export default function Step1Details({
           </section>
         ) : null}
 
-{hasLeadProposalContext && recommendedProjectSetup && !isNoTemplateFlow && !step1NoTemplateBuilt ? (
+        {hasAuthoritativeEstimateTemplate ? (
+          <section
+            data-testid="estimate-template-carried-forward"
+            className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm"
+          >
+            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+              Carried over from Estimate
+            </div>
+            <div className="mt-1 text-base font-semibold text-slate-900">
+              {appliedTemplateName || "Estimate template"}
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <LeadContextField label="Template" value={appliedTemplateName || "Estimate template"} />
+              <LeadContextField label="Project Type" value={dLocal?.project_type || agreement?.project_type || "-"} />
+            </div>
+            <p className="mt-3 text-sm text-slate-700">
+              This setup is authoritative for the accepted Estimate. Other recommendations remain optional and are not applied automatically.
+            </p>
+          </section>
+        ) : null}
+
+        {hasLeadProposalContext && recommendedProjectSetup && !hasAuthoritativeEstimateTemplate && !isNoTemplateFlow && !step1NoTemplateBuilt ? (
           <section
             data-testid="recommended-setup-card"
             className="rounded-2xl border border-sky-200 bg-sky-50/70 p-5 shadow-sm"

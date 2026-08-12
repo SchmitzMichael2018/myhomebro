@@ -820,6 +820,71 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(Agreement.objects.filter(contractor=self.contractor).count(), 1)
         self.assertEqual(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_AGREEMENT_CREATED).count(), 1)
 
+    def test_accepted_estimate_template_and_project_setup_are_carried_to_agreement(self):
+        homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=706)
+        remodel_template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="QA Remodel Template",
+            project_type="Remodel",
+            project_subtype="Bathroom Remodel",
+        )
+        ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Bathroom Repair Template",
+            project_type="Bathroom Repair",
+        )
+        proposal.selected_template = remodel_template
+        proposal.selected_template_name_snapshot = remodel_template.name
+        proposal.project_type = "Remodel"
+        proposal.project_subtype = "Bathroom Remodel"
+        proposal.save(update_fields=[
+            "selected_template", "selected_template_name_snapshot", "project_type", "project_subtype",
+        ])
+        review.snapshot = build_customer_snapshot(proposal)
+        review.save(update_fields=["snapshot"])
+
+        response = self.client.post(
+            "/api/projects/agreements/",
+            {"source_proposal_id": proposal.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        agreement = Agreement.objects.get(pk=response.data["id"])
+        self.assertEqual(agreement.selected_template_id, remodel_template.id)
+        self.assertEqual(agreement.selected_template_name_snapshot, "QA Remodel Template")
+        self.assertEqual(agreement.project_type, "Remodel")
+        self.assertEqual(agreement.project_subtype, "Bathroom Remodel")
+        self.assertEqual(response.data["source_proposal_id"], proposal.id)
+        self.assertEqual(response.data["selected_template_id"], remodel_template.id)
+        self.assertEqual(response.data["accepted_estimate_basis"]["review_version"], review.version)
+
+        reloaded = self.client.get(f"/api/projects/agreements/{agreement.id}/")
+        self.assertEqual(reloaded.status_code, 200)
+        self.assertEqual(reloaded.data["selected_template"]["name"], "QA Remodel Template")
+
+    def test_sent_estimate_template_cannot_be_changed_by_generic_update(self):
+        template = ProjectTemplate.objects.create(contractor=self.contractor, name="QA Remodel Template")
+        replacement = ProjectTemplate.objects.create(contractor=self.contractor, name="Bathroom Repair Template")
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_DASHBOARD,
+            source_id=707,
+            status=Proposal.STATUS_ACCEPTED,
+            selected_template=template,
+            selected_template_name_snapshot=template.name,
+        )
+
+        response = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/",
+            {"selected_template_id": replacement.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.selected_template_id, template.id)
+
     def test_accepted_snapshot_commercial_basis_maps_reserve_without_double_counting(self):
         homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=705)
         proposal.line_items.all().delete()
