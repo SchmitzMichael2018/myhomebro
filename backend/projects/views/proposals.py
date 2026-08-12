@@ -217,6 +217,9 @@ def _serialize_activity(event: ProposalActivity) -> dict:
 
 
 def _serialize_proposal(proposal: Proposal, request=None, include_related=True) -> dict:
+    from projects.services.proposal_lifecycle import synchronize_proposal_lifecycle
+
+    synchronize_proposal_lifecycle(proposal)
     appointment = getattr(proposal, "estimate_appointment", None)
     opportunity = getattr(proposal, "contractor_opportunity", None)
     customer_id = getattr(opportunity, "converted_customer_id", None)
@@ -562,6 +565,7 @@ class ProposalListCreateView(APIView):
                     source_type=source_type,
                     source_id=source_id_int,
                     created_by=request.user,
+                    status=Proposal.STATUS_IN_PROGRESS,
                     **snapshot,
                 )
                 _activity(proposal, ProposalActivity.EVENT_CREATED, "Proposal created", actor=request.user)
@@ -590,7 +594,6 @@ class ProposalDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     EDITABLE_FIELDS = {
-        "status",
         "project_title",
         "service_location",
         "project_start_type",
@@ -648,7 +651,6 @@ class ProposalDetailView(APIView):
                 "selected_template_name_snapshot",
                 "selected_template_source_snapshot",
             ])
-        previous_status = proposal.status
         schedule_fields = {
             "project_start_type",
             "project_start_date",
@@ -675,11 +677,7 @@ class ProposalDetailView(APIView):
         for field in self.EDITABLE_FIELDS:
             if field not in request.data:
                 continue
-            if field == "status":
-                value = _safe_text(request.data.get(field))
-                if value not in {Proposal.STATUS_DRAFT, Proposal.STATUS_SITE_VISIT, Proposal.STATUS_IN_PROGRESS, Proposal.STATUS_READY}:
-                    return Response({"status": ["Customer and system lifecycle states cannot be set manually."]}, status=400)
-            elif field == "quick_checklist":
+            if field == "quick_checklist":
                 value = request.data.get(field)
                 if not isinstance(value, list):
                     return Response({"quick_checklist": ["Checklist must be a list."]}, status=400)
@@ -699,20 +697,19 @@ class ProposalDetailView(APIView):
         if update_fields:
             update_fields.append("updated_at")
             proposal.save(update_fields=update_fields)
-            if "status" in update_fields and proposal.status != previous_status:
-                _activity(
-                    proposal,
-                    ProposalActivity.EVENT_STATUS_UPDATED,
-                    f"Status updated to {_proposal_status_label(proposal.status)}",
-                    actor=request.user,
-                    metadata={"from": previous_status, "to": proposal.status},
-                )
             if any(field in update_fields for field in ["site_visit_notes", "access_notes", "risk_notes", "customer_requests", "site_conditions", "quick_checklist"]):
                 _activity(proposal, ProposalActivity.EVENT_SITE_VISIT_UPDATED, "Site visit details updated", actor=request.user)
             if any(field in update_fields for field in ["included_work", "excluded_work", "assumptions", "allowances"]):
                 _activity(proposal, ProposalActivity.EVENT_SCOPE_EDITED, "Scope details edited", actor=request.user)
             if "internal_notes" in update_fields:
                 _activity(proposal, ProposalActivity.EVENT_NOTES_EDITED, "Internal notes edited", actor=request.user)
+
+        if "recalculate_readiness" in request.data:
+            from projects.services.proposal_lifecycle import synchronize_proposal_lifecycle
+
+            if request.data.get("recalculate_readiness") is not True:
+                return Response({"recalculate_readiness": ["Must be true."]}, status=400)
+            synchronize_proposal_lifecycle(proposal, recalculate_readiness=True)
 
         proposal = _proposal_queryset(proposal.contractor).get(pk=proposal.pk)
         return Response(_serialize_proposal(proposal, request=request))

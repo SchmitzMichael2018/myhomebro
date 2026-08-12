@@ -361,6 +361,30 @@ function statusTone(status) {
   return "border-white/14 bg-white/8 text-sky-100/78";
 }
 
+function estimateLifecyclePresentation(proposal) {
+  const status = compactText(proposal?.status).toLowerCase();
+  if (status === "converted" || proposal?.linked_agreement_id) return {
+    label: "Agreement Created",
+    detail: proposal?.linked_agreement_title
+      ? `Linked to ${proposal.linked_agreement_title}.`
+      : "This Estimate has been converted to an Agreement.",
+  };
+  if (status === "accepted") return {
+    label: "Accepted",
+    detail: proposal?.customer_review?.decided_at
+      ? `Accepted by the customer ${formatDateTime(proposal.customer_review.decided_at)}.`
+      : "Accepted by the customer.",
+  };
+  if (["sent", "viewed"].includes(status)) return {
+    label: "With Customer",
+    detail: proposal?.customer_review?.sent_at
+      ? `Sent ${formatDateTime(proposal.customer_review.sent_at)}.`
+      : "This Estimate is awaiting customer review.",
+  };
+  if (status === "ready") return { label: "Ready to Send", detail: "This Estimate is ready for customer review." };
+  return { label: proposal?.status_label || "In Progress", detail: "Complete the required Estimate details to prepare it for customer review." };
+}
+
 function activityDisplay(item) {
   const message = String(item?.message || "Estimate updated");
   const detail = message.includes(":") ? message.split(":").slice(1).join(":").trim() : "";
@@ -1389,6 +1413,7 @@ export default function ProposalWorkspacePage() {
     () => buildEstimateChecklist({ proposal, draft, totals, photos, documents, clarificationRows }),
     [proposal, draft, totals, photos, documents, clarificationRows]
   );
+  const lifecyclePresentation = estimateLifecyclePresentation(proposal);
   const notesDirty = String(draft.internal_notes || "") !== String(proposal?.internal_notes || "");
   const recentActivity = useMemo(() => (proposal?.activity || []).slice(0, historyExpanded ? 50 : 2), [proposal, historyExpanded]);
   const sortedClarificationRows = useMemo(() => [...clarificationRows].sort((a, b) => {
@@ -1398,6 +1423,16 @@ export default function ProposalWorkspacePage() {
   const isReadOnlyHistory = Boolean(
     proposal && (compactText(proposal.status).toLowerCase() === "converted" || proposal.linked_agreement_id)
   );
+  const lastReadinessSync = useRef("");
+  useEffect(() => {
+    if (!proposal?.id || !["draft", "site_visit", "in_progress", "ready"].includes(proposal.status)) return;
+    const syncKey = `${proposal.id}:${estimateChecklist.readyMinimum}`;
+    if (lastReadinessSync.current === syncKey) return;
+    lastReadinessSync.current = syncKey;
+    api.patch(`/projects/proposals/${proposal.id}/`, { recalculate_readiness: true })
+      .then(({ data }) => setProposal(data))
+      .catch((error) => console.error(error));
+  }, [estimateChecklist.readyMinimum, proposal?.id, proposal?.status]);
   useEffect(() => {
     setClarificationEdits((previous) => {
       const next = { ...previous };
@@ -2621,32 +2656,17 @@ export default function ProposalWorkspacePage() {
             </div>
           ) : null}
 
-          <Section id="overview" active={activeStep.key === "project"} title="Estimate Status" description="Keep the estimate lifecycle status current while project details are prepared.">
+          <Section id="overview" active={activeStep.key === "project"} title="Estimate Status" description="Lifecycle status is updated automatically from Estimate and customer workflow events.">
             <div className="rounded-xl border border-white/10 bg-white/7 p-4">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(proposal.status)}`} data-testid="proposal-status">
-                  {proposal.status_label}
-                </span>
-                <select
-                  data-testid="proposal-status-select"
-                  value={draft.status}
-                  onChange={(event) => patchDraft("status", event.target.value)}
-                  className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white"
-                >
-                  <option value="draft">Draft</option>
-                  <option value="site_visit">Site Visit</option>
-                  <option value="in_progress">Estimate In Progress</option>
-                  <option value="ready">Estimate Ready</option>
-                </select>
-                <button
-                  type="button"
-                  data-testid="proposal-save-status"
-                  onClick={() => saveProposal({ status: draft.status }, "Status updated.")}
-                  disabled={saving}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-60"
-                >
-                  <Save size={16} /> Save
-                </button>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusTone(proposal.status)}`} data-testid="proposal-status">
+                    {lifecyclePresentation.label}
+                  </span>
+                  <p className="mt-3 text-sm font-semibold text-sky-100/70" data-testid="proposal-status-detail">{lifecyclePresentation.detail}</p>
+                  {proposal.converted_at ? <p className="mt-1 text-xs font-semibold text-sky-100/55">Converted {formatDateTime(proposal.converted_at)}</p> : null}
+                </div>
+                {proposal.linked_agreement_url ? <a href={proposal.linked_agreement_url} data-testid="proposal-open-agreement" className={ESTIMATE_PRIMARY_GOLD_BUTTON}>Open Agreement</a> : null}
               </div>
             </div>
           </Section>

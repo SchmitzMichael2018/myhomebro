@@ -21,6 +21,16 @@ describe("estimate queue lifecycle mapping", () => {
     expect(counts.all_active).toBe(rows.filter((row) => estimateMatchesStage(row, "all_active")).length);
   });
 
+  it("counts each system lifecycle independently and lets Agreement linkage win", () => {
+    const rows = [
+      { status: "in_progress" }, { status: "ready" }, { status: "sent" },
+      { status: "accepted" }, { status: "ready", linked_agreement_id: 42 },
+    ];
+    expect(estimateStageCounts(rows)).toMatchObject({
+      in_progress: 1, ready_to_send: 1, with_customer: 1, accepted: 1, converted: 1,
+    });
+  });
+
   it("prioritizes customer changes, acceptance, ready work, and preparation", () => {
     expect(estimateNextPriority([{ status: "sent" }, { status: "accepted" }, { status: "revision_requested" }])).toMatch(/change requests/i);
     expect(estimateNextPriority([{ status: "viewed" }, { status: "accepted" }])).toMatch(/Create an agreement/i);

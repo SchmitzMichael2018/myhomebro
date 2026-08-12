@@ -8,7 +8,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from projects.models import Agreement, Contractor, Homeowner, Milestone, Notification, CustomerConversation, ConversationMessage
+from projects.models import Agreement, Contractor, Homeowner, Milestone, Notification, CustomerConversation, ConversationMessage, Project
 from projects.models_contractor_discovery import (
     ContractorDirectoryEntry,
     ContractorOpportunity,
@@ -330,6 +330,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(proposal.estimate_appointment, self.appointment)
         self.assertEqual(proposal.project_title, "Kitchen Refresh")
         self.assertEqual(proposal.customer_email, "casey@example.com")
+        self.assertEqual(proposal.status, Proposal.STATUS_IN_PROGRESS)
         self.assertEqual(ProposalActivity.objects.filter(proposal=proposal).count(), 2)
 
     def test_create_proposal_is_idempotent_for_source(self):
@@ -341,7 +342,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertFalse(second.data["created"])
         self.assertEqual(Proposal.objects.count(), 1)
 
-    def test_status_transition_validates_supported_statuses(self):
+    def test_routine_updates_ignore_client_supplied_lifecycle_status(self):
         proposal = Proposal.objects.create(
             contractor=self.contractor,
             contractor_opportunity=self.opportunity,
@@ -350,21 +351,91 @@ class ProposalWorkspaceFoundationTests(TestCase):
             project_title="Kitchen Refresh",
         )
 
-        invalid = self.client.patch(f"/api/projects/proposals/{proposal.id}/", {"status": "pricing"}, format="json")
-        self.assertEqual(invalid.status_code, 400)
-
-        valid = self.client.patch(f"/api/projects/proposals/{proposal.id}/", {"status": Proposal.STATUS_SITE_VISIT}, format="json")
-        self.assertEqual(valid.status_code, 200)
+        response = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/",
+            {"status": Proposal.STATUS_READY, "project_title": "Updated title"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
         proposal.refresh_from_db()
-        self.assertEqual(proposal.status, Proposal.STATUS_SITE_VISIT)
-        self.assertTrue(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_STATUS_UPDATED).exists())
+        self.assertEqual(proposal.status, Proposal.STATUS_IN_PROGRESS)
+        self.assertEqual(proposal.project_title, "Updated title")
+        self.assertFalse(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_STATUS_UPDATED).exists())
 
-    def test_customer_lifecycle_status_cannot_be_manually_impersonated(self):
+    def test_customer_lifecycle_status_payloads_are_ignored(self):
         proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen")
         for status in (Proposal.STATUS_VIEWED, Proposal.STATUS_ACCEPTED, Proposal.STATUS_DECLINED, Proposal.STATUS_REVISION_REQUESTED):
             with self.subTest(status=status):
                 response = self.client.patch(f"/api/projects/proposals/{proposal.id}/", {"status": status}, format="json")
-                self.assertEqual(response.status_code, 400)
+                self.assertEqual(response.status_code, 200)
+                proposal.refresh_from_db()
+                self.assertEqual(proposal.status, Proposal.STATUS_IN_PROGRESS)
+
+    def test_readiness_promotes_pre_customer_state_but_cannot_downgrade_accepted(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            status=Proposal.STATUS_IN_PROGRESS,
+            project_title="QA Bathroom Remodel",
+            customer_name="Casey Homeowner",
+            customer_email="casey@example.com",
+            service_location="123 Main St",
+            included_work="Renovate the bathroom",
+        )
+        ProposalLineItem.objects.create(
+            proposal=proposal, category="labor", description="Bathroom work", quantity=1, unit_price=500,
+        )
+        ready = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/", {"recalculate_readiness": True}, format="json"
+        )
+        self.assertEqual(ready.data["status"], Proposal.STATUS_READY)
+
+        ProposalReviewVersion.objects.create(
+            proposal=proposal,
+            version=1,
+            customer_email="casey@example.com",
+            snapshot={},
+            sent_at=timezone.now(),
+            decision=ProposalReviewVersion.DECISION_ACCEPTED,
+            decided_at=timezone.now(),
+        )
+        proposal.status = Proposal.STATUS_ACCEPTED
+        proposal.save(update_fields=["status"])
+        stale = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/",
+            {"status": Proposal.STATUS_READY, "recalculate_readiness": True, "included_work": "Updated scope"},
+            format="json",
+        )
+        self.assertEqual(stale.status_code, 200)
+        self.assertEqual(stale.data["status"], Proposal.STATUS_ACCEPTED)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.STATUS_ACCEPTED)
+
+    def test_reload_and_edit_cannot_downgrade_authoritatively_converted_estimate(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            status=Proposal.STATUS_READY,
+            project_title="QA Bathroom Remodel",
+        )
+        homeowner = Homeowner.objects.create(created_by=self.contractor, full_name="Casey Homeowner")
+        project = Project.objects.create(contractor=self.contractor, homeowner=homeowner, title="Bathroom Agreement")
+        agreement = Agreement.objects.create(project=project, contractor=self.contractor, homeowner=homeowner)
+        proposal.converted_agreement = agreement
+        proposal.save(update_fields=["converted_agreement"])
+
+        response = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/",
+            {"status": Proposal.STATUS_READY, "recalculate_readiness": True, "internal_notes": "Still linked"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["status"], Proposal.STATUS_CONVERTED)
+        self.assertEqual(response.data["linked_agreement_id"], agreement.id)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.STATUS_CONVERTED)
 
     @patch("projects.services.proposal_customer_review.send_postmark_email", return_value=(True, "sent"))
     def test_send_view_and_accept_are_versioned_private_and_idempotent(self, _email):
