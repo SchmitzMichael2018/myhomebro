@@ -372,6 +372,15 @@ def create_property_work_order_agreement_draft(
     if contractor is not None and work_order.assigned_contractor_id != contractor.id:
         raise PermissionError("Only the assigned contractor can create this agreement draft.")
     if work_order.linked_agreement_id:
+        accepted_opportunity = (
+            ContractorOpportunity.objects.select_for_update()
+            .filter(property_work_order=work_order, accepted_by_contractor=assigned_contractor)
+            .order_by("-accepted_at", "-id")
+            .first()
+        )
+        if accepted_opportunity is not None:
+            from projects.services.proposal_conversion import reconcile_opportunity_proposal_draft
+            reconcile_opportunity_proposal_draft(opportunity=accepted_opportunity, agreement=work_order.linked_agreement)
         return {
             "project": work_order.linked_project or getattr(work_order.linked_agreement, "project", None),
             "agreement": work_order.linked_agreement,
@@ -458,6 +467,8 @@ def create_property_work_order_agreement_draft(
                 "updated_at",
             ]
         )
+        from projects.services.proposal_conversion import reconcile_opportunity_proposal_draft
+        reconcile_opportunity_proposal_draft(opportunity=accepted_opportunity, agreement=agreement)
 
     work_order.linked_project = project
     work_order.linked_agreement = agreement
@@ -528,6 +539,8 @@ def accept_property_work_order_opportunity(opportunity: ContractorOpportunity, c
 def convert_opportunity_to_customer_and_draft_agreement(opportunity: ContractorOpportunity, contractor: Contractor) -> dict[str, Any]:
     opportunity = ContractorOpportunity.objects.select_for_update().get(pk=opportunity.pk)
     if opportunity.converted_customer_id and opportunity.converted_agreement_id:
+        from projects.services.proposal_conversion import reconcile_opportunity_proposal_draft
+        reconcile_opportunity_proposal_draft(opportunity=opportunity, agreement=opportunity.converted_agreement)
         return {"customer": opportunity.converted_customer, "agreement": opportunity.converted_agreement, "created": False}
 
     customer = opportunity.converted_customer or _find_or_create_customer(opportunity, contractor)
@@ -597,6 +610,8 @@ def convert_opportunity_to_customer_and_draft_agreement(opportunity: ContractorO
             "updated_at",
         ]
     )
+    from projects.services.proposal_conversion import reconcile_opportunity_proposal_draft
+    reconcile_opportunity_proposal_draft(opportunity=opportunity, agreement=agreement)
     if opportunity.intake_request_id:
         intake = opportunity.intake_request
         intake.homeowner = customer

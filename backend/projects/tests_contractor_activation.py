@@ -2,12 +2,15 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
+from unittest.mock import patch
 
 from projects.models import Agreement, Contractor, Homeowner, Project
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
 from projects.models_proposals import Proposal, ProposalLineItem, ProposalReviewVersion
 from projects.models_templates import ProjectTemplate
 from projects.services.contractor_directory import normalize_business_name
+from projects.services.contractor_opportunities import convert_opportunity_to_customer_and_draft_agreement
+from projects.services.proposal_conversion import ProposalConversionError
 
 
 @override_settings(SECURE_SSL_REDIRECT=False)
@@ -283,6 +286,101 @@ class ContractorActivationSummaryTests(TestCase):
 
         self.assertEqual(response.data["priority_summary"]["active_estimate_count"], 0)
         self.assertIsNone(response.data["priority_summary"]["launch_action"])
+
+    def test_opportunity_draft_creation_atomically_converts_its_ready_proposal(self):
+        self._template()
+        Homeowner.objects.create(created_by=self.contractor, full_name="Independent Customer")
+        entry = self._entry()
+        opportunity = ContractorOpportunity.objects.create(
+            directory_entry=entry, accepted_by_contractor=self.contractor,
+            homeowner_name="QA Customer", homeowner_email="qa@example.com",
+            project_title="QA Bathroom Remodel", status=ContractorOpportunity.STATUS_ACCEPTED,
+        )
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, contractor_opportunity=opportunity,
+            source_type=Proposal.SOURCE_OPPORTUNITY, source_id=opportunity.id,
+            project_title="QA Bathroom Remodel", status=Proposal.STATUS_READY,
+        )
+        ProposalLineItem.objects.create(proposal=proposal, description="Bathroom work", quantity=1, unit_price=1000)
+        independent = Proposal.objects.create(
+            contractor=self.contractor, source_type=Proposal.SOURCE_DASHBOARD, source_id=912,
+            project_title="Independent Estimate", status=Proposal.STATUS_READY,
+        )
+        ProposalLineItem.objects.create(proposal=independent, description="Other work", quantity=1, unit_price=500)
+
+        result = convert_opportunity_to_customer_and_draft_agreement(opportunity, self.contractor)
+
+        proposal.refresh_from_db()
+        agreement = result["agreement"]
+        self.assertEqual(proposal.converted_agreement, agreement)
+        self.assertIsNotNone(proposal.converted_at)
+        self.assertEqual(proposal.status, Proposal.STATUS_CONVERTED)
+        self.assertEqual(proposal.conversion_method, "opportunity_draft")
+        self.assertIsNone(proposal.converted_review_version)
+        self.assertEqual(agreement.source_proposal, proposal)
+        agreement_payload = self.client.get(f"/api/projects/agreements/{agreement.id}/")
+        self.assertEqual(agreement_payload.status_code, 200)
+        self.assertEqual(agreement_payload.data["source_proposal_id"], proposal.id)
+        self.assertIsNone(agreement_payload.data["accepted_estimate_basis"])
+
+        queue = self.client.get("/api/projects/proposals/")
+        converted_row = next(row for row in queue.data["results"] if row["id"] == proposal.id)
+        self.assertEqual(converted_row["status"], Proposal.STATUS_CONVERTED)
+        self.assertEqual(converted_row["linked_agreement_id"], agreement.id)
+        self.assertEqual(converted_row["conversion_method"], "opportunity_draft")
+
+        priority = self.client.get("/api/projects/contractor-activation-summary/").data["priority_summary"]["launch_action"]
+        self.assertEqual(priority["entity_id"], independent.id)
+        self.assertNotIn(str(proposal.id), priority["key"])
+
+    def test_opportunity_draft_rolls_back_when_proposal_transition_fails(self):
+        entry = self._entry()
+        opportunity = ContractorOpportunity.objects.create(
+            directory_entry=entry, accepted_by_contractor=self.contractor,
+            homeowner_name="Rollback Customer", homeowner_email="rollback@example.com",
+            project_title="Rollback Bathroom", status=ContractorOpportunity.STATUS_ACCEPTED,
+        )
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, contractor_opportunity=opportunity,
+            source_type=Proposal.SOURCE_OPPORTUNITY, source_id=opportunity.id,
+            project_title="Rollback Bathroom", status=Proposal.STATUS_READY,
+        )
+
+        with patch(
+            "projects.services.proposal_conversion.reconcile_opportunity_proposal_draft",
+            side_effect=ProposalConversionError("forced rollback"),
+        ):
+            with self.assertRaises(ProposalConversionError):
+                convert_opportunity_to_customer_and_draft_agreement(opportunity, self.contractor)
+
+        proposal.refresh_from_db()
+        opportunity.refresh_from_db()
+        self.assertIsNone(proposal.converted_agreement_id)
+        self.assertIsNone(proposal.converted_at)
+        self.assertEqual(proposal.status, Proposal.STATUS_READY)
+        self.assertIsNone(opportunity.converted_agreement_id)
+        self.assertFalse(Agreement.objects.filter(contractor=self.contractor, project__title="Rollback Bathroom").exists())
+
+    def test_estimate_created_after_opportunity_agreement_is_immediately_reconciled(self):
+        entry = self._entry()
+        opportunity = ContractorOpportunity.objects.create(
+            directory_entry=entry, accepted_by_contractor=self.contractor,
+            homeowner_name="Late Estimate Customer", homeowner_email="late@example.com",
+            project_title="Late Bathroom Estimate", status=ContractorOpportunity.STATUS_ACCEPTED,
+        )
+        agreement = convert_opportunity_to_customer_and_draft_agreement(opportunity, self.contractor)["agreement"]
+
+        response = self.client.post("/api/projects/proposals/", {
+            "source_type": Proposal.SOURCE_OPPORTUNITY,
+            "source_id": opportunity.id,
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        proposal = Proposal.objects.get(pk=response.data["proposal"]["id"])
+        self.assertEqual(proposal.status, Proposal.STATUS_CONVERTED)
+        self.assertEqual(proposal.converted_agreement, agreement)
+        self.assertIsNotNone(proposal.converted_at)
+        self.assertEqual(response.data["proposal"]["linked_agreement_id"], agreement.id)
 
     def test_other_contractor_records_do_not_complete_launch_sequence(self):
         self._template(contractor=self.other_contractor)

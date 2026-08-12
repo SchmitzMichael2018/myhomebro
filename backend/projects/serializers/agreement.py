@@ -643,6 +643,7 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     selected_template = serializers.SerializerMethodField()
     selected_template_id = serializers.SerializerMethodField()
+    source_proposal_id = serializers.SerializerMethodField()
     selected_template_name_snapshot = serializers.CharField(read_only=True)
     compliance_warning = serializers.SerializerMethodField()
     collaboration_summary = serializers.SerializerMethodField()
@@ -704,6 +705,12 @@ class AgreementSerializer(serializers.ModelSerializer):
     def get_selected_template_id(self, obj):
         try:
             return getattr(obj, "selected_template_id", None)
+        except Exception:
+            return None
+
+    def get_source_proposal_id(self, obj):
+        try:
+            return obj.source_proposal.id
         except Exception:
             return None
 

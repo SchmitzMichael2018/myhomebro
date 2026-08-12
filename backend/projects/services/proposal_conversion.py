@@ -106,6 +106,61 @@ def prepare_proposal_conversion(*, contractor, proposal_id: int) -> ProposalConv
     return ProposalConversionContext(proposal, latest, None, _trusted_agreement_payload(latest))
 
 
+def reconcile_opportunity_proposal_draft(*, opportunity, agreement) -> Proposal | None:
+    """Atomically advance the exact Proposal owned by an Opportunity draft conversion.
+
+    Opportunity workflows intentionally allow a contractor to prepare a draft
+    Agreement before customer Estimate acceptance. In that case there is no
+    accepted review basis to attach, but the Proposal and Agreement must still
+    become one authoritative lifecycle.
+    """
+    proposals = list(
+        Proposal.objects.select_for_update()
+        .filter(contractor_opportunity_id=opportunity.id, contractor_id=agreement.contractor_id)
+        .order_by("-updated_at", "-id")[:2]
+    )
+    if not proposals:
+        return None
+    if len(proposals) > 1:
+        raise ProposalConversionError(
+            "More than one Estimate is linked to this opportunity. Resolve the Estimate linkage before creating an Agreement.",
+            status_code=409,
+        )
+    proposal = proposals[0]
+    if proposal.converted_agreement_id not in (None, agreement.id):
+        raise ProposalConversionError("This Estimate is already linked to a different Agreement.", status_code=409)
+
+    latest_review = proposal.review_versions.order_by("-version").first()
+    if latest_review and latest_review.decision == ProposalReviewVersion.DECISION_ACCEPTED:
+        raise ProposalConversionError(
+            "This Estimate has an accepted customer version. Create its Agreement from the Estimate workspace so accepted pricing is preserved.",
+            status_code=409,
+        )
+    proposal.converted_agreement = agreement
+    proposal.converted_review_version = None
+    proposal.converted_at = proposal.converted_at or timezone.now()
+    proposal.conversion_method = "opportunity_draft"
+    proposal.status = Proposal.STATUS_CONVERTED
+    proposal.save(update_fields=[
+        "converted_agreement", "converted_review_version", "converted_at",
+        "conversion_method", "status", "updated_at",
+    ])
+    ProposalActivity.objects.create(
+        proposal=proposal,
+        event_type=ProposalActivity.EVENT_AGREEMENT_CREATED,
+        message="Agreement draft created from linked opportunity",
+        metadata={
+            "agreement_id": agreement.id,
+            "opportunity_id": opportunity.id,
+            "review_version": None,
+            "acceptance_method": "pre_acceptance_opportunity_draft",
+        },
+    )
+    from projects.services.customer_conversations import link_conversation_to_agreement
+    link_conversation_to_agreement(proposal, agreement)
+    return proposal
+
+
 def finalize_proposal_conversion(*, context: ProposalConversionContext, agreement, actor) -> None:
     """Finalize both lifecycle relationships inside the caller's atomic transaction."""
     proposal = context.proposal

@@ -506,6 +506,13 @@ class ProposalListCreateView(APIView):
 
         existing = _proposal_queryset(contractor).filter(source_type=source_type, source_id=source_id_int).first()
         if existing:
+            opportunity = getattr(existing, "contractor_opportunity", None)
+            linked_agreement = getattr(opportunity, "converted_agreement", None)
+            if opportunity is not None and linked_agreement is not None and existing.converted_agreement_id is None:
+                from projects.services.proposal_conversion import reconcile_opportunity_proposal_draft
+                with transaction.atomic():
+                    reconcile_opportunity_proposal_draft(opportunity=opportunity, agreement=linked_agreement)
+                existing.refresh_from_db()
             return Response({"proposal": _serialize_proposal(existing, request=request), "created": False}, status=200)
 
         if is_dashboard_estimate:
@@ -558,6 +565,12 @@ class ProposalListCreateView(APIView):
                     **snapshot,
                 )
                 _activity(proposal, ProposalActivity.EVENT_CREATED, "Proposal created", actor=request.user)
+                if contractor_opportunity is not None and contractor_opportunity.converted_agreement_id:
+                    from projects.services.proposal_conversion import reconcile_opportunity_proposal_draft
+                    reconcile_opportunity_proposal_draft(
+                        opportunity=contractor_opportunity,
+                        agreement=contractor_opportunity.converted_agreement,
+                    )
                 if appointment:
                     _activity(
                         proposal,

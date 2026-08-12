@@ -51,6 +51,7 @@ from projects.services.contractor_opportunities import (
     create_property_work_order_agreement_draft,
     create_or_update_opportunity_from_selection,
 )
+from projects.services.proposal_conversion import ProposalConversionError
 from projects.services.contractor_discovery import (
     build_contractor_recommendations,
     claim_discovery_invite,
@@ -1392,6 +1393,8 @@ class ContractorOpportunityAcceptView(APIView):
             return Response({"detail": "Opportunity not found."}, status=status.HTTP_404_NOT_FOUND)
         try:
             result = accept_contractor_opportunity(opportunity, contractor)
+        except ProposalConversionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
         except PermissionError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
@@ -1432,6 +1435,8 @@ class ContractorOpportunityAgreementDraftView(APIView):
                 contractor=contractor,
                 actor=_safe_text(getattr(request.user, "email", "")),
             )
+        except ProposalConversionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
         except PermissionError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:

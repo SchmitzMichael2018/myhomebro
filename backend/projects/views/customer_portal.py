@@ -99,6 +99,7 @@ from projects.models_maintenance import MaintenanceWorkOrder
 from projects.models_project_intake import ProjectIntake
 from projects.models_proposals import Proposal, ProposalReviewVersion
 from projects.services.proposal_customer_review import token_for as proposal_review_token
+from projects.services.proposal_conversion import ProposalConversionError
 from projects.serializers.base import AgreementDetailPublicSerializer
 from projects.services.bid_workflow import (
     bid_next_action,
@@ -8485,6 +8486,8 @@ class CustomerPortalPropertyWorkOrderAgreementDraftView(CustomerPortalPropertyWo
         row = self._work_order_for_marketplace(company, property_profile, work_order_id)
         try:
             result = create_property_work_order_agreement_draft(row, actor=email)
+        except ProposalConversionError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
         except PermissionError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
