@@ -1628,6 +1628,7 @@ export default function Step2Milestones({
       signature,
     };
   }, [effectiveMilestones]);
+  const total = effectiveMilestones.reduce((sum, milestone) => sum + money(milestone.amount), 0);
   const acceptedEstimateBasis = agreementMeta?.accepted_estimate_basis || null;
   const acceptedAllocation = summarizeAcceptedEstimateAllocation(acceptedEstimateBasis, total);
   const acceptedCommercialBase = acceptedAllocation?.commercialBase ?? null;
@@ -2961,7 +2962,6 @@ export default function Step2Milestones({
     [aiPreview?.questions, assistantClarificationRows]
   );
 
-  const total = effectiveMilestones.reduce((s, m) => s + money(m.amount), 0);
   const manualAmountMilestoneIdSet = useMemo(
     () => new Set((Array.isArray(manualAmountMilestoneIds) ? manualAmountMilestoneIds : []).map((id) => String(id))),
     [manualAmountMilestoneIds]

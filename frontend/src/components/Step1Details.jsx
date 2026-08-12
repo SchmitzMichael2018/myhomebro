@@ -2212,7 +2212,9 @@ export default function Step1Details({
   const isNewAgreement = !agreementId;
   const isProposalHandoff =
     forceProjectDetails ||
-    assistantDraftPayload?.source === "proposal" || assistantLeadContext?.source === "proposal";
+    assistantDraftPayload?.source === "proposal" ||
+    assistantLeadContext?.source === "proposal" ||
+    Boolean(agreement?.source_proposal_id || agreement?.accepted_estimate_basis?.proposal_id);
   const hasMeaningfulSavedProjectDetails = hasMeaningfulStep1DraftState({ agreement, dLocal });
   const canRestoreStartMode =
     !isNewAgreement ||

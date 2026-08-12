@@ -472,10 +472,12 @@ export default function AgreementWizard() {
 
   const step = clampStep(searchParams.get("step") || 1);
   const assistantHandoff = useMemo(() => {
-    const raw = getAssistantHandoff(location.state);
+    // Once an Agreement ID exists, the persisted API record is canonical.
+    // Transient /new handoff/session data must not reinitialize or redirect it.
+    const raw = agreementIdParam ? null : getAssistantHandoff(location.state);
     const { payload } = validateHandoff(raw);
     return payload;
-  }, [location.state]);
+  }, [agreementIdParam, location.state]);
   const assistantHandoffSignature = useMemo(
     () => buildAssistantHandoffSignature(assistantHandoff),
     [assistantHandoff]
@@ -603,6 +605,7 @@ export default function AgreementWizard() {
     () => deriveAgreementId(agreement, agreementIdParam),
     [agreement, agreementIdParam]
   );
+  const hasCanonicalPersistedAgreement = !agreementIdParam || Boolean(agreement?.id);
 
   const totals = useMemo(() => {
     const agreementTotal =
@@ -1130,11 +1133,15 @@ export default function AgreementWizard() {
 
     didResumeStepRef.current = true;
 
+    // An explicit URL step is authoritative for direct reload/deep links. The
+    // saved step is only a resume fallback when the route does not name one.
+    if (searchParams.has("step")) return;
+
     const resumeStep = deriveWizardStepFromAgreement(agreement);
     if (resumeStep !== step) {
       goStep(resumeStep, { replace: true });
     }
-  }, [agreement, agreementId, goStep, step]);
+  }, [agreement, agreementId, goStep, searchParams, step]);
 
   const refreshAgreement = useCallback(async () => {
     if (!agreementId) return;
@@ -2411,7 +2418,7 @@ export default function AgreementWizard() {
         <div className="mt-2 text-xs text-slate-500">Loading project taxonomy…</div>
       ) : null}
 
-      {step === 1 ? (
+      {step === 1 && hasCanonicalPersistedAgreement ? (
         <div className="mt-6">
           <Step1Details
             agreement={agreement}
@@ -2454,7 +2461,10 @@ export default function AgreementWizard() {
               aiHighlightKeys={step1AiHighlights}
               isAiAssistantActive={isAssistantDockOpen}
               aiSetupRequest={step1AiSetupRequest}
-              forceProjectDetails={isProposalAgreementHandoff}
+              forceProjectDetails={
+                isProposalAgreementHandoff ||
+                Boolean(agreement?.source_proposal_id || agreement?.accepted_estimate_basis?.proposal_id)
+              }
               onResetWizardForNewAgreement={resetWizardForNewAgreement}
               step1ResetToChooser={step1ResetToChooser}
               onStep1ResetToChooserChange={setStep1ResetToChooser}
@@ -2491,7 +2501,7 @@ export default function AgreementWizard() {
         </div>
       ) : null}
 
-      {step === 2 ? (
+      {step === 2 && hasCanonicalPersistedAgreement ? (
         <div className="mt-6">
           <Step2Milestones
             agreementId={agreementId}
@@ -2526,7 +2536,7 @@ export default function AgreementWizard() {
         </div>
       ) : null}
 
-      {step === 3 ? (
+      {step === 3 && hasCanonicalPersistedAgreement ? (
         <div className="mt-6">
           <Step3WarrantyAttachments
             agreement={agreement}
@@ -2546,7 +2556,7 @@ export default function AgreementWizard() {
         </div>
       ) : null}
 
-      {step === 4 ? (
+      {step === 4 && hasCanonicalPersistedAgreement ? (
         <div className="mt-6">
           <Step4Finalize
             agreement={agreement}

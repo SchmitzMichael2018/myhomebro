@@ -181,7 +181,7 @@ test("Agreement Wizard prefills editable fields from Estimate Workspace handoff"
 
   await expect(page.getByTestId("estimate-prefill-applied")).toContainText("Estimate Prefill Applied");
   await expect(page.getByTestId("step1-rerun-ai-setup-button")).toContainText("Re-run AI Setup");
-  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Estimate Prefill");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Based on accepted Estimate");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Agreement becomes the source of truth");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$200.00");
@@ -225,4 +225,86 @@ test("Agreement Wizard milestone planning simulation updates and appears in fina
   await expect(page.getByTestId("step4-planning-assumptions")).toContainText("4 people");
   await expect(page.getByTestId("step4-planning-assumptions")).toContainText("Planning only");
   expect(assignmentMutations).toEqual([]);
+});
+
+test("persisted accepted Estimate Agreement keeps setup provenance and renders Step 2", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  const recommendationCalls = [];
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.route("**/api/projects/templates/recommend/", async (route) => {
+    recommendationCalls.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        confidence_level: "high",
+        recommended_template: { id: 99, name: "Bathroom Repair Template" },
+      }),
+    });
+  });
+  const agreement = {
+    id: 100,
+    project_title: "QA Bathroom Remodel",
+    title: "QA Bathroom Remodel",
+    project_type: "Bathroom Remodel",
+    project_subtype: "Full Remodel",
+    description: "Accepted remodel scope",
+    total_cost: "1000.00",
+    status: "draft",
+    step_status: "step1",
+    source_proposal_id: 42,
+    selected_template_id: 11,
+    selected_template_name_snapshot: "QA Remodel Template",
+    selected_template: { id: 11, name: "QA Remodel Template", project_type: "Bathroom Remodel", project_subtype: "Full Remodel" },
+    accepted_estimate_basis: {
+      proposal_id: 42,
+      review_version: 1,
+      subtotal: "1000.00",
+      tax: "0.00",
+      discounts: "0.00",
+      incidentals_reserve: "0.00",
+      total: "1000.00",
+      pricing_rows: [],
+    },
+  };
+  const milestones = [{
+    id: 501,
+    agreement: 100,
+    order: 1,
+    title: "Bathroom installation",
+    description: "Accepted Estimate milestone",
+    amount: "1000.00",
+    accepted_estimate_amount: "1000.00",
+    accepted_estimate_review_version: 1,
+    accepted_estimate_source_key: "bathroom-installation",
+  }];
+  await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) })
+  );
+  await page.route("**/api/projects/milestones/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: milestones }) })
+  );
+
+  await page.goto("/app/agreements/100/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("estimate-template-carried-forward")).toContainText("Estimate Setup Carried Forward");
+  await expect(page.getByTestId("estimate-template-carried-forward")).toContainText("QA Remodel Template");
+  await expect(page.getByTestId("recommended-setup-card")).toHaveCount(0);
+  await expect(page.getByTestId("step1-ai-template-recommendation")).toHaveCount(0);
+  expect(recommendationCalls).toEqual([]);
+
+  await page.getByRole("button", { name: "Step 2 Milestones" }).click();
+  await expect(page.getByText("Bathroom installation").first()).toBeVisible();
+  await expect(page.getByText("This workspace could not finish loading.")).toHaveCount(0);
+
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Bathroom installation").first()).toBeVisible();
+  await page.getByRole("button", { name: "Step 1 Details" }).click();
+  await expect(page.getByTestId("estimate-template-carried-forward")).toContainText("QA Remodel Template");
+  await page.getByRole("button", { name: "Step 2 Milestones" }).click();
+  await expect(page.getByText("Bathroom installation").first()).toBeVisible();
+  expect(pageErrors).toEqual([]);
+  expect(recommendationCalls).toEqual([]);
 });

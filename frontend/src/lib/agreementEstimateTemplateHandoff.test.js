@@ -33,4 +33,8 @@ describe("Agreement Wizard Estimate template handoff", () => {
     expect(firstLoad).toBe("estimate_provenance");
     expect(reloaded).toBe("estimate_provenance");
   });
+
+  it("recognizes persisted Agreement provenance without transient new-route handoff state", () => {
+    expect(step1).toContain("Boolean(agreement?.source_proposal_id || agreement?.accepted_estimate_basis?.proposal_id)");
+  });
 });
