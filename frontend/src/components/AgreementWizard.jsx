@@ -1972,7 +1972,13 @@ export default function AgreementWizard() {
         context.incidentals_reserve_amount ||
         estimate.incidentals_reserve_amount ||
         "",
-      scope: draft.description || draft.scope_of_work || context.project_summary || "",
+      scope:
+        agreement?.scope_of_work ||
+        agreement?.description ||
+        draft.description ||
+        draft.scope_of_work ||
+        context.project_summary ||
+        "",
       lineItemCount:
         context.line_item_count ||
         (Array.isArray(draft.proposal_line_items) ? draft.proposal_line_items.length : 0) ||
@@ -1982,7 +1988,14 @@ export default function AgreementWizard() {
       discounts: acceptedSummary?.discounts ?? draft.proposal_totals?.discounts ?? "",
       reconciles: acceptedSummary?.reconciles ?? true,
     };
-  }, [agreement?.accepted_estimate_basis, assistantHandoff, dLocal.project_title, isProposalAgreementHandoff]);
+  }, [
+    agreement?.accepted_estimate_basis,
+    agreement?.description,
+    agreement?.scope_of_work,
+    assistantHandoff,
+    dLocal.project_title,
+    isProposalAgreementHandoff,
+  ]);
   const assistantDraftPayload = useMemo(
     () => ({
       ...(assistantHandoff.draftPayload || {}),

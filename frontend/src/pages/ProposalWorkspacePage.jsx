@@ -462,7 +462,7 @@ function buildProposalAgreementScope(proposal) {
 
   return [
     sectionBlock("Project Summary", proposal.project_summary),
-    sectionBlock("Scheduling Expectations", proposalScheduleSummary(proposal)),
+    sectionBlock("Requested Timing", proposalScheduleSummary(proposal)),
     sectionBlock("Site Visit Notes", proposal.site_visit_notes),
     sectionBlock("Customer Requests", proposal.customer_requests),
     sectionBlock("Site Conditions", proposal.site_conditions),

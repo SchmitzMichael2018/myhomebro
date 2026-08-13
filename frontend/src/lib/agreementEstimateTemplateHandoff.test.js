@@ -8,11 +8,20 @@ describe("Agreement Wizard Estimate template handoff", () => {
     path.resolve(process.cwd(), "src/components/Step1Details.jsx"),
     "utf8"
   );
+  const wizard = fs.readFileSync(
+    path.resolve(process.cwd(), "src/components/AgreementWizard.jsx"),
+    "utf8"
+  );
+  const estimateWorkspace = fs.readFileSync(
+    path.resolve(process.cwd(), "src/pages/ProposalWorkspacePage.jsx"),
+    "utf8"
+  );
 
-  it("presents an authoritative source Estimate template as carried forward", () => {
-    expect(step1).toContain('data-testid="estimate-template-carried-forward"');
-    expect(step1).toContain("Estimate Setup Carried Forward");
-    expect(step1).toContain("hasAuthoritativeEstimateTemplate");
+  it("keeps the accepted Estimate summary as the single handoff overview", () => {
+    expect(wizard).toContain('data-testid="agreement-proposal-prefill-summary"');
+    expect(wizard).toContain("Based on accepted Estimate");
+    expect(step1).not.toContain('data-testid="estimate-prefill-applied"');
+    expect(step1).not.toContain('data-testid="estimate-template-carried-forward"');
   });
 
   it("does not present a conflicting recommendation when Estimate provenance exists", () => {
@@ -23,6 +32,7 @@ describe("Agreement Wizard Estimate template handoff", () => {
 
   it("resolves exactly one primary setup source", () => {
     expect(resolveAgreementSetupSource({ sourceProposalId: 7, estimateTemplateId: 11, savedTemplateId: 12 })).toBe("estimate_provenance");
+    expect(resolveAgreementSetupSource({ sourceProposalId: 7, estimateTemplateId: null, savedTemplateId: null })).toBe("estimate_provenance");
     expect(resolveAgreementSetupSource({ sourceProposalId: null, estimateTemplateId: null, savedTemplateId: 12 })).toBe("saved_agreement_setup");
     expect(resolveAgreementSetupSource({ sourceProposalId: null, estimateTemplateId: null, savedTemplateId: null })).toBe("ai_recommendation");
   });
@@ -39,9 +49,34 @@ describe("Agreement Wizard Estimate template handoff", () => {
   });
 
   it("keeps AI classification advisory until an explicit replacement action", () => {
-    expect(step1).toContain("hasAuthoritativeEstimateTemplate || !shouldAutoApply");
+    expect(step1).toContain("hasAuthoritativeEstimateProvenance || !shouldAutoApply");
     expect(step1).toContain('data-testid="agreement-ai-accept-classification-button"');
     expect(step1).toContain("Your accepted Estimate classification has not changed");
     expect(step1).toContain("accepted_estimate_basis?.pricing_rows");
+    expect(step1).toContain('hasAuthoritativeEstimateProvenance\n                      ? "Suggest Classification"');
+  });
+
+  it("removes broad Estimate setup and draft actions while retaining focused optional help", () => {
+    expect(step1).not.toContain('data-testid="step1-rerun-ai-setup-button"');
+    expect(step1).toContain("allowAiSetupRecommendation && aiSetupResult?.kind === \"template_match\"");
+    expect(step1).toContain('hasAuthoritativeEstimateProvenance\n                      ? "Improve Scope"');
+    expect(step1).toContain("!hasAuthoritativeEstimateProvenance ? (");
+    expect(step1).toContain("Optional — use AI to refine the scope already carried over from the Estimate.");
+  });
+
+  it("keeps readiness manual and independent of AI usage", () => {
+    const saveValidation = step1.slice(
+      step1.indexOf("function validateStep1ForSave()"),
+      step1.indexOf("function validateStep1ForAi")
+    );
+    expect(saveValidation).toContain('errors.project_type = "Project type is required."');
+    expect(saveValidation).toContain('hasAuthoritativeEstimateProvenance && !safeTrim(dLocal?.project_subtype)');
+    expect(saveValidation).not.toMatch(/classificationResult|aiSetupResult|aiBusy|aiPreview/);
+  });
+
+  it("labels Estimate scheduling context clearly and prefers persisted contractual scope", () => {
+    expect(estimateWorkspace).toContain('sectionBlock("Requested Timing", proposalScheduleSummary(proposal))');
+    expect(estimateWorkspace).not.toContain('sectionBlock("Scheduling Expectations"');
+    expect(wizard.indexOf("agreement?.scope_of_work")).toBeLessThan(wizard.indexOf("draft.description"));
   });
 });

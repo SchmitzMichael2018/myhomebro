@@ -2086,6 +2086,9 @@ export default function Step1Details({
     if (!safeTrim(dLocal?.project_type)) {
       errors.project_type = "Project type is required.";
     }
+    if (hasAuthoritativeEstimateProvenance && !safeTrim(dLocal?.project_subtype)) {
+      errors.project_subtype = "Project subtype is required.";
+    }
     if (!safeTrim(dLocal?.project_title)) {
       errors.project_title = "Project title is required.";
     }
@@ -3226,7 +3229,7 @@ export default function Step1Details({
       const resolvedConfidence = safeTrim(resolvedClassification?.confidence || "low");
       const shouldAutoApply = resolvedConfidence === "medium" || resolvedConfidence === "high";
 
-      if (hasAuthoritativeEstimateTemplate || !shouldAutoApply) {
+      if (hasAuthoritativeEstimateProvenance || !shouldAutoApply) {
         // Low confidence — surface alternatives for the contractor to choose from,
         // but do NOT auto-apply type/subtype/title to the form.
         setClassificationResult({
@@ -3240,12 +3243,12 @@ export default function Step1Details({
             ? resolvedClassification.alternatives
             : [],
           recommended_custom_subtype: safeTrim(resolvedClassification?.recommended_custom_subtype),
-          note: hasAuthoritativeEstimateTemplate
+          note: hasAuthoritativeEstimateProvenance
             ? "Estimate classification is authoritative. Apply this suggestion only if you intend to replace it."
             : "Review the suggestions below and select one, or edit manually.",
         });
         setClassificationMessage(
-          hasAuthoritativeEstimateTemplate
+          hasAuthoritativeEstimateProvenance
             ? "Suggestion ready. Your accepted Estimate classification has not changed."
             : "AI confidence is low — review the suggestions below or edit manually."
         );
@@ -3637,7 +3640,7 @@ export default function Step1Details({
     estimateTemplateId,
     savedTemplateId: persistedAgreementTemplateId,
   });
-  const hasAuthoritativeEstimateTemplate = primarySetupSource === "estimate_provenance";
+  const hasAuthoritativeEstimateProvenance = primarySetupSource === "estimate_provenance";
   const hasSavedAgreementSetup = primarySetupSource === "saved_agreement_setup";
   const allowAiSetupRecommendation = primarySetupSource === "ai_recommendation";
 
@@ -4579,14 +4582,6 @@ export default function Step1Details({
       hasResolvedStep1Content);
   const shouldShowProjectDetailsSection =
     forceProjectDetails || (!shouldShowResetChooserOnly && effectiveStep1ViewState !== "no_template");
-  const estimatePrefillDescription = safeTrim(
-    dLocal?.description ||
-      dLocal?.scope_of_work ||
-      assistantDraftPayload?.description ||
-      assistantDraftPayload?.scope_of_work ||
-      ""
-  );
-
   async function handleUseAiRecommendedTemplate() {
     if (!aiRecommendedTemplate) return;
     await handleTemplateApplyWithOptions(aiRecommendedTemplate);
@@ -4770,7 +4765,7 @@ export default function Step1Details({
         })
       );
 
-    if (hasAuthoritativeEstimateTemplate && (generatedType || generatedSubtype)) {
+    if (hasAuthoritativeEstimateProvenance && (generatedType || generatedSubtype)) {
       setClassificationResult({
         project_type: generatedType,
         project_subtype: generatedSubtype,
@@ -4784,9 +4779,9 @@ export default function Step1Details({
     }
 
     const nextValues = {
-      project_title: hasAuthoritativeEstimateTemplate ? dLocal?.project_title || generatedTitle : generatedTitle,
-      project_type: hasAuthoritativeEstimateTemplate ? dLocal?.project_type || generatedType : generatedType,
-      project_subtype: hasAuthoritativeEstimateTemplate ? dLocal?.project_subtype || generatedSubtype : generatedSubtype,
+      project_title: hasAuthoritativeEstimateProvenance ? dLocal?.project_title || generatedTitle : generatedTitle,
+      project_type: hasAuthoritativeEstimateProvenance ? dLocal?.project_type || generatedType : generatedType,
+      project_subtype: hasAuthoritativeEstimateProvenance ? dLocal?.project_subtype || generatedSubtype : generatedSubtype,
       description: refinedDescription || dLocal?.description || "",
       scope_of_work: refinedDescription || dLocal?.description || "",
     };
@@ -6098,39 +6093,6 @@ export default function Step1Details({
   return (
     <>
       <div className="space-y-6">
-        {isProposalHandoff ? (
-          <div
-            data-testid="estimate-prefill-applied"
-            className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-950"
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-emerald-950">Estimate Prefill Applied</h3>
-                <p className="mt-1 text-sm text-emerald-900">
-                  Customer, address, scope, classification, line item, and reserve details were carried over from
-                  the Estimate Workspace for review.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={async () => {
-                  const prompt = estimatePrefillDescription || safeTrim(dLocal?.project_title);
-                  if (!prompt) return;
-                  setStep1JobDescriptionPrompt(prompt);
-                  setStep1ResetChooserPrompt(prompt);
-                  activateStartMode("ai", { committed: true, source: "user" });
-                  await Promise.resolve();
-                  requestStep1AiSetup(prompt);
-                }}
-                disabled={locked || aiSetupBusy || aiSetupLoadingVisible || !estimatePrefillDescription}
-                className="inline-flex items-center justify-center rounded-xl border border-emerald-300 bg-white px-4 py-2 text-sm font-semibold text-emerald-900 hover:bg-emerald-100 disabled:opacity-60"
-                data-testid="step1-rerun-ai-setup-button"
-              >
-                {aiSetupBusy || aiSetupLoadingVisible ? "Re-running..." : "Re-run AI Setup"}
-              </button>
-            </div>
-          </div>
-        ) : null}
         {!forceProjectDetails && effectiveStep1ViewState !== "ai_built" && effectiveStep1ViewState !== "loading" ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-sm text-gray-600">
@@ -6385,7 +6347,7 @@ export default function Step1Details({
                     </button>
                   </div>
                 </div>
-              ) : aiSetupResult?.kind === "template_match" ? (
+              ) : allowAiSetupRecommendation && aiSetupResult?.kind === "template_match" ? (
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="max-w-3xl">
                     <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
@@ -6774,7 +6736,7 @@ export default function Step1Details({
           </section>
         ) : null}
 
-        {aiSetupResult?.kind === "template_match" ? (
+        {allowAiSetupRecommendation && aiSetupResult?.kind === "template_match" ? (
           <section
             data-testid="step1-ai-setup-result"
             className={`rounded-2xl border p-5 shadow-sm ${
@@ -7099,34 +7061,6 @@ export default function Step1Details({
                 View template options
               </button>
             </div>
-          </section>
-        ) : null}
-
-        {hasAuthoritativeEstimateTemplate ? (
-          <section
-            data-testid="estimate-template-carried-forward"
-            className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm"
-          >
-            <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
-              Estimate Setup Carried Forward
-            </div>
-            <div className="mt-1 text-base font-semibold text-slate-900">
-              {dLocal?.project_title || agreement?.project_title || agreement?.title || "Estimate setup"}
-            </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <LeadContextField label="Template" value={appliedTemplateName || "Estimate template"} />
-              <LeadContextField
-                label="Project Type"
-                value={
-                  [dLocal?.project_type || agreement?.project_type, dLocal?.project_subtype || agreement?.project_subtype]
-                    .filter(Boolean)
-                    .join(" · ") || "-"
-                }
-              />
-            </div>
-            <p className="mt-3 text-sm text-slate-700">
-              This Agreement uses the template and project setup selected in the Estimate. Review the Agreement details below.
-            </p>
           </section>
         ) : null}
 
@@ -7616,7 +7550,9 @@ export default function Step1Details({
                   <div>
                     <div className="text-sm font-semibold text-slate-900">Project classification</div>
                     <div className="mt-1 text-xs text-slate-600">
-                      Use AI to better match the project category, subtype, and title based on the current scope.
+                      {hasAuthoritativeEstimateProvenance
+                        ? "Optional — use AI to suggest a category and subtype for your review. Nothing changes until you accept it."
+                        : "Use AI to better match the project category, subtype, and title based on the current scope."}
                     </div>
                   </div>
                   <button
@@ -7627,7 +7563,11 @@ export default function Step1Details({
                     className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {classificationBusy ? <Spinner size={4} color="indigo-600" /> : null}
-                    {classificationBusy ? "Improving..." : "Improve Project Classification"}
+                    {classificationBusy
+                      ? "Reviewing..."
+                      : hasAuthoritativeEstimateProvenance
+                      ? "Suggest Classification"
+                      : "Improve Project Classification"}
                   </button>
                 </div>
                 {classificationErr ? (
@@ -7656,7 +7596,7 @@ export default function Step1Details({
                     {classificationResult.reason ? (
                       <div className="mt-2 text-xs text-slate-600">{classificationResult.reason}</div>
                     ) : null}
-                    {hasAuthoritativeEstimateTemplate ? (
+                    {hasAuthoritativeEstimateProvenance ? (
                       <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
                         <div>
                           Current Estimate setup: <strong>{dLocal.project_type}</strong>
@@ -7832,7 +7772,12 @@ export default function Step1Details({
                 <div>
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <label htmlFor="mhb-step1details-7745" className="block text-sm font-medium text-slate-900">Subtype</label>
+                      <label htmlFor="mhb-step1details-7745" className="block text-sm font-medium text-slate-900">
+                        Subtype{" "}
+                        {hasAuthoritativeEstimateProvenance ? (
+                          <span className="mhb-required-badge ml-1">Required</span>
+                        ) : null}
+                      </label>
                       {getAiSuggestedIndicator("project_subtype") ? (
                         <span
                           data-testid="agreement-project-subtype-ai-indicator"
@@ -7880,6 +7825,9 @@ export default function Step1Details({
                       ? "Subtype helps tailor templates, scope guidance, and milestones."
                       : "Choose a type first to unlock subtype options."}
                   </div>
+                  {step1FieldErrors.project_subtype ? (
+                    <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.project_subtype}</div>
+                  ) : null}
                 </div>
               </div>
 
@@ -7993,7 +7941,9 @@ export default function Step1Details({
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs text-slate-600">
-                    {startMode === "ai"
+                    {hasAuthoritativeEstimateProvenance
+                      ? "Optional — use AI to refine the scope already carried over from the Estimate."
+                      : startMode === "ai"
                       ? "Use AI to draft the first version, then refine the scope here."
                       : "AI can turn a rough idea into a clearer, stronger scope when you want help."}
                   </div>
@@ -8030,19 +7980,25 @@ export default function Step1Details({
                     className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
                     data-testid="agreement-ai-improve-scope-button"
                   >
-                    {aiBusy ? "Working..." : "Improve Existing Scope"}
+                    {aiBusy
+                      ? "Working..."
+                      : hasAuthoritativeEstimateProvenance
+                      ? "Improve Scope"
+                      : "Improve Existing Scope"}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => runAiDescription("generate")}
-                    disabled={!canGenerateScope}
-                    title={!canGenerateScope ? scopeActionDisabledReason : "Generate a scope draft from the current project details."}
-                    className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
-                    data-testid="agreement-ai-generate-scope-button"
-                  >
-                    {aiBusy ? "Working..." : "Generate Scope Draft"}
-                  </button>
+                  {!hasAuthoritativeEstimateProvenance ? (
+                    <button
+                      type="button"
+                      onClick={() => runAiDescription("generate")}
+                      disabled={!canGenerateScope}
+                      title={!canGenerateScope ? scopeActionDisabledReason : "Generate a scope draft from the current project details."}
+                      className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
+                      data-testid="agreement-ai-generate-scope-button"
+                    >
+                      {aiBusy ? "Working..." : "Generate Scope Draft"}
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="mt-2 text-[11px] text-slate-500">
