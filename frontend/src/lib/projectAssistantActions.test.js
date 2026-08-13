@@ -69,4 +69,10 @@ describe("Agreement Wizard Project Assistant actions", () => {
     expect(dockSource).toContain("mobile:agreement-wizard:");
     expect(dockSource).toContain("<StartWithAIAssistant");
   });
+
+  it("shows synchronized classification request feedback and prevents repeat clicks", () => {
+    expect(assistantSource).toContain("project-assistant-classification-status");
+    expect(assistantSource).toContain('classificationAssistance.status === "pending"');
+    expect(assistantSource).toContain("disabled={disabled}");
+  });
 });

@@ -49,10 +49,23 @@ describe("Agreement Wizard Estimate template handoff", () => {
   });
 
   it("keeps AI classification advisory until an explicit replacement action", () => {
-    expect(step1).toContain("hasAuthoritativeEstimateProvenance || !shouldAutoApply");
+    expect(step1).toContain("Classification is always advisory");
     expect(step1).toContain('data-testid="agreement-ai-accept-classification-button"');
-    expect(step1).toContain("Your accepted Estimate classification has not changed");
+    expect(step1).toContain("Nothing changes until you apply this suggestion.");
     expect(step1).toContain("accepted_estimate_basis?.pricing_rows");
+  });
+
+  it("presents exact classification field changes without alternate-trade chips", () => {
+    expect(step1).toContain('data-testid="agreement-classification-type-comparison"');
+    expect(step1).toContain('data-testid="agreement-classification-subtype-comparison"');
+    expect(step1).toContain("Current:");
+    expect(step1).toContain("Suggested:");
+    expect(step1).toContain("Apply Suggestion");
+    expect(step1).toContain("Keep Current Classification");
+    expect(step1).toContain("No matching subtype — select manually");
+    expect(step1).not.toContain("classificationResult.alternatives.map");
+    expect(step1).not.toContain("Recommended custom subtype:");
+    expect(step1).not.toContain("Replace with suggested classification");
   });
 
   it("removes inline AI actions so Project Assistant is the single entry point", () => {

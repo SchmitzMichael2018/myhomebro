@@ -78,13 +78,14 @@ function CompactBadge({ children }) {
   );
 }
 
-function ProjectAssistantActionButton({ action, onSelect }) {
+function ProjectAssistantActionButton({ action, onSelect, disabled = false }) {
   return (
     <button
       type="button"
       data-testid={`project-assistant-action-${action.key}`}
       onClick={() => onSelect(action)}
-      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-900 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+      disabled={disabled}
+      className="w-full rounded-2xl border border-slate-200 bg-white px-3 py-3 text-left transition hover:border-slate-900 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:cursor-wait disabled:opacity-60"
     >
       <div className="text-sm font-semibold text-slate-950">{action.label}</div>
       {action.description ? (
@@ -367,7 +368,7 @@ function ProjectAssistantRecommendations({ recommendations = [] }) {
   );
 }
 
-function ProjectAssistantPanel({ summary, actions, notice = "", recommendations = [], onAction }) {
+function ProjectAssistantPanel({ summary, actions, notice = "", recommendations = [], onAction, classificationAssistance = {} }) {
   const recommended = Array.isArray(actions?.recommended) ? actions.recommended : [];
   const additional = Array.isArray(actions?.additional) ? actions.additional : [];
   const info = Array.isArray(actions?.info) ? actions.info.filter(Boolean) : [];
@@ -412,6 +413,28 @@ function ProjectAssistantPanel({ summary, actions, notice = "", recommendations 
 
       <ProjectAssistantGuide guide={guide} />
 
+      {classificationAssistance.status && classificationAssistance.status !== "idle" ? (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm ${
+            classificationAssistance.status === "error"
+              ? "border-rose-200 bg-rose-50 text-rose-900"
+              : classificationAssistance.status === "ready"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-sky-200 bg-sky-50 text-sky-900"
+          }`}
+          role="status"
+          aria-live="polite"
+          data-testid="project-assistant-classification-status"
+        >
+          <div className="flex items-center gap-2">
+            {classificationAssistance.status === "pending" ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : null}
+            <span>{classificationAssistance.message}</span>
+          </div>
+        </div>
+      ) : null}
+
       {notice ? (
         <div
           className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -445,6 +468,10 @@ function ProjectAssistantPanel({ summary, actions, notice = "", recommendations 
                 key={action.key}
                 action={action}
                 onSelect={onAction}
+                disabled={
+                  action.key === "step1_improve_classification" &&
+                  classificationAssistance.status === "pending"
+                }
               />
             ))}
           </div>
@@ -462,6 +489,7 @@ function ProjectAssistantPanel({ summary, actions, notice = "", recommendations 
                 key={action.key}
                 action={action}
                 onSelect={onAction}
+                disabled={false}
               />
             ))}
           </div>
@@ -1981,6 +2009,7 @@ export default function StartWithAIAssistant({
             notice={projectAssistantNotice}
             recommendations={projectAssistantRecommendations}
             onAction={useProjectAssistantAction}
+            classificationAssistance={normalizedContext?.classification_assistance || {}}
           />
         ) : hideContextHeader ? null : !isFieldAwareMode ? (
           <div

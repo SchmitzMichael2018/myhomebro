@@ -194,6 +194,101 @@ test("Agreement Wizard prefills editable fields from Estimate Workspace handoff"
   await expect(page.getByTestId("agreement-step1-open-assistant")).toHaveAttribute("aria-expanded", "true");
 });
 
+test("Project Assistant classification is visibly pending and remains advisory until applied", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  await page.addInitScript(() => {
+    const key = "mhb_first_project_assist_handoff";
+    const handoff = JSON.parse(window.sessionStorage.getItem(key) || "{}");
+    handoff.assistantDraftPayload = {
+      ...(handoff.assistantDraftPayload || {}),
+      project_type: "",
+      project_subtype: "",
+    };
+    window.sessionStorage.setItem(key, JSON.stringify(handoff));
+  });
+  let classificationCalls = 0;
+  await page.route("**/api/projects/agreements/ai/classify/", async (route) => {
+    classificationCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        classification: {
+          project_type: "Bathroom",
+          project_subtype: "Refresh",
+          project_title: "Bathroom Remodel",
+          confidence: "high",
+          confidence_label: "High confidence",
+          reason: "The overall project is a bathroom remodel.",
+          alternatives: [
+            { project_type: "Flooring", project_subtype: "Tile Flooring" },
+          ],
+        },
+      }),
+    });
+  });
+
+  await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("agreement-step1-open-assistant").click();
+  const desktopAssistant = page.getByTestId("assistant-desktop-dock");
+  const action = desktopAssistant.getByTestId("project-assistant-action-step1_improve_classification");
+  await action.click();
+  await expect(desktopAssistant.getByTestId("project-assistant-classification-status")).toContainText(
+    "Analyzing project classification..."
+  );
+  await expect(action).toBeDisabled();
+  await expect(desktopAssistant.getByTestId("project-assistant-classification-status")).toContainText(
+    "Classification suggestion ready."
+  );
+  expect(classificationCalls).toBe(1);
+
+  const suggestion = page.getByTestId("agreement-classification-suggestion");
+  await expect(suggestion).toContainText("Current: Not selected");
+  await expect(suggestion).toContainText("Suggested: Bathroom");
+  await expect(suggestion).toContainText("Suggested: Refresh");
+  await expect(suggestion).not.toContainText("Flooring");
+  await expect(page.getByTestId("agreement-ai-accept-classification-button")).toContainText("Apply Suggestion");
+
+  await page.getByTestId("agreement-ai-accept-classification-button").click();
+  await expect(page.getByTestId("agreement-project-type-select")).toHaveValue("Bathroom");
+  await expect(page.getByTestId("agreement-project-subtype-select")).toHaveValue("Refresh");
+  await expect(desktopAssistant.getByTestId("project-assistant-action-step1_improve_classification")).toHaveCount(0);
+});
+
+test("Project Assistant classification failure is visible and retryable", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  await page.addInitScript(() => {
+    const key = "mhb_first_project_assist_handoff";
+    const handoff = JSON.parse(window.sessionStorage.getItem(key) || "{}");
+    handoff.assistantDraftPayload = { ...(handoff.assistantDraftPayload || {}), project_type: "", project_subtype: "" };
+    window.sessionStorage.setItem(key, JSON.stringify(handoff));
+  });
+  let calls = 0;
+  await page.route("**/api/projects/agreements/ai/classify/", async (route) => {
+    calls += 1;
+    await route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ detail: "Classification is temporarily unavailable. Try again." }),
+    });
+  });
+
+  await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("agreement-step1-open-assistant").click();
+  const desktopAssistant = page.getByTestId("assistant-desktop-dock");
+  const action = desktopAssistant.getByTestId("project-assistant-action-step1_improve_classification");
+  await action.click();
+  await expect(desktopAssistant.getByTestId("project-assistant-classification-status")).toContainText(
+    "Classification is temporarily unavailable. Try again."
+  );
+  await expect(action).toBeEnabled();
+  await action.click();
+  await expect.poll(() => calls).toBe(2);
+});
+
 test("Agreement Wizard milestone planning simulation updates and appears in final review", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);

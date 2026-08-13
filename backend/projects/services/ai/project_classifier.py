@@ -449,7 +449,7 @@ def _build_alternatives(
     return unique[:3]
 
 
-def _call_openai_classifier(
+def _call_openai_taxonomy_classifier_legacy(
     *,
     description: str,
     scope: str,
@@ -536,11 +536,15 @@ def _call_openai_classifier(
 
     system = (
         "You classify contractor jobs into a project taxonomy.\n"
-        "Use the scope as the strongest signal, then the original description.\n"
+        "Classify the overall project intent, not an incidental trade within the work.\n"
         "\n"
         f"Valid project_type values — you MUST choose from this list only:\n{_taxonomy_list}\n"
         "\n"
         "Rules:\n"
+        "- Apply this evidence order: explicit project title/established intent; current authoritative project context; "
+        "scope as a whole; milestone composition; then individual trade signals.\n"
+        "- A broad remodel containing painting, tile, plumbing, flooring, or cleanup remains a remodel when those trades "
+        "are components of the larger project.\n"
         "- First write your reasoning_text: briefly explain in 1-2 sentences which project_type best fits and why.\n"
         "- Select the single best matching project_type from the list above. "
         "Do NOT invent new categories or use category names not in the list.\n"
@@ -627,6 +631,285 @@ def _call_openai_classifier(
                 result["_confidence_downgraded"] = True
 
     return result
+
+
+def _call_openai_classifier(
+    *,
+    description: str,
+    scope: str,
+    taxonomy: dict[str, Any] | None = None,
+    current_values: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    """Stage 1: understand the job without exposing taxonomy choices to the model."""
+    api_key = _env_openai_api_key()
+    if not api_key:
+        return None
+    try:
+        from openai import OpenAI  # type: ignore
+    except Exception:
+        return None
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "primary_intent": {"type": "string"},
+            "project_area": {"type": "string"},
+            "project_scale": {"type": "string"},
+            "supporting_trades": {"type": "array", "items": {"type": "string"}},
+            "reasoning": {"type": "string"},
+            "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+        },
+        "required": [
+            "primary_intent",
+            "project_area",
+            "project_scale",
+            "supporting_trades",
+            "reasoning",
+            "confidence",
+        ],
+        "additionalProperties": False,
+    }
+    system = (
+        "Understand this contractor job semantically before any product taxonomy is considered.\n"
+        "Determine what the overall project is; do not choose or guess a database category.\n"
+        "Use evidence in this order: explicit project title/established intent; authoritative project context; "
+        "scope as a whole; milestone or line-item composition; then individual trade signals.\n"
+        "Separate the primary project intent from supporting trades. Painting, plumbing, tile, flooring, electrical, "
+        "and cleanup can support a larger remodel and must not displace that overall intent.\n"
+        "project_area is the main object or area (for example bathroom, kitchen, whole home, roof, or water heater).\n"
+        "project_scale is the nature of work (for example remodel, repair, replacement, installation, or repaint).\n"
+        "Never reuse stale current values unless the title and work context support them.\n"
+        "Return only JSON matching the schema."
+    )
+    user = _json_dump(
+        {
+            "project_title": _safe_str((current_values or {}).get("project_title")),
+            "description_and_estimate_context": description,
+            "scope": scope,
+        }
+    )
+    model = (
+        getattr(settings, "OPENAI_PROJECT_CLASSIFIER_MODEL", None)
+        or getattr(settings, "OPENAI_MODEL", None)
+        or "gpt-4o-mini"
+    )
+    try:
+        response = OpenAI(api_key=api_key).responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            text={
+                "format": {
+                    "type": "json_schema",
+                    "name": "semantic_project_understanding",
+                    "schema": schema,
+                    "strict": True,
+                }
+            },
+        )
+    except Exception as exc:
+        logger.warning("OpenAI semantic project understanding failed: %s", exc)
+        return None
+    text = getattr(response, "output_text", "") or ""
+    if not text and isinstance(getattr(response, "output", None), list):
+        text = json.dumps(getattr(response, "output"), default=str)
+    return _safe_json_loads(text) if text else None
+
+
+SUPPORTING_TRADE_TERMS = (
+    "demolition",
+    "plumbing",
+    "tile",
+    "flooring",
+    "painting",
+    "electrical",
+    "drywall",
+    "carpentry",
+    "hvac",
+    "roofing",
+    "cleanup",
+)
+
+
+def _deterministic_semantic_understanding(
+    *, description: str, scope: str, current_values: dict[str, Any]
+) -> dict[str, Any]:
+    title = _safe_str(current_values.get("project_title"))
+    text = _norm_text(f"{title}\n{description}\n{scope}")
+    supporting = [term for term in SUPPORTING_TRADE_TERMS if term in text]
+    remodel_scale = next(
+        (term for term in ("remodel", "renovation", "renovate", "rehab") if term in text),
+        "",
+    )
+    areas = (
+        "bathroom",
+        "kitchen",
+        "basement",
+        "whole home",
+        "whole house",
+        "bedroom",
+        "living room",
+        "garage",
+    )
+    area = next((term for term in areas if term in text), "")
+    if remodel_scale:
+        primary = f"{area} remodel".strip() if area else "general remodel"
+        return {
+            "primary_intent": primary,
+            "project_area": area,
+            "project_scale": "remodel",
+            "supporting_trades": supporting,
+            "reasoning": "The title and complete scope describe a remodel; individual trades support that broader intent.",
+            "confidence": "high" if title and remodel_scale in _norm_text(title) else "medium",
+            "semantic_source": "deterministic",
+        }
+
+    project_type, project_subtype, reason = classify_type_subtype(
+        project_title=title,
+        description=description,
+        scope_text=scope,
+        requested_type="",
+        requested_subtype="",
+    )
+    primary = " ".join(part for part in [project_subtype, project_type] if part).strip()
+    return {
+        "primary_intent": primary,
+        "project_area": "",
+        "project_scale": "",
+        "supporting_trades": supporting,
+        "reasoning": reason or "Interpreted the dominant work described by the title and scope.",
+        "confidence": "medium" if project_type else "low",
+        "semantic_source": "deterministic",
+    }
+
+
+def _normalize_semantic_understanding(
+    candidate: dict[str, Any] | None,
+    *,
+    deterministic: dict[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(candidate, dict):
+        return deterministic
+    if _safe_str(candidate.get("primary_intent")):
+        semantic = {
+            "primary_intent": _safe_str(candidate.get("primary_intent")),
+            "project_area": _safe_str(candidate.get("project_area")),
+            "project_scale": _safe_str(candidate.get("project_scale")),
+            "supporting_trades": [
+                _safe_str(item) for item in candidate.get("supporting_trades", []) if _safe_str(item)
+            ],
+            "reasoning": _safe_str(candidate.get("reasoning")),
+            "confidence": _normalize_confidence(candidate.get("confidence"), "medium"),
+            "semantic_source": "ai",
+        }
+    else:
+        # Compatibility for existing callers/tests that mock the former taxonomy-shaped response.
+        candidate_type = _safe_str(candidate.get("project_type"))
+        if candidate_type and normalized_key(candidate_type) in normalized_key(
+            deterministic.get("primary_intent")
+        ):
+            return {
+                "primary_intent": " ".join(
+                    part
+                    for part in [
+                        _safe_str(candidate.get("project_subtype")),
+                        candidate_type,
+                    ]
+                    if part
+                ),
+                "project_area": _safe_str(candidate.get("project_subtype")),
+                "project_scale": _safe_str(deterministic.get("project_scale")),
+                "supporting_trades": deterministic.get("supporting_trades") or [],
+                "reasoning": _safe_str(candidate.get("reason")) or _safe_str(deterministic.get("reasoning")),
+                "confidence": _normalize_confidence(candidate.get("confidence"), "medium"),
+                "semantic_source": "legacy_candidate",
+            }
+        return deterministic
+
+    # Explicit remodel intent found across title/full scope outranks a model response
+    # that promotes one supporting trade. This is generic across remodel areas.
+    if deterministic.get("project_scale") == "remodel" and semantic.get("project_scale") != "remodel":
+        return deterministic
+    return semantic
+
+
+def _taxonomy_tokens(value: Any) -> set[str]:
+    return {
+        token
+        for token in re.split(r"[^a-z0-9]+", _norm_text(_safe_str(value)))
+        if token and token not in {"project", "work", "service", "general"}
+    }
+
+
+def _map_semantic_to_taxonomy(
+    semantic: dict[str, Any],
+    *,
+    lookup: _TaxonomyLookup,
+    current_values: dict[str, Any],
+    description: str,
+    scope: str,
+) -> dict[str, Any] | None:
+    primary = _safe_str(semantic.get("primary_intent"))
+    area = _safe_str(semantic.get("project_area"))
+    scale = _safe_str(semantic.get("project_scale"))
+    evidence_tokens = _taxonomy_tokens(f"{primary} {area} {scale}")
+    if not primary:
+        return None
+
+    ranked_types: list[tuple[int, str]] = []
+    for type_name in lookup.type_by_norm.values():
+        type_tokens = _taxonomy_tokens(type_name)
+        score = len(evidence_tokens & type_tokens) * 10
+        subtype_scores = [
+            len(evidence_tokens & _taxonomy_tokens(subtype_name)) * 6
+            for subtype_name in lookup.subtypes_by_type_norm.get(normalized_key(type_name), {}).values()
+        ]
+        score += max(subtype_scores, default=0)
+        if normalized_key(type_name) == normalized_key(primary):
+            score += 100
+        if scale == "remodel" and any(token.startswith("remodel") for token in type_tokens):
+            score += 80
+        ranked_types.append((score, type_name))
+    ranked_types.sort(key=lambda row: (-row[0], row[1].lower()))
+    if not ranked_types or ranked_types[0][0] <= 0:
+        return None
+    project_type = ranked_types[0][1]
+
+    subtype_map = lookup.subtypes_by_type_norm.get(normalized_key(project_type), {})
+    subtype_evidence = _taxonomy_tokens(f"{primary} {area} {scale}")
+    ranked_subtypes: list[tuple[int, str]] = []
+    for subtype_name in subtype_map.values():
+        subtype_tokens = _taxonomy_tokens(subtype_name)
+        score = len(subtype_evidence & subtype_tokens) * 10
+        if normalized_key(subtype_name) in {normalized_key(primary), normalized_key(area)}:
+            score += 100
+        ranked_subtypes.append((score, subtype_name))
+    ranked_subtypes.sort(key=lambda row: (-row[0], row[1].lower()))
+    project_subtype = ranked_subtypes[0][1] if ranked_subtypes and ranked_subtypes[0][0] > 0 else ""
+    semantic_confidence = _normalize_confidence(semantic.get("confidence"), "low")
+    taxonomy_match_quality = "exact" if project_subtype else "type_only"
+    title = _friendly_title(project_type, project_subtype, primary, primary)
+    return {
+        "project_type": project_type,
+        "project_subtype": project_subtype,
+        "project_title": title,
+        "confidence": semantic_confidence,
+        "confidence_label": f"{semantic_confidence.title()} confidence",
+        "semantic_confidence": semantic_confidence,
+        "taxonomy_match_quality": taxonomy_match_quality,
+        "reason": _safe_str(semantic.get("reasoning")),
+        "alternatives": [],
+        "recommended_custom_subtype": "" if project_subtype else f"{area} {scale}".strip().title(),
+        "classification_source": f"semantic_{semantic.get('semantic_source') or 'unknown'}",
+        "semantic_understanding": {
+            "primary_intent": primary,
+            "project_area": area,
+            "project_scale": scale,
+            "supporting_trades": semantic.get("supporting_trades") or [],
+        },
+    }
 
 
 def _normalize_candidate(result: dict[str, Any] | None, lookup: _TaxonomyLookup) -> dict[str, Any] | None:
@@ -727,7 +1010,7 @@ def _fallback_classification(
     }
 
 
-def classify_project_from_scope(
+def _classify_project_from_scope_legacy(
     *,
     description: str,
     scope: str,
@@ -880,3 +1163,90 @@ def classify_project_from_scope(
         result["reason"] = fallback.get("reason") or "Matched the dominant project intent from the description and scope."
 
     return result
+
+
+def classify_project_from_scope(
+    *,
+    description: str,
+    scope: str,
+    taxonomy: dict[str, Any] | None = None,
+    current_values: dict[str, Any] | None = None,
+    contractor: Contractor | None = None,
+) -> dict[str, Any]:
+    """Understand project intent first, then normalize it to visible taxonomy."""
+    description = _safe_str(description)
+    scope = _safe_str(scope)
+    current_values = current_values or {}
+    taxonomy = taxonomy or build_project_taxonomy_snapshot(contractor=contractor)
+    lookup = _taxonomy_lookup(taxonomy)
+    clean_current_values = _clean_current_classification_values(current_values, lookup)
+    semantic_current_values = {
+        "project_title": _safe_str(current_values.get("project_title")),
+        "project_type": _safe_str(current_values.get("project_type")),
+        "project_subtype": _safe_str(current_values.get("project_subtype")),
+    }
+    deterministic = _deterministic_semantic_understanding(
+        description=description,
+        scope=scope,
+        current_values=semantic_current_values,
+    )
+    if normalized_key(deterministic.get("primary_intent")).find("appliance_repair") >= 0:
+        # Existing appliance symptom classification is a narrow deterministic
+        # safeguard for malformed/stale model context. Preserve it until the
+        # active taxonomy includes the appliance family everywhere.
+        return _fallback_classification(
+            description=description,
+            scope=scope,
+            current_values={"project_title": _safe_str(current_values.get("project_title"))},
+        )
+    candidate = _call_openai_classifier(
+        description=description,
+        scope=scope,
+        current_values=semantic_current_values,
+    )
+    semantic = _normalize_semantic_understanding(candidate, deterministic=deterministic)
+    mapped = _map_semantic_to_taxonomy(
+        semantic,
+        lookup=lookup,
+        current_values=semantic_current_values,
+        description=description,
+        scope=scope,
+    )
+    if mapped:
+        return mapped
+
+    # Provider output may be unavailable or malformed. The deterministic semantic
+    # interpretation still maps through the same taxonomy stage; only then do we
+    # retain an already-valid current type as a final non-inventing fallback.
+    deterministic_mapped = _map_semantic_to_taxonomy(
+        deterministic,
+        lookup=lookup,
+        current_values=semantic_current_values,
+        description=description,
+        scope=scope,
+    )
+    if deterministic_mapped:
+        return deterministic_mapped
+    current_type = _resolve_type(clean_current_values.get("project_type"), lookup)
+    current_subtype = _resolve_subtype(
+        current_type, clean_current_values.get("project_subtype"), lookup
+    )
+    return {
+        "project_type": current_type,
+        "project_subtype": current_subtype,
+        "project_title": _safe_str(current_values.get("project_title")),
+        "confidence": "low",
+        "confidence_label": "Manual selection needed",
+        "semantic_confidence": _normalize_confidence(semantic.get("confidence"), "low"),
+        "taxonomy_match_quality": "unresolved",
+        "reason": _safe_str(semantic.get("reasoning")) or "No valid taxonomy match was found.",
+        "alternatives": [],
+        "recommended_custom_subtype": "",
+        "classification_source": "semantic_unresolved",
+        "semantic_understanding": {
+            "primary_intent": _safe_str(semantic.get("primary_intent")),
+            "project_area": _safe_str(semantic.get("project_area")),
+            "project_scale": _safe_str(semantic.get("project_scale")),
+            "supporting_trades": semantic.get("supporting_trades") or [],
+        },
+    }

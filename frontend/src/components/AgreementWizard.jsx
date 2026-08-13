@@ -2080,6 +2080,10 @@ export default function AgreementWizard() {
         count: milestones.length,
         suggested_titles: milestones.map((item) => item?.title).filter(Boolean),
       },
+      classification_assistance: {
+        status: step1AiSetupRequest?.status || "idle",
+        message: step1AiSetupRequest?.message || "",
+      },
       session_state: wizardSessionState,
       ai_panel: aiPanelConfig,
     }),
@@ -2100,6 +2104,8 @@ export default function AgreementWizard() {
       dLocal.project_type,
       homeownerOptions,
       milestones,
+      step1AiSetupRequest?.message,
+      step1AiSetupRequest?.status,
       resolvedProjectFamily.project_family_key,
       resolvedProjectFamily.project_family_label,
       step,
@@ -2151,7 +2157,16 @@ export default function AgreementWizard() {
         }));
         setAiFeedbackByStep((prev) => ({ ...prev, 1: "" }));
         setStep1AiEntryOpen(true);
-        setStep1AiSetupRequest({ prompt, actionKey, nonce: Date.now() });
+        setStep1AiSetupRequest({
+          prompt,
+          actionKey,
+          nonce: Date.now(),
+          status: actionKey === "step1_improve_classification" ? "pending" : "idle",
+          message:
+            actionKey === "step1_improve_classification"
+              ? "Analyzing project classification..."
+              : "",
+        });
         return true;
       }
       if (step === 3 && actionKey === "step3_apply_standard_warranty") {

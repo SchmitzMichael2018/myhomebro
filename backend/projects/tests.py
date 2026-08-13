@@ -1334,6 +1334,209 @@ class AgreementMilestoneSuggestionShapingTests(TestCase):
         self.assertEqual(result["confidence"], "high")
         self.assertIn("outdoor", result["reason"].lower())
 
+    def test_classify_project_from_scope_preserves_bathroom_remodel_intent_over_painting(self):
+        self._ensure_taxonomy("Remodel", ["Bathroom Remodel", "Kitchen Remodel", "Basement"])
+        self._ensure_taxonomy("Painting", ["Interior", "Exterior"])
+        taxonomy = build_project_taxonomy_snapshot(self.contractor)
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Painting",
+                "project_subtype": "Interior",
+                "project_title": "Interior Painting",
+                "confidence": "high",
+                "reason": "The scope includes interior painting.",
+                "recommended_custom_subtype": "",
+                "alternatives": [],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="QA Bathroom Remodel",
+                scope=(
+                    "Demolish the existing bathroom; replace plumbing fixtures; rebuild the shower "
+                    "with tile; install bathroom flooring; paint walls; and complete final cleanup."
+                ),
+                taxonomy=taxonomy,
+                current_values={
+                    "project_title": "QA Bathroom Remodel",
+                    "project_type": "",
+                    "project_subtype": "",
+                },
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Remodel")
+        self.assertEqual(result["project_subtype"], "Bathroom Remodel")
+        self.assertEqual(result["classification_source"], "semantic_deterministic")
+        self.assertNotEqual(result["project_type"], "Painting")
+
+    def test_bathroom_remodel_intent_uses_remodel_when_bathroom_subtype_is_unavailable(self):
+        taxonomy = {
+            "types": [
+                {"name": "Remodel", "subtypes": [{"name": "Home Theater / Media Room"}]},
+                {"name": "Painting", "subtypes": [{"name": "Interior"}]},
+            ]
+        }
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value={
+                "project_type": "Painting",
+                "project_subtype": "Interior",
+                "project_title": "Interior Painting",
+                "confidence": "high",
+                "reason": "The scope includes painting.",
+                "recommended_custom_subtype": "",
+                "alternatives": [],
+            },
+        ):
+            result = classify_project_from_scope(
+                description="QA Bathroom Remodel",
+                scope="Bathroom demolition, plumbing, shower tile, fixtures, flooring, paint, and cleanup.",
+                taxonomy=taxonomy,
+                current_values={"project_title": "QA Bathroom Remodel"},
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Remodel")
+        self.assertEqual(result["project_subtype"], "")
+        self.assertEqual(result["recommended_custom_subtype"], "Bathroom Remodel")
+        self.assertEqual(result["confidence"], "high")
+        self.assertEqual(result["taxonomy_match_quality"], "type_only")
+
+    def test_semantic_first_mapping_covers_remodels_and_pure_trades(self):
+        cases = [
+            {
+                "name": "kitchen remodel",
+                "semantic": {
+                    "primary_intent": "kitchen remodel",
+                    "project_area": "kitchen",
+                    "project_scale": "remodel",
+                    "supporting_trades": ["electrical", "plumbing", "flooring", "painting"],
+                    "reasoning": "The whole kitchen is being renovated.",
+                    "confidence": "high",
+                },
+                "taxonomy": {
+                    "types": [
+                        {"name": "Remodel", "subtypes": [{"name": "Kitchen"}]},
+                        {"name": "Electrical", "subtypes": [{"name": "Rewire"}]},
+                        {"name": "Painting", "subtypes": [{"name": "Interior"}]},
+                    ]
+                },
+                "title": "Kitchen Renovation",
+                "scope": "Cabinets, countertops, electrical, plumbing, flooring, and paint.",
+                "expected": ("Remodel", "Kitchen"),
+            },
+            {
+                "name": "pure painting",
+                "semantic": {
+                    "primary_intent": "interior painting",
+                    "project_area": "interior walls and ceilings",
+                    "project_scale": "repaint",
+                    "supporting_trades": ["painting"],
+                    "reasoning": "The work is solely repainting.",
+                    "confidence": "high",
+                },
+                "taxonomy": {
+                    "types": [
+                        {"name": "Remodel", "subtypes": [{"name": "Kitchen"}]},
+                        {"name": "Painting", "subtypes": [{"name": "Interior Painting"}]},
+                    ]
+                },
+                "title": "Interior Repaint",
+                "scope": "Repaint interior walls and ceilings throughout the first floor.",
+                "expected": ("Painting", "Interior Painting"),
+            },
+            {
+                "name": "pure plumbing",
+                "semantic": {
+                    "primary_intent": "water heater replacement",
+                    "project_area": "water heater",
+                    "project_scale": "replacement",
+                    "supporting_trades": ["plumbing"],
+                    "reasoning": "Replace the failed water heater and associated plumbing.",
+                    "confidence": "high",
+                },
+                "taxonomy": {
+                    "types": [
+                        {"name": "Plumbing", "subtypes": [{"name": "Water Heater Replacement"}]},
+                        {"name": "Painting", "subtypes": [{"name": "Interior"}]},
+                    ]
+                },
+                "title": "Water Heater Replacement",
+                "scope": "Replace failed water heater and reroute associated plumbing.",
+                "expected": ("Plumbing", "Water Heater Replacement"),
+            },
+            {
+                "name": "whole home remodel",
+                "semantic": {
+                    "primary_intent": "whole home remodel",
+                    "project_area": "whole home",
+                    "project_scale": "remodel",
+                    "supporting_trades": ["electrical", "plumbing", "flooring", "painting"],
+                    "reasoning": "Multiple trades support a whole-home renovation.",
+                    "confidence": "high",
+                },
+                "taxonomy": {
+                    "types": [
+                        {"name": "Remodel", "subtypes": []},
+                        {"name": "Painting", "subtypes": [{"name": "Interior"}]},
+                    ]
+                },
+                "title": "Whole Home Renovation",
+                "scope": "Whole-home renovation with electrical, plumbing, flooring, and painting.",
+                "expected": ("Remodel", ""),
+            },
+        ]
+        for case in cases:
+            with self.subTest(case["name"]), patch(
+                "projects.services.ai.project_classifier._call_openai_classifier",
+                return_value=case["semantic"],
+            ):
+                result = classify_project_from_scope(
+                    description=case["title"],
+                    scope=case["scope"],
+                    taxonomy=case["taxonomy"],
+                    current_values={"project_title": case["title"]},
+                    contractor=self.contractor,
+                )
+                self.assertEqual(
+                    (result["project_type"], result["project_subtype"]), case["expected"]
+                )
+                self.assertEqual(result["semantic_confidence"], "high")
+
+    def test_semantic_mapping_uses_contractor_visible_custom_taxonomy(self):
+        taxonomy = {
+            "types": [
+                {
+                    "name": "Residential Renovation",
+                    "subtypes": [{"name": "Primary Bath Transformation"}],
+                },
+                {"name": "Painting", "subtypes": [{"name": "Interior"}]},
+            ]
+        }
+        semantic = {
+            "primary_intent": "primary bath renovation",
+            "project_area": "primary bath",
+            "project_scale": "remodel",
+            "supporting_trades": ["plumbing", "tile", "painting"],
+            "reasoning": "This is a complete primary bath renovation.",
+            "confidence": "high",
+        }
+        with patch(
+            "projects.services.ai.project_classifier._call_openai_classifier",
+            return_value=semantic,
+        ):
+            result = classify_project_from_scope(
+                description="Primary Bath Renovation",
+                scope="Demolition, plumbing, tile, fixtures, flooring, and painting.",
+                taxonomy=taxonomy,
+                current_values={"project_title": "Primary Bath Renovation"},
+                contractor=self.contractor,
+            )
+
+        self.assertEqual(result["project_type"], "Residential Renovation")
+        self.assertEqual(result["project_subtype"], "Primary Bath Transformation")
+
     def test_classify_project_from_scope_rejects_invalid_pair_and_falls_back(self):
         self._ensure_taxonomy("Outdoor Living", ["Outdoor Kitchen", "Patio Extension", "Grill Island", "Pergola / Patio Cover"])
         taxonomy = build_project_taxonomy_snapshot(self.contractor)
