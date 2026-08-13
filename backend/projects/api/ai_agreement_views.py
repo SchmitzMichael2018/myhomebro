@@ -541,8 +541,8 @@ def ai_classify_project(request):
     raw_project_title = (request.data.get("project_title") or "").strip()
     raw_project_type = (request.data.get("project_type") or "").strip()
     raw_project_subtype = (request.data.get("project_subtype") or "").strip()
-    raw_description = (request.data.get("description") or request.data.get("current_description") or "").strip()
-    raw_scope = (request.data.get("scope_of_work") or request.data.get("scope") or "").strip()
+    raw_description = _compose_description_context(request.data)
+    raw_scope = (request.data.get("scope_of_work") or request.data.get("scope") or raw_description).strip()
 
     if not any([raw_project_title, raw_project_type, raw_project_subtype, raw_description, raw_scope]):
         return _validation_error(

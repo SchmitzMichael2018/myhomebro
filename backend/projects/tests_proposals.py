@@ -964,6 +964,9 @@ class ProposalWorkspaceFoundationTests(TestCase):
         first_review.delete()
         proposal.line_items.all().delete()
         template = ProjectTemplate.objects.create(contractor=self.contractor, name="Bathroom allocation")
+        proposal.selected_template = template
+        proposal.selected_template_name_snapshot = template.name
+        proposal.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
         source = ProjectTemplateMilestone.objects.create(template=template, title="Demolition", sort_order=1, normalized_milestone_type="demolition", suggested_amount_percent="13.00")
         line = ProposalLineItem.objects.create(
             proposal=proposal, category=ProposalLineItem.CATEGORY_LABOR, description="Demolition",
@@ -993,10 +996,36 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(milestone.accepted_estimate_review_version, 2)
         self.assertEqual(milestone.accepted_estimate_line_item_id, line.id)
         self.assertEqual(milestone.accepted_estimate_source_key, "demolition")
+        milestone_payload = self.client.get(f"/api/projects/milestones/?agreement={response.data['id']}")
+        self.assertEqual(milestone_payload.status_code, 200, milestone_payload.data)
+        serialized_rows = milestone_payload.data.get("results", milestone_payload.data) if isinstance(milestone_payload.data, dict) else milestone_payload.data
+        self.assertEqual(serialized_rows[0]["amount"], "1000.00")
+        self.assertEqual(serialized_rows[0]["accepted_estimate_amount"], "1000.00")
         self.assertNotEqual(milestone.amount, 1950)
         accepted.refresh_from_db()
         self.assertEqual(accepted.snapshot["pricing"]["line_items"][0]["total"], "1000.00")
         self.assertNotIn("source_template_milestone_id", public_customer_snapshot(accepted.snapshot)["pricing"]["line_items"][0])
+
+    def test_template_estimate_conversion_rolls_back_when_milestone_lineage_does_not_reconcile(self):
+        homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=707)
+        template = ProjectTemplate.objects.create(contractor=self.contractor, name="Authoritative bathroom template")
+        proposal.selected_template = template
+        proposal.selected_template_name_snapshot = template.name
+        proposal.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
+        before_count = Agreement.objects.count()
+
+        response = self.client.post("/api/projects/agreements/", {
+            "source_proposal_id": proposal.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1,
+        }, format="json")
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertIn("milestone allocation", response.data["detail"].lower())
+        self.assertEqual(Agreement.objects.count(), before_count)
+        proposal.refresh_from_db()
+        self.assertIsNone(proposal.converted_agreement_id)
+        self.assertIsNone(proposal.converted_at)
+        review.refresh_from_db()
+        self.assertEqual(review.decision, ProposalReviewVersion.DECISION_ACCEPTED)
 
     def test_conversion_rejects_unaccepted_cross_owner_stale_and_post_acceptance_edits(self):
         for index, status_value in enumerate((Proposal.STATUS_READY, Proposal.STATUS_SENT, Proposal.STATUS_VIEWED, Proposal.STATUS_REVISION_REQUESTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED), start=100):

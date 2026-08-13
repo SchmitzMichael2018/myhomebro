@@ -194,6 +194,16 @@ def finalize_proposal_conversion(*, context: ProposalConversionContext, agreemen
         return ""
 
     mapped_rows = [row for row in pricing_rows if mapping_identity(row) and row.get("category") not in {"tax", "discount", "incidentals_reserve"}]
+    expected_commercial_total = Decimal(str(agreement.total_cost or "0.00"))
+    mapped_commercial_total = sum(
+        (Decimal(str(row.get("total") or "0.00")) for row in mapped_rows),
+        Decimal("0.00"),
+    )
+    if context.selected_template is not None and expected_commercial_total > 0 and mapped_commercial_total != expected_commercial_total:
+        raise ProposalConversionError(
+            "The accepted estimate milestone allocation does not reconcile to its contractual amount. Re-send the estimate with complete milestone pricing lineage before conversion.",
+            status_code=409,
+        )
     if mapped_rows and not agreement.milestones.exists():
         grouped = {}
         for row in mapped_rows:
@@ -219,6 +229,13 @@ def finalize_proposal_conversion(*, context: ProposalConversionContext, agreemen
                 accepted_estimate_review_version=context.review.version,
                 accepted_estimate_source_key=row.get("source_milestone_key") or str(row.get("source_template_milestone_id")),
                 pricing_source_note=f"Accepted Estimate v{context.review.version}",
+            )
+    if mapped_rows and expected_commercial_total > 0:
+        persisted_total = sum(agreement.milestones.values_list("amount", flat=True), Decimal("0.00"))
+        if persisted_total != expected_commercial_total:
+            raise ProposalConversionError(
+                "Agreement milestone pricing does not reconcile to the accepted estimate contractual amount.",
+                status_code=409,
             )
     if proposal.converted_agreement_id and proposal.converted_agreement_id != agreement.id:
         raise ProposalConversionError("This estimate was already converted to another agreement.", status_code=409)

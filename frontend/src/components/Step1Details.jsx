@@ -3156,6 +3156,12 @@ export default function Step1Details({
         project_title: currentTitle,
         project_type: currentType,
         project_subtype: currentSubtype,
+        milestones: (agreement?.accepted_estimate_basis?.pricing_rows || [])
+          .filter((row) => !["tax", "discount", "incidentals_reserve"].includes(safeTrim(row?.category).toLowerCase()))
+          .map((row) => ({
+            title: row?.source_milestone_name || row?.description || "",
+            description: row?.description || "",
+          })),
         context: serializeAiContext(buildAiContext({
           page: "agreement_wizard_step1",
           entityId: agreementId || null,
@@ -3220,7 +3226,7 @@ export default function Step1Details({
       const resolvedConfidence = safeTrim(resolvedClassification?.confidence || "low");
       const shouldAutoApply = resolvedConfidence === "medium" || resolvedConfidence === "high";
 
-      if (!shouldAutoApply) {
+      if (hasAuthoritativeEstimateTemplate || !shouldAutoApply) {
         // Low confidence — surface alternatives for the contractor to choose from,
         // but do NOT auto-apply type/subtype/title to the form.
         setClassificationResult({
@@ -3234,9 +3240,15 @@ export default function Step1Details({
             ? resolvedClassification.alternatives
             : [],
           recommended_custom_subtype: safeTrim(resolvedClassification?.recommended_custom_subtype),
-          note: "Review the suggestions below and select one, or edit manually.",
+          note: hasAuthoritativeEstimateTemplate
+            ? "Estimate classification is authoritative. Apply this suggestion only if you intend to replace it."
+            : "Review the suggestions below and select one, or edit manually.",
         });
-        setClassificationMessage("AI confidence is low — review the suggestions below or edit manually.");
+        setClassificationMessage(
+          hasAuthoritativeEstimateTemplate
+            ? "Suggestion ready. Your accepted Estimate classification has not changed."
+            : "AI confidence is low — review the suggestions below or edit manually."
+        );
       } else {
         const result = commitClassificationResult(resolvedClassification, { silent: false });
         if (!result?.hasMeaningfulChange) {
@@ -4758,10 +4770,23 @@ export default function Step1Details({
         })
       );
 
+    if (hasAuthoritativeEstimateTemplate && (generatedType || generatedSubtype)) {
+      setClassificationResult({
+        project_type: generatedType,
+        project_subtype: generatedSubtype,
+        project_title: generatedTitle,
+        confidence: safeTrim(aiData?.classification?.confidence || aiData?.confidence || "recommended"),
+        confidence_label: safeTrim(aiData?.classification?.confidence_label || aiData?.confidence_label),
+        reason: safeTrim(aiData?.classification?.reason || aiData?.reason),
+        alternatives: aiData?.classification?.alternatives || [],
+        note: "Estimate classification is authoritative. Apply only to intentionally replace it.",
+      });
+    }
+
     const nextValues = {
-      project_title: generatedTitle,
-      project_type: generatedType,
-      project_subtype: generatedSubtype,
+      project_title: hasAuthoritativeEstimateTemplate ? dLocal?.project_title || generatedTitle : generatedTitle,
+      project_type: hasAuthoritativeEstimateTemplate ? dLocal?.project_type || generatedType : generatedType,
+      project_subtype: hasAuthoritativeEstimateTemplate ? dLocal?.project_subtype || generatedSubtype : generatedSubtype,
       description: refinedDescription || dLocal?.description || "",
       scope_of_work: refinedDescription || dLocal?.description || "",
     };
@@ -4775,9 +4800,9 @@ export default function Step1Details({
     }
 
     const projectTypeRef =
-      resolveOptionFromRawValue(generatedType, projectTypeOptions)?.id || resolvedType?.id || null;
+      resolveOptionFromRawValue(nextValues.project_type, projectTypeOptions)?.id || resolvedType?.id || null;
     const projectSubtypeRef =
-      resolveOptionFromRawValue(generatedSubtype, projectSubtypeOptions)?.id ||
+      resolveOptionFromRawValue(nextValues.project_subtype, projectSubtypeOptions)?.id ||
       matchedSubtype?.id ||
       null;
     const usedFallbackCreation = Boolean(
@@ -4811,7 +4836,7 @@ export default function Step1Details({
       description: "",
       scope_of_work: "",
       ...nextValues,
-      title: generatedTitle,
+      title: nextValues.project_title,
     }));
 
     if (!isNewAgreement) {
@@ -4821,11 +4846,11 @@ export default function Step1Details({
     if (agreementId) {
       patchAgreement(
         {
-          project_title: generatedTitle,
-          title: generatedTitle,
-          project_type: generatedType,
+          project_title: nextValues.project_title,
+          title: nextValues.project_title,
+          project_type: nextValues.project_type,
           project_type_ref: projectTypeRef,
-          project_subtype: generatedSubtype,
+          project_subtype: nextValues.project_subtype,
           project_subtype_ref: projectSubtypeRef,
           description: refinedDescription || dLocal?.description || "",
           scope_of_work: refinedDescription || dLocal?.description || "",
@@ -7630,6 +7655,31 @@ export default function Step1Details({
                     </div>
                     {classificationResult.reason ? (
                       <div className="mt-2 text-xs text-slate-600">{classificationResult.reason}</div>
+                    ) : null}
+                    {hasAuthoritativeEstimateTemplate ? (
+                      <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
+                        <div>
+                          Current Estimate setup: <strong>{dLocal.project_type}</strong>
+                          {dLocal.project_subtype ? ` / ${dLocal.project_subtype}` : ""}. The suggestion has not been applied.
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            data-testid="agreement-ai-accept-classification-button"
+                            onClick={() => commitClassificationResult(classificationResult, { note: "AI suggestion explicitly accepted" })}
+                            className="rounded-lg bg-indigo-700 px-3 py-1.5 font-semibold text-white hover:bg-indigo-800"
+                          >
+                            Replace with suggested classification
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setClassificationResult(null); setClassificationMessage("Estimate classification kept."); }}
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700"
+                          >
+                            Keep Estimate classification
+                          </button>
+                        </div>
+                      </div>
                     ) : null}
                     {safeTrim(classificationResult.recommended_custom_subtype) ? (
                       <div className="mt-2 text-xs text-amber-700">

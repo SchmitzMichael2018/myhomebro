@@ -37,4 +37,11 @@ describe("Agreement Wizard Estimate template handoff", () => {
   it("recognizes persisted Agreement provenance without transient new-route handoff state", () => {
     expect(step1).toContain("Boolean(agreement?.source_proposal_id || agreement?.accepted_estimate_basis?.proposal_id)");
   });
+
+  it("keeps AI classification advisory until an explicit replacement action", () => {
+    expect(step1).toContain("hasAuthoritativeEstimateTemplate || !shouldAutoApply");
+    expect(step1).toContain('data-testid="agreement-ai-accept-classification-button"');
+    expect(step1).toContain("Your accepted Estimate classification has not changed");
+    expect(step1).toContain("accepted_estimate_basis?.pricing_rows");
+  });
 });

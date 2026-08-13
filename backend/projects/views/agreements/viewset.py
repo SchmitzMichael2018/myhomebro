@@ -627,10 +627,13 @@ class AgreementViewSet(viewsets.ModelViewSet):
             return Response(response_data, status=status.HTTP_201_CREATED, headers=headers)
 
         except ProposalConversionError as e:
+            transaction.set_rollback(True)
             return Response({"detail": e.detail}, status=e.status_code)
         except ValueError as e:
+            transaction.set_rollback(True)
             return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
+            transaction.set_rollback(True)
             print("AgreementViewSet.create() unexpected error:", repr(e), file=sys.stderr)
             traceback.print_exc()
             return Response(
