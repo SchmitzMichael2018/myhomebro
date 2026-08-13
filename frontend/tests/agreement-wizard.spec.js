@@ -179,14 +179,19 @@ test("Agreement Wizard prefills editable fields from Estimate Workspace handoff"
 
   await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
 
-  await expect(page.getByTestId("estimate-prefill-applied")).toContainText("Estimate Prefill Applied");
-  await expect(page.getByTestId("step1-rerun-ai-setup-button")).toContainText("Re-run AI Setup");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Based on accepted Estimate");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Agreement becomes the source of truth");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$950.00");
   await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("$200.00");
   await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Demo, prep, and install.");
   await expect(page.getByTestId("agreement-proposal-prefill-scope")).toContainText("Crew labor");
+  await expect(page.getByTestId("agreement-step1-assistant-banner")).toContainText("Need help with this agreement?");
+  await expect(page.getByTestId("agreement-step1-open-assistant")).toContainText("Open Project Assistant");
+  await expect(page.getByTestId("agreement-ai-improve-classification-button")).toHaveCount(0);
+  await expect(page.getByTestId("agreement-ai-improve-scope-button")).toHaveCount(0);
+  await page.getByTestId("agreement-step1-open-assistant").click();
+  await expect(page.getByTestId("assistant-desktop-dock")).toBeVisible();
+  await expect(page.getByTestId("agreement-step1-open-assistant")).toHaveAttribute("aria-expanded", "true");
 });
 
 test("Agreement Wizard milestone planning simulation updates and appears in final review", async ({ page }) => {
@@ -289,8 +294,8 @@ test("persisted accepted Estimate Agreement keeps setup provenance and renders S
   );
 
   await page.goto("/app/agreements/100/wizard?step=1", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("estimate-template-carried-forward")).toContainText("Estimate Setup Carried Forward");
-  await expect(page.getByTestId("estimate-template-carried-forward")).toContainText("QA Remodel Template");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Based on accepted Estimate v1");
+  await expect(page.getByTestId("agreement-step1-assistant-banner")).toBeVisible();
   await expect(page.getByTestId("recommended-setup-card")).toHaveCount(0);
   await expect(page.getByTestId("step1-ai-template-recommendation")).toHaveCount(0);
   expect(recommendationCalls).toEqual([]);
@@ -302,7 +307,8 @@ test("persisted accepted Estimate Agreement keeps setup provenance and renders S
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByText("Bathroom installation").first()).toBeVisible();
   await page.getByRole("button", { name: "Step 1 Details" }).click();
-  await expect(page.getByTestId("estimate-template-carried-forward")).toContainText("QA Remodel Template");
+  await expect(page.getByTestId("agreement-proposal-prefill-summary")).toContainText("Based on accepted Estimate v1");
+  await expect(page.getByTestId("agreement-step1-assistant-banner")).toBeVisible();
   await page.getByRole("button", { name: "Step 2 Milestones" }).click();
   await expect(page.getByText("Bathroom installation").first()).toBeVisible();
   expect(pageErrors).toEqual([]);

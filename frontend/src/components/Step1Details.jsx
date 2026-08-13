@@ -3717,12 +3717,16 @@ export default function Step1Details({
     const requestId = aiSetupRequest.nonce;
     (async () => {
       try {
-        await runAiRefineAndSetup(aiSetupRequest.prompt, requestId);
+        if (aiSetupRequest.actionKey === "step1_improve_classification") {
+          await runAiClassification();
+        } else {
+          await runAiRefineAndSetup(aiSetupRequest.prompt, requestId);
+        }
       } finally {
         onStep1AiSetupRequest?.((prev) => (String(prev?.nonce || "") === String(requestId) ? null : prev));
       }
     })();
-  }, [aiSetupRequest?.nonce, aiSetupRequest?.prompt, onStep1AiSetupRequest]);
+  }, [aiSetupRequest?.actionKey, aiSetupRequest?.nonce, aiSetupRequest?.prompt, onStep1AiSetupRequest]);
 
   async function onSubmitSaveAsTemplate(payload) {
     setSavingTemplate(true);
@@ -5916,16 +5920,6 @@ export default function Step1Details({
   const displayedProjectSubtype = normalizeStep1FieldValue(dLocal?.project_subtype);
   const displayedProjectTitle = dLocal?.project_title ?? "";
   const displayedScopeOfWork = buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate });
-  const scopeActionContext = safeTrim(displayedScopeOfWork || step1JobDescriptionPrompt);
-  const canImproveScope = !locked && !aiBusy && Boolean(scopeActionContext);
-  const canGenerateScope = !locked && !aiBusy && Boolean(scopeActionContext || hasSomeContext);
-  const scopeActionDisabledReason = locked
-    ? "This agreement is locked, so scope changes are disabled."
-    : aiBusy
-    ? "AI is already working on this scope."
-    : !scopeActionContext && !hasSomeContext
-    ? "Add a project title, type, or description before generating scope."
-    : "";
 
   useEffect(() => {
     if (locked || !displayedScopeOfWork) return;
@@ -7555,20 +7549,6 @@ export default function Step1Details({
                         : "Use AI to better match the project category, subtype, and title based on the current scope."}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    data-testid="agreement-ai-improve-classification-button"
-                    onClick={runAiClassification}
-                    disabled={locked || classificationBusy}
-                    className="inline-flex items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {classificationBusy ? <Spinner size={4} color="indigo-600" /> : null}
-                    {classificationBusy
-                      ? "Reviewing..."
-                      : hasAuthoritativeEstimateProvenance
-                      ? "Suggest Classification"
-                      : "Improve Project Classification"}
-                  </button>
                 </div>
                 {classificationErr ? (
                   <div className="mt-2 text-xs text-rose-600">{classificationErr}</div>
@@ -7938,76 +7918,6 @@ export default function Step1Details({
                 {step1FieldErrors.description ? (
                   <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.description}</div>
                 ) : null}
-
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-xs text-slate-600">
-                    {hasAuthoritativeEstimateProvenance
-                      ? "Optional — use AI to refine the scope already carried over from the Estimate."
-                      : startMode === "ai"
-                      ? "Use AI to draft the first version, then refine the scope here."
-                      : "AI can turn a rough idea into a clearer, stronger scope when you want help."}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                        aiCredits?.loading
-                          ? "bg-slate-100 text-slate-700"
-                          : "bg-emerald-100 text-emerald-800"
-                      }`}
-                      title="AI tools are included with your account"
-                    >
-                      AI Included
-                    </span>
-
-                    <button
-                      type="button"
-                      onClick={refreshAiCredits}
-                      className="rounded border border-slate-200 px-2 py-1 text-[11px] hover:bg-slate-50 disabled:opacity-60"
-                      disabled={locked}
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex w-full flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => runAiDescription("improve")}
-                    disabled={!canImproveScope}
-                    title={!canImproveScope ? scopeActionDisabledReason : "Improve the current scope draft with AI."}
-                    className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
-                    data-testid="agreement-ai-improve-scope-button"
-                  >
-                    {aiBusy
-                      ? "Working..."
-                      : hasAuthoritativeEstimateProvenance
-                      ? "Improve Scope"
-                      : "Improve Existing Scope"}
-                  </button>
-
-                  {!hasAuthoritativeEstimateProvenance ? (
-                    <button
-                      type="button"
-                      onClick={() => runAiDescription("generate")}
-                      disabled={!canGenerateScope}
-                      title={!canGenerateScope ? scopeActionDisabledReason : "Generate a scope draft from the current project details."}
-                      className="rounded-xl border border-amber-300/45 bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-700 px-3 py-2 text-xs font-semibold text-white shadow-sm shadow-blue-950/25 transition hover:border-amber-200 hover:from-blue-600 hover:to-violet-600 hover:shadow-blue-500/20 focus:outline-none focus:ring-2 focus:ring-amber-300/60 disabled:cursor-not-allowed disabled:border-slate-500/30 disabled:from-slate-700 disabled:via-slate-700 disabled:to-slate-700 disabled:text-slate-300 disabled:shadow-none"
-                      data-testid="agreement-ai-generate-scope-button"
-                    >
-                      {aiBusy ? "Working..." : "Generate Scope Draft"}
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className="mt-2 text-[11px] text-slate-500">
-                  {scopeActionDisabledReason
-                    ? scopeActionDisabledReason
-                    : appliedTemplateId
-                    ? "A template is applied. You can still improve or regenerate this scope before sending."
-                    : "Review and edit the final scope so it accurately reflects the work you are agreeing to perform."}
-                </div>
 
                 {aiErr ? (
                   <div className="mt-2 rounded-xl border border-amber-300/35 bg-amber-500/12 px-3 py-2 text-xs font-medium text-amber-100">

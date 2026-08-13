@@ -830,6 +830,7 @@ function MobileAssistantSheet({ open, onClose, title, context, onAction }) {
   const [showQuickCapture, setShowQuickCapture] = useState(false);
   const isMarketing = String(context?.workspace_mode || context?.workspace || context?.page || "") === "marketing";
   const isCustomerCreate = String(context?.workspace_mode || context?.workspace || context?.page || "") === "customer_create";
+  const isAgreementWizard = String(context?.workspace_mode || context?.workspace || context?.page || "") === "agreement_wizard";
   useEffect(() => { setShowQuickCapture(false); }, [context?.context_revision, isMarketing]);
   if (!open) return null;
   return (
@@ -845,6 +846,23 @@ function MobileAssistantSheet({ open, onClose, title, context, onAction }) {
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <CustomerCreateDockSummary context={context} onAction={onAction} />
           <StartWithAIAssistant mode="dock" context={context} onAction={onAction} hideContextHeader />
+        </div>
+      </> : isAgreementWizard ? <>
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div>
+            <div className="text-xs font-black uppercase tracking-wider text-slate-500">Project Assistant</div>
+            <div className="text-sm font-black text-slate-900">{title}</div>
+          </div>
+          <button type="button" data-testid="assistant-mobile-sheet-close" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <StartWithAIAssistant
+            key={`mobile:agreement-wizard:${context?.current_route || context?.wizard_step || 1}`}
+            mode="dock"
+            context={context}
+            onAction={onAction}
+            hideContextHeader
+          />
         </div>
       </> : isMarketing && !showQuickCapture ? <>
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3"><div><div className="text-xs font-black uppercase tracking-wider text-slate-500">Project Assistant</div><div className="text-sm font-black text-slate-900">Marketing · {context?.active_step_label || "Overview"}</div></div><button type="button" onClick={onClose} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold">Close</button></div>

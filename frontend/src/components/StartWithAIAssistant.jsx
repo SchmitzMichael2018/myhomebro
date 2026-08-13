@@ -124,12 +124,14 @@ function stepGuideCopy(step, summary = {}, actions = {}) {
 
   if (step === 1) {
     const missing = [];
-    if (!summary.projectType) missing.push("Project type or subtype is missing.");
+    if (!summary.projectType) missing.push("Project Type is required.");
+    if (!summary.projectSubtype) missing.push("Project Subtype is required.");
+    if (!summary.scope) missing.push("Scope of Work is required.");
     return {
-      status: summary.projectType ? "Project details are taking shape." : "Project details need a quick review.",
+      status: summary.step1Ready ? "Step 1 is ready." : "Project details need a quick review.",
       currentPurpose: "This step defines the agreement identity and scope before milestones are planned.",
-      attention: missing.length ? missing : ["Confirm the scope, customer, and location before continuing."],
-      nextAction: next?.label || "Continue to Milestones",
+      attention: missing.length ? missing : ["Required project details are complete."],
+      nextAction: summary.step1Ready ? "Continue to Milestones" : next?.label || "Complete required fields",
       blocker: missing.length ? missing[0] : "No blockers found.",
     };
   }
@@ -1402,7 +1404,11 @@ export default function StartWithAIAssistant({
   }, [mode, contextSignature, isAgreementWizardAssistant, isCustomerCreate]);
 
   useEffect(() => {
-    if (!isContextualMode && !isAgreementWizardAssistant) {
+    if (isAgreementWizardAssistant) {
+      setServiceRecommendations([]);
+      return undefined;
+    }
+    if (!isContextualMode) {
       setServiceRecommendations([]);
       return undefined;
     }
@@ -1470,6 +1476,7 @@ export default function StartWithAIAssistant({
     [normalizedContext]
   );
   const projectAssistantRecommendations = useMemo(() => {
+    if (isAgreementWizardAssistant) return [];
     const contextRows = Array.isArray(normalizedContext?.recommendations)
       ? normalizedContext.recommendations
       : Array.isArray(normalizedContext?.unified_recommendations)
@@ -1482,7 +1489,7 @@ export default function StartWithAIAssistant({
       seen.add(key);
       return true;
     }).slice(0, 5);
-  }, [normalizedContext, serviceRecommendations]);
+  }, [isAgreementWizardAssistant, normalizedContext, serviceRecommendations]);
   const showDiagnostics =
     import.meta.env.DEV ||
     (typeof window !== "undefined" && window.MYHOMEBRO_DEBUG_ASSISTANT === true);

@@ -53,15 +53,16 @@ describe("Agreement Wizard Estimate template handoff", () => {
     expect(step1).toContain('data-testid="agreement-ai-accept-classification-button"');
     expect(step1).toContain("Your accepted Estimate classification has not changed");
     expect(step1).toContain("accepted_estimate_basis?.pricing_rows");
-    expect(step1).toContain('hasAuthoritativeEstimateProvenance\n                      ? "Suggest Classification"');
   });
 
-  it("removes broad Estimate setup and draft actions while retaining focused optional help", () => {
+  it("removes inline AI actions so Project Assistant is the single entry point", () => {
     expect(step1).not.toContain('data-testid="step1-rerun-ai-setup-button"');
-    expect(step1).toContain("allowAiSetupRecommendation && aiSetupResult?.kind === \"template_match\"");
-    expect(step1).toContain('hasAuthoritativeEstimateProvenance\n                      ? "Improve Scope"');
-    expect(step1).toContain("!hasAuthoritativeEstimateProvenance ? (");
-    expect(step1).toContain("Optional — use AI to refine the scope already carried over from the Estimate.");
+    expect(step1).not.toContain('data-testid="agreement-ai-improve-classification-button"');
+    expect(step1).not.toContain('data-testid="agreement-ai-improve-scope-button"');
+    expect(step1).not.toContain('data-testid="agreement-ai-generate-scope-button"');
+    expect(wizard).toContain('data-testid="agreement-step1-assistant-banner"');
+    expect(wizard).toContain('data-testid="agreement-step1-open-assistant"');
+    expect(wizard).toContain("Need help with this agreement?");
   });
 
   it("keeps readiness manual and independent of AI usage", () => {

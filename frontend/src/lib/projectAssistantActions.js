@@ -68,7 +68,12 @@ export function buildProjectAssistantSummary(context = {}) {
     milestoneCount,
     total,
     templateStatus: templateName ? `Template: ${templateName}` : "No source template",
-    projectType: [agreement.project_type, agreement.project_subtype].map(clean).filter(Boolean).join(" / "),
+    projectType: clean(agreement.project_type),
+    projectSubtype: clean(agreement.project_subtype),
+    scope: clean(agreement.scope_of_work || agreement.description || agreement.project_summary),
+    customerName: clean(agreement.customer_name),
+    addressComplete: Boolean(agreement.address_complete),
+    step1Ready: Boolean(agreement.step1_ready),
   };
 }
 
@@ -84,7 +89,6 @@ function action(key, label, description, options = {}) {
 
 export function buildProjectAssistantActions(context = {}) {
   const summary = buildProjectAssistantSummary(context);
-  const agreement = context?.agreement_summary || {};
   const templateSummary = context?.template_summary || {};
   const pricingGuidance = context?.pricing_guidance || {};
   const timelineGuidance = context?.timeline_guidance || {};
@@ -104,27 +108,44 @@ export function buildProjectAssistantActions(context = {}) {
   );
 
   if (summary.step === 1) {
-    return {
-      recommended: [
-        action(
-          "step1_improve_scope",
-          "Improve Scope",
-          "Use the current project details to improve the scope draft.",
-          { prompt: "Improve the scope for this agreement." }
-        ),
-        action(
-          "step1_generate_scope_draft",
-          "Generate Scope Draft",
-          "Create a contractor-ready scope draft from the project details.",
-          { prompt: "Generate a scope draft for this agreement." }
-        ),
+    const recommended = [];
+    if (!summary.projectType || !summary.projectSubtype) {
+      recommended.push(
         action(
           "step1_improve_classification",
-          "Improve Classification",
-          "Review the project title, type, and subtype from the description.",
-          { prompt: "Improve the project title, type, and subtype without changing contractor edits." }
-        ),
-      ],
+          "Suggest Classification",
+          "Review an optional project type and subtype suggestion before applying anything.",
+          { prompt: "Suggest a project type and subtype without changing the agreement until I explicitly accept." }
+        )
+      );
+    }
+    recommended.push(
+      summary.scope
+        ? action(
+            "step1_improve_scope",
+            "Improve Scope",
+            "Refine the current scope without changing pricing, milestones, or Estimate provenance.",
+            { prompt: "Improve the existing scope for this agreement without changing pricing or classification." }
+          )
+        : action(
+            "step1_generate_scope_draft",
+            "Generate Scope Draft",
+            "Create a reviewable scope draft from the current project details.",
+            { prompt: "Generate a scope draft for this agreement." }
+          )
+    );
+    if (summary.step1Ready) {
+      recommended.push(
+        action(
+          "open_wizard_step",
+          "Continue to Milestones",
+          "Step 1 required fields are complete.",
+          { targetStep: 2 }
+        )
+      );
+    }
+    return {
+      recommended,
       additional: [],
     };
   }
@@ -274,7 +295,7 @@ export function matchProjectAssistantPromptToAction(prompt, context = {}) {
 
   if (step === 1) {
     if (/\b(classification|classify|type|subtype|title)\b/.test(text)) return find("step1_improve_classification");
-    if (/\b(generate|draft|scope)\b/.test(text)) return find("step1_generate_scope_draft") || find("step1_improve_scope");
+    if (/\b(generate|draft|scope)\b/.test(text)) return find("step1_improve_scope") || find("step1_generate_scope_draft");
     return null;
   }
 

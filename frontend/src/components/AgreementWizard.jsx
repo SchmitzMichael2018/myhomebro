@@ -2029,6 +2029,7 @@ export default function AgreementWizard() {
         project_title: dLocal.project_title || agreement?.project_title || agreement?.title || "",
         project_summary: dLocal.description || agreement?.description || "",
         description: dLocal.description || agreement?.description || "",
+        scope_of_work: dLocal.description || agreement?.scope_of_work || agreement?.description || "",
         project_class: dLocal.project_class || agreement?.project_class || "residential",
         project_family_key:
           dLocal.project_family_key ||
@@ -2052,6 +2053,18 @@ export default function AgreementWizard() {
         ready_to_finalize: step >= 4,
         pending_clarifications: [],
         status: agreement?.status || "draft",
+        address_complete: Boolean(
+          String(dLocal.address_line1 || "").trim() &&
+          String(dLocal.address_city || "").trim() &&
+          String(dLocal.address_state || "").trim() &&
+          String(dLocal.address_postal_code || "").trim()
+        ),
+        step1_ready: Boolean(
+          String(dLocal.project_type || "").trim() &&
+          String(dLocal.project_subtype || "").trim() &&
+          String(dLocal.project_title || "").trim() &&
+          String(dLocal.description || "").trim()
+        ),
       },
       template_id:
         agreement?.selected_template?.id ||
@@ -2075,6 +2088,10 @@ export default function AgreementWizard() {
       agreementId,
       aiPanelConfig,
       dLocal.description,
+      dLocal.address_city,
+      dLocal.address_line1,
+      dLocal.address_postal_code,
+      dLocal.address_state,
       dLocal.homeowner,
       dLocal.project_family_key,
       dLocal.project_family_label,
@@ -2134,7 +2151,7 @@ export default function AgreementWizard() {
         }));
         setAiFeedbackByStep((prev) => ({ ...prev, 1: "" }));
         setStep1AiEntryOpen(true);
-        setStep1AiSetupRequest({ prompt, nonce: Date.now() });
+        setStep1AiSetupRequest({ prompt, actionKey, nonce: Date.now() });
         return true;
       }
       if (step === 3 && actionKey === "step3_apply_standard_warranty") {
@@ -2181,6 +2198,13 @@ export default function AgreementWizard() {
     step,
     step1AiEntryOpen,
   ]);
+
+  const openWizardAssistant = useCallback(() => {
+    openAssistant({
+      context: assistantContext,
+      onAction: handleAssistantAction,
+    });
+  }, [assistantContext, handleAssistantAction, openAssistant]);
 
   useEffect(() => {
     if (!isAssistantDockOpen) return;
@@ -2378,6 +2402,29 @@ export default function AgreementWizard() {
               </div>
             </div>
           ) : null}
+        </div>
+      ) : null}
+
+      {step === 1 ? (
+        <div
+          data-testid="agreement-step1-assistant-banner"
+          className="mt-4 flex flex-col gap-3 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div>
+            <div className="text-sm font-semibold text-slate-950">Need help with this agreement?</div>
+            <div className="mt-1 text-xs leading-5 text-slate-600">
+              Project Assistant can refine your scope, suggest classification, and guide you through the next steps. It is optional.
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="agreement-step1-open-assistant"
+            onClick={openWizardAssistant}
+            aria-expanded={isAssistantDockOpen}
+            className="shrink-0 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+          >
+            {isAssistantDockOpen ? "Project Assistant Open" : "Open Project Assistant"}
+          </button>
         </div>
       ) : null}
 
