@@ -21,6 +21,14 @@ describe("Agreement Wizard Project Assistant actions", () => {
     path.resolve(process.cwd(), "src/components/AssistantDock.jsx"),
     "utf8"
   );
+  const wizardSource = fs.readFileSync(
+    path.resolve(process.cwd(), "src/components/AgreementWizard.jsx"),
+    "utf8"
+  );
+  const step1Source = fs.readFileSync(
+    path.resolve(process.cwd(), "src/components/Step1Details.jsx"),
+    "utf8"
+  );
   it("suggests classification only when type or subtype is missing", () => {
     const missing = buildProjectAssistantActions(step1Context({ description: "Replace bathroom tile." }));
     expect(missing.recommended.map((row) => row.label)).toContain("Suggest Classification");
@@ -74,5 +82,16 @@ describe("Agreement Wizard Project Assistant actions", () => {
     expect(assistantSource).toContain("project-assistant-classification-status");
     expect(assistantSource).toContain('classificationAssistance.status === "pending"');
     expect(assistantSource).toContain("disabled={disabled}");
+  });
+
+  it("uses the shared assistant action-state pattern for advisory scope improvement", () => {
+    expect(wizardSource).toContain('actionKey === "step1_improve_scope"');
+    expect(wizardSource).toContain('"Improving scope..."');
+    expect(assistantSource).toContain("project-assistant-scope-status");
+    expect(assistantSource).toContain('scopeAssistance.status === "pending"');
+    expect(step1Source).toContain('runAiDescription("improve")');
+    expect(step1Source).toContain("Improved scope ready. Review the suggested Scope of Work in Project Details.");
+    expect(step1Source).toContain('acceptLabel="Apply Improved Scope"');
+    expect(step1Source).toContain('rejectLabel="Keep Current Scope"');
   });
 });

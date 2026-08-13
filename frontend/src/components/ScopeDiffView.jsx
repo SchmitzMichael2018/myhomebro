@@ -8,7 +8,7 @@ import { formatDiff } from "../lib/scopeDiff.js";
 //   onAccept: (text: string) => void  — called with the accepted text
 //   onReject: () => void              — called when user cancels
 //   locked: boolean    — disables accept when true
-export default function ScopeDiffView({ original = "", improved = "", onAccept, onReject, locked = false }) {
+export default function ScopeDiffView({ original = "", improved = "", onAccept, onReject, locked = false, acceptLabel = "Accept changes", rejectLabel = "Keep original" }) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState(improved);
 
@@ -87,7 +87,7 @@ export default function ScopeDiffView({ original = "", improved = "", onAccept, 
           disabled={locked}
           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
         >
-          Accept changes
+          {acceptLabel}
         </button>
 
         <button
@@ -95,7 +95,7 @@ export default function ScopeDiffView({ original = "", improved = "", onAccept, 
           onClick={handleReject}
           className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
         >
-          Keep original
+          {rejectLabel}
         </button>
 
         <button

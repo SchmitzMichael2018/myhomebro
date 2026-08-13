@@ -289,6 +289,95 @@ test("Project Assistant classification failure is visible and retryable", async 
   await expect.poll(() => calls).toBe(2);
 });
 
+test("Project Assistant Improve Scope is advisory, visible, retryable, and scope-only", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  const originalScope = "Accepted bathroom remodel scope.";
+  const improvedScope = "Remove existing finishes, install new tile and fixtures, complete painting, and clean the site.";
+  const agreement = {
+    id: 100,
+    project_title: "Bathroom Remodel",
+    title: "Bathroom Remodel",
+    project_type: "Bathroom",
+    project_subtype: "Refresh",
+    description: originalScope,
+    scope_of_work: originalScope,
+    total_cost: "950.00",
+    incidentals_reserve_amount: "200.00",
+    status: "draft",
+    step_status: "step1",
+    source_proposal_id: 42,
+    selected_template_id: 11,
+    selected_template_name_snapshot: "Bathroom Template",
+    accepted_estimate_basis: { proposal_id: 42, review_version: 1, total: "950.00", pricing_rows: [] },
+  };
+  let descriptionCalls = 0;
+  let shouldFail = true;
+  const agreementPatches = [];
+  const milestoneMutations = [];
+  await page.route("**/api/projects/agreements/ai/description/", async (route) => {
+    descriptionCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    if (shouldFail) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Unavailable" }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ description: improvedScope, scope_of_work: improvedScope }),
+    });
+  });
+  await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "PATCH") {
+      agreementPatches.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ...agreement, ...route.request().postDataJSON() }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) });
+  });
+  await page.route("**/api/projects/milestones/**", async (route) => {
+    if (route.request().method() !== "GET") milestoneMutations.push(route.request().url());
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
+  });
+
+  await page.goto("/app/agreements/100/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("agreement-step1-open-assistant").click();
+  const desktopAssistant = page.getByTestId("assistant-desktop-dock");
+  const action = desktopAssistant.getByTestId("project-assistant-action-step1_improve_scope");
+  await action.click();
+  await expect(desktopAssistant.getByTestId("project-assistant-scope-status")).toContainText("Improving scope...");
+  await expect(action).toBeDisabled();
+  await expect(desktopAssistant.getByTestId("project-assistant-scope-status")).toContainText(
+    "Scope improvement could not be completed. Try again."
+  );
+  await expect(action).toBeEnabled();
+  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(originalScope);
+  expect(agreementPatches).toEqual([]);
+
+  await page.getByRole("button", { name: "Step 2 Milestones" }).click();
+  await page.getByRole("button", { name: "Step 1 Details" }).click();
+  await expect(desktopAssistant.getByTestId("project-assistant-scope-status")).toHaveCount(0);
+
+  shouldFail = false;
+  await action.click();
+  await expect(desktopAssistant.getByTestId("project-assistant-scope-status")).toContainText(
+    "Improved scope ready. Review the suggested Scope of Work in Project Details."
+  );
+  expect(descriptionCalls).toBe(2);
+  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(originalScope);
+  await expect(page.getByTestId("scope-diff-view")).toContainText("Apply Improved Scope");
+  await page.getByRole("button", { name: "Apply Improved Scope" }).click();
+  await expect(page.getByTestId("proposal-draft-textarea")).toContainText("Remove existing finishes");
+  expect(agreementPatches).toHaveLength(1);
+  expect(Object.keys(agreementPatches[0]).sort()).toEqual(["description", "scope_of_work"]);
+  expect(milestoneMutations).toEqual([]);
+});
+
 test("Agreement Wizard milestone planning simulation updates and appears in final review", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);

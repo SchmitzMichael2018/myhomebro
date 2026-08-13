@@ -2081,8 +2081,12 @@ export default function AgreementWizard() {
         suggested_titles: milestones.map((item) => item?.title).filter(Boolean),
       },
       classification_assistance: {
-        status: step1AiSetupRequest?.status || "idle",
-        message: step1AiSetupRequest?.message || "",
+        status: step1AiSetupRequest?.actionKey === "step1_improve_classification" ? step1AiSetupRequest?.status || "idle" : "idle",
+        message: step1AiSetupRequest?.actionKey === "step1_improve_classification" ? step1AiSetupRequest?.message || "" : "",
+      },
+      scope_assistance: {
+        status: step1AiSetupRequest?.actionKey === "step1_improve_scope" ? step1AiSetupRequest?.status || "idle" : "idle",
+        message: step1AiSetupRequest?.actionKey === "step1_improve_scope" ? step1AiSetupRequest?.message || "" : "",
       },
       session_state: wizardSessionState,
       ai_panel: aiPanelConfig,
@@ -2105,6 +2109,7 @@ export default function AgreementWizard() {
       homeownerOptions,
       milestones,
       step1AiSetupRequest?.message,
+      step1AiSetupRequest?.actionKey,
       step1AiSetupRequest?.status,
       resolvedProjectFamily.project_family_key,
       resolvedProjectFamily.project_family_label,
@@ -2161,10 +2166,15 @@ export default function AgreementWizard() {
           prompt,
           actionKey,
           nonce: Date.now(),
-          status: actionKey === "step1_improve_classification" ? "pending" : "idle",
+          status:
+            actionKey === "step1_improve_classification" || actionKey === "step1_improve_scope"
+              ? "pending"
+              : "idle",
           message:
             actionKey === "step1_improve_classification"
               ? "Analyzing project classification..."
+              : actionKey === "step1_improve_scope"
+              ? "Improving scope..."
               : "",
         });
         return true;
@@ -2198,6 +2208,13 @@ export default function AgreementWizard() {
     },
     [ensureAgreementExists, goStep, handleViewAgreementPdf, step]
   );
+
+  useEffect(() => {
+    if (step === 1) return;
+    setStep1AiSetupRequest((current) =>
+      current?.actionKey === "step1_improve_scope" ? null : current
+    );
+  }, [step]);
 
   useEffect(() => {
     if (!step1AiEntryOpen || step !== 1) return;

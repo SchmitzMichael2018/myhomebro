@@ -368,7 +368,7 @@ function ProjectAssistantRecommendations({ recommendations = [] }) {
   );
 }
 
-function ProjectAssistantPanel({ summary, actions, notice = "", recommendations = [], onAction, classificationAssistance = {} }) {
+function ProjectAssistantPanel({ summary, actions, notice = "", recommendations = [], onAction, classificationAssistance = {}, scopeAssistance = {} }) {
   const recommended = Array.isArray(actions?.recommended) ? actions.recommended : [];
   const additional = Array.isArray(actions?.additional) ? actions.additional : [];
   const info = Array.isArray(actions?.info) ? actions.info.filter(Boolean) : [];
@@ -435,6 +435,28 @@ function ProjectAssistantPanel({ summary, actions, notice = "", recommendations 
         </div>
       ) : null}
 
+      {scopeAssistance.status && scopeAssistance.status !== "idle" ? (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm ${
+            scopeAssistance.status === "error"
+              ? "border-rose-200 bg-rose-50 text-rose-900"
+              : scopeAssistance.status === "ready"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-sky-200 bg-sky-50 text-sky-900"
+          }`}
+          role="status"
+          aria-live="polite"
+          data-testid="project-assistant-scope-status"
+        >
+          <div className="flex items-center gap-2">
+            {scopeAssistance.status === "pending" ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : null}
+            <span>{scopeAssistance.message}</span>
+          </div>
+        </div>
+      ) : null}
+
       {notice ? (
         <div
           className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
@@ -469,8 +491,9 @@ function ProjectAssistantPanel({ summary, actions, notice = "", recommendations 
                 action={action}
                 onSelect={onAction}
                 disabled={
-                  action.key === "step1_improve_classification" &&
-                  classificationAssistance.status === "pending"
+                  (action.key === "step1_improve_classification" &&
+                    classificationAssistance.status === "pending") ||
+                  (action.key === "step1_improve_scope" && scopeAssistance.status === "pending")
                 }
               />
             ))}
@@ -2010,6 +2033,7 @@ export default function StartWithAIAssistant({
             recommendations={projectAssistantRecommendations}
             onAction={useProjectAssistantAction}
             classificationAssistance={normalizedContext?.classification_assistance || {}}
+            scopeAssistance={normalizedContext?.scope_assistance || {}}
           />
         ) : hideContextHeader ? null : !isFieldAwareMode ? (
           <div

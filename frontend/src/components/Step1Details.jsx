@@ -2858,7 +2858,7 @@ export default function Step1Details({
   }, [last400]);
 
   async function runAiDescription(mode) {
-    if (locked) return;
+    if (locked || aiBusy) return { ok: false, pending: aiBusy };
 
     const validationErrors = validateStep1ForAi(mode === "improve" ? "refine" : "generate");
     if (Object.keys(validationErrors).length) {
@@ -2866,7 +2866,7 @@ export default function Step1Details({
       setStep1ValidationMessage("Please complete the highlighted fields before continuing.");
       focusFirstStep1FieldError(validationErrors);
       setAiErr("Please complete the highlighted fields before continuing.");
-      return;
+      return { ok: false, message: "Complete the highlighted fields before improving scope." };
     }
 
     setAiErr("");
@@ -2936,7 +2936,7 @@ export default function Step1Details({
         });
         setAiPreview(fallbackDraft);
         setAiErr("AI drafting needs a saved agreement, so MyHomeBro prepared a structured scope draft from the current project details.");
-        return;
+        return { ok: true };
       }
 
       const res = await api.post(`/projects/agreements/ai/description/`, payload);
@@ -2958,6 +2958,7 @@ export default function Step1Details({
         enabled: res?.data?.ai_enabled !== false,
         unlimited: res?.data?.ai_unlimited !== false,
       }));
+      return { ok: true };
     } catch (e) {
       const payload = e?.response?.data || {};
       const fieldErrors = normalizeStep1ValidationFieldErrors(payload);
@@ -2983,6 +2984,7 @@ export default function Step1Details({
             "AI scope assist is temporarily unavailable. You can keep editing this scope manually."
         );
       }
+      return { ok: false, message: "Scope improvement could not be completed. Try again." };
     } finally {
       setAiBusy(false);
     }
@@ -3726,6 +3728,23 @@ export default function Step1Details({
                   (result?.ok
                     ? "Classification suggestion ready."
                     : "Couldn't suggest a classification. Try again."),
+              }
+            : prev
+        );
+      } else if (aiSetupRequest.actionKey === "step1_improve_scope") {
+        const result = await runAiDescription("improve");
+        if (!result?.ok) {
+          setAiPreview("");
+          setAiErr(result?.message || "Scope improvement could not be completed. Try again.");
+        }
+        onStep1AiSetupRequest?.((prev) =>
+          String(prev?.nonce || "") === String(requestId)
+            ? {
+                ...prev,
+                status: result?.ok ? "ready" : "error",
+                message: result?.ok
+                  ? "Improved scope ready. Review the suggested Scope of Work in Project Details."
+                  : result?.message || "Scope improvement could not be completed. Try again.",
               }
             : prev
         );
@@ -7930,8 +7949,16 @@ export default function Step1Details({
                     original={safeTrim(dLocal.description)}
                     improved={aiPreview}
                     locked={locked}
-                    onAccept={(text) => applyAiDescription("replace", text)}
-                    onReject={() => setAiPreview("")}
+                    acceptLabel="Apply Improved Scope"
+                    rejectLabel="Keep Current Scope"
+                    onAccept={async (text) => {
+                      await applyAiDescription("replace", text);
+                      onStep1AiSetupRequest?.(null);
+                    }}
+                    onReject={() => {
+                      setAiPreview("");
+                      onStep1AiSetupRequest?.(null);
+                    }}
                   />
                 ) : null}
 
