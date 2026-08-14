@@ -724,6 +724,7 @@ class AgreementSerializer(serializers.ModelSerializer):
         if review is None:
             return None
         pricing = (review.snapshot or {}).get("pricing") or {}
+        from projects.services.proposal_conversion import accepted_estimate_milestone_reconciliation
         return {
             "proposal_id": proposal.id,
             "review_version": review.version,
@@ -733,6 +734,9 @@ class AgreementSerializer(serializers.ModelSerializer):
             "incidentals_reserve": str(pricing.get("incidentals_reserve") or "0.00"),
             "total": str(pricing.get("total") or "0.00"),
             "pricing_rows": pricing.get("line_items") or [],
+            "milestone_reconciliation": accepted_estimate_milestone_reconciliation(
+                proposal=proposal, agreement=obj
+            ),
         }
 
     def _incidentals_summary(self, obj):

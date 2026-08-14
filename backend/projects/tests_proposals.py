@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -1012,26 +1013,104 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(accepted.snapshot["pricing"]["line_items"][0]["total"], "1000.00")
         self.assertNotIn("source_template_milestone_id", public_customer_snapshot(accepted.snapshot)["pricing"]["line_items"][0])
 
-    def test_template_estimate_conversion_rolls_back_when_milestone_lineage_does_not_reconcile(self):
+    def test_template_estimate_missing_lineage_creates_blocked_draft_without_guessing(self):
         homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=707)
         template = ProjectTemplate.objects.create(contractor=self.contractor, name="Authoritative bathroom template")
         proposal.selected_template = template
         proposal.selected_template_name_snapshot = template.name
         proposal.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
-        before_count = Agreement.objects.count()
-
         response = self.client.post("/api/projects/agreements/", {
             "source_proposal_id": proposal.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1,
         }, format="json")
 
-        self.assertEqual(response.status_code, 409, response.data)
-        self.assertIn("milestone allocation", response.data["detail"].lower())
+        self.assertEqual(response.status_code, 201, response.data)
+        agreement = Agreement.objects.get(pk=response.data["id"])
+        self.assertFalse(agreement.milestones.exists())
+        reconciliation = response.data["accepted_estimate_basis"]["milestone_reconciliation"]
+        self.assertFalse(reconciliation["reconciles"])
+        self.assertEqual(reconciliation["expected_commercial_amount"], "500.00")
+        self.assertEqual(reconciliation["actual_milestone_amount"], "0.00")
+        self.assertEqual(reconciliation["difference"], "500.00")
+        self.assertEqual(reconciliation["missing_lineage_rows"][0]["description"], "Installation")
+        self.assertEqual(reconciliation["missing_lineage_rows"][0]["amount"], "500.00")
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.converted_agreement, agreement)
+        self.assertIsNotNone(proposal.converted_at)
+        review.refresh_from_db()
+        self.assertEqual(review.decision, ProposalReviewVersion.DECISION_ACCEPTED)
+
+        from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+        with self.assertRaisesRegex(ValueError, r"Accepted commercial amount: \$500.00.*Installation \(500.00\)"):
+            assert_pricing_ready_for_agreement(agreement)
+
+    def test_qa_bathroom_estimate_commercial_milestones_exclude_reserve_and_reconcile(self):
+        homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=708)
+        proposal.line_items.all().delete()
+        template = ProjectTemplate.objects.create(contractor=self.contractor, name="QA Bathroom Remodel")
+        proposal.selected_template = template
+        proposal.selected_template_name_snapshot = template.name
+        proposal.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
+        rows = [
+            ("Demolition", "1000.00", "demolition"),
+            ("Plumbing & Electrical Prep", "1950.00", "rough-in"),
+            ("Tile & Shower Install", "4950.00", "tile-install"),
+            ("Fixture Install", "4950.00", "fixture-install"),
+        ]
+        for order, (description, amount, key) in enumerate(rows, start=1):
+            source = ProjectTemplateMilestone.objects.create(
+                template=template, title=description, sort_order=order, normalized_milestone_type=key
+            )
+            ProposalLineItem.objects.create(
+                proposal=proposal, category=ProposalLineItem.CATEGORY_LABOR,
+                description=description, quantity=Decimal("1.00"), unit_price=Decimal(amount),
+                source_template=template, source_template_milestone=source,
+                source_milestone_key=key, source_milestone_name=description,
+                source_milestone_order=order,
+            )
+        ProposalLineItem.objects.create(
+            proposal=proposal, category=ProposalLineItem.CATEGORY_INCIDENTALS_RESERVE,
+            description="Refundable incidentals", quantity=Decimal("1.00"), unit_price=Decimal("1500.00"),
+        )
+        review.snapshot = build_customer_snapshot(proposal)
+        review.save(update_fields=["snapshot"])
+
+        response = self.client.post("/api/projects/agreements/", {
+            "source_proposal_id": proposal.id, "homeowner": homeowner.id,
+            "is_draft": True, "wizard_step": 1,
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        agreement = Agreement.objects.get(pk=response.data["id"])
+        self.assertEqual(agreement.total_cost, 12850)
+        self.assertEqual(agreement.incidentals_reserve_amount, 1500)
+        self.assertEqual(sum(agreement.milestones.values_list("amount", flat=True), Decimal("0.00")), Decimal("12850.00"))
+        basis = response.data["accepted_estimate_basis"]
+        self.assertEqual(basis["subtotal"], "12850.00")
+        self.assertEqual(basis["incidentals_reserve"], "1500.00")
+        self.assertEqual(basis["total"], "14350.00")
+        self.assertTrue(basis["milestone_reconciliation"]["reconciles"])
+        self.assertEqual(basis["milestone_reconciliation"]["excluded_rows"][0]["category"], "incidentals_reserve")
+
+    def test_conversion_exception_still_rolls_back_agreement_and_proposal_state(self):
+        homeowner, proposal, _review = self._accepted_proposal_for_conversion(source_id=709)
+        before_count = Agreement.objects.count()
+        with patch(
+            "projects.views.agreements.viewset.finalize_proposal_conversion",
+            side_effect=ProposalConversionError("Injected conversion failure."),
+        ):
+            response = self.client.post("/api/projects/agreements/", {
+                "source_proposal_id": proposal.id,
+                "homeowner": homeowner.id,
+                "is_draft": True,
+                "wizard_step": 1,
+            }, format="json")
+
+        self.assertEqual(response.status_code, 400, response.data)
         self.assertEqual(Agreement.objects.count(), before_count)
         proposal.refresh_from_db()
         self.assertIsNone(proposal.converted_agreement_id)
         self.assertIsNone(proposal.converted_at)
-        review.refresh_from_db()
-        self.assertEqual(review.decision, ProposalReviewVersion.DECISION_ACCEPTED)
+        self.assertNotEqual(proposal.status, Proposal.STATUS_CONVERTED)
 
     def test_conversion_rejects_unaccepted_cross_owner_stale_and_post_acceptance_edits(self):
         for index, status_value in enumerate((Proposal.STATUS_READY, Proposal.STATUS_SENT, Proposal.STATUS_VIEWED, Proposal.STATUS_REVISION_REQUESTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED), start=100):

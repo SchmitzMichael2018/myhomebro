@@ -1581,7 +1581,9 @@ export default function AgreementWizard() {
       const { data } = await api.patch(`/projects/agreements/${id}/`, payload);
       setAgreement(data);
       toast.success("Step 1 saved.");
-      if (goNext) goStep(2);
+      if (goNext) {
+        navigate(`/app/agreements/${id}/wizard?step=2`, { replace: true });
+      }
     } catch (err) {
       const data = err?.response?.data;
       const status = Number(err?.response?.status || 0);

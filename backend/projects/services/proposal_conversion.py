@@ -24,6 +24,88 @@ class ProposalConversionContext:
     selected_template: object | None = None
 
 
+EXCLUDED_MILESTONE_CATEGORIES = {"tax", "discount", "incidentals_reserve"}
+
+
+def _mapping_identity(row: dict) -> str:
+    if row.get("source_template_milestone_id"):
+        return f"id:{row['source_template_milestone_id']}"
+    if row.get("source_milestone_key"):
+        return f"key:{str(row['source_milestone_key']).strip().lower()}"
+    if row.get("source_milestone_order") and row.get("source_milestone_name"):
+        normalized_name = " ".join(str(row["source_milestone_name"]).strip().lower().split())
+        return f"order-name:{row['source_milestone_order']}:{normalized_name}"
+    return ""
+
+
+def accepted_estimate_milestone_reconciliation(*, proposal: Proposal, agreement=None) -> dict:
+    """Report exact accepted milestone lineage without guessing or mutating it."""
+    review = proposal.converted_review_version
+    if review is None:
+        review = proposal.review_versions.filter(decision=ProposalReviewVersion.DECISION_ACCEPTED).order_by("-version").first()
+    pricing = ((review.snapshot or {}).get("pricing") or {}) if review else {}
+    rows = pricing.get("line_items") or []
+    expected = Decimal(str(getattr(agreement, "total_cost", None) or (
+        Decimal(str(pricing.get("subtotal") or "0.00"))
+        + Decimal(str(pricing.get("tax") or "0.00"))
+        - Decimal(str(pricing.get("discounts") or "0.00"))
+    )))
+    commercial_rows = [row for row in rows if row.get("category") not in EXCLUDED_MILESTONE_CATEGORIES]
+    mapped_rows = [row for row in commercial_rows if _mapping_identity(row)]
+    missing_rows = [row for row in commercial_rows if not _mapping_identity(row)]
+    mapped_total = sum((Decimal(str(row.get("total") or "0.00")) for row in mapped_rows), Decimal("0.00"))
+    actual_total = mapped_total
+    modified_milestones = []
+    if agreement is not None:
+        milestones = list(agreement.milestones.all())
+        actual_total = sum((Decimal(str(row.amount or "0.00")) for row in milestones), Decimal("0.00"))
+        modified_milestones = [
+            {
+                "milestone_id": row.id,
+                "title": row.title,
+                "accepted_amount": f"{Decimal(str(row.accepted_estimate_amount)):.2f}",
+                "actual_amount": f"{Decimal(str(row.amount or 0)):.2f}",
+            }
+            for row in milestones
+            if row.accepted_estimate_amount is not None
+            and Decimal(str(row.amount or 0)) != Decimal(str(row.accepted_estimate_amount))
+        ]
+    difference = expected - actual_total
+    missing = [
+        {
+            "proposal_line_item_id": row.get("proposal_line_item_id"),
+            "description": row.get("description") or "Accepted Estimate line item",
+            "amount": f"{Decimal(str(row.get('total') or '0.00')):.2f}",
+            "reason": "No exact template milestone ID, milestone key, or milestone order/name lineage was accepted with this row.",
+        }
+        for row in missing_rows
+    ]
+    reconciles = difference == Decimal("0.00") and not missing and not modified_milestones
+    return {
+        "status": "reconciled" if reconciles else "blocked",
+        "reconciles": reconciles,
+        "review_version": getattr(review, "version", None),
+        "expected_commercial_amount": f"{expected:.2f}",
+        "mapped_snapshot_amount": f"{mapped_total:.2f}",
+        "actual_milestone_amount": f"{actual_total:.2f}",
+        "difference": f"{difference:.2f}",
+        "incidentals_reserve": f"{Decimal(str(pricing.get('incidentals_reserve') or '0.00')):.2f}",
+        "funding_total": f"{Decimal(str(pricing.get('total') or '0.00')):.2f}",
+        "missing_lineage_rows": missing,
+        "modified_milestones": modified_milestones,
+        "excluded_rows": [
+            {
+                "proposal_line_item_id": row.get("proposal_line_item_id"),
+                "description": row.get("description") or row.get("category_label") or row.get("category"),
+                "category": row.get("category"),
+                "amount": f"{Decimal(str(row.get('total') or '0.00')):.2f}",
+                "reason": "Tracked separately from milestone work allocation.",
+            }
+            for row in rows if row.get("category") in EXCLUDED_MILESTONE_CATEGORIES
+        ],
+    }
+
+
 def _scope_from_snapshot(snapshot: dict) -> str:
     project = snapshot.get("project") or {}
     parts = []
@@ -190,31 +272,11 @@ def finalize_proposal_conversion(*, context: ProposalConversionContext, agreemen
             context.proposal.selected_template_name_snapshot or context.selected_template.name
         )
         agreement.save(update_fields=["selected_template", "selected_template_name_snapshot", "updated_at"])
-    def mapping_identity(row):
-        if row.get("source_template_milestone_id"):
-            return f"id:{row['source_template_milestone_id']}"
-        if row.get("source_milestone_key"):
-            return f"key:{str(row['source_milestone_key']).strip().lower()}"
-        if row.get("source_milestone_order") and row.get("source_milestone_name"):
-            normalized_name = " ".join(str(row["source_milestone_name"]).strip().lower().split())
-            return f"order-name:{row['source_milestone_order']}:{normalized_name}"
-        return ""
-
-    mapped_rows = [row for row in pricing_rows if mapping_identity(row) and row.get("category") not in {"tax", "discount", "incidentals_reserve"}]
-    expected_commercial_total = Decimal(str(agreement.total_cost or "0.00"))
-    mapped_commercial_total = sum(
-        (Decimal(str(row.get("total") or "0.00")) for row in mapped_rows),
-        Decimal("0.00"),
-    )
-    if context.selected_template is not None and expected_commercial_total > 0 and mapped_commercial_total != expected_commercial_total:
-        raise ProposalConversionError(
-            "The accepted estimate milestone allocation does not reconcile to its contractual amount. Re-send the estimate with complete milestone pricing lineage before conversion.",
-            status_code=409,
-        )
+    mapped_rows = [row for row in pricing_rows if _mapping_identity(row) and row.get("category") not in EXCLUDED_MILESTONE_CATEGORIES]
     if mapped_rows and not agreement.milestones.exists():
         grouped = {}
         for row in mapped_rows:
-            identity = mapping_identity(row)
+            identity = _mapping_identity(row)
             bucket = grouped.setdefault(identity, {"row": row, "amount": Decimal("0.00"), "line_item_ids": []})
             bucket["amount"] += Decimal(str(row.get("total") or "0.00"))
             bucket["line_item_ids"].append(row.get("proposal_line_item_id"))
@@ -236,13 +298,6 @@ def finalize_proposal_conversion(*, context: ProposalConversionContext, agreemen
                 accepted_estimate_review_version=context.review.version,
                 accepted_estimate_source_key=row.get("source_milestone_key") or str(row.get("source_template_milestone_id")),
                 pricing_source_note=f"Accepted Estimate v{context.review.version}",
-            )
-    if mapped_rows and expected_commercial_total > 0:
-        persisted_total = sum(agreement.milestones.values_list("amount", flat=True), Decimal("0.00"))
-        if persisted_total != expected_commercial_total:
-            raise ProposalConversionError(
-                "Agreement milestone pricing does not reconcile to the accepted estimate contractual amount.",
-                status_code=409,
             )
     if proposal.converted_agreement_id and proposal.converted_agreement_id != agreement.id:
         raise ProposalConversionError("This estimate was already converted to another agreement.", status_code=409)

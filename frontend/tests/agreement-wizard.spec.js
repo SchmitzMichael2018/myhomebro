@@ -335,6 +335,143 @@ test("unsaved accepted-Estimate Agreement can improve scope before save validati
   expect(patchRequests).toEqual([]);
 });
 
+test("accepted Estimate Save & Next creates the draft and reaches Step 2 with reconciled commercial pricing", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  await page.addInitScript(() => {
+    const key = "mhb_first_project_assist_handoff";
+    const handoff = JSON.parse(window.sessionStorage.getItem(key) || "{}");
+    handoff.assistantPrefill = { ...(handoff.assistantPrefill || {}), homeowner_id: 77 };
+    handoff.assistantDraftPayload = {
+      ...(handoff.assistantDraftPayload || {}),
+      homeowner: 77,
+      homeowner_id: 77,
+      customer_id: 77,
+    };
+    window.sessionStorage.setItem(key, JSON.stringify(handoff));
+  });
+  const reconciliation = {
+    status: "reconciled",
+    reconciles: true,
+    expected_commercial_amount: "12850.00",
+    mapped_snapshot_amount: "12850.00",
+    actual_milestone_amount: "12850.00",
+    difference: "0.00",
+    incidentals_reserve: "1500.00",
+    funding_total: "14350.00",
+    missing_lineage_rows: [],
+    excluded_rows: [{ category: "incidentals_reserve", description: "Refundable incidentals", amount: "1500.00" }],
+  };
+  const agreement = {
+    id: 100,
+    homeowner: 77,
+    homeowner_name: "QA Homeowner",
+    homeowner_email: "qa-homeowner@myhomebro.com",
+    project_title: "Bathroom Remodel",
+    title: "Bathroom Remodel",
+    project_type: "Bathroom",
+    project_subtype: "Refresh",
+    description: "Accepted bathroom remodel scope.",
+    scope_of_work: "Accepted bathroom remodel scope.",
+    total_cost: "12850.00",
+    incidentals_reserve_amount: "1500.00",
+    source_proposal_id: 42,
+    status: "draft",
+    step_status: "step2",
+    accepted_estimate_basis: {
+      proposal_id: 42,
+      review_version: 1,
+      subtotal: "12850.00",
+      tax: "0.00",
+      discounts: "0.00",
+      incidentals_reserve: "1500.00",
+      total: "14350.00",
+      pricing_rows: [],
+      milestone_reconciliation: reconciliation,
+    },
+  };
+  const milestones = [
+    { id: 501, agreement: 100, order: 1, title: "Demolition", amount: "1000.00", accepted_estimate_amount: "1000.00", accepted_estimate_review_version: 1 },
+    { id: 502, agreement: 100, order: 2, title: "Plumbing & Electrical Prep", amount: "1950.00", accepted_estimate_amount: "1950.00", accepted_estimate_review_version: 1 },
+    { id: 503, agreement: 100, order: 3, title: "Tile & Shower Install", amount: "4950.00", accepted_estimate_amount: "4950.00", accepted_estimate_review_version: 1 },
+    { id: 504, agreement: 100, order: 4, title: "Fixture Install", amount: "4950.00", accepted_estimate_amount: "4950.00", accepted_estimate_review_version: 1 },
+  ];
+  let createCount = 0;
+  let patchCount = 0;
+  await page.route("**/api/projects/homeowners**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ results: [{ id: 77, full_name: "QA Homeowner", email: "qa-homeowner@myhomebro.com" }] }),
+  }));
+  await page.route(/\/api\/projects\/agreements\/?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "POST") createCount += 1;
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(agreement) });
+  });
+  await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "PATCH") patchCount += 1;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) });
+  });
+  await page.route("**/api/projects/milestones/**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ results: milestones }),
+  }));
+
+  await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Save & Next" }).click();
+  await expect(page).toHaveURL(/\/app\/agreements\/100\/wizard\?step=2/);
+  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$12,850.00");
+  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$1,500.00");
+  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$14,350.00");
+  await expect(page.getByText("Fixture Install").first()).toBeVisible();
+  expect(createCount).toBe(1);
+  expect(patchCount).toBeGreaterThanOrEqual(1);
+});
+
+test("Step 2 names accepted rows that lack exact milestone lineage", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  const agreement = {
+    id: 100,
+    project_title: "QA Bathroom Remodel",
+    project_type: "Bathroom",
+    project_subtype: "Refresh",
+    description: "Accepted scope",
+    total_cost: "12850.00",
+    source_proposal_id: 42,
+    status: "draft",
+    accepted_estimate_basis: {
+      proposal_id: 42,
+      review_version: 1,
+      subtotal: "12850.00",
+      tax: "0.00",
+      discounts: "0.00",
+      incidentals_reserve: "1500.00",
+      total: "14350.00",
+      pricing_rows: [],
+      milestone_reconciliation: {
+        status: "blocked",
+        reconciles: false,
+        expected_commercial_amount: "12850.00",
+        actual_milestone_amount: "7900.00",
+        difference: "4950.00",
+        missing_lineage_rows: [{ proposal_line_item_id: 44, description: "Fixture Install", amount: "4950.00" }],
+      },
+    },
+  };
+  await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) }));
+  await page.route("**/api/projects/milestones/**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) }));
+
+  await page.goto("/app/agreements/100/wizard?step=2", { waitUntil: "domcontentloaded" });
+  const blocker = page.getByTestId("step2-estimate-reconciliation-blocker");
+  await expect(blocker).toContainText("Accepted commercial amount: $12,850.00");
+  await expect(blocker).toContainText("Current milestone amount: $7,900.00");
+  await expect(blocker).toContainText("Difference: $4,950.00");
+  await expect(blocker).toContainText("Fixture Install: $4,950.00");
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("step2-estimate-reconciliation-blocker")).toBeVisible();
+});
+
 test("Project Assistant classification is visibly pending and remains advisory until applied", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);

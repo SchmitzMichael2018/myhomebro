@@ -546,6 +546,26 @@ def get_pricing_readiness_for_agreement(agreement: Agreement) -> dict[str, Any]:
 
 
 def assert_pricing_ready_for_agreement(agreement: Agreement) -> dict[str, Any]:
+    try:
+        proposal = agreement.source_proposal
+    except Exception:
+        proposal = None
+    if proposal is not None and proposal.converted_review_version_id:
+        from projects.services.proposal_conversion import accepted_estimate_milestone_reconciliation
+        reconciliation = accepted_estimate_milestone_reconciliation(proposal=proposal, agreement=agreement)
+        if not reconciliation["reconciles"]:
+            missing = reconciliation["missing_lineage_rows"]
+            missing_detail = ""
+            if missing:
+                missing_detail = " Missing accepted rows: " + "; ".join(
+                    f"{row['description']} ({row['amount']})" for row in missing
+                ) + "."
+            raise ValueError(
+                "Accepted Estimate milestone pricing must reconcile before this Agreement can be sent. "
+                f"Accepted commercial amount: ${reconciliation['expected_commercial_amount']}; "
+                f"current milestone amount: ${reconciliation['actual_milestone_amount']}; "
+                f"difference: ${reconciliation['difference']}.{missing_detail}"
+            )
     readiness = get_pricing_readiness_for_agreement(agreement)
     if readiness.get("blocked"):
         raise ValueError(REQUIRES_SUB_QUOTE_BLOCKER_MESSAGE)

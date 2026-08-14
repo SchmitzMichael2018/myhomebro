@@ -1630,6 +1630,7 @@ export default function Step2Milestones({
   }, [effectiveMilestones]);
   const total = effectiveMilestones.reduce((sum, milestone) => sum + money(milestone.amount), 0);
   const acceptedEstimateBasis = agreementMeta?.accepted_estimate_basis || null;
+  const acceptedMilestoneReconciliation = acceptedEstimateBasis?.milestone_reconciliation || null;
   const acceptedAllocation = summarizeAcceptedEstimateAllocation(acceptedEstimateBasis, total);
   const acceptedCommercialBase = acceptedAllocation?.commercialBase ?? null;
   const acceptedIncidentalsReserve = acceptedAllocation?.incidentalsReserve ?? 0;
@@ -5923,6 +5924,28 @@ export default function Step2Milestones({
             <div><div className="text-xs text-slate-400">Allocation status</div><div className={`font-semibold ${Math.abs(allocationDifference) < 0.005 ? "text-emerald-300" : "text-amber-300"}`}>{Math.abs(allocationDifference) < 0.005 ? "Fully allocated" : allocationDifference > 0 ? `${formatCurrency(allocationDifference)} unallocated` : `${formatCurrency(-allocationDifference)} overallocated`}</div></div>
           </div>
           <p className="mt-3 text-xs text-slate-400">The accepted Estimate remains unchanged. Alternative pricing is shown only when explicitly requested.</p>
+          {acceptedMilestoneReconciliation && !acceptedMilestoneReconciliation.reconciles ? (
+            <div className="mt-4 rounded-xl border border-amber-400/50 bg-amber-950/40 px-4 py-3 text-sm text-amber-100" data-testid="step2-estimate-reconciliation-blocker">
+              <div className="font-semibold">Milestone allocation needs review before sending</div>
+              <div className="mt-1">
+                Accepted commercial amount: {formatCurrency(Number(acceptedMilestoneReconciliation.expected_commercial_amount || 0))}
+                {" · "}Current milestone amount: {formatCurrency(Number(acceptedMilestoneReconciliation.actual_milestone_amount || 0))}
+                {" · "}Difference: {formatCurrency(Number(acceptedMilestoneReconciliation.difference || 0))}
+              </div>
+              {acceptedMilestoneReconciliation.missing_lineage_rows?.length ? (
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {acceptedMilestoneReconciliation.missing_lineage_rows.map((row) => (
+                    <li key={row.proposal_line_item_id || `${row.description}-${row.amount}`}>
+                      {row.description}: {formatCurrency(Number(row.amount || 0))} — missing exact milestone lineage
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <p className="mt-2 text-xs text-amber-200">
+                This draft is preserved, but it cannot be sent until its milestones exactly match the accepted Estimate.
+              </p>
+            </div>
+          ) : null}
         </section>
       ) : null}
 
