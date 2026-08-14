@@ -103,11 +103,6 @@ class ProjectSubtypeSerializer(serializers.ModelSerializer):
                 {"is_system": "System subtypes cannot be contractor-owned."}
             )
 
-        if project_type.is_system and not is_system:
-            raise serializers.ValidationError(
-                {"project_type": "Subtypes under a system type must also be system-owned."}
-            )
-
         return attrs
 
 

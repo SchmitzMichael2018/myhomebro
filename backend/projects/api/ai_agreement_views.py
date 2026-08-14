@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from decimal import Decimal, InvalidOperation
 
 from django.http import JsonResponse
@@ -106,6 +107,68 @@ def _compose_description_context(data) -> str:
     return "\n\n".join(sections).strip()
 
 
+def _scope_improvement_context(agreement: Agreement, data) -> str:
+    """Build a facts-only scope prompt, excluding accepted commercial/schedule metadata."""
+    sections: list[str] = []
+
+    def sanitize(value):
+        text = str(value or "").replace("\r\n", "\n")
+        kept = []
+        skipping = False
+        prohibited_heading = re.compile(
+            r"^(estimate pricing|pricing|requested timing|schedule|payment(?: information| timing| terms)?|incidentals reserve|total funding)\s*:?​?$",
+            re.IGNORECASE,
+        )
+        heading = re.compile(r"^[A-Za-z][A-Za-z /&-]{2,60}:?$")
+        for raw_line in text.split("\n"):
+            line = raw_line.strip()
+            if prohibited_heading.match(line):
+                skipping = True
+                continue
+            if skipping and heading.match(line) and not prohibited_heading.match(line):
+                skipping = False
+            if skipping or "$" in line:
+                continue
+            kept.append(raw_line)
+        return "\n".join(kept).strip()
+
+    def add(label, value):
+        text = sanitize(value)
+        if text:
+            sections.append(f"{label}:\n{text}")
+
+    add("Existing Agreement Scope", agreement.description)
+    try:
+        review = agreement.source_proposal.converted_review_version
+    except Exception:
+        review = None
+    if review is not None:
+        snapshot = review.snapshot or {}
+        project = snapshot.get("project") or {}
+        add("Accepted Estimate Description", project.get("description"))
+        add("Included Work", project.get("included_work"))
+        add("Existing Exclusions", project.get("excluded_work"))
+        add("Existing Assumptions", project.get("assumptions"))
+        add("Existing Allowances", project.get("allowances"))
+        work_rows = []
+        for row in ((snapshot.get("pricing") or {}).get("line_items") or []):
+            if row.get("category") in {"tax", "discount", "incidentals_reserve"}:
+                continue
+            description = _safe_text(row.get("description"))
+            milestone = _safe_text(row.get("source_milestone_name"))
+            text = " — ".join(part for part in [milestone, description] if part)
+            if text and text not in work_rows:
+                work_rows.append(text)
+        if work_rows:
+            add("Accepted Work Categories and Line Items", "\n".join(f"- {row}" for row in work_rows))
+
+    template_context = _safe_text(
+        data.get("template_scope") or data.get("default_scope") or data.get("template_default_scope")
+    )
+    add("Selected Template Scope Context", template_context)
+    return "\n\n".join(sections).strip()
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_agreement_description(request):
@@ -135,7 +198,12 @@ def ai_agreement_description(request):
     raw_project_title = _safe_text(request.data.get("project_title"))
     raw_project_type = _safe_text(request.data.get("project_type"))
     raw_project_subtype = _safe_text(request.data.get("project_subtype"))
-    raw_description = _compose_description_context(request.data)
+    mode = (request.data.get("mode") or "").strip().lower()
+    raw_description = (
+        _scope_improvement_context(agreement, request.data)
+        if mode == "improve" and agreement is not None
+        else _compose_description_context(request.data)
+    )
 
     if not any([raw_project_title, raw_project_type, raw_project_subtype, raw_description]):
         return _validation_error(

@@ -128,6 +128,7 @@ from projects.models_customer_portal import CustomerNotificationCleanupPreferenc
 from projects.models_templates import ProjectTemplate, SeedBenchmarkProfile
 from projects.models_sms import DeferredSMSAutomation, SMSAutomationDecision, SMSConsent, SMSConsentStatus
 from projects.models_project_intake import ProjectIntake, ProjectIntakeClarificationPhoto
+from projects.models_proposals import Proposal, ProposalReviewVersion
 from projects.models_contractor_discovery import ContractorDirectoryListing, MarketplaceLocation
 from receipts.models import Receipt
 from projects.models_subcontractor import (
@@ -7502,6 +7503,137 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertIn("Default deck scope", current_description)
         self.assertIn("Existing milestones", current_description)
         self.assertIn("Demo - Remove damaged boards.", current_description)
+
+    def test_improve_scope_uses_accepted_work_facts_without_commercial_or_timing_metadata(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            source_type=Proposal.SOURCE_DASHBOARD,
+            source_id=9911,
+            project_title="Bathroom Remodel",
+            converted_agreement=self.agreement,
+        )
+        review = ProposalReviewVersion.objects.create(
+            proposal=proposal,
+            version=1,
+            customer_email=self.homeowner.email,
+            decision=ProposalReviewVersion.DECISION_ACCEPTED,
+            snapshot={
+                "project": {
+                    "description": "Renovate the bathroom.",
+                    "included_work": "Remove vanity and install shower tile.",
+                    "excluded_work": "Painting is excluded.",
+                    "assumptions": "Existing drain remains usable.",
+                    "allowances": "Customer-selected fixture allowance applies.",
+                    "schedule": {"start_date": "2026-09-01"},
+                },
+                "pricing": {
+                    "subtotal": "12850.00",
+                    "incidentals_reserve": "1500.00",
+                    "total": "14350.00",
+                    "line_items": [
+                        {"category": "labor", "description": "Demolition", "total": "2500.00", "source_milestone_name": "Demolition"},
+                        {"category": "materials", "description": "Tile and shower installation", "unit_price": "5000.00", "total": "5000.00", "source_milestone_name": "Tile Installation"},
+                        {"category": "incidentals_reserve", "description": "Incidentals Reserve", "total": "1500.00"},
+                    ],
+                },
+            },
+        )
+        proposal.converted_review_version = review
+        proposal.save(update_fields=["converted_review_version", "updated_at"])
+        self.agreement.description = "Included Work:\nRemove vanity.\n\nEstimate Pricing:\n$12,850\n\nRequested Timing:\nStart September 1."
+        self.agreement.save(update_fields=["description", "updated_at"])
+
+        with patch(
+            "projects.services.ai.project_understanding.generate_or_improve_description",
+            return_value={"description": "Improved scope", "_mode": "improve", "_model": "test-model"},
+        ) as writer:
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {"agreement_id": self.agreement.id, "mode": "improve"},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        context = writer.call_args.kwargs["current_description"]
+        self.assertIn("Demolition", context)
+        self.assertIn("Tile and shower installation", context)
+        self.assertIn("Painting is excluded", context)
+        self.assertIn("Existing drain remains usable", context)
+        self.assertNotIn("$12,850", context)
+        self.assertNotIn("12850.00", context)
+        self.assertNotIn("1500.00", context)
+        self.assertNotIn("2026-09-01", context)
+        self.assertNotIn("Requested Timing", context)
+
+    def test_improve_scope_output_filter_removes_commercial_sections(self):
+        from projects.ai.agreement_description_writer import _sanitize_improved_scope
+
+        candidate = """Demolition
+- Remove the existing vanity.
+
+Estimate Pricing
+- Subtotal: $12,850
+- Incidentals Reserve: $1,500
+
+Requested Timing
+- Requested start September 1.
+
+Exclusions
+- Painting is excluded."""
+        result = _sanitize_improved_scope(candidate)
+        self.assertIn("Remove the existing vanity", result)
+        self.assertIn("Painting is excluded", result)
+        self.assertNotIn("$12,850", result)
+        self.assertNotIn("Incidentals Reserve", result)
+        self.assertNotIn("Requested Timing", result)
+        self.assertNotIn("September 1", result)
+
+    def test_custom_taxonomy_is_contractor_owned_reusable_and_duplicate_safe(self):
+        type_response = self.client.post(
+            "/api/projects/project-types/", {"name": "  Specialty   Remodel  "}, format="json"
+        )
+        self.assertEqual(type_response.status_code, 201)
+        type_id = type_response.json()["id"]
+        project_type = ProjectType.objects.get(pk=type_id)
+        self.assertEqual(project_type.contractor, self.contractor)
+        self.assertFalse(project_type.is_system)
+
+        subtype_response = self.client.post(
+            "/api/projects/project-subtypes/",
+            {"project_type": type_id, "name": " Media Room "},
+            format="json",
+        )
+        self.assertEqual(subtype_response.status_code, 201)
+        subtype = ProjectSubtype.objects.get(pk=subtype_response.json()["id"])
+        self.assertEqual(subtype.contractor, self.contractor)
+        self.assertEqual(subtype.project_type, project_type)
+        self.assertFalse(subtype.is_system)
+
+        duplicate_type = self.client.post(
+            "/api/projects/project-types/", {"name": "specialty remodel"}, format="json"
+        )
+        duplicate_subtype = self.client.post(
+            "/api/projects/project-subtypes/",
+            {"project_type": type_id, "name": "media room"},
+            format="json",
+        )
+        self.assertEqual(duplicate_type.status_code, 400)
+        self.assertEqual(duplicate_subtype.status_code, 400)
+
+    def test_contractor_subtype_can_extend_visible_system_type_without_mutating_it(self):
+        system_type = ProjectType.objects.create(name="Remodel", is_system=True)
+        response = self.client.post(
+            "/api/projects/project-subtypes/",
+            {"project_type": system_type.id, "name": "Bathroom Restoration"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 201)
+        subtype = ProjectSubtype.objects.get(pk=response.json()["id"])
+        system_type.refresh_from_db()
+        self.assertEqual(subtype.contractor, self.contractor)
+        self.assertFalse(subtype.is_system)
+        self.assertTrue(system_type.is_system)
+        self.assertIsNone(system_type.contractor_id)
 
     def test_ai_agreement_description_falls_back_when_ai_fails(self):
         with patch(

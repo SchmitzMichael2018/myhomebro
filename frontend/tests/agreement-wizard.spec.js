@@ -374,8 +374,55 @@ test("Project Assistant Improve Scope is advisory, visible, retryable, and scope
   await page.getByRole("button", { name: "Apply Improved Scope" }).click();
   await expect(page.getByTestId("proposal-draft-textarea")).toContainText("Remove existing finishes");
   expect(agreementPatches).toHaveLength(1);
-  expect(Object.keys(agreementPatches[0]).sort()).toEqual(["description", "scope_of_work"]);
+  expect(Object.keys(agreementPatches[0]).sort()).toEqual(["scope_of_work"]);
   expect(milestoneMutations).toEqual([]);
+});
+
+test("Agreement Wizard creates reusable contractor taxonomy from Step 1", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  await page.addInitScript(() => {
+    window.sessionStorage.removeItem("mhb_first_project_assist_handoff");
+  });
+  await page.unroute("**/api/projects/project-types/**");
+  await page.unroute("**/api/projects/project-subtypes/**");
+  const createdTypes = [];
+  const createdSubtypes = [];
+  await page.route("**/api/projects/project-types/**", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      createdTypes.push(body);
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: 31, name: body.name, value: body.name, label: body.name, owner_type: "contractor", is_system: false }) });
+      return;
+    }
+    const results = [{ id: 1, value: "Remodel", label: "Remodel", owner_type: "system" }];
+    if (createdTypes.length) results.push({ id: 31, value: "Specialty Remodel", label: "Specialty Remodel", owner_type: "contractor" });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results }) });
+  });
+  await page.route("**/api/projects/project-subtypes/**", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON();
+      createdSubtypes.push(body);
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: 41, project_type: body.project_type, project_type_name: "Specialty Remodel", name: body.name, value: body.name, label: body.name, owner_type: "contractor", is_system: false }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
+  });
+
+  await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "Browse templates manually" }).click();
+  await page.getByRole("button", { name: "Add Type", exact: true }).click();
+  await page.getByTestId("step1-custom-taxonomy-input").fill("Specialty Remodel");
+  await page.getByTestId("step1-custom-taxonomy-save-button").click();
+  await expect(page.getByTestId("agreement-project-type-select")).toHaveValue("Specialty Remodel");
+  expect(createdTypes).toEqual([{ name: "Specialty Remodel" }]);
+
+  await page.getByRole("button", { name: "Continue with AI Draft" }).click();
+  await page.getByRole("button", { name: "Add Subtype", exact: true }).click();
+  await page.getByTestId("step1-custom-taxonomy-input").fill("Media Room");
+  await page.getByTestId("step1-custom-taxonomy-save-button").click();
+  await expect(page.getByTestId("agreement-project-subtype-select")).toHaveValue("Media Room");
+  expect(createdSubtypes).toEqual([{ name: "Media Room", project_type: 31 }]);
 });
 
 test("Agreement Wizard milestone planning simulation updates and appears in final review", async ({ page }) => {

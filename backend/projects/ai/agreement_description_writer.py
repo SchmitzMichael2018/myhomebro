@@ -161,7 +161,33 @@ def _safe_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def _format_scope_as_bullets(value: Any) -> str:
+def _sanitize_improved_scope(value: Any) -> str:
+    """Reject commercial/schedule prose even when a provider ignores the prompt."""
+    prohibited_heading = re.compile(
+        r"^(estimate pricing|pricing|requested timing|schedule|payment(?: information| timing| terms)?|incidentals reserve|total funding)\s*:?​?$",
+        re.IGNORECASE,
+    )
+    heading = re.compile(r"^[A-Za-z][A-Za-z /&-]{2,60}:?$")
+    prohibited_line = re.compile(
+        r"(?:\$|\b(?:subtotal|unit price|incidentals reserve|total funding|payment due|payment schedule|requested start|requested completion)\b)",
+        re.IGNORECASE,
+    )
+    kept: list[str] = []
+    skipping = False
+    for raw_line in str(value or "").replace("\r\n", "\n").split("\n"):
+        line = raw_line.strip()
+        if prohibited_heading.match(line):
+            skipping = True
+            continue
+        if skipping and heading.match(line) and not prohibited_heading.match(line):
+            skipping = False
+        if skipping or prohibited_line.search(line):
+            continue
+        kept.append(raw_line)
+    return "\n".join(kept).strip()
+
+
+def _format_scope_as_bullets(value: Any, *, add_defaults: bool = True) -> str:
     raw = str(value or "").replace("\r\n", "\n").strip()
     if not raw:
         return ""
@@ -201,11 +227,12 @@ def _format_scope_as_bullets(value: Any) -> str:
         "Complete the described installation, repair, replacement, or removal work for the project area",
         "Perform final cleanup and review completed work with the customer",
     ]
-    for item in defaults:
-        if len(included) >= 5:
-            break
-        if item.lower() not in {existing.lower() for existing in included}:
-            included.append(item)
+    if add_defaults:
+        for item in defaults:
+            if len(included) >= 5:
+                break
+            if item.lower() not in {existing.lower() for existing in included}:
+                included.append(item)
 
     max_bullets = 12
     capped_included = included[: max(5, max_bullets - len(exclusions) - len(customer))]
@@ -307,6 +334,17 @@ def generate_or_improve_description(
         client = _require_openai_client()
     except Exception as exc:
         logger.warning("OpenAI unavailable for agreement description writer; using fallback: %s", exc)
+        if mode == "improve":
+            return {
+                "project_title": _safe_text(project_title),
+                "project_type": _safe_text(project_type),
+                "project_subtype": _safe_text(project_subtype),
+                "description": _format_scope_as_bullets(current_description, add_defaults=False),
+                "recommendation_source": "fallback",
+                "confidence": "fallback",
+                "_model": "fallback",
+                "_mode": mode,
+            }
         return {
             **_fallback_from_context(
                 project_title=project_title,
@@ -317,6 +355,16 @@ def generate_or_improve_description(
             "_mode": mode,
         }
 
+    improve_rules = (
+        "For improve mode, act only as a contractual scope editor.\n"
+        "- Use only facts present in the supplied scope context.\n"
+        "- Organize supported work into clear work-category sections derived from the input.\n"
+        "- Preserve existing exclusions, assumptions, allowances, owner responsibilities, access requirements, and existing-condition qualifications only when supplied.\n"
+        "- Do not output prices, dollar amounts, quantities used only for pricing, tax, discounts, incidentals reserve, funding totals, payment terms, requested dates, or schedule timing.\n"
+        "- Do not invent dimensions, quantities, brands, materials, fixtures, finishes, code requirements, dates, responsibilities, exclusions, allowances, or legal/commercial terms.\n"
+        "- If a qualifier is not supported by the input, omit it.\n"
+        if mode == "improve" else ""
+    )
     system = (
         "You are a construction agreement draft writer.\n"
         "Create a practical first draft from the contractor's short project description.\n"
@@ -327,7 +375,7 @@ def generate_or_improve_description(
         "- Do not use generic labels like 'Installation Project', 'General Project', or 'Custom Project' when the trade is inferable.\n"
         "- Be specific and measurable.\n"
         "- Avoid vague phrases like 'as needed', 'minor fixes', 'etc'.\n"
-        "- Include key inclusions and exclusions.\n"
+        "- Include exclusions only when they are supported by the input.\n"
         "- Always return bullet lists, not paragraph prose.\n"
         "- Use section headings exactly as needed: Included Work, Exclusions, Customer Responsibilities.\n"
         "- Return 5 to 12 total bullets.\n"
@@ -335,6 +383,7 @@ def generate_or_improve_description(
         "- Put exclusions in separate bullets under Exclusions.\n"
         "- Do not use numbered lists.\n"
         "- Do NOT provide legal advice.\n"
+        + improve_rules
     )
 
     user_json = {
@@ -378,6 +427,17 @@ def generate_or_improve_description(
         )
     except Exception as e:
         logger.warning("OpenAI call failed for agreement description writer; using fallback.", exc_info=True)
+        if mode == "improve":
+            return {
+                "project_title": _safe_text(project_title),
+                "project_type": _safe_text(project_type),
+                "project_subtype": _safe_text(project_subtype),
+                "description": _format_scope_as_bullets(current_description, add_defaults=False),
+                "recommendation_source": "fallback",
+                "confidence": "fallback",
+                "_model": "fallback",
+                "_mode": mode,
+            }
         return {
             **_fallback_from_context(
                 project_title=project_title,
@@ -393,6 +453,17 @@ def generate_or_improve_description(
         payload = json.loads(raw)
     except Exception:
         logger.warning("AI description returned invalid JSON; using fallback.")
+        if mode == "improve":
+            return {
+                "project_title": _safe_text(project_title),
+                "project_type": _safe_text(project_type),
+                "project_subtype": _safe_text(project_subtype),
+                "description": _format_scope_as_bullets(current_description, add_defaults=False),
+                "recommendation_source": "fallback",
+                "confidence": "fallback",
+                "_model": "fallback",
+                "_mode": mode,
+            }
         return {
             **_fallback_from_context(
                 project_title=project_title,
@@ -403,12 +474,26 @@ def generate_or_improve_description(
             "_mode": mode,
         }
 
-    desc = _format_scope_as_bullets((payload.get("description") or "").strip())
+    candidate_description = (payload.get("description") or "").strip()
+    if mode == "improve":
+        candidate_description = _sanitize_improved_scope(candidate_description)
+    desc = _format_scope_as_bullets(candidate_description, add_defaults=mode != "improve")
     draft_title = _safe_text(payload.get("project_title"))
     draft_type = _safe_text(payload.get("project_type"))
     draft_subtype = _safe_text(payload.get("project_subtype"))
     if not desc or not any([draft_title, draft_type, draft_subtype]):
         logger.warning("AI returned an empty description; using fallback.")
+        if mode == "improve":
+            return {
+                "project_title": _safe_text(project_title),
+                "project_type": _safe_text(project_type),
+                "project_subtype": _safe_text(project_subtype),
+                "description": _format_scope_as_bullets(current_description, add_defaults=False),
+                "recommendation_source": "fallback",
+                "confidence": "fallback",
+                "_model": "fallback",
+                "_mode": mode,
+            }
         return {
             **_fallback_from_context(
                 project_title=project_title,

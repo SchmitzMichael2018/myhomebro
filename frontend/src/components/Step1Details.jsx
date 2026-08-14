@@ -1796,6 +1796,7 @@ export default function Step1Details({
   const [customProjectTypeOptions, setCustomProjectTypeOptions] = useState([]);
   const [customProjectSubtypeOptionsByType, setCustomProjectSubtypeOptionsByType] = useState({});
   const [taxonomyEditor, setTaxonomyEditor] = useState(null);
+  const [taxonomySaving, setTaxonomySaving] = useState(false);
   const mergedProjectTypeOptions = useMemo(
     () => [...(projectTypeOptions || []), ...(customProjectTypeOptions || [])],
     [projectTypeOptions, customProjectTypeOptions]
@@ -3000,8 +3001,11 @@ export default function Step1Details({
     const nextDescription =
       action === "append" && cur ? `${cur}\n\n${suggestion}` : suggestion;
 
-    const scopePatch = buildAiScopePatch({ description: nextDescription, scope_of_work: nextDescription });
-    setDLocal((current) => mergeAiScopeFields(current, scopePatch));
+    const scopePatch = buildAiScopePatch({ scope_of_work: nextDescription });
+    setDLocal((current) => ({
+      ...mergeAiScopeFields(current, scopePatch),
+      description: nextDescription,
+    }));
     if (!isNewAgreement) {
       writeCache({ description: nextDescription, scope_of_work: nextDescription });
     }
@@ -5610,8 +5614,8 @@ export default function Step1Details({
     setTaxonomyEditor(null);
   };
 
-  const saveTaxonomyEditor = () => {
-    if (locked || !taxonomyEditor?.kind) return;
+  const saveTaxonomyEditor = async () => {
+    if (locked || taxonomySaving || !taxonomyEditor?.kind) return;
 
     const rawValue = safeTrim(taxonomyEditor.value);
     const nextValue = titleCaseWords(rawValue);
@@ -5632,11 +5636,22 @@ export default function Step1Details({
         }));
         return;
       }
+      setTaxonomySaving(true);
+      let created;
+      try {
+        ({ data: created } = await api.post("/projects/project-types/", { name: nextValue }));
+      } catch (error) {
+        const message = error?.response?.data?.name?.[0] || error?.response?.data?.detail || "Could not add this project type.";
+        setTaxonomyEditor((prev) => ({ ...(prev || {}), error: message }));
+        return;
+      } finally {
+        setTaxonomySaving(false);
+      }
       const nextTypeOption = {
-        id: `custom-type-${normalizedNextValue}`,
-        value: nextValue,
-        label: `${nextValue} (Custom)`,
-        owner_type: "custom",
+        ...created,
+        value: created?.value || created?.name || nextValue,
+        label: `${created?.label || created?.name || nextValue} (Custom)`,
+        owner_type: created?.owner_type || "contractor",
       };
       setCustomProjectTypeOptions((prev) => {
         const next = [...prev];
@@ -5647,15 +5662,15 @@ export default function Step1Details({
       });
       setDLocal((prev) => ({
         ...prev,
-        project_type: nextValue,
-        project_type_ref: null,
+        project_type: nextTypeOption.value,
+        project_type_ref: nextTypeOption.id,
         project_subtype: "",
         project_subtype_ref: null,
       }));
       if (!isNewAgreement) {
         writeCache({
-          project_type: nextValue,
-          project_type_ref: null,
+          project_type: nextTypeOption.value,
+          project_type_ref: nextTypeOption.id,
           project_subtype: "",
           project_subtype_ref: null,
         });
@@ -5663,8 +5678,8 @@ export default function Step1Details({
       if (agreementId) {
         patchAgreement(
           {
-            project_type: nextValue,
-            project_type_ref: null,
+            project_type: nextTypeOption.value,
+            project_type_ref: nextTypeOption.id,
             project_subtype: "",
             project_subtype_ref: null,
           },
@@ -5691,9 +5706,12 @@ export default function Step1Details({
       return;
     }
 
+    const parentTypeOption = mergedProjectTypeOptions.find(
+      (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
+    );
     const existingForType = [
       ...(projectSubtypeOptions || []).filter(
-        (opt) => normalizeTaxonomyText(opt?.project_type) === normalizeTaxonomyText(parentType)
+        (opt) => normalizeTaxonomyText(opt?.project_type_name || opt?.project_type) === normalizeTaxonomyText(parentType)
       ),
       ...(customProjectSubtypeOptionsByType[parentType] || []),
     ];
@@ -5706,12 +5724,27 @@ export default function Step1Details({
       return;
     }
 
+    setTaxonomySaving(true);
+    let created;
+    try {
+      ({ data: created } = await api.post("/projects/project-subtypes/", {
+        name: nextValue,
+        project_type: parentTypeOption.id,
+      }));
+    } catch (error) {
+      const message = error?.response?.data?.name?.[0] || error?.response?.data?.project_type?.[0] || error?.response?.data?.detail || "Could not add this subtype.";
+      setTaxonomyEditor((prev) => ({ ...(prev || {}), error: message }));
+      return;
+    } finally {
+      setTaxonomySaving(false);
+    }
     const nextSubtypeOption = {
-      id: `custom-subtype-${normalizeTaxonomyText(parentType)}-${normalizedNextValue}`,
-      value: nextValue,
-      label: `${nextValue} (Custom)`,
-      owner_type: "custom",
-      project_type: parentType,
+      ...created,
+      value: created?.value || created?.name || nextValue,
+      label: `${created?.label || created?.name || nextValue} (Custom)`,
+      owner_type: created?.owner_type || "contractor",
+      project_type: created?.project_type || parentTypeOption.id,
+      project_type_name: created?.project_type_name || parentType,
     };
     setCustomProjectSubtypeOptionsByType((prev) => {
       const next = { ...prev };
@@ -5728,8 +5761,8 @@ export default function Step1Details({
       project_type_ref: mergedProjectTypeOptions.find(
         (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
       )?.id || null,
-      project_subtype: nextValue,
-      project_subtype_ref: null,
+      project_subtype: nextSubtypeOption.value,
+      project_subtype_ref: nextSubtypeOption.id,
     }));
     if (!isNewAgreement) {
       writeCache({
@@ -5738,8 +5771,8 @@ export default function Step1Details({
           mergedProjectTypeOptions.find(
             (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
           )?.id || null,
-        project_subtype: nextValue,
-        project_subtype_ref: null,
+        project_subtype: nextSubtypeOption.value,
+        project_subtype_ref: nextSubtypeOption.id,
       });
     }
     if (agreementId) {
@@ -5750,8 +5783,8 @@ export default function Step1Details({
             mergedProjectTypeOptions.find(
               (opt) => normalizeTaxonomyText(opt?.value) === normalizeTaxonomyText(parentType)
             )?.id || null,
-          project_subtype: nextValue,
-          project_subtype_ref: null,
+          project_subtype: nextSubtypeOption.value,
+          project_subtype_ref: nextSubtypeOption.id,
         },
         { silent: true }
       );
@@ -7711,7 +7744,7 @@ export default function Step1Details({
                         <div className="mt-2 text-xs text-rose-600">{taxonomyEditor.error}</div>
                       ) : (
                         <div className="mt-2 text-[11px] text-slate-600">
-                          Custom values are saved locally and remain selectable as you continue.
+                          Custom values are saved to your taxonomy for future agreements.
                         </div>
                       )}
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -7720,8 +7753,9 @@ export default function Step1Details({
                           onClick={saveTaxonomyEditor}
                           className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700"
                           data-testid="step1-custom-taxonomy-save-button"
+                          disabled={taxonomySaving}
                         >
-                          Save
+                          {taxonomySaving ? "Saving..." : "Save"}
                         </button>
                         <button
                           type="button"

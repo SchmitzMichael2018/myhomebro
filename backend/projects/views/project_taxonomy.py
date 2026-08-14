@@ -19,6 +19,7 @@ from projects.serializers.project_taxonomy import (
     ProjectTypeOptionSerializer,
     ProjectTypeSerializer,
 )
+from projects.models_project_taxonomy import normalized_key
 
 
 class _TaxonomyBaseMixin:
@@ -94,6 +95,20 @@ class ProjectTypeViewSet(_TaxonomyBaseMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         contractor = self._contractor()
         serializer.save(contractor=contractor, is_system=False)
+
+    def create(self, request, *args, **kwargs):
+        contractor = self._contractor()
+        if contractor is None and not self._is_staff():
+            return Response({"detail": "Contractor profile required."}, status=status.HTTP_403_FORBIDDEN)
+        name_key = normalized_key(request.data.get("name", ""))
+        if name_key and ProjectType.objects.filter(
+            Q(is_system=True) | Q(contractor=contractor), normalized_name=name_key
+        ).exists():
+            return Response(
+                {"name": ["A visible project type with this name already exists."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().create(request, *args, **kwargs)
 
     def perform_update(self, serializer):
         obj = self.get_object()
@@ -270,6 +285,33 @@ class ProjectSubtypeViewSet(_TaxonomyBaseMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         contractor = self._contractor()
         serializer.save(contractor=contractor, is_system=False)
+
+    def create(self, request, *args, **kwargs):
+        contractor = self._contractor()
+        if contractor is None and not self._is_staff():
+            return Response({"detail": "Contractor profile required."}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            project_type = ProjectType.objects.get(pk=request.data.get("project_type"))
+        except (ProjectType.DoesNotExist, TypeError, ValueError):
+            return Response(
+                {"project_type": ["Select a valid project type."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not (project_type.is_system or project_type.contractor_id == getattr(contractor, "id", None)):
+            return Response(
+                {"project_type": ["Select a project type visible to your account."]},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        name_key = normalized_key(request.data.get("name", ""))
+        if name_key and ProjectSubtype.objects.filter(
+            project_type=project_type,
+            normalized_name=name_key,
+        ).filter(Q(is_system=True) | Q(contractor=contractor)).exists():
+            return Response(
+                {"name": ["A visible subtype with this name already exists under this type."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().create(request, *args, **kwargs)
 
     def perform_update(self, serializer):
         obj = self.get_object()

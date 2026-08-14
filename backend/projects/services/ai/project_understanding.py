@@ -12,6 +12,10 @@ def _safe_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
+def _safe_scope_text(value: Any) -> str:
+    return re.sub(r"\n{3,}", "\n\n", str(value or "").replace("\r\n", "\n")).strip()
+
+
 def _plain_description_fallback(description: str) -> str:
     text = _safe_text(description)
     text = re.sub(r"^(i|we)?\s*need\s+to\s+", "", text, flags=re.IGNORECASE)
@@ -86,7 +90,9 @@ def understand_project_request(
     when the description clearly points elsewhere.
     """
 
-    clean_description = _safe_text(description)
+    clean_description = (
+        _safe_scope_text(description) if (mode or "").strip().lower() == "improve" else _safe_text(description)
+    )
     clean_title = _safe_text(project_title)
     clean_type = _safe_text(project_type)
     clean_subtype = _safe_text(project_subtype)
@@ -126,7 +132,11 @@ def understand_project_request(
         )
         source = "fallback"
 
-    improved_description = _safe_text(written.get("description")) or clean_description
+    improved_description = (
+        _safe_scope_text(written.get("description"))
+        if (mode or "").strip().lower() == "improve"
+        else _safe_text(written.get("description"))
+    ) or clean_description
     if (
         source == "fallback"
         and clean_description

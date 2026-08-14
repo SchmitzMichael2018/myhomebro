@@ -189,11 +189,6 @@ class ProjectSubtype(models.Model):
         if self.merged_into_id == self.id:
             self.merged_into = None
 
-        # keep contractor ownership aligned with parent when subtype is system-owned
-        if self.project_type_id and self.project_type.is_system:
-            self.is_system = True
-            self.contractor = None
-
         super().save(*args, **kwargs)
 
     def archive(self, *, save: bool = True):
