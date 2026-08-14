@@ -1622,6 +1622,27 @@ function cleanScopeFallbackCandidate(value) {
   return cleaned;
 }
 
+function sanitizeUnsavedScopeAssistText(value) {
+  const prohibitedHeading = /^(requested timing|scheduling expectations|estimate pricing|pricing|subtotal|tax|discount|incidentals reserve|funding|payment schedule|payment timing)\s*:?$/i;
+  const heading = /^[A-Za-z][A-Za-z /&-]{2,60}:?$/;
+  let skipping = false;
+  return String(value || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((rawLine) => {
+      const line = rawLine.trim();
+      if (prohibitedHeading.test(line)) {
+        skipping = true;
+        return false;
+      }
+      if (skipping && heading.test(line) && !prohibitedHeading.test(line)) skipping = false;
+      if (skipping || /\$/.test(line)) return false;
+      return true;
+    })
+    .join("\n")
+    .trim();
+}
+
 function buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate } = {}) {
   const directScope = [
     dLocal?.description,
@@ -2122,6 +2143,34 @@ export default function Step1Details({
 
   function getCanonicalPersistedScope() {
     return safeTrim(agreement?.scope_of_work || agreement?.description || "");
+  }
+
+  function buildUnsavedAcceptedEstimateContext() {
+    const rows = Array.isArray(assistantDraftPayload?.proposal_line_items)
+      ? assistantDraftPayload.proposal_line_items
+      : Array.isArray(assistantDraftPayload?.accepted_estimate_basis?.pricing_rows)
+      ? assistantDraftPayload.accepted_estimate_basis.pricing_rows
+      : [];
+    return {
+      description: safeTrim(
+        assistantDraftPayload?.accepted_estimate_description ||
+          assistantDraftPayload?.project_summary ||
+          assistantDraftPayload?.project_scope_summary ||
+          ""
+      ),
+      included_work: safeTrim(assistantDraftPayload?.included_work || ""),
+      excluded_work: safeTrim(assistantDraftPayload?.excluded_work || ""),
+      assumptions: safeTrim(assistantDraftPayload?.assumptions || ""),
+      allowances: safeTrim(assistantDraftPayload?.allowances || ""),
+      line_items: rows
+        .filter((row) => !["tax", "discount", "incidentals_reserve"].includes(String(row?.category || "").toLowerCase()))
+        .map((row) => ({
+          category: row?.category || "",
+          description: safeTrim(row?.description || ""),
+          source_milestone_name: safeTrim(row?.source_milestone_name || row?.milestone_name || ""),
+        }))
+        .filter((row) => row.description || row.source_milestone_name),
+    };
   }
 
   async function handleStep1Save(goNext = false) {
@@ -2880,7 +2929,8 @@ export default function Step1Details({
 
     const actionContext =
       mode === "improve"
-        ? getCanonicalPersistedScope() || getScopeActionContext() || ""
+        ? getCanonicalPersistedScope() ||
+          sanitizeUnsavedScopeAssistText(getScopeActionContext() || "")
         : getScopeActionContext() || "";
     const templateScope = cleanScopeFallbackCandidate(
       selectedTemplate?.scope_of_work ||
@@ -2912,6 +2962,10 @@ export default function Step1Details({
         milestones: milestoneContext,
         milestone_count: agreement?.milestone_count ?? agreement?.milestones?.length ?? null,
         current_description: clarificationContext,
+        current_scope: actionContext,
+        ...(!agreementId && mode === "improve"
+          ? { accepted_estimate: buildUnsavedAcceptedEstimateContext() }
+          : {}),
         context: serializeAiContext(buildAiContext({
           page: "agreement_wizard_step1",
           entityId: agreementId || null,
@@ -2933,19 +2987,6 @@ export default function Step1Details({
           contractorTradeProfile: contractorBrandVoice?.skills ?? [],
         })),
       };
-
-      if (!agreementId) {
-        const fallbackDraft = buildLocalAiScopeDraft({
-          mode,
-          context: clarificationContext,
-          agreement,
-          dLocal,
-          selectedTemplate,
-        });
-        setAiPreview(fallbackDraft);
-        setAiErr("AI drafting needs a saved agreement, so MyHomeBro prepared a structured scope draft from the current project details.");
-        return { ok: true };
-      }
 
       const res = await api.post(`/projects/agreements/ai/description/`, payload);
       const text = extractAiScopeText(res?.data || {});

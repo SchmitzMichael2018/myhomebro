@@ -7649,6 +7649,46 @@ Exclusions
         self.assertNotIn("$12,850", result["description"])
         self.assertNotIn("Hidden condition", result["description"])
 
+    def test_unsaved_improve_scope_uses_structured_estimate_facts_without_commercial_summary(self):
+        with patch(
+            "projects.services.ai.project_understanding.generate_or_improve_description",
+            return_value={"description": "Clean advisory scope", "_mode": "improve", "_model": "test-model"},
+        ) as writer:
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": None,
+                    "mode": "improve",
+                    "project_title": "Bathroom Remodel",
+                    "current_scope": "Project Summary\nBathroom remodel.\n\nRequested Timing\nStart Aug 14.\n\nEstimate Pricing\n$12,850",
+                    "accepted_estimate": {
+                        "description": "Renovate the bathroom.",
+                        "included_work": "Remove vanity and install shower tile.",
+                        "excluded_work": "Painting is excluded.",
+                        "assumptions": "Existing drain remains usable.",
+                        "allowances": "Fixture allowance applies.",
+                        "line_items": [
+                            {"category": "labor", "description": "Demolition", "source_milestone_name": "Demolition"},
+                            {"category": "materials", "description": "Tile and shower installation", "source_milestone_name": "Tile Installation"},
+                            {"category": "incidentals_reserve", "description": "Incidentals Reserve"},
+                        ],
+                    },
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        context = writer.call_args.kwargs["current_description"]
+        self.assertIn("Bathroom remodel", context)
+        self.assertIn("Demolition", context)
+        self.assertIn("Tile and shower installation", context)
+        self.assertIn("Painting is excluded", context)
+        self.assertIn("Existing drain remains usable", context)
+        self.assertNotIn("Requested Timing", context)
+        self.assertNotIn("Estimate Pricing", context)
+        self.assertNotIn("$12,850", context)
+        self.assertNotIn("Incidentals Reserve", context)
+
     def test_custom_taxonomy_is_contractor_owned_reusable_and_duplicate_safe(self):
         type_response = self.client.post(
             "/api/projects/project-types/", {"name": "  Specialty   Remodel  "}, format="json"

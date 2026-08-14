@@ -107,33 +107,34 @@ def _compose_description_context(data) -> str:
     return "\n\n".join(sections).strip()
 
 
+def _sanitize_scope_input(value) -> str:
+    text = str(value or "").replace("\r\n", "\n")
+    kept = []
+    skipping = False
+    prohibited_heading = re.compile(
+        r"^(estimate pricing|pricing|requested timing|scheduling expectations|schedule|subtotal|tax|discount|payment(?: information| schedule| timing| terms)?|incidentals reserve|funding|total funding)\s*:?​?$",
+        re.IGNORECASE,
+    )
+    heading = re.compile(r"^[A-Za-z][A-Za-z /&-]{2,60}:?$")
+    for raw_line in text.split("\n"):
+        line = raw_line.strip()
+        if prohibited_heading.match(line):
+            skipping = True
+            continue
+        if skipping and heading.match(line) and not prohibited_heading.match(line):
+            skipping = False
+        if skipping or "$" in line:
+            continue
+        kept.append(raw_line)
+    return "\n".join(kept).strip()
+
+
 def _scope_improvement_context(agreement: Agreement, data) -> str:
     """Build a facts-only scope prompt, excluding accepted commercial/schedule metadata."""
     sections: list[str] = []
 
-    def sanitize(value):
-        text = str(value or "").replace("\r\n", "\n")
-        kept = []
-        skipping = False
-        prohibited_heading = re.compile(
-            r"^(estimate pricing|pricing|requested timing|schedule|payment(?: information| timing| terms)?|incidentals reserve|total funding)\s*:?​?$",
-            re.IGNORECASE,
-        )
-        heading = re.compile(r"^[A-Za-z][A-Za-z /&-]{2,60}:?$")
-        for raw_line in text.split("\n"):
-            line = raw_line.strip()
-            if prohibited_heading.match(line):
-                skipping = True
-                continue
-            if skipping and heading.match(line) and not prohibited_heading.match(line):
-                skipping = False
-            if skipping or "$" in line:
-                continue
-            kept.append(raw_line)
-        return "\n".join(kept).strip()
-
     def add(label, value):
-        text = sanitize(value)
+        text = _sanitize_scope_input(value)
         if text:
             sections.append(f"{label}:\n{text}")
 
@@ -166,6 +167,37 @@ def _scope_improvement_context(agreement: Agreement, data) -> str:
         data.get("template_scope") or data.get("default_scope") or data.get("template_default_scope")
     )
     add("Selected Template Scope Context", template_context)
+    return "\n\n".join(sections).strip()
+
+
+def _unsaved_scope_improvement_context(data) -> str:
+    """Build facts-only scope context for an Agreement draft that has no database row yet."""
+    estimate = data.get("accepted_estimate") if isinstance(data.get("accepted_estimate"), dict) else {}
+    sections: list[str] = []
+
+    def add(label, value):
+        text = _sanitize_scope_input(value)
+        if text:
+            sections.append(f"{label}:\n{text}")
+
+    add("Current Draft Scope", data.get("current_scope"))
+    add("Accepted Estimate Description", estimate.get("description"))
+    add("Included Work", estimate.get("included_work"))
+    add("Existing Exclusions", estimate.get("excluded_work"))
+    add("Existing Assumptions", estimate.get("assumptions"))
+    add("Existing Allowances", estimate.get("allowances"))
+    work_rows = []
+    for row in estimate.get("line_items") or []:
+        if not isinstance(row, dict) or row.get("category") in {"tax", "discount", "incidentals_reserve"}:
+            continue
+        description = _safe_text(row.get("description"))
+        milestone = _safe_text(row.get("source_milestone_name"))
+        text = " — ".join(part for part in [milestone, description] if part)
+        if text and text not in work_rows:
+            work_rows.append(text)
+    if work_rows:
+        add("Accepted Work Categories and Line Items", "\n".join(f"- {row}" for row in work_rows))
+    add("Selected Template Scope Context", data.get("template_scope") or data.get("default_scope"))
     return "\n\n".join(sections).strip()
 
 
@@ -202,6 +234,8 @@ def ai_agreement_description(request):
     raw_description = (
         _scope_improvement_context(agreement, request.data)
         if mode == "improve" and agreement is not None
+        else _unsaved_scope_improvement_context(request.data)
+        if mode == "improve"
         else _compose_description_context(request.data)
     )
 

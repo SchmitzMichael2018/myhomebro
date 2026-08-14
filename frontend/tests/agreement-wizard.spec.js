@@ -194,6 +194,71 @@ test("Agreement Wizard prefills editable fields from Estimate Workspace handoff"
   await expect(page.getByTestId("agreement-step1-open-assistant")).toHaveAttribute("aria-expanded", "true");
 });
 
+test("unsaved accepted-Estimate Agreement can improve scope before save validation", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  const improvedScope = "Demolition\n- Remove existing bathroom finishes.\n\nInstallation\n- Complete accepted tile and fixture installation.";
+  const aiRequests = [];
+  const createRequests = [];
+  const patchRequests = [];
+  await page.route("**/api/projects/agreements/ai/description/", async (route) => {
+    aiRequests.push(route.request().postDataJSON());
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ description: improvedScope }),
+    });
+  });
+  await page.route(/\/api\/projects\/agreements\/?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "POST") {
+      createRequests.push(route.request().postDataJSON());
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ detail: "The accepted estimate milestone allocation does not reconcile to its contractual amount." }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
+  });
+  await page.route(/\/api\/projects\/agreements\/\d+\/?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "PATCH") patchRequests.push(route.request().postDataJSON());
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ detail: "Not found" }) });
+  });
+
+  await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("agreement-step1-open-assistant").click();
+  const assistant = page.getByTestId("assistant-desktop-dock");
+  const action = assistant.getByTestId("project-assistant-action-step1_improve_scope");
+  await action.click();
+  await expect(assistant.getByTestId("project-assistant-scope-status")).toContainText("Improving scope...");
+  await expect(action).toBeDisabled();
+  await expect(page.getByText("AI drafting needs a saved agreement", { exact: false })).toHaveCount(0);
+  await expect(page.getByTestId("scope-diff-view")).toContainText("Apply Improved Scope");
+
+  expect(aiRequests).toHaveLength(1);
+  const request = aiRequests[0];
+  expect(request.agreement_id).toBeNull();
+  expect(request.current_scope).toContain("Demo, prep, and install.");
+  expect(request.accepted_estimate.line_items.map((row) => row.description)).toEqual(["Crew labor", "Tile and fixtures"]);
+  expect(JSON.stringify(request)).not.toContain("Requested Timing");
+  expect(JSON.stringify(request)).not.toContain("Estimate Pricing");
+  expect(JSON.stringify(request)).not.toContain("$750.00");
+  expect(JSON.stringify(request)).not.toContain("Incidentals Reserve");
+
+  await page.getByRole("button", { name: "Apply Improved Scope" }).click();
+  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(improvedScope);
+  expect(patchRequests).toEqual([]);
+
+  await page.getByTestId("assistant-desktop-dock-close").click();
+  await page.getByRole("button", { name: "Save Draft", exact: true }).click();
+  await expect.poll(() => createRequests.length).toBe(1);
+  expect(createRequests[0].scope_of_work).toBe(improvedScope);
+  await expect(page.getByText("does not reconcile", { exact: false }).first()).toBeVisible();
+  expect(patchRequests).toEqual([]);
+});
+
 test("Project Assistant classification is visibly pending and remains advisory until applied", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);
