@@ -161,7 +161,7 @@ def _safe_text(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip()
 
 
-def _sanitize_improved_scope(value: Any) -> str:
+def _sanitize_improved_scope(value: Any, *, source_facts: Any = "") -> str:
     """Reject commercial/schedule prose even when a provider ignores the prompt."""
     prohibited_heading = re.compile(
         r"^(estimate pricing|pricing|requested timing|schedule|payment(?: information| timing| terms)?|incidentals reserve|total funding)\s*:?​?$",
@@ -174,6 +174,17 @@ def _sanitize_improved_scope(value: Any) -> str:
     )
     kept: list[str] = []
     skipping = False
+    source_text = _safe_text(source_facts).lower()
+    unsupported_concepts = (
+        (("hidden condition",), ("hidden condition",)),
+        (("engineering",), ("engineering",)),
+        (("permit",), ("permit",)),
+        (("utility relocation",), ("utility relocation",)),
+        (("specialty upgrade",), ("specialty upgrade",)),
+        (("site access", "access requirement"), ("site access", "access requirement", "access notes")),
+        (("material selection",), ("material selection",)),
+        (("verify measurements",), ("measurement",)),
+    )
     for raw_line in str(value or "").replace("\r\n", "\n").split("\n"):
         line = raw_line.strip()
         if prohibited_heading.match(line):
@@ -181,10 +192,24 @@ def _sanitize_improved_scope(value: Any) -> str:
             continue
         if skipping and heading.match(line) and not prohibited_heading.match(line):
             skipping = False
-        if skipping or prohibited_line.search(line):
+        normalized_line = line.lower()
+        unsupported = any(
+            any(term in normalized_line for term in output_terms)
+            and not any(evidence in source_text for evidence in source_terms)
+            for output_terms, source_terms in unsupported_concepts
+        )
+        if skipping or prohibited_line.search(line) or unsupported:
             continue
         kept.append(raw_line)
-    return "\n".join(kept).strip()
+    compacted: list[str] = []
+    for index, raw_line in enumerate(kept):
+        line = raw_line.strip()
+        if heading.match(line):
+            following = next((item.strip() for item in kept[index + 1 :] if item.strip()), "")
+            if not following or heading.match(following):
+                continue
+        compacted.append(raw_line)
+    return "\n".join(compacted).strip()
 
 
 def _format_scope_as_bullets(value: Any, *, add_defaults: bool = True) -> str:
@@ -476,7 +501,9 @@ def generate_or_improve_description(
 
     candidate_description = (payload.get("description") or "").strip()
     if mode == "improve":
-        candidate_description = _sanitize_improved_scope(candidate_description)
+        candidate_description = _sanitize_improved_scope(
+            candidate_description, source_facts=current_description
+        )
     desc = _format_scope_as_bullets(candidate_description, add_defaults=mode != "improve")
     draft_title = _safe_text(payload.get("project_title"))
     draft_type = _safe_text(payload.get("project_type"))

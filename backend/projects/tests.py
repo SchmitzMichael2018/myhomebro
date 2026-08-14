@@ -7580,13 +7580,74 @@ Requested Timing
 
 Exclusions
 - Painting is excluded."""
-        result = _sanitize_improved_scope(candidate)
+        result = _sanitize_improved_scope(candidate, source_facts="Painting is excluded.")
         self.assertIn("Remove the existing vanity", result)
         self.assertIn("Painting is excluded", result)
         self.assertNotIn("$12,850", result)
         self.assertNotIn("Incidentals Reserve", result)
         self.assertNotIn("Requested Timing", result)
         self.assertNotIn("September 1", result)
+
+    def test_improve_scope_output_filter_rejects_unsupported_generic_boilerplate(self):
+        from projects.ai.agreement_description_writer import _sanitize_improved_scope
+
+        candidate = """Included Work
+- Remove vanity and install shower tile.
+- Verify site access and measurements before work begins.
+
+Exclusions
+- Hidden condition repairs, engineering, permits, utility relocation, and specialty upgrades are excluded."""
+        result = _sanitize_improved_scope(
+            candidate,
+            source_facts="Remove vanity and install shower tile.",
+        )
+        self.assertIn("Remove vanity and install shower tile", result)
+        self.assertNotIn("site access", result.lower())
+        self.assertNotIn("measurements", result.lower())
+        self.assertNotIn("hidden condition", result.lower())
+        self.assertNotIn("engineering", result.lower())
+        self.assertNotIn("permits", result.lower())
+        self.assertNotIn("utility relocation", result.lower())
+        self.assertNotIn("specialty upgrades", result.lower())
+
+    def test_improve_scope_writer_sanitizes_provider_output_before_response(self):
+        from projects.ai.agreement_description_writer import generate_or_improve_description
+
+        raw_suggestion = """Demolition
+- Remove the existing vanity.
+
+Estimate Pricing
+- Subtotal: $12,850
+
+Exclusions
+- Hidden condition repairs, engineering, and permits are excluded."""
+        client = SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: SimpleNamespace(
+                    output_text=json.dumps({
+                        "project_title": "Bathroom Remodel",
+                        "project_type": "Remodel",
+                        "project_subtype": "Bathroom",
+                        "description": raw_suggestion,
+                    })
+                )
+            )
+        )
+        with patch(
+            "projects.ai.agreement_description_writer._require_openai_client",
+            return_value=client,
+        ):
+            result = generate_or_improve_description(
+                mode="improve",
+                project_title="Bathroom Remodel",
+                project_type="Remodel",
+                project_subtype="Bathroom",
+                current_description="Demolition:\n- Remove the existing vanity.",
+            )
+
+        self.assertEqual(result["description"], "Demolition\n- Remove the existing vanity.")
+        self.assertNotIn("$12,850", result["description"])
+        self.assertNotIn("Hidden condition", result["description"])
 
     def test_custom_taxonomy_is_contractor_owned_reusable_and_duplicate_safe(self):
         type_response = self.client.post(

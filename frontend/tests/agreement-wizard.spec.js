@@ -313,10 +313,12 @@ test("Project Assistant Improve Scope is advisory, visible, retryable, and scope
   };
   let descriptionCalls = 0;
   let shouldFail = true;
+  const descriptionRequests = [];
   const agreementPatches = [];
   const milestoneMutations = [];
   await page.route("**/api/projects/agreements/ai/description/", async (route) => {
     descriptionCalls += 1;
+    descriptionRequests.push(route.request().postDataJSON());
     await new Promise((resolve) => setTimeout(resolve, 350));
     if (shouldFail) {
       await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Unavailable" }) });
@@ -369,10 +371,28 @@ test("Project Assistant Improve Scope is advisory, visible, retryable, and scope
     "Improved scope ready. Review the suggested Scope of Work in Project Details."
   );
   expect(descriptionCalls).toBe(2);
+  const successfulRequest = descriptionRequests[1];
+  expect(successfulRequest.description).toBe(originalScope);
+  expect(successfulRequest.scope_of_work).toBe(originalScope);
+  expect(successfulRequest.current_description).toContain(originalScope);
+  expect(JSON.stringify(successfulRequest)).not.toContain("Estimate Line Items");
+  expect(JSON.stringify(successfulRequest)).not.toContain("$750.00");
   await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(originalScope);
   await expect(page.getByTestId("scope-diff-view")).toContainText("Apply Improved Scope");
+  await expect(page.getByTestId("scope-diff-view")).toContainText(originalScope);
+  await page.getByRole("button", { name: "Keep Current Scope" }).click();
+  await expect(page.getByTestId("scope-diff-view")).toHaveCount(0);
+  expect(agreementPatches).toEqual([]);
+
+  await action.click();
+  await expect(desktopAssistant.getByTestId("project-assistant-scope-status")).toContainText(
+    "Improved scope ready. Review the suggested Scope of Work in Project Details."
+  );
+  await page.getByRole("button", { name: "Edit before accepting" }).click();
+  const editedScope = "Remove existing finishes and install accepted tile and fixtures.";
+  await page.getByTestId("scope-diff-view").locator("textarea").fill(editedScope);
   await page.getByRole("button", { name: "Apply Improved Scope" }).click();
-  await expect(page.getByTestId("proposal-draft-textarea")).toContainText("Remove existing finishes");
+  await expect(page.getByTestId("proposal-draft-textarea")).toHaveValue(editedScope);
   expect(agreementPatches).toHaveLength(1);
   expect(Object.keys(agreementPatches[0]).sort()).toEqual(["scope_of_work"]);
   expect(milestoneMutations).toEqual([]);

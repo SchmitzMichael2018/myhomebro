@@ -1669,10 +1669,10 @@ function buildLocalAiScopeDraft({ mode, context, agreement, dLocal, selectedTemp
   const subtype = cleanScopeFallbackCandidate(dLocal?.project_subtype || agreement?.project_subtype);
   const type = cleanScopeFallbackCandidate(dLocal?.project_type || agreement?.project_type);
   const projectLabel = title || subtype || type || "the project";
-  const scopeIntro =
-    mode === "improve" && baseContext
-      ? baseContext
-      : `Work includes ${String(projectLabel).toLowerCase()} services based on the current agreement details.`;
+  if (mode === "improve") {
+    return baseContext ? formatGeneratedScopeAsBullets(baseContext) : "";
+  }
+  const scopeIntro = `Work includes ${String(projectLabel).toLowerCase()} services based on the current agreement details.`;
 
   return formatGeneratedScopeAsBullets(
     [
@@ -2118,6 +2118,10 @@ export default function Step1Details({
 
   function getScopeActionContext() {
     return buildStep1ScopeFallback({ agreement, dLocal, selectedTemplate });
+  }
+
+  function getCanonicalPersistedScope() {
+    return safeTrim(agreement?.scope_of_work || agreement?.description || "");
   }
 
   async function handleStep1Save(goNext = false) {
@@ -2874,7 +2878,10 @@ export default function Step1Details({
     setAiPreview("");
     setAiBusy(true);
 
-    const actionContext = getScopeActionContext() || "";
+    const actionContext =
+      mode === "improve"
+        ? getCanonicalPersistedScope() || getScopeActionContext() || ""
+        : getScopeActionContext() || "";
     const templateScope = cleanScopeFallbackCandidate(
       selectedTemplate?.scope_of_work ||
         selectedTemplate?.default_scope ||
@@ -2920,7 +2927,7 @@ export default function Step1Details({
             zip: dLocal.address_postal_code || null,
           } : null,
           milestoneCount: agreement?.milestone_count ?? agreement?.milestones?.length ?? 0,
-          existingScope: dLocal.description || null,
+          existingScope: actionContext || null,
           templateApplied: !!(agreement?.selected_template?.id || agreement?.selected_template_id),
           customerName: selectedCustomer?.full_name || selectedCustomer?.name || agreement?.homeowner_name || null,
           contractorTradeProfile: contractorBrandVoice?.skills ?? [],
@@ -2968,12 +2975,8 @@ export default function Step1Details({
         setStep1ValidationMessage(getStep1FriendlyErrorMessage(payload, fieldErrors));
         focusFirstStep1FieldError(fieldErrors);
       }
-      const fallbackDraft = buildLocalAiScopeDraft({
-        mode,
-        context: actionContext,
-        agreement,
-        dLocal,
-        selectedTemplate,
+      const fallbackDraft = mode === "improve" ? "" : buildLocalAiScopeDraft({
+        mode, context: actionContext, agreement, dLocal, selectedTemplate,
       });
       if (safeTrim(fallbackDraft)) {
         setAiPreview(fallbackDraft);
@@ -7980,7 +7983,7 @@ export default function Step1Details({
 
                 {aiPreview ? (
                   <ScopeDiffView
-                    original={safeTrim(dLocal.description)}
+                    original={getCanonicalPersistedScope() || safeTrim(dLocal.description)}
                     improved={aiPreview}
                     locked={locked}
                     acceptLabel="Apply Improved Scope"
