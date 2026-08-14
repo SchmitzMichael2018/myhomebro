@@ -189,9 +189,85 @@ test("Agreement Wizard prefills editable fields from Estimate Workspace handoff"
   await expect(page.getByTestId("agreement-step1-open-assistant")).toContainText("Open Project Assistant");
   await expect(page.getByTestId("agreement-ai-improve-classification-button")).toHaveCount(0);
   await expect(page.getByTestId("agreement-ai-improve-scope-button")).toHaveCount(0);
+  await expect(page.getByTestId("agreement-customer-select")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add Customer", exact: true })).toBeVisible();
   await page.getByTestId("agreement-step1-open-assistant").click();
   await expect(page.getByTestId("assistant-desktop-dock")).toBeVisible();
   await expect(page.getByTestId("agreement-step1-open-assistant")).toHaveAttribute("aria-expanded", "true");
+});
+
+test("Estimate-derived Agreement presents its authoritative customer without selection or duplicate creation", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  await page.addInitScript(() => {
+    const key = "mhb_first_project_assist_handoff";
+    const handoff = JSON.parse(window.sessionStorage.getItem(key) || "{}");
+    handoff.assistantPrefill = {
+      ...(handoff.assistantPrefill || {}),
+      homeowner_id: 77,
+      customer_name: "QA Homeowner",
+      email: "qa-homeowner@myhomebro.com",
+    };
+    handoff.assistantDraftPayload = {
+      ...(handoff.assistantDraftPayload || {}),
+      homeowner: 77,
+      homeowner_id: 77,
+      customer_id: 77,
+      customer_name: "QA Homeowner",
+      customer_email: "qa-homeowner@myhomebro.com",
+      customer_phone: "512-555-0177",
+    };
+    window.sessionStorage.setItem(key, JSON.stringify(handoff));
+  });
+  const customer = {
+    id: 77,
+    full_name: "QA Homeowner",
+    email: "qa-homeowner@myhomebro.com",
+    phone_number: "512-555-0177",
+    street_address: "123 Main St",
+    city: "Austin",
+    state: "TX",
+    zip_code: "78701",
+  };
+  await page.route("**/api/projects/homeowners**", async (route) => {
+    const isDetail = /\/homeowners\/77\/?(?:\?|$)/.test(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(isDetail ? customer : { results: [customer] }),
+    });
+  });
+
+  await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  const carried = page.getByTestId("agreement-carried-customer");
+  await expect(carried).toContainText("QA Homeowner");
+  await expect(carried).toContainText("qa-homeowner@myhomebro.com");
+  await expect(carried).toContainText("512-555-0177");
+  await expect(page.getByTestId("agreement-customer-select")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add Customer", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Change Customer", exact: true })).toHaveCount(0);
+
+  const persisted = {
+    id: 100,
+    homeowner: 77,
+    homeowner_name: customer.full_name,
+    homeowner_email: customer.email,
+    source_proposal_id: 42,
+    accepted_estimate_basis: { proposal_id: 42, review_version: 1, pricing_rows: [] },
+    project_title: "Bathroom Remodel",
+    project_type: "Bathroom",
+    project_subtype: "Refresh",
+    description: "Accepted bathroom scope.",
+    scope_of_work: "Accepted bathroom scope.",
+    status: "draft",
+    step_status: "step1",
+  };
+  await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(persisted) });
+  });
+  await page.goto("/app/agreements/100/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("agreement-carried-customer")).toContainText("QA Homeowner");
+  await expect(page.getByTestId("agreement-customer-select")).toHaveCount(0);
 });
 
 test("unsaved accepted-Estimate Agreement can improve scope before save validation", async ({ page }) => {

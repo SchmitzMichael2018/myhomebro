@@ -1307,12 +1307,14 @@ export default function AgreementWizard() {
       "";
     const nextQaEmail = prefill.email || draftPayload.email || "";
 
-    if (isBlankAssistantValue(dLocal?.homeowner) && !isBlankAssistantValue(nextQaName)) {
+    if (isBlankAssistantValue(mappedDraft.homeowner) && !isBlankAssistantValue(nextQaName)) {
       setQaName((prev) => {
         if (!isBlankAssistantValue(prev)) return prev;
         return nextQaName;
       });
       setShowQuickAdd(true);
+    } else if (!isBlankAssistantValue(mappedDraft.homeowner)) {
+      setShowQuickAdd(false);
     }
     if (!isBlankAssistantValue(nextQaEmail)) {
       setQaEmail((prev) => {
@@ -2063,7 +2065,8 @@ export default function AgreementWizard() {
           String(dLocal.project_type || "").trim() &&
           String(dLocal.project_subtype || "").trim() &&
           String(dLocal.project_title || "").trim() &&
-          String(dLocal.description || "").trim()
+          String(dLocal.description || "").trim() &&
+          String(dLocal.homeowner || "").trim()
         ),
       },
       template_id:

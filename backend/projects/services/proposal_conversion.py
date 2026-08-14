@@ -113,6 +113,13 @@ def prepare_proposal_conversion(*, contractor, proposal_id: int) -> ProposalConv
         "project_type": proposal.project_type,
         "project_subtype": proposal.project_subtype,
     })
+    opportunity = proposal.contractor_opportunity
+    authoritative_customer_id = (
+        getattr(opportunity, "converted_customer_id", None)
+        or getattr(opportunity, "customer_id", None)
+    )
+    if authoritative_customer_id:
+        trusted_payload["homeowner"] = authoritative_customer_id
     return ProposalConversionContext(proposal, latest, None, trusted_payload, proposal.selected_template)
 
 

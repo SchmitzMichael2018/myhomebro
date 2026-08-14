@@ -17,6 +17,7 @@ export default function CustomerSection({
   customerAddrLoading,
   customerAddrMissing,
   selectedCustomer,
+  authoritativeCustomer,
   showQuickAdd,
   setShowQuickAdd,
   qaName,
@@ -27,6 +28,45 @@ export default function CustomerSection({
   onQuickAdd,
 }) {
   const customerLabel = customerDisplayName(selectedCustomer);
+  const carriedCustomerLabel = customerDisplayName(authoritativeCustomer);
+
+  if (authoritativeCustomer) {
+    return (
+      <div className="md:col-span-2" data-testid="agreement-carried-customer">
+        <div className="text-sm font-medium">Customer</div>
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="font-semibold text-slate-900">{carriedCustomerLabel || "Current customer"}</div>
+          {authoritativeCustomer.email ? (
+            <div className="mt-1 text-sm text-slate-600">{authoritativeCustomer.email}</div>
+          ) : null}
+          {authoritativeCustomer.phone_number || authoritativeCustomer.phone ? (
+            <div className="mt-1 text-sm text-slate-600">
+              {authoritativeCustomer.phone_number || authoritativeCustomer.phone}
+            </div>
+          ) : null}
+          <div className="mt-2 text-xs text-slate-500">
+            Carried from the accepted Estimate. Customer identity is preserved for this Agreement.
+          </div>
+        </div>
+
+        {customerAddrLoading ? (
+          <div className="mt-2 text-xs text-gray-500">Checking customer address...</div>
+        ) : customerAddrMissing?.length ? (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <div className="font-semibold">{carriedCustomerLabel} - Address Required</div>
+            <div className="mt-1 text-xs text-amber-900/90">
+              Complete the customer address before signing or finalizing this Agreement.
+            </div>
+            <ul className="mt-2 ml-5 list-disc text-xs text-amber-900/90">
+              {customerAddrMissing.map((field) => (
+                <li key={field}>{niceCustomerFieldLabel(field)}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <>

@@ -222,7 +222,10 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
     synchronize_proposal_lifecycle(proposal)
     appointment = getattr(proposal, "estimate_appointment", None)
     opportunity = getattr(proposal, "contractor_opportunity", None)
-    customer_id = getattr(opportunity, "converted_customer_id", None)
+    customer_id = (
+        getattr(opportunity, "converted_customer_id", None)
+        or getattr(opportunity, "customer_id", None)
+    )
     linked_agreement = proposal.converted_agreement or (getattr(opportunity, "converted_agreement", None) if opportunity else None)
     linked_opportunity_title = getattr(opportunity, "project_title", "") if opportunity else ""
     linked_agreement_title = ""

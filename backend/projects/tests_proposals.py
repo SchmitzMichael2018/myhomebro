@@ -795,8 +795,13 @@ class ProposalWorkspaceFoundationTests(TestCase):
 
     def test_accepted_proposal_conversion_is_authoritative_transactional_and_idempotent(self):
         homeowner, proposal, review = self._accepted_proposal_for_conversion()
+        different_homeowner = Homeowner.objects.create(
+            created_by=self.contractor, full_name="Different Customer", email="different@example.com"
+        )
+        self.opportunity.converted_customer = homeowner
+        self.opportunity.save(update_fields=["converted_customer", "updated_at"])
         payload = {
-            "source_proposal_id": proposal.id, "homeowner": homeowner.id, "project_title": "Tampered title",
+            "source_proposal_id": proposal.id, "homeowner": different_homeowner.id, "project_title": "Tampered title",
             "description": "Tampered scope", "total_cost": "9999.00", "is_draft": True, "wizard_step": 1, "step_status": "step1",
         }
         created = self.client.post("/api/projects/agreements/", payload, format="json")
@@ -805,6 +810,7 @@ class ProposalWorkspaceFoundationTests(TestCase):
         agreement = Agreement.objects.get(pk=agreement_id)
         proposal.refresh_from_db(); self.opportunity.refresh_from_db()
         self.assertEqual(agreement.total_cost, 500)
+        self.assertEqual(agreement.homeowner, homeowner)
         self.assertIn("Install cabinets", agreement.description)
         self.assertNotIn("Tampered", agreement.description)
         self.assertEqual(proposal.converted_agreement, agreement)

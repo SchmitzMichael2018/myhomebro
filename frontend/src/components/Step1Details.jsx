@@ -3689,6 +3689,29 @@ export default function Step1Details({
     savedTemplateId: persistedAgreementTemplateId,
   });
   const hasAuthoritativeEstimateProvenance = primarySetupSource === "estimate_provenance";
+  const authoritativeEstimateCustomerId =
+    dLocal?.homeowner ||
+    agreement?.homeowner ||
+    assistantDraftPayload?.homeowner_id ||
+    assistantDraftPayload?.customer_id ||
+    null;
+  const hasAuthoritativeEstimateCustomer = Boolean(
+    hasAuthoritativeEstimateProvenance && authoritativeEstimateCustomerId
+  );
+  const estimateCustomerFallback = {
+    id: authoritativeEstimateCustomerId,
+    full_name:
+      agreement?.homeowner_name ||
+      assistantDraftPayload?.customer_name ||
+      assistantDraftPayload?.homeowner_name ||
+      "",
+    email:
+      agreement?.homeowner_email ||
+      assistantDraftPayload?.customer_email ||
+      assistantDraftPayload?.email ||
+      "",
+    phone_number: assistantDraftPayload?.customer_phone || "",
+  };
   const hasSavedAgreementSetup = primarySetupSource === "saved_agreement_setup";
   const allowAiSetupRecommendation = primarySetupSource === "ai_recommendation";
 
@@ -8106,7 +8129,11 @@ export default function Step1Details({
 
             <StepSection
               title="Customer"
-              description="Select the customer for this agreement, or add one quickly if you need to keep moving."
+              description={
+                hasAuthoritativeEstimateCustomer
+                  ? "Customer carried from the accepted Estimate."
+                  : "Select the customer for this agreement, or add one quickly if you need to keep moving."
+              }
               className={supportSectionClass}
               highlighted={hasAiSectionHighlight("homeowner", "customer_contact")}
             >
@@ -8122,6 +8149,11 @@ export default function Step1Details({
                   customerAddrLoading={customerAddrLoading}
                   customerAddrMissing={customerAddrMissing}
                   selectedCustomer={selectedCustomer}
+                  authoritativeCustomer={
+                    hasAuthoritativeEstimateCustomer
+                      ? selectedCustomer || estimateCustomerFallback
+                      : null
+                  }
                   showQuickAdd={showQuickAdd}
                   setShowQuickAdd={setShowQuickAdd}
                   qaName={qaName}
