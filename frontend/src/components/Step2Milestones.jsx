@@ -5355,71 +5355,25 @@ export default function Step2Milestones({
   return (
     <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <section
-        className={`rounded-2xl border px-4 py-4 shadow-sm ${
-          isCommercialProject
-            ? "border-slate-300 bg-gradient-to-br from-slate-50 via-white to-blue-50/50"
-            : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-sky-50/40"
-        }`}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 shadow-sm"
         data-testid="step2-workflow-panel"
       >
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="max-w-3xl">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">
-              {step2ModeMeta.workspaceEyebrow}
-            </div>
-            <h3 className="mt-1 text-xl font-semibold text-slate-950">{step2ModeMeta.workspaceTitle}</h3>
-          </div>
-          <div className="grid min-w-[280px] grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Project path</div>
-              <div className="mt-1 text-sm font-semibold text-slate-900" data-testid="step2-project-class-label">
-                {projectClassLabel(projectClass)}
-              </div>
-              <div className="mt-1 text-xs text-slate-600">
-                {isCommercialProject ? "Structured workflow" : "Homeowner-friendly workflow"}
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {step2ModeMeta.timelineLabel}
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {minStart && maxEnd ? `${friendly(minStart)}  ${friendly(maxEnd)}` : "Add dates to map timing"}
-              </div>
-              <div className="mt-1 text-xs text-slate-600">
-                {effectiveMilestones.length} milestone{effectiveMilestones.length === 1 ? "" : "s"} planned
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                {isCommercialProject ? "Billing structure" : "Planning style"}
-              </div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {isProgressPayments
-                  ? "Progress-payment aware"
-                  : isCommercialProject
-                  ? "Commercial milestone billing"
-                  : "Simple milestone billing"}
-              </div>
-              <div className="mt-1 text-xs text-slate-600">
-                {isProgressPayments
-                  ? "Supports draw-request planning after signing."
-                  : isCommercialProject
-                  ? "Keeps commercial milestones structured without draw schedules."
-                  : "Designed to stay easy for customers to follow."}
-              </div>
-            </div>
-          </div>
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-600">Milestones</div>
+          <h3 className="mt-1 text-xl font-semibold text-slate-950">Payment Milestones</h3>
+          <p className="mt-2 text-sm text-slate-600">
+            Review the payment milestones generated from the accepted estimate. Adjust them if needed before sending the agreement.
+          </p>
         </div>
       </section>
 
-      <CommercialPaymentOverviewPanel
+      {SHOW_LEGACY_STEP2_PANELS && <CommercialPaymentOverviewPanel
         agreementMeta={agreementMeta}
         effectiveMilestones={effectiveMilestones}
         paymentStructure={paymentStructure}
-      />
+      />}
 
-      <section
+      {SHOW_LEGACY_STEP2_PANELS && <section
         data-testid="milestone-planning-panel"
         className="rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-4 shadow-sm"
       >
@@ -5642,9 +5596,9 @@ export default function Step2Milestones({
             </div>
           </div>
         </div>
-      </section>
+      </section>}
 
-      <section
+      {SHOW_LEGACY_STEP2_PANELS && <section
         data-testid="step2-subcontractor-plan-panel"
         className="mb-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 shadow-sm"
       >
@@ -5714,7 +5668,7 @@ export default function Step2Milestones({
             </button>
           </div>
         </div>
-      </section>
+      </section>}
 
       {milestonesLocked ? (
         <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -5949,7 +5903,7 @@ export default function Step2Milestones({
         </section>
       ) : null}
 
-      {showPricingReviewPrompt ? (
+      {SHOW_LEGACY_STEP2_PANELS && showPricingReviewPrompt ? (
         <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -5992,7 +5946,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      <section
+      {SHOW_LEGACY_STEP2_PANELS && <section
         className="mb-4 rounded-2xl border border-sky-200 bg-sky-50/70 shadow-sm"
         data-testid="step2-plan-guidance-card"
       >
@@ -6147,9 +6101,9 @@ export default function Step2Milestones({
             </div>
           </div>
         </div>
-      </section>
+      </section>}
 
-      {rebalancePrompt ? (
+      {SHOW_LEGACY_STEP2_PANELS && rebalancePrompt ? (
         <section
           className="mb-4 rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-4 shadow-sm"
           data-testid="step2-pricing-rebalance-confirmation"
@@ -7267,12 +7221,10 @@ export default function Step2Milestones({
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h4 className="text-base font-semibold text-slate-950">
-              {isCommercialProject ? "Review the schedule of values" : "Review the work plan"}
+              Payment Milestones
             </h4>
             <p className="mt-1 text-sm text-slate-600">
-              {isCommercialProject
-                ? "Expand a card to edit it inline. Drag cards to reorder the schedule."
-                : "Expand a card to edit it inline. Drag cards to reorder the plan."}
+              Expand a milestone to edit it. Drag milestones to change their order.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -7285,7 +7237,7 @@ export default function Step2Milestones({
             >
               {newMilestoneOpen ? "Hide Add Milestone" : "+ Add Milestone"}
             </button>
-            {effectiveMilestones.length ? (
+            {SHOW_LEGACY_STEP2_PANELS && effectiveMilestones.length ? (
               <button
                 type="button"
                 onClick={() => {
@@ -7302,11 +7254,13 @@ export default function Step2Milestones({
           </div>
         </div>
 
-        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600">
-          AI milestone generation coming next.
-        </div>
+        {SHOW_LEGACY_STEP2_PANELS ? (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600">
+            AI milestone generation coming next.
+          </div>
+        ) : null}
 
-        <div
+        {SHOW_LEGACY_STEP2_PANELS && <div
           className="mt-4 rounded-2xl border border-sky-300/25 bg-slate-950/45 p-4 shadow-sm shadow-slate-950/20 ring-1 ring-white/5"
           data-testid="step2-project-start-date-card"
         >
@@ -7359,7 +7313,7 @@ export default function Step2Milestones({
               </button>
             </div>
           </div>
-        </div>
+        </div>}
 
         {newMilestoneOpen ? (
           <div
@@ -7455,7 +7409,7 @@ export default function Step2Milestones({
           </div>
         ) : null}
 
-        {isProgressPayments || isCommercialProject ? (
+        {SHOW_LEGACY_STEP2_PANELS && (isProgressPayments || isCommercialProject) ? (
           <div className="mb-4 rounded-xl border border-indigo-200 bg-indigo-50/70 p-4 text-sm text-indigo-900">
             <div className="font-semibold">
               {isProgressPayments ? step2ModeMeta.progressPanelTitle : step2ModeMeta.simplePanelTitle}
@@ -7466,7 +7420,7 @@ export default function Step2Milestones({
           </div>
         ) : null}
 
-        <section
+        {SHOW_LEGACY_STEP2_PANELS && <section
           data-testid="step2-pricing-readiness-panel"
           className={`mb-4 rounded-2xl border px-4 py-4 text-sm ${
             pricingReadinessCopy.tone === "danger"
@@ -7494,7 +7448,7 @@ export default function Step2Milestones({
               </span>
             </div>
           </div>
-        </section>
+        </section>}
 
         {effectiveMilestones.length ? (
           <div className="space-y-3">
@@ -7505,15 +7459,6 @@ export default function Step2Milestones({
               <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
                 Total: {formatCurrency(total)}
               </span>
-              <span className="rounded-full bg-slate-50 px-2 py-1 font-medium">
-                Path: {projectContextSummary.projectType || projectContextSummary.projectSubtype || projectContextSummary.projectTitle || projectContextSummary.projectFamilyLabel || projectClassLabel(projectClass)}
-              </span>
-            </div>
-            <div
-              className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-medium text-sky-900"
-              data-testid="step2-milestone-generation-context"
-            >
-              Milestones generated for: {milestoneGenerationContextLabel}
             </div>
             <div className="text-xs text-slate-500">Drag to reorder. Click edit to customize.</div>
 

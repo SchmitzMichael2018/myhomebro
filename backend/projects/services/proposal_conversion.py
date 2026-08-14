@@ -80,7 +80,12 @@ def accepted_estimate_milestone_reconciliation(*, proposal: Proposal, agreement=
         }
         for row in missing_rows
     ]
-    reconciles = difference == Decimal("0.00") and not missing and not modified_milestones
+    # Agreement milestones remain editable before sending. The accepted Estimate
+    # is the immutable pricing authority, but its original per-milestone split is
+    # provenance rather than a requirement that prevents a contractor from
+    # splitting or rebalancing the Agreement payment schedule. Readiness depends
+    # on exact commercial-total reconciliation and complete accepted lineage.
+    reconciles = difference == Decimal("0.00") and not missing
     return {
         "status": "reconciled" if reconciles else "blocked",
         "reconciles": reconciles,

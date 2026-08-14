@@ -1013,6 +1013,24 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(accepted.snapshot["pricing"]["line_items"][0]["total"], "1000.00")
         self.assertNotIn("source_template_milestone_id", public_customer_snapshot(accepted.snapshot)["pricing"]["line_items"][0])
 
+        # Contractors may split the generated payment structure without
+        # changing the immutable accepted Estimate commercial total.
+        milestone.amount = Decimal("400.00")
+        milestone.save(update_fields=["amount"])
+        Milestone.objects.create(
+            agreement=milestone.agreement,
+            title="Demolition completion",
+            amount=Decimal("600.00"),
+            order=2,
+        )
+        reconciliation = self.client.get(
+            f"/api/projects/agreements/{milestone.agreement_id}/"
+        ).data["accepted_estimate_basis"]["milestone_reconciliation"]
+        self.assertTrue(reconciliation["reconciles"])
+        self.assertEqual(reconciliation["actual_milestone_amount"], "1000.00")
+        accepted.refresh_from_db()
+        self.assertEqual(accepted.snapshot["pricing"]["line_items"][0]["total"], "1000.00")
+
     def test_template_estimate_missing_lineage_creates_blocked_draft_without_guessing(self):
         homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=707)
         template = ProjectTemplate.objects.create(contractor=self.contractor, name="Authoritative bathroom template")
