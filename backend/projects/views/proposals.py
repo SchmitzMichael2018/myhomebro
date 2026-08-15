@@ -1216,6 +1216,12 @@ class ProposalTemplatePricingApplyView(APIView):
                     unit="ea",
                     unit_price=milestone.suggested_amount_fixed,
                     notes=(milestone.description or milestone.pricing_source_note or "")[:2000],
+                    source_template=template,
+                    source_template_milestone=milestone,
+                    source_milestone_key=milestone.normalized_milestone_type[:128],
+                    source_milestone_name=milestone.title[:255],
+                    source_milestone_order=milestone.sort_order,
+                    source_allocation_percent=milestone.suggested_amount_percent,
                 )
                 for milestone in reusable
             ]

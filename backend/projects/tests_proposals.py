@@ -1443,6 +1443,10 @@ class ProposalWorkspaceFoundationTests(TestCase):
         copied = proposal.line_items.get()
         self.assertNotEqual(copied.id, milestone.id)
         self.assertEqual(copied.description, milestone.title)
+        self.assertEqual(copied.source_template_id, template.id)
+        self.assertEqual(copied.source_template_milestone_id, milestone.id)
+        self.assertEqual(copied.source_milestone_name, milestone.title)
+        self.assertEqual(copied.source_milestone_order, milestone.sort_order)
         proposal.refresh_from_db()
         self.assertEqual(proposal.selected_template_id, template.id)
         self.assertEqual(proposal.pricing_template_name_snapshot, template.name)
@@ -1450,6 +1454,118 @@ class ProposalWorkspaceFoundationTests(TestCase):
         copied.save()
         milestone.refresh_from_db()
         self.assertEqual(milestone.title, "Cabinet installation")
+
+    def test_fixed_price_template_negotiation_carries_exact_lineage_into_agreement(self):
+        homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Casey Homeowner",
+            email="casey@example.com",
+        )
+        self.opportunity.converted_customer = homeowner
+        self.opportunity.save(update_fields=["converted_customer", "updated_at"])
+        proposal = Proposal.objects.create(
+            contractor=self.contractor,
+            contractor_opportunity=self.opportunity,
+            source_type=Proposal.SOURCE_OPPORTUNITY,
+            source_id=self.opportunity.id,
+            status=Proposal.STATUS_IN_PROGRESS,
+            project_title="Bathroom Remodel",
+            project_summary="Accepted bathroom remodel scope.",
+            customer_name="Casey Homeowner",
+            customer_email="casey@example.com",
+            service_location="123 Main St",
+        )
+        template = ProjectTemplate.objects.create(
+            contractor=self.contractor,
+            name="Bathroom Negotiation Template",
+        )
+        template_rows = [
+            ("Demolition", "3000.00", "demolition"),
+            ("Plumbing & Electrical Prep", "3000.00", "rough-in"),
+            ("Tile & Shower Install", "3000.00", "tile-install"),
+            ("Fixture Install", "3850.00", "fixture-install"),
+        ]
+        for order, (title, amount, key) in enumerate(template_rows, start=1):
+            ProjectTemplateMilestone.objects.create(
+                template=template,
+                title=title,
+                sort_order=order,
+                normalized_milestone_type=key,
+                suggested_amount_fixed=Decimal(amount),
+            )
+
+        applied = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/apply-template-pricing/",
+            {"template_id": template.id, "mode": "replace", "confirm_replace": True},
+            format="json",
+        )
+        self.assertEqual(applied.status_code, 200, applied.data)
+        negotiated = ["1000.00", "1950.00", "4950.00", "4950.00"]
+        source_ids = []
+        for line, amount in zip(proposal.line_items.order_by("source_milestone_order"), negotiated):
+            source_ids.append(line.source_template_milestone_id)
+            updated = self.client.patch(
+                f"/api/projects/proposals/{proposal.id}/line-items/{line.id}/",
+                {"unit_price": amount},
+                format="json",
+            )
+            self.assertEqual(updated.status_code, 200, updated.data)
+            line.refresh_from_db()
+            self.assertIsNotNone(line.source_template_milestone_id)
+            self.assertTrue(line.source_milestone_key)
+
+        ProposalLineItem.objects.create(
+            proposal=proposal,
+            category=ProposalLineItem.CATEGORY_INCIDENTALS_RESERVE,
+            description="Incidentals reserve",
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("1500.00"),
+        )
+        accepted_snapshot = build_customer_snapshot(proposal)
+        review = ProposalReviewVersion.objects.create(
+            proposal=proposal,
+            version=1,
+            customer_email=proposal.customer_email,
+            snapshot=accepted_snapshot,
+            decision=ProposalReviewVersion.DECISION_ACCEPTED,
+            decided_at=timezone.now(),
+            accepted_by="Casey Homeowner",
+            acceptance_acknowledgement=ACKNOWLEDGEMENT,
+        )
+        proposal.status = Proposal.STATUS_ACCEPTED
+        proposal.save(update_fields=["status", "updated_at"])
+
+        snapshot_rows = [
+            row for row in review.snapshot["pricing"]["line_items"]
+            if row["category"] != ProposalLineItem.CATEGORY_INCIDENTALS_RESERVE
+        ]
+        self.assertEqual([row["source_template_milestone_id"] for row in snapshot_rows], source_ids)
+        self.assertEqual([row["total"] for row in snapshot_rows], negotiated)
+
+        converted = self.client.post(
+            "/api/projects/agreements/",
+            {"source_proposal_id": proposal.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1},
+            format="json",
+        )
+        self.assertEqual(converted.status_code, 201, converted.data)
+        agreement = Agreement.objects.get(pk=converted.data["id"])
+        self.assertEqual(
+            list(agreement.milestones.order_by("order").values_list("title", "amount")),
+            [(title, Decimal(amount)) for (title, _default, _key), amount in zip(template_rows, negotiated)],
+        )
+        self.assertEqual(agreement.total_cost, Decimal("12850.00"))
+        self.assertEqual(agreement.incidentals_reserve_amount, Decimal("1500.00"))
+        self.assertEqual(converted.data["escrow_funding_summary"]["total_required"], "14350.00")
+        self.assertTrue(converted.data["accepted_estimate_basis"]["milestone_reconciliation"]["reconciles"])
+        self.assertEqual(ProposalReviewVersion.objects.get(pk=review.pk).snapshot, accepted_snapshot)
+
+        repeated = self.client.post(
+            "/api/projects/agreements/",
+            {"source_proposal_id": proposal.id, "homeowner": homeowner.id, "is_draft": True, "wizard_step": 1},
+            format="json",
+        )
+        self.assertEqual(repeated.status_code, 200, repeated.data)
+        self.assertEqual(agreement.milestones.count(), 4)
 
     def test_template_pricing_rejects_another_contractors_template(self):
         proposal = Proposal.objects.create(contractor=self.contractor, source_type=Proposal.SOURCE_OPPORTUNITY, source_id=self.opportunity.id, project_title="Kitchen Refresh")
