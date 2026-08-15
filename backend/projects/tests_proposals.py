@@ -1076,7 +1076,13 @@ class ProposalWorkspaceFoundationTests(TestCase):
         ]
         for order, (description, amount, key) in enumerate(rows, start=1):
             source = ProjectTemplateMilestone.objects.create(
-                template=template, title=description, sort_order=order, normalized_milestone_type=key
+                template=template,
+                title=description,
+                sort_order=order,
+                normalized_milestone_type=key,
+                # Deliberately even defaults prove conversion uses the
+                # negotiated accepted prices instead of template weights.
+                suggested_amount_percent=Decimal("25.00"),
             )
             ProposalLineItem.objects.create(
                 proposal=proposal, category=ProposalLineItem.CATEGORY_LABOR,
@@ -1101,6 +1107,14 @@ class ProposalWorkspaceFoundationTests(TestCase):
         agreement = Agreement.objects.get(pk=response.data["id"])
         self.assertEqual(agreement.total_cost, 12850)
         self.assertEqual(agreement.incidentals_reserve_amount, 1500)
+        self.assertEqual(
+            list(agreement.milestones.order_by("order").values_list("title", "amount")),
+            [(title, Decimal(amount)) for title, amount, _key in rows],
+        )
+        self.assertEqual(
+            list(agreement.milestones.order_by("order").values_list("accepted_estimate_source_key", flat=True)),
+            [key for _title, _amount, key in rows],
+        )
         self.assertEqual(sum(agreement.milestones.values_list("amount", flat=True), Decimal("0.00")), Decimal("12850.00"))
         basis = response.data["accepted_estimate_basis"]
         self.assertEqual(basis["subtotal"], "12850.00")

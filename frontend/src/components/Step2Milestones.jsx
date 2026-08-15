@@ -4838,19 +4838,6 @@ export default function Step2Milestones({
     if (debounceRef.current) clearTimeout(debounceRef.current);
     await persistAnswersToAgreement(null, { source: "user" });
 
-    if (agreementId) {
-      const validation = await validatePlanningTimeline();
-      const status = String(validation?.status || validation?.summary?.status || "").toLowerCase();
-      const acknowledged = Boolean(
-        validation?.acknowledged_at ||
-          agreementMeta?.planning_validation_acknowledged_at
-      );
-      if ((status === "needs_review" || status === "hard_conflict") && !acknowledged) {
-        toast.error("Acknowledge the planning validation warning before continuing.");
-        return;
-      }
-    }
-
     if (!clarReviewed) {
       pendingNextRef.current = true;
       setClarOpen(true);
@@ -4882,6 +4869,11 @@ export default function Step2Milestones({
     if (autoDraftBusy) return;
     if (milestonesLocked || templateApplied) return;
     if (!agreementMeta) return;
+    // Accepted Estimate Agreements must hydrate only their persisted,
+    // immutable-snapshot-derived commercial allocation. Never race that API
+    // hydration with AI/template pricing or fabricate rows for malformed
+    // historical Estimates that intentionally remain unreconciled.
+    if (acceptedEstimateBasis) return;
     if (effectiveMilestones.length > 0) return;
     if (milestoneUserModifiedRef.current || isCreateDraftDirty) return;
 
@@ -4951,6 +4943,7 @@ export default function Step2Milestones({
   }, [
     agreementId,
     agreementMeta,
+    acceptedEstimateBasis,
     autoDraftBusy,
     effectiveMilestones.length,
     isCreateDraftDirty,

@@ -398,6 +398,7 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   ];
   let createCount = 0;
   let patchCount = 0;
+  const milestoneMutations = [];
   await page.route("**/api/projects/homeowners**", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
@@ -411,11 +412,16 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
     if (route.request().method() === "PATCH") patchCount += 1;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) });
   });
-  await page.route("**/api/projects/milestones/**", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ results: milestones }),
-  }));
+  await page.route("**/api/projects/milestones/**", (route) => {
+    if (route.request().method() !== "GET") {
+      milestoneMutations.push({ method: route.request().method(), data: route.request().postDataJSON() });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ results: milestones }),
+    });
+  });
 
   await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Save & Next" }).click();
@@ -424,6 +430,12 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$1,500.00");
   await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$14,350.00");
   await expect(page.getByText("Fixture Install").first()).toBeVisible();
+  for (const amount of ["$1,000.00", "$1,950.00", "$4,950.00"]) {
+    await expect(page.getByText(amount, { exact: true }).first()).toBeVisible();
+  }
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.getByText("$1,950.00", { exact: true }).first()).toBeVisible();
+  expect(milestoneMutations).toEqual([]);
   expect(createCount).toBe(1);
   expect(patchCount).toBeGreaterThanOrEqual(1);
 });
@@ -460,7 +472,11 @@ test("Step 2 names accepted rows that lack exact milestone lineage", async ({ pa
     },
   };
   await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) }));
-  await page.route("**/api/projects/milestones/**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) }));
+  const milestoneMutations = [];
+  await page.route("**/api/projects/milestones/**", (route) => {
+    if (route.request().method() !== "GET") milestoneMutations.push(route.request().method());
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: [] }) });
+  });
 
   await page.goto("/app/agreements/100/wizard?step=2", { waitUntil: "domcontentloaded" });
   const blocker = page.getByTestId("step2-estimate-reconciliation-blocker");
@@ -470,6 +486,7 @@ test("Step 2 names accepted rows that lack exact milestone lineage", async ({ pa
   await expect(blocker).toContainText("Fixture Install: $4,950.00");
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("step2-estimate-reconciliation-blocker")).toBeVisible();
+  expect(milestoneMutations).toEqual([]);
 });
 
 test("Project Assistant classification is visibly pending and remains advisory until applied", async ({ page }) => {
