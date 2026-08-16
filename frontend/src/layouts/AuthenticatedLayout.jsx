@@ -39,14 +39,22 @@ export default function AuthenticatedLayout() {
         <div className="mhb-authenticated-content">
           <MobileSidebarShell sidebar={<Sidebar variant="plain" />}>
             <AssistantDockProvider>
-              <div className="pointer-events-none fixed right-4 top-4 z-40">
+              <header
+                className="pointer-events-none fixed z-40"
+                style={{
+                  right: "max(1rem, env(safe-area-inset-right, 0px))",
+                  top: "max(1rem, env(safe-area-inset-top, 0px))",
+                }}
+                aria-label="Application actions"
+                data-testid="global-header-actions"
+              >
                 <div className="pointer-events-auto flex items-center gap-2">
                   {isCaptureInboxEnabled() ? <CaptureLauncher /> : null}
                   <GlobalCopilotTrigger />
                   <AppearanceMenu />
                   <NotificationBell />
                 </div>
-              </div>
+              </header>
               <div className="flex h-screen w-full overflow-hidden">
                 <Sidebar />
                 <main

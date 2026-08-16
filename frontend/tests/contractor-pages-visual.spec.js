@@ -1101,7 +1101,7 @@ test('capture contractor dashboard for visual QA review', async ({ page }) => {
 
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.getByTestId('assistant-dock-open-button').click();
-  await expect(page.getByTestId('assistant-dock-open-button')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('assistant-dock-open-button')).toHaveAttribute('aria-expanded', 'true');
   const assistantScreenshotPath = path.join(OUT_DIR_REL, 'contractor-dashboard-assistant-open.png');
   await page.screenshot({ path: assistantScreenshotPath, fullPage: false });
   console.log(`[visual-qa] captured Dashboard assistant state -> ${assistantScreenshotPath}`);

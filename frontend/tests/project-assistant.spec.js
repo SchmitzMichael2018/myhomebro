@@ -355,10 +355,39 @@ test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat 
   });
 
   await expect(page.getByTestId('step2-milestone-card-list')).toBeVisible();
-  await page.getByTestId('assistant-dock-open-button').click();
+  const headerActions = page.getByTestId('global-header-actions');
+  const launcher = page.getByTestId('assistant-dock-open-button');
+  await expect(headerActions).toBeVisible();
+  await expect(launcher).toHaveCount(1);
+  await expect(launcher).toHaveAttribute('aria-label', 'Open Project Assistant');
+  await expect(launcher).toHaveAttribute('title', 'Project Assistant');
+  await expect(launcher).toHaveAttribute('aria-expanded', 'false');
+  await expect(launcher).not.toContainText('Project Assistant');
+  await expect
+    .poll(() =>
+      headerActions.locator('button').evaluateAll((buttons) =>
+        buttons
+          .map((button) => button.dataset.testid)
+          .filter((testId) =>
+            [
+              'assistant-dock-open-button',
+              'appearance-menu-trigger',
+              'notifications-bell-button',
+            ].includes(testId)
+          )
+      )
+    )
+    .toEqual([
+      'assistant-dock-open-button',
+      'appearance-menu-trigger',
+      'notifications-bell-button',
+    ]);
+  await launcher.click();
+  await expect(launcher).toHaveAttribute('aria-expanded', 'true');
 
   const dock = page.getByTestId('assistant-desktop-dock');
   await expect(dock).toBeVisible();
+  await page.screenshot({ path: 'test-results/project-assistant-header-desktop.png', fullPage: true });
   await expect(dock).toContainText('Project Assistant');
 
   const panel = dock.getByTestId('project-assistant-panel');
@@ -396,7 +425,7 @@ test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat 
   await expect(panel).not.toContainText('Copilot');
 });
 
-test('mobile Project Assistant launcher stays fixed and preserves the Agreement route', async ({ page }) => {
+test('mobile header Project Assistant preserves the Agreement route and restores focus', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installAgreementWizardStep2Mocks(page);
   await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
@@ -405,13 +434,19 @@ test('mobile Project Assistant launcher stays fixed and preserves the Agreement 
   const launcher = page.getByTestId('assistant-dock-open-button');
   await expect(launcher).toHaveCount(1);
   await expect(launcher).toBeVisible();
-  await expect(launcher).toHaveCSS('position', 'fixed');
+  await expect(page.getByTestId('global-header-actions')).toBeVisible();
+  await expect(launcher).not.toHaveCSS('position', 'fixed');
+  await expect(launcher).toHaveCSS('width', '44px');
+  await expect(launcher).toHaveCSS('height', '44px');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const initialUrl = page.url();
   await launcher.click();
   await expect(page.getByTestId('assistant-mobile-sheet')).toBeVisible();
+  await page.screenshot({ path: 'test-results/project-assistant-header-mobile-390.png', fullPage: true });
   await expect(page).toHaveURL(initialUrl);
   await page.getByTestId('assistant-mobile-sheet').getByRole('button', { name: 'Close' }).click();
   await expect(launcher).toBeVisible();
+  await expect(launcher).toBeFocused();
   await expect(page).toHaveURL(initialUrl);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 });
