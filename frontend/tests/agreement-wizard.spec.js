@@ -378,6 +378,11 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
     source_proposal_id: 42,
     status: "draft",
     step_status: "step2",
+    planning_validation_status: "needs_review",
+    planning_validation_summary: {
+      status: "needs_review",
+      reason: "The proposed dates overlap with existing scheduled work.",
+    },
     accepted_estimate_basis: {
       proposal_id: 42,
       review_version: 1,
@@ -398,6 +403,7 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   ];
   let createCount = 0;
   let patchCount = 0;
+  let acknowledgmentCount = 0;
   const milestoneMutations = [];
   await page.route("**/api/projects/homeowners**", (route) => route.fulfill({
     status: 200,
@@ -411,6 +417,14 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, async (route) => {
     if (route.request().method() === "PATCH") patchCount += 1;
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) });
+  });
+  await page.route("**/api/projects/agreements/100/acknowledge-planning-validation/", async (route) => {
+    acknowledgmentCount += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ status: "needs_review", acknowledged_at: "2026-08-15T12:00:00Z", summary: agreement.planning_validation_summary }),
+    });
   });
   await page.route("**/api/projects/milestones/**", (route) => {
     if (route.request().method() !== "GET") {
@@ -430,6 +444,19 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$1,500.00");
   await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$14,350.00");
   await expect(page.getByText("Fixture Install").first()).toBeVisible();
+  for (const amount of ["$1,000.00", "$1,950.00", "$4,950.00"]) {
+    await expect(page.getByText(amount, { exact: true }).first()).toBeVisible();
+  }
+  const draftUrl = page.url();
+  const [schedulePage] = await Promise.all([
+    page.waitForEvent("popup"),
+    page.getByRole("button", { name: "Review schedule" }).click(),
+  ]);
+  await expect(schedulePage).toHaveURL(/\/app\/team\/schedule/);
+  await schedulePage.close();
+  await expect(page).toHaveURL(draftUrl);
+  await page.getByRole("button", { name: "Continue anyway" }).click();
+  await expect.poll(() => acknowledgmentCount).toBe(1);
   for (const amount of ["$1,000.00", "$1,950.00", "$4,950.00"]) {
     await expect(page.getByText(amount, { exact: true }).first()).toBeVisible();
   }
@@ -740,7 +767,7 @@ test("Agreement Wizard creates reusable contractor taxonomy from Step 1", async 
   expect(createdSubtypes).toEqual([{ name: "Media Room", project_type: 31 }]);
 });
 
-test("Agreement Wizard milestone planning simulation updates and appears in final review", async ({ page }) => {
+test("Agreement Wizard keeps Step 2 focused on commercial milestones without assignment mutations", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);
   const assignmentMutations = [];
@@ -754,27 +781,9 @@ test("Agreement Wizard milestone planning simulation updates and appears in fina
   await page.goto("/app/agreements/new/wizard?step=2", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Step 2 Milestones" }).click();
 
-  await expect(page.getByTestId("milestone-planning-panel")).toContainText("Milestone Planning Simulation");
-  await expect(page.getByTestId("milestone-planning-panel")).toContainText("Planning only. Employees are not assigned until project activation.");
-  await expect(page.getByTestId("planning-validation-panel")).toContainText("Planning validation");
-  const initialDays = await page.getByTestId("planning-working-days").innerText();
-
-  await page.getByTestId("planning-crew-size").fill("4");
-  await page.getByTestId("planning-priority").selectOption("fastest");
-  await page.getByTestId("planning-include-weekends").check();
-  await expect(page.getByTestId("planning-crew-summary")).toContainText("4 people");
-  await expect(page.getByTestId("planning-capability-mix")).toContainText("General Labor");
-  await expect(page.getByTestId("planning-confidence")).toContainText("%");
-  await expect(page.getByTestId("planning-working-days")).not.toHaveText(initialDays);
-
-  await page.evaluate(() => {
-    window.history.pushState({}, "", "/app/agreements/new/wizard?step=4");
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  });
-
-  await expect(page.getByTestId("step4-planning-assumptions")).toContainText("Milestone planning assumptions");
-  await expect(page.getByTestId("step4-planning-assumptions")).toContainText("4 people");
-  await expect(page.getByTestId("step4-planning-assumptions")).toContainText("Planning only");
+  await expect(page.getByTestId("step2-milestone-card-list")).toBeVisible();
+  await expect(page.getByTestId("milestone-planning-panel")).toHaveCount(0);
+  await expect(page.getByTestId("planning-validation-panel")).toHaveCount(0);
   expect(assignmentMutations).toEqual([]);
 });
 

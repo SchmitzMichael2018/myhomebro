@@ -391,3 +391,67 @@ class AgreementPlanningValidationTests(TestCase):
         self.assertEqual(AgreementAssignment.objects.count(), 1)
         self.assertEqual(MilestoneAssignment.objects.count(), 0)
         self.assertEqual(EmployeeWorkSchedule.objects.count(), 0)
+
+    def test_missing_dates_require_review_without_claiming_a_conflict(self):
+        draft = self._agreement(title="Undated Draft", start=None, finish=None)
+        response = self.client.post(f"/api/projects/agreements/{draft.id}/planning-validation/")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["summary"]["status"], STATUS_NEEDS_REVIEW)
+        self.assertEqual(response.data["summary"]["conflicts"], [])
+        self.assertIn("Add milestone dates", response.data["summary"]["reason"])
+
+    def test_boundary_date_overlap_is_advisory_without_assignment_evidence(self):
+        self._agreement(title="Signed Boundary", start="2026-09-05", finish="2026-09-08", committed=True)
+        draft = self._agreement(title="Boundary Draft", start="2026-09-01", finish="2026-09-05")
+        response = self.client.post(f"/api/projects/agreements/{draft.id}/planning-validation/")
+        self.assertEqual(response.data["summary"]["status"], STATUS_NEEDS_REVIEW)
+        self.assertEqual(
+            response.data["summary"]["reason"],
+            "The proposed dates overlap with existing scheduled work.",
+        )
+        self.assertEqual(response.data["summary"]["conflicts"], [])
+
+    def test_completed_work_and_other_contractors_are_excluded(self):
+        completed = self._agreement(title="Completed Work", committed=True)
+        completed.status = "completed"
+        completed.save(update_fields=["status"])
+
+        User = get_user_model()
+        other_user = User.objects.create_user(email="other-validation@example.com", password="test-pass-123")
+        other_contractor = Contractor.objects.create(user=other_user, business_name="Other Validation Co")
+        other_homeowner = Homeowner.objects.create(
+            created_by=other_contractor, full_name="Other Customer", email="other-customer@example.com"
+        )
+        other_project = Project.objects.create(contractor=other_contractor, homeowner=other_homeowner, title="Other Tenant Work")
+        Agreement.objects.create(
+            project=other_project, contractor=other_contractor, homeowner=other_homeowner,
+            status="signed", signed_by_contractor=True, signed_by_homeowner=True,
+            start="2026-09-01", end="2026-09-05", total_cost="1000.00",
+        )
+
+        draft = self._agreement(title="Isolated Draft")
+        response = self.client.post(f"/api/projects/agreements/{draft.id}/planning-validation/")
+        self.assertEqual(response.data["summary"]["status"], STATUS_VALIDATED)
+        self.assertEqual(response.data["summary"]["overlapping_commitments"], [])
+
+    def test_acknowledgement_is_retained_for_same_dates_and_cleared_after_date_change(self):
+        committed = self._agreement(title="Signed Capacity", committed=True)
+        AgreementAssignment.objects.create(agreement=committed, subaccount=self.employee)
+        draft = self._agreement(title="Changing Draft")
+        self.client.post(f"/api/projects/agreements/{draft.id}/acknowledge-planning-validation/")
+        draft.refresh_from_db()
+        acknowledged_at = draft.planning_validation_acknowledged_at
+        self.assertIsNotNone(acknowledged_at)
+
+        self.client.post(f"/api/projects/agreements/{draft.id}/planning-validation/")
+        draft.refresh_from_db()
+        self.assertEqual(draft.planning_validation_acknowledged_at, acknowledged_at)
+
+        assumptions = dict(draft.planning_assumptions)
+        assumptions.update({"planned_start_date": "2026-09-02", "planned_finish_date": "2026-09-06"})
+        draft.planning_assumptions = assumptions
+        draft.save(update_fields=["planning_assumptions"])
+        self.client.post(f"/api/projects/agreements/{draft.id}/planning-validation/")
+        draft.refresh_from_db()
+        self.assertIsNone(draft.planning_validation_acknowledged_at)
+        self.assertIsNone(draft.planning_validation_acknowledged_by)

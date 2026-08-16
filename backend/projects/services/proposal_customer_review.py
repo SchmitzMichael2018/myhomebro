@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import base64
+import uuid
+
 from datetime import timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
+from django.core.exceptions import ImproperlyConfigured
 from django.contrib.auth import get_user_model
 from django.core import signing
 from django.db import transaction
 from django.utils import timezone
+from urllib.parse import urlsplit, urlunsplit
 from django.utils.html import strip_tags
 
 from projects.models_proposals import Proposal, ProposalActivity, ProposalLineItem, ProposalPortalActivation, ProposalReviewVersion
@@ -31,6 +36,27 @@ User = get_user_model()
 
 class ReviewAccessError(Exception):
     pass
+
+
+def trusted_public_site_url() -> str:
+    value = str(getattr(settings, "SITE_URL", "") or "").strip()
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ImproperlyConfigured("SITE_URL must be a valid absolute public URL.")
+    if parsed.scheme != "https" and parsed.hostname.lower() not in {"localhost", "127.0.0.1", "::1"}:
+        raise ImproperlyConfigured("SITE_URL must use HTTPS outside local development.")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+
+
+def public_review_short_url(review: ProposalReviewVersion) -> str:
+    return f"{trusted_public_site_url()}/r/{short_code_for(review)}"
 
 
 def _notification_preview(value: str, limit: int = 140) -> str:
@@ -223,6 +249,49 @@ def resolve_token(token: str, *, lock=False) -> ProposalReviewVersion:
     return review
 
 
+def short_code_for(review: ProposalReviewVersion) -> str:
+    """Opaque, collision-resistant first-party code backed by the review nonce."""
+    return base64.b32encode(review.access_nonce.bytes).decode("ascii").rstrip("=").lower()
+
+
+def resolve_short_code(code: str) -> ProposalReviewVersion:
+    try:
+        padded = str(code or "").strip().upper() + "=" * ((8 - len(str(code or "").strip()) % 8) % 8)
+        raw = base64.b32decode(padded, casefold=True)
+        if len(raw) != 16:
+            raise ValueError
+        nonce = uuid.UUID(bytes=raw)
+    except (ValueError, TypeError, base64.binascii.Error) as exc:
+        raise ReviewAccessError("This estimate review link is invalid or expired.") from exc
+    review = ProposalReviewVersion.objects.filter(access_nonce=nonce).first()
+    if not review or (review.expires_at and review.expires_at <= timezone.now()):
+        raise ReviewAccessError("This estimate review link is invalid or expired.")
+    return review
+
+
+def estimate_sms_body(*, review: ProposalReviewVersion, short_url: str) -> str:
+    snapshot = review.snapshot or {}
+    contractor = str((snapshot.get("contractor") or {}).get("name") or "").strip()
+    project = str((snapshot.get("project") or {}).get("title") or "").strip()
+    raw_total = (snapshot.get("pricing") or {}).get("total")
+    try:
+        if raw_total in (None, ""):
+            raise InvalidOperation
+        total = Decimal(str(raw_total)).quantize(Decimal("0.01"))
+        formatted_total = f"${total:,.0f}" if total == total.to_integral() else f"${total:,.2f}"
+    except (InvalidOperation, TypeError, ValueError):
+        formatted_total = "the provided total"
+    if contractor and project and formatted_total != "the provided total":
+        lead = f"{contractor} sent your {project} estimate for {formatted_total}."
+    elif contractor and project:
+        lead = f"{contractor} sent your {project} estimate."
+    elif contractor:
+        lead = f"{contractor} sent you an estimate."
+    else:
+        lead = "Your contractor sent you a project estimate."
+    return f"{lead} Review: {short_url}. No MyHomeBro account needed."
+
+
 def public_review_payload(review: ProposalReviewVersion, request=None) -> dict:
     from projects.services.customer_conversations import conversation_for_proposal, serialize_conversation
     return {
@@ -313,8 +382,9 @@ def send_review(*, proposal: Proposal, request, resend=False, channels=None) -> 
                 expires_at=timezone.now() + timedelta(days=30),
             )
     token = token_for(review)
-    base = (getattr(settings, "SITE_URL", "") or request.build_absolute_uri("/")).rstrip("/")
+    base = trusted_public_site_url()
     url = f"{base}/estimate-review/{token}"
+    short_url = public_review_short_url(review)
     portal = portal_access(review, request=request)
     secondary_copy = "Keep estimates, agreements, project updates, payments, and documents together in MyHomeBro."
     previous = review.delivery_state or {}
@@ -332,11 +402,9 @@ def send_review(*, proposal: Proposal, request, resend=False, channels=None) -> 
         )
         delivery["email"] = {"attempted": True, "ok": ok, "status": "sent" if ok else "failed", "message": "Email sent." if ok else "Email could not be delivered.", "attempted_at": timezone.now().isoformat()}
     if "sms" in requested and eligibility["sms"]["immediate"]:
-        company = review.snapshot["contractor"]["name"]
-        title = proposal.project_title or "your project"
         sms_result = send_compliant_sms(
             proposal.customer_phone,
-            f"{company} sent you an estimate for {title}. Review it securely here: {url} A MyHomeBro account is not required.",
+            estimate_sms_body(review=review, short_url=short_url),
             category="customer_care",
             dedupe_key=f"proposal-review:{review.id}:sms:{timezone.now().strftime('%Y%m%d%H%M')}",
         )
@@ -401,11 +469,10 @@ def release_pending_estimate_sms(phone_number: str, *, message_sid: str = "") ->
         if latest is None or latest.pk != review.pk or review.decision != ProposalReviewVersion.DECISION_PENDING or (review.expires_at and review.expires_at <= now) or proposal.status in {Proposal.STATUS_DECLINED, Proposal.STATUS_ACCEPTED, Proposal.STATUS_CONVERTED, Proposal.STATUS_EXPIRED}:
             sms_state.update({"status": "cancelled", "message": "Pending text cancelled because this estimate is no longer current."})
         else:
-            base = (getattr(settings, "SITE_URL", "") or "https://www.myhomebro.com").rstrip("/")
-            url = f"{base}/estimate-review/{token_for(review)}"
+            url = public_review_short_url(review)
             result = send_compliant_sms(
                 phone_number,
-                f"{review.snapshot['contractor']['name']} sent you an estimate for {proposal.project_title or 'your project'}. Review it securely here: {url} A MyHomeBro account is not required.",
+                estimate_sms_body(review=review, short_url=url),
                 category="customer_care", dedupe_key=f"proposal-review:{review.id}:sms",
             )
             sms_state.update({

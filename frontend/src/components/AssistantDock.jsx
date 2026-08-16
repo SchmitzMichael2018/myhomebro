@@ -453,6 +453,16 @@ export function useAssistantDock() {
 
 export function GlobalCopilotTrigger() {
   const { openAssistant, isOpen } = useAssistantDock();
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return undefined;
+    const update = () => setKeyboardVisible(window.innerHeight - viewport.height > 150);
+    update();
+    viewport.addEventListener("resize", update);
+    return () => viewport.removeEventListener("resize", update);
+  }, []);
 
   return (
     <button
@@ -462,11 +472,12 @@ export function GlobalCopilotTrigger() {
       title="Project Assistant"
       aria-pressed={isOpen}
       onClick={() => openAssistant()}
-      className={`inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-bold shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 ${
+      className={`fixed right-4 z-40 inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-bold shadow-lg transition focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 sm:right-6 xl:bottom-6 ${keyboardVisible ? "pointer-events-none translate-y-4 opacity-0" : "opacity-100"} ${
         isOpen
           ? "border-slate-900 bg-slate-900 text-white hover:bg-slate-800"
           : "border-slate-200 bg-white text-slate-800 hover:border-amber-200 hover:text-[#18395f] hover:shadow-md"
       }`}
+      style={{ bottom: "max(calc(env(safe-area-inset-bottom, 0px) + 5.5rem), 5.5rem)" }}
     >
       <Sparkles className="h-4 w-4" aria-hidden="true" />
       <span className="hidden sm:inline">Project Assistant</span>

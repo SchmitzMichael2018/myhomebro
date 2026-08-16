@@ -4,11 +4,43 @@ from django.conf import settings
 from pathlib import Path
 
 from django.core.checks import Error, Tags, Warning, register
+from urllib.parse import urlsplit
 
 from core.async_readiness import (
     configuration_diagnostics,
     pdf_storage_status,
 )
+
+
+@register(Tags.security, deploy=True)
+def public_site_url_deploy_check(app_configs, **kwargs):
+    if str(getattr(settings, "DEPLOYMENT_ENVIRONMENT", "")).lower() not in {"production", "staging"}:
+        return []
+    messages = []
+    value = str(getattr(settings, "SITE_URL", "") or "").strip()
+    parsed = urlsplit(value)
+    if (
+        not getattr(settings, "SITE_URL_CONFIGURED", False)
+        or parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+        or parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
+    ):
+        messages.append(Error(
+            "Production SITE_URL must be an explicitly configured public HTTPS origin.",
+            hint="Set SITE_URL to the canonical public application URL without credentials, query parameters, or fragments.",
+            id="core.E130",
+        ))
+    if not str(getattr(settings, "CACHE_URL", "") or "").strip():
+        messages.append(Warning(
+            "CACHE_URL is not configured; public-link throttles are process-local.",
+            hint="Set CACHE_URL to the deployment's shared Redis endpoint before relying on global throttle enforcement.",
+            id="core.W130",
+        ))
+    return messages
 
 
 @register(Tags.security, deploy=True)

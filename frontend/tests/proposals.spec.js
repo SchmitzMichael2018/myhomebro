@@ -363,9 +363,9 @@ test("Estimates landing page lists lifecycle stages and opens existing records",
   await expect(page.getByRole("combobox").filter({ hasText: "All statuses" })).toBeVisible();
   await expect(page.getByLabel("Date updated since")).toBeVisible();
   await expect(page.getByTestId("estimates-tabs")).toContainText("Needs Estimate");
-  await expect(page.getByTestId("estimates-tabs")).toContainText("Ready for Agreement");
+  await expect(page.getByTestId("estimates-tabs")).toContainText("Ready to Send");
   await expect(page.getByTestId("estimates-tabs")).toContainText("Converted");
-  await expect(page.getByTestId("estimates-tabs")).toContainText("Archived");
+  await expect(page.getByTestId("estimates-tabs")).toContainText("Closed");
   await expect(page.getByTestId("estimate-row-42")).toContainText("New Lead Customer");
   await expect(page.getByTestId("estimate-row-42")).toContainText("Bathroom Remodel");
   await expect(page.getByTestId("estimate-row-42")).toContainText("Readiness");
@@ -382,8 +382,8 @@ test("Estimates landing page lists lifecycle stages and opens existing records",
   await page.getByTestId("estimates-tab-in_progress").click();
   await expect(page.getByTestId("estimate-row-43")).toContainText("Flooring Estimate");
 
-  await page.getByTestId("estimates-tab-ready").click();
-  await expect(page.getByTestId("estimate-primary-action-44")).toContainText("Create Agreement");
+  await page.getByTestId("estimates-tab-ready_to_send").click();
+  await expect(page.getByTestId("estimate-primary-action-44")).toContainText("Review & Send");
 
   await page.getByTestId("estimates-tab-converted").click();
   await expect(page.getByTestId("estimate-row-45")).toContainText("Converted Kitchen Agreement");
@@ -461,7 +461,7 @@ test("Estimates header and empty state open the shared creation flow without dup
   const launch = page.getByTestId("dashboard-estimate-launch");
   await launch.dblclick();
 
-  await expect(page).toHaveURL(/\/app\/estimates\/88$/);
+  await expect(page).toHaveURL(/\/app\/proposals\/88\?section=customer$/);
   expect(createCount).toBe(1);
   await page.goBack();
   await expect(page).toHaveURL(/\/app\/estimates$/);
@@ -758,6 +758,62 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(0);
 });
 
+test("Pricing Benchmark renders only reliable numeric comparisons", async ({ page }) => {
+  await installBaseMocks(page);
+  let benchmarkPayload = { available: false, contractor: { available: false }, regional: { available: false } };
+  await page.route("**/api/projects/proposals/42/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(proposal) });
+  });
+  await page.route("**/api/projects/proposals/42/pricing-benchmark/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(benchmarkPayload) });
+  });
+
+  const comparison = (overrides = {}) => ({
+    available: true,
+    count: 6,
+    p25: "700.00",
+    median: "825.00",
+    p75: "900.00",
+    position: "within",
+    confidence: "medium",
+    ...overrides,
+  });
+  let renderCase = 0;
+  const openPricing = async () => {
+    renderCase += 1;
+    await page.goto(`/app/proposals/42?section=estimate&audit_case=${renderCase}`, { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("proposal-workspace")).toBeVisible();
+    await page.getByTestId("estimate-workflow-step-review").click();
+  };
+
+  await openPricing();
+  await expect(page.getByTestId("pricing-benchmark-card")).toHaveCount(0);
+
+  benchmarkPayload = {
+    available: true,
+    current_total: "950.00",
+    contractor: { available: false, reason: "insufficient_comparable_data" },
+    regional: { available: false, reason: "insufficient_comparable_data" },
+  };
+  await openPricing();
+  await expect(page.getByTestId("pricing-benchmark-card")).toHaveCount(0);
+
+  benchmarkPayload = { available: true, current_total: "950.00", contractor: comparison(), regional: { available: false } };
+  await openPricing();
+  await expect(page.getByTestId("pricing-benchmark-business")).toBeVisible();
+  await expect(page.getByTestId("pricing-benchmark-market")).toHaveCount(0);
+
+  benchmarkPayload = { available: true, current_total: "950.00", contractor: { available: false }, regional: comparison({ region_label: "Austin" }) };
+  await openPricing();
+  await expect(page.getByTestId("pricing-benchmark-business")).toHaveCount(0);
+  await expect(page.getByTestId("pricing-benchmark-market")).toBeVisible();
+
+  benchmarkPayload = { available: true, current_total: "950.00", contractor: comparison(), regional: comparison({ region_label: "Austin" }) };
+  await openPricing();
+  await expect(page.getByTestId("pricing-benchmark-business")).toBeVisible();
+  await expect(page.getByTestId("pricing-benchmark-market")).toBeVisible();
+});
+
 test("Estimate Workspace supports navigation, measurements, uploads, scope, and history", async ({ page }) => {
   test.setTimeout(60_000);
   await installBaseMocks(page);
@@ -929,7 +985,6 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
 
   await page.getByTestId("walkthrough-add-measurement").click();
   await page.getByTestId("walkthrough-measurement-label").fill("Fence length");
-  await page.getByTestId("walkthrough-measurement-location").fill("Back yard");
   await page.getByTestId("walkthrough-measurement-quantity").fill("42");
   await page.getByTestId("walkthrough-measurement-unit").selectOption("ft");
   await page.getByTestId("walkthrough-measurement-panel").getByRole("button", { name: /save measurement/i }).click();
@@ -965,7 +1020,6 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await page.getByTestId("proposal-save-site-visit").click();
 
   await page.getByTestId("proposal-measurement-label").fill("Fence length");
-  await page.getByTestId("proposal-measurement-location").fill("Back yard");
   await page.getByTestId("proposal-measurement-quantity").fill("42");
   await page.getByTestId("proposal-measurement-unit").selectOption("ft");
   await page.getByTestId("proposal-measurement-form").getByRole("button", { name: /add/i }).click();
@@ -1069,7 +1123,8 @@ test("Estimate Workspace supports navigation, measurements, uploads, scope, and 
   await expect(page.getByTestId("pricing-benchmark-classification").locator("p").nth(1)).toHaveText("Advisory only");
   await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Above your historical range");
   await expect(page.getByTestId("pricing-benchmark-business")).toContainText("Based on 6 completed comparable projects");
-  await expect(page.getByTestId("pricing-benchmark-market")).toContainText("Insufficient comparable MyHomeBro data");
+  await expect(page.getByTestId("pricing-benchmark-market")).toHaveCount(0);
+  await expect(page.getByTestId("pricing-benchmark-card")).toContainText("Current estimate: $950.00");
   await expect(page.getByTestId("estimate-agreement-handoff")).toContainText("private, versioned estimate");
   await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(0);
   await page.getByTestId("estimate-send-customer").click();
@@ -1173,6 +1228,7 @@ test("Clarification Questions support suggestions, editing, navigation, ignore, 
   await expect(page.getByTestId("proposal-clarification-answer-material_responsibility")).toBeVisible();
   await page.screenshot({ path: "test-results/clarification-needs-and-suggested.png", fullPage: true });
   await page.screenshot({ path: "test-results/clarification-auto-suggestion.png", fullPage: true });
+  patchCount = 0;
   await page.getByTestId("proposal-clarification-answer-material_responsibility").fill("Contractor supplies finish materials.");
   await page.getByTestId("proposal-clarification-save-material_responsibility").click();
   expect(patchCount).toBe(1);

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib import admin
-from django.http import HttpResponse
+from django.http import HttpResponse, Http404
+from django.shortcuts import redirect
 from django.urls import path, include, re_path
 from django.views.generic import RedirectView
 
@@ -16,12 +17,16 @@ from rest_framework_simplejwt.views import (
 from payments.webhooks import stripe_webhook  # noqa: F401  (imported elsewhere historically)
 from projects.views.sms_webhook import sms_webhook
 from projects.views.public_presence import PublicContractorRatingView
+from projects.services.proposal_customer_review import ReviewAccessError, resolve_short_code, token_for
 from projects.views.notifications import (
     NotificationListView,
     NotificationMarkAllReadView,
     NotificationMarkReadView,
     NotificationUnreadCountView,
 )
+from rest_framework.permissions import AllowAny
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
 from .views_legal import TermsOfServiceView, PrivacyPolicyView
 from .views_frontend import pwa_asset, spa as spa_index
@@ -61,9 +66,24 @@ except Exception:
 def health(_request):
     return HttpResponse("ok", content_type="text/plain")
 
+
+class ProposalReviewShortLinkView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "proposal_review_short_link"
+
+    def get(self, _request, code):
+        try:
+            review = resolve_short_code(code)
+        except ReviewAccessError as exc:
+            raise Http404(str(exc)) from exc
+        # The destination is entirely server-generated; callers cannot supply a redirect target.
+        return redirect(f"/estimate-review/{token_for(review)}")
+
 urlpatterns = [
     # Admin & health
     path("healthz", health),
+    path("r/<str:code>", ProposalReviewShortLinkView.as_view(), name="proposal-review-short-link"),
     path("admin/health/async-services/", async_services_readiness, name="async-services-readiness"),
     path("admin/", admin.site.urls),
 

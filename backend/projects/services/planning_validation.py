@@ -345,10 +345,14 @@ def build_planning_validation_summary(agreement: Agreement) -> dict:
     needs_review = bool(warnings or overlapping_commitments)
     if hard_conflict:
         validation_status = STATUS_HARD_CONFLICT
-        reason = "Committed work conflicts with the draft timeline or capability assumptions."
+        reason = "Authoritative assignments or capability availability show a crew-capacity conflict during the proposed dates."
     elif needs_review:
         validation_status = STATUS_NEEDS_REVIEW
-        reason = "Timeline overlaps committed work or lacks complete planning context."
+        reason = (
+            "The proposed dates overlap with existing scheduled work."
+            if overlapping_commitments
+            else "Planning information is incomplete and should be reviewed before sending."
+        )
     else:
         validation_status = STATUS_VALIDATED
         reason = "No blocking timeline or workforce conflicts were detected."
@@ -382,6 +386,7 @@ def validate_agreement_planning(
     persist: bool = True,
     acknowledged_by=None,
 ) -> dict:
+    previous_summary = agreement.planning_validation_summary or {}
     summary = build_planning_validation_summary(agreement)
     if persist:
         now = timezone.now()
@@ -396,6 +401,10 @@ def validate_agreement_planning(
         if acknowledged_by is not None:
             agreement.planning_validation_acknowledged_at = now
             agreement.planning_validation_acknowledged_by = acknowledged_by
+            fields.extend(["planning_validation_acknowledged_at", "planning_validation_acknowledged_by"])
+        elif agreement.planning_validation_acknowledged_at and previous_summary.get("date_range") != summary.get("date_range"):
+            agreement.planning_validation_acknowledged_at = None
+            agreement.planning_validation_acknowledged_by = None
             fields.extend(["planning_validation_acknowledged_at", "planning_validation_acknowledged_by"])
         agreement.save(update_fields=fields)
         summary["checked_at"] = now.isoformat()

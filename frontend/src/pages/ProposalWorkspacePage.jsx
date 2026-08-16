@@ -261,6 +261,8 @@ function benchmarkAdvice(position) {
 }
 
 function PricingBenchmarkCard({ benchmark, loading }) {
+  const hasReliableComparison = Boolean(benchmark?.contractor?.available || benchmark?.regional?.available);
+  if (!loading && (!benchmark?.available || !hasReliableComparison)) return null;
   const section = (title, data, subject, market = false) => (
     <article className="min-w-0 rounded-xl border border-white/10 bg-slate-950/30 p-4" data-testid={market ? "pricing-benchmark-market" : "pricing-benchmark-business"}>
       <h4 className="font-black text-white">{title}</h4>
@@ -275,12 +277,7 @@ function PricingBenchmarkCard({ benchmark, loading }) {
           {data.reference_only ? <p className="text-sky-100/65">Historical reference only; one project does not establish a reliable range.</p> : null}
           {!market && !data.reference_only ? <p className="mt-2 border-t border-white/10 pt-2 text-sky-100/70">{benchmarkAdvice(data.position)}</p> : null}
         </div>
-      ) : (
-        <div className="mt-3 text-sm font-semibold text-sky-100/70">
-          <p className="font-black text-white">{market ? "Insufficient comparable MyHomeBro data" : "Not enough completed comparable projects yet."}</p>
-          <p className="mt-1">{market ? "More completed comparable projects are needed before a reliable anonymous market range can be shown." : "As you complete more projects, MyHomeBro will build a stronger pricing history for your business."}</p>
-        </div>
-      )}
+      ) : null}
     </article>
   );
   return (
@@ -294,9 +291,10 @@ function PricingBenchmarkCard({ benchmark, loading }) {
             <p>Advisory only</p>
           </div>
           <div className="mt-4 grid min-w-0 gap-3 md:grid-cols-2">
-            {section("Your Business", benchmark.contractor, "your historical")}
-            {section("MyHomeBro Market", benchmark.regional, "the MyHomeBro regional", true)}
+            {benchmark.contractor?.available ? section("Your Business", benchmark.contractor, "your historical") : null}
+            {benchmark.regional?.available ? section("MyHomeBro Market", benchmark.regional, "the MyHomeBro regional", true) : null}
           </div>
+          <p className="mt-3 text-sm font-semibold text-sky-50/80">Current estimate: <strong>{money(benchmark.current_total)}</strong></p>
         </>
       ) : <p className="mt-4 text-sm font-semibold text-sky-100/70">Pricing benchmark is temporarily unavailable. Agreement creation is unaffected.</p>}
     </section>
@@ -448,7 +446,7 @@ function buildProposalAgreementScope(proposal) {
       const quantity = [compactText(item.quantity), compactText(item.unit)].filter(Boolean).join(" ");
       const location = compactText(item.location);
       const notes = compactText(item.notes);
-      return [`- ${compactText(item.label) || "Measurement"}`, location ? `(${location})` : "", quantity, notes ? `- ${notes}` : ""]
+      return [`- ${[compactText(item.label) || "Measurement", location].filter(Boolean).join(" — ")}`, quantity, notes ? `- ${notes}` : ""]
         .filter(Boolean)
         .join(" ");
     })
@@ -2434,12 +2432,13 @@ export default function ProposalWorkspacePage() {
             <section className="rounded-2xl bg-white p-4 text-slate-950 shadow-xl" data-testid="walkthrough-measurement-panel">
               <h2 className="text-lg font-black">Add Measurement</h2>
               <form onSubmit={addMeasurement} className="mt-3 grid gap-3 sm:grid-cols-2">
-                {["label", "location", "quantity"].map((key) => (
+                {["label", "quantity"].map((key) => (
                   <input
                     key={key}
                     data-testid={`walkthrough-measurement-${key}`}
                     className="min-h-12 rounded-xl border border-slate-300 px-4 py-3 text-base font-semibold"
-                    placeholder={key === "quantity" ? "Quantity" : key.charAt(0).toUpperCase() + key.slice(1)}
+                    placeholder={key === "quantity" ? "Quantity" : "Bathroom floor, north wall, or shower opening"}
+                    aria-label={key === "label" ? "Area or item" : "Quantity"}
                     value={measurementForm[key]}
                     onChange={(event) => setMeasurementForm((prev) => ({ ...prev, [key]: event.target.value }))}
                   />
@@ -2526,8 +2525,8 @@ export default function ProposalWorkspacePage() {
                   <div className="mt-2 space-y-2">
                     {recentMeasurements.map((item) => (
                       <button key={item.id} type="button" onClick={() => openWalkthroughSection({ key: "measurements", title: "Measurements", target: "measurements", action: "Add measurement", summary: "Review captured measurements." })} className="w-full rounded-xl bg-slate-100 px-3 py-2 text-left">
-                        <div className="font-black">{item.label}</div>
-                        <div className="text-sm font-semibold text-slate-600">{item.quantity} {unitDisplay(item.unit)} - {field(item.location)}</div>
+                        <div className="font-black">{[item.label, item.location].filter(Boolean).join(" — ")}</div>
+                        <div className="text-sm font-semibold text-slate-600">{item.quantity} {unitDisplay(item.unit)}</div>
                       </button>
                     ))}
                   </div>
@@ -3128,12 +3127,13 @@ export default function ProposalWorkspacePage() {
           <Section id="measurements" active={activeStep.key === "site_scope"} title="Measurements">
             <div className="mb-3 text-sm font-black text-sky-100/75" aria-live="polite">{(proposal.measurements || []).length} measurement{(proposal.measurements || []).length === 1 ? "" : "s"}</div>
             <form onSubmit={addMeasurement} className="grid gap-3 rounded-lg border border-white/10 bg-white/7 p-3 md:grid-cols-5" data-testid="proposal-measurement-form">
-              {["label", "location", "quantity"].map((key) => (
+              {["label", "quantity"].map((key) => (
                 <input
                   key={key}
                   data-testid={`proposal-measurement-${key}`}
                   className="rounded-lg border border-white/12 bg-slate-950/35 px-3 py-2 text-sm font-semibold text-white placeholder:text-sky-100/42 focus:border-sky-300 focus:outline-none"
-                  placeholder={key === "quantity" ? "Quantity" : key.charAt(0).toUpperCase() + key.slice(1)}
+                  placeholder={key === "quantity" ? "Quantity" : "Bathroom floor, north wall, or shower opening"}
+                  aria-label={key === "label" ? "Area or item" : "Quantity"}
                   value={measurementForm[key]}
                   onChange={(event) => setMeasurementForm((prev) => ({ ...prev, [key]: event.target.value }))}
                 />
@@ -3153,8 +3153,8 @@ export default function ProposalWorkspacePage() {
               {(proposal.measurements || []).length ? proposal.measurements.map((item) => (
                 <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/7 p-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="font-bold text-white">{item.label}</div>
-                    <div className="text-sm text-sky-100/70">{field(item.location)} - {item.quantity} {unitDisplay(item.unit)}</div>
+                    <div className="font-bold text-white">{[item.label, item.location].filter(Boolean).join(" — ")}</div>
+                    <div className="text-sm text-sky-100/70">{item.quantity} {unitDisplay(item.unit)}</div>
                     {item.notes ? <div className="text-sm text-sky-100/55">{item.notes}</div> : null}
                   </div>
                   <button type="button" onClick={() => deleteMeasurement(item.id)} className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-2 text-sm font-bold text-rose-700">

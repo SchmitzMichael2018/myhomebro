@@ -17,6 +17,19 @@ export default function PublicEstimateReviewPage() {
   const [acknowledged, setAcknowledged] = useState(false);
 
   useEffect(() => {
+    const existing = document.querySelector('meta[name="referrer"]');
+    const previous = existing?.getAttribute("content") || "";
+    const meta = existing || document.createElement("meta");
+    meta.setAttribute("name", "referrer");
+    meta.setAttribute("content", "no-referrer");
+    if (!existing) document.head.appendChild(meta);
+    return () => {
+      if (existing) meta.setAttribute("content", previous);
+      else meta.remove();
+    };
+  }, []);
+
+  useEffect(() => {
     api.get(`/projects/proposal-reviews/${encodeURIComponent(token)}/`).then(({ data }) => setReview(data)).catch((err) => setError(err?.response?.data?.detail || "This estimate could not be opened."));
   }, [token]);
 

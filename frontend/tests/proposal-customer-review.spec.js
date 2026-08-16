@@ -27,6 +27,7 @@ test("customer reviews and accepts the exact estimate version", async ({ page })
     return route.fulfill({ json: review });
   });
   await page.goto("/estimate-review/review-token");
+  await expect(page.locator('meta[name="referrer"]')).toHaveAttribute("content", "no-referrer");
   await expect(page.getByTestId("customer-estimate-review")).toContainText("Kitchen Refresh");
   await expect(page.getByTestId("customer-estimate-review")).not.toContainText("Pricing Benchmark");
   await expect(page.getByTestId("customer-estimate-pricing").getByRole("columnheader")).toHaveText(["Description", "Price"]);

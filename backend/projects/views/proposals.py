@@ -962,7 +962,7 @@ class ProposalMeasurementListCreateView(APIView):
             return error
         label = _safe_text(request.data.get("label"))
         if not label:
-            return Response({"label": ["Label is required."]}, status=400)
+            return Response({"label": ["Area or item is required."]}, status=400)
         try:
             quantity = Decimal(str(request.data.get("quantity")))
         except (InvalidOperation, TypeError):
@@ -1012,7 +1012,7 @@ class ProposalMeasurementDetailView(APIView):
             except (InvalidOperation, TypeError):
                 return Response({"quantity": ["Enter a valid quantity."]}, status=400)
         if not measurement.label:
-            return Response({"label": ["Label is required."]}, status=400)
+            return Response({"label": ["Area or item is required."]}, status=400)
         measurement.save()
         _activity(measurement.proposal, ProposalActivity.EVENT_MEASUREMENT_UPDATED, f"Measurement updated: {measurement.label}", actor=request.user)
         return Response(_serialize_measurement(measurement))

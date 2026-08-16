@@ -5896,6 +5896,26 @@ export default function Step2Milestones({
         </section>
       ) : null}
 
+      {planningValidationRequiresAcknowledgement ? (
+        <section className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-amber-950" data-testid="step2-schedule-conflict-warning">
+          <div className="text-sm font-semibold">Potential scheduling conflict</div>
+          <p className="mt-1 text-sm">
+            {currentPlanningValidation?.summary?.reason || "The proposed broad dates overlap existing scheduled work. Review availability before committing to these dates."}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-amber-900/80">
+            This check uses committed projects and recorded assignments. Review Team Schedule for detailed availability.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={() => window.open("/app/team/schedule", "_blank", "noopener,noreferrer")} className="rounded-lg border border-amber-400 bg-white px-3 py-2 text-sm font-semibold">
+              Review schedule
+            </button>
+            <button type="button" onClick={() => validatePlanningTimeline({ acknowledge: true })} disabled={planningValidationLoading} className="rounded-lg bg-amber-700 px-3 py-2 text-sm font-semibold text-white disabled:opacity-60">
+              {planningValidationLoading ? "Saving…" : "Continue anyway"}
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       {SHOW_LEGACY_STEP2_PANELS && showPricingReviewPrompt ? (
         <div className="mb-4 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

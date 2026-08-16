@@ -115,6 +115,7 @@ ALLOWED_HOSTS = [
 ]
 
 FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+SITE_URL_CONFIGURED = bool(os.environ.get("SITE_URL", "").strip())
 SITE_URL = get_env_var("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 # Development override only. Do not enable in production.
 CONTRACTOR_WEBSITE_DEVELOPMENT_OVERRIDE = get_bool(
@@ -408,6 +409,15 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str
 REDIS_URL = get_env_var("REDIS_URL", "").strip()
 CACHE_URL = get_env_var("CACHE_URL", "").strip()
 
+if CACHE_URL:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.redis.RedisCache",
+            "LOCATION": CACHE_URL,
+            "KEY_PREFIX": "myhomebro-cache",
+        }
+    }
+
 CELERY_BROKER_URL = (
     get_env_var("CELERY_BROKER_URL", "").strip()
     or REDIS_URL
@@ -611,6 +621,7 @@ REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
     "capture_qr_public": get_env_var("CAPTURE_QR_PUBLIC_RATE", "30/hour"),
     "capture_qr_token": get_env_var("CAPTURE_QR_TOKEN_RATE", "15/hour"),
     "capture_conversational": get_env_var("CAPTURE_CONVERSATIONAL_RATE", "60/hour"),
+    "proposal_review_short_link": get_env_var("PROPOSAL_REVIEW_SHORT_LINK_RATE", "60/hour"),
 })
 
 

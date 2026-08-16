@@ -2,12 +2,17 @@ from datetime import timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import patch
+import uuid
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.core.cache import cache
+from django.core.exceptions import ImproperlyConfigured
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
+from rest_framework.throttling import ScopedRateThrottle
 
 from projects.models import Agreement, Contractor, Homeowner, Milestone, Notification, CustomerConversation, ConversationMessage, Project
 from projects.models_contractor_discovery import (
@@ -17,7 +22,7 @@ from projects.models_contractor_discovery import (
 )
 from projects.models_proposals import Proposal, ProposalActivity, ProposalAttachment, ProposalLineItem, ProposalMeasurement, ProposalPortalActivation, ProposalReviewVersion
 from projects.models_sms import SMSConsent
-from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, portal_access, public_customer_snapshot, review_delivery_eligibility, token_for
+from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, estimate_sms_body, portal_access, public_customer_snapshot, public_review_short_url, resolve_token, review_delivery_eligibility, short_code_for, token_for, trusted_public_site_url
 from projects.services.proposal_conversion import ProposalConversionError, _trusted_agreement_payload
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
@@ -699,6 +704,10 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(review.delivery_state["sms"]["consent_inbound_message_sid"], "SM-INBOUND")
         self.assertEqual(proposal.status, Proposal.STATUS_SENT)
         self.assertEqual(ProposalReviewVersion.objects.filter(proposal=proposal).count(), 1)
+        sms_body = sms.call_args.args[1]
+        self.assertIn("/r/", sms_body)
+        self.assertNotIn("/estimate-review/", sms_body)
+        self.assertNotIn(token_for(review), sms_body)
 
     def test_stop_cancels_pending_estimate_sms_without_affecting_email(self):
         proposal = Proposal.objects.create(
@@ -827,6 +836,89 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(Agreement.objects.filter(contractor=self.contractor).count(), 1)
         self.assertEqual(ProposalActivity.objects.filter(proposal=proposal, event_type=ProposalActivity.EVENT_AGREEMENT_CREATED).count(), 1)
 
+    def test_branded_estimate_short_link_resolves_without_exposing_signed_token(self):
+        _homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=1701)
+        review.snapshot["project"]["title"] = "Bathroom Remodel"
+        review.snapshot["pricing"]["total"] = "15000.00"
+        review.expires_at = timezone.now() + timedelta(days=1)
+        review.save(update_fields=["snapshot", "expires_at"])
+        code = short_code_for(review)
+        persisted_code = short_code_for(ProposalReviewVersion.objects.get(pk=review.pk))
+        self.assertEqual(persisted_code, code)
+        signed = token_for(review)
+        body = estimate_sms_body(review=review, short_url=f"https://myhomebro.com/r/{code}")
+        self.assertNotIn(signed, body)
+        self.assertIn("Bathroom Remodel estimate for $15,000", body)
+        self.assertLessEqual(len(body), 200)
+
+        review.snapshot = {}
+        fallback_body = estimate_sms_body(review=review, short_url=f"https://myhomebro.com/r/{code}")
+        self.assertIn("Your contractor sent you a project estimate", fallback_body)
+        review.refresh_from_db()
+
+        self.client.force_authenticate(user=None)
+        response = self.client.get(f"/r/{code}")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"/estimate-review/{signed}")
+        self.assertEqual(resolve_token(signed).pk, review.pk)
+        self.assertEqual(self.client.get("/r/not-a-valid-code").status_code, 404)
+        tampered = f"{code[:-1]}{'a' if code[-1] != 'a' else 'b'}"
+        self.assertEqual(self.client.get(f"/r/{tampered}").status_code, 404)
+
+        old_code = code
+        review.access_nonce = uuid.uuid4()
+        review.save(update_fields=["access_nonce"])
+        self.assertEqual(self.client.get(f"/r/{old_code}").status_code, 404)
+        code = short_code_for(review)
+
+        review.expires_at = timezone.now() - timedelta(seconds=1)
+        review.save(update_fields=["expires_at"])
+        self.assertEqual(self.client.get(f"/r/{code}").status_code, 404)
+
+    def test_estimate_sms_body_handles_missing_descriptive_values(self):
+        _homeowner, _proposal, review = self._accepted_proposal_for_conversion(source_id=1702)
+        short_url = "https://www.myhomebro.com/r/abcdefghijklmnopqrstuvwxyz"
+        cases = [
+            ({"contractor": {"name": "Acme Builders"}, "project": {"title": "Kitchen"}, "pricing": {"total": "9850.50"}}, "Acme Builders sent your Kitchen estimate for $9,850.50."),
+            ({"contractor": {"name": "Acme Builders"}, "project": {"title": "Kitchen"}, "pricing": {}}, "Acme Builders sent your Kitchen estimate."),
+            ({"contractor": {"name": "Acme Builders"}, "project": {}, "pricing": {"total": "9850.50"}}, "Acme Builders sent you an estimate."),
+            ({"contractor": {}, "project": {"title": "Kitchen"}, "pricing": {"total": "9850.50"}}, "Your contractor sent you a project estimate."),
+            ({}, "Your contractor sent you a project estimate."),
+        ]
+        for snapshot, expected_lead in cases:
+            with self.subTest(snapshot=snapshot):
+                review.snapshot = snapshot
+                body = estimate_sms_body(review=review, short_url=short_url)
+                self.assertEqual(body, f"{expected_lead} Review: {short_url}. No MyHomeBro account needed.")
+                self.assertNotIn("$0", body)
+                self.assertNotIn("project project", body.lower())
+
+    def test_public_review_url_uses_only_validated_site_url(self):
+        _homeowner, _proposal, review = self._accepted_proposal_for_conversion(source_id=1703)
+        with override_settings(SITE_URL="https://app.example.com/"):
+            self.assertEqual(trusted_public_site_url(), "https://app.example.com")
+            self.assertEqual(public_review_short_url(review), f"https://app.example.com/r/{short_code_for(review)}")
+        with override_settings(SITE_URL="https://app.example.com/myhomebro/"):
+            self.assertEqual(public_review_short_url(review), f"https://app.example.com/myhomebro/r/{short_code_for(review)}")
+        for invalid in ("", "not-a-url", "http://public.example.com", "https://user:pass@example.com", "https://example.com/?next=https://evil.example"):
+            with self.subTest(invalid=invalid), override_settings(SITE_URL=invalid):
+                with self.assertRaises(ImproperlyConfigured):
+                    trusted_public_site_url()
+        with override_settings(SITE_URL="http://localhost:8000"):
+            self.assertEqual(trusted_public_site_url(), "http://localhost:8000")
+
+    def test_short_link_throttle_is_per_client_and_applies_across_codes(self):
+        rates = {**settings.REST_FRAMEWORK.get("DEFAULT_THROTTLE_RATES", {}), "proposal_review_short_link": "1/hour"}
+        with override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK, "DEFAULT_THROTTLE_RATES": rates}), patch.object(ScopedRateThrottle, "THROTTLE_RATES", rates):
+            cache.clear()
+            self.client.force_authenticate(user=None)
+            first = self.client.get("/r/aaaaaaaaaaaaaaaaaaaaaaaaaa", REMOTE_ADDR="203.0.113.8")
+            second = self.client.get("/r/bbbbbbbbbbbbbbbbbbbbbbbbbb", REMOTE_ADDR="203.0.113.8")
+            other_client = self.client.get("/r/bbbbbbbbbbbbbbbbbbbbbbbbbb", REMOTE_ADDR="203.0.113.9")
+        self.assertEqual(first.status_code, 404)
+        self.assertEqual(second.status_code, 429)
+        self.assertEqual(other_client.status_code, 404)
+
     def test_accepted_estimate_template_and_project_setup_are_carried_to_agreement(self):
         homeowner, proposal, review = self._accepted_proposal_for_conversion(source_id=706)
         remodel_template = ProjectTemplate.objects.create(
@@ -926,7 +1018,8 @@ class ProposalWorkspaceFoundationTests(TestCase):
         self.assertEqual(agreement.total_cost, 15000)
         self.assertEqual(agreement.incidentals_reserve_amount, 1500)
         self.assertEqual(response.data["escrow_funding_summary"]["total_required"], "16500.00")
-        self.assertEqual(response.data["accepted_estimate_basis"], {
+        accepted_basis = response.data["accepted_estimate_basis"]
+        expected_basis = {
             "proposal_id": proposal.id,
             "review_version": 1,
             "subtotal": "15000.00",
@@ -935,7 +1028,13 @@ class ProposalWorkspaceFoundationTests(TestCase):
             "incidentals_reserve": "1500.00",
             "total": "16500.00",
             "pricing_rows": review.snapshot["pricing"]["line_items"],
-        })
+        }
+        for key, value in expected_basis.items():
+            self.assertEqual(accepted_basis[key], value)
+        self.assertEqual(
+            accepted_basis["milestone_reconciliation"]["expected_commercial_amount"],
+            "15000.00",
+        )
         self.assertEqual(review.snapshot, accepted_snapshot)
         milestone = Milestone.objects.create(agreement=agreement, title="Bathroom work", amount="15000.00", order=1)
         template = ProjectTemplate.objects.create(contractor=self.contractor, name="Bathroom Remodel")
@@ -1257,10 +1356,30 @@ class ProposalWorkspaceFoundationTests(TestCase):
         )
         self.assertEqual(updated.status_code, 200)
         self.assertEqual(updated.data["quantity"], "13.00")
+        self.assertEqual(updated.data["label"], "Kitchen width")
+        self.assertEqual(updated.data["location"], "Kitchen")
+
+        relabeled = self.client.patch(
+            f"/api/projects/proposals/{proposal.id}/measurements/{measurement_id}/",
+            {"label": "Kitchen north wall"},
+            format="json",
+        )
+        self.assertEqual(relabeled.status_code, 200)
+        self.assertEqual(relabeled.data["label"], "Kitchen north wall")
+        self.assertEqual(relabeled.data["location"], "Kitchen")
+
+        legacy_location_only = ProposalMeasurement.objects.create(
+            proposal=proposal, label="", location="Shower opening", quantity="1", unit="each"
+        )
+        listed = self.client.get(f"/api/projects/proposals/{proposal.id}/measurements/")
+        legacy_payload = next(item for item in listed.data["results"] if item["id"] == legacy_location_only.id)
+        self.assertEqual(legacy_payload["label"], "")
+        self.assertEqual(legacy_payload["location"], "Shower opening")
 
         deleted = self.client.delete(f"/api/projects/proposals/{proposal.id}/measurements/{measurement_id}/")
         self.assertEqual(deleted.status_code, 204)
-        self.assertEqual(ProposalMeasurement.objects.count(), 0)
+        self.assertEqual(ProposalMeasurement.objects.count(), 1)
+        self.assertTrue(ProposalMeasurement.objects.filter(pk=legacy_location_only.pk).exists())
 
     def test_attachment_crud(self):
         proposal = Proposal.objects.create(

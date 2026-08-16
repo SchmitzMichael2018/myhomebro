@@ -361,42 +361,32 @@ test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat 
   await expect(dock).toBeVisible();
   await expect(dock).toContainText('Project Assistant');
 
-  const panel = page.getByTestId('project-assistant-panel');
+  const panel = dock.getByTestId('project-assistant-panel');
   await expect(panel).toBeVisible();
-  await expect(page.getByTestId('project-assistant-current-project')).toContainText(
+  await expect(dock.getByTestId('project-assistant-current-project')).toContainText(
     'Kitchen Flooring Installation'
   );
-  await expect(page.getByTestId('project-assistant-current-project')).toContainText('3');
+  await expect(dock.getByTestId('project-assistant-current-project')).toContainText('3');
 
-  await expect(page.getByTestId('project-assistant-step-guide')).toBeVisible();
-  await expect(page.getByTestId('project-assistant-step-guide')).toContainText(
+  await expect(dock.getByTestId('project-assistant-step-guide')).toBeVisible();
+  await expect(dock.getByTestId('project-assistant-step-guide')).toContainText(
     "You're reviewing milestones."
   );
-  await expect(page.getByTestId('project-assistant-step-guide')).toContainText('Step 2 of 4');
-  await expect(page.getByTestId('project-assistant-guide-step-2')).toContainText(
+  await expect(dock.getByTestId('project-assistant-step-guide')).toContainText('Step 2 of 4');
+  await expect(dock.getByTestId('project-assistant-guide-step-2')).toContainText(
     'Review milestones'
   );
 
-  await expect(page.getByTestId('project-assistant-recommendations')).toBeVisible();
-  const recommendation = page.getByTestId('project-assistant-recommendation-card').first();
-  await expect(recommendation).toContainText('Improve milestone timing');
-  await expect(recommendation).toContainText('Milestone snapshots show some delayed completion signals.');
-  await expect(recommendation).toContainText('Use this as a planning cue before sending the agreement.');
-  await expect(recommendation).toContainText('medium confidence');
-  await expect(recommendation.getByTestId('recommendation-action')).toContainText('Open Milestones');
-  await recommendation.getByTestId('recommendation-action').click();
-  await expect(page).toHaveURL(/\/app\/milestones/);
-  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('assistant-dock-open-button').click();
+  await expect(panel).toContainText('No pricing guidance available yet.');
 
-  await expect(page.getByTestId('project-assistant-step-actions')).toContainText('Step Actions');
-  await expect(page.getByTestId('project-assistant-other-actions')).toContainText(
+  await expect(dock.getByTestId('project-assistant-step-actions')).toContainText('Step Actions');
+  await expect(dock.getByTestId('project-assistant-other-actions')).toContainText(
     'Other Helpful Actions'
   );
-  await expect(page.getByTestId('project-assistant-action-step2_improve_descriptions')).toBeVisible();
-  await expect(page.getByTestId('project-assistant-action-step2_regenerate_plan')).toBeVisible();
-  await expect(page.getByTestId('project-assistant-action-step2_rebalance_pricing')).toBeVisible();
-  await expect(page.getByTestId('project-assistant-continue-step')).toContainText(
+  await expect(dock.getByTestId('project-assistant-action-step2_improve_descriptions')).toBeVisible();
+  await expect(dock.getByTestId('project-assistant-action-step2_regenerate_plan')).toBeVisible();
+  await expect(dock.getByTestId('project-assistant-action-step2_rebalance_pricing')).toBeVisible();
+  await expect(dock.getByTestId('project-assistant-continue-step')).toContainText(
     'Continue to Warranty'
   );
 
@@ -404,4 +394,24 @@ test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat 
   await expect(panel).not.toContainText('Voice input ready');
   await expect(panel).not.toContainText('ask for one of the available actions');
   await expect(panel).not.toContainText('Copilot');
+});
+
+test('mobile Project Assistant launcher stays fixed and preserves the Agreement route', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installAgreementWizardStep2Mocks(page);
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('step2-milestone-card-list')).toBeVisible();
+
+  const launcher = page.getByTestId('assistant-dock-open-button');
+  await expect(launcher).toHaveCount(1);
+  await expect(launcher).toBeVisible();
+  await expect(launcher).toHaveCSS('position', 'fixed');
+  const initialUrl = page.url();
+  await launcher.click();
+  await expect(page.getByTestId('assistant-mobile-sheet')).toBeVisible();
+  await expect(page).toHaveURL(initialUrl);
+  await page.getByTestId('assistant-mobile-sheet').getByRole('button', { name: 'Close' }).click();
+  await expect(launcher).toBeVisible();
+  await expect(page).toHaveURL(initialUrl);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
 });
