@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Camera, Check, CheckCircle2, Circle, EllipsisVertical, FileSignature, FileUp, Lock, Mail, Mic, Phone, Plus, Ruler, Save, ShieldCheck, StickyNote, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -361,6 +362,10 @@ function statusTone(status) {
 
 function estimateLifecyclePresentation(proposal) {
   const status = compactText(proposal?.status).toLowerCase();
+  if (status === "cancelled") return {
+    label: proposal?.cancellation_kind === "voided_after_acceptance" ? "Voided after acceptance" : "Withdrawn",
+    detail: "This Estimate is retained as read-only history.",
+  };
   if (status === "converted" || proposal?.linked_agreement_id) return {
     label: "Agreement Created",
     detail: proposal?.linked_agreement_title
@@ -368,7 +373,7 @@ function estimateLifecyclePresentation(proposal) {
       : "This Estimate has been converted to an Agreement.",
   };
   if (status === "accepted") return {
-    label: "Accepted",
+    label: "Accepted · Awaiting Agreement",
     detail: proposal?.customer_review?.decided_at
       ? `Accepted by the customer ${formatDateTime(proposal.customer_review.decided_at)}.`
       : "Accepted by the customer.",
@@ -1245,6 +1250,10 @@ export default function ProposalWorkspacePage() {
   const [lifecycleReason, setLifecycleReason] = useState("");
   const [voidConfirmed, setVoidConfirmed] = useState(false);
   const [lifecycleSubmitting, setLifecycleSubmitting] = useState(false);
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const [actionsMenuPosition, setActionsMenuPosition] = useState({ top: 0, right: 12 });
+  const actionsMenuTriggerRef = useRef(null);
+  const actionsMenuRef = useRef(null);
   const [customerPreview, setCustomerPreview] = useState(null);
   const [reviewSending, setReviewSending] = useState(false);
   const [sendReviewOpen, setSendReviewOpen] = useState(false);
@@ -1416,6 +1425,8 @@ export default function ProposalWorkspacePage() {
     [proposal, draft, totals, photos, documents, clarificationRows]
   );
   const lifecyclePresentation = estimateLifecyclePresentation(proposal);
+  const lifecycleStatus = compactText(proposal?.status).toLowerCase();
+  const isAcceptedEstimate = lifecycleStatus === "accepted";
   const notesDirty = String(draft.internal_notes || "") !== String(proposal?.internal_notes || "");
   const recentActivity = useMemo(() => (proposal?.activity || []).slice(0, historyExpanded ? 50 : 2), [proposal, historyExpanded]);
   const sortedClarificationRows = useMemo(() => [...clarificationRows].sort((a, b) => {
@@ -1426,6 +1437,40 @@ export default function ProposalWorkspacePage() {
   const isReadOnlyHistory = Boolean(
     proposal && (compactText(proposal.status).toLowerCase() === "converted" || isCancelledHistory || proposal.linked_agreement_id)
   );
+  useEffect(() => {
+    if (!actionsMenuOpen) return undefined;
+    const updatePosition = () => {
+      const rect = actionsMenuTriggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setActionsMenuPosition({
+        top: Math.min(rect.bottom + 8, window.innerHeight - 72),
+        right: Math.max(12, window.innerWidth - rect.right),
+      });
+    };
+    const closeAndRestoreFocus = () => {
+      setActionsMenuOpen(false);
+      window.requestAnimationFrame(() => actionsMenuTriggerRef.current?.focus());
+    };
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") { event.preventDefault(); closeAndRestoreFocus(); }
+    };
+    const onPointerDown = (event) => {
+      if (actionsMenuRef.current?.contains(event.target) || actionsMenuTriggerRef.current?.contains(event.target)) return;
+      setActionsMenuOpen(false);
+    };
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    window.requestAnimationFrame(() => actionsMenuRef.current?.querySelector("button")?.focus());
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [actionsMenuOpen]);
   const lastReadinessSync = useRef("");
   useEffect(() => {
     if (!proposal?.id || !["draft", "site_visit", "in_progress", "ready"].includes(proposal.status)) return;
@@ -2594,14 +2639,7 @@ export default function ProposalWorkspacePage() {
       actions={
         <>
           {proposal.lifecycle_actions?.can_delete || proposal.lifecycle_actions?.can_withdraw || proposal.lifecycle_actions?.can_void ? (
-            <details className="relative">
-              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/15" data-testid="estimate-actions-menu"><EllipsisVertical size={17} aria-hidden="true" /> Estimate actions</summary>
-              <div className="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-2xl">
-                {proposal.lifecycle_actions.can_delete ? <button type="button" className="min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-rose-700 hover:bg-rose-50" onClick={() => setLifecycleDialog("delete")}>Delete estimate</button> : null}
-                {proposal.lifecycle_actions.can_withdraw ? <button type="button" className="min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-rose-700 hover:bg-rose-50" onClick={() => setLifecycleDialog("withdraw")}>Withdraw estimate</button> : null}
-                {proposal.lifecycle_actions.can_void ? <button type="button" className="min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-rose-700 hover:bg-rose-50" onClick={() => setLifecycleDialog("void")}>Void accepted estimate</button> : null}
-              </div>
-            </details>
+            <button type="button" ref={actionsMenuTriggerRef} aria-haspopup="menu" aria-expanded={actionsMenuOpen} className="flex min-h-11 items-center gap-2 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/15" data-testid="estimate-actions-menu" onClick={() => setActionsMenuOpen((open) => !open)}><EllipsisVertical size={17} aria-hidden="true" /> Estimate actions</button>
           ) : null}
           <button
             type="button"
@@ -2629,12 +2667,12 @@ export default function ProposalWorkspacePage() {
       ) : null}
       {proposal.status === "cancelled" ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-950" data-testid="estimate-cancelled-history"><strong>{proposal.cancellation_kind === "voided_after_acceptance" ? "Voided after acceptance" : "Withdrawn estimate"}</strong>{proposal.cancellation_reason ? <span className="mt-1 block">Reason: {proposal.cancellation_reason}</span> : null}</div> : null}
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-sky-200/14 bg-[#061d42]/95 px-4 py-3 text-sm font-black text-white shadow-sm" data-testid="proposal-workspace-header" aria-live="polite">
-        <span data-testid="estimate-header-send-status">{estimateChecklist.sendReady ? "Ready to Send" : "Not Ready to Send"}</span>
+        <span data-testid="estimate-header-send-status">{["draft", "site_visit", "in_progress", "ready"].includes(lifecycleStatus) ? (estimateChecklist.sendReady ? "Ready to Send" : "In Progress") : lifecyclePresentation.label}</span>
         <span aria-hidden="true">·</span>
-        <span>{estimateChecklist.sendReady ? "0 blockers" : `${estimateChecklist.requiredMissing.length} required item${estimateChecklist.requiredMissing.length === 1 ? "" : "s"} remaining`}</span>
+        {!isAcceptedEstimate && ["draft", "site_visit", "in_progress", "ready"].includes(lifecycleStatus) ? <span>{estimateChecklist.sendReady ? "0 blockers" : `${estimateChecklist.requiredMissing.length} required item${estimateChecklist.requiredMissing.length === 1 ? "" : "s"} remaining`}</span> : null}
         <span aria-hidden="true">·</span>
-        <span>{money(totals.total)}</span>
-        <span className="basis-full text-xs font-semibold text-sky-100/65" data-testid="estimate-header-progress">Estimate completeness: {estimateChecklist.completenessPercent}%{estimateChecklist.sendReady && estimateChecklist.completenessPercent < 100 ? " · Optional details remain, but they are not required to send." : ""}</span>
+        <span>{money(isAcceptedEstimate ? proposal.customer_review?.accepted_amount || totals.total : totals.total)}</span>
+        <span className="basis-full text-xs font-semibold text-sky-100/65" data-testid="estimate-header-progress">{isAcceptedEstimate ? `The customer accepted this Estimate${proposal.customer_review?.decided_at ? ` on ${formatDate(proposal.customer_review.decided_at)}` : ""}. Create an Agreement or void the accepted Estimate if the project will not proceed.` : ["draft", "site_visit", "in_progress", "ready"].includes(lifecycleStatus) ? `Estimate completeness: ${estimateChecklist.completenessPercent}%${estimateChecklist.sendReady && estimateChecklist.completenessPercent < 100 ? " · Optional details remain, but they are not required to send." : ""}` : lifecyclePresentation.detail}</span>
         {isReadOnlyHistory ? <span className="ml-auto text-emerald-200">Converted history</span> : null}
       </div>
 
@@ -3502,6 +3540,12 @@ export default function ProposalWorkspacePage() {
         </main>
 
         {lifecycleDialog ? <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 p-3" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="estimate-lifecycle-title" className="max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 text-slate-950 shadow-2xl" data-testid="estimate-lifecycle-dialog"><h2 id="estimate-lifecycle-title" className="text-xl font-black">{lifecycleDialog === "delete" ? "Delete draft estimate?" : lifecycleDialog === "void" ? "Void accepted estimate?" : "Withdraw this estimate?"}</h2><p className="mt-3 text-sm leading-6 text-slate-700">{lifecycleDialog === "delete" ? "This estimate has not been sent to the customer. Deleting it will permanently remove the draft and its estimate-only details. This cannot be undone." : lifecycleDialog === "void" ? "The customer already accepted this estimate. Voiding it will prevent Agreement creation, but the accepted record and audit history will be retained." : "The customer will no longer be able to review or accept this version. Delivery and review history will be retained."}</p>{lifecycleDialog !== "delete" ? <label className="mt-4 block text-sm font-bold">Reason{lifecycleDialog === "void" ? " (required)" : " (optional)"}<textarea value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 p-3" data-testid="estimate-lifecycle-reason" /></label> : null}{lifecycleDialog === "void" ? <label className="mt-4 flex min-h-11 items-start gap-3 text-sm font-bold"><input type="checkbox" checked={voidConfirmed} onChange={(event) => setVoidConfirmed(event.target.checked)} className="mt-1" />I understand that this accepted estimate will be voided.</label> : null}<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" className="min-h-11 rounded-xl border border-slate-300 px-4 font-bold" onClick={() => setLifecycleDialog("")} disabled={lifecycleSubmitting}>Keep estimate</button><button type="button" className="min-h-11 rounded-xl bg-rose-700 px-4 font-bold text-white disabled:opacity-50" onClick={submitLifecycleAction} disabled={lifecycleSubmitting || (lifecycleDialog === "void" && (!voidConfirmed || !lifecycleReason.trim()))}>{lifecycleSubmitting ? "Working…" : lifecycleDialog === "delete" ? "Delete draft" : lifecycleDialog === "void" ? "Void estimate" : "Withdraw estimate"}</button></div></section></div> : null}
+
+        {actionsMenuOpen ? createPortal(<div ref={actionsMenuRef} role="menu" aria-label="Estimate actions" data-testid="estimate-actions-popover" className="fixed z-[120] w-[min(20rem,calc(100vw-1.5rem))] rounded-xl border border-slate-300 bg-white p-2 text-slate-950 shadow-[0_20px_50px_rgba(2,6,23,0.45)]" style={{ top: actionsMenuPosition.top, right: actionsMenuPosition.right }}>
+          {proposal.lifecycle_actions.can_delete ? <button role="menuitem" type="button" disabled={lifecycleSubmitting} className="min-h-11 w-full rounded-lg px-4 py-3 text-left text-sm font-bold text-rose-800 hover:bg-rose-50 disabled:opacity-50" onClick={() => { setActionsMenuOpen(false); setLifecycleDialog("delete"); }}>Delete estimate</button> : null}
+          {proposal.lifecycle_actions.can_withdraw ? <button role="menuitem" type="button" disabled={lifecycleSubmitting} className="min-h-11 w-full rounded-lg px-4 py-3 text-left text-sm font-bold text-rose-800 hover:bg-rose-50 disabled:opacity-50" onClick={() => { setActionsMenuOpen(false); setLifecycleDialog("withdraw"); }}>Withdraw estimate</button> : null}
+          {proposal.lifecycle_actions.can_void ? <button role="menuitem" type="button" disabled={lifecycleSubmitting} className="min-h-11 w-full rounded-lg px-4 py-3 text-left text-sm font-bold text-rose-800 hover:bg-rose-50 disabled:opacity-50" onClick={() => { setActionsMenuOpen(false); setLifecycleDialog("void"); }}>Void accepted estimate</button> : null}
+        </div>, document.body) : null}
 
         {customerPreview ? <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-3" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCustomerPreview(null); }}><section role="dialog" aria-modal="true" aria-labelledby="customer-preview-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/15 bg-[#071d3d] p-5 text-white shadow-2xl" data-testid="estimate-customer-preview-dialog"><div className="flex justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wide text-sky-200">Customer preview</p><h2 id="customer-preview-title" className="text-2xl font-black">{customerPreview.project?.title}</h2><p className="mt-1 text-sky-100/70">{customerPreview.project?.property}</p></div><button type="button" aria-label="Close customer preview" onClick={() => setCustomerPreview(null)} className="h-10 rounded-lg border border-white/15 p-2"><X /></button></div><div className="mt-5 space-y-4"><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Project description</h3><p className="mt-2 whitespace-pre-wrap text-sky-50/80">{customerPreview.project?.description || "No description provided."}</p></section><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Pricing</h3><div className="mt-2 space-y-2">{(customerPreview.pricing?.line_items || []).map((item, index) => <div key={`${item.description}-${index}`} className="flex justify-between gap-3 border-t border-white/10 pt-2"><span>{item.description}</span><strong>{money(item.total)}</strong></div>)}<div className="flex justify-between border-t border-white/20 pt-3 text-lg"><strong>Total</strong><strong>{money(customerPreview.pricing?.total)}</strong></div></div></section><p className="text-xs font-semibold text-sky-100/55">This preview excludes internal notes, Pricing Benchmark, activity, assistant context, and attachments.</p></div></section></div> : null}
 

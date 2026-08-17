@@ -304,6 +304,8 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "expires_at": _format_datetime(latest_review.expires_at),
         "decision": latest_review.decision,
         "decided_at": _format_datetime(latest_review.decided_at),
+        "accepted_by": latest_review.accepted_by,
+        "accepted_amount": str((latest_review.snapshot.get("pricing") or {}).get("total") or "") if latest_review.decision == ProposalReviewVersion.DECISION_ACCEPTED else "",
         "decline_reason": latest_review.decline_reason,
         "revision_request_message": latest_review.revision_request_message,
         "delivery": latest_review.delivery_state,

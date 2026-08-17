@@ -586,13 +586,13 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
 
   await expect(page).toHaveURL(/section=customer/);
   await page.getByTestId("estimate-actions-menu").click();
-  await page.getByRole("button", { name: "Delete estimate" }).click();
+  await page.getByRole("menuitem", { name: "Delete estimate" }).click();
   const lifecycleDialog = page.getByTestId("estimate-lifecycle-dialog");
   await expect(lifecycleDialog).toContainText("Delete draft estimate?");
   await expect(lifecycleDialog).toContainText("This cannot be undone.");
   await lifecycleDialog.getByRole("button", { name: "Keep estimate" }).click();
   await expect(lifecycleDialog).toHaveCount(0);
-  await expect(page.getByTestId("proposal-workspace-header")).toContainText("Not Ready to Send");
+  await expect(page.getByTestId("proposal-workspace-header")).toContainText("In Progress");
   await expect(page.getByTestId("estimate-header-progress")).toContainText("Estimate completeness:");
   const topTabs = page.getByTestId("estimate-workflow-tabs");
   await expect(topTabs.getByRole("tab")).toHaveCount(4);

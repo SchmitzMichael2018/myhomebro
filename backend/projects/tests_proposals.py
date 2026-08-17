@@ -24,6 +24,7 @@ from projects.models_proposals import Proposal, ProposalActivity, ProposalAttach
 from projects.models_sms import SMSConsent
 from projects.services.proposal_customer_review import ACKNOWLEDGEMENT, activation_token_for, build_customer_snapshot, estimate_sms_body, portal_access, public_customer_snapshot, public_review_short_url, resolve_token, review_delivery_eligibility, short_code_for, token_for, trusted_public_site_url
 from projects.services.proposal_conversion import ProposalConversionError, _trusted_agreement_payload
+from projects.services.proposal_lifecycle import resolve_proposal_lifecycle_status, synchronize_proposal_lifecycle
 from projects.models_templates import ProjectTemplate, ProjectTemplateMilestone
 from projects.models_learning import ContractorBenchmarkAggregate, RegionalBenchmarkAggregate
 from projects.services.proposal_pricing_benchmark import MIN_REGIONAL_BENCHMARK_SAMPLE, classify_proposal_benchmark
@@ -108,6 +109,22 @@ class ProposalCancellationLifecycleTests(TestCase):
         self.client.force_authenticate(self.other_user)
         response = self.client.post(f"/api/projects/proposals/{proposal.id}/cancel/", {}, format="json")
         self.assertEqual(response.status_code, 404)
+
+    def test_accepted_snapshot_repairs_stale_ready_status_idempotently(self):
+        proposal = self.proposal(status=Proposal.STATUS_READY)
+        self.review(proposal, decision=ProposalReviewVersion.DECISION_ACCEPTED)
+
+        self.assertEqual(synchronize_proposal_lifecycle(proposal, readiness_ready=True), Proposal.STATUS_ACCEPTED)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.STATUS_ACCEPTED)
+        self.assertEqual(synchronize_proposal_lifecycle(proposal, readiness_ready=False), Proposal.STATUS_ACCEPTED)
+
+    def test_cancelled_state_precedes_acceptance_and_conversion(self):
+        proposal = self.proposal(status=Proposal.STATUS_CANCELLED)
+        self.review(proposal, decision=ProposalReviewVersion.DECISION_ACCEPTED)
+        proposal.converted_agreement_id = 999
+
+        self.assertEqual(resolve_proposal_lifecycle_status(proposal, readiness_ready=True), Proposal.STATUS_CANCELLED)
 
 
 class ProposalBenchmarkClassificationTests(TestCase):
