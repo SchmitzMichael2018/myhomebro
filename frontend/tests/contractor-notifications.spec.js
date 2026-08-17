@@ -96,6 +96,20 @@ async function installDashboardMocks(page, overrides = {}) {
     });
   });
 
+  await page.route('**/api/projects/contractors/onboarding/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        required_onboarding_complete: true,
+        step: 'complete',
+        business_name: 'Playwright Contracting Co',
+        trade_count: 1,
+        service_region_label: 'Austin, TX',
+      }),
+    });
+  });
+
   await page.route('**/api/projects/contractors/me/**', async (route) => {
     await route.fulfill({
       status: 200,
@@ -238,6 +252,7 @@ async function installDashboardMocks(page, overrides = {}) {
 }
 
 test('contractor dashboard loads current notification, priority, and pipeline surfaces', async ({ page }) => {
+  test.setTimeout(60_000);
   await installDashboardMocks(page);
 
   await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
@@ -245,15 +260,58 @@ test('contractor dashboard loads current notification, priority, and pipeline su
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await expect(page.getByTestId('dashboard-workspace-header')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toHaveCount(1);
-  await expect(page.getByRole('button', { name: 'Open notifications' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open Project Assistant' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Open Project Assistant' })).toHaveCount(1);
+  const header = page.getByTestId('global-header-actions');
+  const launcher = page.getByRole('button', { name: 'Open Project Assistant' });
+  await expect(header).toBeVisible();
+  await expect(launcher).toBeVisible();
+  await expect(launcher).toHaveCount(1);
+  await expect(launcher).toHaveAttribute('title', 'Project Assistant');
+  await expect(launcher).toHaveAttribute('aria-expanded', 'false');
+  await expect(launcher).not.toHaveCSS('position', 'fixed');
+  await expect
+    .poll(() => header.locator('button').evaluateAll((buttons) => buttons.map((button) => button.dataset.testid).filter((testId) => [
+      'assistant-dock-open-button',
+      'appearance-menu-trigger',
+      'notifications-bell-button',
+    ].includes(testId))))
+    .toEqual(['assistant-dock-open-button', 'appearance-menu-trigger', 'notifications-bell-button']);
+  expect(await page.locator('button').evaluateAll((buttons) => buttons.filter((button) => {
+    const style = window.getComputedStyle(button);
+    return button.textContent?.trim() === 'Project Assistant' && style.position === 'fixed' && button.getBoundingClientRect().bottom > window.innerHeight / 2;
+  }).length)).toBe(0);
+  await page.screenshot({ path: 'test-results/dashboard-assistant-header-desktop.png', fullPage: true });
+  await launcher.click();
+  await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
+  await page.getByTestId('assistant-desktop-dock-close').click();
+  await expect(launcher).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(launcher).toHaveCSS('width', '44px');
+  await expect(launcher).toHaveCSS('height', '44px');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await launcher.click();
+  await expect(page.getByTestId('assistant-mobile-sheet')).toBeVisible();
+  await page.screenshot({ path: 'test-results/dashboard-assistant-header-mobile-390.png', fullPage: true });
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Quick Actions');
   await expect(page.getByTestId('dashboard-next-actions')).toContainText("Today's Priorities");
   await expect(page.getByTestId('dashboard-priority-count')).toBeVisible();
   await expect(page.getByText('Work Pipeline').first()).toBeVisible();
   await expect(page.getByTestId('dashboard-money-pipeline')).toBeVisible();
   await expect(page.getByTestId('dashboard-opportunity-metric-open')).toBeVisible();
+});
+
+test('dashboard contextual Assistant priority remains distinct from the global header launcher', async ({ page }) => {
+  await installDashboardMocks(page, {
+    nextBestAction: {
+      action_type: 'start_with_assistant',
+      title: 'Start your next agreement',
+      message: 'Use Project Assistant to prepare the next draft.',
+      cta_label: 'Project Assistant',
+      navigation_target: '/app/assistant',
+    },
+  });
+  await page.goto('/app/dashboard', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('global-header-actions').getByRole('button', { name: 'Open Project Assistant' })).toHaveCount(1);
+  await expect(page.getByTestId('dashboard-next-actions').getByText('Project Assistant', { exact: true })).toHaveCount(1);
 });
 
 test('contractor dashboard renders current quick actions and workflow entry points', async ({ page }) => {

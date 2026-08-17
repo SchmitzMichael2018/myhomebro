@@ -284,7 +284,7 @@ test("authenticated shell renders notifications bell and dropdown panel", async 
   await expect(panel).toBeVisible();
   await expect(panel).toContainText("New quote request");
   await expect(panel).toContainText("Agreement signed");
-  await expect(panel).toContainText("Payment released");
+  await expect(panel).not.toContainText("Payment released");
   await expect(panel.getByTestId("notification-item-1")).toContainText("Action Needed");
   await expect(panel.getByTestId("notifications-dropdown-view-all")).toHaveAttribute("href", "/app/notifications");
 

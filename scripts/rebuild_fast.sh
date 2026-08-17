@@ -34,6 +34,7 @@ python "$BACKEND_DIR/manage.py" migrate --check
 log "Building frontend with Vite (no installs)…"
 cd "$FRONTEND_DIR"
 npx vite build
+python "$REPO_ROOT/scripts/verify_assistant_launcher_build.py"
 
 PWA_ENABLED_NORMALIZED="${PWA_ENABLED:-false}"
 VITE_PWA_ENABLED_NORMALIZED="${VITE_PWA_ENABLED:-false}"
