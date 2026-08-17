@@ -17,6 +17,7 @@ class Proposal(models.Model):
     STATUS_REVISION_REQUESTED = "revision_requested"
     STATUS_EXPIRED = "expired"
     STATUS_CONVERTED = "converted"
+    STATUS_CANCELLED = "cancelled"
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Draft"),
         (STATUS_SITE_VISIT, "Site Visit"),
@@ -29,6 +30,13 @@ class Proposal(models.Model):
         (STATUS_REVISION_REQUESTED, "Revision Requested"),
         (STATUS_EXPIRED, "Expired"),
         (STATUS_CONVERTED, "Converted"),
+        (STATUS_CANCELLED, "Cancelled"),
+    ]
+    CANCELLATION_WITHDRAWN = "withdrawn"
+    CANCELLATION_VOIDED = "voided_after_acceptance"
+    CANCELLATION_CHOICES = [
+        (CANCELLATION_WITHDRAWN, "Withdrawn"),
+        (CANCELLATION_VOIDED, "Voided after acceptance"),
     ]
 
     SOURCE_LEAD = "lead"
@@ -164,6 +172,16 @@ class Proposal(models.Model):
     )
     converted_at = models.DateTimeField(null=True, blank=True)
     conversion_method = models.CharField(max_length=24, blank=True, default="")
+    cancellation_kind = models.CharField(max_length=32, choices=CANCELLATION_CHOICES, blank=True, default="")
+    cancellation_reason = models.CharField(max_length=255, blank=True, default="")
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cancelled_proposals",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -396,6 +414,8 @@ class ProposalActivity(models.Model):
     EVENT_ESTIMATE_REVISION_REQUESTED = "estimate_revision_requested"
     EVENT_AGREEMENT_OVERRIDE = "agreement_override"
     EVENT_AGREEMENT_CREATED = "agreement_created"
+    EVENT_ESTIMATE_WITHDRAWN = "estimate_withdrawn"
+    EVENT_ESTIMATE_VOIDED = "estimate_voided"
     EVENT_CHOICES = [
         (EVENT_CREATED, "Proposal Created"),
         (EVENT_APPOINTMENT_LINKED, "Appointment Linked"),
@@ -419,6 +439,8 @@ class ProposalActivity(models.Model):
         (EVENT_ESTIMATE_REVISION_REQUESTED, "Estimate Revision Requested"),
         (EVENT_AGREEMENT_OVERRIDE, "Agreement Review Override"),
         (EVENT_AGREEMENT_CREATED, "Agreement Created"),
+        (EVENT_ESTIMATE_WITHDRAWN, "Estimate Withdrawn"),
+        (EVENT_ESTIMATE_VOIDED, "Accepted Estimate Voided"),
     ]
 
     proposal = models.ForeignKey(Proposal, on_delete=models.CASCADE, related_name="activity")

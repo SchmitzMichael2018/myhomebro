@@ -466,7 +466,7 @@ def release_pending_estimate_sms(phone_number: str, *, message_sid: str = "") ->
         latest = proposal.review_versions.order_by("-version").first()
         delivery = dict(review.delivery_state or {})
         sms_state = dict(delivery.get("sms") or {})
-        if latest is None or latest.pk != review.pk or review.decision != ProposalReviewVersion.DECISION_PENDING or (review.expires_at and review.expires_at <= now) or proposal.status in {Proposal.STATUS_DECLINED, Proposal.STATUS_ACCEPTED, Proposal.STATUS_CONVERTED, Proposal.STATUS_EXPIRED}:
+        if latest is None or latest.pk != review.pk or review.decision != ProposalReviewVersion.DECISION_PENDING or (review.expires_at and review.expires_at <= now) or proposal.status in {Proposal.STATUS_DECLINED, Proposal.STATUS_ACCEPTED, Proposal.STATUS_CONVERTED, Proposal.STATUS_EXPIRED, Proposal.STATUS_CANCELLED}:
             sms_state.update({"status": "cancelled", "message": "Pending text cancelled because this estimate is no longer current."})
         else:
             url = public_review_short_url(review)

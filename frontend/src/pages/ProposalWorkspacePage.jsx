@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { AlertTriangle, Camera, Check, CheckCircle2, Circle, FileSignature, FileUp, Lock, Mail, Mic, Phone, Plus, Ruler, Save, ShieldCheck, StickyNote, Trash2, X } from "lucide-react";
+import { AlertTriangle, Camera, Check, CheckCircle2, Circle, EllipsisVertical, FileSignature, FileUp, Lock, Mail, Mic, Phone, Plus, Ruler, Save, ShieldCheck, StickyNote, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api from "../api";
@@ -1241,6 +1241,10 @@ export default function ProposalWorkspacePage() {
   const [searchParams] = useSearchParams();
   const { updateAssistantContext } = useAssistantDock();
   const [proposal, setProposal] = useState(null);
+  const [lifecycleDialog, setLifecycleDialog] = useState("");
+  const [lifecycleReason, setLifecycleReason] = useState("");
+  const [voidConfirmed, setVoidConfirmed] = useState(false);
+  const [lifecycleSubmitting, setLifecycleSubmitting] = useState(false);
   const [customerPreview, setCustomerPreview] = useState(null);
   const [reviewSending, setReviewSending] = useState(false);
   const [sendReviewOpen, setSendReviewOpen] = useState(false);
@@ -1418,8 +1422,9 @@ export default function ProposalWorkspacePage() {
     const rank = { "Needs Answer": 0, Reopened: 0, Suggested: 1, Complete: 2, Ignored: 3 };
     return (rank[a.status] ?? 4) - (rank[b.status] ?? 4);
   }), [clarificationRows]);
+  const isCancelledHistory = compactText(proposal?.status).toLowerCase() === "cancelled";
   const isReadOnlyHistory = Boolean(
-    proposal && (compactText(proposal.status).toLowerCase() === "converted" || proposal.linked_agreement_id)
+    proposal && (compactText(proposal.status).toLowerCase() === "converted" || isCancelledHistory || proposal.linked_agreement_id)
   );
   const lastReadinessSync = useRef("");
   useEffect(() => {
@@ -1532,8 +1537,33 @@ export default function ProposalWorkspacePage() {
   }, [activeStep.key, documents.length, draft, estimateChecklist.items, photos.length, pricingBenchmark, proposal, proposalId, selectedTemplate, templatePricingItems.length, totals, updateAssistantContext]);
   function blockReadOnlyHistory() {
     if (!isReadOnlyHistory) return false;
-    toast.error("Converted estimates are read-only history. Open the linked agreement for active work.");
+    toast.error(isCancelledHistory ? "Cancelled estimates are read-only history." : "Converted estimates are read-only history. Open the linked agreement for active work.");
     return true;
+  }
+
+  async function submitLifecycleAction() {
+    if (!lifecycleDialog || lifecycleSubmitting) return;
+    setLifecycleSubmitting(true);
+    try {
+      if (lifecycleDialog === "delete") {
+        await api.delete(`/projects/proposals/${proposalId}/delete-draft/`);
+        toast.success("Draft estimate deleted.");
+        navigate("/app/estimates", { replace: true });
+        return;
+      }
+      const action = lifecycleDialog;
+      const { data } = await api.post(`/projects/proposals/${proposalId}/cancel/`, {
+        reason: lifecycleReason,
+        confirm_accepted: action === "void" ? voidConfirmed : false,
+      });
+      setProposal(data.proposal);
+      setLifecycleDialog("");
+      toast.success(action === "void" ? "Accepted estimate voided." : "Estimate withdrawn.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "The estimate lifecycle action could not be completed.");
+    } finally {
+      setLifecycleSubmitting(false);
+    }
   }
 
   function openWorkspaceSection(sectionKey) {
@@ -2563,6 +2593,16 @@ export default function ProposalWorkspacePage() {
       subtitle="Prepare scope, pricing, evidence, and agreement handoff details in one focused workspace."
       actions={
         <>
+          {proposal.lifecycle_actions?.can_delete || proposal.lifecycle_actions?.can_withdraw || proposal.lifecycle_actions?.can_void ? (
+            <details className="relative">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-lg border border-white/18 bg-white/10 px-3 py-2 text-sm font-bold text-white hover:bg-white/15" data-testid="estimate-actions-menu"><EllipsisVertical size={17} aria-hidden="true" /> Estimate actions</summary>
+              <div className="absolute right-0 z-30 mt-2 w-56 rounded-xl border border-slate-200 bg-white p-2 text-slate-900 shadow-2xl">
+                {proposal.lifecycle_actions.can_delete ? <button type="button" className="min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-rose-700 hover:bg-rose-50" onClick={() => setLifecycleDialog("delete")}>Delete estimate</button> : null}
+                {proposal.lifecycle_actions.can_withdraw ? <button type="button" className="min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-rose-700 hover:bg-rose-50" onClick={() => setLifecycleDialog("withdraw")}>Withdraw estimate</button> : null}
+                {proposal.lifecycle_actions.can_void ? <button type="button" className="min-h-11 w-full rounded-lg px-3 py-2 text-left text-sm font-bold text-rose-700 hover:bg-rose-50" onClick={() => setLifecycleDialog("void")}>Void accepted estimate</button> : null}
+              </div>
+            </details>
+          ) : null}
           <button
             type="button"
             data-testid="enter-walkthrough-mode"
@@ -2581,11 +2621,13 @@ export default function ProposalWorkspacePage() {
         </>
       }
     >
-      {isReadOnlyHistory ? (
+      {isReadOnlyHistory && !isCancelledHistory ? (
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900" data-testid="proposal-read-only-history">
-          This estimate has been converted and remains available as read-only history. The linked agreement is now the active operational record.
+          <span>This estimate was converted to Agreement {proposal.linked_agreement_id ? `#${proposal.linked_agreement_id}` : ""}. Manage cancellation from the Agreement.</span>
+          {proposal.linked_agreement_url ? <a href={proposal.linked_agreement_url} className="ml-3 inline-flex min-h-11 items-center rounded-lg border border-emerald-300 px-3 py-2 font-black" data-testid="estimate-history-open-agreement">Open Agreement</a> : null}
         </div>
       ) : null}
+      {proposal.status === "cancelled" ? <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-semibold text-rose-950" data-testid="estimate-cancelled-history"><strong>{proposal.cancellation_kind === "voided_after_acceptance" ? "Voided after acceptance" : "Withdrawn estimate"}</strong>{proposal.cancellation_reason ? <span className="mt-1 block">Reason: {proposal.cancellation_reason}</span> : null}</div> : null}
       <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-sky-200/14 bg-[#061d42]/95 px-4 py-3 text-sm font-black text-white shadow-sm" data-testid="proposal-workspace-header" aria-live="polite">
         <span data-testid="estimate-header-send-status">{estimateChecklist.sendReady ? "Ready to Send" : "Not Ready to Send"}</span>
         <span aria-hidden="true">·</span>
@@ -3458,6 +3500,8 @@ export default function ProposalWorkspacePage() {
             {(proposal.activity || []).length > 2 ? <button type="button" data-testid="proposal-history-toggle" aria-expanded={historyExpanded} onClick={() => setHistoryExpanded((value) => !value)} className="mt-3 rounded-lg border border-white/16 bg-white/7 px-3 py-2 text-sm font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300">{historyExpanded ? "Show recent activity" : `View full history (${proposal.activity.length})`}</button> : null}
           </Section>
         </main>
+
+        {lifecycleDialog ? <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 p-3" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="estimate-lifecycle-title" className="max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 text-slate-950 shadow-2xl" data-testid="estimate-lifecycle-dialog"><h2 id="estimate-lifecycle-title" className="text-xl font-black">{lifecycleDialog === "delete" ? "Delete draft estimate?" : lifecycleDialog === "void" ? "Void accepted estimate?" : "Withdraw this estimate?"}</h2><p className="mt-3 text-sm leading-6 text-slate-700">{lifecycleDialog === "delete" ? "This estimate has not been sent to the customer. Deleting it will permanently remove the draft and its estimate-only details. This cannot be undone." : lifecycleDialog === "void" ? "The customer already accepted this estimate. Voiding it will prevent Agreement creation, but the accepted record and audit history will be retained." : "The customer will no longer be able to review or accept this version. Delivery and review history will be retained."}</p>{lifecycleDialog !== "delete" ? <label className="mt-4 block text-sm font-bold">Reason{lifecycleDialog === "void" ? " (required)" : " (optional)"}<textarea value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 p-3" data-testid="estimate-lifecycle-reason" /></label> : null}{lifecycleDialog === "void" ? <label className="mt-4 flex min-h-11 items-start gap-3 text-sm font-bold"><input type="checkbox" checked={voidConfirmed} onChange={(event) => setVoidConfirmed(event.target.checked)} className="mt-1" />I understand that this accepted estimate will be voided.</label> : null}<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" className="min-h-11 rounded-xl border border-slate-300 px-4 font-bold" onClick={() => setLifecycleDialog("")} disabled={lifecycleSubmitting}>Keep estimate</button><button type="button" className="min-h-11 rounded-xl bg-rose-700 px-4 font-bold text-white disabled:opacity-50" onClick={submitLifecycleAction} disabled={lifecycleSubmitting || (lifecycleDialog === "void" && (!voidConfirmed || !lifecycleReason.trim()))}>{lifecycleSubmitting ? "Working…" : lifecycleDialog === "delete" ? "Delete draft" : lifecycleDialog === "void" ? "Void estimate" : "Withdraw estimate"}</button></div></section></div> : null}
 
         {customerPreview ? <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/80 p-3" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCustomerPreview(null); }}><section role="dialog" aria-modal="true" aria-labelledby="customer-preview-title" className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/15 bg-[#071d3d] p-5 text-white shadow-2xl" data-testid="estimate-customer-preview-dialog"><div className="flex justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wide text-sky-200">Customer preview</p><h2 id="customer-preview-title" className="text-2xl font-black">{customerPreview.project?.title}</h2><p className="mt-1 text-sky-100/70">{customerPreview.project?.property}</p></div><button type="button" aria-label="Close customer preview" onClick={() => setCustomerPreview(null)} className="h-10 rounded-lg border border-white/15 p-2"><X /></button></div><div className="mt-5 space-y-4"><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Project description</h3><p className="mt-2 whitespace-pre-wrap text-sky-50/80">{customerPreview.project?.description || "No description provided."}</p></section><section className="rounded-xl border border-white/10 bg-white/7 p-4"><h3 className="font-black">Pricing</h3><div className="mt-2 space-y-2">{(customerPreview.pricing?.line_items || []).map((item, index) => <div key={`${item.description}-${index}`} className="flex justify-between gap-3 border-t border-white/10 pt-2"><span>{item.description}</span><strong>{money(item.total)}</strong></div>)}<div className="flex justify-between border-t border-white/20 pt-3 text-lg"><strong>Total</strong><strong>{money(customerPreview.pricing?.total)}</strong></div></div></section><p className="text-xs font-semibold text-sky-100/55">This preview excludes internal notes, Pricing Benchmark, activity, assistant context, and attachments.</p></div></section></div> : null}
 

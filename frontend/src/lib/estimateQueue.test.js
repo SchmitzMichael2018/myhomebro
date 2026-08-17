@@ -5,7 +5,7 @@ describe("estimate queue lifecycle mapping", () => {
   const expected = {
     draft: "needs_estimate", site_visit: "in_progress", in_progress: "in_progress",
     revision_requested: "in_progress", ready: "ready_to_send", sent: "with_customer",
-    viewed: "with_customer", accepted: "accepted", declined: "closed", expired: "closed", converted: "converted",
+    viewed: "with_customer", accepted: "accepted", declined: "closed", expired: "closed", cancelled: "closed", converted: "converted",
   };
 
   it.each(Object.entries(expected))("maps %s to %s", (status, stage) => {

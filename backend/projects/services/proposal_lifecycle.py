@@ -15,6 +15,8 @@ def resolve_proposal_lifecycle_status(proposal: Proposal, *, readiness_ready: bo
     opportunity = getattr(proposal, "contractor_opportunity", None)
     if proposal.converted_agreement_id or getattr(opportunity, "converted_agreement_id", None):
         return Proposal.STATUS_CONVERTED
+    if proposal.status == Proposal.STATUS_CANCELLED:
+        return Proposal.STATUS_CANCELLED
 
     latest = proposal.review_versions.order_by("-version").first()
     if latest is not None:

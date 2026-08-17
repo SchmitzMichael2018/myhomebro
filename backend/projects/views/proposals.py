@@ -251,6 +251,14 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "linked_agreement_url": f"/app/agreements/{linked_agreement.id}" if linked_agreement is not None else "",
         "converted_at": _format_datetime(proposal.converted_at),
         "conversion_method": proposal.conversion_method,
+        "cancellation_kind": proposal.cancellation_kind,
+        "cancellation_reason": proposal.cancellation_reason,
+        "cancelled_at": _format_datetime(proposal.cancelled_at),
+        "lifecycle_actions": {
+            "can_delete": proposal.status in {Proposal.STATUS_DRAFT, Proposal.STATUS_SITE_VISIT, Proposal.STATUS_IN_PROGRESS, Proposal.STATUS_READY} and not proposal.review_versions.exists() and linked_agreement is None,
+            "can_withdraw": proposal.status in {Proposal.STATUS_SENT, Proposal.STATUS_VIEWED} and linked_agreement is None,
+            "can_void": proposal.status == Proposal.STATUS_ACCEPTED and linked_agreement is None,
+        },
         "converted_review_version": getattr(proposal.converted_review_version, "version", None),
         "customer_id": customer_id,
         "homeowner_id": customer_id,
@@ -629,6 +637,8 @@ class ProposalDetailView(APIView):
         if error:
             return error
         return Response(_serialize_proposal(proposal, request=request))
+
+
     def patch(self, request, proposal_id):
         proposal, error = self._get_proposal(request, proposal_id)
         if error:
@@ -729,6 +739,43 @@ class ProposalDetailView(APIView):
         return Response(_serialize_proposal(proposal, request=request))
 
 
+class ProposalDeleteDraftView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, proposal_id):
+        from projects.services.proposal_cancellation import ProposalLifecycleError, delete_draft_estimate
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        try:
+            delete_draft_estimate(contractor=contractor, proposal_id=proposal_id)
+        except ProposalLifecycleError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
+        return Response(status=204)
+
+
+class ProposalCancelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, proposal_id):
+        from projects.services.proposal_cancellation import ProposalLifecycleError, cancel_estimate
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Contractor profile not found."}, status=404)
+        try:
+            proposal = cancel_estimate(
+                contractor=contractor,
+                proposal_id=proposal_id,
+                actor=request.user,
+                reason=request.data.get("reason", ""),
+                confirm_accepted=request.data.get("confirm_accepted") is True,
+            )
+        except ProposalLifecycleError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
+        proposal = _proposal_queryset(contractor).get(pk=proposal.pk)
+        return Response({"proposal": _serialize_proposal(proposal, request=request)})
+
+
 class ProposalCustomerPreviewView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -776,6 +823,8 @@ class PublicProposalReviewView(APIView):
             return error
         with transaction.atomic():
             review = ProposalReviewVersion.objects.select_for_update().select_related("proposal").get(pk=review.pk)
+            if review.proposal.status == Proposal.STATUS_CANCELLED:
+                return Response({"detail": "This estimate is no longer available. Contact the contractor if you need an updated estimate."}, status=410)
             current = review.proposal.review_versions.order_by("-version").first()
             if current.pk != review.pk:
                 return Response({"detail": "A newer estimate is available. Ask your contractor for the latest review link."}, status=409)
@@ -798,6 +847,8 @@ class PublicProposalReviewView(APIView):
             if error:
                 return error
             proposal = Proposal.objects.select_for_update().get(pk=review.proposal_id)
+            if proposal.status == Proposal.STATUS_CANCELLED:
+                return Response({"detail": "This estimate is no longer available. Contact the contractor if you need an updated estimate."}, status=410)
             latest = proposal.review_versions.order_by("-version").first()
             if latest.pk != review.pk:
                 return Response({"detail": "This estimate version has been superseded."}, status=409)
@@ -845,6 +896,8 @@ class PublicProposalMessageView(APIView):
         try:
             with transaction.atomic():
                 review = resolve_token(token, lock=True)
+                if review.proposal.status == Proposal.STATUS_CANCELLED:
+                    return Response({"detail": "This estimate is no longer available. Contact the contractor if you need an updated estimate."}, status=410)
                 latest = review.proposal.review_versions.order_by("-version").first()
                 if latest is None or latest.pk != review.pk:
                     return Response({"detail": "Use the latest estimate review link to send a message."}, status=409)
@@ -896,6 +949,8 @@ class ProposalPortalActivationView(APIView):
         activation, error = self._activation(token)
         if error:
             return error
+        if activation.review.proposal.status == Proposal.STATUS_CANCELLED:
+            return Response({"detail": "This estimate is no longer available. Contact the contractor if you need an updated estimate."}, status=410)
         existing = User.objects.filter(email__iexact=activation.email).first()
         return Response({
             "email": activation.email,
@@ -911,6 +966,8 @@ class ProposalPortalActivationView(APIView):
             activation, error = self._activation(token, lock=True)
             if error:
                 return error
+            if activation.review.proposal.status == Proposal.STATUS_CANCELLED:
+                return Response({"detail": "This estimate is no longer available. Contact the contractor if you need an updated estimate."}, status=410)
             user = User.objects.select_for_update().filter(email__iexact=activation.email).first()
             if user and user.has_usable_password() and user.is_active:
                 return Response({"detail": "An account already exists for this email. Sign in instead."}, status=409)

@@ -33,6 +33,83 @@ from projects.services import sms_service
 from projects.views.customer_portal import _estimate_rows
 
 
+class ProposalCancellationLifecycleTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(email="lifecycle@example.com", password="test-pass")
+        self.contractor = Contractor.objects.create(user=self.user, business_name="Lifecycle Builder")
+        self.other_user = User.objects.create_user(email="outsider@example.com", password="test-pass")
+        Contractor.objects.create(user=self.other_user, business_name="Other Builder")
+        self.client = APIClient()
+        _use_secure_requests(self.client)
+        self.client.force_authenticate(self.user)
+
+    def proposal(self, *, status=Proposal.STATUS_IN_PROGRESS, source_id=991):
+        return Proposal.objects.create(
+            contractor=self.contractor,
+            created_by=self.user,
+            source_type=Proposal.SOURCE_DASHBOARD,
+            source_id=source_id,
+            status=status,
+            project_title="Lifecycle estimate",
+            customer_name="Casey Customer",
+            customer_email="casey@example.com",
+        )
+
+    def review(self, proposal, *, decision=ProposalReviewVersion.DECISION_PENDING):
+        return ProposalReviewVersion.objects.create(
+            proposal=proposal,
+            version=1,
+            customer_email=proposal.customer_email,
+            snapshot={"project": {"title": proposal.project_title}, "pricing": {}},
+            sent_at=timezone.now(),
+            decision=decision,
+            decided_at=timezone.now() if decision != ProposalReviewVersion.DECISION_PENDING else None,
+        )
+
+    def test_unsent_draft_is_deleted_with_owned_children_only(self):
+        proposal = self.proposal()
+        ProposalLineItem.objects.create(proposal=proposal, description="Labor", quantity=1, unit_price=100)
+        response = self.client.delete(f"/api/projects/proposals/{proposal.id}/delete-draft/")
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Proposal.objects.filter(pk=proposal.id).exists())
+        self.assertTrue(Contractor.objects.filter(pk=self.contractor.id).exists())
+
+    def test_sent_estimate_cannot_be_hard_deleted_and_can_be_withdrawn(self):
+        proposal = self.proposal(status=Proposal.STATUS_SENT)
+        review = self.review(proposal)
+        self.assertEqual(self.client.delete(f"/api/projects/proposals/{proposal.id}/delete-draft/").status_code, 409)
+        response = self.client.post(f"/api/projects/proposals/{proposal.id}/cancel/", {"reason": "Scope changed"}, format="json")
+        self.assertEqual(response.status_code, 200)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, Proposal.STATUS_CANCELLED)
+        self.assertEqual(proposal.cancellation_kind, Proposal.CANCELLATION_WITHDRAWN)
+        self.assertTrue(ProposalReviewVersion.objects.filter(pk=review.pk).exists())
+        token = token_for(review)
+        public_client = APIClient()
+        _use_secure_requests(public_client)
+        public = public_client.get(f"/api/projects/proposal-reviews/{token}/")
+        self.assertEqual(public.status_code, 410)
+
+    def test_accepted_estimate_requires_reason_and_confirmation_then_preserves_snapshot(self):
+        proposal = self.proposal(status=Proposal.STATUS_ACCEPTED)
+        review = self.review(proposal, decision=ProposalReviewVersion.DECISION_ACCEPTED)
+        url = f"/api/projects/proposals/{proposal.id}/cancel/"
+        self.assertEqual(self.client.post(url, {"reason": "Project canceled"}, format="json").status_code, 400)
+        response = self.client.post(url, {"reason": "Project canceled", "confirm_accepted": True}, format="json")
+        self.assertEqual(response.status_code, 200)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.cancellation_kind, Proposal.CANCELLATION_VOIDED)
+        self.assertEqual(ProposalReviewVersion.objects.get(pk=review.pk).decision, ProposalReviewVersion.DECISION_ACCEPTED)
+
+    def test_unrelated_contractor_cannot_cancel(self):
+        proposal = self.proposal(status=Proposal.STATUS_SENT)
+        self.review(proposal)
+        self.client.force_authenticate(self.other_user)
+        response = self.client.post(f"/api/projects/proposals/{proposal.id}/cancel/", {}, format="json")
+        self.assertEqual(response.status_code, 404)
+
+
 class ProposalBenchmarkClassificationTests(TestCase):
     def _proposal(self, *, title="", project_type="", project_subtype="", summary="", template=None, opportunity=None):
         return SimpleNamespace(

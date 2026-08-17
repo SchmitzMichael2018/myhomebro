@@ -21,12 +21,13 @@ export const ESTIMATE_STATUS_LABELS = {
   revision_requested: "Changes Requested",
   expired: "Expired",
   converted: "Converted",
+  cancelled: "Cancelled",
 };
 
 export function estimateQueueStage(estimate) {
   const status = String(estimate?.status || "").trim().toLowerCase();
   if (status === "converted" || estimate?.linked_agreement_id) return "converted";
-  if (status === "declined" || status === "expired") return "closed";
+  if (status === "declined" || status === "expired" || status === "cancelled") return "closed";
   if (status === "accepted") return "accepted";
   if (status === "sent" || status === "viewed") return "with_customer";
   if (status === "ready") return "ready_to_send";
