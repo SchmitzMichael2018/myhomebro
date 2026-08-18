@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import timedelta, timezone as datetime_timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from projects.models_contractor_discovery import (
     OpportunityEstimateAppointment,
@@ -17,10 +18,14 @@ from projects.models_proposals import Proposal, ProposalActivity
 
 
 class EstimateAppointmentError(Exception):
-    def __init__(self, detail: str, *, status_code: int = 409):
+    def __init__(self, detail: str, *, status_code: int = 409, field: str | None = None):
         super().__init__(detail)
         self.detail = detail
         self.status_code = status_code
+        self.field = field
+
+    def response_data(self):
+        return {self.field: [self.detail]} if self.field else {"detail": self.detail}
 
 
 ACTIVE_BLOCKING_STATUSES = {
@@ -86,6 +91,39 @@ def _validate_slot_alignment(scheduled_start, duration_minutes):
         raise EstimateAppointmentError(f"Appointment duration must use {increment}-minute increments.", status_code=400)
 
 
+def validate_future_start(scheduled_start, *, timezone_name, now=None):
+    """Validate an aware appointment instant against authoritative server time."""
+    try:
+        ZoneInfo(timezone_name or "America/Chicago")
+    except ZoneInfoNotFoundError as exc:
+        raise EstimateAppointmentError("Choose a valid appointment time zone.", status_code=400, field="timezone") from exc
+    if scheduled_start is None or timezone.is_naive(scheduled_start):
+        raise EstimateAppointmentError("Choose a future appointment date and time.", status_code=400, field="scheduled_start")
+    earliest = (now or timezone.now()) + timedelta(minutes=settings.ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES)
+    if scheduled_start <= earliest:
+        raise EstimateAppointmentError("Choose a future appointment date and time.", status_code=400, field="scheduled_start")
+
+
+def parse_appointment_start(value, *, timezone_name):
+    try:
+        zone = ZoneInfo(timezone_name or "America/Chicago")
+    except ZoneInfoNotFoundError as exc:
+        raise EstimateAppointmentError("Choose a valid appointment time zone.", status_code=400, field="timezone") from exc
+    parsed = parse_datetime(str(value or "").strip())
+    if parsed is None:
+        raise EstimateAppointmentError("Choose a future appointment date and time.", status_code=400, field="scheduled_start")
+    if timezone.is_naive(parsed):
+        first = parsed.replace(tzinfo=zone, fold=0)
+        second = parsed.replace(tzinfo=zone, fold=1)
+        if first.utcoffset() != second.utcoffset():
+            raise EstimateAppointmentError("That local time is ambiguous in the selected time zone. Choose another time.", status_code=400, field="scheduled_start")
+        round_trip = first.astimezone(datetime_timezone.utc).astimezone(zone).replace(tzinfo=None)
+        if round_trip != parsed:
+            raise EstimateAppointmentError("That local time does not exist in the selected time zone. Choose another time.", status_code=400, field="scheduled_start")
+        parsed = first
+    return parsed.astimezone(datetime_timezone.utc)
+
+
 def reservation_segments(scheduled_start, duration_minutes):
     _validate_slot_alignment(scheduled_start, duration_minutes)
     increment = settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES
@@ -126,6 +164,7 @@ def ensure_slot_available(*, contractor, scheduled_start, duration_minutes, excl
 
 def reserve_appointment(appointment, *, replace=False):
     """Persist database-unique segments; legacy overlap validation remains authoritative too."""
+    validate_future_start(appointment.scheduled_start, timezone_name=appointment.timezone)
     ensure_slot_available(
         contractor=appointment.contractor,
         scheduled_start=appointment.scheduled_start,
@@ -205,6 +244,8 @@ def transition_appointment(*, contractor, appointment_id, action, actor, reason=
     if appointment is None:
         raise EstimateAppointmentError("Estimate appointment not found.", status_code=404)
 
+    if action == "confirm":
+        validate_future_start(appointment.scheduled_start, timezone_name=appointment.timezone)
     expired_hold = is_hold_expired(appointment)
     if expired_hold and action == "confirm":
         raise EstimateAppointmentError("This request expired. Propose a new time before confirming it.")
@@ -228,6 +269,7 @@ def transition_appointment(*, contractor, appointment_id, action, actor, reason=
             raise EstimateAppointmentError("Choose a new appointment time.", status_code=400)
         duration_minutes = int(duration_minutes or appointment.duration_minutes)
         _validate_slot_alignment(scheduled_start, duration_minutes)
+        validate_future_start(scheduled_start, timezone_name=timezone_name or appointment.timezone)
 
     before = {
         "status": appointment.status,

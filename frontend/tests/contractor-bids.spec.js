@@ -868,11 +868,15 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("schedule-estimate-customer-name")).toHaveValue("New Lead Customer");
   await expect(page.getByTestId("schedule-estimate-customer-email")).toHaveValue("newlead@example.com");
   await expect(page.getByTestId("schedule-estimate-location")).toHaveValue("Austin, TX");
+  await expect(page.getByTestId("schedule-estimate-modal")).toContainText("Appointments begin in 15-minute increments.");
   await page.getByTestId("schedule-estimate-date").fill("");
   await page.getByTestId("schedule-estimate-submit").click();
   await expect(page.getByTestId("schedule-estimate-error")).toContainText("Date and start time are required");
   await page.getByTestId("schedule-estimate-date").fill("2026-08-12");
-  await page.getByTestId("schedule-estimate-time").fill("10:30");
+  await page.getByTestId("schedule-estimate-time").fill("10:26");
+  await page.getByTestId("schedule-estimate-time").blur();
+  await expect(page.getByTestId("schedule-estimate-time")).toHaveValue("10:30");
+  await expect(page.getByTestId("schedule-estimate-modal")).toContainText("Start time adjusted to 10:30");
   await page.getByTestId("schedule-estimate-notes").fill("Confirm tile measurements.");
   await page.getByTestId("schedule-estimate-submit").click();
   await expect(page.getByTestId("schedule-estimate-confirmation")).toContainText("Estimate Scheduled");

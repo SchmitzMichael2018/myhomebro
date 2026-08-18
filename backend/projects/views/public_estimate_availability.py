@@ -124,6 +124,7 @@ def generate_estimate_slots(contractor, start_date: date, end_date: date):
     slots = []
     cursor = start_date
     now = timezone.now()
+    earliest = now + timedelta(minutes=settings.ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES)
     while cursor <= end_date:
         weekday = cursor.weekday()
         for window in windows:
@@ -138,7 +139,7 @@ def generate_estimate_slots(contractor, start_date: date, end_date: date):
             slot_start = datetime.combine(cursor, window.start_time, tzinfo=zone)
             window_end = datetime.combine(cursor, window.end_time, tzinfo=zone)
             while slot_start + timedelta(minutes=window.duration_minutes) <= window_end:
-                if slot_start > now:
+                if slot_start > earliest:
                     slots.append(_slot_payload(window, slot_start))
                 slot_start += timedelta(minutes=window.duration_minutes)
         cursor += timedelta(days=1)
@@ -189,6 +190,8 @@ class PublicEstimateAvailabilityView(APIView):
             {
                 "contractor_id": contractor.id,
                 "contractor_name": contractor.business_name or "Selected contractor",
+                "scheduling_increment_minutes": settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES,
+                "minimum_lead_minutes": settings.ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES,
                 "start_date": start.isoformat(),
                 "end_date": end.isoformat(),
                 "slots": slots,
@@ -298,7 +301,7 @@ def create_customer_estimate_request_for_opportunity(opportunity: ContractorOppo
             )
             reserve_appointment(appointment)
     except EstimateAppointmentError as exc:
-        return {"detail": exc.detail}, status.HTTP_409_CONFLICT
+        return exc.response_data(), exc.status_code
     opportunity.estimate_preference = ContractorOpportunity.ESTIMATE_PREFERENCE_SLOT
     opportunity.estimate_preference_notes = notes
     opportunity.save(update_fields=["estimate_preference", "estimate_preference_notes", "updated_at"])

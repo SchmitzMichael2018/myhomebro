@@ -349,7 +349,6 @@ test("Estimates landing page lists lifecycle stages and opens existing records",
   await page.route("**/api/projects/proposals/42/", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(estimateListPayload.results[0]) });
   });
-
   await page.goto("/app/estimates", { waitUntil: "domcontentloaded" });
 
   await expect(page.getByRole("link", { name: /Estimates/i })).toBeVisible();
@@ -583,6 +582,9 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await page.route("**/api/projects/proposals/42/", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(proposal) });
   });
+  await page.route("**/api/projects/contractor-opportunities/estimate-appointments/7001/transition/", async (route) => {
+    await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "That appointment time is no longer available." }) });
+  });
 
   await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
 
@@ -609,6 +611,19 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   const appointmentDialog = page.getByTestId("appointment-action-dialog");
   await expect(appointmentDialog).toContainText("Current time:");
   await expect(appointmentDialog.getByLabel("Date")).toBeFocused();
+  for (const label of ["Appointment type", "Duration", "Date", "Start time", "Time zone", "Service location", "Notes (optional)", "Reason"]) {
+    await expect(appointmentDialog.getByLabel(label)).toBeVisible();
+  }
+  const startTime = appointmentDialog.getByLabel("Start time");
+  await startTime.fill("12:26");
+  await startTime.blur();
+  await expect(startTime).toHaveValue("12:30");
+  await expect(appointmentDialog).toContainText("Start time adjusted to 12:30");
+  await appointmentDialog.getByLabel("Notes (optional)").fill("Preserve this note after conflict.");
+  await appointmentDialog.getByLabel("Reason").fill("Customer requested a later visit.");
+  await appointmentDialog.getByRole("button", { name: "Reschedule appointment" }).click();
+  await expect(appointmentDialog.getByTestId("appointment-dialog-error")).toContainText("no longer available");
+  await expect(appointmentDialog.getByLabel("Notes (optional)")).toHaveValue("Preserve this note after conflict.");
   await page.screenshot({ path: "test-results/estimate-appointment-dialog-desktop.png", fullPage: true });
   await page.keyboard.press("Escape");
   await expect(appointmentDialog).toHaveCount(0);

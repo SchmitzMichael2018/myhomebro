@@ -234,6 +234,8 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         linked_agreement_title = getattr(linked_project, "title", "") or getattr(linked_agreement, "title", "") or ""
     data = {
         "id": proposal.id,
+        "appointment_scheduling_increment_minutes": settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES,
+        "appointment_minimum_lead_minutes": settings.ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES,
         "status": proposal.status,
         "status_label": _proposal_status_label(proposal.status),
         "selected_template_id": proposal.selected_template_id,
@@ -868,11 +870,12 @@ class ProposalAppointmentView(APIView):
             }
             if prior_appointment and prior_appointment.status not in terminal_statuses:
                 return Response({"detail": "This Estimate already has a linked appointment."}, status=409)
-            scheduled_start = parse_datetime(_safe_text(request.data.get("scheduled_start")))
-            if scheduled_start is None:
-                return Response({"scheduled_start": ["Choose an appointment time."]}, status=400)
-            if timezone.is_naive(scheduled_start):
-                scheduled_start = timezone.make_aware(scheduled_start, timezone.get_current_timezone())
+            timezone_name = _safe_text(request.data.get("timezone")) or "America/Chicago"
+            try:
+                from projects.services.estimate_appointments import parse_appointment_start
+                scheduled_start = parse_appointment_start(request.data.get("scheduled_start"), timezone_name=timezone_name)
+            except EstimateAppointmentError as exc:
+                return Response(exc.response_data(), status=exc.status_code)
             try:
                 duration = int(request.data.get("duration_minutes") or 60)
             except (TypeError, ValueError):
@@ -906,7 +909,7 @@ class ProposalAppointmentView(APIView):
                         scheduled_start=scheduled_start,
                         duration_minutes=duration,
                         notes=_safe_text(request.data.get("notes")),
-                        timezone=_safe_text(request.data.get("timezone")) or "America/Chicago",
+                        timezone=timezone_name,
                         requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
                         created_by=request.user,
                     )
@@ -916,7 +919,7 @@ class ProposalAppointmentView(APIView):
                     proposal.save(update_fields=["estimate_appointment", "appointment_disposition", "updated_at"])
                     _activity(proposal, ProposalActivity.EVENT_APPOINTMENT_LINKED, "Estimate appointment scheduled and linked", actor=request.user, metadata={"appointment_id": appointment.id, "replaced_terminal_appointment_id": getattr(prior_appointment, "id", None)})
             except EstimateAppointmentError as exc:
-                return Response({"detail": exc.detail}, status=exc.status_code)
+                return Response(exc.response_data(), status=exc.status_code)
         else:
             return Response({"detail": "Choose a valid appointment action."}, status=400)
         proposal = _proposal_queryset(contractor).get(pk=proposal.id)
@@ -1616,3 +1619,4 @@ class ProposalAttachmentDetailView(APIView):
         attachment.delete()
         _activity(proposal, ProposalActivity.EVENT_ATTACHMENT_REMOVED, f"Attachment removed: {name}", actor=request.user)
         return Response(status=204)
+from django.conf import settings

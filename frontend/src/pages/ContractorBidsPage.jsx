@@ -9,6 +9,7 @@ import { Card, WorkspacePageHeader } from "../components/ui";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
 import ConvertToAgreementPanel from "../components/ConvertToAgreementPanel.jsx";
 import AppointmentActionDialog from "../components/AppointmentActionDialog.jsx";
+import { FALLBACK_APPOINTMENT_INCREMENT_MINUTES, friendlyTimeZone, nextAppointmentIncrement, normalizeAppointmentWallTime, validateFutureAppointment, zonedParts, zonedWallTimeToIso } from "../lib/appointmentTime.js";
 import {
   ProjectAssistantApprovalNotice,
   ProjectAssistantPanel,
@@ -669,10 +670,14 @@ function defaultScheduleTime() {
   return "09:00";
 }
 
-function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
+function ScheduleEstimateModal({ row, open, onClose, onScheduled, incrementMinutes, minimumLeadMinutes = 0 }) {
+  const increment = Number(incrementMinutes) || FALLBACK_APPOINTMENT_INCREMENT_MINUTES;
   const source = scheduleSourceForRow(row);
   const [date, setDate] = useState(defaultScheduleDate());
   const [time, setTime] = useState(defaultScheduleTime());
+  const [timeZone, setTimeZone] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago");
+  const [timeError, setTimeError] = useState("");
+  const [timeNotice, setTimeNotice] = useState("");
   const [duration, setDuration] = useState("60");
   const [appointmentType, setAppointmentType] = useState("phone_call");
   const [notes, setNotes] = useState("");
@@ -687,9 +692,12 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
 
   useEffect(() => {
     if (!open || !row) return;
-    setDate(defaultScheduleDate());
-    setTime(defaultScheduleTime());
-    setDuration("60");
+    const defaultZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago";
+    const next = nextAppointmentIncrement({ timeZone: defaultZone, incrementMinutes: increment, minimumLeadMinutes });
+    setTimeZone(defaultZone);
+    setDate(next.date);
+    setTime(next.time);
+    setDuration(String(60 % increment === 0 ? 60 : increment));
     setAppointmentType(row.location ? "in_person" : "phone_call");
     setNotes("");
     setCustomerName(row.customer_name || "");
@@ -697,10 +705,23 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
     setCustomerPhone(row.customer_phone || row.request_snapshot?.customer_phone || "");
     setServiceLocation(row.location || row.request_snapshot?.location || "");
     setError("");
+    setTimeError("");
+    setTimeNotice("");
     setLoading(false);
     setResult(null);
     setCopied(false);
-  }, [open, row?.bid_id]);
+  }, [open, row?.bid_id, increment, minimumLeadMinutes]);
+
+  const futureValidation = date && time && timeZone
+    ? validateFutureAppointment({ date, time, timeZone, minimumLeadMinutes })
+    : { valid: false };
+  const minimumDate = timeZone ? zonedParts(new Date(), timeZone).date : "";
+
+  useEffect(() => {
+    if (!open || !date || !time || !timeZone) return;
+    const validation = validateFutureAppointment({ date, time, timeZone, minimumLeadMinutes });
+    setTimeError(validation.valid ? "" : (validation.error || "Choose a future appointment date and time."));
+  }, [open, date, time, timeZone, appointmentType, duration, minimumLeadMinutes]);
 
   if (!open || !row) return null;
 
@@ -734,11 +755,20 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
       return;
     }
 
-    const scheduledStart = new Date(`${date}T${time}`);
-    if (Number.isNaN(scheduledStart.getTime())) {
-      setError("Choose a valid date and start time.");
+    const normalized = normalizeAppointmentWallTime({ date, time, incrementMinutes: increment });
+    if (!normalized.valid || normalized.changed) {
+      if (normalized.changed) { setDate(normalized.date); setTime(normalized.time); setTimeNotice(`Start time adjusted to ${normalized.time} on ${normalized.date}. Review it, then submit again.`); }
+      setTimeError(`Start time must use ${increment}-minute increments.`);
       return;
     }
+    const future = validateFutureAppointment({ date, time, timeZone, minimumLeadMinutes });
+    if (!future.valid) {
+      setTimeError(future.error || "Choose a future appointment date and time.");
+      return;
+    }
+    let scheduledStart;
+    try { scheduledStart = zonedWallTimeToIso(date, time, timeZone); }
+    catch (conversionError) { setTimeError(conversionError.message); return; }
 
     setLoading(true);
     try {
@@ -749,8 +779,9 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
         customer_phone: customerPhone,
         service_location: serviceLocation,
         appointment_type: appointmentType,
-        scheduled_start: scheduledStart.toISOString(),
+        scheduled_start: scheduledStart,
         duration_minutes: Number(duration || 60),
+        timezone: timeZone,
         notes,
       });
       setResult(data || {});
@@ -759,7 +790,8 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
     } catch (err) {
       console.error(err);
       const payload = err?.response?.data;
-      if (payload?.detail) setError(payload.detail);
+      if (payload?.scheduled_start) setTimeError(payload.scheduled_start[0]);
+      else if (payload?.detail) setError(payload.detail);
       else if (payload && typeof payload === "object") {
         const first = Object.values(payload).flat().find(Boolean);
         setError(first || "Could not schedule this estimate.");
@@ -813,38 +845,41 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
               Customer phone
               <input data-testid="schedule-estimate-customer-phone" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             </label>
-            <label className="text-sm font-semibold text-slate-800">
+            <label htmlFor="schedule-estimate-type" className="text-sm font-semibold text-slate-800">
               Appointment type
-              <select data-testid="schedule-estimate-type" value={appointmentType} onChange={(event) => setAppointmentType(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+              <select id="schedule-estimate-type" data-testid="schedule-estimate-type" value={appointmentType} onChange={(event) => setAppointmentType(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
                 <option value="phone_call">Phone call</option>
                 <option value="video_call">Video call</option>
                 <option value="in_person">In-person estimate</option>
               </select>
             </label>
-            <label className="text-sm font-semibold text-slate-800">
+            <label htmlFor="schedule-estimate-date" className="text-sm font-semibold text-slate-800">
               Date
-              <input data-testid="schedule-estimate-date" type="date" value={date} onChange={(event) => setDate(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <input id="schedule-estimate-date" data-testid="schedule-estimate-date" type="date" min={minimumDate} value={date} onChange={(event) => setDate(event.target.value)} aria-invalid={Boolean(timeError)} aria-describedby="opportunity-time-error" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
             </label>
-            <label className="text-sm font-semibold text-slate-800">
+            <label htmlFor="schedule-estimate-time" className="text-sm font-semibold text-slate-800">
               Start time
-              <input data-testid="schedule-estimate-time" type="time" value={time} onChange={(event) => setTime(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <input id="schedule-estimate-time" data-testid="schedule-estimate-time" type="time" step={increment * 60} value={time} onChange={(event) => { setTime(event.target.value); setTimeError(""); setTimeNotice(""); }} onBlur={() => { const normalized = normalizeAppointmentWallTime({ date, time, incrementMinutes: increment }); if (normalized.changed) { setDate(normalized.date); setTime(normalized.time); setTimeNotice(`Start time adjusted to ${normalized.time} on ${normalized.date}.`); } }} aria-invalid={Boolean(timeError)} aria-describedby="opportunity-time-help opportunity-time-error" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+              <span id="opportunity-time-help" className="mt-1 block text-xs text-slate-600">Appointments begin in {increment}-minute increments.</span>
+              {timeError ? <span id="opportunity-time-error" role="alert" className="mt-1 block text-xs font-bold text-rose-700">{timeError}</span> : timeNotice ? <span id="opportunity-time-error" className="mt-1 block text-xs font-bold text-emerald-700">{timeNotice}</span> : null}
             </label>
-            <label className="text-sm font-semibold text-slate-800">
+            <label htmlFor="schedule-estimate-duration" className="text-sm font-semibold text-slate-800">
               Duration
-              <select data-testid="schedule-estimate-duration" value={duration} onChange={(event) => setDuration(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-                <option value="30">30 minutes</option>
-                <option value="60">1 hour</option>
-                <option value="90">1.5 hours</option>
-                <option value="120">2 hours</option>
+              <select id="schedule-estimate-duration" data-testid="schedule-estimate-duration" value={duration} onChange={(event) => setDuration(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+                {[increment, 30, 45, 60, 90, 120].filter((value, index, values) => value % increment === 0 && values.indexOf(value) === index).map((value) => <option key={value} value={value}>{value} minutes</option>)}
               </select>
             </label>
-            <label className="text-sm font-semibold text-slate-800 md:col-span-2">
-              Service address / location
-              <input data-testid="schedule-estimate-location" value={serviceLocation} onChange={(event) => setServiceLocation(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <label htmlFor="schedule-estimate-timezone" className="text-sm font-semibold text-slate-800 md:col-span-2">
+              Time zone
+              <select id="schedule-estimate-timezone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)} className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">{[timeZone, "America/Chicago", "America/New_York", "America/Denver", "America/Los_Angeles"].filter((v, i, a) => v && a.indexOf(v) === i).map((zone) => <option key={zone} value={zone}>{friendlyTimeZone(zone)}</option>)}</select>
             </label>
-            <label className="text-sm font-semibold text-slate-800 md:col-span-2">
-              Notes
-              <textarea data-testid="schedule-estimate-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Access notes, call details, or questions to cover" />
+            <label htmlFor="schedule-estimate-location" className="text-sm font-semibold text-slate-800 md:col-span-2">
+              {appointmentType === "in_person" ? "Service location" : "Service location (optional)"}
+              <input id="schedule-estimate-location" data-testid="schedule-estimate-location" value={serviceLocation} onChange={(event) => setServiceLocation(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+            <label htmlFor="schedule-estimate-notes" className="text-sm font-semibold text-slate-800 md:col-span-2">
+              Notes (optional)
+              <textarea id="schedule-estimate-notes" data-testid="schedule-estimate-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Access notes, call details, or questions to cover" />
             </label>
           </div>
 
@@ -888,7 +923,7 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled }) {
             <button
               type="submit"
               data-testid="schedule-estimate-submit"
-              disabled={loading || Boolean(result?.appointment)}
+              disabled={loading || Boolean(result?.appointment) || !futureValidation.valid}
               className="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-sky-600 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {loading ? "Scheduling..." : result?.appointment ? "Scheduled" : "Schedule Estimate"}
@@ -1499,6 +1534,8 @@ export default function ContractorBidsPage() {
   const [confirmedReplacementMilestoneIds, setConfirmedReplacementMilestoneIds] = useState([]);
   const [scheduleEstimateOpen, setScheduleEstimateOpen] = useState(false);
   const [appointmentAction, setAppointmentAction] = useState("");
+  const [appointmentIncrement, setAppointmentIncrement] = useState(FALLBACK_APPOINTMENT_INCREMENT_MINUTES);
+  const [appointmentMinimumLead, setAppointmentMinimumLead] = useState(0);
   const [proposalBusy, setProposalBusy] = useState(false);
 
   useEffect(() => {
@@ -1517,6 +1554,8 @@ export default function ContractorBidsPage() {
       if (!mountedRef.current) return;
       const nextRows = Array.isArray(data?.results) ? data.results : [];
       setRows(nextRows);
+      setAppointmentIncrement(Number(data?.appointment_scheduling_increment_minutes) || FALLBACK_APPOINTMENT_INCREMENT_MINUTES);
+      setAppointmentMinimumLead(Number(data?.appointment_minimum_lead_minutes) || 0);
       setServerSummary(data?.summary || {});
       setContractorBrandVoice(meResponse?.data?.public_profile || {});
       if (keepSelectedBidId) {
@@ -3546,6 +3585,8 @@ export default function ContractorBidsPage() {
         open={scheduleEstimateOpen && Boolean(selectedRow)}
         onClose={() => setScheduleEstimateOpen(false)}
         onScheduled={handleEstimateScheduled}
+        incrementMinutes={appointmentIncrement}
+        minimumLeadMinutes={appointmentMinimumLead}
       />
       <AppointmentActionDialog open={Boolean(appointmentAction)} action={appointmentAction} appointment={selectedRow?.latest_estimate_appointment} onClose={() => setAppointmentAction("")} onSubmit={submitEstimateAppointmentTransition} />
       <AssignmentDraftModal

@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from datetime import timedelta
 
+from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.db import transaction
@@ -91,6 +92,12 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
     hold_expired = is_hold_expired(appointment)
     return {
         "id": appointment.id,
+        "scheduling_increment_minutes": settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES,
+        "minimum_lead_minutes": settings.ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES,
+        "is_past_due": bool(
+            appointment.scheduled_start <= timezone.now()
+            and appointment.status in {appointment.STATUS_SCHEDULED, appointment.STATUS_CONFIRMED}
+        ),
         "source_type": appointment.source_type,
         "source_id": (
             appointment.public_lead_id
@@ -1403,6 +1410,8 @@ class ContractorBidsView(APIView):
         return Response(
             {
                 "results": filtered_rows,
+                "appointment_scheduling_increment_minutes": settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES,
+                "appointment_minimum_lead_minutes": settings.ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES,
                 "summary": summary,
                 "filters": {
                     "status": status_filter or "all",
@@ -1517,11 +1526,12 @@ class OpportunityEstimateAppointmentCreateView(APIView):
         if appointment_type == OpportunityEstimateAppointment.TYPE_IN_PERSON and not service_location:
             errors["service_location"] = ["Service location is required for an in-person estimate."]
 
-        scheduled_start = parse_datetime(scheduled_start_raw) if scheduled_start_raw else None
-        if scheduled_start is None:
-            errors["scheduled_start"] = ["Scheduled start is required."]
-        elif timezone.is_naive(scheduled_start):
-            scheduled_start = timezone.make_aware(scheduled_start, timezone.get_current_timezone())
+        timezone_name = _safe_text(request.data.get("timezone")) or "America/Chicago"
+        from projects.services.estimate_appointments import parse_appointment_start, reserve_appointment, EstimateAppointmentError
+        try:
+            scheduled_start = parse_appointment_start(scheduled_start_raw, timezone_name=timezone_name)
+        except EstimateAppointmentError as exc:
+            errors[exc.field or "scheduled_start"] = [exc.detail]
 
         try:
             duration_minutes = int(request.data.get("duration_minutes") or 60)
@@ -1533,7 +1543,6 @@ class OpportunityEstimateAppointmentCreateView(APIView):
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
-        from projects.services.estimate_appointments import reserve_appointment, EstimateAppointmentError
         try:
             with transaction.atomic():
                 source_filters = _estimate_source_kwargs(source_type, source)
@@ -1562,12 +1571,12 @@ class OpportunityEstimateAppointmentCreateView(APIView):
                     duration_minutes=duration_minutes,
                     notes=notes,
                     requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
-                    timezone=_safe_text(request.data.get("timezone")) or "America/Chicago",
+                    timezone=timezone_name,
                     created_by=request.user,
                 )
                 reserve_appointment(appointment)
         except EstimateAppointmentError as exc:
-            return Response({"detail": exc.detail}, status=exc.status_code)
+            return Response(exc.response_data(), status=exc.status_code)
         message = _estimate_customer_message(appointment)
         appointment.customer_message = message
         appointment.save(update_fields=["customer_message", "updated_at"])
@@ -1594,10 +1603,12 @@ class OpportunityEstimateAppointmentTransitionView(APIView):
         if contractor is None:
             return Response({"detail": "Estimate appointment not found."}, status=404)
         from projects.services.estimate_appointments import transition_appointment, EstimateAppointmentError
-        scheduled_start = parse_datetime(_safe_text(request.data.get("scheduled_start"))) if request.data.get("scheduled_start") else None
-        if scheduled_start is not None and timezone.is_naive(scheduled_start):
-            scheduled_start = timezone.make_aware(scheduled_start, timezone.get_current_timezone())
         try:
+            timezone_name = _safe_text(request.data.get("timezone"))
+            scheduled_start = None
+            if request.data.get("scheduled_start"):
+                from projects.services.estimate_appointments import parse_appointment_start
+                scheduled_start = parse_appointment_start(request.data.get("scheduled_start"), timezone_name=timezone_name or "America/Chicago")
             appointment = transition_appointment(
                 contractor=contractor,
                 appointment_id=appointment_id,
@@ -1607,9 +1618,9 @@ class OpportunityEstimateAppointmentTransitionView(APIView):
                 scheduled_start=scheduled_start,
                 duration_minutes=request.data.get("duration_minutes"),
                 appointment_type=_safe_text(request.data.get("appointment_type")),
-                timezone_name=_safe_text(request.data.get("timezone")),
+                timezone_name=timezone_name,
                 notes=request.data.get("notes"),
             )
         except EstimateAppointmentError as exc:
-            return Response({"detail": exc.detail}, status=exc.status_code)
+            return Response(exc.response_data(), status=exc.status_code)
         return Response({"appointment": _serialize_estimate_appointment(appointment)})

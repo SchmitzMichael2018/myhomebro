@@ -1,4 +1,5 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -11,7 +12,7 @@ from projects.models import Contractor
 from projects.models_contractor_discovery import EstimateAppointmentReservation, OpportunityEstimateAppointment
 from projects.models_proposals import Proposal
 from projects.services.estimate_appointments import (
-    EstimateAppointmentError, hold_expiration, is_hold_expired, reserve_appointment, transition_appointment,
+    EstimateAppointmentError, hold_expiration, is_hold_expired, parse_appointment_start, reserve_appointment, transition_appointment,
 )
 
 
@@ -97,6 +98,56 @@ class EstimateAppointmentLifecycleTests(TestCase):
             scheduled_start=self.start,
         )
         self.assertEqual(moved.scheduled_start, self.start)
+
+    @override_settings(ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES=30)
+    def test_server_clock_rejects_past_and_inside_lead_time(self):
+        fixed_now = self.start - timedelta(hours=1)
+        for candidate in (fixed_now - timedelta(days=1), fixed_now, fixed_now + timedelta(minutes=30)):
+            appointment = self.appointment(status=OpportunityEstimateAppointment.STATUS_SCHEDULED, start=candidate)
+            with patch("projects.services.estimate_appointments.timezone.now", return_value=fixed_now):
+                with self.assertRaises(EstimateAppointmentError) as raised:
+                    reserve_appointment(appointment)
+            self.assertEqual(raised.exception.field, "scheduled_start")
+
+    def test_confirm_rejects_requested_slot_that_became_past(self):
+        appointment = self.appointment(start=self.start)
+        with patch("projects.services.estimate_appointments.timezone.now", return_value=self.start + timedelta(minutes=1)):
+            with self.assertRaises(EstimateAppointmentError) as raised:
+                transition_appointment(contractor=self.contractor, appointment_id=appointment.id, action="confirm", actor=self.user)
+        self.assertEqual(raised.exception.field, "scheduled_start")
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_REQUESTED)
+
+    def test_failed_past_reschedule_preserves_original_appointment(self):
+        appointment = self.appointment(status=OpportunityEstimateAppointment.STATUS_CONFIRMED)
+        with patch("projects.services.estimate_appointments.timezone.now", return_value=self.start):
+            with self.assertRaises(EstimateAppointmentError):
+                transition_appointment(contractor=self.contractor, appointment_id=appointment.id, action="reschedule", actor=self.user, scheduled_start=self.start - timedelta(minutes=15))
+        appointment.refresh_from_db()
+        self.assertEqual(appointment.scheduled_start, self.start)
+        self.assertEqual(appointment.status, OpportunityEstimateAppointment.STATUS_CONFIRMED)
+
+    def test_local_parser_rejects_dst_gap_and_ambiguous_fold(self):
+        with self.assertRaises(EstimateAppointmentError):
+            parse_appointment_start("2026-03-08T02:15:00", timezone_name="America/Chicago")
+        with self.assertRaises(EstimateAppointmentError):
+            parse_appointment_start("2026-11-01T01:15:00", timezone_name="America/Chicago")
+
+    def test_direct_api_rejects_past_utc_instant_with_field_error(self):
+        proposal = Proposal.objects.create(
+            contractor=self.contractor, created_by=self.user, source_type=Proposal.SOURCE_DASHBOARD,
+            source_id=99101, project_title="Past API attempt", customer_name="Casey",
+            customer_email="casey@example.com", service_location="123 Main St",
+        )
+        response = self.client.post(
+            f"/api/projects/proposals/{proposal.id}/appointment/",
+            {"action": "schedule", "scheduled_start": "2020-01-01T12:00:00Z", "appointment_type": "in_person", "duration_minutes": 60, "timezone": "America/Chicago"},
+            format="json", secure=True,
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["scheduled_start"], ["Choose a future appointment date and time."])
+        proposal.refresh_from_db()
+        self.assertIsNone(proposal.estimate_appointment_id)
 
     def test_direct_estimate_can_schedule_and_choose_no_visit(self):
         proposal = Proposal.objects.create(
