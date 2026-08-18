@@ -17,6 +17,7 @@ from projects.models_contractor_discovery import (
 from projects.models_project_intake import ProjectIntake
 from projects.models_sms import SMSAutomationDecision, SMSConsent
 from projects.services.contractor_directory import normalize_business_name
+from projects.views.public_estimate_availability import appointment_request_token
 
 
 def _use_secure_requests(client):
@@ -666,6 +667,7 @@ class ContractorOpportunityFlowTests(TestCase):
             "/api/projects/public-intake/estimate-appointment-request/",
             {
                 "opportunity_id": opportunity.id,
+                "authorization_token": appointment_request_token(opportunity),
                 "scheduled_start": slot["scheduled_start"],
                 "appointment_type": slot["appointment_type"],
                 "customer_notes": "Morning is best.",
@@ -683,6 +685,24 @@ class ContractorOpportunityFlowTests(TestCase):
         self.assertEqual(opportunity.estimate_preference, ContractorOpportunity.ESTIMATE_PREFERENCE_SLOT)
         self.assertEqual(Agreement.objects.count(), 0)
         self.assertEqual(AgreementAssignment.objects.count(), 0)
+
+    def test_customer_estimate_request_rejects_raw_or_tampered_authorization(self):
+        self.client.post(
+            "/api/projects/public-intake/select-contractor/",
+            {"token": self.intake.share_token, "selected_contractors": [{"directory_entry_id": self.entry.id}]},
+            format="json",
+        )
+        opportunity = ContractorOpportunity.objects.get()
+        url = "/api/projects/public-intake/estimate-appointment-request/"
+        for token in (None, "tampered-token"):
+            payload = {"opportunity_id": opportunity.id, "preference": "flexible"}
+            if token:
+                payload["authorization_token"] = token
+            response = self.client.post(url, payload, format="json")
+            self.assertEqual(response.status_code, 404)
+            self.assertEqual(response.data["detail"], "Appointment request authorization is invalid.")
+        opportunity.refresh_from_db()
+        self.assertEqual(opportunity.estimate_preference, ContractorOpportunity.ESTIMATE_PREFERENCE_NONE)
 
     def test_customer_estimate_request_rejects_disappeared_slot(self):
         tomorrow = timezone.localdate() + timedelta(days=1)
@@ -706,6 +726,7 @@ class ContractorOpportunityFlowTests(TestCase):
             "/api/projects/public-intake/estimate-appointment-request/",
             {
                 "opportunity_id": opportunity.id,
+                "authorization_token": appointment_request_token(opportunity),
                 "scheduled_start": timezone.make_aware(
                     datetime.combine(tomorrow, time(9, 0)),
                     timezone.get_current_timezone(),
@@ -731,6 +752,7 @@ class ContractorOpportunityFlowTests(TestCase):
             "/api/projects/public-intake/estimate-appointment-request/",
             {
                 "opportunity_id": opportunity.id,
+                "authorization_token": appointment_request_token(opportunity),
                 "preference": "flexible",
                 "customer_notes": "Any weekday morning works.",
             },

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from datetime import timedelta
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.db import transaction
 from django.db.models import Q
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -85,6 +87,8 @@ def _agreement_reference(agreement) -> str:
 def _serialize_estimate_appointment(appointment) -> dict | None:
     if appointment is None:
         return None
+    from projects.services.estimate_appointments import available_actions, is_hold_expired
+    hold_expired = is_hold_expired(appointment)
     return {
         "id": appointment.id,
         "source_type": appointment.source_type,
@@ -93,11 +97,13 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
             or appointment.project_intake_id
             or appointment.contractor_opportunity_id
         ),
-        "status": appointment.status,
+        "status": "expired" if hold_expired else appointment.status,
+        "stored_status": appointment.status,
         "appointment_type": appointment.appointment_type,
         "appointment_type_label": appointment.get_appointment_type_display(),
         "scheduled_start": _format_datetime(appointment.scheduled_start),
         "duration_minutes": appointment.duration_minutes,
+        "scheduled_end": _format_datetime(appointment.scheduled_start + timedelta(minutes=appointment.duration_minutes)),
         "notes": appointment.notes,
         "requested_by": appointment.requested_by,
         "timezone": appointment.timezone,
@@ -105,7 +111,9 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
         "declined_at": _format_datetime(appointment.declined_at),
         "decline_reason": appointment.decline_reason,
         "proposed_start": _format_datetime(appointment.proposed_start),
-        "customer_message": appointment.customer_message,
+        "original_scheduled_start": _format_datetime(appointment.original_scheduled_start),
+        "hold_expires_at": _format_datetime(appointment.hold_expires_at),
+        "customer_message": "This appointment request expired and is no longer reserved." if hold_expired else appointment.customer_message,
         "customer_name": appointment.customer_name,
         "customer_email": appointment.customer_email,
         "customer_phone": appointment.customer_phone,
@@ -113,6 +121,22 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
         "opportunity_title": appointment.opportunity_title,
         "opportunity_reference": appointment.opportunity_reference,
         "created_at": _format_datetime(appointment.created_at),
+        "available_actions": available_actions(appointment),
+        "direct_proposal_id": appointment.direct_proposal_id,
+        "events": [
+            {
+                "id": event.id,
+                "event_type": event.event_type,
+                "from_status": event.from_status,
+                "to_status": event.to_status,
+                "reason": event.reason,
+                "before_values": event.before_values,
+                "after_values": event.after_values,
+                "actor_kind": event.actor_kind,
+                "created_at": _format_datetime(event.created_at),
+            }
+            for event in appointment.events.all()
+        ],
     }
 
 
@@ -1456,15 +1480,9 @@ def _estimate_source_kwargs(source_type: str, source) -> dict:
 
 
 def _estimate_customer_message(appointment: OpportunityEstimateAppointment) -> str:
-    local_start = timezone.localtime(appointment.scheduled_start)
-    when = f"{local_start.strftime('%b')} {local_start.day}, {local_start.year} at {local_start.strftime('%I:%M %p').lstrip('0')}"
-    type_label = appointment.get_appointment_type_display().lower()
-    location = f" at {appointment.service_location}" if appointment.service_location and appointment.appointment_type == appointment.TYPE_IN_PERSON else ""
-    return (
-        f"Hi {appointment.customer_name or 'there'}, this confirms our {type_label} for "
-        f"{appointment.opportunity_title or 'your project'} on {when}{location}. "
-        "Please let me know if anything changes before then."
-    )
+    from projects.services.estimate_appointments import customer_message_for
+
+    return customer_message_for(appointment, event="scheduled")
 
 
 class OpportunityEstimateAppointmentCreateView(APIView):
@@ -1515,23 +1533,41 @@ class OpportunityEstimateAppointmentCreateView(APIView):
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
-        appointment = OpportunityEstimateAppointment.objects.create(
-            contractor=contractor,
-            **_estimate_source_kwargs(source_type, source),
-            opportunity_title=_safe_text(row.get("project_title")),
-            opportunity_reference=_safe_text(row.get("source_reference")),
-            customer_name=customer_name,
-            customer_email=customer_email,
-            customer_phone=customer_phone,
-            service_location=service_location,
-            appointment_type=appointment_type,
-            scheduled_start=scheduled_start,
-            duration_minutes=duration_minutes,
-            notes=notes,
-            requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
-            timezone=_safe_text(request.data.get("timezone")) or "America/Chicago",
-            created_by=request.user,
-        )
+        from projects.services.estimate_appointments import reserve_appointment, EstimateAppointmentError
+        try:
+            with transaction.atomic():
+                source_filters = _estimate_source_kwargs(source_type, source)
+                if OpportunityEstimateAppointment.objects.filter(
+                    contractor=contractor,
+                    status__in=[
+                        OpportunityEstimateAppointment.STATUS_REQUESTED,
+                        OpportunityEstimateAppointment.STATUS_PROPOSED,
+                        OpportunityEstimateAppointment.STATUS_SCHEDULED,
+                        OpportunityEstimateAppointment.STATUS_CONFIRMED,
+                    ],
+                    **source_filters,
+                ).exists():
+                    raise EstimateAppointmentError("This opportunity already has an active estimate appointment.", status_code=409)
+                appointment = OpportunityEstimateAppointment.objects.create(
+                    contractor=contractor,
+                    **source_filters,
+                    opportunity_title=_safe_text(row.get("project_title")),
+                    opportunity_reference=_safe_text(row.get("source_reference")),
+                    customer_name=customer_name,
+                    customer_email=customer_email,
+                    customer_phone=customer_phone,
+                    service_location=service_location,
+                    appointment_type=appointment_type,
+                    scheduled_start=scheduled_start,
+                    duration_minutes=duration_minutes,
+                    notes=notes,
+                    requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
+                    timezone=_safe_text(request.data.get("timezone")) or "America/Chicago",
+                    created_by=request.user,
+                )
+                reserve_appointment(appointment)
+        except EstimateAppointmentError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
         message = _estimate_customer_message(appointment)
         appointment.customer_message = message
         appointment.save(update_fields=["customer_message", "updated_at"])
@@ -1548,3 +1584,32 @@ class OpportunityEstimateAppointmentCreateView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class OpportunityEstimateAppointmentTransitionView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, appointment_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return Response({"detail": "Estimate appointment not found."}, status=404)
+        from projects.services.estimate_appointments import transition_appointment, EstimateAppointmentError
+        scheduled_start = parse_datetime(_safe_text(request.data.get("scheduled_start"))) if request.data.get("scheduled_start") else None
+        if scheduled_start is not None and timezone.is_naive(scheduled_start):
+            scheduled_start = timezone.make_aware(scheduled_start, timezone.get_current_timezone())
+        try:
+            appointment = transition_appointment(
+                contractor=contractor,
+                appointment_id=appointment_id,
+                action=_safe_text(request.data.get("action")),
+                actor=request.user,
+                reason=_safe_text(request.data.get("reason")),
+                scheduled_start=scheduled_start,
+                duration_minutes=request.data.get("duration_minutes"),
+                appointment_type=_safe_text(request.data.get("appointment_type")),
+                timezone_name=_safe_text(request.data.get("timezone")),
+                notes=request.data.get("notes"),
+            )
+        except EstimateAppointmentError as exc:
+            return Response({"detail": exc.detail}, status=exc.status_code)
+        return Response({"appointment": _serialize_estimate_appointment(appointment)})

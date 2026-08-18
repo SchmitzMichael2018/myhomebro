@@ -10,7 +10,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils import timezone
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -263,6 +263,7 @@ def _serialize_proposal(proposal: Proposal, request=None, include_related=True) 
         "customer_id": customer_id,
         "homeowner_id": customer_id,
         "estimate_appointment_id": proposal.estimate_appointment_id,
+        "appointment_disposition": proposal.appointment_disposition,
         "project_title": proposal.project_title,
         "project_summary": proposal.project_summary,
         "project_type": proposal.project_type,
@@ -565,6 +566,26 @@ class ProposalListCreateView(APIView):
             ).first()
             if appointment is None:
                 return Response({"estimate_appointment_id": ["Estimate appointment was not found."]}, status=400)
+        elif not is_dashboard_estimate:
+            appointment_source_type = {
+                Proposal.SOURCE_LEAD: OpportunityEstimateAppointment.SOURCE_PUBLIC_LEAD,
+                Proposal.SOURCE_INTAKE: OpportunityEstimateAppointment.SOURCE_INTAKE,
+                Proposal.SOURCE_OPPORTUNITY: OpportunityEstimateAppointment.SOURCE_OPPORTUNITY,
+                Proposal.SOURCE_PROPERTY_WORK_ORDER: OpportunityEstimateAppointment.SOURCE_OPPORTUNITY,
+            }.get(source_type)
+            source_filter = {"source_type": appointment_source_type, "contractor": contractor, "status__in": [
+                OpportunityEstimateAppointment.STATUS_SCHEDULED,
+                OpportunityEstimateAppointment.STATUS_CONFIRMED,
+            ]}
+            if source_type == Proposal.SOURCE_LEAD:
+                source_filter["public_lead_id"] = source_id_int
+            elif source_type == Proposal.SOURCE_INTAKE:
+                source_filter["project_intake_id"] = source_id_int
+            else:
+                source_filter["contractor_opportunity_id"] = source_id_int
+            eligible = list(OpportunityEstimateAppointment.objects.filter(**source_filter)[:2])
+            if len(eligible) == 1:
+                appointment = eligible[0]
 
         contractor_opportunity = source if isinstance(source, ContractorOpportunity) else None
         snapshot = _snapshot_from_row(row)
@@ -575,6 +596,7 @@ class ProposalListCreateView(APIView):
                     contractor=contractor,
                     contractor_opportunity=contractor_opportunity,
                     estimate_appointment=appointment,
+                    appointment_disposition=Proposal.APPOINTMENT_PLANNED if appointment else Proposal.APPOINTMENT_UNDECIDED,
                     source_type=source_type,
                     source_id=source_id_int,
                     created_by=request.user,
@@ -775,6 +797,129 @@ class ProposalCancelView(APIView):
         except ProposalLifecycleError as exc:
             return Response({"detail": exc.detail}, status=exc.status_code)
         proposal = _proposal_queryset(contractor).get(pk=proposal.pk)
+        return Response({"proposal": _serialize_proposal(proposal, request=request)})
+
+
+class ProposalAppointmentView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def _proposal(self, request, proposal_id):
+        contractor = _resolve_contractor(request.user)
+        if contractor is None:
+            return None, None
+        return _proposal_queryset(contractor).filter(pk=proposal_id).first(), contractor
+
+    def get(self, request, proposal_id):
+        proposal, contractor = self._proposal(request, proposal_id)
+        if proposal is None:
+            return Response({"detail": "Estimate not found."}, status=404)
+        filters = {"contractor": contractor}
+        if proposal.source_type == Proposal.SOURCE_LEAD:
+            filters["public_lead_id"] = proposal.source_id
+        elif proposal.source_type == Proposal.SOURCE_INTAKE:
+            filters["project_intake_id"] = proposal.source_id
+        elif proposal.source_type in {Proposal.SOURCE_OPPORTUNITY, Proposal.SOURCE_PROPERTY_WORK_ORDER}:
+            filters["contractor_opportunity_id"] = proposal.source_id
+        else:
+            filters["direct_proposal_id"] = proposal.id
+        eligible = OpportunityEstimateAppointment.objects.filter(**filters).exclude(
+            status__in=[
+                OpportunityEstimateAppointment.STATUS_DECLINED,
+                OpportunityEstimateAppointment.STATUS_CANCELLED,
+                OpportunityEstimateAppointment.STATUS_COMPLETED,
+                OpportunityEstimateAppointment.STATUS_NO_SHOW,
+            ]
+        )
+        return Response({"results": [_serialize_estimate_appointment(row) for row in eligible]})
+
+    def post(self, request, proposal_id):
+        proposal, contractor = self._proposal(request, proposal_id)
+        if proposal is None:
+            return Response({"detail": "Estimate not found."}, status=404)
+        if proposal.status in {Proposal.STATUS_CANCELLED, Proposal.STATUS_CONVERTED, Proposal.STATUS_ACCEPTED} or proposal.converted_agreement_id:
+            return Response({"detail": "Appointments cannot be changed for this Estimate."}, status=409)
+        action = _safe_text(request.data.get("action"))
+        from projects.services.estimate_appointments import attach_appointment, reserve_appointment, EstimateAppointmentError
+        if action == "no_visit_needed":
+            if proposal.estimate_appointment_id:
+                return Response({"detail": "Cancel the linked appointment before choosing no visit needed."}, status=409)
+            proposal.appointment_disposition = Proposal.APPOINTMENT_NOT_NEEDED
+            proposal.save(update_fields=["appointment_disposition", "updated_at"])
+        elif action == "undecided":
+            proposal.appointment_disposition = Proposal.APPOINTMENT_UNDECIDED
+            proposal.save(update_fields=["appointment_disposition", "updated_at"])
+        elif action == "attach":
+            try:
+                proposal = attach_appointment(
+                    contractor=contractor,
+                    proposal_id=proposal.id,
+                    appointment_id=request.data.get("appointment_id"),
+                    actor=request.user,
+                )
+            except (EstimateAppointmentError, TypeError, ValueError) as exc:
+                return Response({"detail": getattr(exc, "detail", "Choose a valid appointment.")}, status=getattr(exc, "status_code", 400))
+        elif action == "schedule":
+            prior_appointment = proposal.estimate_appointment
+            terminal_statuses = {
+                OpportunityEstimateAppointment.STATUS_DECLINED,
+                OpportunityEstimateAppointment.STATUS_CANCELLED,
+                OpportunityEstimateAppointment.STATUS_COMPLETED,
+                OpportunityEstimateAppointment.STATUS_NO_SHOW,
+            }
+            if prior_appointment and prior_appointment.status not in terminal_statuses:
+                return Response({"detail": "This Estimate already has a linked appointment."}, status=409)
+            scheduled_start = parse_datetime(_safe_text(request.data.get("scheduled_start")))
+            if scheduled_start is None:
+                return Response({"scheduled_start": ["Choose an appointment time."]}, status=400)
+            if timezone.is_naive(scheduled_start):
+                scheduled_start = timezone.make_aware(scheduled_start, timezone.get_current_timezone())
+            try:
+                duration = int(request.data.get("duration_minutes") or 60)
+            except (TypeError, ValueError):
+                return Response({"duration_minutes": ["Choose a valid duration."]}, status=400)
+            if duration < 15 or duration > 480:
+                return Response({"duration_minutes": ["Duration must be between 15 and 480 minutes."]}, status=400)
+            appointment_type = _safe_text(request.data.get("appointment_type")) or OpportunityEstimateAppointment.TYPE_IN_PERSON
+            if appointment_type not in dict(OpportunityEstimateAppointment.TYPE_CHOICES):
+                return Response({"appointment_type": ["Choose phone_call, video_call, or in_person."]}, status=400)
+            if appointment_type == OpportunityEstimateAppointment.TYPE_IN_PERSON and not proposal.service_location:
+                return Response({"service_location": ["Service location is required for an in-person estimate."]}, status=400)
+            try:
+                with transaction.atomic():
+                    source_kwargs = {"source_type": OpportunityEstimateAppointment.SOURCE_PROPOSAL, "direct_proposal": proposal}
+                    if proposal.source_type == Proposal.SOURCE_LEAD:
+                        source_kwargs = {"source_type": OpportunityEstimateAppointment.SOURCE_PUBLIC_LEAD, "public_lead_id": proposal.source_id}
+                    elif proposal.source_type == Proposal.SOURCE_INTAKE:
+                        source_kwargs = {"source_type": OpportunityEstimateAppointment.SOURCE_INTAKE, "project_intake_id": proposal.source_id}
+                    elif proposal.source_type in {Proposal.SOURCE_OPPORTUNITY, Proposal.SOURCE_PROPERTY_WORK_ORDER}:
+                        source_kwargs = {"source_type": OpportunityEstimateAppointment.SOURCE_OPPORTUNITY, "contractor_opportunity_id": proposal.source_id}
+                    appointment = OpportunityEstimateAppointment.objects.create(
+                        contractor=contractor,
+                        **source_kwargs,
+                        opportunity_title=proposal.project_title,
+                        opportunity_reference=f"Estimate #{proposal.id}",
+                        customer_name=proposal.customer_name,
+                        customer_email=proposal.customer_email,
+                        customer_phone=proposal.customer_phone,
+                        service_location=proposal.service_location,
+                        appointment_type=appointment_type,
+                        scheduled_start=scheduled_start,
+                        duration_minutes=duration,
+                        notes=_safe_text(request.data.get("notes")),
+                        timezone=_safe_text(request.data.get("timezone")) or "America/Chicago",
+                        requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
+                        created_by=request.user,
+                    )
+                    reserve_appointment(appointment)
+                    proposal.estimate_appointment = appointment
+                    proposal.appointment_disposition = Proposal.APPOINTMENT_PLANNED
+                    proposal.save(update_fields=["estimate_appointment", "appointment_disposition", "updated_at"])
+                    _activity(proposal, ProposalActivity.EVENT_APPOINTMENT_LINKED, "Estimate appointment scheduled and linked", actor=request.user, metadata={"appointment_id": appointment.id, "replaced_terminal_appointment_id": getattr(prior_appointment, "id", None)})
+            except EstimateAppointmentError as exc:
+                return Response({"detail": exc.detail}, status=exc.status_code)
+        else:
+            return Response({"detail": "Choose a valid appointment action."}, status=400)
+        proposal = _proposal_queryset(contractor).get(pk=proposal.id)
         return Response({"proposal": _serialize_proposal(proposal, request=request)})
 
 

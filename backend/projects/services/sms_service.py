@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import hashlib
 from typing import Any
 
@@ -53,31 +52,30 @@ def normalize_phone_to_e164(value: str | None) -> str:
 
 def _twilio_ready() -> bool:
     return bool(
-        (getattr(settings, "TWILIO_ACCOUNT_SID", None) or os.getenv("TWILIO_ACCOUNT_SID"))
-        and (getattr(settings, "TWILIO_AUTH_TOKEN", None) or os.getenv("TWILIO_AUTH_TOKEN"))
+        getattr(settings, "TWILIO_ACCOUNT_SID", "")
+        and getattr(settings, "TWILIO_AUTH_TOKEN", "")
         and (_messaging_service_sid() or _from_phone_number())
         and Client is not None
     )
 
 
 def _twilio_client():
-    sid = getattr(settings, "TWILIO_ACCOUNT_SID", None) or os.getenv("TWILIO_ACCOUNT_SID")
-    token = getattr(settings, "TWILIO_AUTH_TOKEN", None) or os.getenv("TWILIO_AUTH_TOKEN")
+    sid = getattr(settings, "TWILIO_ACCOUNT_SID", "")
+    token = getattr(settings, "TWILIO_AUTH_TOKEN", "")
     return Client(sid, token)
 
 
 def _messaging_service_sid() -> str:
     return (
-        getattr(settings, "TWILIO_MESSAGING_SERVICE_SID", None)
-        or os.getenv("TWILIO_MESSAGING_SERVICE_SID")
+        getattr(settings, "TWILIO_MESSAGING_SERVICE_SID", "")
         or ""
     ).strip()
 
 
 def _from_phone_number() -> str:
     return (
-        getattr(settings, "TWILIO_PHONE_NUMBER", None) or os.getenv("TWILIO_PHONE_NUMBER")
-        or getattr(settings, "TWILIO_FROM_NUMBER", None) or os.getenv("TWILIO_FROM_NUMBER") or ""
+        getattr(settings, "TWILIO_PHONE_NUMBER", "")
+        or getattr(settings, "TWILIO_FROM_NUMBER", "") or ""
     ).strip()
 
 

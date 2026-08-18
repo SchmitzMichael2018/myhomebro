@@ -28,14 +28,17 @@ export default function Modal({
   children,
 }) {
   const containerRef = useRef(null);
+  const restoreFocusRef = useRef(null);
   const titleIdRef = useRef(`modal-title-${Math.random().toString(36).slice(2)}`);
 
   useEffect(() => {
     if (!visible) return;
+    restoreFocusRef.current = document.activeElement;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev || "";
+      restoreFocusRef.current?.focus?.();
     };
   }, [visible]);
 
@@ -73,13 +76,16 @@ export default function Modal({
   }, [visible, onClose]);
 
   useEffect(() => {
-    if (!visible || !containerRef.current) return;
-    const node =
-      containerRef.current.querySelector("[data-autofocus]") ||
-      containerRef.current.querySelector(
-        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
-      );
-    node?.focus();
+    if (!visible) return;
+    const frame = window.requestAnimationFrame(() => {
+      const node =
+        containerRef.current?.querySelector("[data-autofocus]") ||
+        containerRef.current?.querySelector(
+          "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])"
+        );
+      node?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
   }, [visible]);
 
   const handleOverlayClick = useCallback(
@@ -93,7 +99,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center ${overlayClassName}`.trim()}
+      className={`fixed inset-0 z-[200] flex items-center justify-center ${overlayClassName}`.trim()}
     >
       <button type="button" aria-label="Close modal" className="absolute inset-0 bg-black/50" onClick={handleOverlayClick} />
       <div
@@ -117,7 +123,6 @@ export default function Modal({
               type="button"
               onClick={onClose}
               aria-label="Close modal"
-              data-autofocus
               className="rounded p-1 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               ×

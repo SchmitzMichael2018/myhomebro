@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 import uuid
 
 
 class Proposal(models.Model):
+    APPOINTMENT_UNDECIDED = "undecided"
+    APPOINTMENT_PLANNED = "appointment_planned"
+    APPOINTMENT_NOT_NEEDED = "no_visit_needed"
+    APPOINTMENT_DISPOSITION_CHOICES = [
+        (APPOINTMENT_UNDECIDED, "Undecided"),
+        (APPOINTMENT_PLANNED, "Appointment planned"),
+        (APPOINTMENT_NOT_NEEDED, "No visit needed"),
+    ]
     STATUS_DRAFT = "draft"
     STATUS_SITE_VISIT = "site_visit"
     STATUS_IN_PROGRESS = "in_progress"
@@ -97,6 +106,12 @@ class Proposal(models.Model):
         null=True,
         blank=True,
         related_name="proposals",
+    )
+    appointment_disposition = models.CharField(
+        max_length=24,
+        choices=APPOINTMENT_DISPOSITION_CHOICES,
+        default=APPOINTMENT_UNDECIDED,
+        db_index=True,
     )
     source_type = models.CharField(max_length=32, choices=SOURCE_CHOICES, db_index=True)
     source_id = models.PositiveIntegerField(db_index=True)
@@ -208,6 +223,17 @@ class Proposal(models.Model):
 
     def __str__(self) -> str:
         return f"Proposal #{self.pk} - {self.project_title or self.source_type}"
+
+    def clean(self):
+        super().clean()
+        appointment = self.estimate_appointment
+        if not appointment:
+            return
+        if self.source_type == self.SOURCE_DASHBOARD:
+            if appointment.source_type != appointment.SOURCE_PROPOSAL or appointment.direct_proposal_id != self.pk:
+                raise ValidationError({"estimate_appointment": "Direct Estimate and appointment ownership must match."})
+        elif appointment.direct_proposal_id:
+            raise ValidationError({"estimate_appointment": "Opportunity-derived Estimates cannot use direct appointments."})
 
 
 class ProposalReviewVersion(models.Model):

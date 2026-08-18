@@ -110,7 +110,7 @@ from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorMeView
 from .views.activity_feed import ContractorActivityFeedView
-from .views.contractor_bids import ContractorBidsView, OpportunityEstimateAppointmentCreateView
+from .views.contractor_bids import ContractorBidsView, OpportunityEstimateAppointmentCreateView, OpportunityEstimateAppointmentTransitionView
 from .views.estimate_availability import (
     EstimateAvailabilityWindowDetailView,
     EstimateAvailabilityWindowListView,
@@ -125,6 +125,7 @@ from .views.proposals import (
     ProposalDetailView,
     ProposalDeleteDraftView,
     ProposalCancelView,
+    ProposalAppointmentView,
     ProposalLineItemDetailView,
     ProposalLineItemListCreateView,
     ProposalPricingBenchmarkView,
@@ -1030,6 +1031,7 @@ urlpatterns = [
     path("admin/contractor-opportunities/", AdminContractorOpportunityListView.as_view()),
     path("contractor-opportunities/", ContractorBidsView.as_view()),
     path("contractor-opportunities/estimate-appointments/", OpportunityEstimateAppointmentCreateView.as_view()),
+    path("contractor-opportunities/estimate-appointments/<int:appointment_id>/transition/", OpportunityEstimateAppointmentTransitionView.as_view()),
     path("estimate-availability/", EstimateAvailabilityWindowListView.as_view()),
     path("estimate-availability/<int:window_id>/", EstimateAvailabilityWindowDetailView.as_view()),
     path("contractor-opportunities/<int:opportunity_id>/accept/", ContractorOpportunityAcceptView.as_view()),
@@ -1039,6 +1041,7 @@ urlpatterns = [
     path("proposals/<int:proposal_id>/", ProposalDetailView.as_view()),
     path("proposals/<int:proposal_id>/delete-draft/", ProposalDeleteDraftView.as_view()),
     path("proposals/<int:proposal_id>/cancel/", ProposalCancelView.as_view()),
+    path("proposals/<int:proposal_id>/appointment/", ProposalAppointmentView.as_view()),
     path("proposals/<int:proposal_id>/pricing-benchmark/", ProposalPricingBenchmarkView.as_view()),
     path("proposals/<int:proposal_id>/customer-preview/", ProposalCustomerPreviewView.as_view()),
     path("proposals/<int:proposal_id>/send-review/", ProposalSendReviewView.as_view()),

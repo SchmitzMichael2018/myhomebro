@@ -8,6 +8,7 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { Card, WorkspacePageHeader } from "../components/ui";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
 import ConvertToAgreementPanel from "../components/ConvertToAgreementPanel.jsx";
+import AppointmentActionDialog from "../components/AppointmentActionDialog.jsx";
 import {
   ProjectAssistantApprovalNotice,
   ProjectAssistantPanel,
@@ -77,6 +78,9 @@ function lifecycleStatus(row) {
   }
   if (normalize(row?.latest_estimate_appointment?.status) === "requested") {
     return { label: "Estimate Requested", tone: "border-amber-400/50 bg-amber-500/15 text-amber-100" };
+  }
+  if (normalize(row?.latest_estimate_appointment?.status) === "expired") {
+    return { label: "Request Expired", tone: "border-slate-400/45 bg-slate-500/15 text-slate-100" };
   }
   if (normalize(row?.estimate_preference) === "flexible") {
     return { label: "Flexible Estimate", tone: "border-blue-400/40 bg-blue-500/15 text-blue-100" };
@@ -1494,6 +1498,7 @@ export default function ContractorBidsPage() {
   const [selectedMilestoneIds, setSelectedMilestoneIds] = useState([]);
   const [confirmedReplacementMilestoneIds, setConfirmedReplacementMilestoneIds] = useState([]);
   const [scheduleEstimateOpen, setScheduleEstimateOpen] = useState(false);
+  const [appointmentAction, setAppointmentAction] = useState("");
   const [proposalBusy, setProposalBusy] = useState(false);
 
   useEffect(() => {
@@ -2009,6 +2014,19 @@ export default function ContractorBidsPage() {
         return row;
       })
     );
+  };
+
+  const transitionEstimateAppointment = (action) => setAppointmentAction(action);
+
+  const submitEstimateAppointmentTransition = async (payload) => {
+    const appointment = selectedRow?.latest_estimate_appointment;
+    if (!appointment?.id) return;
+    const { data } = await api.post(`/projects/contractor-opportunities/estimate-appointments/${appointment.id}/transition/`, {
+      action: appointmentAction, scheduled_start: payload.scheduled_start, reason: payload.reason || "",
+      duration_minutes: payload.duration_minutes, timezone: payload.timezone, notes: payload.notes,
+    });
+    handleEstimateScheduled(data);
+    toast.success("Appointment updated.");
   };
 
   const createOrOpenProposal = async () => {
@@ -3036,20 +3054,20 @@ export default function ContractorBidsPage() {
                 ) : null}
 
                 <div className="mt-4 flex flex-wrap gap-3">
-                  {selectedLifecycle.label === "Estimate Requested" ? (
+                  {["Estimate Requested", "Request Expired"].includes(selectedLifecycle.label) ? (
                     <>
-                      <button
+                      {selectedLifecycle.label === "Estimate Requested" ? <button
                         type="button"
                         data-testid="confirm-estimate-request-action"
-                        onClick={() => toast("Estimate confirmation workflow is coming soon. Contact the customer to confirm for now.")}
+                        onClick={() => transitionEstimateAppointment("confirm")}
                         className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-blue-400"
                       >
                         Confirm Estimate
-                      </button>
+                      </button> : null}
                       <button
                         type="button"
                         data-testid="propose-estimate-time-action"
-                        onClick={() => toast("Propose different time workflow is coming soon.")}
+                        onClick={() => transitionEstimateAppointment("propose")}
                         className="inline-flex items-center gap-2 rounded-lg border border-slate-500/60 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-100 hover:bg-slate-700"
                       >
                         Propose Different Time
@@ -3057,11 +3075,12 @@ export default function ContractorBidsPage() {
                       <button
                         type="button"
                         data-testid="decline-estimate-request-action"
-                        onClick={() => toast("Decline estimate request workflow is coming soon.")}
+                        onClick={() => transitionEstimateAppointment("decline")}
                         className="inline-flex items-center gap-2 rounded-lg border border-rose-400/45 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100 hover:bg-rose-500/25"
                       >
                         Decline Estimate Request
                       </button>
+                      <button type="button" onClick={() => transitionEstimateAppointment("cancel")} className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-rose-400/45 bg-rose-500/15 px-4 py-2 text-sm font-semibold text-rose-100">Cancel appointment</button>
                     </>
                   ) : selectedCanCreateProposal && ["Estimate Scheduled", "Estimate In Progress", "Estimate Ready"].includes(selectedLifecycle.label) ? (
                     <button
@@ -3528,6 +3547,7 @@ export default function ContractorBidsPage() {
         onClose={() => setScheduleEstimateOpen(false)}
         onScheduled={handleEstimateScheduled}
       />
+      <AppointmentActionDialog open={Boolean(appointmentAction)} action={appointmentAction} appointment={selectedRow?.latest_estimate_appointment} onClose={() => setAppointmentAction("")} onSubmit={submitEstimateAppointmentTransition} />
       <AssignmentDraftModal
         draft={assignmentDraft}
         open={assignmentDraftOpen}

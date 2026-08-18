@@ -386,7 +386,10 @@ if OpportunityEstimateAppointment is not None:
         )
         list_filter = ("status", "requested_by", "appointment_type", "source_type", "scheduled_start")
         search_fields = ("customer_name", "customer_email", "customer_phone", "opportunity_title", "opportunity_reference")
-        readonly_fields = ("created_at", "updated_at")
+        readonly_fields = (
+            "source_type", "public_lead", "project_intake", "contractor_opportunity",
+            "direct_proposal", "created_at", "updated_at",
+        )
 
 
 if ContractorEstimateAvailabilityWindow is not None:
@@ -404,7 +407,7 @@ if Proposal is not None:
         list_display = ("id", "contractor", "project_title", "status", "source_type", "source_id", "customer_name", "updated_at")
         list_filter = ("status", "source_type", "created_at", "updated_at")
         search_fields = ("project_title", "customer_name", "customer_email", "customer_phone", "service_location")
-        readonly_fields = ("created_at", "updated_at")
+        readonly_fields = ("estimate_appointment", "created_at", "updated_at")
 
 
 if ProposalMeasurement is not None:

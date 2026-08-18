@@ -613,6 +613,9 @@ TAKEOFF_PRICE_STALE_DAYS = int(get_env_var("TAKEOFF_PRICE_STALE_DAYS", "90"))
 CAPTURE_QR_ENABLED = get_bool("CAPTURE_QR_ENABLED", default=False)
 CAPTURE_QR_PUBLIC_ENABLED = get_bool("CAPTURE_QR_PUBLIC_ENABLED", default=False)
 PWA_ENABLED = get_bool("PWA_ENABLED", default=False)
+ESTIMATE_APPOINTMENT_AUTH_MAX_AGE = int(get_env_var("ESTIMATE_APPOINTMENT_AUTH_MAX_AGE", "172800") or 172800)
+ESTIMATE_APPOINTMENT_HOLD_HOURS = int(get_env_var("ESTIMATE_APPOINTMENT_HOLD_HOURS", "24") or 24)
+ESTIMATE_APPOINTMENT_SLOT_MINUTES = int(get_env_var("ESTIMATE_APPOINTMENT_SLOT_MINUTES", "15") or 15)
 CAPTURE_QR_MAX_PHOTOS = int(get_env_var("CAPTURE_QR_MAX_PHOTOS", "3") or 3)
 CAPTURE_QR_MAX_PHOTO_SIZE_MB = int(get_env_var("CAPTURE_QR_MAX_PHOTO_SIZE_MB", "8") or 8)
 CAPTURE_QR_MIN_COMPLETION_SECONDS = int(get_env_var("CAPTURE_QR_MIN_COMPLETION_SECONDS", "2") or 2)
@@ -622,6 +625,7 @@ REST_FRAMEWORK.setdefault("DEFAULT_THROTTLE_RATES", {}).update({
     "capture_qr_token": get_env_var("CAPTURE_QR_TOKEN_RATE", "15/hour"),
     "capture_conversational": get_env_var("CAPTURE_CONVERSATIONAL_RATE", "60/hour"),
     "proposal_review_short_link": get_env_var("PROPOSAL_REVIEW_SHORT_LINK_RATE", "60/hour"),
+    "public_estimate_appointment": get_env_var("PUBLIC_ESTIMATE_APPOINTMENT_RATE", "20/hour"),
 })
 
 

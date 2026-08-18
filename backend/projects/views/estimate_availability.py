@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.conf import settings
 from django.utils.dateparse import parse_time
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -85,7 +86,10 @@ def _parse_payload(data, instance: ContractorEstimateAvailabilityWindow | None =
             if parsed is None:
                 add_error(field, "Enter a valid time.")
             else:
-                values[field] = parsed.replace(second=0, microsecond=0)
+                parsed = parsed.replace(second=0, microsecond=0)
+                if parsed.minute % settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES:
+                    add_error(field, f"Time must align to {settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES}-minute increments.")
+                values[field] = parsed
 
     if "timezone" in data:
         timezone = str(data.get("timezone") or "").strip()
@@ -105,11 +109,11 @@ def _parse_payload(data, instance: ContractorEstimateAvailabilityWindow | None =
     if "duration_minutes" in data or existing is None:
         try:
             duration = int(data.get("duration_minutes"))
-            if duration < 15 or duration > 480:
+            if duration < 15 or duration > 480 or duration % settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES:
                 raise ValueError
             values["duration_minutes"] = duration
         except (TypeError, ValueError):
-            add_error("duration_minutes", "Duration must be between 15 and 480 minutes.")
+            add_error("duration_minutes", f"Duration must be between 15 and 480 minutes in {settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES}-minute increments.")
 
     if "notes" in data:
         values["notes"] = str(data.get("notes") or "").strip()

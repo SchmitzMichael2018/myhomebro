@@ -59,7 +59,7 @@ from projects.services.contractor_discovery import (
 )
 from projects.services.google_places_contractors import geocode_project_location, search_google_places_contractors_with_diagnostics
 from projects.services.contractor_trade_relevance import contractor_entity_excluded, project_trade_intent, trade_fit
-from projects.views.public_estimate_availability import create_customer_estimate_request_for_opportunity
+from projects.views.public_estimate_availability import create_customer_estimate_request_for_opportunity, appointment_request_token
 
 
 def _safe_text(value) -> str:
@@ -281,6 +281,7 @@ def _opportunity_payload(opportunity: ContractorOpportunity) -> dict:
         "converted_agreement": opportunity.converted_agreement_id,
         "agreement_id": opportunity.converted_agreement_id,
         "next_url": next_url,
+        "estimate_appointment_authorization": appointment_request_token(opportunity),
     }
     if work_order is not None:
         payload.update(

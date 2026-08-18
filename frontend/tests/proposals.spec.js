@@ -52,9 +52,11 @@ const opportunityPayload = {
         appointment_type_label: "In-Person Estimate",
         scheduled_start: "2026-07-08T15:00:00Z",
         duration_minutes: 60,
+        service_location: "123 Main St, Austin, TX",
         notes: "Bring tape measure.",
         requested_by: "contractor",
         timezone: "America/Chicago",
+        available_actions: ["reschedule", "cancel", "complete", "no_show"],
       },
       estimate_scheduled: true,
       latest_proposal: null,
@@ -599,6 +601,19 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await expect(page.locator('[role="tabpanel"]')).toHaveCount(1);
   await expect(page.getByTestId("estimate-step-panel-project")).toContainText("Customer & Contact");
   await expect(page.getByTestId("estimate-step-panel-project")).toContainText("Estimate Appointment");
+  const appointmentCard = page.getByTestId("estimate-appointment-card");
+  await expect(appointmentCard).toContainText("In-Person Estimate");
+  await expect(appointmentCard).toContainText("123 Main St, Austin, TX");
+  await expect(page.getByTestId("estimate-appointment-reschedule")).toBeVisible();
+  await page.getByTestId("estimate-appointment-reschedule").click();
+  const appointmentDialog = page.getByTestId("appointment-action-dialog");
+  await expect(appointmentDialog).toContainText("Current time:");
+  await expect(appointmentDialog.getByLabel("Date")).toBeFocused();
+  await page.screenshot({ path: "test-results/estimate-appointment-dialog-desktop.png", fullPage: true });
+  await page.keyboard.press("Escape");
+  await expect(appointmentDialog).toHaveCount(0);
+  await expect(page.getByTestId("estimate-appointment-reschedule")).toBeFocused();
+  await page.screenshot({ path: "test-results/estimate-appointment-workspace-desktop.png", fullPage: true });
   await expect(page.getByTestId("estimate-step-panel-project")).toContainText("Project Scheduling");
   await expect(page.getByTestId("proposal-section-estimate")).toHaveCount(0);
   await expect(page.getByTestId("proposal-section-ready")).toHaveCount(0);
@@ -630,6 +645,13 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
   }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByTestId("estimate-workflow-step-project").click();
+  await page.getByTestId("estimate-appointment-reschedule").click();
+  await expect(page.getByTestId("appointment-action-dialog")).toBeVisible();
+  await page.screenshot({ path: "test-results/estimate-appointment-dialog-mobile.png", fullPage: true });
+  await page.keyboard.press("Escape");
+  await page.screenshot({ path: "test-results/estimate-appointment-workspace-mobile.png", fullPage: true });
   if (await topTabs.isVisible()) return;
 
   await expect(page.getByTestId("proposal-workspace-header")).toContainText("Bathroom Remodel");

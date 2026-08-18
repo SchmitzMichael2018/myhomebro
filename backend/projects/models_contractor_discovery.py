@@ -4,7 +4,9 @@ import secrets
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -645,10 +647,12 @@ class OpportunityEstimateAppointment(models.Model):
     SOURCE_PUBLIC_LEAD = "lead"
     SOURCE_INTAKE = "intake"
     SOURCE_OPPORTUNITY = "opportunity"
+    SOURCE_PROPOSAL = "proposal"
     SOURCE_CHOICES = [
         (SOURCE_PUBLIC_LEAD, "Public Lead"),
         (SOURCE_INTAKE, "Project Intake"),
         (SOURCE_OPPORTUNITY, "Contractor Opportunity"),
+        (SOURCE_PROPOSAL, "Direct Estimate"),
     ]
 
     TYPE_PHONE = "phone_call"
@@ -666,6 +670,8 @@ class OpportunityEstimateAppointment(models.Model):
     STATUS_PROPOSED = "proposed"
     STATUS_DECLINED = "declined"
     STATUS_CANCELLED = "cancelled"
+    STATUS_COMPLETED = "completed"
+    STATUS_NO_SHOW = "no_show"
     STATUS_CHOICES = [
         (STATUS_SCHEDULED, "Scheduled"),
         (STATUS_REQUESTED, "Requested"),
@@ -673,6 +679,8 @@ class OpportunityEstimateAppointment(models.Model):
         (STATUS_PROPOSED, "Proposed"),
         (STATUS_DECLINED, "Declined"),
         (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_NO_SHOW, "No-show"),
     ]
 
     REQUESTED_BY_CONTRACTOR = "contractor"
@@ -709,6 +717,13 @@ class OpportunityEstimateAppointment(models.Model):
         blank=True,
         related_name="estimate_appointments",
     )
+    direct_proposal = models.ForeignKey(
+        "projects.Proposal",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="direct_estimate_appointments",
+    )
     opportunity_title = models.CharField(max_length=255, blank=True, default="")
     opportunity_reference = models.CharField(max_length=80, blank=True, default="")
     customer_name = models.CharField(max_length=255, blank=True, default="")
@@ -726,6 +741,8 @@ class OpportunityEstimateAppointment(models.Model):
     declined_at = models.DateTimeField(null=True, blank=True)
     decline_reason = models.TextField(blank=True, default="")
     proposed_start = models.DateTimeField(null=True, blank=True)
+    original_scheduled_start = models.DateTimeField(null=True, blank=True)
+    hold_expires_at = models.DateTimeField(null=True, blank=True, db_index=True)
     customer_message = models.TextField(blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -744,9 +761,79 @@ class OpportunityEstimateAppointment(models.Model):
             models.Index(fields=["source_type", "scheduled_start"], name="projects_op_est_sou_c7d6e4_idx"),
             models.Index(fields=["contractor", "status", "scheduled_start"], name="projects_op_est_sta_705f8c_idx"),
         ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(source_type="public_lead", public_lead__isnull=False, project_intake__isnull=True, contractor_opportunity__isnull=True, direct_proposal__isnull=True)
+                    | Q(source_type="intake", public_lead__isnull=True, project_intake__isnull=False, contractor_opportunity__isnull=True, direct_proposal__isnull=True)
+                    | Q(source_type="opportunity", public_lead__isnull=True, project_intake__isnull=True, contractor_opportunity__isnull=False, direct_proposal__isnull=True)
+                    | Q(source_type="proposal", public_lead__isnull=True, project_intake__isnull=True, contractor_opportunity__isnull=True, direct_proposal__isnull=False)
+                ),
+                name="estimate_appointment_exact_source",
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"Estimate appointment #{self.pk} for {self.opportunity_reference or self.source_type}"
+
+    def clean(self):
+        super().clean()
+        populated = {
+            self.SOURCE_PUBLIC_LEAD: bool(self.public_lead_id),
+            self.SOURCE_INTAKE: bool(self.project_intake_id),
+            self.SOURCE_OPPORTUNITY: bool(self.contractor_opportunity_id),
+            self.SOURCE_PROPOSAL: bool(self.direct_proposal_id),
+        }
+        if not populated.get(self.source_type) or sum(populated.values()) != 1:
+            raise ValidationError("Exactly the source relationship matching source_type must be populated.")
+        if self.direct_proposal_id and self.direct_proposal.contractor_id != self.contractor_id:
+            raise ValidationError("Direct Estimate appointments must use the same contractor.")
+
+
+class EstimateAppointmentReservation(models.Model):
+    """Database-enforced fixed-increment segments for active appointments."""
+
+    contractor = models.ForeignKey(
+        "projects.Contractor", on_delete=models.CASCADE, related_name="estimate_appointment_reservations"
+    )
+    appointment = models.ForeignKey(
+        OpportunityEstimateAppointment, on_delete=models.CASCADE, related_name="reservations"
+    )
+    segment_start = models.DateTimeField()
+
+    class Meta:
+        ordering = ["segment_start", "id"]
+        constraints = [
+            models.UniqueConstraint(fields=["contractor", "segment_start"], name="uniq_estimate_appointment_segment"),
+            models.UniqueConstraint(fields=["appointment", "segment_start"], name="uniq_estimate_appt_own_segment"),
+        ]
+        indexes = [models.Index(fields=["contractor", "segment_start"], name="estimate_reservation_lookup")]
+
+
+class OpportunityEstimateAppointmentEvent(models.Model):
+    appointment = models.ForeignKey(
+        OpportunityEstimateAppointment,
+        on_delete=models.CASCADE,
+        related_name="events",
+    )
+    event_type = models.CharField(max_length=32, db_index=True)
+    from_status = models.CharField(max_length=24, blank=True, default="")
+    to_status = models.CharField(max_length=24)
+    reason = models.TextField(blank=True, default="")
+    before_values = models.JSONField(default=dict, blank=True)
+    after_values = models.JSONField(default=dict, blank=True)
+    actor_kind = models.CharField(max_length=24, default="contractor")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="estimate_appointment_events",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["created_at", "id"]
 
 
 class ContractorEstimateAvailabilityWindow(models.Model):

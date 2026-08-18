@@ -41,6 +41,8 @@ def _protected_draft_relations(proposal):
         conversation = None
     if conversation is not None:
         labels.append("customer conversation")
+    if proposal.direct_estimate_appointments.exists():
+        labels.append("estimate appointment history")
     return labels
 
 
@@ -108,6 +110,21 @@ def cancel_estimate(*, contractor, proposal_id: int, actor, reason: str = "", co
     proposal.cancelled_at = now
     proposal.cancelled_by = actor
     proposal.save(update_fields=["status", "cancellation_kind", "cancellation_reason", "cancelled_at", "cancelled_by", "updated_at"])
+    appointment = proposal.estimate_appointment
+    if appointment and appointment.scheduled_start > now and appointment.status in {
+        appointment.STATUS_REQUESTED,
+        appointment.STATUS_PROPOSED,
+        appointment.STATUS_SCHEDULED,
+        appointment.STATUS_CONFIRMED,
+    }:
+        from projects.services.estimate_appointments import transition_appointment
+        transition_appointment(
+            contractor=contractor,
+            appointment_id=appointment.id,
+            action="cancel",
+            actor=actor,
+            reason=f"Estimate {kind}: {proposal.cancellation_reason}".strip(),
+        )
     ProposalActivity.objects.create(
         proposal=proposal,
         event_type=event,

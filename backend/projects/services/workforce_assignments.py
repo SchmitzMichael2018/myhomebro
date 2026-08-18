@@ -378,9 +378,20 @@ def normalize_workforce_assignments(contractor: Contractor) -> dict:
             )
         )
 
-    proposals = Proposal.objects.filter(contractor=contractor).exclude(status__in=[Proposal.STATUS_CONVERTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED])
+    proposals = Proposal.objects.filter(contractor=contractor).exclude(status__in=[Proposal.STATUS_CONVERTED, Proposal.STATUS_DECLINED, Proposal.STATUS_EXPIRED, Proposal.STATUS_CANCELLED])
     for proposal in proposals.select_related("estimate_appointment", "contractor_opportunity").order_by("-updated_at", "-id")[:100]:
         appointment = proposal.estimate_appointment
+        if appointment:
+            from projects.services.estimate_appointments import is_hold_expired
+            if is_hold_expired(appointment):
+                appointment = None
+        if appointment and appointment.status in {
+            appointment.STATUS_DECLINED,
+            appointment.STATUS_CANCELLED,
+            appointment.STATUS_COMPLETED,
+            appointment.STATUS_NO_SHOW,
+        }:
+            appointment = None
         scheduled = getattr(appointment, "scheduled_start", None) or getattr(appointment, "appointment_start", None) or proposal.project_start_date
         rows.append(
             _row(
@@ -392,7 +403,7 @@ def normalize_workforce_assignments(contractor: Contractor) -> dict:
                 customer_label=proposal.customer_name,
                 property_address=proposal.service_location,
                 scheduled_start=_iso(scheduled),
-                status=proposal.status,
+                status=appointment.status if appointment else proposal.status,
                 priority="high" if proposal.scheduling_priority == Proposal.SCHEDULING_PRIORITY_REQUIRED else "normal",
                 required_skills=_required_skills(proposal.project_type, proposal.project_subtype),
                 location=proposal.service_location,

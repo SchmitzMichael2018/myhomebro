@@ -9,6 +9,7 @@ import { useAssistantDock } from "../components/AssistantDock.jsx";
 import UnitSelect from "../components/UnitSelect.jsx";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 import CustomerConversation from "../components/CustomerConversation.jsx";
+import AppointmentActionDialog from "../components/AppointmentActionDialog.jsx";
 import { writeSessionAssistantHandoff } from "../lib/assistantHandoff.js";
 import { customUnitError, recognizeUnit, unitDisplay, unitValueForSave } from "../lib/units.js";
 import { buildMilestoneAllocations, getTemplatePricingState } from "../lib/templatePricingState.js";
@@ -1247,6 +1248,7 @@ export default function ProposalWorkspacePage() {
   const { updateAssistantContext } = useAssistantDock();
   const [proposal, setProposal] = useState(null);
   const [lifecycleDialog, setLifecycleDialog] = useState("");
+  const [appointmentAction, setAppointmentAction] = useState("");
   const [lifecycleReason, setLifecycleReason] = useState("");
   const [voidConfirmed, setVoidConfirmed] = useState(false);
   const [lifecycleSubmitting, setLifecycleSubmitting] = useState(false);
@@ -1608,6 +1610,60 @@ export default function ProposalWorkspacePage() {
       toast.error(error?.response?.data?.detail || "The estimate lifecycle action could not be completed.");
     } finally {
       setLifecycleSubmitting(false);
+    }
+  }
+
+  function updateEstimateAppointment(action) {
+    setAppointmentAction(action);
+  }
+
+  async function submitEstimateAppointmentAction(payload) {
+    const appointment = proposal?.appointment;
+      if (appointmentAction === "schedule") {
+        const { data } = await api.post(`/projects/proposals/${proposalId}/appointment/`, {
+          action: "schedule",
+          scheduled_start: payload.scheduled_start,
+          appointment_type: payload.appointment_type,
+          duration_minutes: payload.duration_minutes,
+          timezone: payload.timezone,
+          service_location: payload.service_location,
+          notes: payload.notes,
+        });
+        setProposal(data.proposal);
+      } else {
+        const { data } = await api.post(`/projects/contractor-opportunities/estimate-appointments/${appointment.id}/transition/`, {
+          action: appointmentAction,
+          scheduled_start: payload.scheduled_start,
+          reason: payload.reason || "",
+          duration_minutes: payload.duration_minutes,
+          timezone: payload.timezone,
+          notes: payload.notes,
+        });
+        setProposal((current) => ({ ...current, appointment: data.appointment }));
+      }
+      toast.success("Appointment updated.");
+  }
+
+  async function setAppointmentDisposition(action) {
+    try {
+      const { data } = await api.post(`/projects/proposals/${proposalId}/appointment/`, { action });
+      setProposal(data.proposal);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "The appointment preference could not be updated.");
+    }
+  }
+
+  async function attachExistingAppointment() {
+    try {
+      const { data } = await api.get(`/projects/proposals/${proposalId}/appointment/`);
+      if (data.results?.length !== 1) {
+        toast(data.results?.length ? "Choose the appointment from the related Opportunity; more than one is eligible." : "No eligible appointment is available.");
+        return;
+      }
+      const response = await api.post(`/projects/proposals/${proposalId}/appointment/`, { action: "attach", appointment_id: data.results[0].id });
+      setProposal(response.data.proposal);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "The appointment could not be attached.");
     }
   }
 
@@ -2980,19 +3036,32 @@ export default function ProposalWorkspacePage() {
 
           <Section id="appointment" active={activeStep.key === "project"} title="Estimate Appointment">
             {proposal.appointment ? (
-              <InfoGrid
-                rows={[
+              <div className="space-y-3" data-testid="estimate-appointment-card">
+                <InfoGrid rows={[
                   ["Date and time", formatDateTime(proposal.appointment.scheduled_start)],
+                  ["Duration", `${proposal.appointment.duration_minutes} minutes`],
                   ["Type", proposal.appointment.appointment_type_label],
-                  ["Status", proposal.appointment.status],
+                  ["Status", proposal.appointment.status === "requested" ? "Customer requested — awaiting confirmation" : proposal.appointment.status === "expired" ? "Request expired — time is no longer reserved" : proposal.appointment.status.replaceAll("_", " ")],
                   ["Requested by", proposal.appointment.requested_by],
                   ["Timezone", proposal.appointment.timezone],
+                  ["Location", proposal.appointment.service_location],
                   ["Notes", proposal.appointment.notes],
-                ]}
-              />
+                ]} />
+                {!isReadOnlyHistory && proposal.appointment.available_actions?.length ? <div className="flex flex-wrap gap-2">
+                  {proposal.appointment.available_actions.map((action) => <button key={action} type="button" data-testid={`estimate-appointment-${action}`} onClick={() => updateEstimateAppointment(action)} className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-black ${["decline", "cancel", "no_show"].includes(action) ? "border-rose-300/35 text-rose-100" : "border-sky-300/35 text-sky-100"}`}>{({ confirm: "Confirm", propose: "Propose another time", reschedule: "Reschedule", decline: "Decline", cancel: "Cancel", complete: "Mark completed", no_show: "Mark no-show" })[action]}</button>)}
+                  <a href="/app/team/assignments" className="inline-flex min-h-11 items-center rounded-lg border border-white/15 px-3 py-2 text-sm font-black">View Team Schedule</a>
+                </div> : null}
+                {!isReadOnlyHistory && ["completed", "no_show", "cancelled", "declined"].includes(proposal.appointment.status) ? <button type="button" onClick={() => updateEstimateAppointment("schedule")} className="min-h-11 rounded-lg border border-sky-300/35 px-3 py-2 text-sm font-black">Schedule a new appointment</button> : null}
+              </div>
             ) : (
-              <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70">
-                No estimate appointment is linked yet. Appointment details from intake or opportunity review will appear here when available.
+              <div className="rounded-lg border border-dashed border-white/16 bg-white/6 p-4 text-sm font-semibold text-sky-100/70" data-testid="estimate-appointment-empty">
+                {proposal.appointment_disposition === "no_visit_needed" ? <><strong className="block text-white">No visit needed</strong><span>This Estimate can be prepared and sent without an appointment.</span></> : <span>No appointment is linked. Schedule an optional estimate consultation or site visit{proposal.source_type !== "dashboard" ? ", attach an eligible appointment from the related Opportunity," : ""} or mark that no visit is needed.</span>}
+                {!isReadOnlyHistory ? <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" data-testid="estimate-appointment-schedule" onClick={() => updateEstimateAppointment("schedule")} className="min-h-11 rounded-lg border border-sky-300/35 px-3 py-2 font-black text-sky-100">{proposal.appointment_disposition === "no_visit_needed" ? "Schedule appointment instead" : "Schedule appointment"}</button>
+                  {proposal.source_type !== "dashboard" ? <button type="button" data-testid="estimate-appointment-attach" onClick={attachExistingAppointment} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 font-black text-white">Attach existing appointment</button> : null}
+                  {proposal.appointment_disposition !== "no_visit_needed" ? <button type="button" data-testid="estimate-no-visit-needed" onClick={() => setAppointmentDisposition("no_visit_needed")} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 font-black text-white">No visit needed</button> : null}
+                  {proposal.linked_opportunity_url ? <a href={proposal.linked_opportunity_url} className="inline-flex min-h-11 items-center rounded-lg border border-white/15 px-3 py-2 font-black text-white">View Opportunity</a> : null}
+                </div> : null}
               </div>
             )}
           </Section>
@@ -3538,6 +3607,8 @@ export default function ProposalWorkspacePage() {
             {(proposal.activity || []).length > 2 ? <button type="button" data-testid="proposal-history-toggle" aria-expanded={historyExpanded} onClick={() => setHistoryExpanded((value) => !value)} className="mt-3 rounded-lg border border-white/16 bg-white/7 px-3 py-2 text-sm font-black text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300">{historyExpanded ? "Show recent activity" : `View full history (${proposal.activity.length})`}</button> : null}
           </Section>
         </main>
+
+        <AppointmentActionDialog open={Boolean(appointmentAction)} action={appointmentAction} appointment={proposal.appointment} defaults={{ service_location: proposal.service_location, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "America/Chicago" }} onClose={() => setAppointmentAction("")} onSubmit={submitEstimateAppointmentAction} />
 
         {lifecycleDialog ? <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 p-3" role="presentation"><section role="dialog" aria-modal="true" aria-labelledby="estimate-lifecycle-title" className="max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 text-slate-950 shadow-2xl" data-testid="estimate-lifecycle-dialog"><h2 id="estimate-lifecycle-title" className="text-xl font-black">{lifecycleDialog === "delete" ? "Delete draft estimate?" : lifecycleDialog === "void" ? "Void accepted estimate?" : "Withdraw this estimate?"}</h2><p className="mt-3 text-sm leading-6 text-slate-700">{lifecycleDialog === "delete" ? "This estimate has not been sent to the customer. Deleting it will permanently remove the draft and its estimate-only details. This cannot be undone." : lifecycleDialog === "void" ? "The customer already accepted this estimate. Voiding it will prevent Agreement creation, but the accepted record and audit history will be retained." : "The customer will no longer be able to review or accept this version. Delivery and review history will be retained."}</p>{lifecycleDialog !== "delete" ? <label className="mt-4 block text-sm font-bold">Reason{lifecycleDialog === "void" ? " (required)" : " (optional)"}<textarea value={lifecycleReason} onChange={(event) => setLifecycleReason(event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 p-3" data-testid="estimate-lifecycle-reason" /></label> : null}{lifecycleDialog === "void" ? <label className="mt-4 flex min-h-11 items-start gap-3 text-sm font-bold"><input type="checkbox" checked={voidConfirmed} onChange={(event) => setVoidConfirmed(event.target.checked)} className="mt-1" />I understand that this accepted estimate will be voided.</label> : null}<div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" className="min-h-11 rounded-xl border border-slate-300 px-4 font-bold" onClick={() => setLifecycleDialog("")} disabled={lifecycleSubmitting}>Keep estimate</button><button type="button" className="min-h-11 rounded-xl bg-rose-700 px-4 font-bold text-white disabled:opacity-50" onClick={submitLifecycleAction} disabled={lifecycleSubmitting || (lifecycleDialog === "void" && (!voidConfirmed || !lifecycleReason.trim()))}>{lifecycleSubmitting ? "Working…" : lifecycleDialog === "delete" ? "Delete draft" : lifecycleDialog === "void" ? "Void estimate" : "Withdraw estimate"}</button></div></section></div> : null}
 
