@@ -367,7 +367,9 @@ test('opportunity review displays customer-requested estimate details as awaitin
   await page.getByTestId('propose-estimate-time-action').click();
   const proposeDialog = page.getByTestId('appointment-action-dialog');
   await expect(proposeDialog).toBeVisible();
-  await expect(proposeDialog.getByLabel('Start time')).toHaveAttribute('step', '900');
+  const proposedTimes = proposeDialog.getByLabel('Start time');
+  await expect(proposedTimes).toHaveJSProperty('tagName', 'SELECT');
+  expect(await proposedTimes.locator('option').evaluateAll((options) => options.every((option) => Number(option.value.slice(3)) % 15 === 0))).toBe(true);
   await expect(proposeDialog).toContainText('Appointments begin in 15-minute increments.');
   await expect(page.getByTestId('decline-estimate-request-action')).toBeVisible();
 });

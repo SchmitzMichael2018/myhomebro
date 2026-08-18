@@ -9,7 +9,8 @@ import { Card, WorkspacePageHeader } from "../components/ui";
 import { buildLeadAgreementAssistantState } from "../lib/leadProposalDraft";
 import ConvertToAgreementPanel from "../components/ConvertToAgreementPanel.jsx";
 import AppointmentActionDialog from "../components/AppointmentActionDialog.jsx";
-import { FALLBACK_APPOINTMENT_INCREMENT_MINUTES, friendlyTimeZone, nextAppointmentIncrement, normalizeAppointmentWallTime, validateFutureAppointment, zonedParts, zonedWallTimeToIso } from "../lib/appointmentTime.js";
+import AppointmentDateTimeControls from "../components/AppointmentDateTimeControls.jsx";
+import { appointmentTimeOptions, FALLBACK_APPOINTMENT_INCREMENT_MINUTES, friendlyTimeZone, nextAppointmentIncrement, normalizeAppointmentWallTime, validateFutureAppointment, zonedParts, zonedWallTimeToIso } from "../lib/appointmentTime.js";
 import {
   ProjectAssistantApprovalNotice,
   ProjectAssistantPanel,
@@ -716,12 +717,25 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled, incrementMinut
     ? validateFutureAppointment({ date, time, timeZone, minimumLeadMinutes })
     : { valid: false };
   const minimumDate = timeZone ? zonedParts(new Date(), timeZone).date : "";
+  const timeOptions = useMemo(
+    () => date && timeZone ? appointmentTimeOptions({ date, timeZone, incrementMinutes: increment, minimumLeadMinutes }) : [],
+    [date, timeZone, increment, minimumLeadMinutes]
+  );
 
   useEffect(() => {
     if (!open || !date || !time || !timeZone) return;
     const validation = validateFutureAppointment({ date, time, timeZone, minimumLeadMinutes });
     setTimeError(validation.valid ? "" : (validation.error || "Choose a future appointment date and time."));
   }, [open, date, time, timeZone, appointmentType, duration, minimumLeadMinutes]);
+
+  useEffect(() => {
+    if (!open || !date || date < minimumDate || !timeOptions.length) return;
+    if (!timeOptions.some((option) => option.value === time)) {
+      setTime(timeOptions[0].value);
+      setTimeNotice(`Start time changed to ${timeOptions[0].label}. Review the new time before submitting.`);
+      setTimeError("Review the newly selected start time.");
+    }
+  }, [open, date, time, minimumDate, timeOptions]);
 
   if (!open || !row) return null;
 
@@ -853,16 +867,25 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled, incrementMinut
                 <option value="in_person">In-person estimate</option>
               </select>
             </label>
-            <label htmlFor="schedule-estimate-date" className="text-sm font-semibold text-slate-800">
-              Date
-              <input id="schedule-estimate-date" data-testid="schedule-estimate-date" type="date" min={minimumDate} value={date} onChange={(event) => setDate(event.target.value)} aria-invalid={Boolean(timeError)} aria-describedby="opportunity-time-error" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            </label>
-            <label htmlFor="schedule-estimate-time" className="text-sm font-semibold text-slate-800">
-              Start time
-              <input id="schedule-estimate-time" data-testid="schedule-estimate-time" type="time" step={increment * 60} value={time} onChange={(event) => { setTime(event.target.value); setTimeError(""); setTimeNotice(""); }} onBlur={() => { const normalized = normalizeAppointmentWallTime({ date, time, incrementMinutes: increment }); if (normalized.changed) { setDate(normalized.date); setTime(normalized.time); setTimeNotice(`Start time adjusted to ${normalized.time} on ${normalized.date}.`); } }} aria-invalid={Boolean(timeError)} aria-describedby="opportunity-time-help opportunity-time-error" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-              <span id="opportunity-time-help" className="mt-1 block text-xs text-slate-600">Appointments begin in {increment}-minute increments.</span>
-              {timeError ? <span id="opportunity-time-error" role="alert" className="mt-1 block text-xs font-bold text-rose-700">{timeError}</span> : timeNotice ? <span id="opportunity-time-error" className="mt-1 block text-xs font-bold text-emerald-700">{timeNotice}</span> : null}
-            </label>
+            <AppointmentDateTimeControls
+              dateId="schedule-estimate-date"
+              timeId="schedule-estimate-time"
+              dateTestId="schedule-estimate-date"
+              timeTestId="schedule-estimate-time"
+              date={date}
+              time={time}
+              minimumDate={minimumDate}
+              options={timeOptions}
+              increment={increment}
+              error={timeError}
+              notice={timeNotice}
+              onDateChange={(event) => { const value = event.target.value; setDate(value); setTimeError(value ? "" : "Choose a future appointment date and time."); setTimeNotice(""); }}
+              onTimeChange={(event) => { setTime(event.target.value); setTimeError(""); setTimeNotice(""); }}
+              controlClassName="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-950"
+              helperClassName="text-slate-700"
+              errorClassName="text-rose-700"
+              noticeClassName="text-emerald-700"
+            />
             <label htmlFor="schedule-estimate-duration" className="text-sm font-semibold text-slate-800">
               Duration
               <select id="schedule-estimate-duration" data-testid="schedule-estimate-duration" value={duration} onChange={(event) => setDuration(event.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">

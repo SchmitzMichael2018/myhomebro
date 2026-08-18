@@ -61,10 +61,42 @@ export function zonedWallTimeToIso(date, time, timeZone) {
     const [shownYear, shownMonth, shownDay] = shown.date.split("-").map(Number);
     const [shownHour, shownMinute] = shown.time.split(":").map(Number);
     const difference = wanted - Date.UTC(shownYear, shownMonth - 1, shownDay, shownHour, shownMinute);
-    if (!difference) return candidate.toISOString();
+    if (!difference) {
+      for (let offset = -180; offset <= 180; offset += 30) {
+        if (!offset) continue;
+        const alternate = new Date(candidate.getTime() + offset * 60000);
+        const alternateParts = zonedParts(alternate, timeZone);
+        if (alternateParts.date === date && alternateParts.time === time) {
+          throw new Error("That local time is ambiguous in the selected time zone. Choose another time.");
+        }
+      }
+      return candidate.toISOString();
+    }
     candidate = new Date(candidate.getTime() + difference);
   }
   throw new Error("That local time does not exist in the selected time zone. Choose another time.");
+}
+
+export function formatAppointmentTime(time, locale = "en-US") {
+  const [hour, minute] = time.split(":").map(Number);
+  return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "UTC" }).format(new Date(Date.UTC(2000, 0, 1, hour, minute)));
+}
+
+export function appointmentTimeOptions({ date, timeZone, incrementMinutes, minimumLeadMinutes = 0, now = new Date(), locale = "en-US" }) {
+  const increment = Number(incrementMinutes) || FALLBACK_APPOINTMENT_INCREMENT_MINUTES;
+  const earliest = now.getTime() + Number(minimumLeadMinutes || 0) * 60000;
+  const options = [];
+  for (let minute = 0; minute < 24 * 60; minute += increment) {
+    const value = `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
+    try {
+      const iso = zonedWallTimeToIso(date, value, timeZone);
+      if (new Date(iso).getTime() <= earliest) continue;
+      options.push({ value, label: formatAppointmentTime(value, locale), iso });
+    } catch {
+      // Nonexistent and ambiguous DST wall times cannot be selected safely.
+    }
+  }
+  return options;
 }
 
 export function friendlyTimeZone(timeZone) {

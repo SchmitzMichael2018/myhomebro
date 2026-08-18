@@ -610,15 +610,16 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await page.getByTestId("estimate-appointment-reschedule").click();
   const appointmentDialog = page.getByTestId("appointment-action-dialog");
   await expect(appointmentDialog).toContainText("Current time:");
-  await expect(appointmentDialog.getByLabel("Date")).toBeFocused();
+  await expect(appointmentDialog.getByTestId("appointment-date-input")).toBeFocused();
   for (const label of ["Appointment type", "Duration", "Date", "Start time", "Time zone", "Service location", "Notes (optional)", "Reason"]) {
-    await expect(appointmentDialog.getByLabel(label)).toBeVisible();
+    await expect(appointmentDialog.getByLabel(label, { exact: true })).toBeVisible();
   }
   const startTime = appointmentDialog.getByLabel("Start time");
-  await startTime.fill("12:26");
-  await startTime.blur();
+  await appointmentDialog.getByLabel("Date", { exact: true }).fill("2030-08-20");
+  await startTime.selectOption("12:30");
   await expect(startTime).toHaveValue("12:30");
-  await expect(appointmentDialog).toContainText("Start time adjusted to 12:30");
+  await expect(startTime.locator("option")).toHaveCount(96);
+  await expect(startTime.locator("option").first()).toHaveText("12:00 AM");
   await appointmentDialog.getByLabel("Notes (optional)").fill("Preserve this note after conflict.");
   await appointmentDialog.getByLabel("Reason").fill("Customer requested a later visit.");
   await appointmentDialog.getByRole("button", { name: "Reschedule appointment" }).click();

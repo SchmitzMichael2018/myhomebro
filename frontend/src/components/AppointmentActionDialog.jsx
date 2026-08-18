@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from './Modal.jsx';
+import AppointmentDateTimeControls from './AppointmentDateTimeControls.jsx';
 import {
+  appointmentTimeOptions,
   FALLBACK_APPOINTMENT_INCREMENT_MINUTES,
   friendlyTimeZone,
   nextAppointmentIncrement,
@@ -115,6 +117,12 @@ export default function AppointmentActionDialog({
   const minimumDate = form.timezone
     ? zonedParts(new Date(), form.timezone).date
     : '';
+  const timeOptions = useMemo(
+    () => form.date && form.timezone
+      ? appointmentTimeOptions({ date: form.date, timeZone: form.timezone, incrementMinutes: increment, minimumLeadMinutes })
+      : [],
+    [form.date, form.timezone, increment, minimumLeadMinutes]
+  );
 
   useEffect(() => {
     if (!open || !needsTime || !form.date || !form.time || !form.timezone)
@@ -140,6 +148,15 @@ export default function AppointmentActionDialog({
     form.duration_minutes,
     minimumLeadMinutes,
   ]);
+
+  useEffect(() => {
+    if (!open || !needsTime || !form.date || form.date < minimumDate || !timeOptions.length) return;
+    if (!timeOptions.some((option) => option.value === form.time)) {
+      setForm((current) => ({ ...current, time: timeOptions[0].value }));
+      setTimeNotice(`Start time changed to ${timeOptions[0].label}. Review the new time before submitting.`);
+      setTimeError('Review the newly selected start time.');
+    }
+  }, [open, needsTime, form.date, form.time, minimumDate, timeOptions]);
 
   const change = (key) => (event) =>
     setForm((current) => ({ ...current, [key]: event.target.value }));
@@ -322,71 +339,33 @@ export default function AppointmentActionDialog({
                   ))}
               </select>
             </div>
-            <div>
-              <label htmlFor="appointment-date" className="text-sm font-bold">
-                Date
-              </label>
-              <input
-                id="appointment-date"
-                data-autofocus
-                type="date"
-                min={minimumDate}
-                value={form.date || ''}
-                onChange={change('date')}
-                aria-invalid={Boolean(timeError)}
-                aria-describedby="appointment-time-feedback"
-                className={control}
-              />
-            </div>
-            <div>
-              <label
-                htmlFor="appointment-start-time"
-                className="text-sm font-bold"
-              >
-                Start time
-              </label>
-              <input
-                ref={timeRef}
-                id="appointment-start-time"
-                type="time"
-                step={increment * 60}
-                value={form.time || ''}
-                onChange={(event) => {
-                  setForm((current) => ({
-                    ...current,
-                    time: event.target.value,
-                  }));
-                  setTimeError('');
-                  setTimeNotice('');
-                }}
-                onBlur={normalizeTime}
-                aria-invalid={Boolean(timeError)}
-                aria-describedby="appointment-time-help appointment-time-feedback"
-                className={`${control} ${timeError ? 'border-rose-400' : ''}`}
-              />
-              <p
-                id="appointment-time-help"
-                className="mt-1 text-xs text-sky-100/75"
-              >
-                Appointments begin in {increment}-minute increments.
-              </p>
-              {timeError ? (
-                <p
-                  id="appointment-time-feedback"
-                  role="alert"
-                  className="mt-1 text-xs font-bold text-rose-200"
-                >
-                  {timeError}
-                </p>
-              ) : timeNotice ? (
-                <p
-                  id="appointment-time-feedback"
-                  className="mt-1 text-xs font-bold text-emerald-200"
-                >
-                  {timeNotice}
-                </p>
-              ) : null}
-            </div>
+            <AppointmentDateTimeControls
+              dateId="appointment-date"
+              timeId="appointment-start-time"
+              date={form.date || ''}
+              time={form.time || ''}
+              minimumDate={minimumDate}
+              options={timeOptions}
+              increment={increment}
+              error={timeError}
+              notice={timeNotice}
+              onDateChange={(event) => {
+                const value = event.target.value;
+                setForm((current) => ({ ...current, date: value }));
+                setTimeError(value ? '' : 'Choose a future appointment date and time.');
+                setTimeNotice('');
+              }}
+              onTimeChange={(event) => {
+                setForm((current) => ({ ...current, time: event.target.value }));
+                setTimeError('');
+                setTimeNotice('');
+              }}
+              timeRef={timeRef}
+              controlClassName={control}
+              helperClassName="text-sky-100"
+              errorClassName="text-rose-200"
+              noticeClassName="text-emerald-200"
+            />
             <div className="sm:col-span-2">
               <label
                 htmlFor="appointment-timezone"
