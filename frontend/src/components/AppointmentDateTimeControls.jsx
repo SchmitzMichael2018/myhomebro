@@ -78,8 +78,8 @@ export default function AppointmentDateTimeControls({
           Start time
         </label>
         <div className="relative mt-1">
-        <select
-          ref={timeRef}
+          <select
+            ref={timeRef}
             id={timeId}
           data-testid={timeTestId || `${timeId}-select`}
             value={time}
@@ -87,6 +87,7 @@ export default function AppointmentDateTimeControls({
             aria-invalid={Boolean(error)}
             aria-describedby={`${helperId}${error || notice ? ` ${feedbackId}` : ''}`}
             className={`${controlClassName} mt-0 appearance-none pr-12`}
+            style={{ appearance: 'none', WebkitAppearance: 'none', MozAppearance: 'none', backgroundImage: 'none' }}
           >
             {options.length ? (
               options.map((option) => (

@@ -578,11 +578,13 @@ test("Create Estimate from Opportunity opens Estimate Workspace", async ({ page 
 test("Estimate Workspace renders compact dark command-center guidance", async ({ page }) => {
   await installBaseMocks(page);
   await installAgreementWizardMocks(page);
+  let appointmentMutationCount = 0;
 
   await page.route("**/api/projects/proposals/42/", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(proposal) });
   });
   await page.route("**/api/projects/contractor-opportunities/estimate-appointments/7001/transition/", async (route) => {
+    appointmentMutationCount += 1;
     await route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ detail: "That appointment time is no longer available." }) });
   });
 
@@ -610,6 +612,16 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await page.getByTestId("estimate-appointment-reschedule").click();
   const appointmentDialog = page.getByTestId("appointment-action-dialog");
   await expect(appointmentDialog).toContainText("Current time:");
+  await expect(appointmentDialog.getByRole("button", { name: "Keep current appointment" })).toBeVisible();
+  const rescheduleTrigger = page.getByTestId("estimate-appointment-reschedule");
+  await appointmentDialog.getByRole("button", { name: "Keep current appointment" }).click();
+  expect(appointmentMutationCount).toBe(0);
+  await expect(rescheduleTrigger).toBeFocused();
+  await rescheduleTrigger.click();
+  await page.keyboard.press("Escape");
+  expect(appointmentMutationCount).toBe(0);
+  await expect(rescheduleTrigger).toBeFocused();
+  await rescheduleTrigger.click();
   await expect(appointmentDialog.getByTestId("appointment-date-input")).toBeFocused();
   for (const label of ["Appointment type", "Duration", "Date", "Start time", "Time zone", "Service location", "Notes (optional)", "Reason"]) {
     await expect(appointmentDialog.getByLabel(label, { exact: true })).toBeVisible();
@@ -640,7 +652,21 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await page.screenshot({ path: "test-results/estimate-appointment-dialog-light-mode.png", fullPage: true });
   await page.evaluate(() => { document.documentElement.dataset.mhbTheme = "dark"; });
   const startTime = appointmentDialog.getByLabel("Start time");
+  const startTimeWrapper = startTime.locator("xpath=..");
+  await expect(startTimeWrapper.locator("svg")).toHaveCount(1);
+  await expect(startTimeWrapper.locator("svg")).toHaveAttribute("aria-hidden", "true");
+  expect(await startTime.evaluate((node) => ({ appearance: getComputedStyle(node).appearance, webkitAppearance: getComputedStyle(node).webkitAppearance, backgroundImage: getComputedStyle(node).backgroundImage }))).toEqual({ appearance: "none", webkitAppearance: "none", backgroundImage: "none" });
+  for (const selectLabel of ["Appointment type", "Duration", "Time zone"]) {
+    const select = appointmentDialog.getByLabel(selectLabel, { exact: true });
+    await expect(select.locator("xpath=..").locator("svg")).toHaveCount(0);
+    expect(await select.evaluate((node) => ({ appearance: getComputedStyle(node).appearance, backgroundImage: getComputedStyle(node).backgroundImage }))).toEqual(expect.objectContaining({ appearance: "none" }));
+    expect(await select.evaluate((node) => getComputedStyle(node).backgroundImage)).not.toBe("none");
+  }
   await appointmentDialog.getByLabel("Date", { exact: true }).fill("2030-08-20");
+  await startTime.selectOption("12:30");
+  await startTime.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(startTime).toHaveValue("12:45");
   await startTime.selectOption("12:30");
   await expect(startTime).toHaveValue("12:30");
   await expect(startTime.locator("option")).toHaveCount(96);

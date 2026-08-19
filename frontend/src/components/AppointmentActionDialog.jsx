@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Modal from './Modal.jsx';
 import AppointmentDateTimeControls from './AppointmentDateTimeControls.jsx';
+import { appointmentSecondaryLabel } from '../lib/appointmentDialogCopy.js';
 import {
   appointmentTimeOptions,
   FALLBACK_APPOINTMENT_INCREMENT_MINUTES,
@@ -464,7 +465,7 @@ export default function AppointmentActionDialog({
             disabled={submitting}
             className="min-h-11 rounded-xl border border-slate-300 px-4 font-bold text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
           >
-            Keep appointment
+            {appointmentSecondaryLabel(action)}
           </button>
           <button
             type="submit"

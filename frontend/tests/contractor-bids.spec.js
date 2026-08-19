@@ -870,6 +870,14 @@ test("contractor bids workspace renders, filters, opens details, and converts aw
   await expect(page.getByTestId("schedule-estimate-location")).toHaveValue("Austin, TX");
   await expect(page.getByTestId("schedule-estimate-modal")).toContainText("Appointments begin in 15-minute increments.");
   await expect(page.locator("#schedule-estimate-time-help")).toHaveClass(/text-slate-700/);
+  await expect(page.getByTestId("schedule-estimate-modal").getByRole("button", { name: "Cancel" })).toBeVisible();
+  await page.screenshot({ path: "test-results/estimate-appointment-new-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId("schedule-estimate-time")).toBeVisible();
+  await page.getByTestId("schedule-estimate-time").selectOption("10:30");
+  await expect(page.getByTestId("schedule-estimate-time")).toHaveValue("10:30");
+  await page.screenshot({ path: "test-results/estimate-appointment-new-mobile.png", fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.getByRole("button", { name: "Choose appointment date" })).toBeVisible();
   await page.evaluate(() => {
     window.__appointmentPickerCalls = 0;

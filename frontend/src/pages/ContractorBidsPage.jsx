@@ -941,7 +941,7 @@ function ScheduleEstimateModal({ row, open, onClose, onScheduled, incrementMinut
 
           <div className="mt-5 flex flex-wrap justify-end gap-3 border-t border-slate-200 pt-4">
             <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              Close
+              {result?.appointment ? "Close" : "Cancel"}
             </button>
             <button
               type="submit"
