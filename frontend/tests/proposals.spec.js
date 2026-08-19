@@ -614,6 +614,31 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   for (const label of ["Appointment type", "Duration", "Date", "Start time", "Time zone", "Service location", "Notes (optional)", "Reason"]) {
     await expect(appointmentDialog.getByLabel(label, { exact: true })).toBeVisible();
   }
+  for (const theme of ["dark", "light"]) {
+    await page.evaluate((nextTheme) => { document.documentElement.dataset.mhbTheme = nextTheme; }, theme);
+    const contrast = await appointmentDialog.evaluate((dialog) => {
+      const rgb = (value) => (value.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+      const luminance = (value) => {
+        const [r, g, b] = rgb(value).map((channel) => { const normalized = channel / 255; return normalized <= 0.03928 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4; });
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      const ratio = (foreground, background) => { const high = Math.max(luminance(foreground), luminance(background)); const low = Math.min(luminance(foreground), luminance(background)); return (high + 0.05) / (low + 0.05); };
+      const background = getComputedStyle(dialog).backgroundColor;
+      const labels = [...dialog.querySelectorAll("label")].map((node) => ({ color: getComputedStyle(node).color, ratio: ratio(getComputedStyle(node).color, background) }));
+      const icon = dialog.querySelector('[aria-label="Choose appointment date"] svg');
+      const helper = dialog.querySelector('#appointment-start-time-help');
+      const iconStyle = getComputedStyle(icon);
+      const helperStyle = getComputedStyle(helper);
+      return { background, labels, iconColor: iconStyle.color, iconStroke: iconStyle.stroke, iconRatio: ratio(iconStyle.stroke === "none" ? iconStyle.color : iconStyle.stroke, background), helperColor: helperStyle.color, helperRatio: ratio(helperStyle.color, background) };
+    });
+    expect(contrast.background).toBe("rgb(255, 255, 255)");
+    expect(contrast.labels.every(({ ratio }) => ratio >= 4.5)).toBe(true);
+    expect(contrast.iconStroke).not.toBe("none");
+    expect(contrast.iconRatio).toBeGreaterThanOrEqual(3);
+    expect(contrast.helperRatio).toBeGreaterThanOrEqual(4.5);
+  }
+  await page.screenshot({ path: "test-results/estimate-appointment-dialog-light-mode.png", fullPage: true });
+  await page.evaluate(() => { document.documentElement.dataset.mhbTheme = "dark"; });
   const startTime = appointmentDialog.getByLabel("Start time");
   await appointmentDialog.getByLabel("Date", { exact: true }).fill("2030-08-20");
   await startTime.selectOption("12:30");

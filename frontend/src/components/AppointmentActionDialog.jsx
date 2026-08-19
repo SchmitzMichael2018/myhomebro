@@ -287,12 +287,12 @@ export default function AppointmentActionDialog({
       title={labels[action] || 'Appointment'}
       testId="appointment-action-dialog"
       overlayClassName="bg-slate-950/80 p-3"
-      containerClassName="mx-3 max-h-[calc(100dvh-1.5rem)] max-w-xl rounded-2xl border border-slate-700 bg-[#071d3d] text-white"
+      containerClassName="mx-3 max-h-[calc(100dvh-1.5rem)] max-w-xl rounded-2xl border border-slate-200 bg-white text-slate-900"
       bodyClassName="max-h-[calc(100dvh-6rem)] p-5"
     >
       <form onSubmit={submit} className="space-y-4">
         {appointment && ['propose', 'reschedule'].includes(action) ? (
-          <p className="rounded-xl bg-white/10 p-3 text-sm">
+          <p className="rounded-xl bg-slate-100 p-3 text-sm text-slate-700">
             Current time:{' '}
             {new Date(appointment.scheduled_start).toLocaleString()}
           </p>
@@ -300,7 +300,7 @@ export default function AppointmentActionDialog({
         {needsTime ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
-              <label htmlFor="appointment-type" className="text-sm font-bold">
+              <label htmlFor="appointment-type" className="text-sm font-bold text-slate-800">
                 Appointment type
               </label>
               <select
@@ -317,7 +317,7 @@ export default function AppointmentActionDialog({
             <div>
               <label
                 htmlFor="appointment-duration"
-                className="text-sm font-bold"
+                className="text-sm font-bold text-slate-800"
               >
                 Duration
               </label>
@@ -362,14 +362,14 @@ export default function AppointmentActionDialog({
               }}
               timeRef={timeRef}
               controlClassName={control}
-              helperClassName="text-sky-100"
-              errorClassName="text-rose-200"
-              noticeClassName="text-emerald-200"
+              helperClassName="text-slate-700"
+              errorClassName="text-rose-700"
+              noticeClassName="text-emerald-700"
             />
             <div className="sm:col-span-2">
               <label
                 htmlFor="appointment-timezone"
-                className="text-sm font-bold"
+                className="text-sm font-bold text-slate-800"
               >
                 Time zone
               </label>
@@ -397,7 +397,7 @@ export default function AppointmentActionDialog({
             <div className="sm:col-span-2">
               <label
                 htmlFor="appointment-location"
-                className="text-sm font-bold"
+                className="text-sm font-bold text-slate-800"
               >
                 {form.appointment_type === 'in_person'
                   ? 'Service location'
@@ -411,7 +411,7 @@ export default function AppointmentActionDialog({
               />
             </div>
             <div className="sm:col-span-2">
-              <label htmlFor="appointment-notes" className="text-sm font-bold">
+              <label htmlFor="appointment-notes" className="text-sm font-bold text-slate-800">
                 Notes (optional)
               </label>
               <textarea
@@ -425,7 +425,7 @@ export default function AppointmentActionDialog({
         ) : null}
         {needsReason ? (
           <div>
-            <label htmlFor="appointment-reason" className="text-sm font-bold">
+            <label htmlFor="appointment-reason" className="text-sm font-bold text-slate-800">
               Reason
             </label>
             <textarea
@@ -438,13 +438,13 @@ export default function AppointmentActionDialog({
           </div>
         ) : null}
         {action === 'cancel' ? (
-          <p className="text-sm text-rose-100">
+          <p className="text-sm text-rose-800">
             This releases the reserved time and keeps the appointment in
             history.
           </p>
         ) : null}
         {confirmInvalid ? (
-          <div role="alert" className="rounded-lg bg-rose-950 p-3 text-sm text-rose-100">
+          <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
             Choose a future appointment date and time. Propose another time instead of confirming this request.
           </div>
         ) : null}
@@ -452,7 +452,7 @@ export default function AppointmentActionDialog({
           <div
             role="alert"
             data-testid="appointment-dialog-error"
-            className="rounded-lg bg-rose-950 p-3 text-sm text-rose-100"
+            className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800"
           >
             {error}
           </div>
@@ -462,7 +462,7 @@ export default function AppointmentActionDialog({
             type="button"
             onClick={onClose}
             disabled={submitting}
-            className="min-h-11 rounded-xl border border-white/30 px-4 font-bold"
+            className="min-h-11 rounded-xl border border-slate-300 px-4 font-bold text-slate-700 hover:bg-slate-50 disabled:text-slate-400"
           >
             Keep appointment
           </button>

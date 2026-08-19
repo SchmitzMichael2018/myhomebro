@@ -22,6 +22,7 @@ export default function AppointmentDateTimeControls({
   timeRef,
   dateTestId,
   timeTestId,
+  labelClassName = 'text-slate-800',
 }) {
   const dateRef = useRef(null);
   const feedbackId = `${timeId}-feedback`;
@@ -45,7 +46,7 @@ export default function AppointmentDateTimeControls({
   return (
     <>
       <div className={dateContainerClassName}>
-        <label htmlFor={dateId} className="text-sm font-bold">
+        <label htmlFor={dateId} className={`text-sm font-bold ${labelClassName}`}>
           Date
         </label>
       <div className="relative mt-1">
@@ -66,14 +67,14 @@ export default function AppointmentDateTimeControls({
             type="button"
             aria-label="Choose appointment date"
             onClick={openPicker}
-            className="absolute inset-y-0 right-0 flex min-h-11 min-w-11 items-center justify-center rounded-r-lg text-current opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500"
+            className="absolute inset-y-0 right-0 flex min-h-11 min-w-11 items-center justify-center rounded-r-lg text-slate-700 hover:bg-sky-50 hover:text-sky-700 active:text-sky-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-600 disabled:text-slate-400"
           >
             <CalendarDays aria-hidden="true" className="h-5 w-5" />
           </button>
         </div>
       </div>
       <div className={timeContainerClassName}>
-        <label htmlFor={timeId} className="text-sm font-bold">
+        <label htmlFor={timeId} className={`text-sm font-bold ${labelClassName}`}>
           Start time
         </label>
         <div className="relative mt-1">
@@ -99,7 +100,7 @@ export default function AppointmentDateTimeControls({
           </select>
           <ChevronDown
             aria-hidden="true"
-            className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 opacity-70"
+            className="pointer-events-none absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-600"
           />
         </div>
         <p id={helperId} className={`mt-1 text-xs ${helperClassName}`}>
