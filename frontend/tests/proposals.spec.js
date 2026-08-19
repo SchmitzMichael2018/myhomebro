@@ -608,6 +608,10 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   const appointmentCard = page.getByTestId("estimate-appointment-card");
   await expect(appointmentCard).toContainText("In-Person Estimate");
   await expect(appointmentCard).toContainText("123 Main St, Austin, TX");
+  await expect(appointmentCard.getByRole("link", { name: "View Team Schedule" })).toHaveAttribute(
+    "href",
+    "/app/calendar?date=2026-07-08&view=day&event=estimate-appointment-7001",
+  );
   await expect(page.getByTestId("estimate-appointment-reschedule")).toBeVisible();
   await page.getByTestId("estimate-appointment-reschedule").click();
   const appointmentDialog = page.getByTestId("appointment-action-dialog");

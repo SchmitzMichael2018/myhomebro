@@ -1,5 +1,5 @@
 // frontend/src/components/Calendar.jsx
-import React, { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -31,6 +31,12 @@ const ASSIGNMENT_ROLE_COLORS = {
   employee_readonly: "#9CA3AF",
   default: "#6B7280",
 };
+
+const APPOINTMENT_COLORS = { confirmed: "#0F766E", tentative: "#7C3AED" };
+
+function escapeHtml(value) {
+  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+}
 
 function formatCurrency(n) {
   const num = typeof n === "number" ? n : parseFloat(n);
@@ -161,6 +167,11 @@ export default function Calendar() {
   const [employeeOptions, setEmployeeOptions] = useState([]);
   const [employeeFilter, setEmployeeFilter] = useState("");
   const [activeViewType, setActiveViewType] = useState("dayGridMonth");
+  const activeRangeRef = useRef(null);
+  const calendarQuery = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialDate = calendarQuery.get("date") || undefined;
+  const initialView = { day: "timeGridDay", week: "timeGridWeek", month: "dayGridMonth" }[calendarQuery.get("view")] || "dayGridMonth";
+  const selectedEventId = calendarQuery.get("event") || "";
 
   const loadEmployees = useCallback(async () => {
     try {
@@ -176,7 +187,7 @@ export default function Calendar() {
     loadEmployees();
   }, [loadEmployees]);
 
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (range = activeRangeRef.current) => {
     try {
       setLoading(true);
       const res = await api.get("/projects/milestones/calendar/");
@@ -208,6 +219,16 @@ export default function Calendar() {
         }
         assigneeByMilestoneId = map;
       } catch { /* Assignment enrichment is optional; retain the calendar response. */ }
+
+      let appointmentEvents = [];
+      try {
+        const params = range ? { start: range.startStr, end: range.endStr } : {};
+        const appointmentResponse = await api.get("/projects/appointments/calendar/", { params });
+        appointmentEvents = (appointmentResponse.data?.events || []).map((event) => {
+          const color = event.extendedProps?.tentative ? APPOINTMENT_COLORS.tentative : APPOINTMENT_COLORS.confirmed;
+          return { ...event, backgroundColor: color, borderColor: color, textColor: "#fff" };
+        });
+      } catch { /* Appointment enrichment is optional; retain the other calendar feeds. */ }
 
       const visibleMilestones = milestones.filter((m) => !isPlannedCalendarMilestone(m));
 
@@ -257,7 +278,7 @@ export default function Calendar() {
         };
       });
 
-      setEvents([...milestoneEvents, ...assignmentEvents]);
+      setEvents([...milestoneEvents, ...assignmentEvents, ...appointmentEvents]);
     } catch (err) {
       console.error(err);
       toast.error("Failed to load calendar.");
@@ -267,8 +288,8 @@ export default function Calendar() {
   }, [employeeFilter]);
 
   useEffect(() => {
-    loadEvents();
-  }, [loadEvents]);
+    if (activeRangeRef.current) loadEvents(activeRangeRef.current);
+  }, [employeeFilter, loadEvents]);
 
   // ✅ UPDATED: allow clicking milestone_override assignment to open the milestone modal
   const handleEventClick = async (info) => {
@@ -298,6 +319,11 @@ export default function Calendar() {
       return;
     }
 
+    if (xp.type === "estimate_appointment" && xp.navigation_target) {
+      window.location.assign(xp.navigation_target);
+      return;
+    }
+
     // agreement_assignment: optional future behavior (open agreement detail)
     // if (xp.type === "agreement_assignment" && xp.agreement_id) { ... }
   };
@@ -306,6 +332,13 @@ export default function Calendar() {
     (arg) => {
       const bg = arg.event.backgroundColor || "#1A73E8";
       const xp = arg.event.extendedProps || {};
+      if (xp.type === "estimate_appointment") {
+        const time = arg.event.start?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) || "";
+        const lines = activeViewType === "dayGridMonth"
+          ? [`${time} · Estimate appointment`, xp.display_status]
+          : [arg.timeText || time, xp.estimate_name || "Estimate appointment", xp.appointment_type_label, xp.display_status, xp.location].filter(Boolean);
+        return { html: `<div data-testid="calendar-estimate-appointment-${escapeHtml(xp.appointment_id)}" style="display:inline-block;max-width:100%;background:${bg};color:#fff;border-radius:8px;padding:4px 7px;line-height:1.15;font-size:.82rem;font-weight:700;white-space:normal;word-break:break-word;border:1px ${xp.tentative ? "dashed" : "solid"} rgba(255,255,255,.7);opacity:${xp.tentative ? ".78" : "1"}">${lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>` };
+      }
       const isMilestone = xp.type === "milestone";
       const late = !!xp.late;
 
@@ -373,24 +406,34 @@ export default function Calendar() {
 
       {!loading && events.length === 0 ? (
         <div className="mb-4 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-500">
-          No calendar events yet. Milestones and assignments will appear here as soon as they are scheduled.
+          No calendar events yet. Appointments, milestones, and assignments will appear here as soon as they are scheduled.
         </div>
       ) : null}
 
       <FullCalendar
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-        initialView="dayGridMonth"
+        initialView={initialView}
+        initialDate={initialDate}
         headerToolbar={headerToolbar}
         events={events}
         eventContent={renderEventContent}
         eventClick={handleEventClick}
         eventDidMount={(arg) => {
-          arg.el.title = arg.event.extendedProps?.tooltip || "";
+          arg.el.title = arg.event.extendedProps?.tooltip || arg.event.extendedProps?.display_status || "";
+          if (selectedEventId && arg.event.id === selectedEventId) {
+            arg.el.dataset.selectedEvent = "true";
+            arg.el.style.outline = "3px solid #FBBF24";
+            arg.el.scrollIntoView?.({ block: "nearest" });
+          }
           try {
             arg.el.style.cursor = "pointer";
           } catch { /* Third-party calendar elements may reject direct style changes. */ }
         }}
-        datesSet={(arg) => setActiveViewType(arg.view.type)}
+        datesSet={(arg) => {
+          activeRangeRef.current = arg;
+          setActiveViewType(arg.view.type);
+          loadEvents(arg);
+        }}
         eventDisplay="block"
         dayMaxEventRows={3}
         height="auto"

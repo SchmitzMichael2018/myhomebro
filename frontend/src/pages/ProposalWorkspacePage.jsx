@@ -361,6 +361,23 @@ function statusTone(status) {
   return "border-white/14 bg-white/8 text-sky-100/78";
 }
 
+function appointmentCalendarHref(appointment) {
+  if (!appointment?.scheduled_start) return "/app/calendar";
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: appointment.timezone || "America/Chicago",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date(appointment.scheduled_start));
+    const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const date = `${value.year}-${value.month}-${value.day}`;
+    return `/app/calendar?date=${date}&view=day&event=estimate-appointment-${appointment.id}`;
+  } catch {
+    return "/app/calendar";
+  }
+}
+
 function estimateLifecyclePresentation(proposal) {
   const status = compactText(proposal?.status).toLowerCase();
   if (status === "cancelled") return {
@@ -3049,7 +3066,7 @@ export default function ProposalWorkspacePage() {
                 ]} />
                 {!isReadOnlyHistory && proposal.appointment.available_actions?.length ? <div className="flex flex-wrap gap-2">
                   {proposal.appointment.available_actions.map((action) => <button key={action} type="button" data-testid={`estimate-appointment-${action}`} onClick={() => updateEstimateAppointment(action)} className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-black ${["decline", "cancel", "no_show"].includes(action) ? "border-rose-300/35 text-rose-100" : "border-sky-300/35 text-sky-100"}`}>{({ confirm: "Confirm", propose: "Propose another time", reschedule: "Reschedule", decline: "Decline", cancel: "Cancel", complete: "Mark completed", no_show: "Mark no-show" })[action]}</button>)}
-                  <a href="/app/team/assignments" className="inline-flex min-h-11 items-center rounded-lg border border-white/15 px-3 py-2 text-sm font-black">View Team Schedule</a>
+                  <a href={appointmentCalendarHref(proposal.appointment)} className="inline-flex min-h-11 items-center rounded-lg border border-white/15 px-3 py-2 text-sm font-black">View Team Schedule</a>
                 </div> : null}
                 {!isReadOnlyHistory && ["completed", "no_show", "cancelled", "declined"].includes(proposal.appointment.status) ? <button type="button" onClick={() => updateEstimateAppointment("schedule")} className="min-h-11 rounded-lg border border-sky-300/35 px-3 py-2 text-sm font-black">Schedule a new appointment</button> : null}
               </div>
