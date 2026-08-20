@@ -90,7 +90,9 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
         return None
     from projects.services.estimate_appointments import available_actions, is_hold_expired
     hold_expired = is_hold_expired(appointment)
-    return {
+    from projects.services.estimate_appointment_notifications import contractor_export_payload, public_confirmation_url
+    last_confirmation = appointment.deliveries.filter(kind="confirmation", sent_at__isnull=False).order_by("-sent_at").first()
+    payload = {
         "id": appointment.id,
         "scheduling_increment_minutes": settings.ESTIMATE_APPOINTMENT_SLOT_MINUTES,
         "minimum_lead_minutes": settings.ESTIMATE_APPOINTMENT_MIN_LEAD_MINUTES,
@@ -130,6 +132,9 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
         "created_at": _format_datetime(appointment.created_at),
         "available_actions": available_actions(appointment),
         "direct_proposal_id": appointment.direct_proposal_id,
+        "awaiting_customer_confirmation": bool(not hold_expired and appointment.status == appointment.STATUS_PROPOSED),
+        "confirmation_url": public_confirmation_url(appointment) if not hold_expired and appointment.status == appointment.STATUS_PROPOSED else "",
+        "last_confirmation_sent_at": _format_datetime(last_confirmation.sent_at) if last_confirmation else "",
         "events": [
             {
                 "id": event.id,
@@ -145,6 +150,8 @@ def _serialize_estimate_appointment(appointment) -> dict | None:
             for event in appointment.events.all()
         ],
     }
+    payload.update(contractor_export_payload(appointment))
+    return payload
 
 
 def _appointment_key(source_type: str, source_id) -> tuple[str, int] | None:
@@ -1527,7 +1534,7 @@ class OpportunityEstimateAppointmentCreateView(APIView):
             errors["service_location"] = ["Service location is required for an in-person estimate."]
 
         timezone_name = _safe_text(request.data.get("timezone")) or "America/Chicago"
-        from projects.services.estimate_appointments import parse_appointment_start, reserve_appointment, EstimateAppointmentError
+        from projects.services.estimate_appointments import parse_appointment_start, hold_expiration, reserve_appointment, EstimateAppointmentError
         try:
             scheduled_start = parse_appointment_start(scheduled_start_raw, timezone_name=timezone_name)
         except EstimateAppointmentError as exc:
@@ -1571,6 +1578,8 @@ class OpportunityEstimateAppointmentCreateView(APIView):
                     duration_minutes=duration_minutes,
                     notes=notes,
                     requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
+                    status=OpportunityEstimateAppointment.STATUS_PROPOSED,
+                    hold_expires_at=hold_expiration(),
                     timezone=timezone_name,
                     created_by=request.user,
                 )
@@ -1580,6 +1589,8 @@ class OpportunityEstimateAppointmentCreateView(APIView):
         message = _estimate_customer_message(appointment)
         appointment.customer_message = message
         appointment.save(update_fields=["customer_message", "updated_at"])
+        from projects.services.estimate_appointment_notifications import send_confirmation_notice
+        transaction.on_commit(lambda appointment_id=appointment.id: send_confirmation_notice(OpportunityEstimateAppointment.objects.get(pk=appointment_id)), robust=True)
         return Response(
             {
                 "appointment": _serialize_estimate_appointment(appointment),
@@ -1623,4 +1634,10 @@ class OpportunityEstimateAppointmentTransitionView(APIView):
             )
         except EstimateAppointmentError as exc:
             return Response(exc.response_data(), status=exc.status_code)
+        from projects.services.estimate_appointment_notifications import send_confirmation_notice, send_confirmed_notice
+        action = _safe_text(request.data.get("action"))
+        if action in {"propose", "reschedule"}:
+            transaction.on_commit(lambda appointment_id=appointment.id: send_confirmation_notice(OpportunityEstimateAppointment.objects.get(pk=appointment_id)), robust=True)
+        elif action == "confirm":
+            transaction.on_commit(lambda appointment_id=appointment.id: send_confirmed_notice(OpportunityEstimateAppointment.objects.get(pk=appointment_id)), robust=True)
         return Response({"appointment": _serialize_estimate_appointment(appointment)})

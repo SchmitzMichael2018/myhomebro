@@ -841,7 +841,7 @@ class ProposalAppointmentView(APIView):
         if proposal.status in {Proposal.STATUS_CANCELLED, Proposal.STATUS_CONVERTED, Proposal.STATUS_ACCEPTED} or proposal.converted_agreement_id:
             return Response({"detail": "Appointments cannot be changed for this Estimate."}, status=409)
         action = _safe_text(request.data.get("action"))
-        from projects.services.estimate_appointments import attach_appointment, reserve_appointment, EstimateAppointmentError
+        from projects.services.estimate_appointments import attach_appointment, hold_expiration, reserve_appointment, EstimateAppointmentError
         if action == "no_visit_needed":
             if proposal.estimate_appointment_id:
                 return Response({"detail": "Cancel the linked appointment before choosing no visit needed."}, status=409)
@@ -911,6 +911,8 @@ class ProposalAppointmentView(APIView):
                         notes=_safe_text(request.data.get("notes")),
                         timezone=timezone_name,
                         requested_by=OpportunityEstimateAppointment.REQUESTED_BY_CONTRACTOR,
+                        status=OpportunityEstimateAppointment.STATUS_PROPOSED,
+                        hold_expires_at=hold_expiration(),
                         created_by=request.user,
                     )
                     reserve_appointment(appointment)
@@ -918,6 +920,8 @@ class ProposalAppointmentView(APIView):
                     proposal.appointment_disposition = Proposal.APPOINTMENT_PLANNED
                     proposal.save(update_fields=["estimate_appointment", "appointment_disposition", "updated_at"])
                     _activity(proposal, ProposalActivity.EVENT_APPOINTMENT_LINKED, "Estimate appointment scheduled and linked", actor=request.user, metadata={"appointment_id": appointment.id, "replaced_terminal_appointment_id": getattr(prior_appointment, "id", None)})
+                    from projects.services.estimate_appointment_notifications import send_confirmation_notice
+                    transaction.on_commit(lambda appointment_id=appointment.id: send_confirmation_notice(OpportunityEstimateAppointment.objects.get(pk=appointment_id)), robust=True)
             except EstimateAppointmentError as exc:
                 return Response(exc.response_data(), status=exc.status_code)
         else:

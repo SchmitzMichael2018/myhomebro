@@ -85,10 +85,9 @@ class EstimateAppointmentCalendarIntegrationTests(TestCase):
         self.appointment(start=self.start + timedelta(hours=11), proposal_status=Proposal.STATUS_CANCELLED)
         events = self.calendar().data["events"]
         self.assertEqual({row["id"] for row in events}, {f"estimate-appointment-{requested.id}", f"estimate-appointment-{proposed.id}"})
-        self.assertEqual({row["extendedProps"]["display_status"] for row in events}, {"Awaiting confirmation", "Proposed"})
+        self.assertEqual({row["extendedProps"]["display_status"] for row in events}, {"Customer requested — awaiting contractor confirmation", "Awaiting customer confirmation"})
         self.assertTrue(all(row["extendedProps"]["tentative"] for row in events))
 
     def test_invalid_range_fails_safely(self):
         response = self.calendar(start="2026-09-01T00:00:00Z", end="2026-08-01T00:00:00Z")
         self.assertEqual(response.status_code, 400)
-

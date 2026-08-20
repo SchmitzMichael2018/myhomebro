@@ -146,8 +146,8 @@ class EstimateAppointmentCalendarView(APIView):
                 OpportunityEstimateAppointment.STATUS_PROPOSED,
             }
             display_status = {
-                OpportunityEstimateAppointment.STATUS_REQUESTED: "Awaiting confirmation",
-                OpportunityEstimateAppointment.STATUS_PROPOSED: "Proposed",
+                OpportunityEstimateAppointment.STATUS_REQUESTED: "Customer requested — awaiting contractor confirmation",
+                OpportunityEstimateAppointment.STATUS_PROPOSED: "Awaiting customer confirmation",
                 OpportunityEstimateAppointment.STATUS_SCHEDULED: "Scheduled",
                 OpportunityEstimateAppointment.STATUS_CONFIRMED: "Confirmed",
             }[appointment.status]

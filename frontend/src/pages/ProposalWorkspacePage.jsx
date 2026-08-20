@@ -1634,6 +1634,16 @@ export default function ProposalWorkspacePage() {
     setAppointmentAction(action);
   }
 
+  async function resendAppointmentConfirmation() {
+    try {
+      const { data } = await api.post(`/projects/estimate-appointments/${proposal.appointment.id}/send-confirmation/`);
+      setProposal((current) => ({ ...current, appointment: { ...current.appointment, last_confirmation_sent_at: data.last_confirmation_sent_at } }));
+      toast.success("Confirmation sent.");
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "The confirmation could not be sent.");
+    }
+  }
+
   async function submitEstimateAppointmentAction(payload) {
     const appointment = proposal?.appointment;
       if (appointmentAction === "schedule") {
@@ -3064,9 +3074,25 @@ export default function ProposalWorkspacePage() {
                   ["Location", proposal.appointment.service_location],
                   ["Notes", proposal.appointment.notes],
                 ]} />
+                {proposal.appointment.status === "proposed" ? <p className="rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-sm font-black text-amber-50">Awaiting customer confirmation</p> : null}
                 {!isReadOnlyHistory && proposal.appointment.available_actions?.length ? <div className="flex flex-wrap gap-2">
                   {proposal.appointment.available_actions.map((action) => <button key={action} type="button" data-testid={`estimate-appointment-${action}`} onClick={() => updateEstimateAppointment(action)} className={`min-h-11 rounded-lg border px-3 py-2 text-sm font-black ${["decline", "cancel", "no_show"].includes(action) ? "border-rose-300/35 text-rose-100" : "border-sky-300/35 text-sky-100"}`}>{({ confirm: "Confirm", propose: "Propose another time", reschedule: "Reschedule", decline: "Decline", cancel: "Cancel", complete: "Mark completed", no_show: "Mark no-show" })[action]}</button>)}
                   <a href={appointmentCalendarHref(proposal.appointment)} className="inline-flex min-h-11 items-center rounded-lg border border-white/15 px-3 py-2 text-sm font-black">View Team Schedule</a>
+                </div> : null}
+                {!isReadOnlyHistory && proposal.appointment.awaiting_customer_confirmation ? <div className="rounded-xl border border-amber-300/30 bg-amber-300/10 p-3 text-sm text-amber-50">
+                  <p className="font-bold">The customer must confirm this time before reminders begin.</p>
+                  {proposal.appointment.last_confirmation_sent_at ? <p className="mt-1 text-xs">Last sent {formatDateTime(proposal.appointment.last_confirmation_sent_at)}</p> : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button type="button" onClick={resendAppointmentConfirmation} className="min-h-11 rounded-lg border border-amber-200/40 px-3 py-2 font-black">Send/resend confirmation</button>
+                    {proposal.appointment.confirmation_url ? <button type="button" onClick={() => navigator.clipboard.writeText(proposal.appointment.confirmation_url).then(() => toast.success("Confirmation link copied."))} className="min-h-11 rounded-lg border border-white/15 px-3 py-2 font-black">Copy confirmation link</button> : null}
+                  </div>
+                </div> : null}
+                {proposal.appointment.status === "confirmed" && proposal.appointment.google_calendar_url ? <div className="rounded-xl border border-emerald-300/25 bg-emerald-300/10 p-3">
+                  <div className="flex flex-wrap gap-2">
+                    <a href={proposal.appointment.google_calendar_url} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-11 items-center rounded-lg border border-sky-300/35 px-3 py-2 text-sm font-black text-sky-100">Add to Google Calendar</a>
+                    <a href={proposal.appointment.ics_url} className="inline-flex min-h-11 items-center rounded-lg border border-white/15 px-3 py-2 text-sm font-black text-white">Add to Apple/Outlook Calendar</a>
+                  </div>
+                  <p className="mt-2 text-xs font-semibold text-sky-100/70">{proposal.appointment.calendar_export_note}</p>
                 </div> : null}
                 {!isReadOnlyHistory && ["completed", "no_show", "cancelled", "declined"].includes(proposal.appointment.status) ? <button type="button" onClick={() => updateEstimateAppointment("schedule")} className="min-h-11 rounded-lg border border-sky-300/35 px-3 py-2 text-sm font-black">Schedule a new appointment</button> : null}
               </div>

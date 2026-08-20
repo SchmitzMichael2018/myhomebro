@@ -836,6 +836,51 @@ class OpportunityEstimateAppointmentEvent(models.Model):
         ordering = ["created_at", "id"]
 
 
+class EstimateAppointmentDelivery(models.Model):
+    KIND_CONFIRMATION = "confirmation"
+    KIND_REMINDER = "reminder"
+    KIND_CHOICES = [(KIND_CONFIRMATION, "Confirmation"), (KIND_REMINDER, "Reminder")]
+    CHANNEL_EMAIL = "email"
+    CHANNEL_SMS = "sms"
+    CHANNEL_CHOICES = [(CHANNEL_EMAIL, "Email"), (CHANNEL_SMS, "SMS")]
+    STATUS_PENDING = "pending"
+    STATUS_PROCESSING = "processing"
+    STATUS_SENT = "sent"
+    STATUS_FAILED = "failed"
+    STATUS_SUPPRESSED = "suppressed"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"), (STATUS_PROCESSING, "Processing"),
+        (STATUS_SENT, "Sent"), (STATUS_FAILED, "Failed"), (STATUS_SUPPRESSED, "Suppressed"),
+    ]
+
+    appointment = models.ForeignKey(
+        OpportunityEstimateAppointment, on_delete=models.CASCADE, related_name="deliveries"
+    )
+    schedule_version = models.CharField(max_length=64, db_index=True)
+    kind = models.CharField(max_length=24, choices=KIND_CHOICES, db_index=True)
+    offset_minutes = models.PositiveIntegerField(default=0)
+    channel = models.CharField(max_length=16, choices=CHANNEL_CHOICES)
+    recipient = models.CharField(max_length=320)
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    scheduled_for = models.DateTimeField(db_index=True)
+    attempted_at = models.DateTimeField(null=True, blank=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+    suppressed_at = models.DateTimeField(null=True, blank=True)
+    provider_reference = models.CharField(max_length=255, blank=True, default="")
+    error_code = models.CharField(max_length=80, blank=True, default="")
+    error_detail = models.CharField(max_length=500, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["scheduled_for", "id"]
+        constraints = [models.UniqueConstraint(
+            fields=["appointment", "schedule_version", "kind", "offset_minutes", "channel", "recipient"],
+            name="uniq_est_appt_delivery_version_channel",
+        )]
+        indexes = [models.Index(fields=["status", "scheduled_for"], name="estimate_delivery_due_idx")]
+
+
 class ContractorEstimateAvailabilityWindow(models.Model):
     WEEKDAY_SUNDAY = 6
     WEEKDAY_MONDAY = 0

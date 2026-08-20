@@ -37,6 +37,7 @@ from .models_contractor_discovery import (  # noqa: F401
     ContractorMarketplaceJoinInvite,
     MarketplaceLocation,
     OpportunityEstimateAppointment,
+    EstimateAppointmentDelivery,
 )
 from .models_quick_capture import ProjectAssistantCaptureSession, ProjectAssistantPreparedAction  # noqa: E402,F401
 from .models_smart_capture import AIUsageLedger, ContractorAsset, ProjectAssistantSmartCaptureSession  # noqa: E402,F401

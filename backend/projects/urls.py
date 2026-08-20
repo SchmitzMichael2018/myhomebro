@@ -55,6 +55,12 @@ from .views.attachments import (
 from .views.agreements_bulk_delete import BulkDeleteAgreementsView
 from .views.agreements_merge import MergeAgreementsView
 from .views.calendar import MilestoneCalendarView, AgreementCalendarView, EstimateAppointmentCalendarView
+from .views.estimate_appointment_confirmation import (
+    ContractorEstimateAppointmentConfirmationView,
+    ContractorEstimateAppointmentIcsView,
+    PublicEstimateAppointmentConfirmationView,
+    PublicEstimateAppointmentIcsView,
+)
 from .views.contractors.public import ContractorPublicProfileView
 from .views.notifications import (
     NotificationListView,
@@ -1279,6 +1285,10 @@ urlpatterns = [
 
     path("milestones/calendar/", MilestoneCalendarView.as_view()),
     path("appointments/calendar/", EstimateAppointmentCalendarView.as_view()),
+    path("estimate-appointments/<int:appointment_id>/send-confirmation/", ContractorEstimateAppointmentConfirmationView.as_view()),
+    path("estimate-appointments/<int:appointment_id>/calendar.ics", ContractorEstimateAppointmentIcsView.as_view()),
+    path("public/estimate-appointments/<str:token>/", PublicEstimateAppointmentConfirmationView.as_view()),
+    path("public/estimate-appointments/<str:token>/calendar.ics", PublicEstimateAppointmentIcsView.as_view()),
     path("agreements/calendar/", AgreementCalendarView.as_view()),
 
     path("invoices/<int:pk>/pdf/", InvoicePDFView.as_view()),

@@ -579,9 +579,10 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await installBaseMocks(page);
   await installAgreementWizardMocks(page);
   let appointmentMutationCount = 0;
+  const tentativeProposal = { ...proposal, appointment: { ...proposal.appointment, status: "proposed", awaiting_customer_confirmation: true, confirmation_url: "https://example.test/appointment-confirmation/token", last_confirmation_sent_at: "2026-07-01T18:00:00Z" } };
 
   await page.route("**/api/projects/proposals/42/", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(proposal) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(tentativeProposal) });
   });
   await page.route("**/api/projects/contractor-opportunities/estimate-appointments/7001/transition/", async (route) => {
     appointmentMutationCount += 1;
@@ -608,6 +609,8 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   const appointmentCard = page.getByTestId("estimate-appointment-card");
   await expect(appointmentCard).toContainText("In-Person Estimate");
   await expect(appointmentCard).toContainText("123 Main St, Austin, TX");
+  await expect(appointmentCard).toContainText("Awaiting customer confirmation");
+  await expect(appointmentCard.getByRole("button", { name: "Send/resend confirmation" })).toBeVisible();
   await expect(appointmentCard.getByRole("link", { name: "View Team Schedule" })).toHaveAttribute(
     "href",
     "/app/calendar?date=2026-07-08&view=day&event=estimate-appointment-7001",
@@ -857,6 +860,17 @@ test("Estimate Workspace renders compact dark command-center guidance", async ({
   await expect(page.getByTestId("proposal-nav-ready")).toHaveAttribute("aria-label", /Required, Blocked/);
   await expect(page.getByTestId("estimate-open-agreement")).toHaveAttribute("href", "/app/agreements/450");
   await expect(page.getByTestId("estimate-ready-create-agreement")).toHaveCount(0);
+});
+
+test("confirmed Estimate appointment exposes one-way calendar exports", async ({ page }) => {
+  await installBaseMocks(page);
+  const confirmedProposal = { ...proposal, appointment: { ...proposal.appointment, status: "confirmed", google_calendar_url: "https://calendar.google.com/calendar/render?action=TEMPLATE", ics_url: "/api/projects/estimate-appointments/7001/calendar.ics", calendar_export_note: "Calendar export is one-way." } };
+  await page.route("**/api/projects/proposals/42/", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(confirmedProposal) }));
+  await page.goto("/app/proposals/42", { waitUntil: "domcontentloaded" });
+  const card = page.getByTestId("estimate-appointment-card");
+  await expect(card.getByRole("link", { name: "Add to Google Calendar" })).toHaveAttribute("rel", /noopener/);
+  await expect(card.getByRole("link", { name: "Add to Apple/Outlook Calendar" })).toHaveAttribute("href", /calendar\.ics/);
+  await expect(card).toContainText("Calendar export is one-way");
 });
 
 test("Pricing Benchmark renders only reliable numeric comparisons", async ({ page }) => {

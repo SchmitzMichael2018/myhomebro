@@ -55,12 +55,14 @@ LEGAL_TRANSITIONS = {
     },
     OpportunityEstimateAppointment.STATUS_SCHEDULED: {
         OpportunityEstimateAppointment.STATUS_SCHEDULED,
+        OpportunityEstimateAppointment.STATUS_PROPOSED,
         OpportunityEstimateAppointment.STATUS_CANCELLED,
         OpportunityEstimateAppointment.STATUS_COMPLETED,
         OpportunityEstimateAppointment.STATUS_NO_SHOW,
     },
     OpportunityEstimateAppointment.STATUS_CONFIRMED: {
         OpportunityEstimateAppointment.STATUS_CONFIRMED,
+        OpportunityEstimateAppointment.STATUS_PROPOSED,
         OpportunityEstimateAppointment.STATUS_CANCELLED,
         OpportunityEstimateAppointment.STATUS_COMPLETED,
         OpportunityEstimateAppointment.STATUS_NO_SHOW,
@@ -230,7 +232,7 @@ def available_actions(appointment):
     if status == appointment.STATUS_REQUESTED:
         return ["confirm", "propose", "decline", "cancel"]
     if status == appointment.STATUS_PROPOSED:
-        return ["confirm", "propose", "decline", "cancel"]
+        return ["reschedule", "cancel"]
     if status in {appointment.STATUS_SCHEDULED, appointment.STATUS_CONFIRMED}:
         return ["reschedule", "cancel", "complete", "no_show"]
     return []
@@ -253,7 +255,7 @@ def transition_appointment(*, contractor, appointment_id, action, actor, reason=
     action_targets = {
         "confirm": appointment.STATUS_CONFIRMED,
         "propose": appointment.STATUS_PROPOSED,
-        "reschedule": appointment.status,
+        "reschedule": appointment.STATUS_PROPOSED,
         "decline": appointment.STATUS_DECLINED,
         "cancel": appointment.STATUS_CANCELLED,
         "complete": appointment.STATUS_COMPLETED,
@@ -296,6 +298,7 @@ def transition_appointment(*, contractor, appointment_id, action, actor, reason=
         appointment.hold_expires_at = None
     elif target == appointment.STATUS_PROPOSED:
         appointment.hold_expires_at = hold_expiration(now)
+        appointment.confirmed_at = None
     elif target == appointment.STATUS_DECLINED:
         appointment.declined_at = now
         appointment.decline_reason = str(reason or "").strip()
@@ -323,6 +326,11 @@ def transition_appointment(*, contractor, appointment_id, action, actor, reason=
         actor_kind=actor_kind,
         actor=actor,
     )
+    from projects.services.estimate_appointment_notifications import suppress_future_deliveries, suppress_obsolete_deliveries
+    if target in TERMINAL_STATUSES:
+        suppress_future_deliveries(appointment)
+    elif action in {"propose", "reschedule"}:
+        suppress_obsolete_deliveries(appointment)
     return appointment
 
 
