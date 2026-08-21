@@ -13,6 +13,8 @@ from django.db import transaction
 from django.db.models import Max
 from django.utils import timezone
 
+from core.public_app_urls import build_public_app_url
+
 from projects.models_contractor_discovery import (
     EstimateAppointmentDelivery,
     OpportunityEstimateAppointment,
@@ -64,8 +66,7 @@ def resolve_confirmation_token(token: str, *, lock=False):
 
 
 def public_confirmation_url(appointment) -> str:
-    base = (getattr(settings, "MHB_SITE_URL", "") or "http://localhost:5173").rstrip("/")
-    return f"{base}/appointment-confirmation/{confirmation_token(appointment)}"
+    return build_public_app_url(f"/appointment-confirmation/{confirmation_token(appointment)}")
 
 
 def _zone(appointment):
@@ -97,7 +98,9 @@ def appointment_payload(appointment, *, include_token=False):
     if include_token:
         token = confirmation_token(appointment)
         result["google_calendar_url"] = google_calendar_url(appointment)
-        result["ics_url"] = f"/api/projects/public/estimate-appointments/{token}/calendar.ics"
+        result["ics_url"] = build_public_app_url(
+            f"/api/projects/public/estimate-appointments/{token}/calendar.ics"
+        )
     return result
 
 
@@ -106,7 +109,7 @@ def _message(appointment, *, awaiting=False, reminder=False):
     when = local.strftime("%A, %B %d at %I:%M %p").replace(" at 0", " at ")
     prefix = "Reminder:" if reminder else "Please confirm" if awaiting else "Confirmed:"
     location = f" Location: {appointment.service_location}." if appointment.service_location else ""
-    link = f" Manage appointment: {public_confirmation_url(appointment)}" if awaiting else ""
+    link = f" Manage appointment: {public_confirmation_url(appointment)}"
     return (
         f"MyHomeBro — {prefix} your {appointment.get_appointment_type_display().lower()} with "
         f"{appointment.contractor.business_name or 'your contractor'} on {when} "
@@ -296,7 +299,10 @@ def public_customer_action(token, action, *, reason=""):
 def google_calendar_url(appointment):
     start = appointment.scheduled_start.astimezone(datetime_timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     end = appointment_end(appointment).astimezone(datetime_timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    description = f"MyHomeBro Estimate appointment with {appointment.contractor.business_name or 'your contractor'}."
+    description = (
+        f"MyHomeBro Estimate appointment with {appointment.contractor.business_name or 'your contractor'}. "
+        f"Manage appointment: {public_confirmation_url(appointment)}"
+    )
     return "https://calendar.google.com/calendar/render?" + urlencode({
         "action": "TEMPLATE", "text": "Estimate appointment", "dates": f"{start}/{end}",
         "ctz": appointment.timezone, "location": appointment.service_location, "details": description,
@@ -308,7 +314,7 @@ def contractor_export_payload(appointment):
         return {}
     return {
         "google_calendar_url": google_calendar_url(appointment),
-        "ics_url": f"/api/projects/estimate-appointments/{appointment.id}/calendar.ics",
+        "ics_url": build_public_app_url(f"/api/projects/estimate-appointments/{appointment.id}/calendar.ics"),
         "calendar_export_note": "Calendar export is one-way. Future MyHomeBro changes do not update an event you already imported.",
     }
 
@@ -322,7 +328,10 @@ def appointment_ics(appointment):
     end = appointment_end(appointment).astimezone(datetime_timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     stamp = timezone.now().astimezone(datetime_timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     uid = f"estimate-appointment-{appointment.id}@myhomebro.com"
-    description = f"MyHomeBro Estimate appointment with {appointment.contractor.business_name or 'your contractor'}."
+    description = (
+        f"MyHomeBro Estimate appointment with {appointment.contractor.business_name or 'your contractor'}. "
+        f"Manage appointment: {public_confirmation_url(appointment)}"
+    )
     lines = [
         "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//MyHomeBro//Estimate Appointment//EN",
         "CALSCALE:GREGORIAN", "METHOD:PUBLISH", "BEGIN:VEVENT", f"UID:{uid}", f"DTSTAMP:{stamp}",

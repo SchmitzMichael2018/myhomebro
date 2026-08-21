@@ -7,12 +7,10 @@ from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 from django.contrib.auth import get_user_model
 from django.core import signing
 from django.db import transaction
 from django.utils import timezone
-from urllib.parse import urlsplit, urlunsplit
 from django.utils.html import strip_tags
 
 from projects.models_proposals import Proposal, ProposalActivity, ProposalLineItem, ProposalPortalActivation, ProposalReviewVersion
@@ -20,6 +18,7 @@ from projects.models import Notification
 from projects.services.notification_center import create_notification
 from projects.services.invites_delivery import send_postmark_email
 from projects.services.sms_service import get_sms_status_payload, normalize_phone_to_e164, send_compliant_sms, send_sms_opt_in_request
+from core.public_app_urls import build_public_app_url, public_app_origin
 
 
 TOKEN_SALT = "myhomebro.proposal-customer-review.v1"
@@ -39,24 +38,11 @@ class ReviewAccessError(Exception):
 
 
 def trusted_public_site_url() -> str:
-    value = str(getattr(settings, "SITE_URL", "") or "").strip()
-    parsed = urlsplit(value)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise ImproperlyConfigured("SITE_URL must be a valid absolute public URL.")
-    if parsed.scheme != "https" and parsed.hostname.lower() not in {"localhost", "127.0.0.1", "::1"}:
-        raise ImproperlyConfigured("SITE_URL must use HTTPS outside local development.")
-    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", ""))
+    return public_app_origin()
 
 
 def public_review_short_url(review: ProposalReviewVersion) -> str:
-    return f"{trusted_public_site_url()}/r/{short_code_for(review)}"
+    return build_public_app_url(f"/r/{short_code_for(review)}")
 
 
 def _notification_preview(value: str, limit: int = 140) -> str:
@@ -221,11 +207,15 @@ def resolve_activation_token(token: str, *, lock=False) -> ProposalPortalActivat
 def portal_access(review: ProposalReviewVersion, request=None) -> dict:
     email = review.customer_email.strip().lower()
     user = User.objects.filter(email__iexact=email).first()
-    base = (getattr(settings, "SITE_URL", "") or (request.build_absolute_uri("/") if request else "https://www.myhomebro.com")).rstrip("/")
     if user and user.has_usable_password() and user.is_active:
-        return {"account_exists": True, "status": "active", "url": f"{base}/portal", "label": "Open MyHomeBro"}
+        return {"account_exists": True, "status": "active", "url": build_public_app_url("/portal"), "label": "Open MyHomeBro"}
     activation, _ = ProposalPortalActivation.objects.get_or_create(review=review, defaults={"email": email})
-    return {"account_exists": False, "status": "setup_pending", "url": f"{base}/activate-customer/{activation_token_for(activation)}", "label": "Create MyHomeBro Account"}
+    return {
+        "account_exists": False,
+        "status": "setup_pending",
+        "url": build_public_app_url(f"/activate-customer/{activation_token_for(activation)}"),
+        "label": "Create MyHomeBro Account",
+    }
 
 
 def resolve_token(token: str, *, lock=False) -> ProposalReviewVersion:
@@ -382,8 +372,7 @@ def send_review(*, proposal: Proposal, request, resend=False, channels=None) -> 
                 expires_at=timezone.now() + timedelta(days=30),
             )
     token = token_for(review)
-    base = trusted_public_site_url()
-    url = f"{base}/estimate-review/{token}"
+    url = build_public_app_url(f"/estimate-review/{token}")
     short_url = public_review_short_url(review)
     portal = portal_access(review, request=request)
     secondary_copy = "Keep estimates, agreements, project updates, payments, and documents together in MyHomeBro."

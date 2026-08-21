@@ -3,7 +3,7 @@ from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 from django.contrib.auth import get_user_model
-from django.core import signing
+from django.core import mail, signing
 from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -14,11 +14,14 @@ from projects.models_contractor_discovery import EstimateAppointmentDelivery, Op
 from projects.models_proposals import Proposal
 from projects.services.estimate_appointment_notifications import (
     TOKEN_SALT,
+    appointment_payload,
     appointment_ics,
     confirmation_token,
+    contractor_export_payload,
     dispatch_due_reminders,
     google_calendar_url,
     prepare_confirmed_reminders,
+    public_confirmation_url,
     public_customer_action,
     schedule_version,
     send_confirmation_notice,
@@ -28,7 +31,7 @@ from projects.services.estimate_appointments import hold_expiration, transition_
 
 @override_settings(
     EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
-    MHB_SITE_URL="https://example.test",
+    SITE_URL="https://example.test",
     ESTIMATE_APPOINTMENT_REMINDER_OFFSETS_MINUTES=[1440, 120],
 )
 class EstimateAppointmentConfirmationTests(TestCase):
@@ -76,6 +79,49 @@ class EstimateAppointmentConfirmationTests(TestCase):
         sms.assert_called_once()
         with self.assertRaisesRegex(ValueError, "sent recently"):
             send_confirmation_notice(appointment)
+
+    @override_settings(SITE_URL="https://www.myhomebro.com/")
+    @patch("projects.services.estimate_appointment_notifications.send_compliant_sms")
+    def test_confirmation_email_sms_and_resend_use_production_origin(self, sms):
+        sms.return_value = {"ok": True, "twilio_sid": "SM-test"}
+        appointment = self.appointment()
+        send_confirmation_notice(appointment)
+        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", mail.outbox[-1].body)
+        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
+        self.assertNotIn("localhost", mail.outbox[-1].body + sms.call_args.args[1])
+        send_confirmation_notice(appointment, force=True)
+        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", mail.outbox[-1].body)
+        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
+
+    @override_settings(SITE_URL="http://localhost:5173/")
+    def test_development_origin_may_be_explicitly_overridden(self):
+        appointment = self.appointment(phone="")
+        self.assertTrue(public_confirmation_url(appointment).startswith(
+            "http://localhost:5173/appointment-confirmation/"
+        ))
+
+    @override_settings(SITE_URL="https://www.myhomebro.com")
+    @patch("projects.services.estimate_appointment_notifications.send_compliant_sms")
+    def test_due_reminder_uses_production_origin(self, sms):
+        sms.return_value = {"ok": True, "twilio_sid": "SM-reminder"}
+        appointment = self.appointment(status="confirmed", start=self.start)
+        prepare_confirmed_reminders(appointment, now=self.start - timedelta(hours=25))
+        dispatch_due_reminders(now=self.start - timedelta(hours=24), batch_size=10)
+        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
+        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", mail.outbox[-1].body)
+
+    @override_settings(SITE_URL="https://www.myhomebro.com", ALLOWED_HOSTS=["attacker.example"])
+    @patch("projects.services.estimate_appointment_notifications.send_compliant_sms")
+    def test_request_host_cannot_influence_delivered_url(self, sms):
+        sms.return_value = {"ok": True, "twilio_sid": "SM-host"}
+        appointment = self.appointment(email="")
+        response = self.client.post(
+            f"/api/projects/estimate-appointments/{appointment.id}/send-confirmation/",
+            {}, format="json", HTTP_HOST="attacker.example", secure=True,
+        )
+        self.assertIn(response.status_code, {200, 201})
+        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
+        self.assertNotIn("attacker.example", sms.call_args.args[1])
 
     def test_customer_confirmation_is_idempotent_and_creates_versioned_reminders(self):
         appointment = self.appointment(phone="")
@@ -174,6 +220,12 @@ class EstimateAppointmentConfirmationTests(TestCase):
         self.assertIn(f"UID:estimate-appointment-{appointment.id}@myhomebro.com", first)
         self.assertIn("DTSTART:20260821T190000Z", first)
         self.assertIn("LOCATION:12 Main St\\; Suite 2", first)
+        self.assertNotIn("localhost", google_calendar_url(appointment) + first)
+        public_export = appointment_payload(appointment, include_token=True)
+        contractor_export = contractor_export_payload(appointment)
+        self.assertTrue(public_export["ics_url"].startswith("https://example.test/api/"))
+        self.assertTrue(contractor_export["ics_url"].startswith("https://example.test/api/"))
+        self.assertNotIn("localhost", public_export["ics_url"] + contractor_export["ics_url"])
         self.assertEqual(first.split("UID:", 1)[1].split("\r\n", 1)[0], second.split("UID:", 1)[1].split("\r\n", 1)[0])
 
     def test_ics_endpoints_enforce_confirmed_status_and_contractor_ownership(self):

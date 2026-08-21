@@ -4,7 +4,9 @@ from django.conf import settings
 from pathlib import Path
 
 from django.core.checks import Error, Tags, Warning, register
-from urllib.parse import urlsplit
+from django.core.exceptions import ImproperlyConfigured
+
+from core.public_app_urls import normalize_public_app_origin
 
 from core.async_readiness import (
     configuration_diagnostics,
@@ -12,26 +14,22 @@ from core.async_readiness import (
 )
 
 
-@register(Tags.security, deploy=True)
+@register(Tags.security)
 def public_site_url_deploy_check(app_configs, **kwargs):
     if str(getattr(settings, "DEPLOYMENT_ENVIRONMENT", "")).lower() not in {"production", "staging"}:
         return []
     messages = []
     value = str(getattr(settings, "SITE_URL", "") or "").strip()
-    parsed = urlsplit(value)
-    if (
-        not getattr(settings, "SITE_URL_CONFIGURED", False)
-        or parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.query
-        or parsed.fragment
-        or parsed.hostname.lower() in {"localhost", "127.0.0.1", "::1"}
-    ):
+    try:
+        normalize_public_app_origin(value, production=True)
+    except (ImproperlyConfigured, ValueError):
+        valid = False
+    else:
+        valid = bool(getattr(settings, "SITE_URL_CONFIGURED", False))
+    if not valid:
         messages.append(Error(
             "Production SITE_URL must be an explicitly configured public HTTPS origin.",
-            hint="Set SITE_URL to the canonical public application URL without credentials, query parameters, or fragments.",
+            hint="Set SITE_URL=https://www.myhomebro.com in the shared production environment.",
             id="core.E130",
         ))
     if not str(getattr(settings, "CACHE_URL", "") or "").strip():

@@ -14,7 +14,7 @@ async function installRoutes(page) {
     if (route.request().method() === "GET") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ appointment: state }) });
     const body = route.request().postDataJSON();
     actions.push(body.action);
-    if (body.action === "confirm") state = { ...state, status: "confirmed", display_status: "Confirmed", confirmed: true, google_calendar_url: "https://calendar.google.com/calendar/render?action=TEMPLATE", ics_url: "/api/projects/public/estimate-appointments/test-token/calendar.ics", calendar_export_note: "Calendar export is one-way." };
+    if (body.action === "confirm") state = { ...state, status: "confirmed", display_status: "Confirmed", confirmed: true, google_calendar_url: "https://calendar.google.com/calendar/render?action=TEMPLATE", ics_url: "https://www.myhomebro.com/api/projects/public/estimate-appointments/test-token/calendar.ics", calendar_export_note: "Calendar export is one-way." };
     if (body.action === "decline") state = { ...state, status: "declined", display_status: "Declined" };
     const message = body.action === "confirm" ? "Your appointment is confirmed." : body.action === "decline" ? "The appointment was declined." : "Your request was sent to the contractor.";
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ appointment: state, message }) });
@@ -34,6 +34,7 @@ test("customer confirms an appointment and receives one-way calendar exports", a
   await expect(surface.getByRole("link", { name: "Add to Google Calendar" })).toHaveAttribute("target", "_blank");
   await expect(surface.getByRole("link", { name: "Add to Google Calendar" })).toHaveAttribute("rel", /noopener/);
   await expect(surface.getByRole("link", { name: "Add to Apple/Outlook Calendar" })).toHaveAttribute("href", /calendar\.ics/);
+  await expect(surface.locator('a[href*="localhost"]')).toHaveCount(0);
   expect(actions).toEqual(["confirm"]);
   await page.screenshot({ path: "test-results/appointment-confirmation-desktop.png", fullPage: true });
 });

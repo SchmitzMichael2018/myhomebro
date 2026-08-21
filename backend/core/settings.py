@@ -115,6 +115,8 @@ ALLOWED_HOSTS = [
 ]
 
 FRONTEND_URL = get_env_var("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+# Authoritative origin for all externally delivered application links. Production
+# must set this explicitly; web workers and management commands load the same .env.
 SITE_URL_CONFIGURED = bool(os.environ.get("SITE_URL", "").strip())
 SITE_URL = get_env_var("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 # Development override only. Do not enable in production.
