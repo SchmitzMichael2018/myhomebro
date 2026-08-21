@@ -10,7 +10,11 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from projects.models import Contractor
-from projects.models_contractor_discovery import EstimateAppointmentDelivery, OpportunityEstimateAppointment
+from projects.models_contractor_discovery import (
+    EstimateAppointmentDelivery,
+    EstimateAppointmentShortLink,
+    OpportunityEstimateAppointment,
+)
 from projects.models_proposals import Proposal
 from projects.services.estimate_appointment_notifications import (
     TOKEN_SALT,
@@ -23,6 +27,7 @@ from projects.services.estimate_appointment_notifications import (
     prepare_confirmed_reminders,
     public_confirmation_url,
     public_customer_action,
+    resolve_confirmation_token,
     schedule_version,
     send_confirmation_notice,
 )
@@ -86,18 +91,22 @@ class EstimateAppointmentConfirmationTests(TestCase):
         sms.return_value = {"ok": True, "twilio_sid": "SM-test"}
         appointment = self.appointment()
         send_confirmation_notice(appointment)
-        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", mail.outbox[-1].body)
-        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
+        short_url = public_confirmation_url(appointment)
+        self.assertRegex(short_url, r"^https://www\.myhomebro\.com/a/[A-Za-z0-9_-]{20,32}$")
+        self.assertIn(short_url, mail.outbox[-1].body)
+        self.assertIn(short_url, sms.call_args.args[1])
+        self.assertNotIn("/appointment-confirmation/", mail.outbox[-1].body + sms.call_args.args[1])
         self.assertNotIn("localhost", mail.outbox[-1].body + sms.call_args.args[1])
         send_confirmation_notice(appointment, force=True)
-        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", mail.outbox[-1].body)
-        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
+        self.assertIn(short_url, mail.outbox[-1].body)
+        self.assertIn(short_url, sms.call_args.args[1])
+        self.assertEqual(public_confirmation_url(appointment), short_url)
 
     @override_settings(SITE_URL="http://localhost:5173/")
     def test_development_origin_may_be_explicitly_overridden(self):
         appointment = self.appointment(phone="")
         self.assertTrue(public_confirmation_url(appointment).startswith(
-            "http://localhost:5173/appointment-confirmation/"
+            "http://localhost:5173/a/"
         ))
 
     @override_settings(SITE_URL="https://www.myhomebro.com")
@@ -107,8 +116,31 @@ class EstimateAppointmentConfirmationTests(TestCase):
         appointment = self.appointment(status="confirmed", start=self.start)
         prepare_confirmed_reminders(appointment, now=self.start - timedelta(hours=25))
         dispatch_due_reminders(now=self.start - timedelta(hours=24), batch_size=10)
-        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
-        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", mail.outbox[-1].body)
+        short_url = public_confirmation_url(appointment)
+        self.assertIn(short_url, sms.call_args.args[1])
+        self.assertIn(short_url, mail.outbox[-1].body)
+        self.assertNotIn("/appointment-confirmation/", sms.call_args.args[1] + mail.outbox[-1].body)
+
+    @override_settings(SITE_URL="https://www.myhomebro.com")
+    @patch("projects.services.estimate_appointment_notifications.send_compliant_sms")
+    def test_sms_reminder_and_calendar_channels_share_one_short_url(self, sms):
+        sms.return_value = {"ok": True, "twilio_sid": "SM-shared"}
+        start = timezone.now().replace(second=0, microsecond=0) + timedelta(hours=25)
+        start += timedelta(minutes=(-start.minute) % 15)
+        appointment = self.appointment(start=start)
+        send_confirmation_notice(appointment)
+        short_url = public_confirmation_url(appointment)
+        self.assertIn(short_url, sms.call_args.args[1])
+
+        appointment.status = appointment.STATUS_CONFIRMED
+        appointment.hold_expires_at = None
+        appointment.save(update_fields=["status", "hold_expires_at", "updated_at"])
+        prepare_confirmed_reminders(appointment, now=start - timedelta(hours=25))
+        dispatch_due_reminders(now=start - timedelta(hours=24), batch_size=10)
+        self.assertIn(short_url, sms.call_args.args[1])
+        self.assertIn(short_url, parse_qs(urlparse(google_calendar_url(appointment)).query)["details"][0])
+        self.assertIn(short_url, appointment_ics(appointment))
+        self.assertNotIn("/appointment-confirmation/", sms.call_args.args[1] + appointment_ics(appointment))
 
     @override_settings(SITE_URL="https://www.myhomebro.com", ALLOWED_HOSTS=["attacker.example"])
     @patch("projects.services.estimate_appointment_notifications.send_compliant_sms")
@@ -120,7 +152,7 @@ class EstimateAppointmentConfirmationTests(TestCase):
             {}, format="json", HTTP_HOST="attacker.example", secure=True,
         )
         self.assertIn(response.status_code, {200, 201})
-        self.assertIn("https://www.myhomebro.com/appointment-confirmation/", sms.call_args.args[1])
+        self.assertIn("https://www.myhomebro.com/a/", sms.call_args.args[1])
         self.assertNotIn("attacker.example", sms.call_args.args[1])
 
     def test_customer_confirmation_is_idempotent_and_creates_versioned_reminders(self):
@@ -182,6 +214,42 @@ class EstimateAppointmentConfirmationTests(TestCase):
         with self.assertRaises(ValueError):
             public_customer_action(token, "confirm")
 
+    @override_settings(SITE_URL="https://www.myhomebro.com")
+    def test_short_route_redirects_to_signed_flow_and_fails_closed(self):
+        appointment = self.appointment(phone="")
+        short_url = public_confirmation_url(appointment)
+        code = short_url.rsplit("/", 1)[-1]
+        response = APIClient().get(f"/a/{code}", secure=True)
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response["Location"].startswith("/appointment-confirmation/"))
+        token = response["Location"].rsplit("/", 1)[-1]
+        self.assertEqual(resolve_confirmation_token(token).id, appointment.id)
+        self.assertEqual(APIClient().get("/a/not-valid", secure=True).status_code, 404)
+        self.assertEqual(APIClient().get("/a/AAAAAAAAAAAAAAAAAAAAAA", secure=True).status_code, 404)
+
+        appointment.status = appointment.STATUS_CANCELLED
+        appointment.save(update_fields=["status", "updated_at"])
+        self.assertEqual(APIClient().get(f"/a/{code}", secure=True).status_code, 404)
+
+    @override_settings(SITE_URL="https://www.myhomebro.com")
+    def test_existing_appointment_is_lazily_assigned_one_stable_versioned_code(self):
+        appointment = self.appointment(phone="")
+        self.assertFalse(EstimateAppointmentShortLink.objects.filter(appointment=appointment).exists())
+        first = public_confirmation_url(appointment)
+        self.assertEqual(public_confirmation_url(appointment), first)
+        self.assertEqual(EstimateAppointmentShortLink.objects.filter(appointment=appointment).count(), 1)
+        other = self.appointment(start=self.start + timedelta(hours=6), phone="")
+        self.assertNotEqual(public_confirmation_url(other), first)
+        old_code = first.rsplit("/", 1)[-1]
+        updated = transition_appointment(
+            contractor=self.contractor, appointment_id=appointment.id, action="reschedule", actor=self.user,
+            scheduled_start=self.start + timedelta(hours=3), duration_minutes=60,
+        )
+        second = public_confirmation_url(updated)
+        self.assertNotEqual(first, second)
+        self.assertEqual(APIClient().get(f"/a/{old_code}", secure=True).status_code, 404)
+        self.assertEqual(APIClient().get(f"/a/{second.rsplit('/', 1)[-1]}", secure=True).status_code, 302)
+
     def test_reschedule_invalidates_old_deliveries_and_requires_reconfirmation(self):
         appointment = self.appointment(status="confirmed", phone="")
         prepare_confirmed_reminders(appointment)
@@ -215,17 +283,23 @@ class EstimateAppointmentConfirmationTests(TestCase):
         query = parse_qs(urlparse(google_calendar_url(appointment)).query)
         self.assertEqual(query["dates"], ["20260821T190000Z/20260821T200000Z"])
         self.assertEqual(query["ctz"], ["America/Chicago"])
+        short_url = public_confirmation_url(appointment)
+        self.assertIn(f"Manage appointment: {short_url}", query["details"][0])
+        self.assertNotIn("/appointment-confirmation/", query["details"][0])
         first = appointment_ics(appointment)
         second = appointment_ics(appointment)
         self.assertIn(f"UID:estimate-appointment-{appointment.id}@myhomebro.com", first)
         self.assertIn("DTSTART:20260821T190000Z", first)
         self.assertIn("LOCATION:12 Main St\\; Suite 2", first)
+        self.assertIn(f"Manage appointment: {short_url}", first)
+        self.assertNotIn("/appointment-confirmation/", first)
         self.assertNotIn("localhost", google_calendar_url(appointment) + first)
         public_export = appointment_payload(appointment, include_token=True)
         contractor_export = contractor_export_payload(appointment)
         self.assertTrue(public_export["ics_url"].startswith("https://example.test/api/"))
         self.assertTrue(contractor_export["ics_url"].startswith("https://example.test/api/"))
         self.assertNotIn("localhost", public_export["ics_url"] + contractor_export["ics_url"])
+        self.assertEqual(public_confirmation_url(appointment), short_url)
         self.assertEqual(first.split("UID:", 1)[1].split("\r\n", 1)[0], second.split("UID:", 1)[1].split("\r\n", 1)[0])
 
     def test_ics_endpoints_enforce_confirmed_status_and_contractor_ownership(self):

@@ -881,6 +881,27 @@ class EstimateAppointmentDelivery(models.Model):
         indexes = [models.Index(fields=["status", "scheduled_for"], name="estimate_delivery_due_idx")]
 
 
+class EstimateAppointmentShortLink(models.Model):
+    """Opaque public alias for one exact appointment schedule version."""
+
+    appointment = models.ForeignKey(
+        OpportunityEstimateAppointment, on_delete=models.CASCADE, related_name="short_links"
+    )
+    schedule_version = models.CharField(max_length=64, db_index=True)
+    code = models.CharField(max_length=32, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+        constraints = [models.UniqueConstraint(
+            fields=["appointment", "schedule_version"],
+            name="uniq_est_appt_short_link_version",
+        )]
+
+    def __str__(self) -> str:
+        return f"Appointment short link for #{self.appointment_id}"
+
+
 class ContractorEstimateAvailabilityWindow(models.Model):
     WEEKDAY_SUNDAY = 6
     WEEKDAY_MONDAY = 0

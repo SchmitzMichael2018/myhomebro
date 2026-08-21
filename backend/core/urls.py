@@ -18,6 +18,10 @@ from payments.webhooks import stripe_webhook  # noqa: F401  (imported elsewhere 
 from projects.views.sms_webhook import sms_webhook
 from projects.views.public_presence import PublicContractorRatingView
 from projects.services.proposal_customer_review import ReviewAccessError, resolve_short_code, token_for
+from projects.services.estimate_appointment_notifications import (
+    confirmation_token,
+    resolve_appointment_short_code,
+)
 from projects.views.notifications import (
     NotificationListView,
     NotificationMarkAllReadView,
@@ -80,10 +84,25 @@ class ProposalReviewShortLinkView(APIView):
         # The destination is entirely server-generated; callers cannot supply a redirect target.
         return redirect(f"/estimate-review/{token_for(review)}")
 
+
+class EstimateAppointmentShortLinkView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "appointment_short_link"
+
+    def get(self, _request, code):
+        appointment = resolve_appointment_short_code(code)
+        if appointment is None:
+            raise Http404("This appointment link is invalid or no longer available.")
+        # The signed token remains the authorization boundary and the destination
+        # is entirely server-generated; the short code never contains customer data.
+        return redirect(f"/appointment-confirmation/{confirmation_token(appointment)}")
+
 urlpatterns = [
     # Admin & health
     path("healthz", health),
     path("r/<str:code>", ProposalReviewShortLinkView.as_view(), name="proposal-review-short-link"),
+    path("a/<str:code>", EstimateAppointmentShortLinkView.as_view(), name="appointment-short-link"),
     path("admin/health/async-services/", async_services_readiness, name="async-services-readiness"),
     path("admin/", admin.site.urls),
 

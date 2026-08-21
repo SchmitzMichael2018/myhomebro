@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import secrets
 from dataclasses import dataclass
 from datetime import timedelta, timezone as datetime_timezone
 from urllib.parse import urlencode
@@ -9,7 +10,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.conf import settings
 from django.core import signing
 from django.core.mail import EmailMessage
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Max
 from django.utils import timezone
 
@@ -17,6 +18,7 @@ from core.public_app_urls import build_public_app_url
 
 from projects.models_contractor_discovery import (
     EstimateAppointmentDelivery,
+    EstimateAppointmentShortLink,
     OpportunityEstimateAppointment,
     OpportunityEstimateAppointmentEvent,
 )
@@ -65,8 +67,54 @@ def resolve_confirmation_token(token: str, *, lock=False):
     return appointment
 
 
-def public_confirmation_url(appointment) -> str:
+def signed_confirmation_url(appointment) -> str:
     return build_public_app_url(f"/appointment-confirmation/{confirmation_token(appointment)}")
+
+
+def appointment_short_link(appointment) -> EstimateAppointmentShortLink:
+    version = schedule_version(appointment)
+    existing = EstimateAppointmentShortLink.objects.filter(
+        appointment=appointment, schedule_version=version
+    ).first()
+    if existing:
+        return existing
+    # token_urlsafe(16) carries 128 bits of CSPRNG entropy and is URL-safe.
+    for _attempt in range(5):
+        try:
+            with transaction.atomic():
+                link, _created = EstimateAppointmentShortLink.objects.get_or_create(
+                    appointment=appointment,
+                    schedule_version=version,
+                    defaults={"code": secrets.token_urlsafe(16)},
+                )
+            return link
+        except IntegrityError:
+            existing = EstimateAppointmentShortLink.objects.filter(
+                appointment=appointment, schedule_version=version
+            ).first()
+            if existing:
+                return existing
+    raise RuntimeError("Could not allocate an appointment management link.")
+
+
+def public_confirmation_url(appointment) -> str:
+    return build_public_app_url(f"/a/{appointment_short_link(appointment).code}")
+
+
+def resolve_appointment_short_code(code: str):
+    if not isinstance(code, str) or not (20 <= len(code) <= 32):
+        return None
+    link = EstimateAppointmentShortLink.objects.select_related("appointment").filter(code=code).first()
+    if link is None:
+        return None
+    appointment = link.appointment
+    if (
+        link.schedule_version != schedule_version(appointment)
+        or appointment.status not in {appointment.STATUS_PROPOSED, appointment.STATUS_CONFIRMED}
+        or is_hold_expired(appointment)
+    ):
+        return None
+    return appointment
 
 
 def _zone(appointment):
