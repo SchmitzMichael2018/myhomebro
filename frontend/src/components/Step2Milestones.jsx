@@ -5860,18 +5860,7 @@ export default function Step2Milestones({
         </div>
       ) : null}
 
-      {acceptedEstimateBasis ? (
-        <section className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-4 text-slate-100 shadow-sm" data-testid="step2-accepted-estimate-pricing-summary">
-          <div className="text-xs font-semibold uppercase tracking-[0.16em] text-sky-300">Accepted Estimate Basis · v{acceptedEstimateBasis.review_version}</div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <div><div className="text-xs text-slate-400">Commercial base</div><div className="font-semibold">{formatCurrency(acceptedCommercialBase)}</div></div>
-            <div><div className="text-xs text-slate-400">Incidentals Reserve</div><div className="font-semibold">{formatCurrency(acceptedIncidentalsReserve)}</div></div>
-            <div><div className="text-xs text-slate-400">Funding total</div><div className="font-semibold">{formatCurrency(acceptedFundingTotal)}</div></div>
-            <div><div className="text-xs text-slate-400">Milestones allocated</div><div className="font-semibold">{formatCurrency(total)}</div></div>
-            <div><div className="text-xs text-slate-400">Allocation status</div><div className={`font-semibold ${Math.abs(allocationDifference) < 0.005 ? "text-emerald-300" : "text-amber-300"}`}>{Math.abs(allocationDifference) < 0.005 ? "Fully allocated" : allocationDifference > 0 ? `${formatCurrency(allocationDifference)} unallocated` : `${formatCurrency(-allocationDifference)} overallocated`}</div></div>
-          </div>
-          <p className="mt-3 text-xs text-slate-400">The accepted Estimate remains unchanged. Alternative pricing is shown only when explicitly requested.</p>
-          {acceptedMilestoneReconciliation && !acceptedMilestoneReconciliation.reconciles ? (
+      {acceptedEstimateBasis && acceptedMilestoneReconciliation && !acceptedMilestoneReconciliation.reconciles ? (
             <div className="mt-4 rounded-xl border border-amber-400/50 bg-amber-950/40 px-4 py-3 text-sm text-amber-100" data-testid="step2-estimate-reconciliation-blocker">
               <div className="font-semibold">Milestone allocation needs review before sending</div>
               <div className="mt-1">
@@ -5892,8 +5881,6 @@ export default function Step2Milestones({
                 This draft is preserved, but it cannot be sent until its milestones exactly match the accepted Estimate.
               </p>
             </div>
-          ) : null}
-        </section>
       ) : null}
 
       {planningValidationRequiresAcknowledgement ? (
