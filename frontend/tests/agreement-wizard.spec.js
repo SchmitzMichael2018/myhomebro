@@ -603,7 +603,7 @@ test("Project Assistant keeps a bathroom remodel above supporting plumbing trade
         classification: {
           project_type: "Plumbing",
           project_subtype: "Faucet Repair",
-          project_title: "Master Bath Renovation",
+          project_title: "Faucet Repair",
           confidence: "high",
           confidence_label: "High confidence",
           reason: "The overall scope is a bathroom remodel with supporting trades.",
