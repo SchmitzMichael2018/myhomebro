@@ -1966,7 +1966,15 @@ export default function AgreementWizard() {
       (sum, row) => sum + Number(row?.amount || 0),
       0
     );
-    const allocation = summarizeAcceptedEstimateAllocation(acceptedBasis, allocatedMilestones);
+    const acceptedAllocation = summarizeAcceptedEstimateAllocation(acceptedBasis, allocatedMilestones);
+    const currentAgreementReserve = Number(agreement?.incidentals_reserve_amount || 0);
+    const allocation = acceptedAllocation
+      ? {
+          ...acceptedAllocation,
+          incidentalsReserve: currentAgreementReserve,
+          fundingTotal: acceptedAllocation.commercialBase + currentAgreementReserve,
+        }
+      : null;
     return {
       proposalId: acceptedSummary?.proposalId || context.proposal_id || draft.proposal_id || "",
       reviewVersion: acceptedSummary?.reviewVersion || "",
@@ -2004,6 +2012,7 @@ export default function AgreementWizard() {
   }, [
     agreement?.accepted_estimate_basis,
     agreement?.description,
+    agreement?.incidentals_reserve_amount,
     agreement?.scope_of_work,
     assistantHandoff,
     dLocal.project_title,

@@ -480,6 +480,50 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   expect(patchCount).toBeGreaterThanOrEqual(1);
 });
 
+test("Step 2 summary uses the agreement reserve above the accepted Estimate reserve", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  const agreement = {
+    id: 100,
+    project_title: "Bathroom Remodel",
+    project_type: "Bathroom",
+    project_subtype: "Refresh",
+    description: "Accepted bathroom remodel scope.",
+    incidentals_reserve_amount: "500.00",
+    source_proposal_id: 42,
+    status: "draft",
+    accepted_estimate_basis: {
+      proposal_id: 42,
+      review_version: 1,
+      subtotal: "5000.00",
+      tax: "0.00",
+      discounts: "0.00",
+      incidentals_reserve: "0.00",
+      total: "5000.00",
+      pricing_rows: [],
+      milestone_reconciliation: { reconciles: true },
+    },
+  };
+  const milestones = [{ id: 501, agreement: 100, order: 1, title: "Project Work", amount: "5000.00" }];
+  await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) })
+  );
+  await page.route("**/api/projects/milestones/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ results: milestones }) })
+  );
+
+  await page.goto("/app/agreements/100/wizard?step=2", { waitUntil: "domcontentloaded" });
+  const estimateSummary = page.getByTestId("agreement-proposal-prefill-summary");
+  await expect(estimateSummary).toContainText("Commercial base");
+  await expect(estimateSummary).toContainText("$5,000.00");
+  await expect(estimateSummary).toContainText("Incidentals Reserve");
+  await expect(estimateSummary).toContainText("$500.00");
+  await expect(estimateSummary).toContainText("Funding total");
+  await expect(estimateSummary).toContainText("$5,500.00");
+  await expect(estimateSummary).toContainText("Fully allocated");
+  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toHaveCount(0);
+});
+
 test("Step 2 names accepted rows that lack exact milestone lineage", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);
