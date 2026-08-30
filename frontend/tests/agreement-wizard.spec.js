@@ -591,7 +591,7 @@ test("Project Assistant keeps a bathroom remodel above supporting plumbing trade
       project_type: "",
       project_subtype: "",
       description:
-        "Master bath remodel with demolition, plumbing and electrical prep, tile and shower install, fixture install, and final cleanup.",
+        "Project Summary\nMaster bath remodel. New floor and wall tile. New tub and shower. New vanity.\n\nEstimate Pricing\n- Labor - Demolition\n- Labor - Plumbing & Electrical Prep\n- Labor - Tile & Shower Install\n- Labor - Fixture Install\n- Labor - Final Cleanup",
     };
     window.sessionStorage.setItem(key, JSON.stringify(handoff));
   });

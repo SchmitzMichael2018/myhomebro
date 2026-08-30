@@ -3275,15 +3275,30 @@ export default function Step1Details({
       const { data } = await api.post("/projects/agreements/ai/classify/", payload);
       const classification = data?.classification || data || {};
       const currentScopeText = safeTrim(currentScope || currentPrompt);
-      const sourceOnlyConsistency = inferStep1ProjectClassificationConsistency({
-        sourceText: [
+      const sourceEvidence = [
           currentTitle,
           currentType,
           currentSubtype,
           currentScopeText,
           currentPrompt,
           ...(payload.milestones || []).flatMap((row) => [row.title, row.description]),
-        ].filter(Boolean).join(" "),
+        ].filter(Boolean).join(" ");
+      const normalizedSourceEvidence = normalizeAiText(sourceEvidence);
+      const sourceBathroomRemodel =
+        /\b(remodel|remodeling|renovation|renovate|rehab)\b/i.test(normalizedSourceEvidence) &&
+        /\b(master|primary)?\s*(bath|bathroom)\b/i.test(normalizedSourceEvidence)
+          ? {
+              project_type: "Remodel",
+              project_subtype: "Bathroom Remodel",
+              project_title: currentTitle || "Bathroom Remodel",
+              reason:
+                "The title and complete scope describe a bathroom remodel; plumbing, electrical, tile, demolition, fixture, and cleanup work are supporting tasks.",
+              confidence: "high",
+              confidence_label: "High confidence",
+            }
+          : null;
+      const sourceOnlyConsistency = sourceBathroomRemodel || inferStep1ProjectClassificationConsistency({
+        sourceText: sourceEvidence,
         scopeText: currentScopeText,
       });
       const backendSuggestedType = safeTrim(classification?.project_type);
