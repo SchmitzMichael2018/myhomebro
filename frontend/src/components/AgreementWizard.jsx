@@ -31,6 +31,7 @@ import {
 } from "../lib/assistantHandoff.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { acceptedEstimateBasisSummary } from "../lib/agreementEstimateHandoff.js";
+import { summarizeAcceptedEstimateAllocation } from "../lib/agreementMilestonePricing.js";
 import { trackOnboardingEvent } from "../lib/onboardingAnalytics.js";
 import { getAgreementWizardHint } from "../lib/workflowHints.js";
 import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
@@ -1458,6 +1459,7 @@ export default function AgreementWizard() {
     const projectStartDate = toDateOnly(dLocal.project_start_date || dLocal.start || "");
     const selectedTypeId = normalizeWizardStep1Id(selectedType?.id);
     const selectedSubtypeId = normalizeWizardStep1Id(selectedSubtype?.id);
+    const effectivePaymentMode = safeStr(dLocal.payment_mode).toLowerCase() || "escrow";
 
     const fallbackTitle = "Draft Agreement";
     const fallbackDescription =
@@ -1502,10 +1504,10 @@ export default function AgreementWizard() {
         dLocal.agreement_mode === "maintenance" ? safeRecurringText(dLocal.service_window_notes) : "",
       recurring_summary_label:
         dLocal.agreement_mode === "maintenance" ? safeRecurringText(dLocal.recurring_summary_label) : "",
-      payment_mode: dLocal.payment_mode || "escrow",
+      payment_mode: effectivePaymentMode,
       payment_structure: dLocal.payment_structure || "simple",
       incidentals_reserve_amount:
-        dLocal.payment_mode === "escrow" ? dLocal.incidentals_reserve_amount || "0.00" : "0.00",
+        effectivePaymentMode === "escrow" ? dLocal.incidentals_reserve_amount || "0.00" : "0.00",
       retainage_percent:
         String(dLocal.payment_structure || "simple").toLowerCase() === "progress"
           ? dLocal.retainage_percent || "0.00"
@@ -1959,6 +1961,11 @@ export default function AgreementWizard() {
     const context = assistantHandoff.context || {};
     const draft = assistantHandoff.draftPayload || {};
     const estimate = assistantHandoff.estimatePreview || {};
+    const allocatedMilestones = (Array.isArray(milestones) ? milestones : []).reduce(
+      (sum, row) => sum + Number(row?.amount || 0),
+      0
+    );
+    const allocation = summarizeAcceptedEstimateAllocation(acceptedBasis, allocatedMilestones);
     return {
       proposalId: acceptedSummary?.proposalId || context.proposal_id || draft.proposal_id || "",
       reviewVersion: acceptedSummary?.reviewVersion || "",
@@ -1991,6 +1998,7 @@ export default function AgreementWizard() {
       tax: acceptedSummary?.tax ?? draft.proposal_totals?.tax ?? "",
       discounts: acceptedSummary?.discounts ?? draft.proposal_totals?.discounts ?? "",
       reconciles: acceptedSummary?.reconciles ?? true,
+      allocation,
     };
   }, [
     agreement?.accepted_estimate_basis,
@@ -1999,6 +2007,7 @@ export default function AgreementWizard() {
     assistantHandoff,
     dLocal.project_title,
     isProposalAgreementHandoff,
+    milestones,
   ]);
   const assistantDraftPayload = useMemo(
     () => ({
@@ -2383,7 +2392,9 @@ export default function AgreementWizard() {
       {proposalHandoffSummary ? (
         <div
           data-testid="agreement-proposal-prefill-summary"
-          className="mt-4 grid gap-3 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50 md:grid-cols-4"
+          className={`mt-4 grid gap-3 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50 ${
+            step === 2 && proposalHandoffSummary.allocation ? "md:grid-cols-5" : "md:grid-cols-4"
+          }`}
         >
           <div className="md:col-span-4">
             <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/80">
@@ -2401,25 +2412,59 @@ export default function AgreementWizard() {
               </div>
             ) : null}
           </div>
-          <div>
-            <div className="text-xs font-semibold uppercase text-emerald-100/70">Estimate</div>
-            <div className="font-bold text-white">
-              {proposalHandoffSummary.proposalId ? `#${proposalHandoffSummary.proposalId}` : "Estimate"}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase text-emerald-100/70">Subtotal</div>
-            <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.subtotal)}</div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase text-emerald-100/70">Total</div>
-            <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.total)}</div>
-          </div>
-          <div>
-            <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals Reserve</div>
-            <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.incidentals)}</div>
-          </div>
-          {Number(proposalHandoffSummary.tax || 0) || Number(proposalHandoffSummary.discounts || 0) ? (
+          {step === 2 && proposalHandoffSummary.allocation ? (
+            <>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Commercial base</div>
+                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.commercialBase)}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals Reserve</div>
+                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.incidentalsReserve)}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Funding total</div>
+                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.fundingTotal)}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Milestones allocated</div>
+                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.allocated)}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Allocation status</div>
+                <div className={`font-bold ${proposalHandoffSummary.allocation.fullyAllocated ? "text-emerald-200" : "text-amber-200"}`}>
+                  {proposalHandoffSummary.allocation.fullyAllocated
+                    ? "Fully allocated"
+                    : proposalHandoffSummary.allocation.unallocated > 0
+                    ? `${moneyLabel(proposalHandoffSummary.allocation.unallocated)} unallocated`
+                    : `${moneyLabel(proposalHandoffSummary.allocation.overallocated)} overallocated`}
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Estimate</div>
+                <div className="font-bold text-white">
+                  {proposalHandoffSummary.proposalId ? `#${proposalHandoffSummary.proposalId}` : "Estimate"}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Subtotal</div>
+                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.subtotal)}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Total</div>
+                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.total)}</div>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals Reserve</div>
+                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.incidentals)}</div>
+              </div>
+            </>
+          )}
+          {(step !== 2 || !proposalHandoffSummary.allocation) &&
+          (Number(proposalHandoffSummary.tax || 0) || Number(proposalHandoffSummary.discounts || 0)) ? (
             <div>
               <div className="text-xs font-semibold uppercase text-emerald-100/70">Adjustments</div>
               <div className="font-bold text-white">
@@ -2427,11 +2472,13 @@ export default function AgreementWizard() {
               </div>
             </div>
           ) : null}
-          <div>
-            <div className="text-xs font-semibold uppercase text-emerald-100/70">Line Items</div>
-            <div className="font-bold text-white">{proposalHandoffSummary.lineItemCount || 0}</div>
-          </div>
-          {proposalHandoffSummary.scope ? (
+          {step !== 2 || !proposalHandoffSummary.allocation ? (
+            <div>
+              <div className="text-xs font-semibold uppercase text-emerald-100/70">Line Items</div>
+              <div className="font-bold text-white">{proposalHandoffSummary.lineItemCount || 0}</div>
+            </div>
+          ) : null}
+          {(step !== 2 || !proposalHandoffSummary.allocation) && proposalHandoffSummary.scope ? (
             <div className="md:col-span-4" data-testid="agreement-proposal-prefill-scope">
               <div className="text-xs font-semibold uppercase text-emerald-100/70">Scope Input</div>
               <div className="mt-1 line-clamp-4 whitespace-pre-wrap text-sm text-emerald-50/90">

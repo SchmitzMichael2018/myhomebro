@@ -401,7 +401,7 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
     { id: 503, agreement: 100, order: 3, title: "Tile & Shower Install", amount: "4950.00", accepted_estimate_amount: "4950.00", accepted_estimate_review_version: 1 },
     { id: 504, agreement: 100, order: 4, title: "Fixture Install", amount: "4950.00", accepted_estimate_amount: "4950.00", accepted_estimate_review_version: 1 },
   ];
-  let createCount = 0;
+  const createPayloads = [];
   let patchCount = 0;
   let acknowledgmentCount = 0;
   const milestoneMutations = [];
@@ -411,7 +411,7 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
     body: JSON.stringify({ results: [{ id: 77, full_name: "QA Homeowner", email: "qa-homeowner@myhomebro.com" }] }),
   }));
   await page.route(/\/api\/projects\/agreements\/?(?:\?.*)?$/, async (route) => {
-    if (route.request().method() === "POST") createCount += 1;
+    if (route.request().method() === "POST") createPayloads.push(route.request().postDataJSON());
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(agreement) });
   });
   await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, async (route) => {
@@ -438,11 +438,23 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   });
 
   await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  const reserveInput = page.getByTestId("agreement-incidentals-reserve-input");
+  await reserveInput.click();
+  await reserveInput.pressSequentially("500");
+  await expect(reserveInput).toHaveValue("500");
   await page.getByRole("button", { name: "Save & Next" }).click();
   await expect(page).toHaveURL(/\/app\/agreements\/100\/wizard\?step=2/);
-  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$12,850.00");
-  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$1,500.00");
-  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toContainText("$14,350.00");
+  expect(createPayloads).toHaveLength(1);
+  expect(createPayloads[0].payment_mode).toBe("escrow");
+  expect(createPayloads[0].incidentals_reserve_amount).toBe("500");
+  const estimateSummary = page.getByTestId("agreement-proposal-prefill-summary");
+  await expect(estimateSummary).toContainText("Commercial base");
+  await expect(estimateSummary).toContainText("$12,850.00");
+  await expect(estimateSummary).toContainText("$1,500.00");
+  await expect(estimateSummary).toContainText("$14,350.00");
+  await expect(estimateSummary).toContainText("Milestones allocated");
+  await expect(estimateSummary).toContainText("Fully allocated");
+  await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toHaveCount(0);
   await expect(page.getByText("Fixture Install").first()).toBeVisible();
   for (const amount of ["$1,000.00", "$1,950.00", "$4,950.00"]) {
     await expect(page.getByText(amount, { exact: true }).first()).toBeVisible();
@@ -463,7 +475,7 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   await page.reload({ waitUntil: "domcontentloaded" });
   await expect(page.getByText("$1,950.00", { exact: true }).first()).toBeVisible();
   expect(milestoneMutations).toEqual([]);
-  expect(createCount).toBe(1);
+  expect(createPayloads).toHaveLength(1);
   expect(patchCount).toBeGreaterThanOrEqual(1);
 });
 

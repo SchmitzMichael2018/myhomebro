@@ -8112,6 +8112,7 @@ export default function Step1Details({
                     name="incidentals_reserve_amount"
                     value={safeTrim(dLocal?.incidentals_reserve_amount || "0.00")}
                     onChange={locked ? undefined : handleStep1LocalChange}
+                    onFocus={(event) => event.currentTarget.select()}
                     disabled={locked}
                     className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 md:w-48"
                   />
