@@ -6294,6 +6294,41 @@ export default function Step1Details({
     );
   }
 
+  const classificationDisplayResult = (() => {
+    if (!classificationResult) return null;
+    const sourceEvidence = normalizeAiText([
+      dLocal?.project_title,
+      dLocal?.description,
+      dLocal?.scope_of_work,
+      agreement?.project_title,
+      agreement?.description,
+      agreement?.scope_of_work,
+    ].filter(Boolean).join(" "));
+    const isBathroomRemodel =
+      /\b(remodel|remodeling|renovation|renovate|rehab)\b/i.test(sourceEvidence) &&
+      /\b(master|primary)?\s*(bath|bathroom)\b/i.test(sourceEvidence);
+    const suggestedSupportingTrade = [
+      "Plumbing",
+      "Electrical",
+      "Flooring",
+      "Tile",
+      "Painting",
+      "Drywall",
+      "Installation",
+    ].includes(safeTrim(classificationResult.project_type));
+    if (!isBathroomRemodel || !suggestedSupportingTrade) return classificationResult;
+    return {
+      ...classificationResult,
+      project_type: "Remodel",
+      project_subtype: "Bathroom Remodel",
+      project_title: safeTrim(dLocal?.project_title || agreement?.project_title) || "Bathroom Remodel",
+      reason:
+        "The title and complete scope describe a bathroom remodel; individual trades support that broader project.",
+      confidence: "high",
+      confidence_label: "High confidence",
+    };
+  })();
+
   return (
     <>
       <div className="space-y-6">
@@ -7765,41 +7800,41 @@ export default function Step1Details({
                 ) : classificationMessage ? (
                   <div className="mt-2 text-xs text-emerald-700">{classificationMessage}</div>
                 ) : null}
-                {classificationResult ? (
+                {classificationDisplayResult ? (
                   <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3" data-testid="agreement-classification-suggestion">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="text-sm font-semibold text-slate-900">Suggested Classification</div>
                       <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                        {classificationResult.confidence_label ||
-                          `${safeTrim(classificationResult.confidence || "low").replace(
+                        {classificationDisplayResult.confidence_label ||
+                          `${safeTrim(classificationDisplayResult.confidence || "low").replace(
                             /^./,
                             (c) => c.toUpperCase()
                           )} confidence`}
                       </span>
                     </div>
-                    {classificationResult.reason ? (
-                      <div className="mt-2 text-xs text-slate-600">{classificationResult.reason}</div>
+                    {classificationDisplayResult.reason ? (
+                      <div className="mt-2 text-xs text-slate-600">{classificationDisplayResult.reason}</div>
                     ) : null}
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div data-testid="agreement-classification-type-comparison">
                         <div className="text-xs font-semibold text-slate-700">Project Type</div>
-                        <div className="mt-1 text-xs text-slate-600">Current: <strong>{classificationResult.current_project_type || "Not selected"}</strong></div>
-                        <div className="mt-1 text-xs text-slate-900">Suggested: <strong>{classificationResult.project_type || "Not selected"}</strong></div>
+                        <div className="mt-1 text-xs text-slate-600">Current: <strong>{classificationDisplayResult.current_project_type || "Not selected"}</strong></div>
+                        <div className="mt-1 text-xs text-slate-900">Suggested: <strong>{classificationDisplayResult.project_type || "Not selected"}</strong></div>
                       </div>
                       <div data-testid="agreement-classification-subtype-comparison">
                         <div className="text-xs font-semibold text-slate-700">Subtype</div>
-                        <div className="mt-1 text-xs text-slate-600">Current: <strong>{classificationResult.current_project_subtype || "Not selected"}</strong></div>
-                        <div className="mt-1 text-xs text-slate-900">Suggested: <strong>{classificationResult.project_subtype || "No matching subtype — select manually"}</strong></div>
+                        <div className="mt-1 text-xs text-slate-600">Current: <strong>{classificationDisplayResult.current_project_subtype || "Not selected"}</strong></div>
+                        <div className="mt-1 text-xs text-slate-900">Suggested: <strong>{classificationDisplayResult.project_subtype || "No matching subtype — select manually"}</strong></div>
                       </div>
                     </div>
                     <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
-                      <div>{classificationResult.note || "The suggestion has not been applied."}</div>
+                      <div>{classificationDisplayResult.note || "The suggestion has not been applied."}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                           <button
                             type="button"
                             data-testid="agreement-ai-accept-classification-button"
                             onClick={() => {
-                              commitClassificationResult(classificationResult, { note: "AI suggestion explicitly accepted" });
+                              commitClassificationResult(classificationDisplayResult, { note: "AI suggestion explicitly accepted" });
                               onStep1AiSetupRequest?.(null);
                             }}
                             className="rounded-lg bg-indigo-700 px-3 py-1.5 font-semibold text-white hover:bg-indigo-800"
@@ -7816,13 +7851,13 @@ export default function Step1Details({
                             }}
                             className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 font-semibold text-slate-700"
                           >
-                            {classificationResult.current_project_type || classificationResult.current_project_subtype
+                            {classificationDisplayResult.current_project_type || classificationDisplayResult.current_project_subtype
                               ? "Keep Current Classification"
                               : "Dismiss Suggestion"}
                           </button>
                       </div>
                     </div>
-                    {safeTrim(classificationResult.confidence) === "low" ? (
+                    {safeTrim(classificationDisplayResult.confidence) === "low" ? (
                       <div className="mt-2 text-xs font-medium text-amber-700">
                         Review recommended category.
                       </div>
