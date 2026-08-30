@@ -650,6 +650,47 @@ function inferStep1ProjectClassificationConsistency({
     };
   }
 
+  const remodelIntent = /\b(remodel|remodeling|renovation|renovate|rehab)\b/i.test(combined);
+  const supportingTradeSuggestion =
+    !safeTrim(suggestedProjectType) ||
+    ["Plumbing", "Electrical", "Flooring", "Tile", "Painting", "Drywall", "Installation"].includes(
+      safeTrim(suggestedProjectType)
+    );
+  if (remodelIntent && supportingTradeSuggestion) {
+    if (/\b(master|primary)?\s*(bath|bathroom)\b/i.test(combined)) {
+      return {
+        project_type: "Remodel",
+        project_subtype: "Bathroom Remodel",
+        project_title: suggestedProjectTitle || "Bathroom Remodel",
+        reason:
+          "The title and complete scope describe a bathroom remodel; plumbing, electrical, tile, and fixture work are supporting trades.",
+        confidence: "high",
+        confidence_label: "High confidence",
+      };
+    }
+    if (/\bkitchen\b/i.test(combined)) {
+      return {
+        project_type: "Remodel",
+        project_subtype: "Kitchen Remodel",
+        project_title: suggestedProjectTitle || "Kitchen Remodel",
+        reason:
+          "The title and complete scope describe a kitchen remodel; individual trade work supports the broader renovation.",
+        confidence: "high",
+        confidence_label: "High confidence",
+      };
+    }
+    if (/\b(whole\s+home|whole\s+house|full\s+home)\b/i.test(combined)) {
+      return {
+        project_type: "Remodel",
+        project_subtype: "Full Home Remodel",
+        project_title: suggestedProjectTitle || "Full Home Remodel",
+        reason: "The title and complete scope describe a full-home remodel.",
+        confidence: "high",
+        confidence_label: "High confidence",
+      };
+    }
+  }
+
   const wetBarSetup = inferWetBarProjectSetup(combinedText);
   if (wetBarSetup) return wetBarSetup;
 

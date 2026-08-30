@@ -579,6 +579,53 @@ test("Project Assistant classification is visibly pending and remains advisory u
   await expect(desktopAssistant.getByTestId("project-assistant-action-step1_improve_classification")).toHaveCount(0);
 });
 
+test("Project Assistant keeps a bathroom remodel above supporting plumbing trades", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  await page.addInitScript(() => {
+    const key = "mhb_first_project_assist_handoff";
+    const handoff = JSON.parse(window.sessionStorage.getItem(key) || "{}");
+    handoff.assistantDraftPayload = {
+      ...(handoff.assistantDraftPayload || {}),
+      project_title: "Master Bath Renovation",
+      project_type: "",
+      project_subtype: "",
+      description:
+        "Master bath remodel with demolition, plumbing and electrical prep, tile and shower install, fixture install, and final cleanup.",
+    };
+    window.sessionStorage.setItem(key, JSON.stringify(handoff));
+  });
+  await page.route("**/api/projects/agreements/ai/classify/", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        classification: {
+          project_type: "Plumbing",
+          project_subtype: "Faucet Repair",
+          project_title: "Master Bath Renovation",
+          confidence: "high",
+          confidence_label: "High confidence",
+          reason: "The overall scope is a bathroom remodel with supporting trades.",
+        },
+      }),
+    })
+  );
+
+  await page.goto("/app/agreements/new/wizard?step=1", { waitUntil: "domcontentloaded" });
+  await page.getByTestId("agreement-step1-open-assistant").click();
+  await page
+    .getByTestId("assistant-desktop-dock")
+    .getByTestId("project-assistant-action-step1_improve_classification")
+    .click();
+
+  const suggestion = page.getByTestId("agreement-classification-suggestion");
+  await expect(suggestion).toContainText("Suggested: Remodel");
+  await expect(suggestion).toContainText("Suggested: Bathroom Remodel");
+  await expect(suggestion).not.toContainText("Suggested: Plumbing");
+  await expect(suggestion).not.toContainText("Suggested: Faucet Repair");
+});
+
 test("Project Assistant classification failure is visible and retryable", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);

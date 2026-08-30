@@ -329,15 +329,16 @@ function optionLabel(options, value) {
 
 function formatDate(value) {
   if (!value) return "";
-  try {
-    return new Date(`${value}T12:00:00`).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return String(value);
-  }
+  const raw = String(value).trim();
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(raw)
+    ? new Date(`${raw}T12:00:00`)
+    : new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function proposalScheduleSummary(source = {}) {
@@ -1767,8 +1768,8 @@ export default function ProposalWorkspacePage() {
       clarificationRows.filter((row) => row.complete && !row.ignored && row.answer).map((row) => [row.key, row.answer])
     );
     const classification = normalizeProposalClassificationForAgreement(
-      workspaceProposal.project_type,
-      workspaceProposal.project_subtype
+      workspaceProposal.project_type || selectedTemplate?.project_type,
+      workspaceProposal.project_subtype || selectedTemplate?.project_subtype
     );
     const address = parseServiceLocationForAgreement(workspaceProposal.service_location);
     const scheduling = {
@@ -1787,6 +1788,9 @@ export default function ProposalWorkspacePage() {
         project_summary: workspaceProposal.project_summary || "",
         project_type: classification.projectType,
         project_subtype: classification.projectSubtype,
+        selected_template_id: selectedTemplate?.id || workspaceProposal.selected_template_id || null,
+        selected_template_name_snapshot:
+          selectedTemplate?.name || workspaceProposal.selected_template_name || workspaceProposal.selected_template_name_snapshot || "",
         customer_name: workspaceProposal.customer_name || "",
         email: workspaceProposal.customer_email || "",
         address_line1: address.address_line1 || workspaceProposal.service_location || "",
@@ -1809,6 +1813,9 @@ export default function ProposalWorkspacePage() {
         customer_id: workspaceProposal.customer_id || workspaceProposal.homeowner_id || "",
         project_type: classification.projectType,
         project_subtype: classification.projectSubtype,
+        selected_template_id: selectedTemplate?.id || workspaceProposal.selected_template_id || null,
+        selected_template_name_snapshot:
+          selectedTemplate?.name || workspaceProposal.selected_template_name || workspaceProposal.selected_template_name_snapshot || "",
         project_summary: workspaceProposal.project_summary || "",
         description: scopeText || workspaceProposal.project_summary || "",
         scope_of_work: scopeText || workspaceProposal.project_summary || "",
@@ -1855,6 +1862,8 @@ export default function ProposalWorkspacePage() {
         incidentals_reserve_amount: incidentalsReserve,
         proposal_scheduling: scheduling,
         line_item_count: lineItems.length,
+        template_name:
+          selectedTemplate?.name || workspaceProposal.selected_template_name || workspaceProposal.selected_template_name_snapshot || "",
         measurement_count: measurements.length,
         attachment_count: attachments.length,
       },
