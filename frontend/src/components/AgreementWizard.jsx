@@ -42,6 +42,7 @@ import {
 } from "../lib/projectFamilyContext.js";
 import { getStripeOnboardingState } from "../lib/stripeOnboardingStatus.js";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
+import { normalizePaymentMode } from "./step1/step1Utils.jsx";
 
 /* ---------------- helpers ---------------- */
 
@@ -1459,7 +1460,7 @@ export default function AgreementWizard() {
     const projectStartDate = toDateOnly(dLocal.project_start_date || dLocal.start || "");
     const selectedTypeId = normalizeWizardStep1Id(selectedType?.id);
     const selectedSubtypeId = normalizeWizardStep1Id(selectedSubtype?.id);
-    const effectivePaymentMode = safeStr(dLocal.payment_mode).toLowerCase() || "escrow";
+    const effectivePaymentMode = normalizePaymentMode(dLocal.payment_mode);
 
     const fallbackTitle = "Draft Agreement";
     const fallbackDescription =

@@ -347,6 +347,7 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
       homeowner: 77,
       homeowner_id: 77,
       customer_id: 77,
+      payment_mode: "escrow_funded",
     };
     window.sessionStorage.setItem(key, JSON.stringify(handoff));
   });
