@@ -3275,7 +3275,32 @@ export default function Step1Details({
       const { data } = await api.post("/projects/agreements/ai/classify/", payload);
       const classification = data?.classification || data || {};
       const currentScopeText = safeTrim(currentScope || currentPrompt);
-      const localConsistency = inferStep1ProjectClassificationConsistency({
+      const sourceOnlyConsistency = inferStep1ProjectClassificationConsistency({
+        sourceText: [
+          currentTitle,
+          currentType,
+          currentSubtype,
+          currentScopeText,
+          currentPrompt,
+          ...(payload.milestones || []).flatMap((row) => [row.title, row.description]),
+        ].filter(Boolean).join(" "),
+        scopeText: currentScopeText,
+      });
+      const backendSuggestedType = safeTrim(classification?.project_type);
+      const backendIsSupportingTrade = [
+        "Plumbing",
+        "Electrical",
+        "Flooring",
+        "Tile",
+        "Painting",
+        "Drywall",
+        "Installation",
+      ].includes(backendSuggestedType);
+      const sourceRemodelOverridesSupportingTrade =
+        sourceOnlyConsistency?.project_type === "Remodel" && backendIsSupportingTrade;
+      const localConsistency = sourceRemodelOverridesSupportingTrade
+        ? sourceOnlyConsistency
+        : inferStep1ProjectClassificationConsistency({
         sourceText: [
           currentTitle,
           currentType,
