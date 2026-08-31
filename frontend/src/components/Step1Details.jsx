@@ -6369,12 +6369,21 @@ export default function Step1Details({
       0
   );
   const step1Reserve = Number(dLocal?.incidentals_reserve_amount || 0);
-  const step1MilestoneCount = Number(
-    agreement?.milestone_count ??
-      agreement?.milestones?.length ??
-      assistantDraftPayload?.milestones?.length ??
-      assistantDraftPayload?.proposal_milestones?.length ??
-      0
+  const acceptedMilestoneLabels = new Set(
+    (Array.isArray(agreement?.accepted_estimate_basis?.pricing_rows)
+      ? agreement.accepted_estimate_basis.pricing_rows
+      : []
+    )
+      .filter((row) => !["tax", "discount", "incidentals_reserve"].includes(safeTrim(row?.category).toLowerCase()))
+      .map((row) => safeTrim(row?.source_milestone_name || row?.milestone_name))
+      .filter(Boolean)
+  );
+  const step1MilestoneCount = Math.max(
+    Number(agreement?.milestone_count || 0),
+    Number(agreement?.milestones?.length || 0),
+    Number(assistantDraftPayload?.milestones?.length || 0),
+    Number(assistantDraftPayload?.proposal_milestones?.length || 0),
+    acceptedMilestoneLabels.size
   );
 
   return (
