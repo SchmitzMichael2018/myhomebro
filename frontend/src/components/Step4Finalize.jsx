@@ -327,20 +327,31 @@ function getMilestoneSubcontractorPayoutAmount(milestone) {
   return 0;
 }
 
-function formatMilestoneDate(m) {
-  const raw = m?.due_date || m?.dueDate || m?.target_date || m?.date || m?.scheduled_for;
+function formatDateOnlyForDisplay(raw) {
   if (!raw) return "—";
-  const d = new Date(raw);
+  const text = String(raw);
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const d = match
+    ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    : new Date(text);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleDateString();
 }
 
+function formatMilestoneDate(m) {
+  const raw =
+    m?.due_date ||
+    m?.completion_date ||
+    m?.dueDate ||
+    m?.target_date ||
+    m?.date ||
+    m?.scheduled_for;
+  return formatDateOnlyForDisplay(raw);
+}
+
 function formatMilestoneStartDate(m) {
   const raw = m?.start_date || m?.startDate || m?.start || m?.scheduled_start;
-  if (!raw) return "—";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString();
+  return formatDateOnlyForDisplay(raw);
 }
 
 function formatPlanningDate(value) {
@@ -781,6 +792,7 @@ export default function Step4Finalize({
   onPreviewViewed = () => {},
   reviewSignRequestId = 0,
   postSendGuidance = "",
+  onEditMilestone = null,
 }) {
   const [agreement, setAgreement] = useState(agreementProp || null);
   const [showAllClarifications, setShowAllClarifications] = useState(false);
@@ -2245,10 +2257,24 @@ export default function Step4Finalize({
               </thead>
               <tbody>
                 {displayMilestones.map((m, idx) => (
-                  <tr key={m?.id || `m-${idx}`} className="hover:bg-slate-50">
+                  <tr
+                    key={m?.id || `m-${idx}`}
+                    className={onEditMilestone ? "cursor-pointer hover:bg-indigo-50 focus:bg-indigo-50 focus:outline-none" : "hover:bg-slate-50"}
+                    onClick={() => onEditMilestone?.(m)}
+                    onKeyDown={(event) => {
+                      if (!onEditMilestone || (event.key !== "Enter" && event.key !== " ")) return;
+                      event.preventDefault();
+                      onEditMilestone(m);
+                    }}
+                    role={onEditMilestone ? "button" : undefined}
+                    tabIndex={onEditMilestone ? 0 : undefined}
+                    aria-label={onEditMilestone ? `Edit milestone ${m?.title || idx + 1}` : undefined}
+                    data-testid={`step4-milestone-row-${m?.id || idx + 1}`}
+                  >
                     <td className="p-2 border-b border-slate-200">{idx + 1}</td>
                     <td className="p-2 border-b border-slate-200">
                       <div className="font-medium text-slate-900">{m?.title || `Milestone ${idx + 1}`}</div>
+                      {onEditMilestone ? <div className="mt-0.5 text-[11px] font-medium text-indigo-600">Click to edit</div> : null}
                       {m?.description ? (
                         <div className="text-xs text-slate-500 mt-0.5 whitespace-pre-wrap">{m.description}</div>
                       ) : null}

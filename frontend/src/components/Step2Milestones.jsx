@@ -5149,6 +5149,15 @@ export default function Step2Milestones({
     return explicitKey;
   }
 
+  useEffect(() => {
+    if (!editMilestone?.id || editOpen) return;
+    const idx = effectiveMilestones.findIndex(
+      (row) => String(row?.id) === String(editMilestone.id)
+    );
+    if (idx < 0) return;
+    handleEditClick(effectiveMilestones[idx], idx);
+  }, [editMilestone, editOpen, effectiveMilestones]);
+
   function notifyNoPricingGuidance() {
     const message = "No pricing guidance available yet. Enter a target project total manually, then rebalance milestones.";
     setAiChangeSummary(message);

@@ -6868,6 +6868,14 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-warranty-summary')).toContainText(
     '12-Month Workmanship Warranty (Standard)'
   );
+  await expect(page.getByTestId('step4-milestone-row-1')).toContainText('4/29/2026');
+  await expect(page.getByTestId('step4-milestone-row-1')).toContainText('4/30/2026');
+  await expect(page.getByTestId('step4-milestone-row-1')).toContainText('Click to edit');
+  await page.getByTestId('step4-milestone-row-1').click();
+  await expect(page).toHaveURL(/step=2/);
+  await expect(page.getByTestId('step2-edit-milestone-modal')).toBeVisible();
+  await page.getByRole('button', { name: 'Step 4 Finalize' }).click();
+  await expect(page).toHaveURL(/step=4/);
   await expect(page.getByText('Once both signatures are complete, the customer will be prompted to fund escrow.')).toBeVisible();
 
   await page.getByTestId('agreement-wizard-view-pdf-button').click();

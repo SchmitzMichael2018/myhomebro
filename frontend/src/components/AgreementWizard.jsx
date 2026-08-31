@@ -2756,6 +2756,10 @@ export default function AgreementWizard() {
             onAgreementUpdated={(updated) => setAgreement(updated)}
             refreshAgreement={refreshAgreement}
             postSendGuidance={aiPanelConfig.nextGuidance}
+            onEditMilestone={(milestone) => {
+              setEditMilestone(milestone);
+              goStep(2);
+            }}
           />
         </div>
       ) : null}
