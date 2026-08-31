@@ -1666,7 +1666,11 @@ class Agreement(models.Model):
 
     warranty_type = models.CharField(
         max_length=16,
-        choices=[("default", "Default"), ("custom", "Custom")],
+        choices=[
+            ("default", "Standard 12-month workmanship warranty"),
+            ("custom", "Custom warranty"),
+            ("none", "No contractor warranty"),
+        ],
         default="default",
     )
     warranty_text_snapshot = models.TextField(blank=True, default="")
@@ -1840,13 +1844,15 @@ class Agreement(models.Model):
 
         if self.warranty_type:
             self.warranty_type = str(self.warranty_type).strip().lower()
-            if self.warranty_type not in ("default", "custom"):
+            if self.warranty_type not in ("default", "custom", "none"):
                 self.warranty_type = "default"
         else:
             self.warranty_type = "default"
 
         snap = (self.warranty_text_snapshot or "").strip()
-        if not snap:
+        if self.warranty_type == "none":
+            self.warranty_text_snapshot = ""
+        elif not snap:
             self.warranty_text_snapshot = DEFAULT_WARRANTY_TEXT
 
         if self.status in (ProjectStatus.COMPLETED, ProjectStatus.CANCELLED):

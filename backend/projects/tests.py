@@ -7048,11 +7048,100 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(warranty.status, "active")
         self.assertTrue(warranty.generated_from_agreement_completion)
         self.assertEqual(warranty.completion_date, date(2026, 4, 1))
+        self.assertEqual(warranty.end_date, date(2027, 4, 1))
         self.assertIn("workmanship", warranty.coverage_details.lower())
 
         again = ensure_warranties_for_completed_agreement(self.agreement)
         self.assertEqual(again[0].id, warranty.id)
         self.assertEqual(AgreementWarranty.objects.filter(agreement=self.agreement, generated_from_agreement_completion=True).count(), 1)
+
+    def test_no_warranty_selection_suppresses_generated_coverage(self):
+        response = self.client.patch(
+            f"/api/projects/agreements/{self.agreement.id}/",
+            {"warranty_type": "none"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.agreement.refresh_from_db()
+        self.assertEqual(self.agreement.warranty_type, "none")
+        self.assertEqual(self.agreement.warranty_text_snapshot, "")
+
+        self.agreement.status = "completed"
+        self.agreement.end = date(2026, 4, 1)
+        self.agreement.save(update_fields=["status", "end"])
+        from projects.services.warranty_management import ensure_warranties_for_completed_agreement
+
+        self.assertEqual(ensure_warranties_for_completed_agreement(self.agreement), [])
+        self.assertFalse(AgreementWarranty.objects.filter(agreement=self.agreement).exists())
+
+    def test_custom_warranty_requires_terms(self):
+        response = self.client.patch(
+            f"/api/projects/agreements/{self.agreement.id}/",
+            {"warranty_type": "custom", "warranty_text_snapshot": ""},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("custom_warranty_text", response.json())
+
+    def test_expired_warranty_rejects_customer_and_contractor_requests(self):
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="Expired workmanship warranty",
+            coverage_details="Expired coverage.",
+            start_date=timezone.localdate() - timedelta(days=365),
+            end_date=timezone.localdate() - timedelta(days=1),
+            status="active",
+            applies_to="workmanship",
+        )
+        self.assertEqual(warranty.status, "expired")
+
+        customer = _use_secure_requests(APIClient())
+        customer_response = customer.post(
+            f"/api/projects/customer-portal/{self.agreement.homeowner_access_token}/warranty-requests/",
+            {"warranty_id": warranty.id, "title": "Late issue", "description": "Coverage has ended."},
+            format="json",
+        )
+        self.assertEqual(customer_response.status_code, 400)
+
+        contractor_response = self.client.post(
+            "/api/projects/warranty-requests/",
+            {"warranty": warranty.id, "title": "Late issue", "description": "Coverage has ended."},
+            format="json",
+        )
+        self.assertEqual(contractor_response.status_code, 403)
+
+    def test_dashboard_counts_only_date_valid_active_warranties(self):
+        AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="Current coverage",
+            start_date=timezone.localdate() - timedelta(days=1),
+            end_date=timezone.localdate() + timedelta(days=30),
+            status="active",
+        )
+        AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="Future coverage",
+            start_date=timezone.localdate() + timedelta(days=5),
+            end_date=timezone.localdate() + timedelta(days=365),
+            status="active",
+        )
+        expired = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="Expired coverage",
+            start_date=timezone.localdate() - timedelta(days=30),
+            end_date=timezone.localdate() - timedelta(days=1),
+            status="active",
+        )
+
+        response = self.client.get("/api/projects/warranty/dashboard/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["metrics"]["active_warranties"], 1)
+        expired.refresh_from_db()
+        self.assertEqual(expired.status, "expired")
 
     def test_customer_can_submit_warranty_request_with_evidence(self):
         self.agreement.status = "completed"
@@ -7130,6 +7219,10 @@ class AgreementWarrantyApiTests(TestCase):
             format="json",
         )
         self.assertEqual(work.status_code, 201)
+        self.assertEqual(work.json()["milestone_type"], "warranty_service")
+        self.assertEqual(work.json()["amount"], "0.00")
+        self.assertFalse(work.json()["is_billable"])
+        self.assertFalse(work.json()["funding_required"])
         self.assertTrue(WarrantyWorkOrder.objects.filter(warranty_request=request_row).exists())
 
         escalation = self.client.post(

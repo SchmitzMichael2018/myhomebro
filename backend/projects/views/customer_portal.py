@@ -162,6 +162,7 @@ from projects.services.rental_operations_billing import (
 )
 from projects.services.recommendations import build_customer_recommendations
 from projects.services.workflow_notifications import notify_dispute_event
+from projects.services.warranty_management import active_warranty_queryset
 from projects.services.customer_portal_status import build_customer_payment_model, enrich_customer_portal_rows
 from projects.services.project_activity import create_project_activity_event, serialize_project_activity_events
 from projects.services.ai.project_understanding import understand_project_request
@@ -4991,8 +4992,8 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
                     for request_row in row.requests.select_related("work_order", "work_order__assigned_user").prefetch_related("evidence").order_by("-created_at", "-id")[:10]
                 ],
             }
-            for row in AgreementWarranty.objects.filter(
-                agreement=agreement, status="active"
+            for row in active_warranty_queryset(
+                AgreementWarranty.objects.filter(agreement=agreement)
             ).filter(
                 Q(origin_capture__isnull=True) | Q(customer_visible=True)
             ).order_by("-end_date", "-id")

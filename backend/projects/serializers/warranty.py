@@ -141,10 +141,19 @@ class WarrantyRequestEvidenceSerializer(serializers.ModelSerializer):
 
 
 class WarrantyWorkOrderSerializer(serializers.ModelSerializer):
+    milestone_type = serializers.SerializerMethodField(read_only=True)
+    amount = serializers.SerializerMethodField(read_only=True)
+    is_billable = serializers.SerializerMethodField(read_only=True)
+    funding_required = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = WarrantyWorkOrder
         fields = [
             "id",
+            "milestone_type",
+            "amount",
+            "is_billable",
+            "funding_required",
             "warranty_request",
             "warranty",
             "agreement",
@@ -170,6 +179,18 @@ class WarrantyWorkOrderSerializer(serializers.ModelSerializer):
             "completed_at",
         ]
         read_only_fields = ["id", "warranty", "agreement", "project", "contractor", "created_at", "updated_at", "completed_at"]
+
+    def get_milestone_type(self, obj):
+        return "warranty_service"
+
+    def get_amount(self, obj):
+        return "0.00"
+
+    def get_is_billable(self, obj):
+        return False
+
+    def get_funding_required(self, obj):
+        return False
 
 
 class WarrantyRequestSerializer(serializers.ModelSerializer):

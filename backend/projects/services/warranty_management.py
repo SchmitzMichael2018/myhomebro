@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import calendar
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from projects.models import Agreement, AgreementWarranty, Notification, WarrantyStatus
@@ -19,11 +21,33 @@ from projects.services.notification_center import create_notification
 from projects.services.smart_notifications import create_smart_notification
 
 
-def _add_months_approx(start, months: int):
+def add_calendar_months(start, months: int):
+    """Add calendar months while keeping the day when the target month allows it."""
     try:
-        return start + timedelta(days=max(int(months or 0), 0) * 30)
+        month_index = start.month - 1 + max(int(months or 0), 0)
+        year = start.year + month_index // 12
+        month = month_index % 12 + 1
+        day = min(start.day, calendar.monthrange(year, month)[1])
+        return start.replace(year=year, month=month, day=day)
     except Exception:
         return start
+
+
+def warranty_is_active(warranty: AgreementWarranty, *, on_date=None) -> bool:
+    on_date = on_date or timezone.localdate()
+    return bool(
+        warranty.status == WarrantyStatus.ACTIVE
+        and (not warranty.start_date or warranty.start_date <= on_date)
+        and (not warranty.end_date or warranty.end_date >= on_date)
+    )
+
+
+def active_warranty_queryset(queryset, *, on_date=None):
+    on_date = on_date or timezone.localdate()
+    return queryset.filter(status=WarrantyStatus.ACTIVE).filter(
+        Q(start_date__isnull=True) | Q(start_date__lte=on_date),
+        Q(end_date__isnull=True) | Q(end_date__gte=on_date),
+    )
 
 
 def agreement_completion_date(agreement: Agreement):
@@ -42,6 +66,14 @@ def ensure_warranties_for_completed_agreement(agreement: Agreement) -> list[Agre
     if contractor is None:
         return []
 
+    warranty_type = str(getattr(agreement, "warranty_type", "default") or "default").strip().lower()
+    if warranty_type == "none":
+        AgreementWarranty.objects.filter(
+            agreement=agreement,
+            generated_from_agreement_completion=True,
+        ).exclude(status=WarrantyStatus.VOID).update(status=WarrantyStatus.VOID)
+        return []
+
     start = agreement_completion_date(agreement)
     text = (getattr(agreement, "warranty_text_snapshot", "") or "").strip()
     if not text:
@@ -49,7 +81,7 @@ def ensure_warranties_for_completed_agreement(agreement: Agreement) -> list[Agre
             "Standard workmanship warranty for covered labor after substantial completion. "
             "Materials remain subject to manufacturer warranty terms."
         )
-    end = _add_months_approx(start, 12)
+    end = add_calendar_months(start, 12)
     warranty, _created = AgreementWarranty.objects.update_or_create(
         agreement=agreement,
         applies_to="workmanship",
@@ -183,7 +215,7 @@ def create_warranty_work_order(request: WarrantyRequest, *, actor=None, payload:
             "estimated_duration_minutes": payload.get("estimated_duration_minutes"),
             "customer_notes": payload.get("customer_notes") or request.customer_notes,
             "completion_checklist": payload.get("completion_checklist") or [],
-            "status": WarrantyWorkOrder.STATUS_OPEN,
+            "status": WarrantyWorkOrder.STATUS_SCHEDULED if payload.get("scheduled_for") else WarrantyWorkOrder.STATUS_OPEN,
         },
     )
     if created:

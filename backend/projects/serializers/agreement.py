@@ -1370,7 +1370,11 @@ class AgreementSerializer(serializers.ModelSerializer):
 
         use_default = data.pop("use_default_warranty", None)
         custom_text = data.pop("custom_warranty_text", None)
-        if use_default is not None:
+        explicit_warranty_type = str(data.get("warranty_type") or "").strip().lower()
+        if explicit_warranty_type == "none":
+            data["warranty_type"] = "none"
+            data["warranty_text_snapshot"] = ""
+        elif use_default is not None:
             if use_default:
                 data["warranty_type"] = "default"
                 if custom_text == "":
@@ -1636,6 +1640,17 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = dict(attrs)
+
+        warranty_type = str(
+            attrs.get("warranty_type", getattr(self.instance, "warranty_type", "default")) or "default"
+        ).strip().lower()
+        warranty_text = str(
+            attrs.get("warranty_text_snapshot", getattr(self.instance, "warranty_text_snapshot", "")) or ""
+        ).strip()
+        if warranty_type == "custom" and not warranty_text:
+            raise serializers.ValidationError(
+                {"custom_warranty_text": "Enter the custom warranty terms or choose another warranty option."}
+            )
 
         if attrs.get("description", None) is None:
             attrs["description"] = ""

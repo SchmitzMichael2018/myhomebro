@@ -570,6 +570,7 @@ export default function AgreementWizard() {
   const [taxonomyLoading, setTaxonomyLoading] = useState(false);
 
   const [useDefaultWarranty, setUseDefaultWarranty] = useState(true);
+  const [warrantyType, setWarrantyType] = useState("default");
   const [customWarranty, setCustomWarranty] = useState("");
   const [attachments, setAttachments] = useState([]);
 
@@ -710,6 +711,7 @@ export default function AgreementWizard() {
     setTaxonomyLoading(false);
 
     setUseDefaultWarranty(true);
+    setWarrantyType("default");
     setCustomWarranty("");
     setAttachments([]);
 
@@ -1082,12 +1084,15 @@ export default function AgreementWizard() {
         const warrantyType = String(data?.warranty_type || "").toLowerCase();
         const snap = data?.warranty_text_snapshot;
         if (warrantyType === "custom") {
+          setWarrantyType("custom");
           setUseDefaultWarranty(false);
           setCustomWarranty(typeof snap === "string" ? snap : "");
         } else if (warrantyType === "none" || warrantyType === "disabled" || warrantyType === "off") {
+          setWarrantyType("none");
           setUseDefaultWarranty(false);
           setCustomWarranty("");
         } else {
+          setWarrantyType("default");
           setUseDefaultWarranty(true);
           setCustomWarranty(typeof snap === "string" && snap.trim() ? snap : "");
         }
@@ -1767,16 +1772,24 @@ export default function AgreementWizard() {
     const id = await ensureAgreementExists();
     if (!id) return;
 
+    if (warrantyType === "custom" && !String(customWarranty || "").trim()) {
+      toast.error("Enter the custom warranty terms or choose another warranty option.");
+      return false;
+    }
+
     try {
       const payload = {
-        use_default_warranty: !!useDefaultWarranty,
-        custom_warranty_text: useDefaultWarranty ? "" : customWarranty || "",
+        warranty_type: warrantyType,
+        use_default_warranty: warrantyType === "default",
+        custom_warranty_text: warrantyType === "custom" ? customWarranty || "" : "",
       };
       const { data } = await api.patch(`/projects/agreements/${id}/`, payload);
       setAgreement(data);
       toast.success("Warranty saved.");
+      return true;
     } catch (err) {
       toast.error(err?.response?.data?.detail || "Unable to save warranty.");
+      return false;
     }
   };
 
@@ -2218,6 +2231,7 @@ export default function AgreementWizard() {
             custom_warranty_text: "",
           });
           setUseDefaultWarranty(true);
+          setWarrantyType("default");
           setCustomWarranty("");
           setAgreement(data);
           toast.success("Standard warranty applied.");
@@ -2695,6 +2709,8 @@ export default function AgreementWizard() {
             DEFAULT_WARRANTY={DEFAULT_WARRANTY}
             useDefaultWarranty={useDefaultWarranty}
             setUseDefaultWarranty={setUseDefaultWarranty}
+            warrantyType={warrantyType}
+            setWarrantyType={setWarrantyType}
             customWarranty={customWarranty}
             setCustomWarranty={setCustomWarranty}
             saveWarranty={saveWarranty}

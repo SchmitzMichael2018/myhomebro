@@ -25,6 +25,7 @@ from projects.serializers.warranty import (
 )
 from projects.services.agreements.project_create import resolve_contractor_for_user
 from projects.services.warranty_management import (
+    active_warranty_queryset,
     acknowledge_warranty_completion,
     build_warranty_ai_review,
     complete_warranty_work_order,
@@ -33,6 +34,7 @@ from projects.services.warranty_management import (
     ensure_warranties_for_completed_agreement,
     escalate_warranty_request_to_resolution,
     record_warranty_status,
+    warranty_is_active,
 )
 
 
@@ -135,6 +137,8 @@ class WarrantyDashboardView(APIView):
 
         today = timezone.localdate()
         soon = today + timedelta(days=30)
+        warranties.filter(status="active", end_date__lt=today).update(status="expired")
+        active_warranties = active_warranty_queryset(warranties, on_date=today)
         open_statuses = [
             WarrantyRequest.STATUS_SUBMITTED,
             WarrantyRequest.STATUS_UNDER_REVIEW,
@@ -147,14 +151,16 @@ class WarrantyDashboardView(APIView):
             WarrantyRequest.STATUS_REPAIR_IN_PROGRESS,
             WarrantyRequest.STATUS_WAITING_ON_CUSTOMER,
             WarrantyRequest.STATUS_WAITING_ON_MATERIALS,
+            WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED,
+            WarrantyRequest.STATUS_FOLLOW_UP_NEEDED,
         ]
         data = {
             "metrics": {
-                "active_warranties": warranties.filter(status="active").count(),
+                "active_warranties": active_warranties.count(),
                 "open_warranty_requests": requests.filter(status__in=open_statuses).count(),
                 "repairs_scheduled": requests.filter(status=WarrantyRequest.STATUS_REPAIR_SCHEDULED).count(),
                 "repairs_in_progress": requests.filter(status=WarrantyRequest.STATUS_REPAIR_IN_PROGRESS).count(),
-                "expiring_soon": warranties.filter(status="active", end_date__gte=today, end_date__lte=soon).count(),
+                "expiring_soon": active_warranties.filter(end_date__lte=soon).count(),
                 "expired": warranties.filter(Q(status="expired") | Q(end_date__lt=today)).count(),
                 "warranty_risk": requests.filter(status__in=[WarrantyRequest.STATUS_NOT_COVERED, WarrantyRequest.STATUS_DENIED]).count(),
             },
@@ -199,6 +205,8 @@ class WarrantyRequestViewSet(viewsets.ModelViewSet):
         if not (self.request.user.is_staff or self.request.user.is_superuser):
             if contractor is None or warranty.contractor_id != contractor.id:
                 raise PermissionDenied("You can only create warranty requests for your own warranties.")
+        if not warranty_is_active(warranty):
+            raise PermissionDenied("Warranty coverage is not currently active for this agreement.")
         row = serializer.save(
             agreement=agreement,
             project=getattr(agreement, "project", None),
@@ -296,7 +304,9 @@ class CustomerWarrantyRequestView(APIView):
             homeowner_access_token=token,
         )
         warranty_id = request.data.get("warranty") or request.data.get("warranty_id")
-        warranties = AgreementWarranty.objects.filter(agreement=agreement, status="active").order_by("-end_date", "-id")
+        warranties = active_warranty_queryset(
+            AgreementWarranty.objects.filter(agreement=agreement)
+        ).order_by("-end_date", "-id")
         if warranty_id:
             warranties = warranties.filter(pk=warranty_id)
         warranty = warranties.first()

@@ -2520,7 +2520,7 @@ export default function BusinessDashboard() {
               ["customer-approval", "Customer Approval", pendingReleaseCount, "/app/payments?money_status=payment_pending", CircleDollarSign, "bg-emerald-50 text-emerald-700"],
               ["signatures", "Signatures", unsignedAgreementCount, "/app/agreements?status=awaiting_signature", FileText, "bg-amber-50 text-amber-700"],
               ["reviews", "Awaiting Review", overdueMilestoneCount, "/app/reviewer/queue", Star, "bg-blue-50 text-blue-700"],
-              ["warranty", "Warranty", Number(canonicalMetrics.warranty_requests?.value || 0), "/app/warranty", Info, "bg-violet-50 text-violet-700"],
+              ["warranty", "Warranty", Number(canonicalMetrics.warranty_requests?.value || 0), "/app/warranties", Info, "bg-violet-50 text-violet-700"],
               ["resolution", "Resolution", Number(canonicalMetrics.resolution_cases?.value || openDisputesCount), "/app/resolution", TriangleAlert, "bg-red-50 text-red-600"],
             ].map(([key, label, count, href, Icon, tone]) => <a key={key} href={href} data-testid={`insights-operations-queue-${key}`} className="flex min-h-[70px] items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5 hover:bg-slate-100"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${tone}`}><Icon aria-hidden="true" className="h-5 w-5" /></span><span className="min-w-0 flex-1"><strong className="block text-xl font-black leading-none text-slate-950">{int(count)}</strong><span className="mt-1 block whitespace-nowrap text-sm font-bold text-slate-800">{label}</span></span><ChevronRight aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" /></a>)}
           </div></div></section>
@@ -2639,6 +2639,7 @@ export default function BusinessDashboard() {
                   "open_projects",
                   "open_opportunities",
                   "estimate_pipeline",
+                  "active_warranties",
                   "warranty_requests",
                   "resolution_cases",
                   "team_capacity",

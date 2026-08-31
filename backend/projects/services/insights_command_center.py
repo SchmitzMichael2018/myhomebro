@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from projects.models import (
     Agreement,
+    AgreementWarranty,
     DrawRequest,
     DrawRequestStatus,
     Invoice,
@@ -22,6 +23,7 @@ from projects.models_dispute import Dispute
 from projects.models_proposals import Proposal
 from projects.models_warranty import WarrantyRequest
 from projects.services.workforce_assignments import normalize_workforce_assignments
+from projects.services.warranty_management import active_warranty_queryset
 
 
 def _money(value: Any) -> str:
@@ -125,6 +127,10 @@ def build_insights_command_center(contractor, start_dt, end_dt, *, financial_sum
         WarrantyRequest.STATUS_WAITING_ON_CUSTOMER,
     ]
     warranty_count = WarrantyRequest.objects.filter(contractor=contractor, status__in=warranty_attention_statuses).count()
+    active_warranty_count = active_warranty_queryset(
+        AgreementWarranty.objects.filter(contractor=contractor),
+        on_date=today,
+    ).count()
 
     resolution_count = Dispute.objects.filter(agreement__contractor=contractor, is_archived=False).exclude(
         status__in=["resolved_contractor", "resolved_homeowner", "resolved_partial", "canceled"]
@@ -174,7 +180,8 @@ def build_insights_command_center(contractor, start_dt, end_dt, *, financial_sum
         "open_projects": _metric("open_projects", "Open Projects", open_agreements.count(), detail="Active agreements not completed or cancelled", href="/app/agreements"),
         "open_opportunities": _metric("open_opportunities", "Open Opportunities", open_opportunities, detail="Leads still in the opportunity pipeline", href="/app/opportunities"),
         "estimate_pipeline": _metric("estimate_pipeline", "Estimate Pipeline", estimate_pipeline_count, detail="Active estimate workspaces", href="/app/estimates"),
-        "warranty_requests": _metric("warranty_requests", "Warranty Requests", warranty_count, detail="Warranty items needing review", href="/app/warranty"),
+        "active_warranties": _metric("active_warranties", "Active Warranties", active_warranty_count, detail="Customer coverage active today", href="/app/warranties"),
+        "warranty_requests": _metric("warranty_requests", "Warranty Requests", warranty_count, detail="Warranty items needing review", href="/app/warranties"),
         "resolution_cases": _metric("resolution_cases", "Resolution Cases", resolution_count, detail="Open resolution cases", href="/app/resolution"),
         "team_capacity": _metric("team_capacity", "Team Capacity", overbooked_count, detail="Team members near capacity or overbooked", href="/app/team"),
         "customer_requests": _metric("customer_requests", "Customer Requests", stale_opportunities, detail="Stale opportunities that may need follow-up", href="/app/opportunities"),
@@ -185,7 +192,7 @@ def build_insights_command_center(contractor, start_dt, end_dt, *, financial_sum
         _attention_item("unsigned_agreements", "Unsigned agreements", unsigned_agreements, severity="medium", why="Unsigned agreements are not ready for funded project work.", workspace="Agreements", href="/app/agreements?status=awaiting_signature"),
         _attention_item("unfunded_agreements", "Money waiting to be funded", unfunded_agreements, severity="medium", why="Escrow agreements need funding before money can safely move.", workspace="Agreements", href="/app/agreements?status=signed"),
         _attention_item("pending_customer_approvals", "Pending customer approvals", pending_invoice_count, severity="medium", why="Customer approvals are the next step before money can be released.", workspace="Payments", href="/app/payments?money_status=payment_pending", amount=_money(pending_release)),
-        _attention_item("warranty_requests", "Warranty requests", warranty_count, severity="high" if warranty_count >= 2 else "medium", why="Warranty items affect customer trust and may become resolution cases.", workspace="Warranty", href="/app/warranty"),
+        _attention_item("warranty_requests", "Warranty requests", warranty_count, severity="high" if warranty_count >= 2 else "medium", why="Warranty items affect customer trust and may become resolution cases.", workspace="Warranty", href="/app/warranties"),
         _attention_item("resolution_cases", "Resolution cases", resolution_count, severity="high", why="Open resolution cases can hold funds and slow project closeout.", workspace="Resolution", href="/app/resolution"),
         _attention_item("team_capacity", "Team capacity pressure", overbooked_count, severity="medium", why="Capacity pressure increases schedule risk before new work is committed.", workspace="Team", href="/app/team"),
         _attention_item("stale_opportunities", "Stale opportunities", stale_opportunities, severity="low", why="Older leads may need follow-up or cleanup to keep the pipeline accurate.", workspace="Opportunities", href="/app/opportunities"),

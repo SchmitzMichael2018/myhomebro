@@ -7788,6 +7788,60 @@ test('agreement wizard step 4 shows missing warranty as a warning state', async 
   await expect(page.getByTestId('step4-warranty-summary')).toContainText('No warranty provided');
 });
 
+test('agreement wizard step 3 saves an explicit no-contractor-warranty selection', async ({ page }) => {
+  const patchPayloads = [];
+  const agreement = {
+    id: AGREEMENT_ID + 20,
+    agreement_id: AGREEMENT_ID + 20,
+    project_title: 'Warranty Choice Project',
+    title: 'Warranty Choice Project',
+    description: 'Project with an explicit warranty decision.',
+    project_class: 'residential',
+    project_type: 'Remodel',
+    project_subtype: 'Bathroom Remodel',
+    homeowner: 1,
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    payment_mode: 'escrow',
+    payment_structure: 'simple',
+    status: 'draft',
+    warranty_type: 'default',
+    warranty_text_snapshot: 'Standard warranty terms.',
+    step_status: '3',
+  };
+
+  await installStep4FinalizeRoutes(page, {
+    agreement,
+    milestones: [],
+    events: { patchPayloads },
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/agreements/${agreement.id}/attachments/?(\\?.*)?$`),
+    async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) });
+    }
+  );
+
+  await page.goto(`/app/agreements/${agreement.id}/wizard?step=3`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  await expect(page.getByTestId('warranty-type-options')).toBeVisible({ timeout: 15000 });
+  await page.getByTestId('warranty-type-none').check();
+  await expect(page.getByTestId('warranty-none-confirmation')).toBeVisible();
+  await page.getByRole('button', { name: 'Save & Next' }).click();
+
+  await expect.poll(() => patchPayloads.some((payload) => payload.warranty_type === 'none')).toBe(true);
+  const warrantyPayload = patchPayloads.find((payload) => payload.warranty_type === 'none');
+  expect(warrantyPayload).toMatchObject({
+    warranty_type: 'none',
+    use_default_warranty: false,
+    custom_warranty_text: '',
+  });
+  await expect(page).toHaveURL(/step=4/);
+});
+
 test('draft agreement detail redirects to the wizard', async ({ page }) => {
   const agreement = {
     id: AGREEMENT_ID + 3,

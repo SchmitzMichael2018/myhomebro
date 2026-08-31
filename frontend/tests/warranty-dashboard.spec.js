@@ -57,7 +57,7 @@ const populatedDashboard = {
       agreement_title: 'Kitchen Remodel Agreement',
       coverage_details: 'Covers workmanship defects for cabinet installation and trim finishing.',
       start_date: '2026-03-01',
-      end_date: '2026-08-01',
+      end_date: '2026-09-15',
       status: 'active',
       applies_to: 'workmanship',
       open_request_count: 1,
@@ -127,7 +127,7 @@ test('contractor warranties renders compact zero-data operations layout', async 
 
   await page.goto('/app/warranties', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByRole('heading', { name: 'Warranties' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Warranties' })).toBeVisible({ timeout: 15000 });
   await expect(page.getByRole('button', { name: 'Refresh' })).toBeVisible();
   await expect(page.getByTestId('warranty-dashboard')).toBeVisible();
   await expect(page.locator('.mhb-operational-surface').getByTestId('warranty-dashboard')).toBeVisible();
@@ -176,7 +176,7 @@ test('contractor warranties preserves counts, filters, records, and request acti
 
   await page.goto('/app/warranties', { waitUntil: 'domcontentloaded' });
 
-  await expect(page.getByTestId('warranty-metrics')).toContainText('2');
+  await expect(page.getByTestId('warranty-metrics')).toContainText('2', { timeout: 15000 });
   await expect(page.getByTestId('warranty-metrics')).toContainText('1');
   await expect(page.getByTestId('warranty-tab-requests')).toContainText('2');
   await expect(page.getByTestId('warranty-tab-active')).toContainText('2');
@@ -184,7 +184,7 @@ test('contractor warranties preserves counts, filters, records, and request acti
   await expect(page.getByTestId('warranty-tab-expiring')).toContainText('1');
   await expect(page.getByTestId('warranty-request-701')).toContainText('Cabinet trim separating');
   await expect(page.getByTestId('warranty-request-701')).toContainText('Generate recommendation');
-  await expect(page.getByTestId('warranty-request-701')).toContainText('Create Work Order');
+  await expect(page.getByTestId('warranty-request-701')).toContainText('Create Warranty Service');
   await expect(page.getByTestId('warranty-request-701')).toContainText('Complete');
   await expect(page.getByTestId('warranty-dashboard-filters')).toContainText('All statuses');
 

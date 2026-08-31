@@ -150,7 +150,7 @@ function RequestCard({ row, busyId, runAction }) {
             Generate recommendation
           </button>
           <button className={`${operationalPrimaryButton} rounded-lg px-3 py-2 text-sm font-black`} onClick={() => runAction(row, "work-order")} disabled={busyId === `${row.id}:work-order`}>
-            Create Work Order
+            {row.work_order ? "Warranty Service Created" : "Create Warranty Service"}
           </button>
           <button className="rounded-lg border border-emerald-200/35 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/16" onClick={() => runAction(row, "status", { status: "completed", note: "Warranty work completed." })} disabled={busyId === `${row.id}:status`}>
             Complete
@@ -257,7 +257,13 @@ export default function WarrantyDashboardPage() {
   }, [filters, openRequests, warrantyById]);
 
   const activeWarranties = useMemo(
-    () => warranties.filter((row) => ["active", "in_effect", "open"].includes(String(row.status || "").toLowerCase())),
+    () => warranties.filter((row) => {
+      if (!["active", "in_effect", "open"].includes(String(row.status || "").toLowerCase())) return false;
+      const today = new Date();
+      const start = row.start_date ? new Date(`${row.start_date}T00:00:00`) : null;
+      const end = row.end_date ? new Date(`${row.end_date}T23:59:59`) : null;
+      return (!start || start <= today) && (!end || end >= today);
+    }),
     [warranties]
   );
 

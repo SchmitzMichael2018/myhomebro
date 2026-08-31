@@ -147,6 +147,9 @@ class InsightsCommandCenterApiTests(TestCase):
             command_center["metrics"]["outstanding_receivables"]["label"],
             "Money Customers Still Owe",
         )
+        self.assertEqual(command_center["metrics"]["active_warranties"]["value"], 1)
+        self.assertEqual(command_center["metrics"]["active_warranties"]["href"], "/app/warranties")
+        self.assertEqual(command_center["metrics"]["warranty_requests"]["href"], "/app/warranties")
         attention_titles = {item["title"] for item in command_center["needs_attention"]}
         self.assertIn("Overdue milestones", attention_titles)
         self.assertIn("Warranty requests", attention_titles)

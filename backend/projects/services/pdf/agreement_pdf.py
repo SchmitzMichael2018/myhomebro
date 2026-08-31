@@ -1054,7 +1054,12 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   story.append(Paragraph("Warranty", s_h2))
   wtype = (_s(getattr(ag, "warranty_type", ""))).strip().lower()
   wtext = _s(getattr(ag, "warranty_text_snapshot", ""))
-  if wtype in ("default", "standard", "std") or not wtext:
+  if wtype == "none":
+    story.append(Paragraph(
+      "No contractor warranty is included with this agreement. Product and manufacturer warranties, if any, remain separate.",
+      s_just,
+    ))
+  elif wtype in ("default", "standard", "std") or not wtext:
     story.append(Paragraph(
       "Contractor warrants that all work will be performed in a professional and workmanlike manner consistent "
       "with applicable codes and industry standards. Warranty excludes normal wear, misuse, improper maintenance, "

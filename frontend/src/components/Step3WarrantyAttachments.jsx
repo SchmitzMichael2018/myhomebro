@@ -26,6 +26,8 @@ export default function Step3WarrantyAttachments({
   DEFAULT_WARRANTY,
   useDefaultWarranty,
   setUseDefaultWarranty,
+  warrantyType,
+  setWarrantyType,
   customWarranty,
   setCustomWarranty,
   saveWarranty,
@@ -242,6 +244,8 @@ export default function Step3WarrantyAttachments({
 
   const handleNextClick = async () => {
     if (!locked && agreementId) {
+      const warrantySaved = await saveWarranty?.();
+      if (warrantySaved === false) return;
       await saveClarificationNotes({ silent: true }).catch(() => {});
     }
     onNext?.();
@@ -271,7 +275,7 @@ export default function Step3WarrantyAttachments({
           <div>
             <h3 className="text-base font-semibold text-slate-900">Warranty</h3>
             <p className="mt-1 text-sm text-slate-600">
-              Choose the standard workmanship warranty or replace it with custom terms before final review.
+              Choose the coverage that will appear in the signed agreement. Coverage begins when the project is completed.
             </p>
           </div>
           <button
@@ -285,23 +289,40 @@ export default function Step3WarrantyAttachments({
         </div>
 
         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
-          <label className={`inline-flex items-center gap-2 ${locked ? "opacity-70" : ""}`}>
-            <input
-              type="checkbox"
-              checked={useDefaultWarranty}
-              onChange={(e) => !locked && setUseDefaultWarranty(e.target.checked)}
-              disabled={locked}
-            />
-            <span className="text-sm font-medium text-slate-900">
-              Use default 12-month workmanship warranty
-            </span>
-          </label>
+          <fieldset className="space-y-2" disabled={locked} data-testid="warranty-type-options">
+            <legend className="sr-only">Warranty coverage</legend>
+            {[
+              ["default", "Standard 12-month workmanship warranty", "Covers workmanship for 12 calendar months after project completion."],
+              ["custom", "Custom warranty", "Use your own reviewed warranty terms."],
+              ["none", "No contractor warranty", "No contractor warranty will be created. Manufacturer warranties may still apply."],
+            ].map(([value, label, help]) => (
+              <label key={value} className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${warrantyType === value ? "border-indigo-400 bg-indigo-50" : "border-slate-200 bg-white"} ${locked ? "opacity-70" : ""}`}>
+                <input
+                  type="radio"
+                  name="warranty-type"
+                  value={value}
+                  checked={warrantyType === value}
+                  onChange={() => {
+                    if (locked) return;
+                    setWarrantyType(value);
+                    setUseDefaultWarranty(value === "default");
+                    if (value === "none") setCustomWarranty("");
+                  }}
+                  data-testid={`warranty-type-${value}`}
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-slate-900">{label}</span>
+                  <span className="mt-0.5 block text-xs text-slate-600">{help}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
 
-          {useDefaultWarranty ? (
+          {warrantyType === "default" ? (
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm whitespace-pre-wrap text-slate-700">
               {DEFAULT_WARRANTY}
             </div>
-          ) : (
+          ) : warrantyType === "custom" ? (
             <div className="mt-3">
               <label htmlFor="mhb-step3warrantyattachments-306" className="mb-1 block text-sm font-medium text-slate-800">Custom Warranty</label>
               <textarea id="mhb-step3warrantyattachments-306"
@@ -311,6 +332,10 @@ export default function Step3WarrantyAttachments({
                 onChange={(e) => !locked && setCustomWarranty(e.target.value)}
                 disabled={locked}
               />
+            </div>
+          ) : (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="warranty-none-confirmation">
+              The signed agreement will state that no contractor warranty is included. Product and manufacturer warranties remain separate.
             </div>
           )}
         </div>
