@@ -6442,7 +6442,7 @@ test('agreement wizard step 2 keeps existing milestone dates when the contractor
 test('agreement wizard step 2 auto-schedules milestone dates when the plan has no dates yet', async ({
   page,
 }) => {
-  const originalStart = '';
+  const originalStart = '2026-05-10';
   const nextStart = '2026-05-10';
   const agreement = {
     id: AGREEMENT_ID,

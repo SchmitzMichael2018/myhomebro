@@ -3961,6 +3961,22 @@ export default function Step2Milestones({
   function requestProjectStartDateSave() {
     const nextStart = toDateOnly(projectStartDateDraft);
     if (nextStart === agreementProjectStartDate) {
+      const hasAnyMilestoneDate = effectiveMilestones.some((row) =>
+        Boolean(
+          toDateOnly(
+            row?.start_date ||
+              row?.start ||
+              row?.completion_date ||
+              row?.end_date ||
+              row?.end ||
+              row?.due_date
+          )
+        )
+      );
+      if (nextStart && effectiveMilestones.length > 0 && !hasAnyMilestoneDate) {
+        void persistProjectStartDate(nextStart, { updateTimeline: true });
+        return;
+      }
       toast("Project start date is unchanged.");
       return;
     }
@@ -7257,7 +7273,7 @@ export default function Step2Milestones({
           </div>
         ) : null}
 
-        {SHOW_LEGACY_STEP2_PANELS && <div
+        <div
           className="mt-4 rounded-2xl border border-sky-300/25 bg-slate-950/45 p-4 shadow-sm shadow-slate-950/20 ring-1 ring-white/5"
           data-testid="step2-project-start-date-card"
         >
@@ -7310,7 +7326,7 @@ export default function Step2Milestones({
               </button>
             </div>
           </div>
-        </div>}
+        </div>
 
         {newMilestoneOpen ? (
           <div
