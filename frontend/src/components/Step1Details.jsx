@@ -67,6 +67,13 @@ function PrettyJson({ data }) {
   );
 }
 
+function formatAgreementMoney(value) {
+  const amount = Number(value || 0);
+  return Number.isFinite(amount)
+    ? amount.toLocaleString(undefined, { style: "currency", currency: "USD" })
+    : "$0.00";
+}
+
 const STEP1_FIELD_LABELS = {
   project_type: "Project Type",
   project_type_ref: "Project Type",
@@ -1849,6 +1856,7 @@ export default function Step1Details({
   }, [location.pathname]);
 
   const locked = useMemo(() => isAgreementLocked(agreement), [agreement]);
+  const [step1SaveState, setStep1SaveState] = useState(agreementId ? "saved" : "unsaved");
   const [clarificationAnswers, setClarificationAnswers] = useState({});
   const [clarificationsSkipped, setClarificationsSkipped] = useState(false);
   const [step1JobDescriptionPrompt, setStep1JobDescriptionPrompt] = useState(() =>
@@ -2226,7 +2234,9 @@ export default function Step1Details({
 
     setStep1FieldErrors({});
     setStep1ValidationMessage("");
-    await saveStep1(goNext);
+    setStep1SaveState("saving");
+    const savedAgreement = await saveStep1(goNext);
+    setStep1SaveState(savedAgreement ? "saved" : "error");
   }
 
   function normalizeRecurringText(value) {
@@ -2250,11 +2260,14 @@ export default function Step1Details({
     const key = JSON.stringify(outgoingFields);
     if (lastPatchedRef.current[key]) return;
     lastPatchedRef.current[key] = true;
+    setStep1SaveState("saving");
 
     try {
       await api.patch(`/projects/agreements/${id}/`, outgoingFields);
+      setStep1SaveState("saved");
       if (!silent) toast.success("Saved");
     } catch (e) {
+      setStep1SaveState("error");
       const msg = formatApiError(e, "Could not save changes.");
       if (!silent) toast.error(msg);
     } finally {
@@ -2264,6 +2277,7 @@ export default function Step1Details({
 
   function schedulePatch(fields, delayMs = 450) {
     if (locked) return;
+    setStep1SaveState("saving");
     if (patchTimerRef.current) clearTimeout(patchTimerRef.current);
     patchTimerRef.current = setTimeout(() => {
       patchAgreement(fields, { silent: true });
@@ -5983,6 +5997,7 @@ export default function Step1Details({
         ? rawValue
         : normalizeStep1FieldValue(rawValue);
     const nextEvent = name ? { target: { name, value }, currentTarget: { name, value } } : e;
+    setStep1SaveState(agreementId ? "saving" : "unsaved");
 
     if (
       name === "project_title" ||
@@ -6326,8 +6341,30 @@ export default function Step1Details({
         "The title and complete scope describe a bathroom remodel; individual trades support that broader project.",
       confidence: "high",
       confidence_label: "High confidence",
+      alternatives: [
+        {
+          project_type: safeTrim(classificationResult.project_type),
+          project_subtype: safeTrim(classificationResult.project_subtype),
+          relationship: "Supporting trade",
+        },
+        ...(Array.isArray(classificationResult.alternatives) ? classificationResult.alternatives : []),
+      ].filter((option) => safeTrim(option?.project_type || option?.label || option)),
     };
   })();
+
+  const step1CommercialBase = Number(
+    agreement?.accepted_estimate_basis?.subtotal ??
+      agreement?.total_amount ??
+      0
+  );
+  const step1Reserve = Number(dLocal?.incidentals_reserve_amount || 0);
+  const step1MilestoneCount = Number(
+    agreement?.milestone_count ??
+      agreement?.milestones?.length ??
+      assistantDraftPayload?.milestones?.length ??
+      assistantDraftPayload?.proposal_milestones?.length ??
+      0
+  );
 
   return (
     <>
@@ -7789,9 +7826,9 @@ export default function Step1Details({
                   <div>
                     <div className="text-sm font-semibold text-slate-900">Project classification</div>
                     <div className="mt-1 text-xs text-slate-600">
-                      {hasAuthoritativeEstimateProvenance
-                        ? "Optional — use AI to suggest a category and subtype for your review. Nothing changes until you accept it."
-                        : "Use AI to better match the project category, subtype, and title based on the current scope."}
+                      {safeTrim(dLocal?.project_type) && safeTrim(dLocal?.project_subtype)
+                        ? "Classification carried forward from the saved estimate or template. Use Project Assistant only if the job scope changed."
+                        : "Classification is missing. Select it manually or ask Project Assistant for an optional suggestion based on the full scope."}
                     </div>
                   </div>
                 </div>
@@ -7827,6 +7864,24 @@ export default function Step1Details({
                         <div className="mt-1 text-xs text-slate-900">Suggested: <strong>{classificationDisplayResult.project_subtype || "No matching subtype — select manually"}</strong></div>
                       </div>
                     </div>
+                    {Array.isArray(classificationDisplayResult.alternatives) && classificationDisplayResult.alternatives.length ? (
+                      <div className="mt-3" data-testid="agreement-classification-alternatives">
+                        <div className="text-xs font-semibold text-slate-700">Related trades</div>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {classificationDisplayResult.alternatives.slice(0, 3).map((option, index) => {
+                            const type = safeTrim(option?.project_type || option?.type || option?.label || option);
+                            const subtype = safeTrim(option?.project_subtype || option?.subtype || "");
+                            if (!type && !subtype) return null;
+                            return (
+                              <span key={`${type}-${subtype}-${index}`} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700">
+                                {[type, subtype].filter(Boolean).join(" · ")}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-1 text-[11px] text-slate-500">Related trades support the project; they do not replace the primary classification.</div>
+                      </div>
+                    ) : null}
                     <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
                       <div>{classificationDisplayResult.note || "The suggestion has not been applied."}</div>
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -8102,22 +8157,26 @@ export default function Step1Details({
               {normalizePaymentMode(dLocal?.payment_mode) === "escrow" ? (
                 <div data-testid="agreement-incidentals-reserve-field" className="md:max-w-sm">
                   <label htmlFor="mhb-step1details-7850" className="mb-1 block text-sm font-medium text-slate-900">
-                    Incidentals Reserve
+                    Contingency Reserve
                   </label>
-                  <input id="mhb-step1details-7850"
-                    data-testid="agreement-incidentals-reserve-input"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    name="incidentals_reserve_amount"
-                    value={safeTrim(dLocal?.incidentals_reserve_amount || "0.00")}
-                    onChange={locked ? undefined : handleStep1LocalChange}
-                    onFocus={(event) => event.currentTarget.select()}
-                    disabled={locked}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 md:w-48"
-                  />
+                  <div className="relative w-full md:w-48">
+                    <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm font-medium text-slate-500" aria-hidden="true">$</span>
+                    <input id="mhb-step1details-7850"
+                      data-testid="agreement-incidentals-reserve-input"
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      step="0.01"
+                      name="incidentals_reserve_amount"
+                      value={safeTrim(dLocal?.incidentals_reserve_amount || "0.00")}
+                      onChange={locked ? undefined : handleStep1LocalChange}
+                      onFocus={(event) => event.currentTarget.select()}
+                      disabled={locked}
+                      className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-7 pr-3 text-sm text-slate-900"
+                    />
+                  </div>
                   <div className="mt-1 text-[11px] text-slate-500">
-                    Separate from milestones. Escrow funding integration is pending, so this stores the configured reserve for expense tracking only.
+                    Extra budget for unforeseen costs. It stays separate from milestone allocation.
                   </div>
                   {step1FieldErrors.incidentals_reserve_amount ? (
                     <div className="mt-1 text-xs text-rose-600">{step1FieldErrors.incidentals_reserve_amount}</div>
@@ -8480,7 +8539,27 @@ export default function Step1Details({
               </div>
             </StepSection>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 pt-5">
+            <div className="border-t border-slate-200 pt-5">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm" data-testid="agreement-step1-confirmation">
+                <div className="font-medium text-slate-700">
+                  Contract {formatAgreementMoney(step1CommercialBase)} · Reserve {formatAgreementMoney(step1Reserve)} · {step1MilestoneCount} milestone{step1MilestoneCount === 1 ? "" : "s"}
+                </div>
+                <div
+                  data-testid="agreement-step1-save-status"
+                  className={`text-xs font-semibold ${step1SaveState === "error" ? "text-rose-700" : step1SaveState === "saving" ? "text-amber-700" : "text-emerald-700"}`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  {step1SaveState === "saving"
+                    ? "Saving…"
+                    : step1SaveState === "error"
+                    ? "Not saved — try again"
+                    : step1SaveState === "unsaved"
+                    ? "Save to create draft"
+                    : "Saved"}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
           <button
             data-testid="agreement-save-draft-button"
             type="button"
@@ -8508,6 +8587,7 @@ export default function Step1Details({
               Save &amp; Next
             </button>
           )}
+              </div>
             </div>
         </div>
         ) : null}

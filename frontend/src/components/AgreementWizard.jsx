@@ -1576,7 +1576,7 @@ export default function AgreementWizard() {
   const saveStep1 = async (goNext = false) => {
     setLast400(null);
     const id = await ensureAgreementExists();
-    if (!id) return;
+    if (!id) return null;
 
     try {
       const payload = buildStep1Payload({ forDraftCreate: false });
@@ -1587,6 +1587,7 @@ export default function AgreementWizard() {
       if (goNext) {
         navigate(`/app/agreements/${id}/wizard?step=2`, { replace: true });
       }
+      return data;
     } catch (err) {
       const data = err?.response?.data;
       const status = Number(err?.response?.status || 0);
@@ -1602,6 +1603,7 @@ export default function AgreementWizard() {
           ? "You don’t have permission to update this agreement."
           : extractApiValidationMessage(data, "Unable to save Step 1.")
       );
+      return null;
     }
   };
 
@@ -2403,7 +2405,7 @@ export default function AgreementWizard() {
         <div
           data-testid="agreement-proposal-prefill-summary"
           className={`mt-4 grid gap-3 rounded-xl border border-emerald-300/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-50 ${
-            step === 2 && proposalHandoffSummary.allocation ? "md:grid-cols-5" : "md:grid-cols-4"
+            step === 2 && proposalHandoffSummary.allocation ? "md:grid-cols-1" : "md:grid-cols-4"
           }`}
         >
           <div className="md:col-span-4">
@@ -2414,7 +2416,7 @@ export default function AgreementWizard() {
               Review the Estimate Workspace data first, then refine the contract, milestones, payment schedule, legal terms, and warranty before sending.
             </div>
             <div className="mt-1 text-xs font-semibold text-emerald-100/75">
-              Fields remain editable. After this draft is created, the Agreement becomes the source of truth for incidentals reserve, milestones, signatures, and funding.
+              Fields remain editable. After this draft is created, the Agreement becomes the source of truth for the contingency reserve, milestones, signatures, and funding.
             </div>
             {proposalHandoffSummary.reconciles === false ? (
               <div className="mt-2 rounded-lg border border-amber-300/40 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-100" role="alert">
@@ -2423,34 +2425,25 @@ export default function AgreementWizard() {
             ) : null}
           </div>
           {step === 2 && proposalHandoffSummary.allocation ? (
-            <>
-              <div>
-                <div className="text-xs font-semibold uppercase text-emerald-100/70">Commercial base</div>
-                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.commercialBase)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals Reserve</div>
-                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.incidentalsReserve)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold uppercase text-emerald-100/70">Funding total</div>
-                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.fundingTotal)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold uppercase text-emerald-100/70">Milestones allocated</div>
-                <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.allocation.allocated)}</div>
-              </div>
-              <div>
-                <div className="text-xs font-semibold uppercase text-emerald-100/70">Allocation status</div>
-                <div className={`font-bold ${proposalHandoffSummary.allocation.fullyAllocated ? "text-emerald-200" : "text-amber-200"}`}>
-                  {proposalHandoffSummary.allocation.fullyAllocated
-                    ? "Fully allocated"
-                    : proposalHandoffSummary.allocation.unallocated > 0
-                    ? `${moneyLabel(proposalHandoffSummary.allocation.unallocated)} unallocated`
-                    : `${moneyLabel(proposalHandoffSummary.allocation.overallocated)} overallocated`}
-                </div>
-              </div>
-            </>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-emerald-200/20 bg-slate-950/20 px-3 py-2" data-testid="agreement-funding-allocation-summary">
+              <span><strong>Contract</strong> {moneyLabel(proposalHandoffSummary.allocation.commercialBase)}</span>
+              <span aria-hidden="true">+</span>
+              <span><strong>Contingency Reserve</strong> {moneyLabel(proposalHandoffSummary.allocation.incidentalsReserve)}</span>
+              <span aria-hidden="true">=</span>
+              <span><strong>Funding</strong> {moneyLabel(proposalHandoffSummary.allocation.fundingTotal)}</span>
+              <span className="text-emerald-100/55" aria-hidden="true">·</span>
+              <span><strong>{moneyLabel(proposalHandoffSummary.allocation.allocated)}</strong> allocated</span>
+              <span className="text-emerald-100/55" aria-hidden="true">·</span>
+              <span className={`font-bold ${proposalHandoffSummary.allocation.fullyAllocated ? "text-emerald-200" : "text-amber-200"}`}>
+                {proposalHandoffSummary.allocation.fullyAllocated
+                  ? proposalHandoffSummary.allocation.incidentalsReserve > 0
+                    ? `Contract amount fully allocated — ${moneyLabel(proposalHandoffSummary.allocation.incidentalsReserve)} reserve remains separate`
+                    : "Contract amount fully allocated"
+                  : proposalHandoffSummary.allocation.unallocated > 0
+                  ? `${moneyLabel(proposalHandoffSummary.allocation.unallocated)} contract amount unallocated`
+                  : `${moneyLabel(proposalHandoffSummary.allocation.overallocated)} contract amount overallocated`}
+              </span>
+            </div>
           ) : (
             <>
               <div>
@@ -2468,7 +2461,7 @@ export default function AgreementWizard() {
                 <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.total)}</div>
               </div>
               <div>
-                <div className="text-xs font-semibold uppercase text-emerald-100/70">Incidentals Reserve</div>
+                <div className="text-xs font-semibold uppercase text-emerald-100/70">Contingency Reserve</div>
                 <div className="font-bold text-white">{moneyLabel(proposalHandoffSummary.incidentals)}</div>
               </div>
             </>
