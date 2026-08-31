@@ -6813,6 +6813,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
     fundingPreview: {
       project_amount: 3600,
       homeowner_escrow: 3600,
+      incidentals_reserve: 500,
       escrow_funded: false,
       rate: 0.05,
       flat_fee: 1,
@@ -6863,6 +6864,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-summary-customer')).toContainText('Customer Email');
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Payment Mode');
   await expect(page.getByTestId('step4-summary-payment')).toContainText('Escrow');
+  await expect(page.getByTestId('financial-row-escrow-deposit')).toContainText('Contingency Reserve: $500.00');
   await expect(page.getByTestId('step4-warranty-summary')).toBeVisible();
   await expect(page.getByTestId('step4-warranty-summary')).toContainText('Warranty');
   await expect(page.getByTestId('step4-warranty-summary')).toContainText(

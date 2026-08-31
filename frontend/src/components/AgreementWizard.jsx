@@ -1986,7 +1986,9 @@ export default function AgreementWizard() {
       0
     );
     const acceptedAllocation = summarizeAcceptedEstimateAllocation(acceptedBasis, allocatedMilestones);
-    const currentAgreementReserve = Number(agreement?.incidentals_reserve_amount || 0);
+    const currentAgreementReserve = Number(
+      dLocal?.incidentals_reserve_amount ?? agreement?.incidentals_reserve_amount ?? 0
+    );
     const allocation = acceptedAllocation
       ? {
           ...acceptedAllocation,
@@ -2006,10 +2008,12 @@ export default function AgreementWizard() {
         estimate.suggested_total_price ||
         "",
       incidentals:
-        acceptedBasis.incidentals_reserve ||
-        draft.incidentals_reserve_amount ||
-        context.incidentals_reserve_amount ||
-        estimate.incidentals_reserve_amount ||
+        dLocal?.incidentals_reserve_amount ??
+        agreement?.incidentals_reserve_amount ??
+        acceptedBasis.incidentals_reserve ??
+        draft.incidentals_reserve_amount ??
+        context.incidentals_reserve_amount ??
+        estimate.incidentals_reserve_amount ??
         "",
       scope:
         agreement?.scope_of_work ||
@@ -2034,6 +2038,7 @@ export default function AgreementWizard() {
     agreement?.incidentals_reserve_amount,
     agreement?.scope_of_work,
     assistantHandoff,
+    dLocal.incidentals_reserve_amount,
     dLocal.project_title,
     isProposalAgreementHandoff,
     milestones,

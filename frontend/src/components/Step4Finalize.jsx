@@ -1379,7 +1379,11 @@ export default function Step4Finalize({
   const milestoneEscrowTotal =
     fundingPreview?.milestone_escrow_total != null ? Number(fundingPreview.milestone_escrow_total) : projectAmount;
   const incidentalsReserve =
-    fundingPreview?.incidentals_reserve != null ? Number(fundingPreview.incidentals_reserve) : Number(agreement?.incidentals_reserve_amount || 0);
+    agreement?.incidentals_reserve_amount != null
+      ? Number(agreement.incidentals_reserve_amount)
+      : fundingPreview?.incidentals_reserve != null
+      ? Number(fundingPreview.incidentals_reserve)
+      : Number(dLocal?.incidentals_reserve_amount || 0);
 
   const fundedSoFar = Number(
     fundingPreview?.escrow_funded_amount ??
