@@ -7220,11 +7220,8 @@ export default function Step2Milestones({
       <section className="rounded-3xl border border-slate-300 bg-white p-5 shadow-md ring-1 ring-slate-100" data-testid="step2-milestone-card-list">
         <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h4 className="text-base font-semibold text-slate-950">
-              Payment Milestones
-            </h4>
             <p className="mt-1 text-sm text-slate-600">
-              Expand a milestone to edit it. Drag milestones to change their order.
+              Milestones are collapsed by default. Select one to view its plan, or use Edit for changes. Drag to reorder.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -8772,7 +8769,7 @@ export default function Step2Milestones({
               </button>
             </div>
           </div>
-          {rebalancePrompt.replacesAcceptedEstimate ? <div className="mt-2 text-xs font-semibold text-amber-950">The accepted Estimate and Incidentals Reserve will remain unchanged.</div> : null}
+          {rebalancePrompt.replacesAcceptedEstimate ? <div className="mt-2 text-xs font-semibold text-amber-950">The accepted Estimate and Contingency Reserve will remain unchanged.</div> : null}
         </div>
       ) : null}
 

@@ -2396,7 +2396,7 @@ export default function Step4Finalize({
                   </div>
                   <div className="mt-2 grid gap-2 text-xs text-indigo-900/80 sm:grid-cols-2">
                     <div>Milestone escrow: <span className="font-semibold">{formatMoney(milestoneEscrowTotal)}</span></div>
-                    <div>Incidentals Reserve: <span className="font-semibold">{formatMoney(incidentalsReserve)}</span></div>
+                    <div>Contingency Reserve: <span className="font-semibold">{formatMoney(incidentalsReserve)}</span></div>
                     <div>Already funded: <span className="font-semibold">{formatMoney(fundedSoFar)}</span></div>
                     <div>Remaining: <span className="font-semibold">{formatMoney(remainingToFund)}</span></div>
                   </div>

@@ -449,12 +449,12 @@ test("accepted Estimate Save & Next creates the draft and reaches Step 2 with re
   expect(createPayloads[0].payment_mode).toBe("escrow");
   expect(createPayloads[0].incidentals_reserve_amount).toBe("500");
   const estimateSummary = page.getByTestId("agreement-proposal-prefill-summary");
-  await expect(estimateSummary).toContainText("Commercial base");
+  await expect(estimateSummary).toContainText("Contract");
   await expect(estimateSummary).toContainText("$12,850.00");
   await expect(estimateSummary).toContainText("$1,500.00");
   await expect(estimateSummary).toContainText("$14,350.00");
-  await expect(estimateSummary).toContainText("Milestones allocated");
-  await expect(estimateSummary).toContainText("Fully allocated");
+  await expect(estimateSummary).toContainText("allocated");
+  await expect(estimateSummary).toContainText("Contract amount fully allocated");
   await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toHaveCount(0);
   await expect(page.getByText("Fixture Install").first()).toBeVisible();
   for (const amount of ["$1,000.00", "$1,950.00", "$4,950.00"]) {
@@ -514,13 +514,14 @@ test("Step 2 summary uses the agreement reserve above the accepted Estimate rese
 
   await page.goto("/app/agreements/100/wizard?step=2", { waitUntil: "domcontentloaded" });
   const estimateSummary = page.getByTestId("agreement-proposal-prefill-summary");
-  await expect(estimateSummary).toContainText("Commercial base");
+  await expect(estimateSummary).toContainText("Contract");
   await expect(estimateSummary).toContainText("$5,000.00");
-  await expect(estimateSummary).toContainText("Incidentals Reserve");
+  await expect(estimateSummary).toContainText("Contingency Reserve");
   await expect(estimateSummary).toContainText("$500.00");
-  await expect(estimateSummary).toContainText("Funding total");
+  await expect(estimateSummary).toContainText("Funding");
   await expect(estimateSummary).toContainText("$5,500.00");
-  await expect(estimateSummary).toContainText("Fully allocated");
+  await expect(estimateSummary).toContainText("Contract amount fully allocated — $500.00 reserve remains separate");
+  await expect(page.getByText("Payment Milestones", { exact: true })).toHaveCount(1);
   await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toHaveCount(0);
 });
 
@@ -627,7 +628,7 @@ test("Project Assistant classification is visibly pending and remains advisory u
   await expect(suggestion).toContainText("Current: Not selected");
   await expect(suggestion).toContainText("Suggested: Bathroom");
   await expect(suggestion).toContainText("Suggested: Refresh");
-  await expect(suggestion).not.toContainText("Flooring");
+  await expect(page.getByTestId("agreement-classification-alternatives")).toContainText("Flooring · Tile Flooring");
   await expect(page.getByTestId("agreement-ai-accept-classification-button")).toContainText("Apply Suggestion");
 
   await page.getByTestId("agreement-ai-accept-classification-button").click();
