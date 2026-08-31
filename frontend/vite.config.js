@@ -81,6 +81,7 @@ export default defineConfig(({ mode }) => {
     assetsDir: "assets",
     sourcemap: false,
     emptyOutDir: true,
+    reportCompressedSize: false,
     chunkSizeWarningLimit: 1200,
 
     // IMPORTANT: enable manifest so deploy can pick correct hashed files
