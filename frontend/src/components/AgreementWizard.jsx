@@ -1040,6 +1040,10 @@ export default function AgreementWizard() {
             data?.retainage_percent != null
               ? String(data.retainage_percent)
               : prev.retainage_percent || "0.00",
+          incidentals_reserve_amount:
+            data?.incidentals_reserve_amount != null
+              ? String(data.incidentals_reserve_amount)
+              : prev.incidentals_reserve_amount || "0.00",
           description: data?.description || prev.description,
 
           address_line1:

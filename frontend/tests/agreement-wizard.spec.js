@@ -535,7 +535,7 @@ test("existing agreement autosaves the contingency reserve and reports Saved", a
     project_subtype: "Bathroom Remodel",
     description: "Accepted bathroom remodel scope.",
     payment_mode: "escrow",
-    incidentals_reserve_amount: "0.00",
+    incidentals_reserve_amount: "125.00",
     source_proposal_id: 42,
     status: "draft",
     accepted_estimate_basis: { proposal_id: 42, subtotal: "5000.00", pricing_rows: [] },
@@ -552,6 +552,7 @@ test("existing agreement autosaves the contingency reserve and reports Saved", a
 
   await page.goto("/app/agreements/100/wizard?step=1", { waitUntil: "domcontentloaded" });
   const reserve = page.getByTestId("agreement-incidentals-reserve-input");
+  await expect(reserve).toHaveValue("125.00");
   await reserve.click();
   await reserve.pressSequentially("500");
   await expect(page.getByTestId("agreement-step1-save-status")).toHaveText("Saved");
