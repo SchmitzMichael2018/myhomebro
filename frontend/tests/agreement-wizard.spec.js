@@ -525,6 +525,40 @@ test("Step 2 summary uses the agreement reserve above the accepted Estimate rese
   await expect(page.getByTestId("step2-accepted-estimate-pricing-summary")).toHaveCount(0);
 });
 
+test("existing agreement autosaves the contingency reserve and reports Saved", async ({ page }) => {
+  await installWizardMocks(page);
+  await loginContractor(page);
+  let agreement = {
+    id: 100,
+    project_title: "Bathroom Remodel",
+    project_type: "Remodel",
+    project_subtype: "Bathroom Remodel",
+    description: "Accepted bathroom remodel scope.",
+    payment_mode: "escrow",
+    incidentals_reserve_amount: "0.00",
+    source_proposal_id: 42,
+    status: "draft",
+    accepted_estimate_basis: { proposal_id: 42, subtotal: "5000.00", pricing_rows: [] },
+  };
+  const patches = [];
+  await page.route(/\/api\/projects\/agreements\/100\/?(?:\?.*)?$/, async (route) => {
+    if (route.request().method() === "PATCH") {
+      const payload = route.request().postDataJSON();
+      patches.push(payload);
+      agreement = { ...agreement, ...payload };
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(agreement) });
+  });
+
+  await page.goto("/app/agreements/100/wizard?step=1", { waitUntil: "domcontentloaded" });
+  const reserve = page.getByTestId("agreement-incidentals-reserve-input");
+  await reserve.click();
+  await reserve.pressSequentially("500");
+  await expect(page.getByTestId("agreement-step1-save-status")).toHaveText("Saved");
+  await expect.poll(() => patches.some((payload) => payload.incidentals_reserve_amount === "500")).toBe(true);
+  await expect(page.getByTestId("agreement-step1-confirmation")).toContainText("Reserve $500.00");
+});
+
 test("Step 2 names accepted rows that lack exact milestone lineage", async ({ page }) => {
   await installWizardMocks(page);
   await loginContractor(page);

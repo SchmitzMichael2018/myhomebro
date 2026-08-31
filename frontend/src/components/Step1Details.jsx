@@ -5997,7 +5997,7 @@ export default function Step1Details({
         ? rawValue
         : normalizeStep1FieldValue(rawValue);
     const nextEvent = name ? { target: { name, value }, currentTarget: { name, value } } : e;
-    setStep1SaveState(agreementId ? "saving" : "unsaved");
+    setStep1SaveState("unsaved");
 
     if (
       name === "project_title" ||
@@ -6081,6 +6081,17 @@ export default function Step1Details({
 
     if (name === "description") {
       schedulePatch({ description: value || "", scope_of_work: value || "", step_status: "step1" }, 450);
+      return;
+    }
+
+    if (name === "incidentals_reserve_amount") {
+      schedulePatch(
+        {
+          incidentals_reserve_amount: value === "" ? "0.00" : value,
+          step_status: "step1",
+        },
+        450
+      );
       return;
     }
 
