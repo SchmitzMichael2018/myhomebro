@@ -43,13 +43,10 @@ git pull --ff-only
 echo "==> Install backend requirements"
 pip install -r "$BACKEND_DIR/requirements.txt"
 
-echo "==> Apply migrations and verify async services"
+echo "==> Apply migrations"
 python "$BACKEND_DIR/manage.py" migrate --noinput
 echo "==> Ensure shared database cache table exists"
-python "$BACKEND_DIR/manage.py" createcachetable --database default
-REPO_ROOT="$REPO_DIR" \
-PYTHON_BIN="$(command -v python)" \
-bash "$REPO_DIR/scripts/check_async_readiness.sh"
+python "$BACKEND_DIR/manage.py" createcachetable --database default --skip-checks
 
 echo "==> Build frontend"
 cd "$FRONTEND_DIR"
@@ -60,6 +57,11 @@ else
   npm install
 fi
 npm run build
+
+echo "==> Verify async services and generated PWA assets"
+REPO_ROOT="$REPO_DIR" \
+PYTHON_BIN="$(command -v python)" \
+bash "$REPO_DIR/scripts/check_async_readiness.sh"
 
 echo "==> Clean old generated assets"
 rm -rf "$REPO_DIR/staticfiles/assets"/* || true
