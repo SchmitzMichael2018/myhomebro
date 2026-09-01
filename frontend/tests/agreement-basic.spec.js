@@ -6882,19 +6882,9 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-warranty-summary')).toContainText(
     '12-Month Workmanship Warranty (Standard)'
   );
-  const scheduleReview = page.getByTestId('step4-planning-assumptions');
-  await expect(scheduleReview).toContainText('Milestone schedule review');
-  await expect(scheduleReview).toContainText(
-    '2 milestones planned from Apr 29, 2026 through May 2, 2026. No schedule conflicts found.'
-  );
-  await expect(scheduleReview).toContainText('Internal planning only—not part of the customer agreement.');
-  await expect(scheduleReview).toContainText('Schedule checked');
-  await expect(page.getByText('Milestone planning assumptions')).toHaveCount(0);
-  await expect(scheduleReview.getByText('System Confidence')).not.toBeVisible();
-  await scheduleReview.getByText('View planning details').click();
-  await expect(scheduleReview.getByText('System Confidence')).toBeVisible();
-  await expect(scheduleReview).toContainText('completed-project history grows');
-  await expect(scheduleReview.getByRole('button', { name: 'Edit milestone plan' })).toBeVisible();
+  await expect(page.getByTestId('step4-planning-assumptions')).toHaveCount(0);
+  await expect(page.getByTestId('step4-schedule-conflicts')).toHaveCount(0);
+  await expect(page.getByText('Milestone schedule review')).toHaveCount(0);
   await expect(page.getByTestId('step4-milestone-row-1')).toContainText('4/29/2026');
   await expect(page.getByTestId('step4-milestone-row-1')).toContainText('4/30/2026');
   await expect(page.getByTestId('step4-milestone-row-1')).toContainText('Click to edit');

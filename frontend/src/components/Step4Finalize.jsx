@@ -354,11 +354,50 @@ function formatMilestoneStartDate(m) {
   return formatDateOnlyForDisplay(raw);
 }
 
-function formatPlanningDate(value) {
-  if (!value) return "—";
-  const d = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+function milestoneDateValue(milestone, kind) {
+  const raw = kind === "start"
+    ? milestone?.start_date || milestone?.startDate || milestone?.start || milestone?.scheduled_start
+    : milestone?.due_date ||
+      milestone?.completion_date ||
+      milestone?.dueDate ||
+      milestone?.target_date ||
+      milestone?.date ||
+      milestone?.scheduled_for;
+  if (!raw) return "";
+  const match = String(raw).match(/^(\d{4}-\d{2}-\d{2})/);
+  return match?.[1] || "";
+}
+
+export function buildMilestoneScheduleConflictReview(milestones = []) {
+  const rows = Array.isArray(milestones) ? milestones : [];
+  const issues = [];
+  let previousStart = "";
+
+  rows.forEach((milestone, index) => {
+    const label = safeMilestoneStr(milestone?.title) || `Milestone ${index + 1}`;
+    const rawStart = milestoneDateValue(milestone, "start");
+    const rawFinish = milestoneDateValue(milestone, "finish");
+    const start = rawStart || rawFinish;
+    const finish = rawFinish || rawStart;
+
+    if (!start && !finish) {
+      issues.push(`${label} does not have a scheduled date`);
+      return;
+    }
+    if (start && finish && finish < start) {
+      issues.push(`${label} ends before it starts`);
+    }
+    if (previousStart && start && start < previousStart) {
+      issues.push(`${label} is scheduled before the preceding milestone`);
+    }
+    if (start) previousStart = start;
+  });
+
+  return {
+    issues,
+    needsAttention: issues.length > 0,
+    summary: issues.join("; "),
+  };
 }
 
 function safeMilestoneStr(v) {
@@ -1066,46 +1105,10 @@ export default function Step4Finalize({
   const sendBlockedByQuotes = pricingStrategy === "requires_sub_quote" && Boolean(pricingReadiness.blocked);
   const sendNeedsEstimateWarning = pricingStrategy === "estimate" && pricingReadiness.estimatedCount > 0;
 
-  const planningScheduleReview = useMemo(() => {
-    if (!milestonePlanningAssumptions) return null;
-
-    const plannedStart = milestonePlanningAssumptions.planned_start_date || "";
-    const plannedFinish = milestonePlanningAssumptions.planned_finish_date || "";
-    const deadline = safeMilestoneStr(milestonePlanningAssumptions.deadline_feasibility);
-    const missingDateCount = displayMilestones.filter((milestone) => {
-      const start = milestone?.start_date || milestone?.startDate || milestone?.start || milestone?.scheduled_start;
-      const finish =
-        milestone?.due_date ||
-        milestone?.completion_date ||
-        milestone?.dueDate ||
-        milestone?.target_date ||
-        milestone?.date ||
-        milestone?.scheduled_for;
-      return !start || !finish;
-    }).length;
-    const issues = [];
-
-    if (!plannedStart || !plannedFinish) issues.push("the overall schedule is missing dates");
-    if (missingDateCount) {
-      issues.push(`${missingDateCount} milestone${missingDateCount === 1 ? " is" : "s are"} missing dates`);
-    }
-    if (/infeasible|conflict|impossible|exceed|late|at risk|unlikely/i.test(deadline)) {
-      issues.push(`deadline status: ${deadline}`);
-    }
-
-    const milestoneCount = displayMilestones.length;
-    const dateRange = plannedStart && plannedFinish
-      ? ` from ${formatPlanningDate(plannedStart)} through ${formatPlanningDate(plannedFinish)}`
-      : "";
-
-    return {
-      issues,
-      needsAttention: issues.length > 0,
-      summary: issues.length
-        ? `${milestoneCount} milestone${milestoneCount === 1 ? "" : "s"} planned; ${issues.join("; ")}.`
-        : `${milestoneCount} milestone${milestoneCount === 1 ? "" : "s"} planned${dateRange}. No schedule conflicts found.`,
-    };
-  }, [displayMilestones, milestonePlanningAssumptions]);
+  const milestoneScheduleConflictReview = useMemo(
+    () => buildMilestoneScheduleConflictReview(displayMilestones),
+    [displayMilestones]
+  );
 
   const firstInvalidTitle = useMemo(() => {
     if (!invalidAmountInfo) return "";
@@ -1903,78 +1906,23 @@ export default function Step4Finalize({
           </div>
         </section>
 
-        {milestonePlanningAssumptions && planningScheduleReview ? (
+        {milestoneScheduleConflictReview.needsAttention ? (
           <section
-            data-testid="step4-planning-assumptions"
-            className={`mt-4 rounded-2xl border px-4 py-4 shadow-sm ${
-              planningScheduleReview.needsAttention
-                ? "border-amber-200 bg-amber-50/70"
-                : "border-emerald-200 bg-emerald-50/70"
-            }`}
+            data-testid="step4-schedule-conflicts"
+            className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 px-4 py-4 shadow-sm"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                  Milestone schedule review
+                <div className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-800">
+                  Schedule conflict detected
                 </div>
                 <div className="mt-1 text-sm font-semibold text-slate-900">
-                  {planningScheduleReview.summary}
-                </div>
-                <div className="mt-1 text-xs text-slate-600">
-                  Internal planning only—not part of the customer agreement.
+                  {milestoneScheduleConflictReview.summary}.
                 </div>
               </div>
-              <SummaryBadge tone={planningScheduleReview.needsAttention ? "amber" : "emerald"}>
-                {planningScheduleReview.needsAttention ? "Review needed" : "Schedule checked"}
-              </SummaryBadge>
+              <SummaryBadge tone="amber">Review needed</SummaryBadge>
             </div>
-
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <details className="group" data-testid="step4-planning-details">
-                <summary className="cursor-pointer text-xs font-semibold text-indigo-700 hover:text-indigo-800 hover:underline">
-                  View planning details
-                </summary>
-                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    <SummaryCard label="Planned Start" value={formatPlanningDate(milestonePlanningAssumptions.planned_start_date)} />
-                    <SummaryCard label="Planned Finish" value={formatPlanningDate(milestonePlanningAssumptions.planned_finish_date)} />
-                    <SummaryCard label="Duration" value={`${milestonePlanningAssumptions.planned_duration_days || 0} working days`} />
-                    <SummaryCard label="Deadline" value={milestonePlanningAssumptions.deadline_feasibility || "Not assessed"} />
-                    <SummaryCard label="Crew" value={`${milestonePlanningAssumptions.planned_crew_size || 0} people`} />
-                    <SummaryCard label="Labor Hours" value={`${milestonePlanningAssumptions.planned_labor_hours || 0} hours`} />
-                    <SummaryCard label="System Confidence" value={`${milestonePlanningAssumptions.planning_confidence || 0}%`} />
-                    <SummaryCard
-                      label="Labor Cost"
-                      value={
-                        milestonePlanningAssumptions.labor_cost_configured
-                          ? formatMoney(milestonePlanningAssumptions.estimated_labor_cost)
-                          : "Not configured"
-                      }
-                    />
-                  </div>
-                  {Array.isArray(milestonePlanningAssumptions.planning_capability_mix) &&
-                  milestonePlanningAssumptions.planning_capability_mix.length ? (
-                    <div className="mt-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Capability mix</div>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {milestonePlanningAssumptions.planning_capability_mix.map((item) => (
-                          <span key={item.capability} className="rounded-full bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                            {item.count} {item.capability}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {milestonePlanningAssumptions.planning_notes ? (
-                    <div className="mt-3 text-sm text-slate-700">
-                      {milestonePlanningAssumptions.planning_notes}
-                    </div>
-                  ) : null}
-                  <div className="mt-3 text-xs text-slate-500">
-                    Crew, labor, cost, and confidence values are planning aids and may become more useful as completed-project history grows.
-                  </div>
-                </div>
-              </details>
+            <div className="mt-3">
               <button
                 type="button"
                 onClick={handleResolveQuotes}
