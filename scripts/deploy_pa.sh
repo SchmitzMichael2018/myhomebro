@@ -51,6 +51,11 @@ python "$BACKEND_DIR/manage.py" createcachetable --database default --skip-check
 echo "==> Build frontend"
 cd "$FRONTEND_DIR"
 echo "Build will use: node $(node -v), npm $(npm -v)"
+if [ -z "${VITE_PWA_ENABLED:-}" ]; then
+  VITE_PWA_ENABLED="$(python "$BACKEND_DIR/manage.py" shell -c "from django.conf import settings; print(str(bool(settings.PWA_ENABLED)).lower())" | tail -n 1)"
+  export VITE_PWA_ENABLED
+fi
+echo "PWA build enabled: $VITE_PWA_ENABLED"
 if [ -f package-lock.json ]; then
   npm ci || npm install
 else
