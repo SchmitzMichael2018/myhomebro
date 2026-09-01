@@ -6783,6 +6783,18 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
     warranty_text_snapshot: '',
     require_contractor_signature: true,
     require_customer_signature: true,
+    planning_assumptions: {
+      planned_start_date: '2026-04-29',
+      planned_finish_date: '2026-05-02',
+      planned_duration_days: 4,
+      planned_crew_size: 2,
+      planned_labor_hours: 48,
+      planning_confidence: 35,
+      labor_cost_configured: false,
+      deadline_feasibility: 'Feasible',
+      planning_capability_mix: [{ capability: 'Carpentry', count: 2 }],
+      planning_notes: 'Initial system planning estimate.',
+    },
     step_status: '4',
   };
 
@@ -6870,6 +6882,19 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-warranty-summary')).toContainText(
     '12-Month Workmanship Warranty (Standard)'
   );
+  const scheduleReview = page.getByTestId('step4-planning-assumptions');
+  await expect(scheduleReview).toContainText('Milestone schedule review');
+  await expect(scheduleReview).toContainText(
+    '2 milestones planned from Apr 29, 2026 through May 2, 2026. No schedule conflicts found.'
+  );
+  await expect(scheduleReview).toContainText('Internal planning only—not part of the customer agreement.');
+  await expect(scheduleReview).toContainText('Schedule checked');
+  await expect(page.getByText('Milestone planning assumptions')).toHaveCount(0);
+  await expect(scheduleReview.getByText('System Confidence')).not.toBeVisible();
+  await scheduleReview.getByText('View planning details').click();
+  await expect(scheduleReview.getByText('System Confidence')).toBeVisible();
+  await expect(scheduleReview).toContainText('completed-project history grows');
+  await expect(scheduleReview.getByRole('button', { name: 'Edit milestone plan' })).toBeVisible();
   await expect(page.getByTestId('step4-milestone-row-1')).toContainText('4/29/2026');
   await expect(page.getByTestId('step4-milestone-row-1')).toContainText('4/30/2026');
   await expect(page.getByTestId('step4-milestone-row-1')).toContainText('Click to edit');

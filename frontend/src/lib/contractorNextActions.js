@@ -21,6 +21,12 @@ function parseDateAny(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function agreementIdFromTarget(value) {
+  const target = safeText(value);
+  const match = target.match(/\/app\/agreements\/(\d+)(?:\/|\?|$)/);
+  return match?.[1] || null;
+}
+
 function countLabel(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -294,8 +300,7 @@ function latestByDate(rows, datePicker) {
 function mapNextBestAction(nextBestAction) {
   if (!nextBestAction?.title) return null;
   const target = safeText(nextBestAction.navigation_target);
-  const agreementMatch = target.match(/\/app\/agreements\/(\d+)/);
-  const agreementId = agreementMatch?.[1] || null;
+  const agreementId = agreementIdFromTarget(target);
   const actionType = safeText(nextBestAction.action_type) || "next_best_action";
   const actionFamily = actionType === "send_first_agreement" ? "agreement_pre_send" : "";
   return buildAction({
@@ -930,14 +935,19 @@ export function getContractorNextActions({
       .filter((item) => !isStatusConfirmationItem(item))
       .filter((item) => safeText(item?.navigation_target) && safeText(item?.navigation_target) !== "/app/dashboard")
       .slice(0, remainingActivitySlots)
-      .map((item, index) =>
-        buildAction({
+      .map((item, index) => {
+        const navigationTarget = item?.navigation_target || "/app/dashboard";
+        const agreementId = agreementIdFromTarget(navigationTarget);
+        const isAgreementCreated = /agreement\s+draft\s+created/i.test(
+          safeText(item?.title || item?.message)
+        );
+        return buildAction({
           key: `activity:${item?.id ?? index}`,
           dedupeKey: `activity:${item?.id ?? index}`,
           title: item?.title || "Open activity item",
           description: item?.summary || "Review the latest activity item.",
           buttonLabel: item?.severity === "warning" || item?.severity === "critical" ? "Review" : "Open",
-          navigationTarget: item?.navigation_target || "/app/dashboard",
+          navigationTarget,
           priorityScore: 25 - index,
           category: normalizeStatus(item?.severity) === "critical" ? "operations" : "customer",
           source: "activity",
@@ -950,8 +960,13 @@ export function getContractorNextActions({
           customer: item?.customer_name,
           project: item?.project_title,
           updatedAt: item?.created_at || item?.updated_at,
+          entityType: agreementId ? "agreement" : "",
+          entityId: agreementId,
+          agreementId,
+          actionFamily: agreementId && isAgreementCreated ? "agreement_pre_send" : "",
+          specificity: agreementId ? 1 : 0,
         })
-      );
+      });
     actions.push(...activityActions);
   }
 

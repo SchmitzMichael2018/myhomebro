@@ -130,6 +130,32 @@ describe("getContractorNextActions", () => {
     expect(actions.some((action) => action.title === "Send your next agreement")).toBe(false);
   });
 
+  it("deduplicates an agreement-created activity event against its draft priority", () => {
+    const actions = getContractorNextActions({
+      agreements: [{
+        id: 42,
+        status: "draft",
+        project_title: "Bathroom Remodel",
+        customer_name: "QA Homeowner",
+      }],
+      activityFeed: [{
+        id: 900,
+        title: "Agreement draft created",
+        summary: "A new agreement draft is ready for review and sending.",
+        navigation_target: "/app/agreements/42/wizard?step=1",
+        created_at: "2026-08-30T10:44:00Z",
+      }],
+    });
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      key: "agreement:42:agreement_pre_send",
+      entity_type: "agreement",
+      entity_id: "42",
+      title: "Bathroom Remodel agreement ready to send",
+    });
+  });
+
   it("returns one signature priority only after signing has started", () => {
     const actions = getContractorNextActions({
       agreements: [{
