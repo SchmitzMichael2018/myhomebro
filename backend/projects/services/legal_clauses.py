@@ -17,7 +17,7 @@ def _cooling_off_clause(project_state: Optional[str]) -> Clause:
     If settings.MHB_COOLING_OFF_BY_STATE contains a key for the state (e.g., 'CA', 'TX'),
     that text is used as the body; otherwise a safe, generic fallback is returned.
     """
-    title = "Right to Cancel (If Applicable by Law)"
+    title = "Cancellation Rights"
     state = (project_state or "").strip().upper() or None
     override_map = getattr(settings, "MHB_COOLING_OFF_BY_STATE", {}) if settings else {}
     if state and state in override_map:
@@ -27,11 +27,9 @@ def _cooling_off_clause(project_state: Optional[str]) -> Clause:
 
     return (
         title,
-        "If a residential 'cooling-off' or 'three-day cancellation' right applies under the governing state’s law, "
-        "the Customer may cancel within the applicable period by written notice through the platform message center. "
-        "Any refund or recovery will follow applicable law and this Agreement’s payment provisions. Because these laws "
-        "vary by state and project type, the parties are responsible for verifying whether such a right applies to this "
-        "project in their state."
+        "Nothing in this Agreement limits a cancellation or rescission right that cannot be waived under applicable law. "
+        "When a separate Notice of Cancellation or state addendum is included with this Agreement, that notice or addendum "
+        "controls the applicable cancellation procedure and deadline."
     )
 
 
@@ -62,7 +60,8 @@ def _payment_clause(payment_mode: Optional[str]) -> Clause:
         "Payment & Escrow",
         "Payments are funded to escrow and released per approved milestones. After a milestone is submitted for approval, "
         "Customer will have seventy-two (72) hours to approve or dispute through the platform. If no response is received "
-        "within 72 hours, funds for that milestone may be automatically released."
+        "within 72 hours, funds for that milestone may be automatically released. A timely dispute blocks release of the "
+        "disputed amount until the parties authorize a resolution or release is otherwise legally authorized."
     )
 
 
@@ -174,10 +173,13 @@ def build_legal_notices(
     # 10) Dispute Resolution
     clauses.append((
         "Dispute Resolution",
-        "Any dispute the parties cannot resolve through the platform will first be submitted to good-faith mediation. If "
-        "unresolved within thirty (30) days of a written mediation request, the dispute shall be resolved by binding, "
-        "individual arbitration administered by a recognized arbitration provider. The arbitration provider may conduct "
-        "conferences and hearings by video or teleconference unless in-person proceedings are required by law."
+        "A timely milestone dispute blocks release of the disputed amount. The parties may submit statements, photographs, "
+        "documents, messages, and other supporting information through MyHomeBro. Project Assistant may organize that "
+        "information and suggest non-binding resolution options. Automated summaries and recommendations do not determine "
+        "fault or legal liability, do not constitute an inspection, mediation, arbitration award, or legal advice, and do "
+        "not release, refund, split, or transfer funds. The parties must expressly authorize any negotiated resolution or "
+        "financial disposition. Undisputed amounts may be released when mutually authorized. If the parties do not agree, "
+        "they retain the external remedies available under applicable law."
     ))
 
     # 11) Limitation of Liability
@@ -211,14 +213,10 @@ def build_legal_notices(
         "opportunity to inspect and cure."
     ))
 
-    # 15) Photo Authorization (optional)
-    clauses.append((
-        "Photo Authorization (Optional)",
-        "Customer grants Contractor permission to photograph completed work for portfolio or marketing, excluding any "
-        "personally identifiable information. This authorization is optional and may be revoked by written notice prior to publication."
-    ))
+    # Photo/marketing authorization is intentionally not implied by the work
+    # agreement. It must be captured as a separate affirmative customer opt-in.
 
-    # 16) Confidentiality
+    # 15) Confidentiality
     clauses.append((
         "Confidentiality",
         "Each party will keep the other’s non-public information confidential and use it only to perform this Agreement, "

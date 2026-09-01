@@ -22,6 +22,7 @@ from projects.services.pdf import build_agreement_pdf_bytes, attach_pdf_to_agree
 from projects.services.mailer import email_signed_agreement
 from projects.services.sms import sms_link_to_parties  # safe: no-op if not configured
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.agreement_readiness import assert_agreement_ready_for_signature
 from projects.services.signed_agreement_snapshot import capture_signed_agreement_snapshot
 
 
@@ -252,6 +253,7 @@ class AgreementSigningViewSet(viewsets.ViewSet):
 
         try:
             assert_pricing_ready_for_agreement(ag)
+            assert_agreement_ready_for_signature(ag)
         except ValueError as exc:
             return response.Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

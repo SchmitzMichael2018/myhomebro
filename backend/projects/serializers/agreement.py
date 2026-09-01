@@ -559,6 +559,7 @@ class AgreementSerializer(serializers.ModelSerializer):
     is_fully_signed = serializers.SerializerMethodField()
     signature_is_satisfied = serializers.SerializerMethodField()
     accepted_estimate_basis = serializers.SerializerMethodField()
+    signing_readiness = serializers.SerializerMethodField()
 
     project_title = serializers.SerializerMethodField()
     homeowner_name = serializers.SerializerMethodField()
@@ -673,6 +674,11 @@ class AgreementSerializer(serializers.ModelSerializer):
 
     def get_current_pdf_url(self, obj):
         return _safe_file_url(getattr(obj, "pdf_file", None))
+
+    def get_signing_readiness(self, obj):
+        from projects.services.agreement_readiness import agreement_readiness
+
+        return agreement_readiness(obj)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

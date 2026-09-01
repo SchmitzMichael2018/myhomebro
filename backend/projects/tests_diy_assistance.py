@@ -442,6 +442,7 @@ class DIYAssistanceTests(TestCase):
             homeowner_responsibilities="Prep and cleanup",
             contractor_responsibilities="Electrical and inspection work",
             excluded_work="Electrical panel service",
+            incidentals_reserve_amount="500.00",
         )
         Milestone.objects.create(
             agreement=agreement,
@@ -588,6 +589,14 @@ class DIYAssistanceTests(TestCase):
         self.assertIn("Inspection Checkpoints", extracted)
         self.assertIn("Rescue / Partial Completion Notes", extracted)
         self.assertIn("Payment & Escrow", extracted)
+        self.assertIn("Scope of Work", extracted)
+        self.assertIn("Need help finishing a started project.", extracted)
+        self.assertIn("Contingency reserve", extracted)
+        self.assertIn("$500.00", extracted)
+        self.assertIn("one (1) year", extracted)
+        self.assertIn("suggest non-binding resolution options", extracted)
+        self.assertNotIn("recognized arbitration provider", extracted)
+        self.assertNotIn("Photo Authorization", extracted)
 
     def test_contractor_search_prioritizes_claimed_contractor_before_cached_listing(self):
         ContractorPublicProfile.objects.create(

@@ -1329,7 +1329,8 @@ export default function Step4Finalize({
     .trim();
   const warrantyIsDefault = useDefaultWarranty || warrantyType === "default";
   const warrantyIsCustom = !warrantyIsDefault && !!warrantyText;
-  const warrantyIsMissing = !warrantyIsDefault && !warrantyIsCustom;
+  const warrantyIsNone = warrantyType === "none";
+  const warrantyIsMissing = !warrantyIsDefault && !warrantyIsCustom && !warrantyIsNone;
   const warrantyPreviewText = warrantyIsDefault
     ? formatWarrantyPreview(defaultWarrantyText)
     : formatWarrantyPreview(warrantyText);
@@ -1501,10 +1502,30 @@ export default function Step4Finalize({
       warnLabel: "Add a project title and customer before sending",
     },
     {
+      key: "scope",
+      ok: Boolean(safeMilestoneStr(agreement?.scope_of_work || agreement?.description)),
+      goodLabel: "Scope of Work is included",
+      warnLabel: "Add a complete Scope of Work before sending",
+    },
+    {
       key: "milestones",
       ok: displayMilestones.length > 0 && projectAmount > 0,
       goodLabel: `${displayMilestones.length} milestone${displayMilestones.length === 1 ? "" : "s"} configured · ${formatMoney(projectAmount)} total`,
       warnLabel: "Milestones and pricing still need review",
+    },
+    {
+      key: "milestone-outcomes",
+      ok:
+        displayMilestones.length > 0 &&
+        displayMilestones.every((milestone) => Boolean(safeMilestoneStr(milestone?.description))),
+      goodLabel: "Every milestone includes a Completed when outcome",
+      warnLabel: "Add a Completed when outcome to every milestone",
+    },
+    {
+      key: "warranty",
+      ok: !warrantyIsMissing,
+      goodLabel: warrantyIsNone ? "No contractor warranty selected" : "Warranty coverage and duration included",
+      warnLabel: "Choose a warranty option before sending",
     },
     {
       key: "payment",
@@ -1853,7 +1874,7 @@ export default function Step4Finalize({
                   : "border-emerald-200 bg-emerald-50 text-emerald-800"
               }`}
             >
-              {warrantyIsMissing ? "No warranty" : "Warranty included"}
+              {warrantyIsMissing ? "Decision required" : warrantyIsNone ? "No contractor warranty" : "Warranty included"}
             </span>
           </div>
 
@@ -1894,12 +1915,17 @@ export default function Step4Finalize({
                     </details>
                   ) : null}
                 </>
+              ) : warrantyIsNone ? (
+                <>
+                  <div className="text-sm font-semibold text-slate-900">No Contractor Warranty</div>
+                  <div className="mt-1 text-sm text-slate-700">
+                    The contractor selected no contractor warranty. Applicable manufacturer warranties remain separate.
+                  </div>
+                </>
               ) : (
                 <>
-                  <div className="text-sm font-semibold text-slate-900">No warranty provided</div>
-                  <div className="mt-1 text-sm text-slate-700">
-                    This agreement does not include a warranty summary.
-                  </div>
+                  <div className="text-sm font-semibold text-slate-900">Warranty decision required</div>
+                  <div className="mt-1 text-sm text-slate-700">Return to Step 3 and choose a warranty option.</div>
                 </>
               )}
             </div>

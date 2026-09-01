@@ -311,7 +311,9 @@ def _project_address(ag: Agreement) -> str:
 
 
 def _detect_project_state(ag: Agreement) -> Optional[str]:
-  candidates: List[Optional[str]] = []
+  # The agreement snapshot is authoritative for the job location. Do not let a
+  # contractor or homeowner mailing address override the project jurisdiction.
+  candidates: List[Optional[str]] = [getattr(ag, "project_address_state", None)]
   try:
     proj = getattr(ag, "project", None)
     if proj:
@@ -660,12 +662,27 @@ def _normalized_clarification_rows(questions: list[dict], answers: dict) -> list
 
   rows: List[dict] = []
   for key in ordered_keys:
+    # Workflow bookkeeping belongs in the application audit trail, not in the
+    # customer-facing contract.
+    if key in {
+      "clarifications_reviewed_step2",
+      "clarifications_reviewed",
+      "step2_reviewed",
+    }:
+      continue
     q = question_map.get(key, {})
     label = str(q.get("label") or "").strip() or _pretty_key(key)
     help_text = str(q.get("help") or "").strip()
     required = bool(q.get("required", False))
     value = a_map.get(key)
     answered = _clarification_is_answered(value)
+
+    # A bare number is not a usable contractual measurement. Keep it out of the
+    # PDF until the answer identifies a unit (square feet, linear feet, etc.).
+    if key in {"measurement_notes", "measurements_notes"}:
+      raw_measurement = str(value or "").strip()
+      if raw_measurement and raw_measurement.replace(".", "", 1).isdigit():
+        continue
 
     if not answered and not required:
       # hide optional blanks to keep PDF clean
@@ -896,6 +913,67 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
   story.append(Paragraph(f"<b>Status:</b> {status_line}", s_small))
   story.append(Spacer(1, 12))
 
+  scope_text = _s(getattr(ag, "description", "")).strip()
+  excluded_work = _s(getattr(ag, "excluded_work", "")).strip()
+  contractor_responsibilities = _s(getattr(ag, "contractor_responsibilities", "")).strip()
+  customer_responsibilities = _s(getattr(ag, "homeowner_responsibilities", "")).strip()
+
+  story.append(Paragraph("Scope of Work", s_h2))
+  if scope_text:
+    story.append(Paragraph(_desc_to_html(scope_text), s_just))
+  else:
+    story.append(Paragraph("No detailed scope of work was provided.", s_muted))
+  if excluded_work:
+    story.append(Spacer(1, 5))
+    story.append(Paragraph("<b>Excluded Work</b>", s_lbl))
+    story.append(Paragraph(_desc_to_html(excluded_work), s_just))
+  if contractor_responsibilities:
+    story.append(Spacer(1, 5))
+    story.append(Paragraph("<b>Contractor Responsibilities</b>", s_lbl))
+    story.append(Paragraph(_desc_to_html(contractor_responsibilities), s_just))
+  if customer_responsibilities:
+    story.append(Spacer(1, 5))
+    story.append(Paragraph("<b>Customer Responsibilities</b>", s_lbl))
+    story.append(Paragraph(_desc_to_html(customer_responsibilities), s_just))
+  story.append(Spacer(1, 12))
+
+  milestone_total = sum(
+    (Decimal(str(getattr(row, "amount", 0) or 0)) for row in milestones_qs),
+    Decimal("0.00"),
+  )
+  reserve_amount = max(
+    Decimal("0.00"),
+    Decimal(str(getattr(ag, "incidentals_reserve_amount", 0) or 0)),
+  )
+  funding_total = milestone_total + reserve_amount
+  pricing_rows = [
+    [Paragraph("Pricing", s_table), Paragraph("Amount", s_table_center)],
+    [Paragraph("Contract work", s_table), Paragraph(_currency(milestone_total), s_table_center)],
+    [Paragraph("Contingency reserve", s_table), Paragraph(_currency(reserve_amount), s_table_center)],
+    [Paragraph("<b>Total funding requirement</b>", s_table), Paragraph(f"<b>{_currency(funding_total)}</b>", s_table_center)],
+  ]
+  pricing_tbl = Table(pricing_rows, colWidths=[doc.width - 1.45 * inch, 1.45 * inch])
+  pricing_tbl.setStyle(TableStyle([
+    ("BACKGROUND", (0, 0), (-1, 0), "#F3F4F6"),
+    ("BACKGROUND", (0, -1), (-1, -1), "#FAFAFA"),
+    ("GRID", (0, 0), (-1, -1), 0.25, "#E5E7EB"),
+    ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ("TOPPADDING", (0, 0), (-1, -1), 4),
+    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+  ]))
+  story.append(pricing_tbl)
+  if reserve_amount > Decimal("0.00"):
+    story.append(Spacer(1, 4))
+    story.append(Paragraph(
+      "Contingency funds may be used only through a customer-approved change order. "
+      "Unused contingency is not earned by Contractor.",
+      s_small,
+    ))
+  story.append(Spacer(1, 12))
+
   story.append(Paragraph("Milestones", s_h2))
   ms = milestones_qs
   if ms.exists():
@@ -1059,15 +1137,14 @@ def build_agreement_pdf_bytes(ag: Agreement, *, is_preview: bool = False) -> byt
       "No contractor warranty is included with this agreement. Product and manufacturer warranties, if any, remain separate.",
       s_just,
     ))
-  elif wtype in ("default", "standard", "std") or not wtext:
+  elif wtext:
+    story.append(Paragraph(_escape_html(wtext).replace("\n", "<br/>"), s_just))
+  else:
     story.append(Paragraph(
-      "Contractor warrants that all work will be performed in a professional and workmanlike manner consistent "
-      "with applicable codes and industry standards. Warranty excludes normal wear, misuse, improper maintenance, "
-      "third-party modifications, and acts of God.",
+      "Standard workmanship warranty: Contractor warrants labor performed under this Agreement for one (1) year "
+      "from substantial completion. Materials remain subject to applicable manufacturer warranties.",
       s_just,
     ))
-  else:
-    story.append(Paragraph(wtext.replace("\n", "<br/>"), s_just))
   story.append(Spacer(1, 12))
 
   project_mode = _s(getattr(ag, "project_mode", "")).strip().lower().replace("-", "_").replace(" ", "_")

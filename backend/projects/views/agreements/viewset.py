@@ -54,6 +54,7 @@ from projects.services.agreements.pdf_actions import (
 )
 from projects.services.assisted_diy import build_assisted_diy_snapshot
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.agreement_readiness import assert_agreement_ready_for_signature
 from projects.services.project_activation import build_activation_preview
 from projects.services.planning_validation import (
     revalidate_unsigned_pipeline_for_committed_agreement,
@@ -1003,6 +1004,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag = self.get_object()
         try:
             assert_pricing_ready_for_agreement(ag)
+            assert_agreement_ready_for_signature(ag)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1036,6 +1038,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag: Agreement = self.get_object()
         try:
             assert_pricing_ready_for_agreement(ag)
+            assert_agreement_ready_for_signature(ag)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1076,6 +1079,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
         ag: Agreement = self.get_object()
         try:
             assert_pricing_ready_for_agreement(ag)
+            assert_agreement_ready_for_signature(ag)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1118,6 +1122,7 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         try:
             assert_pricing_ready_for_agreement(ag)
+            assert_agreement_ready_for_signature(ag)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 

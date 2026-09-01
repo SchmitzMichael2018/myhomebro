@@ -13,6 +13,7 @@ from django.utils.timezone import now
 from projects.models import Agreement
 from projects.services.agreements.final_link import send_final_link_for_agreement
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.agreement_readiness import assert_agreement_ready_for_signature
 from projects.services.assisted_diy import build_assisted_diy_snapshot
 from projects.services.signed_agreement_snapshot import capture_signed_agreement_snapshot
 
@@ -123,6 +124,7 @@ def apply_homeowner_signature(
       - satisfied_before: bool
       - satisfied_after: bool
     """
+    assert_agreement_ready_for_signature(ag)
     was_homeowner_signed = bool(getattr(ag, "signed_by_homeowner", False))
     satisfied_before = _signature_satisfied(ag)
 

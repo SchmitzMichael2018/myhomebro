@@ -17,6 +17,7 @@ from projects.services.agreements.public_sign import (
     maybe_send_final_copy_after_homeowner_sign,
 )
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.agreement_readiness import assert_agreement_ready_for_signature
 from projects.services.notification_center import create_notification
 from projects.services.agreements.pdf_stream import serve_public_pdf
 from projects.services.agreements.pdf_loader import load_pdf_services
@@ -110,6 +111,7 @@ def send_final_agreement_link_view(request, agreement_id: int):
     ag = get_object_or_404(Agreement, pk=agreement_id)
     try:
         assert_pricing_ready_for_agreement(ag)
+        assert_agreement_ready_for_signature(ag)
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
     try:
@@ -282,6 +284,7 @@ def agreement_public_sign(request):
     ag = unsign_public_token(token)
     try:
         assert_pricing_ready_for_agreement(ag)
+        assert_agreement_ready_for_signature(ag)
     except ValueError as exc:
         return Response({"detail": str(exc)}, status=400)
 

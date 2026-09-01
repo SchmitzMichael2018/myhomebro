@@ -7755,7 +7755,7 @@ test('agreement wizard step 4 allows sending after subcontractor quote is accept
   await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeEnabled();
 });
 
-test('agreement wizard step 4 shows missing warranty as a warning state', async ({ page }) => {
+test('agreement wizard step 4 shows an explicit no-warranty decision', async ({ page }) => {
   let agreement = {
     id: AGREEMENT_ID + 2,
     agreement_id: AGREEMENT_ID + 2,
@@ -7810,7 +7810,7 @@ test('agreement wizard step 4 shows missing warranty as a warning state', async 
   });
 
   await expect(page.getByTestId('step4-warranty-summary')).toBeVisible();
-  await expect(page.getByTestId('step4-warranty-summary')).toContainText('No warranty provided');
+  await expect(page.getByTestId('step4-warranty-summary')).toContainText('No Contractor Warranty');
 });
 
 test('agreement wizard step 3 saves an explicit no-contractor-warranty selection', async ({ page }) => {

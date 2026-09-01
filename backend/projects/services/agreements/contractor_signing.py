@@ -13,6 +13,7 @@ from projects.services.mailer import email_signing_invite
 from projects.services.sms import sms_link_to_parties
 from projects.services.agreements.public_sign import build_public_sign_url
 from projects.services.subcontractor_quotes import assert_pricing_ready_for_agreement
+from projects.services.agreement_readiness import assert_agreement_ready_for_signature
 from projects.services.assisted_diy import build_assisted_diy_snapshot
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
     assert_pricing_ready_for_agreement(ag)
+    assert_agreement_ready_for_signature(ag)
     homeowner = getattr(ag, "homeowner", None)
     homeowner_email = getattr(homeowner, "email", None)
     if not homeowner_email:
@@ -53,6 +55,7 @@ def apply_contractor_signature(
     signature_data_url: Optional[str] = None,
     signed_ip: Optional[str] = None,
 ) -> Agreement:
+    assert_agreement_ready_for_signature(ag)
     name = (typed_name or "").strip()
     if not name:
         raise ValueError("Signature name is required.")

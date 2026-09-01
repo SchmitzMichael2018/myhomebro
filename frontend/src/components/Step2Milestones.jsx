@@ -7396,7 +7396,7 @@ export default function Step2Milestones({
                 <textarea
                   className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
                   rows={3}
-                  placeholder="Description (details, materials, notes)"
+                  placeholder="Completed when (visible result required for approval)"
                   name="description"
                   value={mLocal.description}
                   onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -8024,7 +8024,7 @@ export default function Step2Milestones({
           <textarea
             className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
             rows={3}
-            placeholder="Description (details, materials, notes)"
+            placeholder="Completed when (visible result required for approval)"
             name="description"
             value={mLocal.description}
             onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -8372,7 +8372,7 @@ export default function Step2Milestones({
           <textarea
             className="w-full resize-y rounded-xl border border-slate-300 px-3 py-2 text-sm"
             rows={3}
-            placeholder="Description (details, materials, notes)"
+            placeholder="Completed when (visible result required for approval)"
             name="description"
             value={mLocal.description}
             onChange={(e) => onMLocalChange(e.target.name, e.target.value)}
@@ -9214,7 +9214,7 @@ export default function Step2Milestones({
 
               <div>
                 <div className="flex items-center justify-between gap-2">
-                  <label htmlFor="mhb-step2milestones-9184" className="mb-1 block text-xs font-semibold text-gray-700">Description</label>
+                  <label htmlFor="mhb-step2milestones-9184" className="mb-1 block text-xs font-semibold text-gray-700">Completed when</label>
                   <button
                     type="button"
                     onClick={runEditAiImprove}
@@ -9233,6 +9233,9 @@ export default function Step2Milestones({
                   disabled={editBusy}
                   data-testid="step2-edit-milestone-description"
                 />
+                <div className="mt-1 text-xs text-slate-500">
+                  Describe the visible result the customer will review before approving payment.
+                </div>
                 {editAiErr ? <div className="mt-1 text-xs text-red-600">{editAiErr}</div> : null}
 
                 {editAiPreview ? (
