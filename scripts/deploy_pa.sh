@@ -46,7 +46,7 @@ pip install -r "$BACKEND_DIR/requirements.txt"
 echo "==> Apply migrations"
 python "$BACKEND_DIR/manage.py" migrate --noinput
 echo "==> Ensure shared database cache table exists"
-python "$BACKEND_DIR/manage.py" createcachetable --database default --skip-checks
+python "$BACKEND_DIR/manage.py" createcachetable --database default
 
 echo "==> Build frontend"
 cd "$FRONTEND_DIR"
