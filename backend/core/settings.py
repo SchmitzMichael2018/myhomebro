@@ -410,6 +410,7 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = int(get_env_var("FILE_UPLOAD_MAX_MEMORY_SIZE", str
 # ──────────────────────────────────────────────────────────────────────────────
 REDIS_URL = get_env_var("REDIS_URL", "").strip()
 CACHE_URL = get_env_var("CACHE_URL", "").strip()
+CACHE_TABLE_NAME = get_env_var("CACHE_TABLE_NAME", "myhomebro_cache").strip() or "myhomebro_cache"
 
 if CACHE_URL:
     CACHES = {
@@ -417,6 +418,19 @@ if CACHE_URL:
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
             "LOCATION": CACHE_URL,
             "KEY_PREFIX": "myhomebro-cache",
+        }
+    }
+elif DEPLOYMENT_ENVIRONMENT in {"production", "staging"}:
+    # PythonAnywhere does not provide Redis on every plan. A database cache is
+    # still shared by all web workers, so public-link throttles and idempotency
+    # guards remain authoritative instead of becoming process-local.
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": CACHE_TABLE_NAME,
+            "KEY_PREFIX": "myhomebro-cache",
+            "TIMEOUT": 300,
+            "OPTIONS": {"MAX_ENTRIES": 10000, "CULL_FREQUENCY": 3},
         }
     }
 

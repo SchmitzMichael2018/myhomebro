@@ -45,6 +45,8 @@ pip install -r "$BACKEND_DIR/requirements.txt"
 
 echo "==> Apply migrations and verify async services"
 python "$BACKEND_DIR/manage.py" migrate --noinput
+echo "==> Ensure shared database cache table exists"
+python "$BACKEND_DIR/manage.py" createcachetable --database default
 REPO_ROOT="$REPO_DIR" \
 PYTHON_BIN="$(command -v python)" \
 bash "$REPO_DIR/scripts/check_async_readiness.sh"

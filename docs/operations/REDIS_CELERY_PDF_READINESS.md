@@ -95,7 +95,8 @@ be treated as an active capability or a reason to provision Redis.
 | `REDIS_URL` | Optional source for the broker when `CELERY_BROKER_URL` is absent |
 | `CELERY_BROKER_URL` | Required when `PDF_ASYNC_ENABLED=true` |
 | `CELERY_RESULT_BACKEND` | Recommended; defaults to Redis database 1 for a Redis broker |
-| `CACHE_URL` | Reserved explicit cache endpoint; no queue fallback depends on it |
+| `CACHE_URL` | Optional Redis cache endpoint. Production otherwise uses the shared database cache. |
+| `CACHE_TABLE_NAME` | Optional database-cache table name; defaults to `myhomebro_cache` |
 | `PDF_ASYNC_ENABLED` | Must be explicitly true to dispatch queued PDFs |
 | `PDF_SYNC_FALLBACK_ENABLED` | Must remain false; synchronous web fallback is unsupported |
 | `CELERY_NOTIFICATIONS_ENABLED` | Optional queued invoice notification capability; defaults false |

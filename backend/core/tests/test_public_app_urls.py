@@ -36,6 +36,28 @@ class PublicAppUrlTests(SimpleTestCase):
     def test_production_check_accepts_canonical_origin(self):
         self.assertFalse(any(message.id == "core.E130" for message in public_site_url_deploy_check(None)))
 
+    @override_settings(
+        DEPLOYMENT_ENVIRONMENT="production", SITE_URL_CONFIGURED=True,
+        SITE_URL="https://www.myhomebro.com/",
+        CACHES={"default": {
+            "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+            "LOCATION": "myhomebro_cache",
+        }},
+    )
+    def test_production_check_accepts_shared_database_cache(self):
+        self.assertFalse(any(message.id == "core.W130" for message in public_site_url_deploy_check(None)))
+
+    @override_settings(
+        DEPLOYMENT_ENVIRONMENT="production", SITE_URL_CONFIGURED=True,
+        SITE_URL="https://www.myhomebro.com/",
+        CACHES={"default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "test-process-cache",
+        }},
+    )
+    def test_production_check_warns_for_process_local_cache(self):
+        self.assertTrue(any(message.id == "core.W130" for message in public_site_url_deploy_check(None)))
+
     def test_non_local_http_is_rejected_but_local_development_is_allowed(self):
         self.assertEqual(normalize_public_app_origin("http://localhost:5173/"), "http://localhost:5173")
         with self.assertRaises(ImproperlyConfigured):

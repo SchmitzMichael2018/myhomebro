@@ -32,10 +32,11 @@ def public_site_url_deploy_check(app_configs, **kwargs):
             hint="Set SITE_URL=https://www.myhomebro.com in the shared production environment.",
             id="core.E130",
         ))
-    if not str(getattr(settings, "CACHE_URL", "") or "").strip():
+    cache_backend = str(settings.CACHES.get("default", {}).get("BACKEND", ""))
+    if "LocMemCache" in cache_backend or "DummyCache" in cache_backend:
         messages.append(Warning(
-            "CACHE_URL is not configured; public-link throttles are process-local.",
-            hint="Set CACHE_URL to the deployment's shared Redis endpoint before relying on global throttle enforcement.",
+            "The production cache is not shared; public-link throttles are process-local.",
+            hint="Configure CACHE_URL or use the deployment's shared database cache.",
             id="core.W130",
         ))
     return messages
