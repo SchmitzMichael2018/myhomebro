@@ -10,7 +10,7 @@ from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 import tempfile
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.admin.sites import AdminSite
@@ -7597,6 +7597,30 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertNotIn("Whole agreement scope", payload["description"])
         self.assertEqual(writer.call_args.kwargs["current_description"], "Demolition")
         self.assertEqual(writer.call_args.kwargs["milestone_title"], "Demolition")
+        self.assertIn("Whole agreement scope", writer.call_args.kwargs["agreement_scope"])
+
+    def test_milestone_completion_writer_normalizes_provider_bullets(self):
+        from projects.ai.agreement_description_writer import improve_milestone_completion_description
+
+        provider = Mock()
+        provider.responses.create.return_value.output_text = json.dumps({
+            "description": "• Fixtures removed.\n- Debris cleared.\n* Area ready for review.\n- Extra line omitted.",
+        })
+        with patch(
+            "projects.ai.agreement_description_writer._require_openai_client",
+            return_value=provider,
+        ):
+            result = improve_milestone_completion_description(
+                milestone_title="Demolition",
+                current_description="Demolition",
+                project_title="Master Bath Renovation",
+                agreement_scope="Remove bathroom fixtures and flooring.",
+            )
+
+        self.assertEqual(
+            result["description"],
+            "- Fixtures removed.\n- Debris cleared.\n- Area ready for review.",
+        )
 
     def test_ai_agreement_description_includes_scope_template_and_milestones(self):
         with patch(

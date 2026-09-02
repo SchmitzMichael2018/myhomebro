@@ -31,6 +31,7 @@ def improve_milestone_completion_description(
     project_title: str = "",
     project_type: str = "",
     project_subtype: str = "",
+    agreement_scope: str = "",
 ) -> Dict[str, Any]:
     """Improve one milestone's acceptance criteria without rewriting agreement scope."""
     title = _safe_text(milestone_title)
@@ -53,7 +54,7 @@ def improve_milestone_completion_description(
         "Return only 1 to 3 short bullet lines describing visible, reviewable results for this milestone.\n"
         "Do not rewrite the agreement scope, mention other milestones, add prices or dates, or output section headings.\n"
         "Do not invent brands, dimensions, quantities, permits, code requirements, or customer responsibilities.\n"
-        "Use the project identity only to understand the selected milestone."
+        "Use the agreement scope only as factual context. Include only facts relevant to the selected milestone."
     )
     schema = {
         "type": "object",
@@ -72,6 +73,7 @@ def improve_milestone_completion_description(
                     "project_subtype": _safe_text(project_subtype),
                     "milestone_title": title,
                     "current_completion_criteria": current,
+                    "agreement_scope_context": str(agreement_scope or "").strip(),
                 }, ensure_ascii=False)},
             ],
             text={"format": {
@@ -84,10 +86,12 @@ def improve_milestone_completion_description(
         payload = json.loads(getattr(response, "output_text", "") or "{}")
         description = str(payload.get("description") or "").strip()
         lines = [line.strip() for line in description.splitlines() if line.strip()]
-        cleaned = "\n".join(
-            line if line.startswith(("- ", "* ")) else f"- {line}"
-            for line in lines[:3]
-        )
+        cleaned_lines = []
+        for line in lines[:3]:
+            normalized = re.sub(r"^(?:[-*]|[•‣▪])\s*", "", line).strip()
+            if normalized:
+                cleaned_lines.append(f"- {normalized}")
+        cleaned = "\n".join(cleaned_lines)
         if not cleaned:
             raise ValueError("Empty milestone completion description")
         return {"description": cleaned, "_model": _model_name(), "_mode": "improve"}

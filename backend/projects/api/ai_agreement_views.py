@@ -247,6 +247,7 @@ def ai_agreement_description(request):
             project_title=raw_project_title,
             project_type=raw_project_type,
             project_subtype=raw_project_subtype,
+            agreement_scope=getattr(agreement, "description", "") if agreement is not None else "",
         )
         return JsonResponse({
             "detail": "OK",
