@@ -83,6 +83,9 @@ describe("Agreement Wizard Project Assistant actions", () => {
     expect(improvement?.description).toBe(
       "Review suggested milestone titles, completion criteria, and timing based on the current scope. Nothing changes until you apply the plan."
     );
+    expect(actions.recommended.map((row) => row.key)).not.toContain(
+      "step2_regenerate_plan"
+    );
   });
 
   it("filters global recommendations inside the Agreement Wizard", () => {

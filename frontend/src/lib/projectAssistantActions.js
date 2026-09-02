@@ -171,15 +171,6 @@ export function buildProjectAssistantActions(context = {}) {
           "Review suggested milestone titles, completion criteria, and timing based on the current scope. Nothing changes until you apply the plan."
         )
       );
-      if (!hasGeneratedPlan) {
-        recommended.push(
-          action(
-            "step2_regenerate_plan",
-            "Regenerate Milestone Plan",
-            "Generate a reviewable milestone plan before replacing anything."
-          )
-        );
-      }
     } else {
       recommended.push(
         action(

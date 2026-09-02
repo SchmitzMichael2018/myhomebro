@@ -413,7 +413,7 @@ test('Agreement Wizard Project Assistant renders as a Step 2 guide without chat 
     'Other Helpful Actions'
   );
   await expect(dock.getByTestId('project-assistant-action-step2_improve_descriptions')).toBeVisible();
-  await expect(dock.getByTestId('project-assistant-action-step2_regenerate_plan')).toBeVisible();
+  await expect(dock.getByTestId('project-assistant-action-step2_regenerate_plan')).toHaveCount(0);
   await expect(dock.getByTestId('project-assistant-action-step2_rebalance_pricing')).toBeVisible();
   await expect(dock.getByTestId('project-assistant-continue-step')).toContainText(
     'Continue to Warranty'
