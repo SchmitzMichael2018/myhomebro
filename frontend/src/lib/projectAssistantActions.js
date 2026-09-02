@@ -167,8 +167,8 @@ export function buildProjectAssistantActions(context = {}) {
       recommended.push(
         action(
           "step2_improve_descriptions",
-          "Improve Milestone Descriptions",
-          "Refresh milestone descriptions using the current scope."
+          "Improve Milestone Plan",
+          "Review suggested milestone titles, completion criteria, and timing based on the current scope. Nothing changes until you apply the plan."
         )
       );
       if (!hasGeneratedPlan) {

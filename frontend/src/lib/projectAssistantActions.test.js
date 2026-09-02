@@ -66,6 +66,25 @@ describe("Agreement Wizard Project Assistant actions", () => {
     expect(summary.step1Ready).toBe(false);
   });
 
+  it("describes the Step 2 bulk improvement as a reviewable milestone plan", () => {
+    const actions = buildProjectAssistantActions({
+      workspace_mode: "agreement_wizard",
+      wizard_step: 2,
+      agreement_summary: {
+        milestone_count: 2,
+        total: 1000,
+      },
+    });
+    const improvement = actions.recommended.find(
+      (row) => row.key === "step2_improve_descriptions"
+    );
+
+    expect(improvement?.label).toBe("Improve Milestone Plan");
+    expect(improvement?.description).toBe(
+      "Review suggested milestone titles, completion criteria, and timing based on the current scope. Nothing changes until you apply the plan."
+    );
+  });
+
   it("filters global recommendations inside the Agreement Wizard", () => {
     expect(assistantSource).toContain("if (isAgreementWizardAssistant) return [];");
     expect(assistantSource).toContain("if (isAgreementWizardAssistant) {");
