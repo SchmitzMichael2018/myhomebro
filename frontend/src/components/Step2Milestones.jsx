@@ -24,6 +24,7 @@ import useAiFieldHighlights from "../hooks/useAiFieldHighlights.js";
 import { getAiPanelConfigForStep } from "../lib/agreementWizardAiPanel.js";
 import { labelForTemplateMilestoneType } from "../lib/milestoneTypes.js";
 import { summarizeAcceptedEstimateAllocation } from "../lib/agreementMilestonePricing.js";
+import { preserveMilestoneAmounts } from "../lib/milestoneAmountPreservation.js";
 
 // Superseded Step 2 panels remain dormant until their markup is removed separately.
 const SHOW_LEGACY_STEP2_PANELS = false;
@@ -3588,7 +3589,12 @@ export default function Step2Milestones({
       );
     }
 
-    return sortFallbackMilestones(previewRows.map((row, idx) => ({ ...row, order: idx + 1 })));
+    return sortFallbackMilestones(
+      preserveMilestoneAmounts(previewRows, effectiveMilestones).map((row, idx) => ({
+        ...row,
+        order: idx + 1,
+      }))
+    );
   }
 
   function applyAiSuggestedMilestones(mode = "replace", { force = false } = {}) {
@@ -3685,9 +3691,13 @@ export default function Step2Milestones({
           ).filter(Boolean),
           { existingRows: mode === "add_missing" ? effectiveMilestones : [] }
         );
-        const adjustedRows = anchorStart
+        const scheduledRows = anchorStart
           ? rescheduleMilestonesFromStartDate(previewRows, anchorStart)
           : previewRows;
+        const adjustedRows =
+          mode === "replace" && effectiveMilestones.length
+            ? preserveMilestoneAmounts(scheduledRows, effectiveMilestones)
+            : scheduledRows;
         const analysis = analyzeMilestonePlan(adjustedRows, {
           existingRows: mode === "add_missing" ? effectiveMilestones : [],
         });
