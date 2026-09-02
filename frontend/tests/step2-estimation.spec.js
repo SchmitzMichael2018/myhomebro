@@ -460,6 +460,55 @@ test('step 2 edit modal persists milestone description and updates the card', as
   await expect(card).toContainText('Protect floors, remove existing finishes, and stage debris for disposal.');
 });
 
+test('step 2 improves only the milestone currently being edited', async ({ page }) => {
+  await installAgreementWizardMocks(page, {
+    estimateResponse: {
+      milestone_suggestions: [],
+      price_adjustments: [],
+      timeline_adjustments: [],
+      explanation_lines: [],
+      source_metadata: {},
+    },
+  });
+
+  let improvementPayload = null;
+  await page.route('**/api/projects/agreements/ai/description/', async (route) => {
+    improvementPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        description: '- Existing finishes are removed.\n- The area is cleared for the next phase.',
+        content_target: 'milestone_completion',
+        milestone_title: 'Demo & Prep',
+      }),
+    });
+  });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/wizard?step=2`, {
+    waitUntil: 'domcontentloaded',
+  });
+  await page.getByTestId('step2-milestone-card-801').getByRole('button', { name: 'Edit' }).click();
+  const modal = page.getByTestId('step2-edit-milestone-modal');
+  await modal.getByTestId('step2-edit-improve-description').click();
+
+  await expect(modal).toContainText('AI Preview for this milestone only');
+  await expect(modal).toContainText('Existing finishes are removed.');
+  expect(improvementPayload).toMatchObject({
+    agreement_id: AGREEMENT_ID,
+    content_target: 'milestone_completion',
+    milestone_id: 801,
+    milestone_title: 'Demo & Prep',
+    current_description: 'Protect work area and demo existing finishes.',
+  });
+  expect(JSON.stringify(improvementPayload)).not.toContain('Install cabinets, finishes, and fixtures.');
+
+  await modal.getByRole('button', { name: 'Replace' }).click();
+  await expect(modal.getByTestId('step2-edit-milestone-description')).toHaveValue(
+    '- Existing finishes are removed.\n- The area is cleared for the next phase.'
+  );
+});
+
 test('step 2 estimate summary, details, budget guidance, and milestone advisory UI render without overwriting milestone amounts', async ({
   page,
 }) => {

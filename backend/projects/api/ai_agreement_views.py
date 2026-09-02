@@ -17,6 +17,7 @@ from projects.ai.agreement_milestone_writer import (
     suggest_scope_and_milestones,
     suggest_pricing_refresh,
 )
+from projects.ai.agreement_description_writer import improve_milestone_completion_description
 from projects.models import Agreement, Milestone
 from projects.services.ai_orchestrator import orchestrate_user_request
 from projects.services.ai.project_classifier import build_project_taxonomy_snapshot, classify_project_from_scope
@@ -231,6 +232,32 @@ def ai_agreement_description(request):
     raw_project_type = _safe_text(request.data.get("project_type"))
     raw_project_subtype = _safe_text(request.data.get("project_subtype"))
     mode = (request.data.get("mode") or "").strip().lower()
+    content_target = _safe_text(request.data.get("content_target")).lower()
+    if content_target == "milestone_completion":
+        milestone_title = _safe_text(request.data.get("milestone_title"))
+        current_description = str(request.data.get("current_description") or "").strip()
+        if not milestone_title:
+            return _validation_error(
+                {"milestone_title": ["Select a milestone before improving its completion criteria."]},
+                "Select a milestone before using AI.",
+            )
+        result = improve_milestone_completion_description(
+            milestone_title=milestone_title,
+            current_description=current_description,
+            project_title=raw_project_title,
+            project_type=raw_project_type,
+            project_subtype=raw_project_subtype,
+        )
+        return JsonResponse({
+            "detail": "OK",
+            "description": result["description"],
+            "content_target": "milestone_completion",
+            "milestone_title": milestone_title,
+            "_mode": "improve",
+            "_model": result.get("_model"),
+            **_ai_access_payload(),
+        })
+
     raw_description = (
         _scope_improvement_context(agreement, request.data)
         if mode == "improve" and agreement is not None

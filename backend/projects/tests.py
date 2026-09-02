@@ -7564,6 +7564,40 @@ class AIFreeAccessRegressionTests(TestCase):
         self.assertIn("draft", payload)
         self.assertEqual(payload["draft"]["description"], "AI-generated scope")
 
+    def test_milestone_description_improvement_targets_only_selected_milestone(self):
+        self.agreement.description = "Included Work:\n- Whole agreement scope that must not replace one milestone."
+        self.agreement.save(update_fields=["description", "updated_at"])
+
+        with patch(
+            "projects.api.ai_agreement_views.improve_milestone_completion_description",
+            return_value={
+                "description": "- Existing fixtures are removed.\n- The area is cleared for the next phase.",
+                "_model": "test-model",
+            },
+        ) as writer:
+            response = self.client.post(
+                "/api/projects/agreements/ai/description/",
+                {
+                    "agreement_id": self.agreement.id,
+                    "mode": "improve",
+                    "content_target": "milestone_completion",
+                    "milestone_title": "Demolition",
+                    "current_description": "Demolition",
+                    "project_title": "Master Bath Renovation",
+                    "project_type": "Remodel",
+                    "project_subtype": "Bathroom Remodel",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["content_target"], "milestone_completion")
+        self.assertEqual(payload["milestone_title"], "Demolition")
+        self.assertNotIn("Whole agreement scope", payload["description"])
+        self.assertEqual(writer.call_args.kwargs["current_description"], "Demolition")
+        self.assertEqual(writer.call_args.kwargs["milestone_title"], "Demolition")
+
     def test_ai_agreement_description_includes_scope_template_and_milestones(self):
         with patch(
             "projects.services.ai.project_understanding.generate_or_improve_description",

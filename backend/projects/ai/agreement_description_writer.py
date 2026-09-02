@@ -13,6 +13,89 @@ from django.conf import settings
 logger = logging.getLogger(__name__)
 
 
+def _milestone_completion_fallback(*, milestone_title: str, current_description: str) -> str:
+    title = _safe_text(milestone_title) or "Milestone"
+    current = str(current_description or "").strip()
+    if current and _safe_text(current).lower() != title.lower():
+        return current
+    return (
+        f"- The {title.lower()} work described for this milestone is complete.\n"
+        "- The work area is cleared and ready for customer review and the next scheduled phase."
+    )
+
+
+def improve_milestone_completion_description(
+    *,
+    milestone_title: str,
+    current_description: str,
+    project_title: str = "",
+    project_type: str = "",
+    project_subtype: str = "",
+) -> Dict[str, Any]:
+    """Improve one milestone's acceptance criteria without rewriting agreement scope."""
+    title = _safe_text(milestone_title)
+    current = str(current_description or "").strip()
+    if not title:
+        raise RuntimeError("Milestone title is required.")
+
+    fallback = _milestone_completion_fallback(
+        milestone_title=title,
+        current_description=current,
+    )
+    try:
+        client = _require_openai_client()
+    except Exception as exc:
+        logger.warning("OpenAI unavailable for milestone completion writer; using fallback: %s", exc)
+        return {"description": fallback, "_model": "fallback", "_mode": "improve"}
+
+    system = (
+        "You improve the completion criteria for exactly one construction payment milestone.\n"
+        "Return only 1 to 3 short bullet lines describing visible, reviewable results for this milestone.\n"
+        "Do not rewrite the agreement scope, mention other milestones, add prices or dates, or output section headings.\n"
+        "Do not invent brands, dimensions, quantities, permits, code requirements, or customer responsibilities.\n"
+        "Use the project identity only to understand the selected milestone."
+    )
+    schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {"description": {"type": "string"}},
+        "required": ["description"],
+    }
+    try:
+        response = client.responses.create(
+            model=_model_name(),
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": json.dumps({
+                    "project_title": _safe_text(project_title),
+                    "project_type": _safe_text(project_type),
+                    "project_subtype": _safe_text(project_subtype),
+                    "milestone_title": title,
+                    "current_completion_criteria": current,
+                }, ensure_ascii=False)},
+            ],
+            text={"format": {
+                "type": "json_schema",
+                "name": "milestone_completion_description",
+                "schema": schema,
+                "strict": True,
+            }},
+        )
+        payload = json.loads(getattr(response, "output_text", "") or "{}")
+        description = str(payload.get("description") or "").strip()
+        lines = [line.strip() for line in description.splitlines() if line.strip()]
+        cleaned = "\n".join(
+            line if line.startswith(("- ", "* ")) else f"- {line}"
+            for line in lines[:3]
+        )
+        if not cleaned:
+            raise ValueError("Empty milestone completion description")
+        return {"description": cleaned, "_model": _model_name(), "_mode": "improve"}
+    except Exception:
+        logger.warning("Milestone completion AI call failed; using fallback.", exc_info=True)
+        return {"description": fallback, "_model": "fallback", "_mode": "improve"}
+
+
 _FALLBACK_HINTS = [
     {
         "patterns": [r"\bdryer\b.*\b(noise|noises|loud|rattle|grind|squeal|repair|service)\b", r"\b(noise|noises|loud|rattle|grind|squeal)\b.*\bdryer\b"],

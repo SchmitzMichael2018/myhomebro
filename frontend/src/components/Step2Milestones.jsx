@@ -4728,10 +4728,13 @@ export default function Step2Milestones({
     try {
       const payload = {
         mode: "improve",
+        content_target: "milestone_completion",
         agreement_id: agreementId,
-        project_title: "",
-        project_type: "",
-        project_subtype: "",
+        milestone_id: editForm.id,
+        milestone_title: editForm.title || "",
+        project_title: agreementMeta?.project_title || agreementMeta?.title || "",
+        project_type: projectContextSummary?.projectType || agreementMeta?.project_type || "",
+        project_subtype: projectContextSummary?.projectSubtype || agreementMeta?.project_subtype || "",
         current_description: editForm.description || "",
         context: serializeAiContext(buildAiContext({
           page: "agreement_wizard_step2",
@@ -9221,6 +9224,7 @@ export default function Step2Milestones({
                     disabled={editBusy || editAiBusy || milestonesLocked}
                     className="rounded border px-2 py-1 text-[11px] hover:bg-gray-50 disabled:opacity-60"
                     title="Uses the agreement AI bundle (no extra charge after first use on this agreement)."
+                    data-testid="step2-edit-improve-description"
                   >
                     {editAiBusy ? "Working" : " Improve Description"}
                   </button>
@@ -9240,7 +9244,9 @@ export default function Step2Milestones({
 
                 {editAiPreview ? (
                   <div className="mt-2 rounded-md border bg-indigo-50 p-3">
-                    <div className="mb-2 text-xs font-semibold text-indigo-900">AI Preview</div>
+                    <div className="mb-2 text-xs font-semibold text-indigo-900">
+                      AI Preview for this milestone only
+                    </div>
                     <div className="whitespace-pre-wrap text-sm text-indigo-900">{editAiPreview}</div>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
