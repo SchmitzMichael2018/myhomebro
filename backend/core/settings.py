@@ -156,7 +156,7 @@ if not DEBUG:
         if u not in CSRF_TRUSTED_ORIGINS:
             CSRF_TRUSTED_ORIGINS.append(u)
 
-X_FRAME_OPTIONS = "SAMEORIGIN"
+X_FRAME_OPTIONS = "DENY"
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 # Stripe Connect embedded authentication uses a Stripe-owned popup. Stripe
 # documents that COOP same-origin breaks this flow; unsafe-none is the browser
@@ -583,9 +583,13 @@ CSRF_COOKIE_SAMESITE = get_env_var("CSRF_COOKIE_SAMESITE", "Lax")
 
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-    # SECURE_HSTS_SECONDS = 31536000
-    # SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    # SECURE_HSTS_PRELOAD = True
+
+# Begin with a deliberately short production HSTS window. This protects repeat
+# visits from HTTPS downgrade attacks while keeping the first rollout quickly
+# reversible. Increase only after HTTPS is verified for every intended host.
+SECURE_HSTS_SECONDS = int(get_env_var("SECURE_HSTS_SECONDS", "0" if DEBUG else "300"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = get_bool("SECURE_HSTS_INCLUDE_SUBDOMAINS", default=False)
+SECURE_HSTS_PRELOAD = get_bool("SECURE_HSTS_PRELOAD", default=False)
 
 ACCOUNTS_REQUIRE_EMAIL_VERIFICATION = get_bool("ACCOUNTS_REQUIRE_EMAIL_VERIFICATION", default=False)
 
