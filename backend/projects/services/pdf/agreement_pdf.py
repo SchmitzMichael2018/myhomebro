@@ -372,32 +372,31 @@ def _desc_to_html(desc: str) -> str:
   if not desc:
     return ""
 
-  lines = [ln.strip() for ln in desc.split("\n")]
-
-  bullets: List[str] = []
-  normals: List[str] = []
-
-  for ln in lines:
-    if not ln:
-      normals.append("")
-      continue
-    if ln.startswith(("-", "•", "*")):
-      bullets.append(ln.lstrip("-•*").strip())
-    else:
-      normals.append(ln)
-
   parts: List[str] = []
+  pending_blank = False
+  for raw_line in desc.split("\n"):
+    line = raw_line.strip()
+    if not line:
+      pending_blank = bool(parts)
+      continue
 
-  normal_txt = "\n".join(normals).strip()
-  if normal_txt:
-    parts.append(_escape_html(normal_txt).replace("\n\n", "<br/><br/>").replace("\n", "<br/>"))
+    if pending_blank:
+      parts.append("")
+      pending_blank = False
 
-  if bullets:
-    li = "".join([f"<li>{_escape_html(b)}</li>" for b in bullets if b])
-    if li:
-      parts.append(f"<ul>{li}</ul>")
+    if line.startswith(("-", "•", "*")):
+      item = line.lstrip("-•*").strip()
+      if item:
+        parts.append(f"- {_escape_html(item)}")
+      continue
 
-  return "<br/>".join([p for p in parts if p])
+    escaped = _escape_html(line)
+    if line.endswith((':',)) and len(line) <= 80:
+      parts.append(f"<b>{escaped}</b>")
+    else:
+      parts.append(escaped)
+
+  return "<br/>".join(parts)
 
 
 def _header_footer(canvas, doc, *, ag: Optional[Agreement] = None):
