@@ -54,9 +54,9 @@ function friendlyDate(d) {
 
 // choose best download URL
 const urlFor = (a) =>
-  a?.file ||
-  a?.url ||
   a?.file_url ||
+  a?.url ||
+  a?.file ||
   a?.download_url ||
   a?.download ||
   a?.absolute_url ||
@@ -241,7 +241,7 @@ export default function MilestoneEditModal({
   const [comments, setComments] = useState([]);
   const [loadingComments, setLoadingComments] = useState(false);
 
-  // files / attachments (agreement-level, like before)
+  // Completion evidence belongs to the milestone so it follows the invoice.
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -355,16 +355,16 @@ export default function MilestoneEditModal({
         setLockMessage("");
       }
 
-      if (agreementId) reloadAttachments(agreementId);
+      if (currentMilestone.id) reloadAttachments(currentMilestone.id);
       if (currentMilestone.id) reloadComments(currentMilestone.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, currentMilestone]);
 
-  const reloadAttachments = async (agId) => {
+  const reloadAttachments = async (milestoneId) => {
     setLoadingAttachments(true);
     try {
-      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
+      const { data } = await api.get(`/projects/milestones/${milestoneId}/files/`);
       const list = Array.isArray(data) ? data : [];
       list.sort((a, b) => (b.id || 0) - (a.id || 0));
       setRecentAttachments(list.slice(0, 10));
@@ -668,9 +668,9 @@ export default function MilestoneEditModal({
   }, [currentMilestone, comment, actionReadOnly]);
 
   /* ---------- attachments ---------- */
-  const fetchAgreementAttachments = async (agId) => {
+  const fetchMilestoneAttachments = async (milestoneId) => {
     try {
-      const { data } = await api.get(`/projects/agreements/${agId}/attachments/`);
+      const { data } = await api.get(`/projects/milestones/${milestoneId}/files/`);
       return Array.isArray(data) ? data : [];
     } catch {
       return [];
@@ -683,35 +683,32 @@ export default function MilestoneEditModal({
       return;
     }
     if (!file) return;
-    if (!agreementId) {
-      toast.error("Missing agreement id for upload.");
+    if (!currentMilestone?.id) {
+      toast.error("Missing milestone id for upload.");
       return;
     }
 
     setUploading(true);
     setUploadError("");
 
-    const title = `${form.title || currentMilestone?.title || "Milestone"} — ${file.name}`;
     const postFD = (url, fd) =>
       api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
 
     const verify = async () => {
-      const list = await fetchAgreementAttachments(agreementId);
+      const list = await fetchMilestoneAttachments(currentMilestone.id);
       setRecentAttachments(list.slice(0, 10));
       return list.find(
         (a) =>
-          (a.title && a.title.includes(file.name)) ||
-          (a.filename && a.filename === file.name)
+          a.file_name === file.name ||
+          a.filename === file.name ||
+          String(a.file || "").endsWith(file.name)
       );
     };
 
     try {
       const fd = new FormData();
       fd.append("file", file);
-      fd.append("agreement", String(agreementId));
-      fd.append("title", title);
-      fd.append("category", "OTHER");
-      await postFD(`/projects/agreements/${agreementId}/attachments/`, fd);
+      await postFD(`/projects/milestones/${currentMilestone.id}/files/`, fd);
       const found = await verify();
       if (found) {
         toast.success("File uploaded");
@@ -719,29 +716,13 @@ export default function MilestoneEditModal({
         setUploading(false);
         return;
       }
-    } catch { /* Validation below handles unsupported or invalid date values. */ }
-
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("agreement", String(agreementId));
-      fd.append("title", title);
-      fd.append("category", "OTHER");
-      await postFD(`/projects/attachments/`, fd);
-      const found = await verify();
-      if (found) {
-        toast.success("File uploaded");
-        setFile(null);
-        setUploading(false);
-        return;
-      }
-    } catch (e2) {
-      const resp = e2?.response;
+    } catch (uploadFailure) {
+      const resp = uploadFailure?.response;
       const body =
         (resp?.data &&
           (typeof resp.data === "string" ? resp.data : safeJsonString(resp.data))) ||
         resp?.statusText ||
-        e2?.message ||
+        uploadFailure?.message ||
         "Upload failed";
       setUploadError(`HTTP ${resp?.status || 400}: ${body}`);
       toast.error(`Upload failed: ${body}`);
@@ -752,7 +733,7 @@ export default function MilestoneEditModal({
     setUploadError("Upload accepted but attachment not visible yet.");
     toast.error("Server accepted upload, but attachment not visible yet.");
     setUploading(false);
-  }, [file, agreementId, form.title, currentMilestone?.title, actionReadOnly]);
+  }, [file, currentMilestone?.id, actionReadOnly]);
 
   const deleteAttachment = useCallback(
     async (attachmentId) => {
@@ -760,16 +741,13 @@ export default function MilestoneEditModal({
         toast("Read-only view. Delete is disabled here.");
         return;
       }
-      if (!agreementId) return;
+      if (!currentMilestone?.id) return;
       setDeletingId(attachmentId);
 
       const tryDelete = async (url) => api.delete(url);
 
       const paths = [
-        `/projects/agreements/${agreementId}/attachments/${attachmentId}/`,
-        `/projects/agreements/${agreementId}/attachments/${attachmentId}`,
-        `/projects/attachments/${attachmentId}/`,
-        `/projects/attachments/${attachmentId}`,
+        `/projects/milestone-files/${attachmentId}/`,
       ];
 
       let ok = false;
@@ -800,11 +778,11 @@ export default function MilestoneEditModal({
         return;
       }
 
-      await reloadAttachments(agreementId);
+      await reloadAttachments(currentMilestone.id);
       toast.success("Attachment deleted");
       setDeletingId(null);
     },
-    [agreementId, actionReadOnly]
+    [currentMilestone?.id, actionReadOnly]
   );
 
   /* ---------- HARDENED complete ---------- */
@@ -1646,8 +1624,7 @@ export default function MilestoneEditModal({
                         className="flex items-center justify-between"
                       >
                         <span className="truncate">
-                          {a.category ? `[${String(a.category).toUpperCase()}] ` : ""}
-                          {a.title || a.filename || "Attachment"}
+                          {a.file_name || a.title || a.filename || "Attachment"}
                         </span>
                         <span className="ml-3 flex items-center gap-3">
                           {url ? (
@@ -1684,7 +1661,7 @@ export default function MilestoneEditModal({
 
               <div className="mt-2">
                 <button
-                  onClick={() => agreementId && reloadAttachments(agreementId)}
+                  onClick={() => currentMilestone?.id && reloadAttachments(currentMilestone.id)}
                   className="rounded bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
                 >
                   Refresh
