@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   BadgeDollarSign,
   BadgeCheck,
+  ShieldCheck,
   WalletMinimal,
   FilePlus2,
   HandCoins,
@@ -3543,14 +3544,24 @@ export default function ContractorDashboard() {
   ];
   const moneyPipelineRows = [
     {
-      key: "awaiting-customer",
-      title: "Awaiting Customer Approval",
+      key: "escrow-funded",
+      title: "Escrow Funded",
+      icon: ShieldCheck,
+      count: paymentSummary.escrow_funded.count,
+      amount: paymentSummary.escrow_funded.amount,
+      description: "Customer funds received and held in escrow for future milestone releases.",
+      tone: "good",
+      onClick: () => goPayments({ moneyStatus: "escrow_funded" }),
+    },
+    {
+      key: "invoiced",
+      title: "Invoiced",
       icon: Receipt,
-      count: paymentSummary.awaiting_customer_approval.count,
-      amount: paymentSummary.awaiting_customer_approval.amount,
-      description: "Invoices or draw requests waiting on owner or customer review.",
+      count: paymentSummary.invoiced.count,
+      amount: paymentSummary.invoiced.amount,
+      description: "Invoices or draw requests sent and awaiting customer action.",
       tone: "warn",
-      onClick: () => goPayments({ moneyStatus: "awaiting_customer_approval" }),
+      onClick: () => goPayments({ moneyStatus: "invoiced" }),
     },
     {
       key: "payment-pending",
@@ -3598,15 +3609,13 @@ export default function ContractorDashboard() {
       );
     }).length;
     const pendingPaymentAmount =
-      money(paymentSummary.awaiting_customer_approval.amount) +
+      money(paymentSummary.invoiced.amount) +
       money(paymentSummary.payment_pending.amount);
     const pendingPaymentCount =
-      Number(paymentSummary.awaiting_customer_approval.count || 0) +
+      Number(paymentSummary.invoiced.count || 0) +
       Number(paymentSummary.payment_pending.count || 0);
     const escrowProtectedAmount =
-      money(paymentSummary.awaiting_customer_approval.amount) +
-      money(paymentSummary.payment_pending.amount) +
-      money(paymentSummary.paid.amount);
+      money(paymentSummary.escrow_funded.amount);
     const upcomingMilestoneCount = Number(dueSchedule.week.count || 0);
 
     return [
@@ -3834,7 +3843,7 @@ export default function ContractorDashboard() {
             Track payments from approval to payout.
           </p>
         </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {moneyPipelineRows.map((row) => (
             <PipelineRow
               key={row.key}
@@ -4403,6 +4412,7 @@ export default function ContractorDashboard() {
             <DashboardSection
               title="Recent Activity"
               subtitle="A quieter view of recent workflow changes."
+              variant="premium"
             >
               <div className="space-y-2.5" data-testid="dashboard-activity-feed">
                 {activityFeed.slice(0, 5).map((item) => (

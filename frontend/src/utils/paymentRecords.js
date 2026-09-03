@@ -57,18 +57,23 @@ function invoiceMoneyStatus(invoice) {
 
   const status = norm(invoice?.status);
   const display = norm(invoice?.display_status ?? invoice?.status_label);
+  const paymentMode = invoiceMode(invoice);
   const escrowReleased =
     invoice?.escrow_released === true ||
     invoice?.escrow_released === 1 ||
     invoice?.escrow_released === "true" ||
     !!invoice?.escrow_released_at;
-  const directPaid =
+  const paidSignal =
     !!invoice?.direct_pay_paid_at ||
     !!invoice?.directPayPaidAt ||
     !!invoice?.paid_at;
 
-  if (escrowReleased || directPaid || display === "paid" || status.includes("paid") || status === "released") {
+  if (escrowReleased || status === "released") {
     return "paid";
+  }
+
+  if (paidSignal || display === "paid" || status.includes("paid")) {
+    return paymentMode === "escrow" ? "escrow_funded" : "paid";
   }
 
   if (["approved", "ready_to_pay"].includes(status) || display === "approved") {
@@ -80,24 +85,25 @@ function invoiceMoneyStatus(invoice) {
     display.includes("pending") ||
     display.includes("sent")
   ) {
-    return "awaiting_customer_approval";
+    return "invoiced";
   }
 
   if (status.includes("reject") || status.includes("fail")) return "issues";
-  return "awaiting_customer_approval";
+  return "invoiced";
 }
 
 function drawMoneyStatus(draw) {
   const status = norm(draw?.workflow_status ?? draw?.status);
-  if (status === "submitted") return "awaiting_customer_approval";
+  if (status === "submitted") return "invoiced";
   if (status === "payment_pending" || status === "approved") return "payment_pending";
   if (status === "paid") return "paid";
   if (["changes_requested", "rejected", "disputed"].includes(status)) return "issues";
-  return "awaiting_customer_approval";
+  return "invoiced";
 }
 
 export function moneyStatusLabel(status) {
-  if (status === "awaiting_customer_approval") return "Awaiting Customer Approval";
+  if (status === "escrow_funded") return "Escrow Funded";
+  if (status === "invoiced" || status === "awaiting_customer_approval") return "Invoiced";
   if (status === "payment_pending") return "Payment Pending";
   if (status === "paid") return "Paid";
   if (status === "issues") return "Resolution / Holds";
@@ -197,7 +203,8 @@ export function buildUnifiedPaymentRecords({ invoices = [], drawRequests = [] })
 
 export function summarizePaymentRecords(records) {
   const base = {
-    awaiting_customer_approval: { count: 0, amount: 0 },
+    escrow_funded: { count: 0, amount: 0 },
+    invoiced: { count: 0, amount: 0 },
     payment_pending: { count: 0, amount: 0 },
     paid: { count: 0, amount: 0 },
     issues: { count: 0, amount: 0 },

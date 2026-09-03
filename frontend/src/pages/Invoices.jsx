@@ -42,9 +42,11 @@ function prettyDate(value) {
 }
 
 function toneClasses(status) {
+  if (status === "escrow_funded") return "border-teal-200 bg-teal-50 text-teal-800";
+  if (status === "invoiced") return "border-amber-200 bg-amber-50 text-amber-900";
   if (status === "paid") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (status === "payment_pending") return "border-indigo-200 bg-indigo-50 text-indigo-800";
-  if (status === "awaiting_customer_approval") return "border-slate-200 bg-slate-50 text-slate-800";
+  if (status === "awaiting_customer_approval") return "border-amber-200 bg-amber-50 text-amber-900";
   if (status === "issues") return "border-amber-200 bg-amber-50 text-amber-900";
   return "border-slate-200 bg-slate-50 text-slate-800";
 }
@@ -469,8 +471,9 @@ export default function Invoices() {
         </Button>
       </Card>
 
-      <div className="mb-5 grid gap-3 md:grid-cols-4">
-        <SummaryCard title="Awaiting Customer Approval" summary={summary.awaiting_customer_approval} />
+      <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <SummaryCard title="Escrow Funded" summary={summary.escrow_funded} />
+        <SummaryCard title="Invoiced" summary={summary.invoiced} />
         <SummaryCard title="Payment Pending" summary={summary.payment_pending} />
         <SummaryCard title="Paid" summary={summary.paid} />
         <SummaryCard title="Resolution / Holds" summary={summary.issues} />
@@ -510,7 +513,8 @@ export default function Invoices() {
           data-testid="payments-filter-money-status"
         >
           <option value="all">All Money Statuses</option>
-          <option value="awaiting_customer_approval">Awaiting Customer Approval</option>
+          <option value="escrow_funded">Escrow Funded</option>
+          <option value="invoiced">Invoiced</option>
           <option value="payment_pending">Payment Pending</option>
           <option value="paid">Paid</option>
           <option value="issues">Resolution / Holds</option>

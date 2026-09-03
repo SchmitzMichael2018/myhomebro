@@ -440,7 +440,8 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText("Today's Schedule");
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Payment');
   await expect(page.getByTestId('dashboard-quick-actions-row')).toContainText('Expense');
-  await expect(page.getByTestId('dashboard-money-awaiting-customer')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-escrow-funded')).toBeVisible();
+  await expect(page.getByTestId('dashboard-money-invoiced')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-payment-pending')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-paid')).toBeVisible();
   await expect(page.getByTestId('dashboard-money-issues')).toBeVisible();
@@ -456,7 +457,9 @@ test('contractor dashboard reflects draw-request payment pipeline and actions', 
   await expect(page.getByTestId('dashboard-bids-row-intake-202')).toContainText('Office Suite Renovation');
   await expect(page.getByTestId('dashboard-bids-row-lead-203')).toContainText('Convert to Agreement');
   await expect(page.getByTestId('dashboard-bids-row-lead-204')).toContainText('Not Selected');
-  await expect(page.getByTestId('dashboard-money-awaiting-customer')).toContainText('Awaiting Customer Approval');
+  await expect(page.getByTestId('dashboard-money-escrow-funded')).toContainText('Escrow Funded');
+  await expect(page.getByTestId('dashboard-money-escrow-funded')).toContainText('$1,100.00');
+  await expect(page.getByTestId('dashboard-money-invoiced')).toContainText('Invoiced');
   await expect(page.getByTestId('dashboard-money-payment-pending')).toContainText('Payment Pending');
   await expect(page.getByTestId('dashboard-money-paid')).toContainText('Paid');
   await expect(page.locator('text=/awaiting payment/i').first()).toBeVisible();
