@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import toast from "react-hot-toast";
 import api from "../api";
+import SendInvoiceButton from "./SendInvoiceButton";
 
 /* ---------------- helpers ---------------- */
 
@@ -223,6 +224,7 @@ export default function MilestoneEditModal({
   }, [location?.search]);
 
   const [currentMilestone, setCurrentMilestone] = useState(milestone || null);
+  const [linkedInvoice, setLinkedInvoice] = useState(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -274,6 +276,36 @@ export default function MilestoneEditModal({
   useEffect(() => {
     setCurrentMilestone(milestone || null);
   }, [milestone, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const embedded =
+      currentMilestone?.invoice && typeof currentMilestone.invoice === "object"
+        ? currentMilestone.invoice
+        : null;
+    const invoiceId =
+      embedded?.id || currentMilestone?.invoice_id || currentMilestone?.invoiceId || null;
+
+    if (embedded) setLinkedInvoice(embedded);
+    else setLinkedInvoice(null);
+    if (!invoiceId) return;
+
+    let cancelled = false;
+    api
+      .get(`/projects/invoices/${invoiceId}/`, {
+        params: { _ts: Date.now() },
+        headers: { "Cache-Control": "no-cache", Pragma: "no-cache" },
+      })
+      .then(({ data }) => {
+        if (!cancelled) setLinkedInvoice(data);
+      })
+      .catch(() => {
+        // Keep the embedded invoice, if present. The invoice page remains the fallback.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, currentMilestone?.invoice_id, currentMilestone?.invoiceId, currentMilestone?.invoice]);
 
   const agreementId =
     currentMilestone?.agreement ??
@@ -1069,8 +1101,29 @@ export default function MilestoneEditModal({
       </div>
     ) : null;
 
-  // ✅ show complete button even when signed/locked (but not when actionReadOnly)
-  const canShowComplete = !actionReadOnly;
+  const milestoneCompleted =
+    currentMilestone?.completed === true ||
+    ["complete", "completed", "approved"].includes(
+      String(currentMilestone?.status || "").trim().toLowerCase()
+    );
+
+  // Completion is an action for unfinished work only. Completed milestones move
+  // forward to their linked invoice instead of offering completion again.
+  const canShowComplete = !actionReadOnly && !milestoneCompleted;
+
+  const billingAction = milestoneCompleted ? (
+    linkedInvoice ? (
+      <SendInvoiceButton
+        invoice={linkedInvoice}
+        onUpdated={setLinkedInvoice}
+        forceEnable
+      />
+    ) : currentMilestone?.invoice_id || currentMilestone?.invoiceId ? (
+      <span className="text-sm font-medium text-slate-500">Loading invoice…</span>
+    ) : (
+      <span className="text-sm text-slate-500">Create the invoice from the Milestones page.</span>
+    )
+  ) : null;
 
   return (
     <div
@@ -1526,18 +1579,20 @@ export default function MilestoneEditModal({
 
               <div className="flex-1" />
 
-              <button
-                onClick={completeToReview}
-                disabled={!completionGate.ok || actionReadOnly}
-                className={`rounded px-3 py-2 text-sm font-medium ${
-                  completionGate.ok && !actionReadOnly
-                    ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                }`}
-                title={completionGate.ok ? "Submit completion for review." : completionGate.reason}
-              >
-                Complete Milestone
-              </button>
+              {milestoneCompleted ? billingAction : (
+                <button
+                  onClick={completeToReview}
+                  disabled={!completionGate.ok || actionReadOnly}
+                  className={`rounded px-3 py-2 text-sm font-medium ${
+                    completionGate.ok && !actionReadOnly
+                      ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                  }`}
+                  title={completionGate.ok ? "Submit completion for review." : completionGate.reason}
+                >
+                  Complete Milestone
+                </button>
+              )}
             </div>
           ) : !lockedSigned ? (
             <div className="mt-4 flex items-center gap-2">
@@ -1551,7 +1606,7 @@ export default function MilestoneEditModal({
 
               <div className="flex-1" />
 
-              {canShowComplete ? (
+              {milestoneCompleted ? billingAction : canShowComplete ? (
                 <button
                   onClick={completeToReview}
                   disabled={!completionGate.ok}
@@ -1728,7 +1783,9 @@ export default function MilestoneEditModal({
             </div>
 
             <div className="mt-2 text-xs text-gray-500">
-              Complete is disabled until agreement requirements are satisfied.
+              {milestoneCompleted
+                ? "Milestone completed. Use the invoice action below for customer billing."
+                : "Complete is disabled until agreement requirements are satisfied."}
             </div>
           </section>
 
@@ -1736,7 +1793,9 @@ export default function MilestoneEditModal({
             <section data-testid="milestone-final-action-section" className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="text-sm font-semibold text-gray-800">Final Action</div>
               <p className="mt-1 text-xs leading-5 text-gray-500">
-                Completion is available only when the existing signing, funding, and milestone rules allow it.
+                {milestoneCompleted
+                  ? "This milestone is complete. Send its invoice or resend it if the customer needs another copy."
+                  : "Completion is available only when the existing signing, funding, and milestone rules allow it."}
               </p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <button
@@ -1746,7 +1805,7 @@ export default function MilestoneEditModal({
                 >
                   Close
                 </button>
-                {canShowComplete ? (
+                {milestoneCompleted ? billingAction : canShowComplete ? (
                   <button
                     data-testid="milestone-final-complete-action"
                     onClick={completeToReview}
