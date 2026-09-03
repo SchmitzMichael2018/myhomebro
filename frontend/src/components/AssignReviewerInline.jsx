@@ -6,7 +6,9 @@ export default function AssignReviewerInline({
   onAssign,
   onClear,
   disabled = false,
+  theme = "default",
 }) {
+  const operational = theme === "operational";
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -55,15 +57,15 @@ export default function AssignReviewerInline({
   }
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div data-testid="assign-reviewer-inline" className={`rounded-xl border p-4 ${operational ? "border-white/10 bg-[#041735]/80 text-white" : "border-gray-200 bg-white"}`}>
       <div className="font-bold">Delegated Reviewer</div>
-      <div className="mt-1 text-sm text-gray-500">
+      <div className={`mt-1 text-sm ${operational ? "text-sky-100/65" : "text-gray-500"}`}>
         Contractor owner is the default reviewer. You can optionally assign an
         internal team reviewer.
       </div>
 
       <div className="mt-3 text-sm">
-        <span className="font-semibold text-gray-900">Current:</span>{" "}
+        <span className={`font-semibold ${operational ? "text-white" : "text-gray-900"}`}>Current:</span>{" "}
         {currentReviewer?.is_delegated
           ? currentReviewer?.display_name || currentReviewer?.email || "Unassigned"
           : "Contractor Owner"}
@@ -81,7 +83,7 @@ export default function AssignReviewerInline({
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
           disabled={disabled || busy}
-          className="flex-1 rounded-lg border border-gray-300 px-3 py-2"
+          className={operational ? "mhb-operational-control flex-1 rounded-lg px-3 py-2" : "flex-1 rounded-lg border border-gray-300 px-3 py-2"}
         >
           <option value="">
             {options.length === 0 ? "No eligible reviewers" : "Select delegated reviewer"}
@@ -108,7 +110,7 @@ export default function AssignReviewerInline({
           data-testid="delegated-reviewer-clear-button"
           onClick={handleClear}
           disabled={disabled || busy || !currentReviewer?.is_delegated}
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"
+          className={operational ? "rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-semibold text-white hover:bg-white/15 disabled:opacity-40" : "rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"}
         >
           {busy ? "Working..." : "Clear"}
         </button>

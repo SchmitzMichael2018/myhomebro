@@ -6006,8 +6006,8 @@ export default function AgreementDetail({
                         </div>
 
                       {m.subcontractor_review_note ? (
-                        <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
-                          <span className="font-semibold text-gray-900">
+                        <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
+                          <span className="font-semibold text-white">
                             Review note:
                           </span>{' '}
                           {m.subcontractor_review_note}
@@ -6016,9 +6016,9 @@ export default function AgreementDetail({
 
                       <div
                         data-testid={`milestone-completion-state-${m.id}`}
-                        className="mt-2 text-sm text-gray-600"
+                        className="mt-2 text-sm text-sky-100/70"
                       >
-                        <span className="font-semibold text-gray-900">
+                        <span className="font-semibold text-white">
                           Work submission:
                         </span>{' '}
                         {String(
@@ -6044,8 +6044,8 @@ export default function AgreementDetail({
 
                       {m.work_submission_note ||
                       m.subcontractor_completion_note ? (
-                        <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
-                          <span className="font-semibold text-gray-900">
+                        <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
+                          <span className="font-semibold text-white">
                             Completion note:
                           </span>{' '}
                           {m.work_submission_note ||
@@ -6055,8 +6055,8 @@ export default function AgreementDetail({
 
                       {m.work_review_response_note ||
                       m.subcontractor_review_response_note ? (
-                        <div className="mt-1 text-sm text-gray-600 whitespace-pre-wrap">
-                          <span className="font-semibold text-gray-900">
+                        <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
+                          <span className="font-semibold text-white">
                             Review response:
                           </span>{' '}
                           {m.work_review_response_note ||
@@ -6174,6 +6174,7 @@ export default function AgreementDetail({
                       {isContractor && (
                         <div className="mt-3">
                           <AssignSubcontractorInline
+                            theme="operational"
                             acceptedSubcontractors={acceptedSubcontractors}
                             currentAssignment={m.assigned_subcontractor}
                             currentCompliance={
@@ -6196,6 +6197,7 @@ export default function AgreementDetail({
                           />
                           <div className="mt-3">
                             <AssignReviewerInline
+                              theme="operational"
                               reviewers={eligibleReviewers}
                               currentReviewer={m.reviewer}
                               onAssign={(subaccountId) =>
@@ -6214,8 +6216,8 @@ export default function AgreementDetail({
                               Clear Review Request
                             </button>
                           ) : null}
-                          <div className="mt-3 space-y-2 rounded-lg border border-gray-200 bg-white p-4">
-                            <div className="text-sm font-semibold text-gray-900">
+                          <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-[#041735]/80 p-4">
+                            <div className="text-sm font-semibold text-white">
                               Worker Submission Review
                             </div>
                             <textarea
@@ -6228,7 +6230,7 @@ export default function AgreementDetail({
                                   [m.id]: e.target.value,
                                 }))
                               }
-                              className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
+                              className="mhb-operational-control w-full rounded-lg px-3 py-2 text-sm"
                               placeholder="Optional response note"
                             />
                             <div className="flex flex-wrap gap-2">
@@ -6262,7 +6264,7 @@ export default function AgreementDetail({
                                     m.subcontractor_completion_status) !==
                                     'submitted_for_review'
                                 }
-                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                                className="rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15 disabled:opacity-40"
                               >
                                 {completionDecisionBusy[m.id]
                                   ? 'Working...'

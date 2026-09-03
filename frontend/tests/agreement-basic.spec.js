@@ -7148,6 +7148,9 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   );
   await expect(page.getByTestId('milestone-team-controls-501')).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('milestone-team-controls-501')).toContainText('Advanced assignment controls');
+  await page.getByTestId('milestone-team-controls-501').click();
+  await expect(page.getByTestId('assign-subcontractor-inline').first()).toHaveClass(/bg-\[#041735\]/);
+  await expect(page.getByTestId('assign-reviewer-inline').first()).toHaveClass(/bg-\[#041735\]/);
   await page.getByTestId('agreement-workspace-tab-more').click();
   await expect(page.getByTestId('agreement-workspace-panel-activity')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-workspace-panel-activity')).toContainText('Assign Entire Agreement');

@@ -35,7 +35,9 @@ export default function AssignSubcontractorInline({
   onAssign,
   onUnassign,
   disabled = false,
+  theme = "default",
 }) {
+  const operational = theme === "operational";
   const [selected, setSelected] = useState("");
   const [agreedPay, setAgreedPay] = useState("");
   const [paymentReleaseMode, setPaymentReleaseMode] = useState("manual_release");
@@ -155,19 +157,19 @@ export default function AssignSubcontractorInline({
   const currentPayout = currentAgreement?.payout_orchestration || {};
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <div data-testid="assign-subcontractor-inline" className={`rounded-xl border p-4 ${operational ? "border-white/10 bg-[#041735]/80 text-white" : "border-gray-200 bg-white"}`}>
       <div className="font-bold">Assigned Subcontractor</div>
-      <div className="mt-1 text-sm text-gray-500">
+      <div className={`mt-1 text-sm ${operational ? "text-sky-100/65" : "text-gray-500"}`}>
         Only accepted subcontractors for this agreement can be assigned.
       </div>
 
       <div className="mt-3 text-sm">
-        <span className="font-semibold text-gray-900">Current:</span>{" "}
+        <span className={`font-semibold ${operational ? "text-white" : "text-gray-900"}`}>Current:</span>{" "}
         {currentAssignment?.display_name || currentAssignment?.email || "Unassigned"}
       </div>
 
       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-semibold text-gray-900">Compliance:</span>
+        <span className={`font-semibold ${operational ? "text-white" : "text-gray-900"}`}>Compliance:</span>
         <span
           data-testid="subcontractor-assignment-compliance-chip"
           className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${complianceClass(
@@ -252,7 +254,7 @@ export default function AssignSubcontractorInline({
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
           disabled={disabled || busy}
-          className="flex-1 rounded-lg border border-gray-300 px-3 py-2"
+          className={operational ? "mhb-operational-control flex-1 rounded-lg px-3 py-2" : "flex-1 rounded-lg border border-gray-300 px-3 py-2"}
         >
           <option value="">
             {options.length === 0 ? "No accepted subcontractors" : "Select subcontractor"}
@@ -272,7 +274,7 @@ export default function AssignSubcontractorInline({
           value={agreedPay}
           onChange={(e) => setAgreedPay(e.target.value)}
           disabled={disabled || busy}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm md:w-40"
+          className={operational ? "mhb-operational-control rounded-lg px-3 py-2 text-sm md:w-40" : "rounded-lg border border-gray-300 px-3 py-2 text-sm md:w-40"}
           placeholder="Agreed pay"
         />
 
@@ -281,7 +283,7 @@ export default function AssignSubcontractorInline({
           value={paymentReleaseMode}
           onChange={(e) => setPaymentReleaseMode(e.target.value)}
           disabled={disabled || busy}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm md:w-56"
+          className={operational ? "mhb-operational-control rounded-lg px-3 py-2 text-sm md:w-56" : "rounded-lg border border-gray-300 px-3 py-2 text-sm md:w-56"}
         >
           <option value="manual_release">Manual Release</option>
           <option value="auto_after_customer_approval">Auto-Release After Customer Approval</option>
@@ -302,7 +304,7 @@ export default function AssignSubcontractorInline({
           type="button"
           onClick={handleUnassign}
           disabled={disabled || busy || !currentAssignment}
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"
+          className={operational ? "rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-semibold text-white hover:bg-white/15 disabled:opacity-40" : "rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"}
         >
           {busy ? "Working..." : "Remove"}
         </button>
