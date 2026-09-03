@@ -18,6 +18,7 @@ from rest_framework.exceptions import PermissionDenied
 from ..models import Invoice, InvoiceStatus, MilestoneComment, MilestoneFile
 from ..serializers.invoices import InvoiceSerializer
 from projects.services.invoice_pdf import generate_invoice_pdf_bytes
+from projects.services.invites_delivery import send_postmark_email
 
 # ✅ Direct Pay service
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
@@ -180,20 +181,6 @@ def _invoice_notes_and_attachments(invoice: Invoice) -> tuple[str, list[dict]]:
 
 
 def _send_invoice_email_postmark(invoice: Invoice) -> dict:
-    try:
-        from postmarker.core import PostmarkClient
-    except Exception as exc:
-        raise RuntimeError(
-            "Postmark email client is not installed in this environment."
-        ) from exc
-
-    token = getattr(settings, "POSTMARK_SERVER_TOKEN", None)
-    if not token:
-        raise RuntimeError("POSTMARK_SERVER_TOKEN is missing from settings/environment.")
-
-    from_email = getattr(settings, "POSTMARK_FROM_EMAIL", "info@myhomebro.com")
-    message_stream = getattr(settings, "POSTMARK_MESSAGE_STREAM", "outbound")
-
     to_email = _get_customer_email(invoice)
     if not to_email:
         raise RuntimeError("Customer email not found for this invoice.")
@@ -275,14 +262,27 @@ def _send_invoice_email_postmark(invoice: Invoice) -> dict:
     </div>
     """
 
-    client = PostmarkClient(server_token=token)
-    return client.emails.send(
-        From=from_email,
-        To=to_email,
-        Subject=subject,
-        HtmlBody=html,
-        MessageStream=message_stream,
+    text_body = (
+        f"Hi {customer_name},\n\n"
+        f"Your contractor submitted invoice {inv_number} for {project_title}.\n"
+        f"Amount: ${float(amount_val):.2f}\n"
+        f"Milestone: {milestone_line}\n\n"
+        f"Approve and pay: {approve_url}\n"
+        f"Dispute: {dispute_url}\n"
+        f"View invoice PDF: {pdf_url}\n"
     )
+    sent, provider_message = send_postmark_email(
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html,
+    )
+    if not sent:
+        raise RuntimeError(provider_message)
+
+    # Keep the existing return shape used by the send/resend actions. The
+    # shared REST sender does not expose Postmark's message id.
+    return {"MessageID": "", "Message": provider_message}
 
 
 def _agreement_has_active_dispute(agreement) -> bool:
