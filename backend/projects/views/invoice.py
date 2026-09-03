@@ -4,7 +4,7 @@
 import logging
 import os
 from django.shortcuts import get_object_or_404
-from django.http import HttpResponse, FileResponse
+from django.http import HttpResponse
 from django.conf import settings
 from django.utils import timezone
 
@@ -504,21 +504,23 @@ class InvoicePDFView(APIView):
         invoice = get_object_or_404(Invoice, pk=pk)
         user = request.user
 
-        contractor_user = getattr(getattr(getattr(invoice, "agreement", None), "project", None), "contractor", None)
-        contractor_user = getattr(contractor_user, "user", None)
-
         agreement = getattr(invoice, "agreement", None)
+        contractor = getattr(agreement, "contractor", None) if agreement else None
+        if contractor is None:
+            contractor = getattr(getattr(agreement, "project", None), "contractor", None)
+        contractor_user = getattr(contractor, "user", None)
         customer = getattr(agreement, "homeowner", None) if agreement else None
         customer_user = getattr(customer, "user", None)
 
         if user != contractor_user and (customer_user is None or user != customer_user):
             return Response({"detail": "Unauthorized access."}, status=status.HTTP_403_FORBIDDEN)
 
-        if not getattr(invoice, "pdf_file", None):
-            return Response({"detail": "No PDF file found for this invoice."}, status=status.HTTP_404_NOT_FOUND)
-
-        file_path = invoice.pdf_file.path
-        if not os.path.exists(file_path):
-            return Response({"detail": "File not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        return FileResponse(open(file_path, "rb"), as_attachment=True, filename=os.path.basename(file_path))
+        try:
+            pdf_bytes = generate_invoice_pdf_bytes(invoice)
+            filename = f"invoice_{getattr(invoice, 'invoice_number', pk)}.pdf"
+            response = HttpResponse(pdf_bytes, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="{filename}"'
+            return response
+        except Exception:
+            logger.exception("PDF generation for Invoice %s failed", invoice.id)
+            return Response({"detail": "Failed to generate invoice PDF."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

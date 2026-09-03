@@ -33,6 +33,17 @@ class AsyncPDFTestBase(TestCase):
 
 
 class PDFDispatchTests(AsyncPDFTestBase):
+    def test_authenticated_invoice_download_generates_pdf_on_demand(self):
+        invoice = Invoice.objects.create(agreement=self.agreement, amount=Decimal("250.00"))
+        self.client.force_login(self.agreement.contractor.user)
+
+        response = self.client.get(f"/api/projects/invoices/{invoice.id}/pdf/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/pdf")
+        self.assertIn("attachment", response["Content-Disposition"])
+        self.assertTrue(response.content.startswith(b"%PDF"))
+
     @override_settings(PDF_ASYNC_ENABLED=True, PDF_QUEUE_NAME="pdf")
     @patch("projects.tasks.task_generate_full_agreement_pdf.apply_async")
     def test_successful_enqueue_stores_task_id_after_acceptance(self, apply_async):
