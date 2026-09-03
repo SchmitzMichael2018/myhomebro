@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import SignaturePad from "signature_pad";
 import toast from "react-hot-toast";
 import api from "../api";
+import { hasSignatureForMethod, SIGNATURE_METHODS } from "../lib/signatureMethods.js";
 
 const TOS_URL = "/legal/terms-of-service/";
 const PRIVACY_URL = "/legal/privacy-policy/";
@@ -73,6 +74,7 @@ export default function SignatureModal({
   onSigned,
 }) {
   const [typedName, setTypedName] = useState(defaultName || "");
+  const [signatureMethod, setSignatureMethod] = useState(SIGNATURE_METHODS.TYPE);
   const [legalAcknowledged, setLegalAcknowledged] = useState(false);
   const [sigFile, setSigFile] = useState(null);
   const [sigPreview, setSigPreview] = useState(null);
@@ -194,6 +196,7 @@ export default function SignatureModal({
     }
 
     setTypedName(defaultName || "");
+    setSignatureMethod(SIGNATURE_METHODS.TYPE);
     setLegalAcknowledged(false);
     setSigFile(null);
     if (sigPreview) {
@@ -227,6 +230,19 @@ export default function SignatureModal({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, agreement?.id, defaultName]);
+
+  useEffect(() => {
+    if (!isOpen || signatureMethod !== SIGNATURE_METHODS.DRAW) return undefined;
+    const timer = setTimeout(() => {
+      if (!canvasRef.current) return;
+      destroyPad(sigPadRef);
+      initPad(sigPadRef, canvasRef.current);
+      if (canvasWrapRef.current) {
+        resizePad(sigPadRef, canvasRef.current, canvasWrapRef.current);
+      }
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [destroyPad, initPad, isOpen, resizePad, signatureMethod]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -285,9 +301,15 @@ export default function SignatureModal({
 
   if (!isOpen || !agreement) return null;
 
+  const methodComplete = hasSignatureForMethod(signatureMethod, {
+    typedName,
+    hasDrawn,
+    sigFile,
+  });
   const canSubmit =
     !!agreementReviewed &&
     typedName.trim().length > 1 &&
+    methodComplete &&
     legalAcknowledged &&
     !submitting;
 
@@ -302,12 +324,13 @@ export default function SignatureModal({
       fd.append("signer_name", typedName.trim());
       fd.append("signer_role", signerRoleNormalized);
       fd.append("signature_text", typedName.trim());
-      const drawn = getAnyDrawnDataUrl();
+      fd.append("signature_method", signatureMethod);
+      const drawn = signatureMethod === SIGNATURE_METHODS.DRAW ? getAnyDrawnDataUrl() : null;
       if (drawn && dataUrlLooksValidPng(drawn)) {
         fd.append("signature_image_base64", drawn);
         fd.append("signature_data_url", drawn);
       }
-      if (sigFile) {
+      if (signatureMethod === SIGNATURE_METHODS.UPLOAD && sigFile) {
         fd.append("signature_image", sigFile);
         fd.append("signature", sigFile);
       }
@@ -443,7 +466,56 @@ export default function SignatureModal({
                 />
               </div>
 
-              <div className="min-w-0">
+              <fieldset>
+                <legend className="mb-2 text-[11px] font-semibold text-slate-200">Choose Signature Method</legend>
+                <div className="grid grid-cols-3 gap-2" data-testid="signature-method-options">
+                  {[
+                    [SIGNATURE_METHODS.TYPE, "Type"],
+                    [SIGNATURE_METHODS.DRAW, "Draw"],
+                    [SIGNATURE_METHODS.UPLOAD, "Upload"],
+                  ].map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      aria-pressed={signatureMethod === value}
+                      onClick={() => {
+                        setSignatureMethod(value);
+                        if (value !== SIGNATURE_METHODS.DRAW) clearAllPads();
+                        if (value !== SIGNATURE_METHODS.UPLOAD) {
+                          setSigFile(null);
+                          if (sigPreview) URL.revokeObjectURL(sigPreview);
+                          setSigPreview(null);
+                        }
+                      }}
+                      className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                        signatureMethod === value
+                          ? "border-sky-400 bg-sky-500 text-slate-950"
+                          : "border-white/15 bg-slate-900/80 text-slate-200 hover:bg-slate-800"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              {signatureMethod === SIGNATURE_METHODS.TYPE ? (
+                <div className="rounded-xl border border-sky-400/30 bg-slate-900/70 px-4 py-4">
+                  <div className="text-[11px] font-semibold text-slate-300">Typed Signature Preview</div>
+                  <div
+                    className="mt-3 min-h-20 rounded-lg border border-white/15 bg-white px-5 py-4 text-4xl text-slate-950"
+                    style={{ fontFamily: '"Segoe Script", "Brush Script MT", cursive' }}
+                    data-testid="typed-signature-preview"
+                  >
+                    {typedName.trim() || "Your signature"}
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-400">
+                    Your typed legal name will be recorded as your electronic signature.
+                  </p>
+                </div>
+              ) : null}
+
+              {signatureMethod === SIGNATURE_METHODS.DRAW ? <div className="min-w-0">
                 <div className="mb-1 flex items-center justify-between">
                   <div className="text-[11px] font-semibold text-slate-200">Draw Signature</div>
                   <button
@@ -476,10 +548,10 @@ export default function SignatureModal({
                     Open Full-Screen Signature Pad
                   </button>
                 ) : null}
-              </div>
+              </div> : null}
 
-              <div className="border-t border-white/10 pt-2">
-                <div className="mb-1 text-[11px] font-semibold text-slate-200">Or Upload Signature Image</div>
+              {signatureMethod === SIGNATURE_METHODS.UPLOAD ? <div className="border-t border-white/10 pt-2">
+                <div className="mb-1 text-[11px] font-semibold text-slate-200">Upload Signature Image</div>
 
                 <label className="mb-2 inline-flex cursor-pointer items-center text-[11px] text-sky-300 hover:text-sky-200">
                   <input
@@ -520,10 +592,10 @@ export default function SignatureModal({
                   </div>
                 ) : (
                   <div className="text-[11px] text-slate-500">
-                    No image uploaded. If you prefer, just draw your signature above.
+                    No image uploaded yet.
                   </div>
                 )}
-              </div>
+              </div> : null}
 
               <label className="flex items-start gap-2 rounded-lg border border-slate-700 bg-slate-900/70 px-3 py-2 text-[11px] text-slate-200">
                 <input
