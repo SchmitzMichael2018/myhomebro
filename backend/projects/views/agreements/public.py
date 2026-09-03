@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from django.http import Http404
 from django.shortcuts import get_object_or_404
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -260,6 +261,20 @@ def agreement_public_sign(request):
                 "contractor_rating": _contractor_rating_payload(contractor),
                 "project_dashboard_url": project_dashboard_url,
                 "status": getattr(ag, "status", "draft"),
+                "status_label": (
+                    "Signed"
+                    if bool(getattr(ag, "signed_by_homeowner", False))
+                    else "Awaiting your signature"
+                ),
+                "payment_mode": getattr(ag, "payment_mode", "escrow") or "escrow",
+                "contract_amount": str(getattr(ag, "total_cost", 0) or 0),
+                "contingency_reserve": str(
+                    max(getattr(ag, "incidentals_reserve_amount", 0) or 0, 0)
+                ),
+                "total_escrow_required": str(
+                    (getattr(ag, "total_cost", 0) or 0)
+                    + max(getattr(ag, "incidentals_reserve_amount", 0) or 0, 0)
+                ),
                 "pdf_url": pdf_url,
                 "milestones": milestone_rows,
                 "attachments": _agreement_visible_attachments(ag),
@@ -361,6 +376,7 @@ def agreement_public_sign(request):
     return Response(resp, status=200)
 
 
+@xframe_options_sameorigin
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def agreement_public_pdf(request):

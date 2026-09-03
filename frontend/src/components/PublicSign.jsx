@@ -2,7 +2,7 @@
 // Customer-facing review / sign / fund page for tokenized agreements.
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
@@ -14,10 +14,6 @@ import { ProjectModeBadge } from "./projectMode.jsx";
 
 const STRIPE_PUBLISHABLE_KEY = getStripePublishableKey();
 const stripePromise = STRIPE_PUBLISHABLE_KEY ? loadStripe(STRIPE_PUBLISHABLE_KEY) : null;
-
-function useQuery() {
-  return new URLSearchParams(useLocation().search);
-}
 
 function money(value) {
   const num = Number(value || 0);
@@ -309,16 +305,13 @@ function PublicFundingCheckout({ fundingToken, agreementTitle, onPaid }) {
 
 export default function PublicSign() {
   const { token } = useParams();
-  const query = useQuery();
 
   const [loading, setLoading] = useState(true);
   const [agreement, setAgreement] = useState(null);
   const [error, setError] = useState("");
   const [isSignOpen, setIsSignOpen] = useState(false);
-  const [lastSignResponse, setLastSignResponse] = useState(null);
+  const [pdfReviewed, setPdfReviewed] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-
-  const modeFinal = (query.get("mode") || "").toLowerCase() === "final";
 
   const loadAgreement = useCallback(async () => {
     if (!token) {
@@ -353,20 +346,19 @@ export default function PublicSign() {
     String(agreement?.status || "").toLowerCase() === "signed";
 
   const contractorRating = agreement?.contractor_rating || {};
-  const termsText =
-    agreement?.terms_of_service_snapshot ||
-    agreement?.terms_text ||
-    agreement?.terms ||
-    "";
   const projectTitle = agreement?.project_title || agreement?.title || "Agreement";
   const contractorEmail = agreement?.contractor_email || "";
   const projectDashboardUrl = agreement?.project_dashboard_url || "";
   const fundingToken = agreement?.funding_token || parseFundingToken(agreement?.public_fund_url || "");
-
-  const fundingSectionTitle = isFullySigned ? "Deposit Funding" : "Deposit Step";
+  const paymentMode = String(agreement?.payment_mode || "escrow").trim().toLowerCase();
+  const usesEscrow = paymentMode === "escrow";
+  const contractAmount = Number(agreement?.contract_amount ?? agreement?.total_cost ?? 0);
+  const contingencyReserve = Number(agreement?.contingency_reserve ?? agreement?.incidentals_reserve_amount ?? 0);
+  const totalEscrowRequired = Number(
+    agreement?.total_escrow_required ?? contractAmount + contingencyReserve
+  );
 
   const handleSigned = (updated) => {
-    setLastSignResponse(updated || null);
     const fundingUrl =
       updated?.funding?.public_fund_url ||
       updated?.public_fund_url ||
@@ -387,12 +379,37 @@ export default function PublicSign() {
     ? `mailto:${contractorEmail}?subject=${encodeURIComponent(`Question about ${projectTitle}`)}`
     : "#terms";
 
-  const milestoneRows = Array.isArray(agreement?.milestones)
-    ? agreement.milestones
-    : [];
-  const photoRows = Array.isArray(agreement?.attachments)
-    ? agreement.attachments
-    : [];
+  const handleReviewPdf = () => {
+    if (!agreement?.pdf_url) {
+      toast.error("The agreement PDF is not available yet.");
+      return;
+    }
+    setPdfReviewed(true);
+    window.open(agreement.pdf_url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleDownloadPdf = () => {
+    if (!agreement?.pdf_url) {
+      toast.error("The agreement PDF is not available yet.");
+      return;
+    }
+    setPdfReviewed(true);
+    const link = document.createElement("a");
+    link.href = agreement.pdf_url;
+    link.download = `${projectTitle.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "agreement"}.pdf`;
+    link.rel = "noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const openSignature = () => {
+    if (!pdfReviewed) {
+      toast.error("Please open or download the agreement PDF before signing.");
+      return;
+    }
+    setIsSignOpen(true);
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-24 lg:pb-8">
@@ -432,68 +449,19 @@ export default function PublicSign() {
           </div>
         ) : agreement ? (
           <>
-            <section
-              className="mb-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
-              data-testid="public-agreement-hero"
-            >
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    {agreement.contractor_name || "Contractor"}
-                  </div>
-                  <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">
-                    {projectTitle}
-                  </h1>
-                  <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                    {contractorRating?.review_count > 0 ? (
-                      <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-amber-700">
-                        ★ {contractorRating.average_rating?.toFixed?.(2) || contractorRating.average_rating} • {contractorRating.review_count} verified reviews
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-                        New on MyHomeBro
-                      </span>
-                    )}
-                    <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1">
-                    {agreement.payment_mode === "escrow" ? "Escrow protected" : "Direct pay"}
-                  </span>
-                  <ProjectModeBadge
-                    mode={agreement.project_mode}
-                    dataTestId="public-agreement-project-mode-badge"
-                  />
-                    {agreement.status ? (
-                      <span className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 capitalize">
-                        {String(agreement.status).replaceAll("_", " ")}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsSignOpen(true)}
-                    className="inline-flex items-center justify-center rounded-full bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500"
-                    data-testid="public-agreement-accept-sign"
-                  >
-                    Accept & Sign
-                  </button>
-                  <a
-                    href={askQuestionHref}
-                    className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                  >
-                    Ask Question
-                  </a>
-                  {projectDashboardUrl ? (
-                    <a
-                      href={projectDashboardUrl}
-                      className="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                      data-testid="public-agreement-open-project-dashboard"
-                    >
-                      Open Project Dashboard
-                    </a>
-                  ) : null}
-                </div>
+            <section className="mb-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="public-agreement-hero">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Agreement from {agreement.contractor_name || "your contractor"}
+              </div>
+              <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">{projectTitle}</h1>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+                  {usesEscrow ? "Escrow protected" : "Direct pay"}
+                </span>
+                <ProjectModeBadge mode={agreement.project_mode} dataTestId="public-agreement-project-mode-badge" />
+                <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-800">
+                  {agreement.status_label || (isFullySigned ? "Signed" : "Awaiting your signature")}
+                </span>
               </div>
             </section>
 
@@ -503,230 +471,76 @@ export default function PublicSign() {
               </div>
             ) : null}
 
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(340px,0.9fr)]">
-              <div className="space-y-4">
-                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" id="terms">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Project Summary
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)]">
+              <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="public-agreement-pdf-review">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Legal agreement</div>
+                    <div className="mt-1 text-lg font-bold text-slate-900">Review the PDF before signing</div>
                   </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">
-                    {agreement.project_summary || agreement.scope_summary || agreement.description || "Project details will be finalized in the agreement."}
-                  </p>
-                </section>
-
-                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Pricing
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={handleReviewPdf} className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white" data-testid="public-agreement-open-pdf">Open PDF</button>
+                    <button type="button" onClick={handleDownloadPdf} className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700" data-testid="public-agreement-download-pdf">Download PDF</button>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl bg-slate-50 p-3">
-                      <div className="text-xs text-slate-500">Total cost</div>
-                      <div className="mt-1 text-xl font-bold text-slate-900">
-                        {money(agreement.total_cost || agreement.escrow_total || 0)}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 p-3">
-                      <div className="text-xs text-slate-500">Milestones</div>
-                      <div className="mt-1 text-xl font-bold text-slate-900">
-                        {milestoneRows.length}
-                      </div>
-                    </div>
-                    <div className="rounded-2xl bg-slate-50 p-3">
-                      <div className="text-xs text-slate-500">Escrow</div>
-                      <div className="mt-1 text-xl font-bold text-slate-900">
-                        {agreement.payment_mode === "escrow" ? "Protected" : "Not used"}
-                      </div>
-                    </div>
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-600">
-                    {agreement.payment_mode === "escrow"
-                      ? "We hold deposit funds securely, then release payments as milestones are approved."
-                      : "This agreement uses direct pay instead of escrow funding."}
-                  </p>
-                  <div className="mt-4 space-y-2">
-                    {milestoneRows.map((milestone, index) => (
-                      <div
-                        key={milestone.id || `${milestone.title}-${index}`}
-                        className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3"
-                      >
-                        <div>
-                          <div className="font-medium text-slate-900">{milestone.title}</div>
-                          <div className="text-xs text-slate-500">{milestone.description || "Milestone phase"}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-sm font-semibold text-slate-900">{money(milestone.amount)}</div>
-                          <div className="text-xs text-slate-500">Phase {milestone.order || index + 1}</div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Photos
-                  </div>
-                  {photoRows.length ? (
-                    <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      {photoRows.map((photo) => (
-                        <a
-                          key={photo.id}
-                          href={photo.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="group overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
-                        >
-                          <div className="aspect-square bg-slate-100">
-                            {photo.url ? (
-                              <img
-                                src={photo.url}
-                                alt={photo.title || "Agreement attachment"}
-                                className="h-full w-full object-cover transition group-hover:scale-[1.02]"
-                              />
-                            ) : (
-                              <div className="flex h-full items-center justify-center text-xs text-slate-500">
-                                Attachment
-                              </div>
-                            )}
-                          </div>
-                          <div className="px-3 py-2">
-                            <div className="truncate text-sm font-medium text-slate-900">{photo.title}</div>
-                            <div className="text-xs text-slate-500">{photo.category}</div>
-                          </div>
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                      No project photos were attached yet.
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Terms
-                  </div>
-                  <details className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                    <summary className="cursor-pointer text-sm font-semibold text-slate-900">
-                      Review terms and policies
-                    </summary>
-                    <div className="mt-3 space-y-4 text-sm leading-6 text-slate-700">
-                      <div>
-                        <div className="font-medium text-slate-900">Agreement terms</div>
-                        <p className="mt-1 whitespace-pre-wrap">
-                          {termsText || "Terms will appear here once finalized."}
-                        </p>
-                      </div>
-                      {agreement.privacy_policy_snapshot ? (
-                        <div>
-                          <div className="font-medium text-slate-900">Privacy policy</div>
-                          <p className="mt-1 whitespace-pre-wrap">{agreement.privacy_policy_snapshot}</p>
-                        </div>
-                      ) : null}
-                    </div>
-                  </details>
-                </section>
-
-                {lastSignResponse ? (
-                  <section
-                    className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm"
-                    data-testid="public-agreement-confirmation"
-                  >
-                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-                      Confirmation
-                    </div>
-                    <div className="mt-1 text-lg font-bold text-emerald-900">
-                      Agreement signed successfully
-                    </div>
-                    <p className="mt-2 text-sm leading-6 text-emerald-800">
-                      Next step: complete deposit funding if required. We’ll keep this agreement on file and continue with the project workflow.
-                    </p>
-                    {projectDashboardUrl ? (
-                      <div className="mt-4">
-                        <a
-                          href={projectDashboardUrl}
-                          className="inline-flex items-center justify-center rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500"
-                        >
-                          Open Project Dashboard
-                        </a>
-                      </div>
-                    ) : null}
-                  </section>
-                ) : null}
-              </div>
-
-              <aside className="space-y-4 lg:sticky lg:top-4 self-start">
-                <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Agreement preview
-                  </div>
-                  {agreement.pdf_url ? (
-                    <iframe
-                      title="Agreement Preview"
-                      src={agreement.pdf_url}
-                      className="mt-3 h-[420px] w-full rounded-2xl border border-slate-200 bg-slate-50"
-                    />
-                  ) : (
-                    <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                      PDF preview is not available.
-                    </div>
-                  )}
-                </section>
-
-                <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Signature
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-slate-600">
-                    Please review the agreement above, then sign to unlock deposit funding and project confirmation.
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setIsSignOpen(true)}
-                      className="inline-flex flex-1 items-center justify-center rounded-full bg-sky-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-500"
-                      data-testid="public-agreement-open-signature"
-                    >
-                      Accept & Sign
-                    </button>
-                    <a
-                      href={askQuestionHref}
-                      className="inline-flex flex-1 items-center justify-center rounded-full border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
-                    >
-                      Ask Question
-                    </a>
-                  </div>
-                </section>
-
-                <div data-testid="public-agreement-funding-section">
-                  <PublicFundingCheckout
-                    fundingToken={fundingToken}
-                    agreementTitle={projectTitle}
-                    onPaid={() => setReloadKey((v) => v + 1)}
-                  />
                 </div>
+                {agreement.pdf_url ? (
+                  <iframe title="Agreement PDF" src={agreement.pdf_url} className="mt-4 h-[72vh] min-h-[620px] w-full rounded-2xl border border-slate-200 bg-slate-100" />
+                ) : (
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-800">The agreement PDF is not available. Please ask the contractor to regenerate it before signing.</div>
+                )}
+              </section>
 
-                <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Next steps
-                  </div>
-                  <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                    <li>• Review the scope and timeline.</li>
-                    <li>• Sign the agreement when you’re ready.</li>
-                    <li>• Fund the deposit through the secure payment step.</li>
-                    <li>• We’ll keep you updated by email.</li>
-                  </ul>
+              <aside className="space-y-4 lg:sticky lg:top-20 self-start">
+                <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" data-testid="public-agreement-financial-summary">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Agreement summary</div>
+                  <dl className="mt-4 space-y-3 text-sm">
+                    <div className="flex justify-between gap-4"><dt className="text-slate-600">Payment protection</dt><dd className="font-semibold text-slate-900">{usesEscrow ? "Escrow" : "Direct Pay"}</dd></div>
+                    <div className="flex justify-between gap-4"><dt className="text-slate-600">Contract amount</dt><dd className="font-semibold text-slate-900">{money(contractAmount)}</dd></div>
+                    <div className="flex justify-between gap-4"><dt className="text-slate-600">Contingency reserve</dt><dd className="font-semibold text-slate-900">{money(contingencyReserve)}</dd></div>
+                    {usesEscrow ? <div className="flex justify-between gap-4 border-t border-slate-200 pt-3"><dt className="font-semibold text-slate-900">Total escrow funding</dt><dd className="font-bold text-slate-900">{money(totalEscrowRequired)}</dd></div> : null}
+                  </dl>
+                  {contingencyReserve > 0 ? <p className="mt-4 rounded-2xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">The contingency reserve is held separately from milestone payments and is used only for documented, approved unforeseen work.</p> : null}
                 </section>
+
+                {!isFullySigned ? (
+                  <section className="rounded-3xl border border-sky-200 bg-sky-50 p-5 shadow-sm" data-testid="public-agreement-sign-action">
+                    <div className="text-lg font-bold text-slate-900">Ready to sign?</div>
+                    <p className="mt-2 text-sm leading-6 text-slate-700">Open or download the PDF first. Your signature applies to that agreement.</p>
+                    <button type="button" onClick={openSignature} disabled={!agreement.pdf_url || !pdfReviewed} className="mt-4 w-full rounded-full bg-sky-600 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50" data-testid="public-agreement-accept-sign">Accept & Sign</button>
+                    {!pdfReviewed ? <div className="mt-2 text-center text-xs text-slate-600">PDF review required before signing</div> : null}
+                    <a href={askQuestionHref} className="mt-3 block text-center text-sm font-semibold text-sky-800">Ask the contractor a question</a>
+                  </section>
+                ) : (
+                  <section className="rounded-3xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm" data-testid="public-agreement-confirmation">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Complete</div>
+                    <div className="mt-1 text-lg font-bold text-emerald-900">Agreement signed successfully</div>
+                    <p className="mt-2 text-sm leading-6 text-emerald-800">Your signed agreement is on file. Continue to the next project step below.</p>
+                  </section>
+                )}
+
+                {isFullySigned && usesEscrow ? (
+                  <div data-testid="public-agreement-funding-section">
+                    <PublicFundingCheckout fundingToken={fundingToken} agreementTitle={projectTitle} onPaid={() => setReloadKey((v) => v + 1)} />
+                  </div>
+                ) : null}
+
+                {isFullySigned && !usesEscrow ? (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-5 text-sm text-slate-700 shadow-sm">Your contractor will send payment requests according to the signed agreement.</div>
+                ) : null}
+
+                {isFullySigned && projectDashboardUrl ? (
+                  <a href={projectDashboardUrl} className="block rounded-full bg-slate-900 px-4 py-3 text-center text-sm font-semibold text-white" data-testid="public-agreement-open-project-dashboard">Open Project Dashboard</a>
+                ) : null}
               </aside>
             </div>
 
-            <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
+            {!isFullySigned ? <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
               <div className="mx-auto flex max-w-7xl gap-2">
                 <button
                   type="button"
-                  onClick={() => setIsSignOpen(true)}
-                  className="flex-1 rounded-full bg-sky-600 px-4 py-3 text-sm font-semibold text-white"
+                  onClick={openSignature}
+                  disabled={!agreement.pdf_url || !pdfReviewed}
+                  className="flex-1 rounded-full bg-sky-600 px-4 py-3 text-sm font-semibold text-white disabled:opacity-50"
                 >
                   Accept & Sign
                 </button>
@@ -737,7 +551,7 @@ export default function PublicSign() {
                   Ask Question
                 </a>
               </div>
-            </div>
+            </div> : null}
           </>
         ) : null}
       </main>
@@ -755,6 +569,9 @@ export default function PublicSign() {
         signingRole="homeowner"
         token={token}
         defaultName={agreement?.homeowner_name || ""}
+        agreementReviewed={pdfReviewed}
+        onOpenAgreementPdf={handleReviewPdf}
+        onDownloadAgreementPdf={handleDownloadPdf}
         onSigned={handleSigned}
       />
     </div>
