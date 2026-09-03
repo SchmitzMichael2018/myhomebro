@@ -987,6 +987,10 @@ export default function MilestoneList() {
                       </div>
                     ) : (
                       milestonesToShow.map((m) => {
+                        const milestoneSequence = Math.max(
+                          g.allMilestones.findIndex((item) => String(item.id) === String(m.id)) + 1,
+                          1
+                        );
                         const milestoneDisplay = getMilestoneDisplay(m, { agreementId: agId });
                         const allowED = canEditDelete(m);
                         const allowComplete = canComplete(m);
@@ -1009,7 +1013,7 @@ export default function MilestoneList() {
                           "rounded-2xl border p-4 transition",
                           cardTone,
                           isRowBusy ? "opacity-70" : "",
-                          isFocused ? "bg-blue-50 ring-2 ring-blue-300" : "",
+                          isFocused ? "bg-blue-400/10 ring-2 ring-blue-300/70" : "",
                         ].join(" ");
 
                         return (
@@ -1022,12 +1026,23 @@ export default function MilestoneList() {
                             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
-                                  {isCompleted ? (
-                                    <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-emerald-400 text-sm font-black text-slate-950" aria-hidden="true">
-                                      ✓
-                                    </span>
-                                  ) : null}
-                                  <h3 className="text-lg font-extrabold text-white">{m.title || "Untitled milestone"}</h3>
+                                  <span
+                                    data-testid={`milestone-sequence-${m.id}`}
+                                    className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border text-sm font-black shadow-[0_6px_16px_rgba(2,8,23,0.25)] ${
+                                      isCompleted
+                                        ? "border-emerald-200/50 bg-emerald-400 text-slate-950"
+                                        : "border-blue-300/40 bg-blue-600 text-white"
+                                    }`}
+                                    aria-label={`Milestone ${milestoneSequence} of ${g.allMilestones.length}`}
+                                  >
+                                    {milestoneSequence}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-100/50">
+                                      Milestone {milestoneSequence} of {g.allMilestones.length}
+                                    </div>
+                                    <h3 className="mt-0.5 text-lg font-extrabold text-white">{m.title || "Untitled milestone"}</h3>
+                                  </div>
                                   {activeTone && !isCompleted ? <span className={chipClass("active")}>Current</span> : null}
                                   {m._late && !isPaid ? <span className={chipClass("danger")}>Late</span> : null}
                                 </div>
