@@ -65,6 +65,7 @@ export default function MilestoneDetail() {
   const [milestone, setMilestone] = useState(null); // server snapshot
   const [form, setForm] = useState(pickForm(null)); // editable state
   const [error, setError] = useState("");
+  const [invoiceCreating, setInvoiceCreating] = useState(false);
 
   const [lastSavedAt, setLastSavedAt] = useState(null); // Draft timestamp
   const [draftLoaded, setDraftLoaded] = useState(false); // Banner indicator
@@ -298,6 +299,36 @@ export default function MilestoneDetail() {
     }
   };
 
+  const invoiceId =
+    (typeof milestone?.invoice === "object" ? milestone.invoice?.id ?? milestone.invoice?.invoice_id ?? milestone.invoice?.pk : milestone?.invoice) ??
+    milestone?.invoice_id ?? milestone?.invoiceId ?? null;
+  const isInvoiced = milestone?.is_invoiced === true || !!invoiceId;
+  const canSubmitInvoice = !readOnly && milestone?.completed === true && !isInvoiced;
+
+  const submitInvoice = async () => {
+    if (!canSubmitInvoice || invoiceCreating) return;
+    if (isDirty()) {
+      toast("Save or discard milestone changes before submitting the invoice.");
+      return;
+    }
+    setInvoiceCreating(true);
+    try {
+      const { data } = await api.post(`/projects/milestones/${milestone.id}/create-invoice/`);
+      const createdInvoiceId = data?.id || data?.invoice_id || data?.pk || invoiceId;
+      toast.success("Invoice created.");
+      navigate(createdInvoiceId ? `/app/invoices/${createdInvoiceId}` : "/app/payments");
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      const message = err?.response?.data?.detail || "Unable to create an invoice for this milestone.";
+      toast.error(message);
+      if (code === "escrow_required" || String(message).toLowerCase().includes("escrow")) {
+        navigate(`/app/agreements/${milestone.agreement}/workspace?tab=money`);
+      }
+    } finally {
+      setInvoiceCreating(false);
+    }
+  };
+
   const goBack = () => {
     // ✅ In readonly mode: no autosave on back
     if (!readOnly && isDirty()) {
@@ -365,6 +396,16 @@ export default function MilestoneDetail() {
         {/* ✅ Hide save controls in read-only */}
         {!readOnly ? (
           <div className="flex items-center gap-2">
+            {canSubmitInvoice ? (
+              <Button theme="operational" size="sm" onClick={submitInvoice} disabled={invoiceCreating} data-testid="milestone-detail-submit-invoice">
+                {invoiceCreating ? "Submitting…" : "Submit Invoice"}
+              </Button>
+            ) : null}
+            {isInvoiced && invoiceId ? (
+              <Button theme="operational" variant="secondary" size="sm" onClick={() => navigate(`/app/invoices/${invoiceId}`)} data-testid="milestone-detail-view-invoice">
+                View Invoice
+              </Button>
+            ) : null}
             <Button theme="operational" variant="secondary" size="sm" onClick={saveDraft}>
               Save Draft
             </Button>

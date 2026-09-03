@@ -149,3 +149,79 @@ test('completed milestone can open invoice detail through the contractor invoice
     page.getByTestId('invoice-detail-milestone-title')
   ).toContainText('Demo and prep');
 });
+
+test('completed milestone detail exposes the same submit invoice action', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('access', 'playwright-access-token');
+  });
+
+  await page.route('**/api/projects/whoami/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 7,
+        type: 'contractor',
+        role: 'contractor_owner',
+        email: 'playwright@myhomebro.local',
+      }),
+    });
+  });
+
+  await page.route('**/api/payments/onboarding/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        onboarding_status: 'not_started',
+        connected: false,
+      }),
+    });
+  });
+
+  await page.route(
+    new RegExp(`/api/projects/milestones/${MILESTONE_ID}/?(\\?.*)?$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          id: MILESTONE_ID,
+          agreement: AGREEMENT_ID,
+          agreement_title: 'Kitchen Remodel',
+          title: 'Demo and prep',
+          description: 'Initial demolition and site prep.',
+          amount: 2500,
+          start_date: '2026-03-20',
+          completion_date: '2026-03-21',
+          completed: true,
+          is_invoiced: false,
+        }),
+      });
+    }
+  );
+
+  await page.route(
+    new RegExp(`/api/projects/milestones/${MILESTONE_ID}/create-invoice/?$`),
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: INVOICE_ID, invoice_number: 'INV-910' }),
+      });
+    }
+  );
+
+  await page.goto(`/app/milestones/${MILESTONE_ID}`, {
+    waitUntil: 'domcontentloaded',
+  });
+
+  const submitInvoice = page.getByTestId('milestone-detail-submit-invoice');
+  await expect(submitInvoice).toBeVisible();
+  await expect(submitInvoice).toHaveText('Submit Invoice');
+  await submitInvoice.click();
+
+  await expect(page).toHaveURL(`/app/invoices/${INVOICE_ID}`);
+});
