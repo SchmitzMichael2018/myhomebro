@@ -74,19 +74,19 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
   };
 
   return (
-    <Card>
+    <Card theme="operational" data-testid="agreement-attachment-manager">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold">Attachments & Addenda</h3>
       </div>
 
       {loading ? (
-        <div className="text-gray-500">Loading…</div>
+        <div className="text-sky-100/65">Loading…</div>
       ) : items.length === 0 ? (
-        <div className="text-gray-500">None yet.</div>
+        <div className="text-sky-100/65">None yet.</div>
       ) : (
         <div className="overflow-x-auto mb-4">
-          <table className="min-w-full text-sm border rounded">
-            <thead className="bg-gray-50">
+          <table className="min-w-full rounded border border-white/10 text-sm">
+            <thead className="bg-white/10 text-sky-100/75">
               <tr>
                 <th className="p-2 border text-left">Title</th>
                 <th className="p-2 border text-left">Category</th>
@@ -99,14 +99,14 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
             </thead>
             <tbody>
               {items.map((it) => (
-                <tr key={it.id} className="odd:bg-white even:bg-gray-50">
+                <tr key={it.id} className="border-t border-white/10 odd:bg-white/5 even:bg-white/10">
                   <td className="p-2 border">{it.title || "—"}</td>
                   <td className="p-2 border">{it.category}</td>
                   <td className="p-2 border">
                     {it.file_url ? (
                       <>
                         <a
-                          className="text-blue-700 hover:underline"
+                          className="text-sky-300 hover:underline"
                           href={it.file_url}
                           target="_blank"
                           rel="noreferrer"
@@ -114,7 +114,7 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
                           {it.file_name || "Open"}
                         </a>
                         <a
-                          className="ml-3 text-blue-600 hover:underline"
+                          className="ml-3 text-sky-300 hover:underline"
                           href={it.file_url}
                           download={it.file_name || true}
                         >
@@ -122,10 +122,10 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
                         </a>
                       </>
                     ) : (
-                      <span className="text-gray-500">no file</span>
+                      <span className="text-sky-100/60">no file</span>
                     )}
                     {typeof it.size_bytes === "number" && (
-                      <span className="text-gray-500 ml-2">({Math.ceil(it.size_bytes / 1024)} KB)</span>
+                      <span className="ml-2 text-sky-100/60">({Math.ceil(it.size_bytes / 1024)} KB)</span>
                     )}
                   </td>
                   <td className="p-2 border">{it.visible_to_homeowner ? "Yes" : "No"}</td>
@@ -135,6 +135,7 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
                     <td className="p-2 border">
                       <Button
                         variant="danger"
+                        theme="operational"
                         size="sm"
                         onClick={() => onDelete(it.id)}
                       >
@@ -150,12 +151,12 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
       )}
 
       {canEdit && (
-        <form onSubmit={onUpload} className="grid md:grid-cols-2 gap-3 items-end">
+        <form onSubmit={onUpload} className="grid items-end gap-4 md:grid-cols-2">
           <div>
             <label htmlFor="mhb-attachmentmanager-155" className="block text-sm font-medium">Title</label>
             <input id="mhb-attachmentmanager-155"
               type="text"
-              className="mt-1 w-full border rounded px-3 py-2"
+              className="mhb-operational-control mt-1 w-full rounded-lg px-3 py-2"
               placeholder="e.g., 12-Month Workmanship Warranty"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -164,7 +165,7 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
           <div>
             <label htmlFor="mhb-attachmentmanager-165" className="block text-sm font-medium">Category</label>
             <select id="mhb-attachmentmanager-165"
-              className="mt-1 w-full border rounded px-3 py-2"
+              className="mhb-operational-control mt-1 w-full rounded-lg px-3 py-2"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
             >
@@ -175,12 +176,12 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
             <label htmlFor="mhb-attachmentmanager-175" className="block text-sm font-medium">File</label>
             <input id="mhb-attachmentmanager-175"
               type="file"
-              className="mt-1 w-full"
+              className="mt-1 w-full rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-sm text-sky-100 file:mr-3 file:rounded-md file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:font-semibold file:text-white"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
               accept=".pdf,image/*"
             />
           </div>
-          <div className="flex gap-4">
+          <div className="flex flex-wrap gap-4 text-sm text-sky-100/80">
             <label className="inline-flex items-center gap-2">
               <input type="checkbox" checked={visible} onChange={(e) => setVisible(e.target.checked)} />
               <span>Visible to Customer</span>
@@ -193,6 +194,7 @@ export default function AttachmentManager({ agreementId, canEdit = false }) {
           <div className="md:col-span-2">
             <Button
               type="submit"
+              theme="operational"
               disabled={submitting || !file}
             >
               {submitting ? "Uploading…" : "Upload Attachment"}

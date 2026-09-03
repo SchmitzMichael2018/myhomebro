@@ -7178,6 +7178,7 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Download PDF');
 
   await expect(page.getByTestId('agreement-workspace-panel-documents')).toHaveClass(/bg-\[#061d42\]/);
+  await expect(page.getByTestId('agreement-attachment-manager')).toHaveClass(/bg-\[var\(--mhb-surface-card\)\]/);
   await expect(page.getByTestId('agreement-workspace-panel-documents')).not.toContainText('PDF Versions');
 
   const visibleText = await page.locator('body').innerText();
