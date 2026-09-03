@@ -6949,9 +6949,9 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await page.getByRole('button', { name: 'Sign as Contractor' }).click();
   await expect.poll(() => signCalls.length).toBe(1);
   await expect(page.getByRole('button', { name: 'Sign & Continue' })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Send to Customer' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send / Resend Signature Request' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Send to Customer' }).click();
+  await page.getByRole('button', { name: 'Send / Resend Signature Request' }).click();
   await expect.poll(() => sendCalls.length).toBe(1);
 
   await page.getByRole('button', { name: 'Step 3 Warranty' }).click();
@@ -6969,7 +6969,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('agreement-workspace-tabs')).toBeVisible();
   await expect(page.getByTestId('agreement-workspace-tab-milestones')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-command-center')).toBeVisible();
-  await expect(page.getByTestId('agreement-workspace-tab-activity')).toContainText('Team & Assignments');
+  await expect(page.getByTestId('agreement-workspace-tab-more')).toContainText('More');
 });
 
 test('agreement workspace phase 3 shows operations manager and PDF fallback', async ({ page }) => {
@@ -7100,21 +7100,17 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   });
 
   await expect(page.getByTestId('agreement-overview-command-center')).toBeVisible();
-  await expect(page.getByTestId('agreement-overview-command-center')).toContainText('Agreement Operations Manager');
+  await expect(page.getByTestId('agreement-overview-command-center')).toContainText('Next Step');
   await expect(page.getByTestId('agreement-operations-next-action')).toContainText('Awaiting Signature');
   await expect(page.getByTestId('agreement-operations-manager')).toContainText('Current Stage');
   await expect(page.getByTestId('agreement-operations-manager')).toContainText('Waiting on signature');
   await expect(page.getByTestId('agreement-operations-manager')).toContainText('Current Milestone');
   await expect(page.getByTestId('agreement-operations-manager')).toContainText('Build and finish');
-  await expect(page.getByTestId('agreement-operations-manager')).toContainText('Funding State');
-  await expect(page.getByTestId('agreement-operations-manager')).toContainText('Next Payment');
+  await expect(page.getByTestId('agreement-operations-manager')).toContainText('Schedule');
   await expect(page.getByTestId('agreement-overview-command-center')).not.toContainText('Estimated Effort');
   await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Open signatures');
-  await expect(page.getByTestId('agreement-overview-secondary-cta')).toContainText('Review PDF');
-  await expect(page.getByTestId('agreement-project-snapshot')).toBeVisible();
-  await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('Signature needed');
-  await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('1 of 3 complete');
-  await expect(page.getByTestId('agreement-overview-status-summary')).not.toContainText('0 of 0');
+  await expect(page.getByTestId('agreement-overview-secondary-cta')).toHaveCount(0);
+  await expect(page.getByTestId('agreement-project-snapshot')).toBeHidden();
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Prep and mobilization');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Build and finish');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Paid');
@@ -7126,12 +7122,9 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-overview-timeline')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-documents-summary')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-command-center')).toHaveClass(/bg-\[#061d42\]/);
-  await expect(page.getByTestId('agreement-project-snapshot')).toHaveClass(/bg-\[#061d42\]/);
+  await expect(page.getByTestId('agreement-project-snapshot')).toHaveClass(/hidden/);
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-workspace-nav-back')).toHaveAttribute('href', '/app/agreements');
-  await expect(page.getByTestId('agreement-workspace-nav-customer')).toHaveAttribute('href', '/app/customers/1');
-  await expect(page.getByTestId('agreement-workspace-nav-records')).toHaveAttribute('href', '/app/customers/records');
-  await expect(page.getByTestId('agreement-workspace-nav-payments')).toHaveAttribute('href', '/app/payments');
   await expect(page.getByTestId('agreement-workspace-breadcrumb')).toContainText('Agreements');
   await page.getByTestId('agreement-workspace-tab-milestones').click();
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toHaveClass(/bg-\[#061d42\]/);
@@ -7154,12 +7147,12 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   );
   await expect(page.getByTestId('milestone-team-controls-501')).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('milestone-team-controls-501')).toContainText('Advanced assignment controls');
-  await page.getByTestId('agreement-workspace-tab-activity').click();
+  await page.getByTestId('agreement-workspace-tab-more').click();
   await expect(page.getByTestId('agreement-workspace-panel-activity')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-workspace-panel-activity')).toContainText('Assign Entire Agreement');
+  await expect(page.getByTestId('agreement-workspace-panel-activity')).toContainText('Customer Workspace');
   await page.getByTestId('agreement-workspace-tab-overview').click();
-  await expect(page.getByTestId('agreement-workspace-tab-activity')).toContainText('Team & Assignments');
-  await expect(page.getByTestId('agreement-workspace-tabs')).not.toContainText('Activity');
+  await expect(page.getByTestId('agreement-workspace-tab-more')).toContainText('More');
 
   await page.getByTestId('agreement-workspace-tab-funding').click();
   await expect(page.getByTestId('agreement-workspace-panel-funding')).toHaveClass(/bg-\[#061d42\]/);
@@ -7173,20 +7166,18 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-workspace-panel-funding')).not.toContainText('SMS Status');
   await expect(page.getByTestId('agreement-workspace-panel-funding')).not.toContainText('Draw Requests');
 
-  await page.getByTestId('agreement-workspace-tab-signatures').click();
+  await page.getByTestId('agreement-workspace-tab-documents').click();
   await expect(page.getByTestId('agreement-workspace-panel-signatures')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-signatures-pdf-history')).toBeVisible();
-  await expect(page.getByTestId('agreement-signatures-pdf-history')).toContainText('PDF History');
+  await expect(page.getByTestId('agreement-signatures-pdf-history')).toContainText('Signed Agreement');
   await page.getByRole('button', { name: 'Preview PDF' }).click();
   await expect.poll(() => previewAttempts).toBe(1);
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toBeVisible();
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Open raw PDF');
   await expect(page.getByTestId('agreement-pdf-preview-fallback')).toContainText('Download PDF');
 
-  await page.getByTestId('agreement-workspace-tab-documents').click();
   await expect(page.getByTestId('agreement-workspace-panel-documents')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-workspace-panel-documents')).not.toContainText('PDF Versions');
-  await expect(page.getByTestId('agreement-workspace-panel-documents')).not.toContainText('PDF History');
 
   const visibleText = await page.locator('body').innerText();
   expect(visibleText).not.toMatch(/â|Â|Ã/);

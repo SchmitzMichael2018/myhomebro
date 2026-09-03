@@ -392,14 +392,10 @@ function normalizeAdminTab(tab) {
 
 const WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'activation', label: 'Activation' },
   { id: 'milestones', label: 'Milestones' },
-  { id: 'amendments', label: 'Amendments' },
-  { id: 'funding', label: 'Funding & Payments' },
-  { id: 'signatures', label: 'Signatures & PDF' },
+  { id: 'funding', label: 'Money' },
   { id: 'documents', label: 'Documents' },
-  { id: 'activity', label: 'Team & Assignments' },
-  { id: 'ai', label: 'AI Review' },
+  { id: 'more', label: 'More' },
 ];
 
 function normalizeWorkspaceTab(tab) {
@@ -408,7 +404,10 @@ function normalizeWorkspaceTab(tab) {
     .toLowerCase();
   if (normalized === 'payments') return 'funding';
   if (normalized === 'pdf' || normalized === 'signatures-pdf')
-    return 'signatures';
+    return 'documents';
+  if (normalized === 'signatures') return 'documents';
+  if (normalized === 'activity' || normalized === 'amendments') return 'more';
+  if (normalized === 'activation' || normalized === 'ai') return 'overview';
   if (WORKSPACE_TABS.some((item) => item.id === normalized)) return normalized;
   return 'overview';
 }
@@ -698,6 +697,7 @@ function AdminAgreementCommandCenter({
 
   return (
     <ContractorPageSurface
+      variant={isAdminMode ? 'default' : 'operational'}
       eyebrow="Admin"
       title="Admin Agreement Detail"
       subtitle="Command center for financial, operational, communication, and audit review."
@@ -3530,6 +3530,9 @@ export default function AgreementDetail({
     { label: 'Warranties', value: warranties.length },
     { label: 'Attachments', value: Number(agreement?.attachments_count || 0) },
   ];
+  const historicalPdfVersions = (Array.isArray(norm.pdfVersions) ? norm.pdfVersions : []).filter(
+    (version) => Number(version?.version_number ?? version?.version ?? 0) !== Number(norm.currentPdfVersion || 0)
+  );
   const hasSmsDetails =
     !!agreement?.sms_enabled ||
     !!agreement?.last_sms_event?.summary ||
@@ -3611,43 +3614,6 @@ export default function AgreementDetail({
           >
             {isAdminMode ? 'Back to Admin Agreements' : 'Back to Agreements'}
           </a>
-          {!isAdminMode && customerWorkspaceUrl ? (
-            <a
-              data-testid="agreement-workspace-nav-customer"
-              href={customerWorkspaceUrl}
-              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
-            >
-              Customer Workspace
-            </a>
-          ) : null}
-          {!isAdminMode ? (
-            <a
-              data-testid="agreement-workspace-nav-records"
-              href={recordsUrl}
-              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
-            >
-              Records
-            </a>
-          ) : null}
-          {!isAdminMode && norm.isSigned && (norm.isDirectPay || norm.escrowFunded) ? (
-            <button
-              type="button"
-              data-testid="agreement-workspace-nav-activation"
-              onClick={() => setWorkspaceTab('activation')}
-              className="rounded-xl border border-emerald-200/30 bg-emerald-400/15 px-3 py-2 text-sm font-semibold text-emerald-50 shadow-sm hover:bg-emerald-400/20"
-            >
-              Preview Activation
-            </button>
-          ) : null}
-          {hasPaymentNavigation ? (
-            <a
-              data-testid="agreement-workspace-nav-payments"
-              href={paymentsUrl}
-              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
-            >
-              Payments
-            </a>
-          ) : null}
         </div>
       }
     >
@@ -3711,18 +3677,9 @@ export default function AgreementDetail({
                 happens through invoice pay links as milestones are invoiced.
               </div>
             )}
-            <div
-              data-testid="agreement-workspace-next-action"
-              className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-2xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-sm text-amber-50"
-            >
-              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-100/80">
-                Next action
-              </span>
-              <span className="font-semibold">{nextActionLabel}</span>
-            </div>
           </div>
 
-          <div className="grid min-w-0 grid-cols-2 gap-2 sm:min-w-[280px] sm:gap-3">
+          <div className="grid min-w-0 grid-cols-2 gap-2 sm:min-w-[560px] sm:grid-cols-4 sm:gap-3">
             <SummaryCard
               label="Agreement Status"
               value={norm.isSigned ? 'Signed' : statusText}
@@ -3739,28 +3696,8 @@ export default function AgreementDetail({
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="Version"
-              value={
-                norm.currentPdfVersion != null
-                  ? `v${norm.currentPdfVersion} current`
-                  : pdfStatusLabel
-              }
-              className="border-white/10 bg-white/10 text-white"
-            />
-            <SummaryCard
-              label="Last Activity"
-              value={
-                <span
-                  data-testid="agreement-timeline-state"
-                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-extrabold ${
-                    timelineState === 'active'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                      : 'border-slate-200 bg-slate-100 text-slate-700'
-                  }`}
-                >
-                  {agreementTimelineLabel(norm)}
-                </span>
-              }
+              label="Next Milestone"
+              value={currentMilestoneLabel}
               className="border-white/10 bg-white/10 text-white"
             />
           </div>
@@ -3816,16 +3753,16 @@ export default function AgreementDetail({
 
       <nav
         data-testid="agreement-workspace-tabs"
-        className="sticky top-0 z-10 -mx-1 overflow-x-auto rounded-2xl border border-white/10 bg-[#061d42]/95 p-2 shadow-[0_12px_30px_rgba(2,8,23,0.18)]"
+        className="sticky top-0 z-10 rounded-2xl border border-white/10 bg-[#061d42]/95 p-2 shadow-[0_12px_30px_rgba(2,8,23,0.18)]"
       >
-        <div className="flex min-w-max gap-2 px-1">
+        <div className="grid grid-cols-2 gap-2 px-1 sm:grid-cols-5">
           {WORKSPACE_TABS.map((tab) => (
             <button
               key={tab.id}
               type="button"
               data-testid={`agreement-workspace-tab-${tab.id}`}
               onClick={() => setWorkspaceTab(tab.id)}
-              className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
+              className={`rounded-xl px-3 py-2 text-center text-sm font-semibold transition ${
                 workspaceTab === tab.id
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'bg-white/5 text-sky-100/75 hover:bg-white/10 hover:text-white'
@@ -4080,7 +4017,7 @@ export default function AgreementDetail({
               className="rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
             >
               <h3 className="mb-4 text-lg font-semibold text-white">
-                Agreement Operations Manager
+                Next Step
               </h3>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-stretch lg:justify-between">
                 <div className="min-w-0 flex-1 rounded-2xl border border-blue-300/25 bg-white/10 p-4">
@@ -4109,27 +4046,12 @@ export default function AgreementDetail({
                   >
                     {nextAction.cta}
                   </button>
-                  {nextAction.secondaryCta ? (
-                    <button
-                    type="button"
-                    data-testid="agreement-overview-secondary-cta"
-                    onClick={() =>
-                      runWorkspaceAction({
-                        href: nextAction.hrefSecondary,
-                        tab: nextAction.secondaryTab,
-                      })
-                    }
-                      className="inline-flex items-center justify-center rounded-xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-white/15"
-                    >
-                      {nextAction.secondaryCta}
-                    </button>
-                  ) : null}
                 </div>
               </div>
 
               <div
                 data-testid="agreement-operations-manager"
-                className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"
+                className="mt-4 grid gap-3 sm:grid-cols-3"
               >
                 <SummaryCard
                   label="Current Stage"
@@ -4142,13 +4064,16 @@ export default function AgreementDetail({
                   className="border-white/10 bg-white/10 text-white"
                 />
                 <SummaryCard
-                  label="Funding State"
-                  value={fundingStatusLabel}
-                  className="border-white/10 bg-white/10 text-white"
-                />
-                <SummaryCard
-                  label="Next Payment"
-                  value={nextPaymentStatus}
+                  label="Schedule"
+                  value={
+                    planningValidationStatus === 'hard_conflict'
+                      ? 'Conflict found'
+                      : planningValidationStatus === 'needs_review'
+                        ? 'Review needed'
+                        : planningValidationStatus === 'validated'
+                          ? 'No conflicts found'
+                          : 'No conflict reported'
+                  }
                   className="border-white/10 bg-white/10 text-white"
                 />
               </div>
@@ -4156,7 +4081,7 @@ export default function AgreementDetail({
 
             <section
               data-testid="agreement-project-snapshot"
-              className="rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
+              className="hidden"
             >
               <h3 className="text-lg font-semibold text-white">
                 Project Snapshot
@@ -4188,7 +4113,7 @@ export default function AgreementDetail({
               </div>
             </section>
 
-            {hasPlanningAssumptions ? (
+            {false && hasPlanningAssumptions ? (
               <section
                 data-testid="agreement-planning-assumptions"
                 className="rounded-2xl border border-blue-300/20 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
@@ -4985,21 +4910,18 @@ export default function AgreementDetail({
       <div
         data-testid="agreement-workspace-panel-signatures"
         className={
-          workspaceTab === 'signatures'
+          workspaceTab === 'documents'
             ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
             : 'hidden'
         }
       >
-        <WorkflowHint hint={agreementHint} testId="agreement-detail-hint" />
-
         <div className="rounded-2xl border border-white/10 bg-white/10 p-4 shadow-sm">
           <div className="mb-3">
             <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-sky-100/60">
-              Primary Actions
+              Agreement PDF
             </h3>
             <div className="mt-1 text-sm text-sky-100/70">
-              Handle signatures, documents, and the next key job action from one
-              place.
+              Open or download the current signed agreement.
             </div>
           </div>
           <div className="flex flex-wrap gap-3 items-start">
@@ -5009,37 +4931,6 @@ export default function AgreementDetail({
                 className="rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700"
               >
                 Sign
-              </button>
-            )}
-
-            {/* Escrow-only actions */}
-            {!norm.isDirectPay &&
-              isContractor &&
-              norm.isSigned &&
-              !norm.escrowFunded && (
-                <SendFundingLinkButton
-                  agreementId={norm.id}
-                  isFullySigned={norm.isSigned}
-                  className="mr-2"
-                />
-              )}
-
-            {!norm.isDirectPay && norm.isSigned && !norm.escrowFunded && (
-              <button
-                onClick={startEscrow}
-                className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-amber-600"
-              >
-                Fund Escrow
-              </button>
-            )}
-
-            {!norm.isDirectPay && norm.escrowFunded && (
-              <button
-                onClick={() => setRefundOpen(true)}
-                className="rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-rose-700"
-                title="Refund Control Center (unreleased escrow only)."
-              >
-                Refund Escrow
               </button>
             )}
 
@@ -5057,25 +4948,6 @@ export default function AgreementDetail({
               Download PDF
             </button>
 
-            <button
-              type="button"
-              data-testid="agreement-support-button"
-              onClick={() => setSupportOpen(true)}
-              className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-white/15"
-            >
-              Support
-            </button>
-
-            {isContractor && (
-              <button
-                data-testid="invite-subcontractor-button"
-                type="button"
-                onClick={() => setInviteFormOpen((open) => !open)}
-                className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-sky-100 hover:bg-white/15"
-              >
-                {inviteFormOpen ? 'Close Invite Form' : 'Invite Subcontractor'}
-              </button>
-            )}
           </div>
         </div>
         {pdfPreviewError ? (
@@ -5126,17 +4998,16 @@ export default function AgreementDetail({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-lg font-semibold text-white">
-                PDF History
+                Signed Agreement
               </h3>
               <p className="mt-1 text-sm text-sky-100/70">
-                Current and historical agreement PDFs are available here with
-                signatures.
+                The current signed PDF is shown first. Previous versions remain available for records.
               </p>
             </div>
             <span className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100">
-              {norm.pdfVersions?.length
-                ? `${norm.pdfVersions.length} version${norm.pdfVersions.length === 1 ? '' : 's'}`
-                : 'No history yet'}
+              {historicalPdfVersions.length
+                ? `${historicalPdfVersions.length} previous version${historicalPdfVersions.length === 1 ? '' : 's'}`
+                : 'Current version only'}
             </span>
           </div>
 
@@ -5144,7 +5015,7 @@ export default function AgreementDetail({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="text-sm font-semibold text-white">
-                  Current PDF{' '}
+                  Signed Agreement — Current{' '}
                   {norm.currentPdfVersion != null ? (
                     <span className="text-xs text-sky-100/60">
                       (v{norm.currentPdfVersion})
@@ -5189,9 +5060,9 @@ export default function AgreementDetail({
             </div>
           </div>
 
-          {Array.isArray(norm.pdfVersions) && norm.pdfVersions.length ? (
+          {historicalPdfVersions.length ? (
             <div className="mt-3 space-y-2">
-              {norm.pdfVersions.map((v) => {
+              {historicalPdfVersions.map((v) => {
                 const verNum = Number(v?.version_number ?? v?.version ?? 0);
                 const kind = String(v?.kind || '').toLowerCase();
                 const fileUrl = v?.file_url || v?.fileUrl || '';
@@ -5268,11 +5139,21 @@ export default function AgreementDetail({
       <div
         data-testid="agreement-workspace-panel-activity"
         className={
-          workspaceTab === 'activity'
+          workspaceTab === 'more'
             ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
             : 'hidden'
         }
       >
+        <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
+          <h3 className="text-lg font-semibold text-white">More project tools</h3>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {customerWorkspaceUrl ? (
+              <a href={customerWorkspaceUrl} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Customer Workspace</a>
+            ) : null}
+            <a href={recordsUrl} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Customer Records</a>
+            <button type="button" onClick={() => setSupportOpen(true)} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Support</button>
+          </div>
+        </section>
         <section className="space-y-4">
           <div>
             <h3 className="text-lg font-semibold text-white">
@@ -5310,6 +5191,14 @@ export default function AgreementDetail({
                     stay with the contractor owner.
                   </div>
                 </div>
+                <button
+                  data-testid="invite-subcontractor-button"
+                  type="button"
+                  onClick={() => setInviteFormOpen((open) => !open)}
+                  className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/15"
+                >
+                  {inviteFormOpen ? 'Close Invite Form' : 'Invite Subcontractor'}
+                </button>
               </div>
 
               {inviteFormOpen && (
@@ -5503,7 +5392,7 @@ export default function AgreementDetail({
         data-testid="agreement-workspace-panel-documents"
         className={
           workspaceTab === 'documents'
-            ? 'space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
+            ? 'mt-4 space-y-4 rounded-2xl border border-white/10 bg-[#061d42]/95 p-4 text-sky-100 shadow-sm'
             : 'hidden'
         }
       >
@@ -5789,7 +5678,7 @@ export default function AgreementDetail({
 
       <div
         data-testid="agreement-workspace-panel-amendments"
-        className={workspaceTab === 'amendments' ? 'space-y-4' : 'hidden'}
+        className={workspaceTab === 'more' ? 'mt-4 space-y-4' : 'hidden'}
       >
         {isContractor && amendmentRequests.length ? (
           <AmendmentReviewPanel
