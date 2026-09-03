@@ -7135,6 +7135,9 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).toContainText('Final walkthrough');
   await expect(page.getByTestId('agreement-workspace-panel-milestones')).not.toContainText('No milestones found');
   await expect(page.getByTestId('milestone-status-501')).toContainText('Completed');
+  await expect(page.getByTestId('milestone-number-501')).toHaveText('1');
+  await expect(page.getByTestId('milestone-number-501')).toHaveAttribute('aria-label', 'Milestone 1 of 3');
+  await expect(page.getByTestId('milestone-number-502')).toHaveText('2');
   await expect(page.getByTestId('milestone-progress-501')).toContainText('100%');
   await expect(page.getByTestId('milestone-progress-bar-501')).toHaveAttribute('style', /width: 100%/);
   await expect(page.getByTestId('milestone-payment-status-501')).toContainText('Paid');

@@ -5748,7 +5748,7 @@ export default function AgreementDetail({
               </p>
             ) : (
               <div className="space-y-3">
-                {milestones.map((m) => {
+                {milestones.map((m, milestoneIndex) => {
                   const refunded = isRefundedMilestone(m);
                   const amendmentBlocked = isMilestoneAmendmentBlocked(m);
                   const displayMilestone = milestoneDisplaySource(m);
@@ -5803,21 +5803,33 @@ export default function AgreementDetail({
                     <div
                       key={m.id}
                       data-testid={`milestone-card-${m.id}`}
-                      className={`rounded-xl border p-4 ${
+                      className={`rounded-2xl border p-4 shadow-[0_10px_24px_rgba(2,8,23,0.22)] ${
                         display.isCompleted
                           ? 'border-emerald-300/40 bg-emerald-500/10'
-                          : 'border-white/10 bg-[#041735]/80'
+                          : 'border-white/20 bg-[#041735]/90'
                       }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3 text-sm">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="font-semibold text-white">
-                              {m.title}
-                            </span>
-                          </div>
-                          <div className="mt-1 text-xs font-semibold text-sky-100/65">
-                            {formatMoney(m.amount)}
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span
+                            data-testid={`milestone-number-${m.id}`}
+                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-blue-300/40 bg-blue-600 text-base font-black text-white shadow-[0_6px_16px_rgba(37,99,235,0.35)]"
+                            aria-label={`Milestone ${milestoneIndex + 1} of ${milestones.length}`}
+                          >
+                            {milestoneIndex + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-100/55">
+                              Milestone {milestoneIndex + 1} of {milestones.length}
+                            </div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                              <span className="font-semibold text-white">
+                                {m.title}
+                              </span>
+                            </div>
+                            <div className="mt-1 text-xs font-semibold text-sky-100/65">
+                              {formatMoney(m.amount)}
+                            </div>
                           </div>
                         </div>
                         {refunded ? <RefundedBadge /> : null}
