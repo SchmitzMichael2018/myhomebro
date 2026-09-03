@@ -130,6 +130,31 @@ describe("getContractorNextActions", () => {
     expect(actions.some((action) => action.title === "Send your next agreement")).toBe(false);
   });
 
+  it("does not present a dashboard self-link as a priority action", () => {
+    const actions = getContractorNextActions({
+      nextBestAction: {
+        action_type: "resume_workflow",
+        title: "Open your dashboard workflow",
+        navigation_target: "/app/dashboard",
+      },
+    });
+
+    expect(actions).toEqual([]);
+  });
+
+  it("keeps escrow funding confirmations out of the action queue", () => {
+    const actions = getContractorNextActions({
+      activityFeed: [{
+        id: 88,
+        title: "Escrow funded",
+        summary: "Escrow funds were received for this agreement.",
+        navigation_target: "/app/agreements/35/workspace?tab=money",
+      }],
+    });
+
+    expect(actions).toEqual([]);
+  });
+
   it("deduplicates an agreement-created activity event against its draft priority", () => {
     const actions = getContractorNextActions({
       agreements: [{

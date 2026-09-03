@@ -91,6 +91,8 @@ const STATUS_CONFIRMATION_PATTERNS = [
   /account.*(activat|verif|complet|ready)/i,
   /setup.*(complet|done|ready)/i,
   /payment.*(setup|configur|ready)/i,
+  /escrow.*fund(ed|ing)?/i,
+  /fund(ed|ing)?.*escrow/i,
 ];
 
 function isStatusConfirmationItem(item) {
@@ -300,8 +302,9 @@ function latestByDate(rows, datePicker) {
 function mapNextBestAction(nextBestAction) {
   if (!nextBestAction?.title) return null;
   const target = safeText(nextBestAction.navigation_target);
-  const agreementId = agreementIdFromTarget(target);
   const actionType = safeText(nextBestAction.action_type) || "next_best_action";
+  if (actionType === "resume_workflow" && target === "/app/dashboard") return null;
+  const agreementId = agreementIdFromTarget(target);
   const actionFamily = actionType === "send_first_agreement" ? "agreement_pre_send" : "";
   return buildAction({
     key: `next-best:${safeText(nextBestAction.action_type) || safeText(nextBestAction.title)}`,
