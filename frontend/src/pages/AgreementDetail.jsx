@@ -4452,15 +4452,15 @@ export default function AgreementDetail({
             </div>
           ) : null}
           <div
-            className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-slate-800"
+            className="mt-4 rounded-xl border border-sky-300/25 bg-sky-400/10 px-4 py-3 text-sm text-sky-100"
             data-testid="agreement-payment-protection-summary"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+                <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-300">
                   Payment Protection
                 </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">
+                <div className="mt-1 text-sm font-semibold text-white">
                   {paymentProtectionLabel(norm.payment_protection?.label)}
                 </div>
               </div>
@@ -4470,7 +4470,7 @@ export default function AgreementDetail({
                 {paymentProtectionLabel(norm.payment_protection?.label)}
               </span>
             </div>
-            <div className="mt-2 text-sm text-slate-700">
+            <div className="mt-2 text-sm text-sky-100/75">
               {norm.payment_protection?.reason ||
                 'Escrow milestone payments help protect both homeowners and contractors.'}
             </div>

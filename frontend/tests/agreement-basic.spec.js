@@ -7122,6 +7122,7 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('agreement-overview-milestone-preview')).not.toContainText('Assigned Worker');
   await expect(page.getByTestId('agreement-overview-timeline')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-documents-summary')).toBeVisible();
+  await expect(page.getByTestId('agreement-payment-protection-summary')).toHaveClass(/bg-sky-400\/10/);
   await expect(page.getByTestId('agreement-overview-command-center')).toHaveClass(/bg-\[#061d42\]/);
   await expect(page.getByTestId('agreement-project-snapshot')).toHaveClass(/hidden/);
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toHaveClass(/bg-\[#061d42\]/);
