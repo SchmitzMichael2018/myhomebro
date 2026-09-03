@@ -31,6 +31,9 @@ def _site_url() -> str:
 
 
 def _public_logo_url() -> str | None:
+    frontend_url = (getattr(settings, "FRONTEND_URL", "") or "").rstrip("/")
+    if frontend_url:
+        return f"{frontend_url}/static/myhomebro-logo.png"
     return getattr(settings, "PUBLIC_LOGO_URL", None)
 
 
