@@ -1047,7 +1047,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
             return addr_error
 
         try:
-            payload = send_signature_request_to_homeowner(ag)
+            payload = send_signature_request_to_homeowner(
+                ag,
+                force_send=bool(request.data.get("resend")),
+            )
             try:
                 create_activity_event(
                     contractor=getattr(ag, "contractor", None),

@@ -19,7 +19,7 @@ from projects.services.assisted_diy import build_assisted_diy_snapshot
 logger = logging.getLogger(__name__)
 
 
-def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
+def send_signature_request_to_homeowner(ag: Agreement, *, force_send: bool = False) -> Dict[str, Any]:
     assert_pricing_ready_for_agreement(ag)
     assert_agreement_ready_for_signature(ag)
     homeowner = getattr(ag, "homeowner", None)
@@ -39,7 +39,9 @@ def send_signature_request_to_homeowner(ag: Agreement) -> Dict[str, Any]:
             ag,
             link_url=sign_url,
             note="Please review and sign your agreement.",
-            dedupe_key=f"agreement_signature_request:{ag.pk}",
+            # Manual resends are intentional customer communications. An empty
+            # key bypasses the first-send de-duplication used by the SMS layer.
+            dedupe_key="" if force_send else f"agreement_signature_request:{ag.pk}",
         )
     except Exception:
         logger.exception("Failed to send signing invite SMS for agreement %s", ag.pk)

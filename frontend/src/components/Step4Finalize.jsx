@@ -1678,7 +1678,10 @@ export default function Step4Finalize({
     setSendError(null);
     setPricingSendPrompt(null);
     try {
-      const { data } = await api.post(`/projects/agreements/${agreementId}/send_signature_request/`);
+      const { data } = await api.post(
+        `/projects/agreements/${agreementId}/send_signature_request/`,
+        { resend: forceSend },
+      );
       const signUrl = data?.sign_url || data?.view_url || data?.link || data?.url || "";
       setCustomerSendState({ sent: true, signUrl });
       if (signUrl && typeof window !== "undefined" && customerSendStorageKey) {
@@ -2707,6 +2710,15 @@ export default function Step4Finalize({
                     data-testid="step4-copy-customer-link-button"
                   >
                     Copy Customer Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSendHomeownerLink(true)}
+                    disabled={sendingLink || hasInvalidMilestoneAmounts}
+                    className="rounded border border-emerald-200 bg-white px-4 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-60"
+                    data-testid="step4-resend-signature-request-button"
+                  >
+                    {sendingLink ? "Resending…" : "Resend Signature Request"}
                   </button>
                 </div>
               </div>
