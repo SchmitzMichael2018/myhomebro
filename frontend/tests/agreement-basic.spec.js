@@ -6969,6 +6969,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('agreement-workspace-tabs')).toBeVisible();
   await expect(page.getByTestId('agreement-workspace-tab-milestones')).toBeVisible();
   await expect(page.getByTestId('agreement-overview-command-center')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Agreement Workspace' })).toHaveClass(/text-\[var\(--mhb-text-primary\)\]/);
   await expect(page.getByTestId('agreement-workspace-tab-more')).toContainText('More');
 });
 

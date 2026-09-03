@@ -697,7 +697,6 @@ function AdminAgreementCommandCenter({
 
   return (
     <ContractorPageSurface
-      variant={isAdminMode ? 'default' : 'operational'}
       eyebrow="Admin"
       title="Admin Agreement Detail"
       subtitle="Command center for financial, operational, communication, and audit review."
@@ -3602,6 +3601,7 @@ export default function AgreementDetail({
 
   return (
     <ContractorPageSurface
+      variant={isAdminMode ? 'default' : 'operational'}
       eyebrow={pageEyebrow}
       title={pageTitle}
       subtitle={pageSubtitle}
