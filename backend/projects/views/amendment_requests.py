@@ -59,6 +59,8 @@ class ContractorAgreementAmendmentImproveView(APIView):
 
     class InputSerializer(serializers.Serializer):
         requested_change = serializers.CharField()
+        reason = serializers.CharField(required=False, allow_blank=True)
+        affected_milestone_title = serializers.CharField(required=False, allow_blank=True)
         current_change_type = serializers.ChoiceField(
             choices=[choice[0] for choice in AmendmentRequest.ChangeType.choices],
             required=False,
@@ -71,7 +73,10 @@ class ContractorAgreementAmendmentImproveView(APIView):
         serializer = self.InputSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         original = serializer.validated_data["requested_change"].strip()
-        text = original.lower()
+        reason = serializer.validated_data.get("reason", "").strip()
+        affected_milestone = serializer.validated_data.get("affected_milestone_title", "").strip()
+        combined = " ".join(part for part in [original, reason] if part)
+        text = combined.lower()
         suggested = serializer.validated_data.get("current_change_type") or AmendmentRequest.ChangeType.OTHER
         if re.search(r"\b(remove|omit|delete|descope|de-scope|credit)\b", text):
             suggested = AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK
@@ -83,14 +88,37 @@ class ContractorAgreementAmendmentImproveView(APIView):
             suggested = AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE
 
         clean = re.sub(r"\s+", " ", original).rstrip(".")
-        prefix = {
-            AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK: "Please review this proposed removal of work",
-            AmendmentRequest.ChangeType.DATE_CHANGE: "Please review this proposed schedule change",
-            AmendmentRequest.ChangeType.AMOUNT_CHANGE: "Please review this proposed price change",
-            AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE: "Please review this proposed scope or material change",
-        }.get(suggested, "Please review this proposed change")
+        reason_clean = re.sub(r"\s+", " ", reason).rstrip(".")
+        is_water_remediation = bool(re.search(r"\b(water damage|water remediation|mold|pipe leak|leak)\b", text))
+        if is_water_remediation:
+            milestone_title = "Water Damage Remediation"
+            scope = (
+                "Repair or coordinate repair of the identified leak; dry the affected area; "
+                "remove or treat mold-contaminated materials as required; repair or replace "
+                "damaged wood and related materials within the approved amendment scope; and "
+                "document the completed remediation before concealed work resumes."
+            )
+            completion = (
+                "Complete when the leak source is repaired, affected materials are dry, required "
+                "mold treatment and approved material repairs are complete, the area is ready for "
+                "the next trade, and dated completion photos or specialist documentation are provided."
+            )
+        else:
+            milestone_title = {
+                AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK: "Scope Removal",
+                AmendmentRequest.ChangeType.DATE_CHANGE: "Schedule Adjustment",
+                AmendmentRequest.ChangeType.AMOUNT_CHANGE: "Price Adjustment",
+                AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE: "Additional Scope of Work",
+            }.get(suggested, "Agreement Change")
+            scope = clean[:1].upper() + clean[1:] + "."
+            if reason_clean:
+                scope += f" Required because: {reason_clean}."
+            completion = (
+                "Complete when the approved changed work is finished, any required inspection or "
+                "supporting documentation is provided, and the result is ready for customer review."
+            )
         questions = []
-        if len(original) < 40:
+        if len(combined) < 60:
             questions.append("What exact work, location, material, or milestone is affected?")
         if suggested == AmendmentRequest.ChangeType.AMOUNT_CHANGE and not re.search(r"\$|\b\d+(\.\d+)?\b", text):
             questions.append("What price adjustment is proposed, if known?")
@@ -102,12 +130,23 @@ class ContractorAgreementAmendmentImproveView(APIView):
             AmendmentRequest.ChangeType.AMOUNT_CHANGE: "Add an estimate, quote, receipt, or written price basis.",
             AmendmentRequest.ChangeType.DATE_CHANGE: "Add delivery dates, availability notes, or other schedule support.",
         }.get(suggested, "Add relevant photos, estimates, documents, or project notes.")
+        placement = f"Before {affected_milestone}" if affected_milestone else "Before the next affected milestone"
+        improved_description = f"{milestone_title}: {scope}"
         return Response({
             "detail": "Amendment request improved.",
             "original_request": original,
             "suggested_change_type": suggested,
             "suggested_change_type_label": AmendmentRequest.ChangeType(suggested).label,
-            "improved_description": f"{prefix}: {clean}.",
+            "improved_description": improved_description,
+            "improved_reason": reason_clean[:1].upper() + reason_clean[1:] + "." if reason_clean else "",
+            "milestone_draft": {
+                "title": milestone_title,
+                "scope": scope,
+                "completion_criteria": completion,
+                "recommended_placement": placement,
+                "schedule_confirmation": "Contractor must confirm any added duration and revised dates.",
+                "price_confirmation": "Contractor must enter and confirm the amendment amount before it is sent for approval.",
+            },
             "clarification_questions": questions[:3],
             "evidence_note": evidence,
             "source": "ai_advisory",

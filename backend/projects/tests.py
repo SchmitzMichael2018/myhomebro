@@ -26148,7 +26148,9 @@ class CustomerPortalAccessTests(TestCase):
         )
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(response.data["suggested_change_type"], AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE)
-        self.assertIn("scope or material change", response.data["improved_description"])
+        self.assertEqual(response.data["milestone_draft"]["title"], "Water Damage Remediation")
+        self.assertIn("dry the affected area", response.data["milestone_draft"]["scope"])
+        self.assertIn("dated completion photos", response.data["milestone_draft"]["completion_criteria"])
         self.assertIn("photos", response.data["evidence_note"].lower())
 
     def test_contractor_can_create_and_homeowner_can_respond_to_amendment_request(self):

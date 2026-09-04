@@ -103,7 +103,16 @@ test('contractor can request a change from the agreement workspace', async ({ pa
       body: JSON.stringify({
         suggested_change_type: 'scope_product_change',
         suggested_change_type_label: 'Product/Scope Change',
-        improved_description: 'Please review this proposed scope or material change: add water-damage remediation before rough plumbing.',
+        improved_description: 'Water Damage Remediation: Repair the leak, dry the area, treat mold, and repair damaged wood.',
+        improved_reason: 'Hidden water damage was found after demolition.',
+        milestone_draft: {
+          title: 'Water Damage Remediation',
+          scope: 'Repair the leak, dry the area, treat mold, and repair damaged wood.',
+          completion_criteria: 'Complete when the leak is repaired, materials are dry, treatment is complete, and photos are provided.',
+          recommended_placement: 'Before Rough plumbing',
+          schedule_confirmation: 'Contractor must confirm revised dates.',
+          price_confirmation: 'Contractor must confirm the amendment amount.',
+        },
         clarification_questions: ['What exact area is affected?'],
         evidence_note: 'Add photos of the condition or a specialist estimate.',
       }),
@@ -135,8 +144,11 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await page.getByTestId('contractor-amendment-request-reason').fill('Hidden water damage was found after demolition.');
   await page.getByTestId('contractor-amendment-ai-improve').click();
   await expect(page.getByTestId('contractor-amendment-ai-suggestion')).toContainText('What exact area is affected?');
+  await expect(page.getByTestId('contractor-amendment-ai-suggestion')).toContainText('Water Damage Remediation');
+  await expect(page.getByTestId('contractor-amendment-ai-suggestion')).toContainText('Completed when');
+  await expect(page.getByTestId('contractor-amendment-ai-suggestion')).toContainText('Before Rough plumbing');
   await page.getByTestId('contractor-amendment-ai-apply').click();
-  await expect(page.getByTestId('contractor-amendment-request-change')).toHaveValue(/Please review this proposed scope/);
+  await expect(page.getByTestId('contractor-amendment-request-change')).toHaveValue(/Water Damage Remediation/);
   await page.getByTestId('contractor-amendment-request-attachments').setInputFiles({
     name: 'water-damage.jpg',
     mimeType: 'image/jpeg',
@@ -144,12 +156,12 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   });
   await page.getByRole('button', { name: 'Submit Change Request' }).click();
 
-  expect(requestPayload).toContain('scope_product_change');
-  expect(requestPayload).toContain('Please review this proposed scope or material change');
-  expect(requestPayload).toContain('Hidden water damage was found after demolition.');
-  expect(requestPayload).toContain('water-damage.jpg');
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Change request submitted');
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Requested by contractor');
+  expect(requestPayload).toContain('scope_product_change');
+  expect(requestPayload).toContain('Water Damage Remediation');
+  expect(requestPayload).toContain('Hidden water damage was found after demolition.');
+  expect(requestPayload).toContain('water-damage.jpg');
 });
 
 test('contractor reviews and responds to a de-scope amendment request', async ({ page }) => {

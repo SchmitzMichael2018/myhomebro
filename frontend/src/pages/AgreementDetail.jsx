@@ -1842,7 +1842,9 @@ export default function AgreementDetail({
         `/projects/agreements/${id}/amendment-requests/improve/`,
         {
           requested_change: requestedChange,
+          reason: amendmentRequestForm.reason.trim(),
           current_change_type: amendmentRequestForm.change_type,
+          affected_milestone_title: currentMilestone?.title || '',
         }
       );
       setAmendmentSuggestion(data);
@@ -1859,6 +1861,7 @@ export default function AgreementDetail({
       ...current,
       change_type: amendmentSuggestion.suggested_change_type || current.change_type,
       requested_change: amendmentSuggestion.improved_description || current.requested_change,
+      reason: amendmentSuggestion.improved_reason || current.reason,
     }));
     setAmendmentSuggestion(null);
   };
@@ -5911,9 +5914,23 @@ export default function AgreementDetail({
                     <p className="mt-1 font-semibold text-white">{amendmentSuggestion.suggested_change_type_label}</p>
                   </div>
                   <div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Improved description</span>
-                    <p className="mt-1 text-sky-100/80">{amendmentSuggestion.improved_description}</p>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</span>
+                    <p className="mt-1 font-semibold text-white">{amendmentSuggestion.milestone_draft?.title}</p>
+                    <p className="mt-1 text-sky-100/80">{amendmentSuggestion.milestone_draft?.scope || amendmentSuggestion.improved_description}</p>
                   </div>
+                  {amendmentSuggestion.milestone_draft?.completion_criteria ? (
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Completed when</span>
+                      <p className="mt-1 text-sky-100/80">{amendmentSuggestion.milestone_draft.completion_criteria}</p>
+                    </div>
+                  ) : null}
+                  {amendmentSuggestion.milestone_draft?.recommended_placement ? (
+                    <div className="grid gap-2 rounded-lg border border-violet-200/15 bg-slate-950/20 p-3 text-xs sm:grid-cols-2">
+                      <div><span className="font-semibold text-violet-200">Placement:</span> {amendmentSuggestion.milestone_draft.recommended_placement}</div>
+                      <div><span className="font-semibold text-violet-200">Schedule:</span> {amendmentSuggestion.milestone_draft.schedule_confirmation}</div>
+                      <div className="sm:col-span-2"><span className="font-semibold text-violet-200">Price:</span> {amendmentSuggestion.milestone_draft.price_confirmation}</div>
+                    </div>
+                  ) : null}
                   {amendmentSuggestion.clarification_questions?.length ? (
                     <div>
                       <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Details to confirm</span>
