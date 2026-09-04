@@ -6962,6 +6962,9 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-customer-send-success')).toBeVisible();
   await expect(page.getByTestId('step4-open-workspace-button')).toBeVisible();
   await expect(page.getByTestId('step4-copy-customer-link-button')).toBeVisible();
+  await expect(page.getByTestId('step4-resend-signature-request-button')).toBeVisible();
+  await page.getByTestId('step4-resend-signature-request-button').click();
+  await expect.poll(() => sendCalls.length).toBe(2);
   await page.getByTestId('step4-open-workspace-button').click();
   await expect(page).toHaveURL(new RegExp(`/app/agreements/${AGREEMENT_ID}/workspace$`));
   await expect(page.getByRole('heading', { name: 'Agreement Workspace' })).toBeVisible();

@@ -9,7 +9,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api";
+import api, { extractApiErrorMessage } from "../api";
 import toast from "react-hot-toast";
 import SignatureModal from "./SignatureModal";
 import SendFundingLinkButton from "./SendFundingLinkButton";
@@ -1694,7 +1694,7 @@ export default function Step4Finalize({
       toast.success("Customer signing link sent.");
       await refreshAgreement();
     } catch (err) {
-      const msg = err?.response?.data?.detail || "Unable to send customer signing link.";
+      const msg = extractApiErrorMessage(err) || "Unable to send customer signing link.";
       setSendError(msg);
       toast.error(msg);
     } finally {

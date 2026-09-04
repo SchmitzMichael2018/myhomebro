@@ -29,24 +29,36 @@ def send_signature_request_to_homeowner(ag: Agreement, *, force_send: bool = Fal
 
     sign_url = build_public_sign_url(ag)
 
+    email_sent = False
+    sms_sent = 0
     try:
-        email_signing_invite(ag, sign_url=sign_url)
+        email_sent = bool(email_signing_invite(ag, sign_url=sign_url))
     except Exception:
         logger.exception("Failed to send signing invite email for agreement %s", ag.pk)
 
     try:
-        sms_link_to_parties(
+        sms_sent = int(sms_link_to_parties(
             ag,
             link_url=sign_url,
             note="Please review and sign your agreement.",
             # Manual resends are intentional customer communications. An empty
             # key bypasses the first-send de-duplication used by the SMS layer.
             dedupe_key="" if force_send else f"agreement_signature_request:{ag.pk}",
-        )
+        ) or 0)
     except Exception:
         logger.exception("Failed to send signing invite SMS for agreement %s", ag.pk)
 
-    return {"ok": True, "sign_url": sign_url}
+    if not email_sent and sms_sent < 1:
+        raise ValueError(
+            "The signing link was created, but it could not be delivered by email or text. "
+            "Check the customer's contact information and notification configuration, then try again."
+        )
+
+    return {
+        "ok": True,
+        "sign_url": sign_url,
+        "delivery": {"email_sent": email_sent, "sms_sent": sms_sent},
+    }
 
 
 def apply_contractor_signature(
