@@ -155,6 +155,39 @@ describe("getContractorNextActions", () => {
     expect(actions).toEqual([]);
   });
 
+  it("removes sent-for-signature activity after the agreement is fully signed", () => {
+    const actions = getContractorNextActions({
+      agreements: [{ id: 35, status: "signed", signature_is_satisfied: true, escrow_funded: true }],
+      activityFeed: [{
+        id: 91,
+        title: "Agreement sent for signature",
+        summary: "The homeowner can now review and sign this agreement.",
+        navigation_target: "/app/agreements/35",
+      }],
+    });
+
+    expect(actions.some((action) => action.title === "Agreement sent for signature")).toBe(false);
+  });
+
+  it("uses one money priority when backend and invoice data describe the same pending invoice", () => {
+    const actions = getContractorNextActions({
+      nextBestAction: {
+        action_type: "review_pending_milestone_release",
+        title: "Review a pending milestone release",
+        navigation_target: "/app/invoices/17",
+        priority_score: 70,
+      },
+      invoices: [{ id: 17, status: "pending", amount: "650.00" }],
+    });
+
+    expect(actions.filter((action) => /payment request|milestone release/i.test(action.title))).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      key: "invoices-pending-approval",
+      category: "money",
+      title: "Review payment requests",
+    });
+  });
+
   it("deduplicates an agreement-created activity event against its draft priority", () => {
     const actions = getContractorNextActions({
       agreements: [{

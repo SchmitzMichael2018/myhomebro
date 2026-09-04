@@ -27,6 +27,30 @@ function agreementIdFromTarget(value) {
   return match?.[1] || null;
 }
 
+function agreementSignatureIsSatisfied(agreement) {
+  const status = normalizeStatus(
+    agreement?.status || agreement?.agreement_status || agreement?.state
+  );
+  return Boolean(
+    agreement?.signature_is_satisfied ||
+      agreement?.is_fully_signed ||
+      agreement?.fully_signed ||
+      (agreement?.contractor_signed && agreement?.customer_signed) ||
+      ["signed", "funded", "active", "executed", "in_progress", "completed"].includes(status)
+  );
+}
+
+function isResolvedActivityItem(item, agreements) {
+  const title = safeText(item?.title || item?.message);
+  if (!/agreement.*sent.*signature|sent.*agreement.*signature/i.test(title)) return false;
+  const agreementId = agreementIdFromTarget(item?.navigation_target);
+  if (!agreementId) return false;
+  const agreement = (Array.isArray(agreements) ? agreements : []).find(
+    (row) => safeText(row?.id || row?.agreement_id) === safeText(agreementId)
+  );
+  return agreementSignatureIsSatisfied(agreement);
+}
+
 function countLabel(count, singular, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -371,7 +395,13 @@ export function getContractorNextActions({
   const actions = [];
 
   const mappedNextBestAction = mapNextBestAction(nextBestAction);
-  if (mappedNextBestAction) {
+  const mappedActionType = normalizeStatus(mappedNextBestAction?.action_type);
+  const hasEquivalentInvoiceAction =
+    (["review_pending_milestone_release", "review_invoice_approval"].includes(mappedActionType) &&
+      (Array.isArray(invoices) ? invoices : []).some((invoice) => invBucket(invoice) === "pending")) ||
+    (mappedActionType === "release_payment" &&
+      (Array.isArray(invoices) ? invoices : []).some((invoice) => invBucket(invoice) === "approved"));
+  if (mappedNextBestAction && !hasEquivalentInvoiceAction) {
     actions.push(mappedNextBestAction);
   }
 
@@ -936,6 +966,7 @@ export function getContractorNextActions({
   if (remainingActivitySlots > 0) {
     const activityActions = [...(Array.isArray(activityFeed) ? activityFeed : [])]
       .filter((item) => !isStatusConfirmationItem(item))
+      .filter((item) => !isResolvedActivityItem(item, agreements))
       .filter((item) => safeText(item?.navigation_target) && safeText(item?.navigation_target) !== "/app/dashboard")
       .slice(0, remainingActivitySlots)
       .map((item, index) => {
