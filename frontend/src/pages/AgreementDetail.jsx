@@ -1816,6 +1816,9 @@ export default function AgreementDetail({
   const contractorSubmittedAmendments = amendmentRequests.filter(
     (request) => String(request?.initiated_by_role || '').toLowerCase() === 'contractor'
   );
+  const openContractorSubmittedAmendments = contractorSubmittedAmendments.filter(
+    isOpenContractorAmendment
+  );
   const pendingContractorAmendments = homeownerAmendmentRequests.filter(
     isOpenContractorAmendment
   );
@@ -3774,10 +3777,10 @@ export default function AgreementDetail({
               <button
                 type="button"
                 data-testid="contractor-request-amendment"
-                onClick={openAmendmentRequest}
+                onClick={() => openContractorSubmittedAmendments.length ? setWorkspaceTab('more') : openAmendmentRequest()}
                 className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
               >
-                Request Change
+                {openContractorSubmittedAmendments.length ? 'View Change Request' : 'Request Change'}
               </button>
             ) : null}
             {norm.isDirectPay && (
@@ -4187,6 +4190,44 @@ export default function AgreementDetail({
                 />
               </div>
             </section>
+
+            {openContractorSubmittedAmendments.length ? (
+              <section
+                data-testid="agreement-overview-change-request"
+                className="rounded-2xl border border-amber-200/30 bg-gradient-to-br from-amber-300/15 to-[#061d42]/95 p-5 text-sky-100 shadow-sm"
+              >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-lg font-semibold text-white">Change Request Pending</h3>
+                      <span className="rounded-full border border-amber-200/35 bg-amber-300/15 px-2.5 py-1 text-xs font-semibold text-amber-100">
+                        {openContractorSubmittedAmendments[0].response_label || 'Pending response'}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-sky-100/55">
+                      Submitted {fmtDateTime(openContractorSubmittedAmendments[0].created_at) || 'recently'}
+                    </div>
+                    <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-amber-100/75">
+                      {openContractorSubmittedAmendments[0].requested_changes?.milestone_draft?.title || amendmentLabel(openContractorSubmittedAmendments[0])}
+                    </div>
+                    <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-sky-50">
+                      {openContractorSubmittedAmendments[0].requested_change || openContractorSubmittedAmendments[0].requested_changes?.requested_change || openContractorSubmittedAmendments[0].justification}
+                    </p>
+                    <p className="mt-3 text-xs text-sky-100/60">
+                      The signed agreement remains controlling until both parties approve and sign an amendment.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="agreement-overview-view-change-request"
+                    onClick={() => setWorkspaceTab('more')}
+                    className="rounded-xl border border-amber-200/40 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+                  >
+                    View Full Request
+                  </button>
+                </div>
+              </section>
+            ) : null}
 
             <section
               data-testid="agreement-project-snapshot"

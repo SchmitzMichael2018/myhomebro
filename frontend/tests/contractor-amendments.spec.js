@@ -176,6 +176,12 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Hidden water damage was found after demolition.');
   await expect(page.getByTestId('contractor-submitted-amendment-draft-55')).toContainText('Completed when');
   await expect(page.getByTestId('contractor-submitted-amendment-draft-55')).toContainText('Before Rough plumbing');
+  await page.getByTestId('agreement-workspace-tab-overview').click();
+  await expect(page.getByTestId('agreement-overview-change-request')).toContainText('Change Request Pending');
+  await expect(page.getByTestId('agreement-overview-change-request')).toContainText('Water Damage Remediation');
+  await expect(page.getByTestId('contractor-request-amendment')).toContainText('View Change Request');
+  await page.getByTestId('agreement-overview-view-change-request').click();
+  await expect(page.getByTestId('contractor-submitted-amendment-draft-55')).toBeVisible();
   expect(requestPayload).toContain('scope_product_change');
   expect(requestPayload).toContain('Water Damage Remediation');
   expect(requestPayload).toContain('Hidden water damage was found after demolition.');
