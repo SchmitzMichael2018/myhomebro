@@ -7,6 +7,14 @@ const isPendingish = (status) => {
   return s === "pending" || s === "pending_approval";
 };
 
+export const isInvoiceFinalized = (invoice) => {
+  const status = String(invoice?.status || "").trim().toLowerCase();
+  return (
+    Boolean(invoice?.escrow_released) ||
+    ["paid", "released", "refunded", "void", "canceled", "cancelled"].includes(status)
+  );
+};
+
 export default function SendInvoiceButton({
   invoice,
   onUpdated,
@@ -35,6 +43,10 @@ export default function SendInvoiceButton({
     if (!isPendingish(status)) return "Invoice is no longer pending.";
     return emailSentAt ? "Resend invoice email" : "Send invoice email";
   }, [invoiceId, loading, forceEnable, status, emailSentAt]);
+
+  // A settled invoice remains available for viewing and downloading, but it
+  // must not present another customer payment-request action.
+  if (isInvoiceFinalized(invoice)) return null;
 
   const endpoint = emailSentAt
     ? `/projects/invoices/${invoiceId}/resend/`
