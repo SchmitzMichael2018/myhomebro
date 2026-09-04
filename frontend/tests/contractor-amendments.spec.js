@@ -130,6 +130,11 @@ test('contractor can request a change from the agreement workspace', async ({ pa
       justification: 'Hidden water damage was found after demolition.',
       requested_changes: {
         requested_change: 'Water Damage Remediation: Repair the leak, dry the area, treat mold, and repair damaged wood.',
+        proposed_value_change: '1250.00',
+        notification_delivery: {
+          email: { status: 'sent', sent: true },
+          sms: { status: 'sent', sent: true },
+        },
         milestone_draft: {
           title: 'Water Damage Remediation',
           scope: 'Repair the leak, dry the area, treat mold, and repair damaged wood.',
@@ -148,7 +153,11 @@ test('contractor can request a change from the agreement workspace', async ({ pa
     await route.fulfill({
       status: 201,
       contentType: 'application/json',
-      body: JSON.stringify({ ok: true, amendment_request: { id: 55, status: 'open' } }),
+      body: JSON.stringify({
+        ok: true,
+        notifications: { email: { status: 'sent', sent: true }, sms: { status: 'sent', sent: true } },
+        amendment_request: { id: 55, status: 'open' },
+      }),
     });
   });
 
@@ -157,6 +166,7 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await expect(page.getByTestId('contractor-amendment-request-modal')).toContainText('Request a Change');
   await page.getByTestId('contractor-amendment-request-change').fill('Add water-damage remediation before rough plumbing.');
   await page.getByTestId('contractor-amendment-request-reason').fill('Hidden water damage was found after demolition.');
+  await page.getByTestId('contractor-amendment-request-amount').fill('1250.00');
   await page.getByTestId('contractor-amendment-ai-improve').click();
   await expect(page.getByTestId('contractor-amendment-ai-suggestion')).toContainText('What exact area is affected?');
   await expect(page.getByTestId('contractor-amendment-ai-suggestion')).toContainText('Water Damage Remediation');
@@ -174,6 +184,9 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Change request submitted');
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Requested by contractor');
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Hidden water damage was found after demolition.');
+  await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('$1,250.00');
+  await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Email: Sent');
+  await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Text: Sent');
   await expect(page.getByTestId('contractor-submitted-amendment-draft-55')).toContainText('Completed when');
   await expect(page.getByTestId('contractor-submitted-amendment-draft-55')).toContainText('Before Rough plumbing');
   await page.getByTestId('agreement-workspace-tab-overview').click();
@@ -186,6 +199,7 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   expect(requestPayload).toContain('Water Damage Remediation');
   expect(requestPayload).toContain('Hidden water damage was found after demolition.');
   expect(requestPayload).toContain('water-damage.jpg');
+  expect(requestPayload).toContain('1250.00');
   expect(requestPayload).toContain('completion_criteria');
 });
 

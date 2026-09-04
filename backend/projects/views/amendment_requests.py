@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from decimal import Decimal
+from html import escape
 from pathlib import Path
 
 from django.conf import settings
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -16,7 +19,12 @@ from projects.models import Agreement, Milestone
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.models_project_activity import ProjectActivityEvent
 from projects.services.project_activity import create_project_activity_event, mark_activity_viewed
+from projects.services.invites_delivery import send_postmark_email
+from projects.services.sms_service import send_compliant_sms
 from projects.utils.accounts import get_contractor_for_user
+
+
+logger = logging.getLogger(__name__)
 
 
 COUNTER_ATTACHMENT_ALLOWED_TYPES = {
@@ -223,6 +231,88 @@ def _contractor_agreement_for_user(user, agreement_id: int) -> Agreement | None:
     return Agreement.objects.select_related("contractor", "homeowner", "project").filter(id=agreement_id, contractor=contractor).first()
 
 
+def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, amendment: AmendmentRequest) -> dict:
+    homeowner = getattr(agreement, "homeowner", None)
+    contractor = getattr(agreement, "contractor", None)
+    customer_name = getattr(homeowner, "full_name", "") or "Homeowner"
+    customer_email = str(getattr(homeowner, "email", "") or "").strip()
+    customer_phone = str(getattr(homeowner, "phone_number", "") or "").strip()
+    contractor_name = (
+        getattr(contractor, "business_name", "")
+        or getattr(contractor, "full_name", "")
+        or "Your contractor"
+    )
+    project_title = (
+        getattr(agreement, "project_title", "")
+        or getattr(getattr(agreement, "project", None), "title", "")
+        or f"Agreement #{agreement.id}"
+    )
+    requested_changes = amendment.requested_changes or {}
+    requested_change = str(requested_changes.get("requested_change") or "").strip()
+    proposed_amount = str(requested_changes.get("proposed_value_change") or "").strip()
+    amount_line = f"Proposed price adjustment: ${Decimal(proposed_amount):,.2f}\n" if proposed_amount else "Proposed price adjustment: To be determined\n"
+    site_url = (getattr(settings, "MHB_SITE_URL", "") or getattr(settings, "SITE_URL", "") or request.build_absolute_uri("/")).rstrip("/")
+    token = str(getattr(agreement, "homeowner_access_token", "") or "")
+    review_url = f"{site_url}/agreements/magic/{token}" if token else site_url
+    subject = f"Change request for {project_title} — review requested"
+    text_body = (
+        f"Hi {customer_name},\n\n"
+        f"{contractor_name} submitted a change request for {project_title}.\n\n"
+        f"Requested change: {requested_change}\n"
+        f"Reason: {amendment.justification}\n"
+        f"{amount_line}\n"
+        f"Review the request in your MyHomeBro workspace:\n{review_url}\n\n"
+        "The signed agreement remains unchanged until the amendment is approved and signed."
+    )
+    html_body = (
+        "<div style='font-family:Arial,sans-serif;line-height:1.55;color:#172033'>"
+        f"<h2>Change request for {escape(project_title)}</h2>"
+        f"<p>Hi {escape(customer_name)},</p>"
+        f"<p><strong>{escape(contractor_name)}</strong> submitted a change request for your review.</p>"
+        f"<p><strong>Requested change:</strong><br>{escape(requested_change)}</p>"
+        f"<p><strong>Reason:</strong><br>{escape(amendment.justification)}</p>"
+        f"<p><strong>Proposed price adjustment:</strong> {('$' + format(Decimal(proposed_amount), ',.2f')) if proposed_amount else 'To be determined'}</p>"
+        f"<p><a href='{escape(review_url)}' style='display:inline-block;background:#1769e0;color:#fff;padding:12px 18px;text-decoration:none;border-radius:8px;font-weight:bold'>Review Change Request</a></p>"
+        "<p style='color:#526079;font-size:13px'>The signed agreement remains unchanged until the amendment is approved and signed.</p>"
+        "</div>"
+    )
+
+    email_result = {"status": "not_available", "sent": False, "detail": "Customer email is not available."}
+    if customer_email:
+        try:
+            sent, detail = send_postmark_email(
+                to_email=customer_email,
+                subject=subject,
+                text_body=text_body,
+                html_body=html_body,
+            )
+            email_result = {"status": "sent" if sent else "failed", "sent": bool(sent), "detail": detail}
+        except Exception as exc:  # pragma: no cover - provider safety net
+            logger.exception("Amendment request email failed for agreement %s", agreement.id)
+            email_result = {"status": "failed", "sent": False, "detail": str(exc)}
+
+    sms_result = {"status": "not_available", "sent": False, "detail": "Customer phone is not available."}
+    if customer_phone:
+        try:
+            raw_sms = send_compliant_sms(
+                customer_phone,
+                f"MyHomeBro: {contractor_name} submitted a change request for {project_title}. Review it here: {review_url}",
+                related_object=agreement,
+                category="customer_care",
+                dedupe_key=f"amendment-request:{amendment.id}",
+            )
+            sms_result = {
+                "status": raw_sms.get("status") or ("sent" if raw_sms.get("ok") else "failed"),
+                "sent": bool(raw_sms.get("ok")),
+                "detail": raw_sms.get("detail") or "",
+                "reason_code": raw_sms.get("reason_code") or "",
+            }
+        except Exception as exc:  # pragma: no cover - provider safety net
+            logger.exception("Amendment request SMS failed for agreement %s", agreement.id)
+            sms_result = {"status": "failed", "sent": False, "detail": str(exc)}
+    return {"email": email_result, "sms": sms_result, "attempted_at": timezone.now().isoformat()}
+
+
 class ContractorAgreementAmendmentRequestView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -330,9 +420,20 @@ class ContractorAgreementAmendmentRequestView(APIView):
                 ],
             },
         )
+        notifications = _notify_homeowner_of_amendment_request(
+            request=request,
+            agreement=agreement,
+            amendment=amendment,
+        )
+        amendment.requested_changes = {
+            **(amendment.requested_changes or {}),
+            "notification_delivery": notifications,
+        }
+        amendment.save(update_fields=["requested_changes", "updated_at"])
         return Response(
             {
                 "ok": True,
+                "notifications": notifications,
                 "amendment_request": {
                     "id": amendment.id,
                     "status": amendment.status,

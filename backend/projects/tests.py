@@ -26153,7 +26153,13 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIn("dated completion photos", response.data["milestone_draft"]["completion_criteria"])
         self.assertIn("photos", response.data["evidence_note"].lower())
 
-    def test_contractor_can_create_and_homeowner_can_respond_to_amendment_request(self):
+    @patch("projects.views.amendment_requests.send_compliant_sms")
+    @patch("projects.views.amendment_requests.send_postmark_email")
+    def test_contractor_can_create_and_homeowner_can_respond_to_amendment_request(self, send_email, send_sms):
+        self.customer_homeowner.phone_number = "+15125550199"
+        self.customer_homeowner.save(update_fields=["phone_number", "updated_at"])
+        send_email.return_value = (True, "Postmark email sent.")
+        send_sms.return_value = {"ok": True, "status": "sent", "detail": "SMS queued.", "reason_code": "sent"}
         milestone = Milestone.objects.create(
             agreement=self.agreement,
             order=1,
@@ -26190,6 +26196,12 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(amendment_request.initiated_by_role, "contractor")
         self.assertEqual(amendment_request.response_state, AmendmentRequest.ResponseState.PENDING)
         self.assertEqual(amendment_request.requested_changes["milestone_draft"]["title"], "Additional Electrical Work")
+        self.assertEqual(amendment_request.requested_changes["proposed_value_change"], "250.00")
+        self.assertTrue(amendment_request.requested_changes["notification_delivery"]["email"]["sent"])
+        self.assertTrue(amendment_request.requested_changes["notification_delivery"]["sms"]["sent"])
+        send_email.assert_called_once()
+        self.assertIn("Proposed price adjustment: $250.00", send_email.call_args.kwargs["text_body"])
+        send_sms.assert_called_once()
         self.assertEqual(amendment_request.attachments.count(), 1)
         self.assertEqual(amendment_request.attachments.first().original_filename, "hidden-damage.jpg")
         self.assertTrue(

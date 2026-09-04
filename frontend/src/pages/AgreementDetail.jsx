@@ -1776,6 +1776,7 @@ export default function AgreementDetail({
     change_type: 'scope_product_change',
     requested_change: '',
     reason: '',
+    proposed_value_change: '',
     attachments: [],
     milestone_draft: null,
   });
@@ -1828,6 +1829,7 @@ export default function AgreementDetail({
       change_type: 'scope_product_change',
       requested_change: '',
       reason: '',
+      proposed_value_change: '',
       attachments: [],
       milestone_draft: null,
     });
@@ -1884,6 +1886,9 @@ export default function AgreementDetail({
       form.append('change_type', amendmentRequestForm.change_type);
       form.append('requested_change', amendmentRequestForm.requested_change);
       form.append('reason', amendmentRequestForm.reason);
+      if (amendmentRequestForm.proposed_value_change !== '') {
+        form.append('proposed_value_change', amendmentRequestForm.proposed_value_change);
+      }
       if (amendmentRequestForm.milestone_draft) {
         form.append('milestone_draft', JSON.stringify(amendmentRequestForm.milestone_draft));
       }
@@ -1892,7 +1897,17 @@ export default function AgreementDetail({
         `/projects/agreements/${id}/amendment-requests/`,
         form
       );
-      toast.success(data?.amendment_request_id ? 'An amendment request is already open.' : 'Change request submitted.');
+      if (data?.amendment_request_id) {
+        toast.success('An amendment request is already open.');
+      } else {
+        const emailSent = data?.notifications?.email?.sent;
+        const smsSent = data?.notifications?.sms?.sent;
+        toast.success(
+          emailSent || smsSent
+            ? `Change request submitted. Customer notified${emailSent && smsSent ? ' by email and text' : emailSent ? ' by email' : ' by text'}.`
+            : 'Change request submitted. Customer notification could not be delivered; review the delivery status.'
+        );
+      }
       setAmendmentRequestOpen(false);
       await fetchAgreement();
       setWorkspaceTab('more');
@@ -4213,6 +4228,12 @@ export default function AgreementDetail({
                     <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-sky-50">
                       {openContractorSubmittedAmendments[0].requested_change || openContractorSubmittedAmendments[0].requested_changes?.requested_change || openContractorSubmittedAmendments[0].justification}
                     </p>
+                    <p className="mt-3 text-sm font-semibold text-amber-100">
+                      Proposed price adjustment:{' '}
+                      {openContractorSubmittedAmendments[0].requested_changes?.proposed_value_change
+                        ? Number(openContractorSubmittedAmendments[0].requested_changes.proposed_value_change).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                        : 'To be determined'}
+                    </p>
                     <p className="mt-3 text-xs text-sky-100/60">
                       The signed agreement remains controlling until both parties approve and sign an amendment.
                     </p>
@@ -5873,6 +5894,24 @@ export default function AgreementDetail({
                       </div>
                     </div>
                   </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Proposed price adjustment</div>
+                      <div className="mt-2 font-semibold text-white">
+                        {request.requested_changes?.proposed_value_change
+                          ? Number(request.requested_changes.proposed_value_change).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                          : 'To be determined'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Customer notification</div>
+                      <div className="mt-2 text-sm text-sky-50">
+                        Email: {request.requested_changes?.notification_delivery?.email?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.email?.status === 'failed' ? 'Failed' : 'Not available'}
+                        <span className="mx-2 text-sky-100/30">•</span>
+                        Text: {request.requested_changes?.notification_delivery?.sms?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.sms?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery?.sms?.status === 'blocked' ? 'Not permitted' : 'Not available'}
+                      </div>
+                    </div>
+                  </div>
                   {request.requested_changes?.milestone_draft?.title ? (
                     <div data-testid={`contractor-submitted-amendment-draft-${request.id}`} className="mt-4 rounded-xl border border-violet-200/20 bg-violet-300/10 p-4">
                       <div className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</div>
@@ -5987,6 +6026,24 @@ export default function AgreementDetail({
                 placeholder="Describe the discovered condition and supporting evidence."
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
+            </label>
+            <label className="mt-4 block text-sm font-semibold">
+              Proposed price adjustment
+              <div className="relative mt-2">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sky-100/60">$</span>
+                <input
+                  data-testid="contractor-amendment-request-amount"
+                  type="number"
+                  step="0.01"
+                  value={amendmentRequestForm.proposed_value_change}
+                  onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, proposed_value_change: event.target.value }))}
+                  placeholder="0.00"
+                  className="w-full rounded-xl border border-white/15 bg-[#03142e] py-2 pl-7 pr-3 text-white placeholder:text-sky-100/40"
+                />
+              </div>
+              <span className="mt-1 block text-xs font-normal text-sky-100/55">
+                Enter the added cost, or use a negative amount for a credit. Leave blank only if pricing is still being determined.
+              </span>
             </label>
             <div className="mt-4 rounded-xl border border-violet-300/25 bg-violet-300/10 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
