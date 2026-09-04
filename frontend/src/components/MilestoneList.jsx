@@ -20,6 +20,7 @@ import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
 import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
 import RefundEscrowModal from "./RefundEscrowModal";
+import SendInvoiceButton from "./SendInvoiceButton";
 
 // Retained for a later operational-board migration; intentionally not rendered.
 const SHOW_LEGACY_MILESTONE_TABLE = false;
@@ -694,6 +695,28 @@ export default function MilestoneList() {
     }
   };
 
+  const reviewSubmittedWork = async (milestoneId, decision) => {
+    if (!milestoneId || !["approve", "reject"].includes(decision)) return;
+    markBusy(milestoneId, true);
+    try {
+      const endpoint =
+        decision === "approve"
+          ? `/projects/milestones/${milestoneId}/approve-work/`
+          : `/projects/milestones/${milestoneId}/send-back-work/`;
+      await api.post(endpoint, { response_note: "" });
+      toast.success(decision === "approve" ? "Work approved." : "Work sent back for changes.");
+      await reload();
+    } catch (err) {
+      console.error(err);
+      toast.error(
+        err?.response?.data?.detail ||
+          (decision === "approve" ? "Unable to approve work." : "Unable to reject work.")
+      );
+    } finally {
+      markBusy(milestoneId, false);
+    }
+  };
+
   const createInvoiceAndGo = async (m) => {
     const milestoneId = m?.id;
     if (!milestoneId) return;
@@ -1002,6 +1025,14 @@ export default function MilestoneList() {
                         const isSignedLockedMilestone = Boolean(m._signedLike || m.agreement_is_locked || m.agreement_locked);
                         const isFocused = focusId && String(m.id) === String(focusId);
                         const isCompleted = milestoneDisplay.isCompleted;
+                        const invoiceId = getInvoiceIdFromMilestone(m);
+                        const linkedInvoice =
+                          (m?.invoice && typeof m.invoice === "object" ? m.invoice : null) ||
+                          (invoiceId ? invoicesMap[String(invoiceId)] : null);
+                        const submissionStatus = String(
+                          m.work_submission_status || m.subcontractor_completion_status || ""
+                        ).toLowerCase();
+                        const needsWorkReview = submissionStatus === "submitted_for_review";
                         const isPaid = milestoneDisplay.paymentLabel === "Paid";
                         const activeTone = milestoneDisplay.actionStateTone === "active" || String(milestoneDisplay.statusLabel).toLowerCase().includes("active");
                         const cardTone = isCompleted
@@ -1140,7 +1171,28 @@ export default function MilestoneList() {
                                   View
                                 </button>
 
-                                {allowComplete ? (
+                                {needsWorkReview ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => reviewSubmittedWork(m.id, "approve")}
+                                      disabled={isRowBusy}
+                                      className="rounded-xl border border-emerald-300/35 bg-emerald-400/14 px-4 py-2.5 text-sm font-bold text-emerald-100 hover:bg-emerald-400/22 disabled:opacity-50"
+                                    >
+                                      Approve Work
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => reviewSubmittedWork(m.id, "reject")}
+                                      disabled={isRowBusy}
+                                      className="rounded-xl border border-rose-300/35 bg-rose-400/12 px-4 py-2.5 text-sm font-bold text-rose-100 hover:bg-rose-400/20 disabled:opacity-50"
+                                    >
+                                      Reject Work
+                                    </button>
+                                  </>
+                                ) : null}
+
+                                {allowComplete && !needsWorkReview ? (
                                   <button
                                     data-testid={`milestone-deeplink-action-${m.id}`}
                                     type="button"
@@ -1174,6 +1226,15 @@ export default function MilestoneList() {
                                   <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-sky-100/62">
                                     {completeReason}
                                   </div>
+                                ) : null}
+
+                                {isCompleted && linkedInvoice ? (
+                                  <SendInvoiceButton
+                                    invoice={linkedInvoice}
+                                    onUpdated={reload}
+                                    forceEnable
+                                    className="w-full rounded-xl py-2.5"
+                                  />
                                 ) : null}
 
                                 {canRefund ? (
