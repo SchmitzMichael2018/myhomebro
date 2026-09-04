@@ -5952,7 +5952,7 @@ export default function AgreementDetail({
                       <div className="mt-2 text-sm text-sky-50">
                         Email: {request.requested_changes?.notification_delivery?.email?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.email?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery ? 'Not available' : 'Not sent'}
                         <span className="mx-2 text-sky-100/30">•</span>
-                        Text: {request.requested_changes?.notification_delivery?.sms?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.sms?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery?.sms?.status === 'blocked' ? 'Not permitted' : request.requested_changes?.notification_delivery ? 'Not available' : 'Not sent'}
+                        Text: {request.requested_changes?.notification_delivery?.sms?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.sms?.status === 'consent_pending' ? 'Opt-in sent — awaiting YES' : request.requested_changes?.notification_delivery?.sms?.reason_code === 'opted_out' ? 'Customer opted out — must text START' : request.requested_changes?.notification_delivery?.sms?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery?.sms?.status === 'blocked' ? 'SMS consent required' : request.requested_changes?.notification_delivery ? 'Not available' : 'Not sent'}
                       </div>
                     </div>
                   </div>

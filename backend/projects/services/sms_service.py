@@ -717,6 +717,11 @@ def handle_inbound_sms(*, from_phone: str, body: str, message_sid: str = "") -> 
         )
         from projects.services.proposal_customer_review import release_pending_estimate_sms
         release_pending_estimate_sms(normalized_phone, message_sid=message_sid)
+        try:
+            from projects.views.amendment_requests import release_pending_amendment_sms
+            release_pending_amendment_sms(normalized_phone, message_sid=message_sid)
+        except Exception:  # pragma: no cover - opt-in acknowledgement must remain available
+            logger.exception("Failed to release pending amendment SMS for %s", normalized_phone)
         return {"message": START_RESPONSE, "keyword": "YES" if keyword == "YES" else "START", "phone_number_e164": normalized_phone}
     if keyword in HELP_KEYWORDS:
         if consent is not None:

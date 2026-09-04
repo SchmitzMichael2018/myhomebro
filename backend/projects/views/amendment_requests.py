@@ -23,7 +23,7 @@ from projects.models_amendment_request import AmendmentRequest, AmendmentRequest
 from projects.models_project_activity import ProjectActivityEvent
 from projects.services.project_activity import create_project_activity_event, mark_activity_viewed
 from projects.services.invites_delivery import send_postmark_email
-from projects.services.sms_service import send_compliant_sms
+from projects.services.sms_service import normalize_phone_to_e164, send_compliant_sms, send_sms_opt_in_request
 from projects.services.amendments import mark_agreement_amended
 from projects.services.agreement_fee_allocation import refresh_agreement_fee_allocations
 from projects.utils.accounts import get_contractor_for_user
@@ -236,7 +236,7 @@ def _contractor_agreement_for_user(user, agreement_id: int) -> Agreement | None:
     return Agreement.objects.select_related("contractor", "homeowner", "project").filter(id=agreement_id, contractor=contractor).first()
 
 
-def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, amendment: AmendmentRequest, dedupe_suffix: str = "") -> dict:
+def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, amendment: AmendmentRequest, dedupe_suffix: str = "", send_email: bool = True) -> dict:
     homeowner = getattr(agreement, "homeowner", None)
     contractor = getattr(agreement, "contractor", None)
     customer_name = getattr(homeowner, "full_name", "") or "Homeowner"
@@ -256,7 +256,8 @@ def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, ame
     requested_change = str(requested_changes.get("requested_change") or "").strip()
     proposed_amount = str(requested_changes.get("proposed_value_change") or "").strip()
     amount_line = f"Proposed price adjustment: ${Decimal(proposed_amount):,.2f}\n" if proposed_amount else "Proposed price adjustment: To be determined\n"
-    site_url = (getattr(settings, "MHB_SITE_URL", "") or getattr(settings, "SITE_URL", "") or request.build_absolute_uri("/")).rstrip("/")
+    request_site_url = request.build_absolute_uri("/") if request is not None else ""
+    site_url = (getattr(settings, "MHB_SITE_URL", "") or getattr(settings, "SITE_URL", "") or request_site_url).rstrip("/")
     portal_token = signing.dumps(
         {"email": customer_email.lower()},
         salt="myhomebro.customer-portal",
@@ -290,7 +291,7 @@ def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, ame
     )
 
     email_result = {"status": "not_available", "sent": False, "detail": "Customer email is not available."}
-    if customer_email:
+    if customer_email and send_email:
         try:
             sent, detail = send_postmark_email(
                 to_email=customer_email,
@@ -319,10 +320,60 @@ def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, ame
                 "detail": raw_sms.get("detail") or "",
                 "reason_code": raw_sms.get("reason_code") or "",
             }
+            if raw_sms.get("reason_code") == "no_consent":
+                opt_in = send_sms_opt_in_request(
+                    phone_number=customer_phone,
+                    company_name=contractor_name,
+                    contractor=contractor,
+                    dedupe_key=f"amendment-opt-in:{amendment.id}",
+                )
+                if opt_in.get("ok") or opt_in.get("status") == "duplicate" or opt_in.get("reason_code") == "consent_pending":
+                    sms_result = {
+                        "status": "consent_pending",
+                        "sent": False,
+                        "detail": "Opt-in request sent. Waiting for the customer to reply YES.",
+                        "reason_code": "consent_pending",
+                    }
         except Exception as exc:  # pragma: no cover - provider safety net
             logger.exception("Amendment request SMS failed for agreement %s", agreement.id)
             sms_result = {"status": "failed", "sent": False, "detail": str(exc)}
     return {"email": email_result, "sms": sms_result, "attempted_at": timezone.now().isoformat()}
+
+
+def release_pending_amendment_sms(phone_number: str, *, message_sid: str = "") -> int:
+    """Send queued amendment review links after an affirmative SMS opt-in."""
+    normalized = normalize_phone_to_e164(phone_number)
+    if not normalized:
+        return 0
+    sent = 0
+    pending = AmendmentRequest.objects.select_related(
+        "agreement", "agreement__homeowner", "agreement__contractor", "agreement__project"
+    ).filter(response_state=AmendmentRequest.ResponseState.PENDING).order_by("-created_at")[:200]
+    for amendment in pending:
+        delivery = dict((amendment.requested_changes or {}).get("notification_delivery") or {})
+        if (delivery.get("sms") or {}).get("status") != "consent_pending":
+            continue
+        homeowner_phone = getattr(getattr(amendment.agreement, "homeowner", None), "phone_number", "")
+        if normalize_phone_to_e164(homeowner_phone) != normalized:
+            continue
+        released = _notify_homeowner_of_amendment_request(
+            request=None,
+            agreement=amendment.agreement,
+            amendment=amendment,
+            dedupe_suffix=f":opt-in:{message_sid or timezone.now().timestamp()}",
+            send_email=False,
+        )
+        sms_result = released.get("sms") or {}
+        requested_changes = dict(amendment.requested_changes or {})
+        requested_changes["notification_delivery"] = {
+            **delivery,
+            "sms": sms_result,
+            "attempted_at": released.get("attempted_at"),
+        }
+        amendment.requested_changes = requested_changes
+        amendment.save(update_fields=["requested_changes", "updated_at"])
+        sent += int(bool(sms_result.get("sent")))
+    return sent
 
 
 class ContractorAmendmentNotifyView(APIView):

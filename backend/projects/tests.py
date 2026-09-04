@@ -26153,6 +26153,46 @@ class CustomerPortalAccessTests(TestCase):
         self.assertIn("dated completion photos", response.data["milestone_draft"]["completion_criteria"])
         self.assertIn("photos", response.data["evidence_note"].lower())
 
+    @patch("projects.views.amendment_requests.send_sms_opt_in_request")
+    @patch("projects.views.amendment_requests.send_compliant_sms")
+    @patch("projects.views.amendment_requests.send_postmark_email")
+    def test_amendment_notification_requests_sms_opt_in_when_consent_is_missing(self, send_email, send_sms, send_opt_in):
+        from projects.views.amendment_requests import _notify_homeowner_of_amendment_request
+
+        self.customer_homeowner.phone_number = "+15125550199"
+        self.customer_homeowner.save(update_fields=["phone_number", "updated_at"])
+        send_email.return_value = (True, "Postmark email sent.")
+        send_sms.return_value = {
+            "ok": False,
+            "status": "blocked",
+            "detail": "No SMS consent is on file for this phone number.",
+            "reason_code": "no_consent",
+        }
+        send_opt_in.return_value = {
+            "ok": True,
+            "status": "consent_request_sent",
+            "reason_code": "consent_pending",
+            "detail": "Opt-in request sent.",
+        }
+        amendment_request = AmendmentRequest.objects.create(
+            agreement=self.agreement,
+            initiated_by_role="contractor",
+            change_type=AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+            requested_changes={"requested_change": "Add water remediation.", "proposed_value_change": "700.00"},
+            justification="Hidden water damage was discovered.",
+        )
+
+        result = _notify_homeowner_of_amendment_request(
+            request=RequestFactory().post("/"),
+            agreement=self.agreement,
+            amendment=amendment_request,
+        )
+
+        self.assertEqual(result["sms"]["status"], "consent_pending")
+        self.assertFalse(result["sms"]["sent"])
+        self.assertIn("reply YES", result["sms"]["detail"])
+        send_opt_in.assert_called_once()
+
     @patch("projects.views.amendment_requests.send_compliant_sms")
     @patch("projects.views.amendment_requests.send_postmark_email")
     def test_contractor_can_create_and_homeowner_can_respond_to_amendment_request(self, send_email, send_sms):
