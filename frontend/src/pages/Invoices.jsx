@@ -216,10 +216,31 @@ export default function Invoices() {
     }),
     [filteredRecords]
   );
-  const totalPages = Math.max(1, Math.ceil(sortedRecords.length / pageSize));
-  const paginatedRecords = useMemo(
-    () => sortedRecords.slice((page - 1) * pageSize, page * pageSize),
-    [page, pageSize, sortedRecords]
+  const projectGroups = useMemo(() => {
+    const groups = new Map();
+    for (const record of sortedRecords) {
+      const key = record.agreementId
+        ? `agreement-${record.agreementId}`
+        : `title-${norm(record.agreementTitle)}-${record.projectClass}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          key,
+          agreementId: record.agreementId,
+          agreementTitle: record.agreementTitle,
+          projectClass: record.projectClass,
+          paymentMode: record.paymentMode,
+          records: [],
+        });
+      }
+      groups.get(key).records.push(record);
+    }
+    return [...groups.values()];
+  }, [sortedRecords]);
+
+  const totalPages = Math.max(1, Math.ceil(projectGroups.length / pageSize));
+  const paginatedProjectGroups = useMemo(
+    () => projectGroups.slice((page - 1) * pageSize, page * pageSize),
+    [page, pageSize, projectGroups]
   );
 
   useEffect(() => {
@@ -229,27 +250,6 @@ export default function Invoices() {
   useEffect(() => {
     setPage((current) => Math.min(current, totalPages));
   }, [totalPages]);
-
-  const groupedRecords = useMemo(() => {
-    const shape = {
-      invoice: { residential: [], commercial: [] },
-      draw_request: { residential: [], commercial: [] },
-    };
-    for (const record of paginatedRecords) {
-      if (!shape[record.recordType]) continue;
-      shape[record.recordType][record.projectClass].push(record);
-    }
-    for (const type of Object.keys(shape)) {
-      for (const projectClass of Object.keys(shape[type])) {
-        shape[type][projectClass].sort((a, b) => {
-          const aTime = parseDate(a.sortDate)?.getTime() || 0;
-          const bTime = parseDate(b.sortDate)?.getTime() || 0;
-          return bTime - aTime;
-        });
-      }
-    }
-    return shape;
-  }, [paginatedRecords]);
 
   const totals = useMemo(() => {
     const count = filteredRecords.length;
@@ -310,31 +310,48 @@ export default function Invoices() {
     }
   };
 
-  const Section = ({ title, recordType, projectClass }) => {
-    const rows = groupedRecords?.[recordType]?.[projectClass] || [];
-    if (!rows.length) return null;
+  const ProjectPaymentGroup = ({ group }) => {
+    const rows = group.records || [];
     return (
       <Card
         padding="none"
         theme="operational"
         className="overflow-hidden"
-        data-testid={`payments-section-${recordType}-${projectClass}`}
+        data-testid={`payments-project-${group.agreementId || group.key}`}
       >
-        <div className="border-b border-[var(--mhb-border-divider)] bg-[var(--mhb-surface-subtle)] px-4 py-3">
-          <div className="text-sm font-semibold text-[var(--mhb-text-primary)]">{title}</div>
-          <div className="mt-1 text-xs text-[var(--mhb-text-muted)]">
-            {rows.length} record{rows.length === 1 ? "" : "s"} •{" "}
-            {money(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0))}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--mhb-border-divider)] bg-[var(--mhb-surface-subtle)] px-4 py-4">
+          <div>
+            <div className="text-base font-bold text-[var(--mhb-text-primary)]">{group.agreementTitle}</div>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--mhb-text-muted)]">
+              <span>{projectClassLabel(group.projectClass)}</span>
+              <span aria-hidden="true">•</span>
+              <span>{rows.length} payment record{rows.length === 1 ? "" : "s"}</span>
+              {group.paymentMode ? (
+                <>
+                  <span aria-hidden="true">•</span>
+                  <span>{norm(group.paymentMode) === "escrow" ? "Escrow" : "Direct Pay"}</span>
+                </>
+              ) : null}
+            </div>
           </div>
+          {group.agreementId ? (
+            <button
+              type="button"
+              onClick={() => navigate(`/app/agreements/${group.agreementId}`)}
+              className="rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-3 py-2 text-xs font-semibold text-[var(--mhb-text-primary)] hover:bg-[var(--mhb-surface-interactive-hover)]"
+            >
+              Open Agreement
+            </button>
+          ) : null}
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-[var(--mhb-border-divider)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--mhb-text-muted)]">
-                <th className="px-4 py-3">Record</th>
+                <th className="px-4 py-3">Type</th>
+                <th className="px-4 py-3">Payment record</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Amount</th>
-                <th className="px-4 py-3">Agreement</th>
                 <th className="px-4 py-3">Actions</th>
               </tr>
             </thead>
@@ -345,6 +362,9 @@ export default function Invoices() {
                   actionLoadingKey === `release-${record.recordType}-${record.id}`;
                 return (
                   <tr key={`${record.recordType}-${record.id}`} className="border-b border-[var(--mhb-border-divider)] align-top last:border-b-0 hover:bg-[var(--mhb-surface-interactive-hover)]">
+                    <td className="px-4 py-3 text-xs font-semibold text-[var(--mhb-text-secondary)]">
+                      {record.recordTypeLabel}
+                    </td>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-[var(--mhb-text-primary)]">{record.title}</div>
                       <div className="mt-1 text-xs text-[var(--mhb-text-secondary)]">{record.subtitle}</div>
@@ -358,10 +378,6 @@ export default function Invoices() {
                     </td>
                     <td className="px-4 py-3 font-semibold text-slate-900">{money(record.amount)}</td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-slate-900">{record.agreementTitle}</div>
-                      <div className="mt-1 text-xs text-slate-500">{projectClassLabel(record.projectClass)}</div>
-                    </td>
-                    <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-2">
                         {record.recordType === "invoice" ? (
                           <>
@@ -372,15 +388,6 @@ export default function Invoices() {
                             >
                               View
                             </button>
-                            {record.agreementId ? (
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/app/agreements/${record.agreementId}`)}
-                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                Agreement
-                              </button>
-                            ) : null}
                           </>
                         ) : (
                           <>
@@ -402,15 +409,6 @@ export default function Invoices() {
                                 className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
                               >
                                 Release Funds
-                              </button>
-                            ) : null}
-                            {record.agreementId ? (
-                              <button
-                                type="button"
-                                onClick={() => navigate(`/app/agreements/${record.agreementId}`)}
-                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                              >
-                                Edit
                               </button>
                             ) : null}
                             <button
@@ -551,21 +549,20 @@ export default function Invoices() {
         </div>
       ) : (
         <div className="space-y-5">
-          <Section title="Residential Invoices" recordType="invoice" projectClass="residential" />
-          <Section title="Commercial Invoices" recordType="invoice" projectClass="commercial" />
-          <Section title="Residential Draw Requests" recordType="draw_request" projectClass="residential" />
-          <Section title="Commercial Draw Requests" recordType="draw_request" projectClass="commercial" />
+          {paginatedProjectGroups.map((group) => (
+            <ProjectPaymentGroup key={group.key} group={group} />
+          ))}
           <Card theme="operational" padding="none" className="overflow-hidden">
             <PaginationControls
               page={page}
               pageSize={pageSize}
-              totalItems={filteredRecords.length}
+              totalItems={projectGroups.length}
               onPageChange={setPage}
               onPageSizeChange={(nextSize) => {
                 setPageSize(nextSize);
                 setPage(1);
               }}
-              label="payment records"
+              label="projects"
               testId="payments-pagination"
             />
           </Card>

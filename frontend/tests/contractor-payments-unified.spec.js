@@ -116,21 +116,24 @@ test("unified payments page filters invoices and draw requests by project class,
   await expect(page.locator("text=Paid").first()).toBeVisible();
   await expect(page.locator("text=Resolution / Holds").first()).toBeVisible();
 
-  await expect(page.getByTestId("payments-section-invoice-residential")).toBeVisible();
-  await expect(page.getByTestId("payments-section-invoice-commercial")).toBeVisible();
-  await expect(page.getByTestId("payments-section-draw_request-commercial")).toBeVisible();
+  await expect(page.getByTestId("payments-project-401")).toBeVisible();
+  await expect(page.getByTestId("payments-project-402")).toBeVisible();
+  await expect(page.getByTestId("payments-project-301")).toBeVisible();
+  await expect(page.getByTestId("payments-project-301")).toContainText("3 payment records");
+  await expect(page.getByTestId("payments-project-301")).toContainText("Invoice");
+  await expect(page.getByTestId("payments-project-301")).toContainText("Draw Request");
 
   await page.getByTestId("payments-filter-project-class").selectOption("commercial");
-  await expect(page.getByTestId("payments-section-invoice-commercial")).toBeVisible();
-  await expect(page.getByTestId("payments-section-draw_request-commercial")).toBeVisible();
-  await expect(page.getByTestId("payments-section-invoice-residential")).toHaveCount(0);
+  await expect(page.getByTestId("payments-project-301")).toBeVisible();
+  await expect(page.getByTestId("payments-project-401")).toHaveCount(0);
 
   await page.getByTestId("payments-filter-record-type").selectOption("draw_request");
-  await expect(page.getByTestId("payments-section-draw_request-commercial")).toBeVisible();
-  await expect(page.getByTestId("payments-section-invoice-commercial")).toHaveCount(0);
+  await expect(page.getByTestId("payments-project-301")).toBeVisible();
+  await expect(page.getByTestId("payments-project-301")).toContainText("2 payment records");
+  await expect(page.getByTestId("payments-project-301")).not.toContainText("INV-72");
 
   await page.getByTestId("payments-filter-money-status").selectOption("payment_pending");
-  await expect(page.getByTestId("payments-section-draw_request-commercial")).toContainText("Payment Pending");
+  await expect(page.getByTestId("payments-project-301")).toContainText("Payment Pending");
   await expect(page.getByText("Mobilization")).toHaveCount(0);
   await expect(page.getByText("Framing")).toBeVisible();
 });
@@ -155,20 +158,20 @@ test("payments pagination preserves filters, supports rows per page, and recover
 
   await page.goto("/app/payments", { waitUntil: "domcontentloaded" });
   const pagination = page.getByTestId("payments-pagination");
-  await expect(pagination).toContainText("Showing 1-10 of 15 payment records");
+  await expect(pagination).toContainText("Showing 1-10 of 13 projects");
   await pagination.getByRole("button", { name: "Next" }).click();
-  await expect(pagination).toContainText("Showing 11-15 of 15 payment records");
+  await expect(pagination).toContainText("Showing 11-13 of 13 projects");
 
   await page.getByPlaceholder(/Search by agreement/i).fill("Pagination Project 1");
-  await expect(pagination).toContainText("Showing 1-2 of 2 payment records");
+  await expect(pagination).toContainText("Showing 1-2 of 2 projects");
   await expect(pagination).toContainText("Page 1 of 1");
 
   await page.getByPlaceholder(/Search by agreement/i).fill("");
-  await pagination.getByLabel("Rows per page for payment records").selectOption("25");
-  await expect(pagination).toContainText("Showing 1-15 of 15 payment records");
+  await pagination.getByLabel("Rows per page for projects").selectOption("25");
+  await expect(pagination).toContainText("Showing 1-13 of 13 projects");
   await expect(pagination.getByRole("button", { name: "Next" })).toBeDisabled();
 
   await page.getByTestId("payments-filter-record-type").selectOption("draw_request");
-  await expect(pagination).toContainText("Showing 1-2 of 2 payment records");
-  await expect(page.getByTestId("payments-section-draw_request-commercial")).toBeVisible();
+  await expect(pagination).toContainText("Showing 1-1 of 1 projects");
+  await expect(page.getByTestId("payments-project-301")).toBeVisible();
 });
