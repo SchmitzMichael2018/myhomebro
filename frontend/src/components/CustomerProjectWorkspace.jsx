@@ -2307,6 +2307,11 @@ export default function CustomerProjectWorkspace({
                 <div className="rounded-2xl border border-violet-300/25 bg-violet-300/10 p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</div>
                   <div className="mt-1 font-bold">{reviewAmendment.milestone_draft.title}</div>
+                  {reviewAmendment.milestone_draft.recommended_placement ? (
+                    <div className="mt-2 inline-flex rounded-full border border-violet-300/30 bg-violet-300/15 px-3 py-1 text-sm font-bold text-violet-100">
+                      {reviewAmendment.milestone_draft.recommended_placement}
+                    </div>
+                  ) : null}
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-200">{reviewAmendment.milestone_draft.scope}</p>
                   {reviewAmendment.milestone_draft.completion_criteria ? <p className="mt-2 text-sm text-slate-300"><strong>Completed when:</strong> {reviewAmendment.milestone_draft.completion_criteria}</p> : null}
                 </div>

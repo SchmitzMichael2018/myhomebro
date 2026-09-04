@@ -26371,6 +26371,8 @@ class CustomerPortalAccessTests(TestCase):
                     "title": "Water Damage Remediation",
                     "scope": "Dry the affected area and treat mold.",
                     "completion_criteria": "Moisture readings and photos are documented.",
+                    "placement_before_milestone_id": existing.id,
+                    "proposed_order": 1,
                 },
             },
             justification="Hidden water damage was discovered.",
@@ -26396,6 +26398,7 @@ class CustomerPortalAccessTests(TestCase):
         self.assertFalse(self.agreement.signed_by_contractor)
         self.assertEqual(self.agreement.escrow_funded_amount, Decimal("5000.00"))
         self.assertEqual(amendment_request.requested_changes["applied_milestone_id"], added.id)
+        self.assertEqual(amendment_request.requested_changes["confirmed_milestone_order"], 1)
 
         repeat = contractor_client.post(f"/api/projects/amendment-requests/{amendment_request.id}/apply/")
         self.assertEqual(repeat.status_code, 200, repeat.data)

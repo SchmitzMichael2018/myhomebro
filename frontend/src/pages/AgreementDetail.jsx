@@ -1780,6 +1780,7 @@ export default function AgreementDetail({
     requested_change: '',
     reason: '',
     proposed_value_change: '',
+    placement_before_milestone_id: '',
     attachments: [],
     milestone_draft: null,
   });
@@ -1840,6 +1841,7 @@ export default function AgreementDetail({
       requested_change: '',
       reason: '',
       proposed_value_change: '',
+      placement_before_milestone_id: String(currentMilestone?.id || milestones.find((row) => !isMilestoneComplete(row))?.id || 'end'),
       attachments: [],
       milestone_draft: null,
     });
@@ -1861,7 +1863,7 @@ export default function AgreementDetail({
           requested_change: requestedChange,
           reason: amendmentRequestForm.reason.trim(),
           current_change_type: amendmentRequestForm.change_type,
-          affected_milestone_title: currentMilestone?.title || '',
+          affected_milestone_title: milestones.find((row) => String(row.id) === String(amendmentRequestForm.placement_before_milestone_id))?.title || currentMilestone?.title || '',
         }
       );
       setAmendmentSuggestion(data);
@@ -1879,7 +1881,10 @@ export default function AgreementDetail({
       change_type: amendmentSuggestion.suggested_change_type || current.change_type,
       requested_change: amendmentSuggestion.improved_description || current.requested_change,
       reason: amendmentSuggestion.improved_reason || current.reason,
-      milestone_draft: amendmentSuggestion.milestone_draft || current.milestone_draft,
+      milestone_draft: {
+        ...(amendmentSuggestion.milestone_draft || current.milestone_draft || {}),
+        placement_before_milestone_id: current.placement_before_milestone_id === 'end' ? null : Number(current.placement_before_milestone_id),
+      },
     }));
     setAmendmentSuggestion(null);
   };
@@ -1899,9 +1904,21 @@ export default function AgreementDetail({
       if (amendmentRequestForm.proposed_value_change !== '') {
         form.append('proposed_value_change', amendmentRequestForm.proposed_value_change);
       }
-      if (amendmentRequestForm.milestone_draft) {
-        form.append('milestone_draft', JSON.stringify(amendmentRequestForm.milestone_draft));
-      }
+      const placementTarget = milestones.find((row) => String(row.id) === String(amendmentRequestForm.placement_before_milestone_id));
+      const proposedOrder = placementTarget ? Number(placementTarget.order || milestones.indexOf(placementTarget) + 1) : milestones.length + 1;
+      const placementLabel = placementTarget
+        ? `New Milestone ${proposedOrder}, before ${placementTarget.order || proposedOrder}. ${placementTarget.title}`
+        : `New Milestone ${proposedOrder}, after the current final milestone`;
+      const milestoneDraft = {
+        ...(amendmentRequestForm.milestone_draft || amendmentSuggestion?.milestone_draft || {}),
+        title: amendmentRequestForm.milestone_draft?.title || amendmentSuggestion?.milestone_draft?.title || 'Additional Work',
+        scope: amendmentRequestForm.milestone_draft?.scope || amendmentSuggestion?.milestone_draft?.scope || amendmentRequestForm.requested_change,
+        completion_criteria: amendmentRequestForm.milestone_draft?.completion_criteria || amendmentSuggestion?.milestone_draft?.completion_criteria || 'Changed work is complete and ready for customer review.',
+        placement_before_milestone_id: placementTarget?.id || null,
+        proposed_order: proposedOrder,
+        recommended_placement: placementLabel,
+      };
+      form.append('milestone_draft', JSON.stringify(milestoneDraft));
       amendmentRequestForm.attachments.forEach((file) => form.append('attachments', file));
       const { data } = await api.post(
         `/projects/agreements/${id}/amendment-requests/`,
@@ -6187,6 +6204,35 @@ export default function AgreementDetail({
                 placeholder="Describe the discovered condition and supporting evidence."
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
+            </label>
+            <label className="mt-4 block text-sm font-semibold">
+              Milestone placement
+              <select
+                data-testid="contractor-amendment-placement"
+                value={amendmentRequestForm.placement_before_milestone_id}
+                onChange={(event) => setAmendmentRequestForm((current) => ({
+                  ...current,
+                  placement_before_milestone_id: event.target.value,
+                  milestone_draft: current.milestone_draft ? {
+                    ...current.milestone_draft,
+                    placement_before_milestone_id: event.target.value === 'end' ? null : Number(event.target.value),
+                  } : current.milestone_draft,
+                }))}
+                className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white"
+              >
+                {milestones.map((milestone, index) => {
+                  const number = Number(milestone.order || index + 1);
+                  return (
+                    <option key={milestone.id} value={milestone.id}>
+                      {`New Milestone ${number} — before ${number}. ${milestone.title}`}
+                    </option>
+                  );
+                })}
+                <option value="end">{`New Milestone ${milestones.length + 1} — after the current final milestone`}</option>
+              </select>
+              <span className="mt-1 block text-xs font-normal text-sky-100/55">
+                Existing milestones at and after this position will move down one number after the amendment is funded.
+              </span>
             </label>
             <label className="mt-4 block text-sm font-semibold">
               Proposed price adjustment

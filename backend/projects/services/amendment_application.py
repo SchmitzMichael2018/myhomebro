@@ -63,8 +63,10 @@ def prepare_accepted_change_amendment(amendment: AmendmentRequest, *, actor=None
     agreement.save()
 
     milestones = list(Milestone.objects.select_for_update().filter(agreement=agreement).order_by("order", "id"))
+    placement_before_id = milestone_draft.get("placement_before_milestone_id")
+    placement_target = next((row for row in milestones if str(row.id) == str(placement_before_id)), None)
     next_unfinished = next((row for row in milestones if not row.completed), None)
-    insert_order = next_unfinished.order if next_unfinished else ((milestones[-1].order + 1) if milestones else 1)
+    insert_order = placement_target.order if placement_target else (next_unfinished.order if next_unfinished else ((milestones[-1].order + 1) if milestones else 1))
     for row in sorted((row for row in milestones if row.order >= insert_order), key=lambda item: item.order, reverse=True):
         row.order += 1
         row.save(update_fields=["order"])
@@ -95,6 +97,7 @@ def prepare_accepted_change_amendment(amendment: AmendmentRequest, *, actor=None
         "applied_by_user_id": getattr(actor, "id", None),
         "workflow_stage": "awaiting_amendment_signatures",
         "milestone_activation": "awaiting_additional_funding",
+        "confirmed_milestone_order": insert_order,
     })
     amendment.requested_changes = requested_changes
     amendment.save(update_fields=["requested_changes", "updated_at"])

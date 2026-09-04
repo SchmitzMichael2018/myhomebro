@@ -164,6 +164,7 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await page.goto(`/app/agreements/${AGREEMENT_ID}`);
   await page.getByTestId('contractor-request-amendment').click();
   await expect(page.getByTestId('contractor-amendment-request-modal')).toContainText('Request a Change');
+  await expect(page.getByTestId('contractor-amendment-placement')).toContainText('New Milestone 1 — before 1. Rough plumbing');
   await page.getByTestId('contractor-amendment-request-change').fill('Add water-damage remediation before rough plumbing.');
   await page.getByTestId('contractor-amendment-request-reason').fill('Hidden water damage was found after demolition.');
   await page.getByTestId('contractor-amendment-request-amount').fill('1250.00');
@@ -201,6 +202,8 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   expect(requestPayload).toContain('water-damage.jpg');
   expect(requestPayload).toContain('1250.00');
   expect(requestPayload).toContain('completion_criteria');
+  expect(requestPayload).toContain('placement_before_milestone_id');
+  expect(requestPayload).toContain('proposed_order');
 });
 
 test('accepted contractor change can be inserted into an amendment draft', async ({ page }) => {
