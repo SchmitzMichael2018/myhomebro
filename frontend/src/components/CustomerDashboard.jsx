@@ -2737,9 +2737,14 @@ function AccountPanel({ portal, token = "", saving = false, teamSaving = false, 
 export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const location = useLocation();
   const requestedWorkspace = new URLSearchParams(location.search).get("workspace");
-  const [activeTab, setActiveTab] = useState(requestedWorkspace === "diy-planner" ? "diy-planner" : requestedWorkspace === "requests" ? "requests" : "overview");
+  const linkedWorkspace = ["projects", "requests", "payments", "notifications", "diy-planner"].includes(requestedWorkspace)
+    ? requestedWorkspace
+    : "overview";
+  const [activeTab, setActiveTab] = useState(linkedWorkspace);
   useEffect(() => {
-    if (requestedWorkspace === "diy-planner" || requestedWorkspace === "requests") setActiveTab(requestedWorkspace);
+    if (["projects", "requests", "payments", "notifications", "diy-planner"].includes(requestedWorkspace)) {
+      setActiveTab(requestedWorkspace);
+    }
   }, [requestedWorkspace]);
   const [creatingRequest, setCreatingRequest] = useState(false);
   const [savingProperty, setSavingProperty] = useState(false);

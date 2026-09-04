@@ -8,6 +8,7 @@ from html import escape
 from pathlib import Path
 
 from django.conf import settings
+from django.core import signing
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
@@ -252,8 +253,15 @@ def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, ame
     proposed_amount = str(requested_changes.get("proposed_value_change") or "").strip()
     amount_line = f"Proposed price adjustment: ${Decimal(proposed_amount):,.2f}\n" if proposed_amount else "Proposed price adjustment: To be determined\n"
     site_url = (getattr(settings, "MHB_SITE_URL", "") or getattr(settings, "SITE_URL", "") or request.build_absolute_uri("/")).rstrip("/")
-    token = str(getattr(agreement, "homeowner_access_token", "") or "")
-    review_url = f"{site_url}/agreements/magic/{token}" if token else site_url
+    portal_token = signing.dumps(
+        {"email": customer_email.lower()},
+        salt="myhomebro.customer-portal",
+    ) if customer_email else ""
+    review_url = (
+        f"{site_url}/portal/{portal_token}?workspace=projects&agreement={agreement.id}&change_request={amendment.id}"
+        if portal_token
+        else f"{site_url}/portal"
+    )
     subject = f"Change request for {project_title} — review requested"
     text_body = (
         f"Hi {customer_name},\n\n"

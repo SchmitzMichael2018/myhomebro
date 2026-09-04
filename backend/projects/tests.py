@@ -26201,6 +26201,8 @@ class CustomerPortalAccessTests(TestCase):
         self.assertTrue(amendment_request.requested_changes["notification_delivery"]["sms"]["sent"])
         send_email.assert_called_once()
         self.assertIn("Proposed price adjustment: $250.00", send_email.call_args.kwargs["text_body"])
+        self.assertIn("/portal/", send_email.call_args.kwargs["text_body"])
+        self.assertNotIn("/agreements/magic/", send_email.call_args.kwargs["text_body"])
         send_sms.assert_called_once()
         self.assertEqual(amendment_request.attachments.count(), 1)
         self.assertEqual(amendment_request.attachments.first().original_filename, "hidden-damage.jpg")

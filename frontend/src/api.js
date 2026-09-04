@@ -51,6 +51,10 @@ const NO_AUTH_HEADER_PATHS = new Set([
   "/auth/jwt/refresh/",
 ]);
 
+function isNoAuthPath(path) {
+  return NO_AUTH_HEADER_PATHS.has(path) || /^\/agreements\/access\/[^/]+\/?$/.test(path);
+}
+
 // Canonical remaps (unchanged)
 const ENDPOINT_REMAP = [
   ["/customers", "/projects/homeowners"],
@@ -307,7 +311,7 @@ function installInterceptors(instance) {
     }
 
     const p = pathOnly(config.url || "");
-    if (NO_AUTH_HEADER_PATHS.has(p)) {
+    if (isNoAuthPath(p)) {
       delete config.headers?.Authorization;
     } else {
       const token = MEM_ACCESS || getAccessToken();
@@ -355,7 +359,7 @@ function installInterceptors(instance) {
       const config = error.config || {};
       const reqPath = pathOnly(config.url || "");
 
-      if (NO_AUTH_HEADER_PATHS.has(reqPath)) {
+      if (isNoAuthPath(reqPath)) {
         return Promise.reject(error);
       }
 
