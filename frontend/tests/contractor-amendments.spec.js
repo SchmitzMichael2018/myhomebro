@@ -262,11 +262,16 @@ test('accepted contractor change can be inserted into an amendment draft', async
   page.on('dialog', (dialog) => dialog.accept());
 
   await page.goto(`/app/agreements/${AGREEMENT_ID}`);
+  const overviewChange = page.getByTestId('agreement-overview-change-request');
+  await expect(overviewChange).toContainText('Accepted Change Requires Amendment');
+  await expect(overviewChange).toContainText('Water Damage Remediation');
+  await expect(overviewChange).toContainText('$700.00');
   await page.getByTestId('agreement-workspace-tab-more').click();
   const actions = page.getByTestId(`contractor-amendment-accepted-actions-${AMENDMENT_ID}`);
   await expect(actions).toContainText('Customer accepted this change request');
   await expect(actions).toContainText('signed before additional escrow');
-  await page.getByTestId(`contractor-amendment-apply-${AMENDMENT_ID}`).click();
+  await page.getByTestId('agreement-workspace-tab-overview').click();
+  await page.getByTestId('agreement-overview-apply-change-request').click();
 
   await expect.poll(() => applyCalled).toBe(true);
   await expect(page).toHaveURL(new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=2`));

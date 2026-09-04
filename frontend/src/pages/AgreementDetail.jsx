@@ -1823,6 +1823,10 @@ export default function AgreementDetail({
   const openContractorSubmittedAmendments = contractorSubmittedAmendments.filter(
     isOpenContractorAmendment
   );
+  const acceptedUnappliedContractorAmendments = contractorSubmittedAmendments.filter(
+    (request) => amendmentResponseState(request.response_state) === 'accepted' && !request.requested_changes?.applied_milestone_id
+  );
+  const overviewContractorAmendment = openContractorSubmittedAmendments[0] || acceptedUnappliedContractorAmendments[0] || null;
   const pendingContractorAmendments = homeownerAmendmentRequests.filter(
     isOpenContractorAmendment
   );
@@ -3833,10 +3837,10 @@ export default function AgreementDetail({
               <button
                 type="button"
                 data-testid="contractor-request-amendment"
-                onClick={() => openContractorSubmittedAmendments.length ? setWorkspaceTab('more') : openAmendmentRequest()}
+                onClick={() => overviewContractorAmendment ? setWorkspaceTab('more') : openAmendmentRequest()}
                 className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
               >
-                {openContractorSubmittedAmendments.length ? 'View Change Request' : 'Request Change'}
+                {overviewContractorAmendment ? 'View Change Request' : 'Request Change'}
               </button>
             ) : null}
             {norm.isDirectPay && (
@@ -4247,7 +4251,7 @@ export default function AgreementDetail({
               </div>
             </section>
 
-            {openContractorSubmittedAmendments.length ? (
+            {overviewContractorAmendment ? (
               <section
                 data-testid="agreement-overview-change-request"
                 className="rounded-2xl border border-amber-200/30 bg-gradient-to-br from-amber-300/15 to-[#061d42]/95 p-5 text-sky-100 shadow-sm"
@@ -4255,38 +4259,53 @@ export default function AgreementDetail({
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-semibold text-white">Change Request Pending</h3>
+                      <h3 className="text-lg font-semibold text-white">
+                        {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' ? 'Accepted Change Requires Amendment' : 'Change Request Pending'}
+                      </h3>
                       <span className="rounded-full border border-amber-200/35 bg-amber-300/15 px-2.5 py-1 text-xs font-semibold text-amber-100">
-                        {openContractorSubmittedAmendments[0].response_label || 'Pending response'}
+                        {overviewContractorAmendment.response_label || 'Pending response'}
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-sky-100/55">
-                      Submitted {fmtDateTime(openContractorSubmittedAmendments[0].created_at) || 'recently'}
+                      Submitted {fmtDateTime(overviewContractorAmendment.created_at) || 'recently'}
                     </div>
                     <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-amber-100/75">
-                      {openContractorSubmittedAmendments[0].requested_changes?.milestone_draft?.title || amendmentLabel(openContractorSubmittedAmendments[0])}
+                      {overviewContractorAmendment.requested_changes?.milestone_draft?.title || amendmentLabel(overviewContractorAmendment)}
                     </div>
                     <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-sky-50">
-                      {openContractorSubmittedAmendments[0].requested_change || openContractorSubmittedAmendments[0].requested_changes?.requested_change || openContractorSubmittedAmendments[0].justification}
+                      {overviewContractorAmendment.requested_change || overviewContractorAmendment.requested_changes?.requested_change || overviewContractorAmendment.justification}
                     </p>
                     <p className="mt-3 text-sm font-semibold text-amber-100">
                       Proposed price adjustment:{' '}
-                      {openContractorSubmittedAmendments[0].requested_changes?.proposed_value_change
-                        ? Number(openContractorSubmittedAmendments[0].requested_changes.proposed_value_change).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                      {overviewContractorAmendment.requested_changes?.proposed_value_change
+                        ? Number(overviewContractorAmendment.requested_changes.proposed_value_change).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
                         : 'To be determined'}
                     </p>
                     <p className="mt-3 text-xs text-sky-100/60">
                       The signed agreement remains controlling until both parties approve and sign an amendment.
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    data-testid="agreement-overview-view-change-request"
-                    onClick={() => setWorkspaceTab('more')}
-                    className="rounded-xl border border-amber-200/40 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
-                  >
-                    View Full Request
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' ? (
+                      <button
+                        type="button"
+                        data-testid="agreement-overview-apply-change-request"
+                        disabled={amendmentApplyBusy === String(overviewContractorAmendment.id)}
+                        onClick={() => applyAcceptedAmendment(overviewContractorAmendment)}
+                        className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:opacity-60"
+                      >
+                        {amendmentApplyBusy === String(overviewContractorAmendment.id) ? 'Preparing...' : 'Prepare Amendment & Add Milestone'}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      data-testid="agreement-overview-view-change-request"
+                      onClick={() => setWorkspaceTab('more')}
+                      className="rounded-xl border border-amber-200/40 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+                    >
+                      View Full Request
+                    </button>
+                  </div>
                 </div>
               </section>
             ) : null}
