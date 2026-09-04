@@ -1774,6 +1774,7 @@ export default function AgreementDetail({
     change_type: 'scope_product_change',
     requested_change: '',
     reason: '',
+    attachments: [],
   });
   const [warrantyForm, setWarrantyForm] = useState({
     title: '',
@@ -1821,6 +1822,7 @@ export default function AgreementDetail({
       change_type: 'scope_product_change',
       requested_change: '',
       reason: '',
+      attachments: [],
     });
     setAmendmentRequestOpen(true);
   };
@@ -1833,9 +1835,14 @@ export default function AgreementDetail({
     }
     try {
       setAmendmentRequestBusy(true);
+      const form = new FormData();
+      form.append('change_type', amendmentRequestForm.change_type);
+      form.append('requested_change', amendmentRequestForm.requested_change);
+      form.append('reason', amendmentRequestForm.reason);
+      amendmentRequestForm.attachments.forEach((file) => form.append('attachments', file));
       const { data } = await api.post(
         `/projects/agreements/${id}/amendment-requests/`,
-        amendmentRequestForm
+        form
       );
       toast.success(data?.amendment_request_id ? 'An amendment request is already open.' : 'Change request submitted.');
       setAmendmentRequestOpen(false);
@@ -5759,6 +5766,10 @@ export default function AgreementDetail({
                   <div className="mt-1 text-sm text-sky-100/70">
                     Requested by contractor · {request.response_label || request.status_label || 'Pending response'}
                   </div>
+                  <AttachmentLinks
+                    attachments={request.counter_attachments || []}
+                    testId={`contractor-submitted-amendment-attachments-${request.id}`}
+                  />
                 </div>
               ))}
             </div>
@@ -5838,6 +5849,23 @@ export default function AgreementDetail({
                 placeholder="Describe the discovered condition and supporting evidence."
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
+            </label>
+            <label className="mt-4 block text-sm font-semibold">
+              Supporting photos or documents
+              <input
+                data-testid="contractor-amendment-request-attachments"
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
+                onChange={(event) => setAmendmentRequestForm((current) => ({
+                  ...current,
+                  attachments: Array.from(event.target.files || []).slice(0, 5),
+                }))}
+                className="mt-2 block w-full rounded-xl border border-dashed border-sky-200/30 bg-[#03142e] px-3 py-3 text-sm text-sky-100 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-100 file:px-3 file:py-2 file:font-semibold file:text-slate-950"
+              />
+              <span className="mt-1 block text-xs font-normal text-sky-100/55">
+                Upload up to 5 photos, PDFs, or supporting documents (10 MB each).
+              </span>
             </label>
             <div className="mt-6 flex justify-end gap-3">
               <button

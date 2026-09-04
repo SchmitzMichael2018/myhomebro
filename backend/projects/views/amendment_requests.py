@@ -132,6 +132,16 @@ class ContractorAgreementAmendmentRequestView(APIView):
 
         serializer = ContractorAgreementAmendmentRequestSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        files = (
+            request.FILES.getlist("attachments")
+            or request.FILES.getlist("files")
+            or request.FILES.getlist("file")
+        )
+        if len(files) > 5:
+            return Response({"attachments": "Upload up to 5 supporting files."}, status=status.HTTP_400_BAD_REQUEST)
+        attachment_errors = [error for uploaded in files if (error := validate_counter_attachment(uploaded))]
+        if attachment_errors:
+            return Response({"attachments": attachment_errors}, status=status.HTTP_400_BAD_REQUEST)
         existing = (
             AmendmentRequest.objects.filter(agreement=agreement)
             .exclude(status=AmendmentRequest.Status.CLOSED)
@@ -184,6 +194,20 @@ class ContractorAgreementAmendmentRequestView(APIView):
             amendment.affected_milestones.set(affected)
             apply_descoped_milestone_hold(amendment)
 
+        created_attachments = [
+            AmendmentRequestAttachment.objects.create(
+                amendment_request=amendment,
+                agreement=agreement,
+                file=uploaded,
+                original_filename=getattr(uploaded, "name", "") or "",
+                content_type=getattr(uploaded, "content_type", "") or "",
+                size=int(getattr(uploaded, "size", 0) or 0),
+                uploaded_by=request.user,
+                response_state=AmendmentRequest.ResponseState.PENDING,
+            )
+            for uploaded in files
+        ]
+
         create_project_activity_event(
             agreement=agreement,
             event_type="amendment_created",
@@ -195,7 +219,14 @@ class ContractorAgreementAmendmentRequestView(APIView):
             actor_role="contractor",
             recipient_role="homeowner",
             delivered=True,
-            metadata={"change_type": change_type},
+            metadata={
+                "change_type": change_type,
+                "attachment_count": len(created_attachments),
+                "attachments": [
+                    serialize_amendment_attachment(attachment, request=request)
+                    for attachment in created_attachments
+                ],
+            },
         )
         return Response(
             {

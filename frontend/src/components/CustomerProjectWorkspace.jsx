@@ -771,6 +771,7 @@ export default function CustomerProjectWorkspace({
     desired_resolution: "",
     description: "",
     attachment_note: "",
+    attachments: [],
   });
 
   const findAgreementForProject = (project) => {
@@ -1335,6 +1336,7 @@ export default function CustomerProjectWorkspace({
       desired_resolution: "",
       description: "",
       attachment_note: "",
+      attachments: [],
     });
     setActionModal(kind);
   };
@@ -1418,7 +1420,16 @@ export default function CustomerProjectWorkspace({
           evidence_note: actionForm.attachment_note,
         };
       }
-      const { data } = await api.post(endpoint, payload);
+      let requestBody = payload;
+      if (actionModal === "amendment" && actionForm.attachments?.length) {
+        requestBody = new FormData();
+        Object.entries(payload).forEach(([key, value]) => {
+          if (Array.isArray(value)) value.forEach((item) => requestBody.append(key, item));
+          else requestBody.append(key, value);
+        });
+        actionForm.attachments.forEach((file) => requestBody.append("attachments", file));
+      }
+      const { data } = await api.post(endpoint, requestBody);
       if (data?.portal) onRefresh?.(data.portal);
       toast.success(
         actionModal === "amendment"
@@ -2476,6 +2487,25 @@ The price should be adjusted because we removed part of the work.`}
                   placeholder="Reference photos, documents, or notes already in your records."
                 />
               </label>
+              {actionModal === "amendment" ? (
+                <label className="block text-sm font-semibold text-slate-200">
+                  Supporting photos or PDF
+                  <input
+                    data-testid="customer-action-attachments"
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    onChange={(event) => setActionForm((current) => ({
+                      ...current,
+                      attachments: Array.from(event.target.files || []).slice(0, 5),
+                    }))}
+                    className="mt-2 block w-full rounded-xl border border-dashed border-slate-600 bg-slate-900 px-3 py-3 text-sm text-slate-200 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-200 file:px-3 file:py-2 file:font-semibold file:text-slate-950"
+                  />
+                  <span className="mt-1 block text-xs font-normal text-slate-400">
+                    Upload up to 5 JPG, PNG, WEBP, or PDF files (10 MB each).
+                  </span>
+                </label>
+              ) : null}
             </div>
 
             <div className="mt-5 flex flex-wrap justify-end gap-3">

@@ -9786,6 +9786,13 @@ class CustomerPortalAgreementAmendmentRequestView(APIView):
 
         serializer = CustomerPortalAgreementAmendmentSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        files = _tenant_maintenance_uploaded_files(request)
+        if len(files) > 5:
+            return Response({"attachments": "Upload up to 5 supporting files."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            _validate_tenant_maintenance_attachments(files)
+        except serializers.ValidationError as exc:
+            return Response({"attachments": exc.detail}, status=status.HTTP_400_BAD_REQUEST)
         portal_payload = _build_customer_portal_payload(email, request=request)
         agreement_row = next((row for row in portal_payload["agreements"] if row["id"] == agreement.id), {})
         status_key = agreement_row.get("customer_status_key", "")
@@ -9875,6 +9882,19 @@ class CustomerPortalAgreementAmendmentRequestView(APIView):
                     delivered=True,
                     metadata={"milestone_id": milestone.id},
                 )
+        created_attachments = [
+            AmendmentRequestAttachment.objects.create(
+                amendment_request=amendment,
+                agreement=agreement,
+                file=uploaded,
+                original_filename=getattr(uploaded, "name", "") or "",
+                content_type=getattr(uploaded, "content_type", "") or "",
+                size=int(getattr(uploaded, "size", 0) or 0),
+                uploaded_by=user,
+                response_state=AmendmentRequest.ResponseState.PENDING,
+            )
+            for uploaded in files
+        ]
         create_project_activity_event(
             agreement=agreement,
             event_type="amendment_created",
@@ -9890,6 +9910,11 @@ class CustomerPortalAgreementAmendmentRequestView(APIView):
                 "change_type": amendment.change_type,
                 "portal_change_type": portal_change_type,
                 "estimated_refundable_escrow_surplus": str(estimated_surplus),
+                "attachment_count": len(created_attachments),
+                "attachments": [
+                    _serialize_amendment_attachment(attachment)
+                    for attachment in created_attachments
+                ],
             },
         )
         return Response(

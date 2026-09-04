@@ -97,11 +97,11 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   let requestPayload = null;
   await mockContractorShell(page, agreement);
   await page.route(`**/api/projects/agreements/${AGREEMENT_ID}/amendment-requests/`, async (route) => {
-    requestPayload = route.request().postDataJSON();
+    requestPayload = route.request().postData() || '';
     agreement.amendment_requests.push({
       id: 55,
       initiated_by_role: 'contractor',
-      change_type: requestPayload.change_type,
+      change_type: 'scope_product_change',
       change_type_label: 'Product/Scope Change',
       status: 'open',
       status_label: 'Open',
@@ -120,13 +120,17 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await expect(page.getByTestId('contractor-amendment-request-modal')).toContainText('Request a Change');
   await page.getByTestId('contractor-amendment-request-change').fill('Add water-damage remediation before rough plumbing.');
   await page.getByTestId('contractor-amendment-request-reason').fill('Hidden water damage was found after demolition.');
+  await page.getByTestId('contractor-amendment-request-attachments').setInputFiles({
+    name: 'water-damage.jpg',
+    mimeType: 'image/jpeg',
+    buffer: Buffer.from('supporting-photo'),
+  });
   await page.getByRole('button', { name: 'Submit Change Request' }).click();
 
-  expect(requestPayload).toMatchObject({
-    change_type: 'scope_product_change',
-    requested_change: 'Add water-damage remediation before rough plumbing.',
-    reason: 'Hidden water damage was found after demolition.',
-  });
+  expect(requestPayload).toContain('scope_product_change');
+  expect(requestPayload).toContain('Add water-damage remediation before rough plumbing.');
+  expect(requestPayload).toContain('Hidden water damage was found after demolition.');
+  expect(requestPayload).toContain('water-damage.jpg');
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Change request submitted');
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Requested by contractor');
 });
