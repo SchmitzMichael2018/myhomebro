@@ -6909,6 +6909,7 @@ test("customer portal limits long home records, payments, and documents without 
   await page.getByTestId("customer-dashboard-tab-projects").click();
   await page.getByTestId("customer-project-search").fill("Escrow Funded Invoice");
   await page.getByTestId("customer-project-card-escrow-funded-invoice-project").click();
+  await expect(page.getByTestId("customer-header-request-amendment")).toBeVisible();
   await expect(page.getByTestId("customer-homeowner-action-center")).toContainText("Need to Change Something?");
   await page.getByTestId("customer-action-amendment").click();
   await expect(page.getByTestId("customer-action-modal")).toContainText("Request Amendment");

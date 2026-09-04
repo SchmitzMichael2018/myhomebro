@@ -1768,6 +1768,13 @@ export default function AgreementDetail({
   const [payoutReleaseTarget, setPayoutReleaseTarget] = useState(null);
   const [amendmentResponseBusy, setAmendmentResponseBusy] = useState('');
   const [viewedAmendmentIds, setViewedAmendmentIds] = useState(new Set());
+  const [amendmentRequestOpen, setAmendmentRequestOpen] = useState(false);
+  const [amendmentRequestBusy, setAmendmentRequestBusy] = useState(false);
+  const [amendmentRequestForm, setAmendmentRequestForm] = useState({
+    change_type: 'scope_product_change',
+    requested_change: '',
+    reason: '',
+  });
   const [warrantyForm, setWarrantyForm] = useState({
     title: '',
     coverage_details: '',
@@ -1799,9 +1806,47 @@ export default function AgreementDetail({
   const amendmentRequests = Array.isArray(norm?.amendmentRequests)
     ? norm.amendmentRequests
     : [];
-  const pendingContractorAmendments = amendmentRequests.filter(
+  const homeownerAmendmentRequests = amendmentRequests.filter(
+    (request) => String(request?.initiated_by_role || '').toLowerCase() !== 'contractor'
+  );
+  const contractorSubmittedAmendments = amendmentRequests.filter(
+    (request) => String(request?.initiated_by_role || '').toLowerCase() === 'contractor'
+  );
+  const pendingContractorAmendments = homeownerAmendmentRequests.filter(
     isOpenContractorAmendment
   );
+
+  const openAmendmentRequest = () => {
+    setAmendmentRequestForm({
+      change_type: 'scope_product_change',
+      requested_change: '',
+      reason: '',
+    });
+    setAmendmentRequestOpen(true);
+  };
+
+  const submitContractorAmendmentRequest = async (event) => {
+    event.preventDefault();
+    if (!amendmentRequestForm.requested_change.trim() || !amendmentRequestForm.reason.trim()) {
+      toast.error('Describe the requested change and why it is needed.');
+      return;
+    }
+    try {
+      setAmendmentRequestBusy(true);
+      const { data } = await api.post(
+        `/projects/agreements/${id}/amendment-requests/`,
+        amendmentRequestForm
+      );
+      toast.success(data?.amendment_request_id ? 'An amendment request is already open.' : 'Change request submitted.');
+      setAmendmentRequestOpen(false);
+      await fetchAgreement();
+      setWorkspaceTab('more');
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Could not submit the change request.');
+    } finally {
+      setAmendmentRequestBusy(false);
+    }
+  };
 
   const ratePercent =
     fundingPreview?.rate != null
@@ -3673,6 +3718,16 @@ export default function AgreementDetail({
                 </span>
               ) : null}
             </div>
+            {isContractor && norm.isSigned && !isCompletedAgreement ? (
+              <button
+                type="button"
+                data-testid="contractor-request-amendment"
+                onClick={openAmendmentRequest}
+                className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+              >
+                Request Change
+              </button>
+            ) : null}
             {norm.isDirectPay && (
               <div className="max-w-2xl text-xs text-sky-100/65">
                 Direct Pay agreements don&apos;t use escrow. Payment collection
@@ -5682,13 +5737,32 @@ export default function AgreementDetail({
         data-testid="agreement-workspace-panel-amendments"
         className={workspaceTab === 'more' ? 'mt-4 space-y-4' : 'hidden'}
       >
-        {isContractor && amendmentRequests.length ? (
+        {isContractor && homeownerAmendmentRequests.length ? (
           <AmendmentReviewPanel
-            amendments={amendmentRequests}
+            amendments={homeownerAmendmentRequests}
             onRespond={submitAmendmentResponse}
             onMarkViewed={markAmendmentViewed}
             busyId={amendmentResponseBusy}
           />
+        ) : contractorSubmittedAmendments.length ? (
+          <section className="rounded-2xl border border-amber-200/30 bg-amber-300/10 p-6 text-sky-100 shadow-sm">
+            <h3 className="text-lg font-semibold text-white">Change request submitted</h3>
+            <p className="mt-2 text-sm text-sky-100/75">
+              Your request is waiting for the customer to respond. Work and payment
+              on affected milestones remain governed by the signed agreement until
+              an amendment is approved and signed.
+            </p>
+            <div className="mt-4 space-y-2">
+              {contractorSubmittedAmendments.map((request) => (
+                <div key={request.id} className="rounded-xl border border-white/10 bg-[#03142e]/80 p-4">
+                  <div className="font-semibold text-white">{amendmentLabel(request)}</div>
+                  <div className="mt-1 text-sm text-sky-100/70">
+                    Requested by contractor · {request.response_label || request.status_label || 'Pending response'}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
         ) : (
           <section className="rounded-2xl border border-white/10 bg-[#061d42]/80 p-6 text-sky-100/75 shadow-sm">
             <h3 className="text-lg font-semibold text-white">
@@ -5698,9 +5772,93 @@ export default function AgreementDetail({
               Amendment requests and contractor responses will appear here when
               this agreement changes after signing.
             </p>
+            {isContractor && norm.isSigned && !isCompletedAgreement ? (
+              <button
+                type="button"
+                onClick={openAmendmentRequest}
+                className="mt-4 rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+              >
+                Request Change
+              </button>
+            ) : null}
           </section>
         )}
       </div>
+
+      {amendmentRequestOpen ? (
+        <div
+          data-testid="contractor-amendment-request-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Request a change"
+        >
+          <form
+            onSubmit={submitContractorAmendmentRequest}
+            className="w-full max-w-xl rounded-2xl border border-white/15 bg-[#061d42] p-6 text-white shadow-2xl"
+          >
+            <h2 className="text-xl font-bold">Request a Change</h2>
+            <p className="mt-2 text-sm leading-6 text-sky-100/70">
+              Use this for newly discovered conditions, added or removed work,
+              price changes, or schedule changes. The signed agreement remains
+              unchanged until both parties approve and sign an amendment.
+            </p>
+            <label className="mt-5 block text-sm font-semibold">
+              Change type
+              <select
+                value={amendmentRequestForm.change_type}
+                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, change_type: event.target.value }))}
+                className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white"
+              >
+                <option value="scope_product_change">Scope or material change</option>
+                <option value="amount_change">Price change</option>
+                <option value="date_change">Schedule change</option>
+                <option value="descope_remove_work">Remove work</option>
+                <option value="other">Other</option>
+              </select>
+            </label>
+            <label className="mt-4 block text-sm font-semibold">
+              What needs to change?
+              <textarea
+                data-testid="contractor-amendment-request-change"
+                rows={4}
+                value={amendmentRequestForm.requested_change}
+                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, requested_change: event.target.value }))}
+                placeholder="Example: Add water-damage remediation before rough plumbing begins."
+                className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
+              />
+            </label>
+            <label className="mt-4 block text-sm font-semibold">
+              Why is this needed?
+              <textarea
+                data-testid="contractor-amendment-request-reason"
+                rows={3}
+                value={amendmentRequestForm.reason}
+                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, reason: event.target.value }))}
+                placeholder="Describe the discovered condition and supporting evidence."
+                className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
+              />
+            </label>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                disabled={amendmentRequestBusy}
+                onClick={() => setAmendmentRequestOpen(false)}
+                className="rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-sky-100 hover:bg-white/10"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={amendmentRequestBusy}
+                className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-60"
+              >
+                {amendmentRequestBusy ? 'Submitting...' : 'Submit Change Request'}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       <div
         data-testid="agreement-workspace-panel-milestones"

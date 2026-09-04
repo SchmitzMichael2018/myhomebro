@@ -1664,6 +1664,16 @@ export default function CustomerProjectWorkspace({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {homeownerActions.amendment?.available ? (
+                    <button
+                      type="button"
+                      data-testid="customer-header-request-amendment"
+                      onClick={() => openHomeownerAction("amendment")}
+                      className="inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
+                    >
+                      Request Change
+                    </button>
+                  ) : null}
                   {selectedRow?.agreementUrl ? (
                     <a
                       data-testid="customer-agreement-view-action"
