@@ -5,6 +5,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from projects.models import Agreement, Milestone
 from projects.models_amendment_request import AmendmentRequest
@@ -72,12 +73,17 @@ def prepare_accepted_change_amendment(amendment: AmendmentRequest, *, actor=None
         row.save(update_fields=["order"])
 
     description = scope if not completion_criteria else f"{scope}\n\nCompletion criteria: {completion_criteria}"
+    proposed_date = parse_date(str(milestone_draft.get("proposed_milestone_date") or ""))
+    if proposed_date is None and placement_target is not None:
+        proposed_date = placement_target.completion_date or placement_target.start_date
     milestone = Milestone.objects.create(
         agreement=agreement,
         order=insert_order,
         title=title,
         description=description,
         amount=amount,
+        start_date=proposed_date,
+        completion_date=proposed_date,
         amendment_number_snapshot=agreement.amendment_number,
     )
     agreement.total_cost = Milestone.objects.filter(agreement=agreement).aggregate(total=Sum("amount"))["total"] or Decimal("0.00")
@@ -98,6 +104,7 @@ def prepare_accepted_change_amendment(amendment: AmendmentRequest, *, actor=None
         "workflow_stage": "awaiting_amendment_signatures",
         "milestone_activation": "awaiting_additional_funding",
         "confirmed_milestone_order": insert_order,
+        "confirmed_milestone_date": proposed_date.isoformat() if proposed_date else None,
     })
     amendment.requested_changes = requested_changes
     amendment.save(update_fields=["requested_changes", "updated_at"])

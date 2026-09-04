@@ -1781,6 +1781,7 @@ export default function AgreementDetail({
     reason: '',
     proposed_value_change: '',
     placement_before_milestone_id: '',
+    proposed_milestone_date: '',
     attachments: [],
     milestone_draft: null,
   });
@@ -1836,12 +1837,14 @@ export default function AgreementDetail({
   );
 
   const openAmendmentRequest = () => {
+    const placementMilestone = currentMilestone || milestones.find((row) => !isMilestoneComplete(row));
     setAmendmentRequestForm({
       change_type: 'scope_product_change',
       requested_change: '',
       reason: '',
       proposed_value_change: '',
-      placement_before_milestone_id: String(currentMilestone?.id || milestones.find((row) => !isMilestoneComplete(row))?.id || 'end'),
+      placement_before_milestone_id: String(placementMilestone?.id || 'end'),
+      proposed_milestone_date: String(placementMilestone?.completion_date || placementMilestone?.due_date || placementMilestone?.start_date || '').slice(0, 10),
       attachments: [],
       milestone_draft: null,
     });
@@ -1891,8 +1894,8 @@ export default function AgreementDetail({
 
   const submitContractorAmendmentRequest = async (event) => {
     event.preventDefault();
-    if (!amendmentRequestForm.requested_change.trim() || !amendmentRequestForm.reason.trim()) {
-      toast.error('Describe the requested change and why it is needed.');
+    if (!amendmentRequestForm.requested_change.trim() || !amendmentRequestForm.reason.trim() || !amendmentRequestForm.proposed_milestone_date) {
+      toast.error('Describe the change, its cause, and the proposed milestone date.');
       return;
     }
     try {
@@ -1917,6 +1920,7 @@ export default function AgreementDetail({
         placement_before_milestone_id: placementTarget?.id || null,
         proposed_order: proposedOrder,
         recommended_placement: placementLabel,
+        proposed_milestone_date: amendmentRequestForm.proposed_milestone_date,
       };
       form.append('milestone_draft', JSON.stringify(milestoneDraft));
       amendmentRequestForm.attachments.forEach((file) => form.append('attachments', file));
@@ -6219,6 +6223,10 @@ export default function AgreementDetail({
                 onChange={(event) => setAmendmentRequestForm((current) => ({
                   ...current,
                   placement_before_milestone_id: event.target.value,
+                  proposed_milestone_date: (() => {
+                    const target = milestones.find((row) => String(row.id) === String(event.target.value));
+                    return String(target?.completion_date || target?.due_date || target?.start_date || current.proposed_milestone_date || '').slice(0, 10);
+                  })(),
                   milestone_draft: current.milestone_draft ? {
                     ...current.milestone_draft,
                     placement_before_milestone_id: event.target.value === 'end' ? null : Number(event.target.value),
@@ -6238,6 +6246,20 @@ export default function AgreementDetail({
               </select>
               <span className="mt-1 block text-xs font-normal text-sky-100/55">
                 Existing milestones at and after this position will move down one number after the amendment is funded.
+              </span>
+            </label>
+            <label className="mt-4 block text-sm font-semibold">
+              Proposed milestone date
+              <input
+                data-testid="contractor-amendment-milestone-date"
+                type="date"
+                required
+                value={amendmentRequestForm.proposed_milestone_date}
+                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, proposed_milestone_date: event.target.value }))}
+                className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white"
+              />
+              <span className="mt-1 block text-xs font-normal text-sky-100/55">
+                Defaults to the date of the milestone that will follow this added work.
               </span>
             </label>
             <label className="mt-4 block text-sm font-semibold">

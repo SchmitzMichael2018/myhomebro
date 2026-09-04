@@ -26373,6 +26373,7 @@ class CustomerPortalAccessTests(TestCase):
                     "completion_criteria": "Moisture readings and photos are documented.",
                     "placement_before_milestone_id": existing.id,
                     "proposed_order": 1,
+                    "proposed_milestone_date": (timezone.localdate() + timedelta(days=3)).isoformat(),
                 },
             },
             justification="Hidden water damage was discovered.",
@@ -26390,6 +26391,8 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(added.title, "Water Damage Remediation")
         self.assertEqual(added.amount, Decimal("700.00"))
         self.assertEqual(added.order, 1)
+        self.assertEqual(added.completion_date, timezone.localdate() + timedelta(days=3))
+        self.assertEqual(added.start_date, timezone.localdate() + timedelta(days=3))
         self.assertEqual(existing.order, 2)
         self.assertEqual(self.agreement.total_cost, Decimal("5700.00"))
         self.assertEqual(self.agreement.amendment_number, 1)

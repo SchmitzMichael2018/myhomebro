@@ -90,7 +90,7 @@ test('contractor can request a change from the agreement workspace', async ({ pa
     signature_is_satisfied: true,
     escrow_funded: true,
     invoices: [],
-    milestones: [{ id: MILESTONE_ID, title: 'Rough plumbing', amount: '5000.00', status: 'pending' }],
+    milestones: [{ id: MILESTONE_ID, title: 'Rough plumbing', amount: '5000.00', status: 'pending', completion_date: '2026-09-08' }],
     amendment_requests: [],
     pdf_versions: [],
   };
@@ -165,6 +165,7 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await page.getByTestId('contractor-request-amendment').click();
   await expect(page.getByTestId('contractor-amendment-request-modal')).toContainText('Request a Change');
   await expect(page.getByTestId('contractor-amendment-placement')).toContainText('New Milestone 1 — before 1. Rough plumbing');
+  await expect(page.getByTestId('contractor-amendment-milestone-date')).toHaveValue('2026-09-08');
   await page.getByTestId('contractor-amendment-request-change').fill('Add water-damage remediation before rough plumbing.');
   await page.getByTestId('contractor-amendment-request-reason').fill('Hidden water damage was found after demolition.');
   await page.getByTestId('contractor-amendment-request-amount').fill('1250.00');

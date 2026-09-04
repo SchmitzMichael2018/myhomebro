@@ -2312,6 +2312,11 @@ export default function CustomerProjectWorkspace({
                       {reviewAmendment.milestone_draft.recommended_placement}
                     </div>
                   ) : null}
+                  {reviewAmendment.milestone_draft.proposed_milestone_date ? (
+                    <div className="mt-2 text-sm font-semibold text-sky-100">
+                      Proposed date: {formatDate(reviewAmendment.milestone_draft.proposed_milestone_date)}
+                    </div>
+                  ) : null}
                   <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-200">{reviewAmendment.milestone_draft.scope}</p>
                   {reviewAmendment.milestone_draft.completion_criteria ? <p className="mt-2 text-sm text-slate-300"><strong>Completed when:</strong> {reviewAmendment.milestone_draft.completion_criteria}</p> : null}
                 </div>
