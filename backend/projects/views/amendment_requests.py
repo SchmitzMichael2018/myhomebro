@@ -52,6 +52,7 @@ class ContractorAgreementAmendmentRequestSerializer(serializers.Serializer):
     proposed_value_change = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     revised_project_value = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     attachment_note = serializers.CharField(required=False, allow_blank=True)
+    milestone_draft = serializers.JSONField(required=False)
 
 
 class ContractorAgreementAmendmentImproveView(APIView):
@@ -274,6 +275,7 @@ class ContractorAgreementAmendmentRequestView(APIView):
                 "requested_change": serializer.validated_data["requested_change"],
                 "attachment_note": serializer.validated_data.get("attachment_note", ""),
                 "proposed_value_change": str(serializer.validated_data.get("proposed_value_change") or ""),
+                "milestone_draft": serializer.validated_data.get("milestone_draft") or {},
                 "requested_on_amendment_number": int(getattr(agreement, "amendment_number", 0) or 0),
             },
             justification=serializer.validated_data["reason"],

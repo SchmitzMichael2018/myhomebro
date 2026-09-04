@@ -1777,6 +1777,7 @@ export default function AgreementDetail({
     requested_change: '',
     reason: '',
     attachments: [],
+    milestone_draft: null,
   });
   const [warrantyForm, setWarrantyForm] = useState({
     title: '',
@@ -1825,6 +1826,7 @@ export default function AgreementDetail({
       requested_change: '',
       reason: '',
       attachments: [],
+      milestone_draft: null,
     });
     setAmendmentSuggestion(null);
     setAmendmentRequestOpen(true);
@@ -1862,6 +1864,7 @@ export default function AgreementDetail({
       change_type: amendmentSuggestion.suggested_change_type || current.change_type,
       requested_change: amendmentSuggestion.improved_description || current.requested_change,
       reason: amendmentSuggestion.improved_reason || current.reason,
+      milestone_draft: amendmentSuggestion.milestone_draft || current.milestone_draft,
     }));
     setAmendmentSuggestion(null);
   };
@@ -1878,6 +1881,9 @@ export default function AgreementDetail({
       form.append('change_type', amendmentRequestForm.change_type);
       form.append('requested_change', amendmentRequestForm.requested_change);
       form.append('reason', amendmentRequestForm.reason);
+      if (amendmentRequestForm.milestone_draft) {
+        form.append('milestone_draft', JSON.stringify(amendmentRequestForm.milestone_draft));
+      }
       amendmentRequestForm.attachments.forEach((file) => form.append('attachments', file));
       const { data } = await api.post(
         `/projects/agreements/${id}/amendment-requests/`,
@@ -5801,14 +5807,66 @@ export default function AgreementDetail({
             <div className="mt-4 space-y-2">
               {contractorSubmittedAmendments.map((request) => (
                 <div key={request.id} className="rounded-xl border border-white/10 bg-[#03142e]/80 p-4">
-                  <div className="font-semibold text-white">{amendmentLabel(request)}</div>
-                  <div className="mt-1 text-sm text-sky-100/70">
-                    Requested by contractor · {request.response_label || request.status_label || 'Pending response'}
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="font-semibold text-white">{amendmentLabel(request)}</div>
+                      <div className="mt-1 text-xs text-sky-100/55">
+                        Submitted {fmtDateTime(request.created_at) || 'recently'} · Requested by contractor
+                      </div>
+                    </div>
+                    <span className="self-start rounded-full border border-amber-200/30 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-100">
+                      {request.response_label || request.status_label || 'Pending response'}
+                    </span>
                   </div>
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Requested change</div>
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-50">
+                        {request.requested_change || request.requested_changes?.requested_change || 'No description provided.'}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Reason</div>
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-50">
+                        {request.justification || 'No reason provided.'}
+                      </div>
+                    </div>
+                  </div>
+                  {request.requested_changes?.milestone_draft?.title ? (
+                    <div data-testid={`contractor-submitted-amendment-draft-${request.id}`} className="mt-4 rounded-xl border border-violet-200/20 bg-violet-300/10 p-4">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</div>
+                      <div className="mt-1 font-semibold text-white">{request.requested_changes.milestone_draft.title}</div>
+                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-100/80">{request.requested_changes.milestone_draft.scope}</div>
+                      <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-violet-200">Completed when</div>
+                      <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-sky-100/80">{request.requested_changes.milestone_draft.completion_criteria}</div>
+                      <div className="mt-3 grid gap-2 text-xs text-sky-100/70 sm:grid-cols-2">
+                        <div><span className="font-semibold text-violet-200">Placement:</span> {request.requested_changes.milestone_draft.recommended_placement}</div>
+                        <div><span className="font-semibold text-violet-200">Schedule:</span> {request.requested_changes.milestone_draft.schedule_confirmation}</div>
+                        <div className="sm:col-span-2"><span className="font-semibold text-violet-200">Price:</span> {request.requested_changes.milestone_draft.price_confirmation}</div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {request.requested_changes?.attachment_note ? (
+                    <div className="mt-3 text-sm text-sky-100/70"><span className="font-semibold text-white">Evidence note:</span> {request.requested_changes.attachment_note}</div>
+                  ) : null}
                   <AttachmentLinks
                     attachments={request.counter_attachments || []}
                     testId={`contractor-submitted-amendment-attachments-${request.id}`}
                   />
+                  {request.activity_events?.length ? (
+                    <details className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
+                      <summary className="cursor-pointer text-sm font-semibold text-white">Activity history</summary>
+                      <div className="mt-3 space-y-2 text-sm text-sky-100/70">
+                        {request.activity_events.map((event) => (
+                          <div key={event.id} className="border-t border-white/10 pt-2 first:border-0 first:pt-0">
+                            <div className="font-semibold text-sky-50">{event.title || event.event_label}</div>
+                            <div className="text-xs text-sky-100/50">{fmtDateTime(event.created_at)}</div>
+                            {event.body ? <div className="mt-1">{event.body}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : null}
                 </div>
               ))}
             </div>

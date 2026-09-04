@@ -26172,6 +26172,11 @@ class CustomerPortalAccessTests(TestCase):
                 "reason": "Customer requested outlet near the desk.",
                 "affected_milestone_ids": [milestone.id],
                 "proposed_value_change": "250.00",
+                "milestone_draft": json.dumps({
+                    "title": "Additional Electrical Work",
+                    "scope": "Install one additional outlet.",
+                    "completion_criteria": "Outlet is installed, tested, and documented.",
+                }),
                 "attachments": SimpleUploadedFile(
                     "hidden-damage.jpg",
                     b"supporting-photo",
@@ -26184,6 +26189,7 @@ class CustomerPortalAccessTests(TestCase):
         amendment_request = AmendmentRequest.objects.get(id=create_response.data["amendment_request"]["id"])
         self.assertEqual(amendment_request.initiated_by_role, "contractor")
         self.assertEqual(amendment_request.response_state, AmendmentRequest.ResponseState.PENDING)
+        self.assertEqual(amendment_request.requested_changes["milestone_draft"]["title"], "Additional Electrical Work")
         self.assertEqual(amendment_request.attachments.count(), 1)
         self.assertEqual(amendment_request.attachments.first().original_filename, "hidden-damage.jpg")
         self.assertTrue(
