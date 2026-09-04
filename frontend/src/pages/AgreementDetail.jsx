@@ -6184,26 +6184,32 @@ export default function AgreementDetail({
               </select>
             </label>
             <label className="mt-4 block text-sm font-semibold">
-              What needs to change?
+              What work will be added, changed, or removed?
               <textarea
                 data-testid="contractor-amendment-request-change"
                 rows={4}
                 value={amendmentRequestForm.requested_change}
                 onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, requested_change: event.target.value }))}
-                placeholder="Example: Add water-damage remediation before rough plumbing begins."
+                placeholder="Describe the work itself. Example: Repair the leak, dry the area, treat mold, and replace damaged wood."
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
+              <span className="mt-1 block text-xs font-normal text-sky-100/55">
+                This becomes the proposed milestone scope.
+              </span>
             </label>
             <label className="mt-4 block text-sm font-semibold">
-              Why is this needed?
+              What caused this change?
               <textarea
                 data-testid="contractor-amendment-request-reason"
                 rows={3}
                 value={amendmentRequestForm.reason}
                 onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, reason: event.target.value }))}
-                placeholder="Describe the discovered condition and supporting evidence."
+                placeholder="Describe why the original agreement no longer covers the situation. Example: A hidden pipe leak and mold were found after demolition."
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
+              <span className="mt-1 block text-xs font-normal text-sky-100/55">
+                This documents the reason for the amendment; avoid repeating the work description.
+              </span>
             </label>
             <label className="mt-4 block text-sm font-semibold">
               Milestone placement
