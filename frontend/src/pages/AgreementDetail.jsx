@@ -1772,6 +1772,8 @@ export default function AgreementDetail({
   const [amendmentRequestBusy, setAmendmentRequestBusy] = useState(false);
   const [amendmentImproveBusy, setAmendmentImproveBusy] = useState(false);
   const [amendmentSuggestion, setAmendmentSuggestion] = useState(null);
+  const [amendmentNotifyBusy, setAmendmentNotifyBusy] = useState('');
+  const [amendmentNotifyAmounts, setAmendmentNotifyAmounts] = useState({});
   const [amendmentRequestForm, setAmendmentRequestForm] = useState({
     change_type: 'scope_product_change',
     requested_change: '',
@@ -1915,6 +1917,28 @@ export default function AgreementDetail({
       toast.error(error?.response?.data?.detail || 'Could not submit the change request.');
     } finally {
       setAmendmentRequestBusy(false);
+    }
+  };
+
+  const notifyCustomerOfExistingAmendment = async (request) => {
+    const amount = amendmentNotifyAmounts[request.id] ?? request.requested_changes?.proposed_value_change ?? '';
+    try {
+      setAmendmentNotifyBusy(String(request.id));
+      const { data } = await api.post(`/projects/amendment-requests/${request.id}/notify/`, {
+        proposed_value_change: amount === '' ? null : amount,
+      });
+      const emailSent = data?.notifications?.email?.sent;
+      const smsSent = data?.notifications?.sms?.sent;
+      if (emailSent || smsSent) {
+        toast.success(`Customer notified${emailSent && smsSent ? ' by email and text' : emailSent ? ' by email' : ' by text'}.`);
+      } else {
+        toast.error('The request was updated, but customer notification could not be delivered.');
+      }
+      await fetchAgreement();
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Could not notify the customer.');
+    } finally {
+      setAmendmentNotifyBusy('');
     }
   };
 
@@ -5906,12 +5930,40 @@ export default function AgreementDetail({
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                       <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Customer notification</div>
                       <div className="mt-2 text-sm text-sky-50">
-                        Email: {request.requested_changes?.notification_delivery?.email?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.email?.status === 'failed' ? 'Failed' : 'Not available'}
+                        Email: {request.requested_changes?.notification_delivery?.email?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.email?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery ? 'Not available' : 'Not sent'}
                         <span className="mx-2 text-sky-100/30">•</span>
-                        Text: {request.requested_changes?.notification_delivery?.sms?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.sms?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery?.sms?.status === 'blocked' ? 'Not permitted' : 'Not available'}
+                        Text: {request.requested_changes?.notification_delivery?.sms?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.sms?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery?.sms?.status === 'blocked' ? 'Not permitted' : request.requested_changes?.notification_delivery ? 'Not available' : 'Not sent'}
                       </div>
                     </div>
                   </div>
+                  {isOpenContractorAmendment(request) ? (
+                    <div className="mt-3 flex flex-col gap-3 rounded-xl border border-amber-200/25 bg-amber-300/10 p-3 sm:flex-row sm:items-end">
+                      <label className="min-w-0 flex-1 text-sm font-semibold text-white">
+                        Price adjustment
+                        <div className="relative mt-2">
+                          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sky-100/60">$</span>
+                          <input
+                            data-testid={`contractor-amendment-notify-amount-${request.id}`}
+                            type="number"
+                            step="0.01"
+                            value={amendmentNotifyAmounts[request.id] ?? request.requested_changes?.proposed_value_change ?? ''}
+                            onChange={(event) => setAmendmentNotifyAmounts((current) => ({ ...current, [request.id]: event.target.value }))}
+                            placeholder="0.00"
+                            className="w-full rounded-xl border border-white/15 bg-[#03142e] py-2 pl-7 pr-3 text-white"
+                          />
+                        </div>
+                      </label>
+                      <button
+                        type="button"
+                        data-testid={`contractor-amendment-notify-${request.id}`}
+                        disabled={amendmentNotifyBusy === String(request.id)}
+                        onClick={() => notifyCustomerOfExistingAmendment(request)}
+                        className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-60"
+                      >
+                        {amendmentNotifyBusy === String(request.id) ? 'Sending...' : request.requested_changes?.notification_delivery ? 'Update & Resend' : 'Add Amount & Notify Customer'}
+                      </button>
+                    </div>
+                  ) : null}
                   {request.requested_changes?.milestone_draft?.title ? (
                     <div data-testid={`contractor-submitted-amendment-draft-${request.id}`} className="mt-4 rounded-xl border border-violet-200/20 bg-violet-300/10 p-4">
                       <div className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</div>

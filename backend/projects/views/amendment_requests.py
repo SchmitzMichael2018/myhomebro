@@ -231,7 +231,7 @@ def _contractor_agreement_for_user(user, agreement_id: int) -> Agreement | None:
     return Agreement.objects.select_related("contractor", "homeowner", "project").filter(id=agreement_id, contractor=contractor).first()
 
 
-def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, amendment: AmendmentRequest) -> dict:
+def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, amendment: AmendmentRequest, dedupe_suffix: str = "") -> dict:
     homeowner = getattr(agreement, "homeowner", None)
     contractor = getattr(agreement, "contractor", None)
     customer_name = getattr(homeowner, "full_name", "") or "Homeowner"
@@ -299,7 +299,7 @@ def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, ame
                 f"MyHomeBro: {contractor_name} submitted a change request for {project_title}. Review it here: {review_url}",
                 related_object=agreement,
                 category="customer_care",
-                dedupe_key=f"amendment-request:{amendment.id}",
+                dedupe_key=f"amendment-request:{amendment.id}{dedupe_suffix}",
             )
             sms_result = {
                 "status": raw_sms.get("status") or ("sent" if raw_sms.get("ok") else "failed"),
@@ -311,6 +311,68 @@ def _notify_homeowner_of_amendment_request(*, request, agreement: Agreement, ame
             logger.exception("Amendment request SMS failed for agreement %s", agreement.id)
             sms_result = {"status": "failed", "sent": False, "detail": str(exc)}
     return {"email": email_result, "sms": sms_result, "attempted_at": timezone.now().isoformat()}
+
+
+class ContractorAmendmentNotifyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    class InputSerializer(serializers.Serializer):
+        proposed_value_change = serializers.DecimalField(
+            max_digits=12,
+            decimal_places=2,
+            required=False,
+            allow_null=True,
+        )
+
+    def post(self, request, request_id: int):
+        contractor = get_contractor_for_user(request.user)
+        amendment = get_object_or_404(
+            AmendmentRequest.objects.select_related(
+                "agreement",
+                "agreement__contractor",
+                "agreement__homeowner",
+                "agreement__project",
+            ),
+            id=request_id,
+            agreement__contractor=contractor,
+            initiated_by_role="contractor",
+        )
+        if amendment.status == AmendmentRequest.Status.CLOSED:
+            return Response({"detail": "This change request is closed."}, status=status.HTTP_400_BAD_REQUEST)
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        requested_changes = amendment.requested_changes or {}
+        if "proposed_value_change" in serializer.validated_data:
+            amount = serializer.validated_data.get("proposed_value_change")
+            requested_changes["proposed_value_change"] = "" if amount is None else str(amount)
+        amendment.requested_changes = requested_changes
+        amendment.save(update_fields=["requested_changes", "updated_at"])
+
+        notifications = _notify_homeowner_of_amendment_request(
+            request=request,
+            agreement=amendment.agreement,
+            amendment=amendment,
+            dedupe_suffix=f":manual:{timezone.now().timestamp()}",
+        )
+        amendment.requested_changes = {
+            **(amendment.requested_changes or {}),
+            "notification_delivery": notifications,
+        }
+        amendment.save(update_fields=["requested_changes", "updated_at"])
+        create_project_activity_event(
+            agreement=amendment.agreement,
+            event_type="amendment_delivered",
+            object_type="amendment_request",
+            object_id=amendment.id,
+            title="Change request notification sent",
+            body="Customer notification delivery was requested by the contractor.",
+            actor=request.user,
+            actor_role="contractor",
+            recipient_role="homeowner",
+            delivered=bool(notifications["email"]["sent"] or notifications["sms"]["sent"]),
+            metadata={"notification_delivery": notifications},
+        )
+        return Response({"ok": True, "notifications": notifications}, status=status.HTTP_200_OK)
 
 
 class ContractorAgreementAmendmentRequestView(APIView):
