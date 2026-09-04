@@ -1773,6 +1773,7 @@ export default function AgreementDetail({
   const [amendmentImproveBusy, setAmendmentImproveBusy] = useState(false);
   const [amendmentSuggestion, setAmendmentSuggestion] = useState(null);
   const [amendmentNotifyBusy, setAmendmentNotifyBusy] = useState('');
+  const [amendmentApplyBusy, setAmendmentApplyBusy] = useState('');
   const [amendmentNotifyAmounts, setAmendmentNotifyAmounts] = useState({});
   const [amendmentRequestForm, setAmendmentRequestForm] = useState({
     change_type: 'scope_product_change',
@@ -1939,6 +1940,22 @@ export default function AgreementDetail({
       toast.error(error?.response?.data?.detail || 'Could not notify the customer.');
     } finally {
       setAmendmentNotifyBusy('');
+    }
+  };
+
+  const applyAcceptedAmendment = async (request) => {
+    if (!request?.id) return;
+    const title = request.requested_changes?.milestone_draft?.title || 'the proposed milestone';
+    if (!window.confirm(`Create an amendment draft and insert ${title}? The amended agreement must be signed before additional escrow can be requested.`)) return;
+    try {
+      setAmendmentApplyBusy(String(request.id));
+      const { data } = await api.post(`/projects/amendment-requests/${request.id}/apply/`);
+      toast.success(data?.already_applied ? 'This change is already in the amendment draft.' : 'Milestone added to the amendment draft. Review and send it for signatures next.');
+      navigate(data?.next_url || `/app/agreements/${id}/wizard?step=2`);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'Could not prepare the amendment draft.');
+    } finally {
+      setAmendmentApplyBusy('');
     }
   };
 
@@ -5884,11 +5901,14 @@ export default function AgreementDetail({
           />
         ) : contractorSubmittedAmendments.length ? (
           <section className="rounded-2xl border border-amber-200/30 bg-amber-300/10 p-6 text-sky-100 shadow-sm">
-            <h3 className="text-lg font-semibold text-white">Change request submitted</h3>
+            <h3 className="text-lg font-semibold text-white">
+              {contractorSubmittedAmendments.some((request) => amendmentResponseState(request.response_state) === 'accepted')
+                ? 'Accepted change requests'
+                : 'Change request submitted'}
+            </h3>
             <p className="mt-2 text-sm text-sky-100/75">
-              Your request is waiting for the customer to respond. Work and payment
-              on affected milestones remain governed by the signed agreement until
-              an amendment is approved and signed.
+              Accepted changes must be placed into a formal amendment and signed before
+              the new milestone can begin or additional escrow funding can be requested.
             </p>
             <div className="mt-4 space-y-2">
               {contractorSubmittedAmendments.map((request) => (
@@ -5962,6 +5982,59 @@ export default function AgreementDetail({
                       >
                         {amendmentNotifyBusy === String(request.id) ? 'Sending...' : request.requested_changes?.notification_delivery ? 'Update & Resend' : 'Add Amount & Notify Customer'}
                       </button>
+                    </div>
+                  ) : null}
+                  {amendmentResponseState(request.response_state) === 'accepted' ? (
+                    <div data-testid={`contractor-amendment-accepted-actions-${request.id}`} className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-400/10 p-4">
+                      <div className="font-semibold text-emerald-100">Customer accepted this change request</div>
+                      {!request.requested_changes?.applied_milestone_id ? (
+                        <>
+                          <p className="mt-1 text-sm leading-6 text-sky-100/75">
+                            Insert the proposed milestone into an amendment draft. You will review the amount and sequence before sending it for signatures. The amendment must be signed before additional escrow can be requested.
+                          </p>
+                          <button
+                            type="button"
+                            data-testid={`contractor-amendment-apply-${request.id}`}
+                            disabled={amendmentApplyBusy === String(request.id)}
+                            onClick={() => applyAcceptedAmendment(request)}
+                            className="mt-3 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:opacity-60"
+                          >
+                            {amendmentApplyBusy === String(request.id) ? 'Preparing Amendment...' : 'Prepare Amendment & Add Milestone'}
+                          </button>
+                        </>
+                      ) : !norm.isSigned ? (
+                        <>
+                          <p className="mt-1 text-sm leading-6 text-sky-100/75">
+                            Milestone #{request.requested_changes.applied_milestone_id} is in Amendment {request.requested_changes.applied_amendment_number}. Review the milestone, then finalize and send the amendment for signatures.
+                          </p>
+                          <button
+                            type="button"
+                            data-testid={`contractor-amendment-review-draft-${request.id}`}
+                            onClick={() => navigate(`/app/agreements/${id}/wizard?step=2`)}
+                            className="mt-3 rounded-xl border border-emerald-200/40 bg-emerald-300/15 px-4 py-2.5 text-sm font-semibold text-emerald-100 hover:bg-emerald-300/25"
+                          >
+                            Review Amendment Milestones
+                          </button>
+                        </>
+                      ) : Number(fundingPreview?.remaining_to_fund || 0) > 0 ? (
+                        <>
+                          <p className="mt-1 text-sm leading-6 text-sky-100/75">
+                            The amended agreement is signed. Request the remaining {formatMoney(fundingPreview.remaining_to_fund)} in escrow before starting the added milestone.
+                          </p>
+                          <div className="mt-3">
+                            <SendFundingLinkButton
+                              agreementId={id}
+                              isFullySigned={!!norm.isSigned}
+                              amount={fundingPreview.remaining_to_fund}
+                              label="Request Additional Escrow Funding"
+                              variant="success"
+                              onSuccess={() => fetchAgreement()}
+                            />
+                          </div>
+                        </>
+                      ) : (
+                        <p className="mt-1 text-sm leading-6 text-emerald-100">The amendment milestone is included and escrow is fully funded.</p>
+                      )}
                     </div>
                   ) : null}
                   {request.requested_changes?.milestone_draft?.title ? (

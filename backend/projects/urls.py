@@ -206,7 +206,7 @@ from .views.template_views import (
 )
 
 from .views.agreements_amend import create_amendment
-from .views.amendment_requests import ContractorAgreementAmendmentImproveView, ContractorAgreementAmendmentRequestView, ContractorAmendmentNotifyView, AmendmentRequestResponseView, AmendmentRequestViewedView
+from .views.amendment_requests import ContractorAgreementAmendmentImproveView, ContractorAgreementAmendmentRequestView, ContractorAmendmentNotifyView, AmendmentRequestResponseView, ContractorAmendmentApplyView, AmendmentRequestViewedView
 from .views.refund import AgreementRefundCompatView
 
 from .views.employee_assignments import (
@@ -777,6 +777,7 @@ urlpatterns = [
     path("agreements/<int:agreement_id>/amendment-requests/", ContractorAgreementAmendmentRequestView.as_view(), name="contractor-agreement-amendment-request"),
     path("agreements/<int:agreement_id>/amendment-requests/improve/", ContractorAgreementAmendmentImproveView.as_view(), name="contractor-agreement-amendment-improve"),
     path("amendment-requests/<int:request_id>/respond/", AmendmentRequestResponseView.as_view(), name="amendment-request-respond"),
+    path("amendment-requests/<int:request_id>/apply/", ContractorAmendmentApplyView.as_view(), name="amendment-request-apply"),
     path("amendment-requests/<int:request_id>/notify/", ContractorAmendmentNotifyView.as_view(), name="contractor-amendment-notify"),
     path("amendment-requests/<int:request_id>/viewed/", AmendmentRequestViewedView.as_view(), name="amendment-request-viewed"),
     path("customer-portal/<str:token>/reimbursements/<int:reimbursement_id>/approve/", CustomerPortalReimbursementApproveView.as_view(), name="customer-portal-reimbursement-approve"),

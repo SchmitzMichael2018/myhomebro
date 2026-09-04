@@ -203,6 +203,75 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   expect(requestPayload).toContain('completion_criteria');
 });
 
+test('accepted contractor change can be inserted into an amendment draft', async ({ page }) => {
+  const agreement = {
+    id: AGREEMENT_ID,
+    title: 'Bathroom Agreement',
+    homeowner_name: 'Jordan Demo',
+    homeowner_email: 'jordan@example.com',
+    total_cost: '5000.00',
+    payment_mode: 'escrow',
+    status: 'signed',
+    signed_by_contractor: true,
+    signed_by_homeowner: true,
+    signature_is_satisfied: true,
+    escrow_funded: true,
+    invoices: [],
+    milestones: [{ id: MILESTONE_ID, title: 'Rough plumbing', amount: '5000.00', status: 'pending' }],
+    amendment_requests: [{
+      id: AMENDMENT_ID,
+      created_at: '2026-09-04T12:00:00Z',
+      initiated_by_role: 'contractor',
+      change_type: 'scope_product_change',
+      change_type_label: 'Product/Scope Change',
+      requested_change: 'Add water-damage remediation before rough plumbing.',
+      justification: 'Hidden water damage was found.',
+      requested_changes: {
+        requested_change: 'Add water-damage remediation before rough plumbing.',
+        proposed_value_change: '700.00',
+        milestone_draft: {
+          title: 'Water Damage Remediation',
+          scope: 'Dry the affected area and treat mold.',
+          completion_criteria: 'Moisture readings and photos are documented.',
+        },
+      },
+      status: 'routed_to_amendment',
+      status_label: 'Routed to Amendment',
+      response_state: 'accepted',
+      response_label: 'Accepted',
+      activity_events: [],
+    }],
+    pdf_versions: [],
+  };
+  let applyCalled = false;
+  await mockContractorShell(page, agreement);
+  await page.route(`**/api/projects/amendment-requests/${AMENDMENT_ID}/apply/`, async (route) => {
+    applyCalled = true;
+    await route.fulfill({
+      status: 201,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        milestone_id: 902,
+        amendment_number: 1,
+        additional_escrow_required: '700.00',
+        next_url: `/app/agreements/${AGREEMENT_ID}/wizard?step=2`,
+      }),
+    });
+  });
+  page.on('dialog', (dialog) => dialog.accept());
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}`);
+  await page.getByTestId('agreement-workspace-tab-more').click();
+  const actions = page.getByTestId(`contractor-amendment-accepted-actions-${AMENDMENT_ID}`);
+  await expect(actions).toContainText('Customer accepted this change request');
+  await expect(actions).toContainText('signed before additional escrow');
+  await page.getByTestId(`contractor-amendment-apply-${AMENDMENT_ID}`).click();
+
+  await expect.poll(() => applyCalled).toBe(true);
+  await expect(page).toHaveURL(new RegExp(`/app/agreements/${AGREEMENT_ID}/wizard\\?step=2`));
+});
+
 test('contractor reviews and responds to a de-scope amendment request', async ({ page }) => {
   const agreement = {
     id: AGREEMENT_ID,

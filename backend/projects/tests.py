@@ -26293,6 +26293,66 @@ class CustomerPortalAccessTests(TestCase):
             ).exists()
         )
 
+    def test_contractor_applies_accepted_change_as_single_amendment_milestone(self):
+        existing = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Rough plumbing",
+            description="Complete rough plumbing.",
+            amount=Decimal("5000.00"),
+            completion_date=timezone.localdate() + timedelta(days=5),
+        )
+        self.agreement.total_cost = Decimal("5000.00")
+        self.agreement.status = "signed"
+        self.agreement.signed_by_contractor = True
+        self.agreement.signed_by_homeowner = True
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("5000.00")
+        self.agreement.save()
+        amendment_request = AmendmentRequest.objects.create(
+            agreement=self.agreement,
+            initiated_by_role="contractor",
+            change_type=AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+            response_state=AmendmentRequest.ResponseState.ACCEPTED,
+            status=AmendmentRequest.Status.ROUTED_TO_AMENDMENT,
+            requested_changes={
+                "requested_change": "Add water remediation before rough plumbing.",
+                "proposed_value_change": "700.00",
+                "milestone_draft": {
+                    "title": "Water Damage Remediation",
+                    "scope": "Dry the affected area and treat mold.",
+                    "completion_criteria": "Moisture readings and photos are documented.",
+                },
+            },
+            justification="Hidden water damage was discovered.",
+        )
+        contractor_client = _use_secure_requests(APIClient())
+        contractor_client.force_authenticate(user=self.contractor_user)
+
+        response = contractor_client.post(f"/api/projects/amendment-requests/{amendment_request.id}/apply/")
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.agreement.refresh_from_db()
+        amendment_request.refresh_from_db()
+        existing.refresh_from_db()
+        added = Milestone.objects.get(id=response.data["milestone_id"])
+        self.assertEqual(added.title, "Water Damage Remediation")
+        self.assertEqual(added.amount, Decimal("700.00"))
+        self.assertEqual(added.order, 1)
+        self.assertEqual(existing.order, 2)
+        self.assertEqual(self.agreement.total_cost, Decimal("5700.00"))
+        self.assertEqual(self.agreement.amendment_number, 1)
+        self.assertEqual(self.agreement.status, "draft")
+        self.assertFalse(self.agreement.signed_by_homeowner)
+        self.assertFalse(self.agreement.signed_by_contractor)
+        self.assertEqual(self.agreement.escrow_funded_amount, Decimal("5000.00"))
+        self.assertEqual(amendment_request.requested_changes["applied_milestone_id"], added.id)
+
+        repeat = contractor_client.post(f"/api/projects/amendment-requests/{amendment_request.id}/apply/")
+        self.assertEqual(repeat.status_code, 200, repeat.data)
+        self.assertTrue(repeat.data["already_applied"])
+        self.assertEqual(Milestone.objects.filter(agreement=self.agreement).count(), 2)
+
     def test_contractor_agreement_payload_includes_incoming_descope_amendment(self):
         milestone = Milestone.objects.create(
             agreement=self.agreement,
