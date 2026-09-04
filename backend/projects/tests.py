@@ -26320,9 +26320,18 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         amendment_request.refresh_from_db()
+        self.agreement.refresh_from_db()
         self.assertEqual(amendment_request.response_state, AmendmentRequest.ResponseState.ACCEPTED)
         self.assertEqual(amendment_request.status, AmendmentRequest.Status.ROUTED_TO_AMENDMENT)
         self.assertIsNone(amendment_request.responded_by)
+        self.assertEqual(response.data["workflow"]["workflow_stage"], "awaiting_amendment_signatures")
+        self.assertEqual(self.agreement.status, "draft")
+        self.assertFalse(self.agreement.signed_by_contractor)
+        self.assertFalse(self.agreement.signed_by_homeowner)
+        added_milestone = Milestone.objects.get(id=amendment_request.requested_changes["applied_milestone_id"])
+        self.assertEqual(added_milestone.title, "Water Damage Remediation")
+        self.assertEqual(added_milestone.amount, Decimal("1850.00"))
+        self.assertEqual(amendment_request.requested_changes["milestone_activation"], "awaiting_additional_funding")
         self.assertTrue(
             ProjectActivityEvent.objects.filter(
                 agreement=self.agreement,

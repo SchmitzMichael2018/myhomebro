@@ -1826,7 +1826,10 @@ export default function AgreementDetail({
   const acceptedUnappliedContractorAmendments = contractorSubmittedAmendments.filter(
     (request) => amendmentResponseState(request.response_state) === 'accepted' && !request.requested_changes?.applied_milestone_id
   );
-  const overviewContractorAmendment = openContractorSubmittedAmendments[0] || acceptedUnappliedContractorAmendments[0] || null;
+  const acceptedAwaitingSignatureAmendments = contractorSubmittedAmendments.filter(
+    (request) => amendmentResponseState(request.response_state) === 'accepted' && request.requested_changes?.applied_milestone_id && !norm.isSigned
+  );
+  const overviewContractorAmendment = openContractorSubmittedAmendments[0] || acceptedUnappliedContractorAmendments[0] || acceptedAwaitingSignatureAmendments[0] || null;
   const pendingContractorAmendments = homeownerAmendmentRequests.filter(
     isOpenContractorAmendment
   );
@@ -4260,7 +4263,11 @@ export default function AgreementDetail({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-lg font-semibold text-white">
-                        {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' ? 'Accepted Change Requires Amendment' : 'Change Request Pending'}
+                        {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted'
+                          ? overviewContractorAmendment.requested_changes?.applied_milestone_id
+                            ? 'Amendment Ready for Signature'
+                            : 'Accepted Change Requires Amendment'
+                          : 'Change Request Pending'}
                       </h3>
                       <span className="rounded-full border border-amber-200/35 bg-amber-300/15 px-2.5 py-1 text-xs font-semibold text-amber-100">
                         {overviewContractorAmendment.response_label || 'Pending response'}
@@ -4286,7 +4293,7 @@ export default function AgreementDetail({
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' ? (
+                    {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' && !overviewContractorAmendment.requested_changes?.applied_milestone_id ? (
                       <button
                         type="button"
                         data-testid="agreement-overview-apply-change-request"
@@ -4295,6 +4302,16 @@ export default function AgreementDetail({
                         className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:opacity-60"
                       >
                         {amendmentApplyBusy === String(overviewContractorAmendment.id) ? 'Preparing...' : 'Prepare Amendment & Add Milestone'}
+                      </button>
+                    ) : null}
+                    {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' && overviewContractorAmendment.requested_changes?.applied_milestone_id && !norm.isSigned ? (
+                      <button
+                        type="button"
+                        data-testid="agreement-overview-review-amendment"
+                        onClick={() => navigate(`/app/agreements/${id}/wizard?step=2`)}
+                        className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-emerald-950 hover:bg-emerald-300"
+                      >
+                        Review & Sign Amendment
                       </button>
                     ) : null}
                     <button
@@ -6032,7 +6049,7 @@ export default function AgreementDetail({
                             onClick={() => navigate(`/app/agreements/${id}/wizard?step=2`)}
                             className="mt-3 rounded-xl border border-emerald-200/40 bg-emerald-300/15 px-4 py-2.5 text-sm font-semibold text-emerald-100 hover:bg-emerald-300/25"
                           >
-                            Review Amendment Milestones
+                            Review & Sign Amendment
                           </button>
                         </>
                       ) : Number(fundingPreview?.remaining_to_fund || 0) > 0 ? (
