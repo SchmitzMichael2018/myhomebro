@@ -15276,6 +15276,70 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertFalse(invoice.escrow_released)
         self.assertEqual(invoice.status, InvoiceStatus.PENDING)
 
+    def test_magic_invoice_approval_repairs_incomplete_funding_payment_from_stripe(self):
+        self.agreement.payment_mode = "escrow"
+        self.agreement.status = "funded"
+        self.agreement.escrow_funded = True
+        self.agreement.escrow_funded_amount = Decimal("5500.00")
+        self.contractor.stripe_account_id = "acct_invoice_ready"
+        self.contractor.charges_enabled = True
+        self.contractor.payouts_enabled = True
+        self.contractor.details_submitted = True
+        self.contractor.save(update_fields=["stripe_account_id", "charges_enabled", "payouts_enabled", "details_submitted"])
+        self.agreement.save(
+            update_fields=[
+                "payment_mode",
+                "status",
+                "escrow_funded",
+                "escrow_funded_amount",
+            ]
+        )
+        Payment.objects.create(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_missing_funding_row",
+            stripe_charge_id=None,
+            amount_cents=0,
+            currency="usd",
+            status="succeeded",
+        )
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("650.00"),
+            status=InvoiceStatus.PENDING,
+        )
+        stripe_intent = SimpleNamespace(
+            id="pi_missing_funding_row",
+            status="succeeded",
+            amount_received=550000,
+            amount=550000,
+            currency="usd",
+            latest_charge=SimpleNamespace(id="ch_recovered_funding"),
+            metadata={"agreement_id": str(self.agreement.id)},
+        )
+
+        with override_settings(STRIPE_SECRET_KEY="sk_test_dummy"):
+            with patch("stripe.PaymentIntent.retrieve", return_value=stripe_intent) as retrieve:
+                with patch("stripe.Transfer.create", return_value=SimpleNamespace(id="tr_recovered_release")) as transfer:
+                    response = self.client.patch(
+                        f"/api/projects/invoices/magic/{invoice.public_token}/approve/",
+                        {},
+                        format="json",
+                    )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["mode"], "escrow_release")
+        retrieve.assert_called_once_with("pi_missing_funding_row", expand=["latest_charge"])
+        self.assertEqual(transfer.call_args.kwargs["source_transaction"], "ch_recovered_funding")
+        payment = Payment.objects.get(
+            agreement=self.agreement,
+            stripe_payment_intent_id="pi_missing_funding_row",
+        )
+        self.assertEqual(payment.amount_cents, 550000)
+        self.assertEqual(payment.stripe_charge_id, "ch_recovered_funding")
+        invoice.refresh_from_db()
+        self.assertTrue(invoice.escrow_released)
+        self.assertEqual(invoice.status, InvoiceStatus.PAID)
+
     def test_magic_invoice_approval_blocks_restricted_connected_account_without_transfer(self):
         self.agreement.payment_mode = "escrow"
         self.agreement.status = "funded"

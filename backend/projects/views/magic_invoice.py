@@ -175,6 +175,97 @@ def _select_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents: in
     return None
 
 
+def _reconcile_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents: int, stripe):
+    """Repair a missing escrow charge reference from Stripe's source of truth.
+
+    Older funding webhooks could mark an agreement funded before fully persisting
+    its Payment amount or charge id.  Never infer a charge locally: retrieve the
+    recorded PaymentIntent and require Stripe to confirm that it succeeded.
+    """
+    try:
+        from payments.models import Payment
+    except Exception:
+        return None
+
+    agreement = getattr(invoice, "agreement", None)
+    if agreement is None:
+        return None
+
+    candidates = list(
+        Payment.objects.select_for_update()
+        .filter(agreement_id=invoice.agreement_id)
+        .exclude(stripe_payment_intent_id__isnull=True)
+        .exclude(stripe_payment_intent_id="")
+        .order_by("created_at", "id")
+    )
+    agreement_pi = str(getattr(agreement, "stripe_payment_intent_id", "") or "").strip()
+    candidate_ids = [str(payment.stripe_payment_intent_id).strip() for payment in candidates]
+    if agreement_pi and agreement_pi not in candidate_ids:
+        candidate_ids.append(agreement_pi)
+
+    for payment_intent_id in candidate_ids:
+        try:
+            intent = stripe.PaymentIntent.retrieve(payment_intent_id, expand=["latest_charge"])
+            intent_status = str(getattr(intent, "status", "") or "").lower()
+            if intent_status != "succeeded":
+                continue
+
+            metadata = getattr(intent, "metadata", {}) or {}
+            metadata_agreement_id = str(
+                metadata.get("agreement_id", "") if hasattr(metadata, "get") else ""
+            ).strip()
+            if metadata_agreement_id and metadata_agreement_id != str(invoice.agreement_id):
+                continue
+
+            amount_cents = int(
+                getattr(intent, "amount_received", 0) or getattr(intent, "amount", 0) or 0
+            )
+            latest_charge = getattr(intent, "latest_charge", None)
+            charge_id = str(
+                getattr(latest_charge, "id", "")
+                or (latest_charge if isinstance(latest_charge, str) else "")
+                or ""
+            ).strip()
+            if not charge_id or amount_cents < int(payout_cents or 0):
+                continue
+
+            payment = Payment.objects.filter(
+                agreement_id=invoice.agreement_id,
+                stripe_payment_intent_id=payment_intent_id,
+            ).first()
+            if payment is None:
+                payment = Payment.objects.create(
+                    agreement_id=invoice.agreement_id,
+                    stripe_payment_intent_id=payment_intent_id,
+                    stripe_charge_id=charge_id,
+                    amount_cents=amount_cents,
+                    currency=str(getattr(intent, "currency", "usd") or "usd").lower(),
+                    status="succeeded",
+                )
+            else:
+                update_fields = []
+                if payment.stripe_charge_id != charge_id:
+                    payment.stripe_charge_id = charge_id
+                    update_fields.append("stripe_charge_id")
+                if int(payment.amount_cents or 0) < amount_cents:
+                    payment.amount_cents = amount_cents
+                    update_fields.append("amount_cents")
+                if payment.status != "succeeded":
+                    payment.status = "succeeded"
+                    update_fields.append("status")
+                if update_fields:
+                    payment.save(update_fields=update_fields)
+            return payment
+        except Exception as exc:
+            logger.warning(
+                "Unable to reconcile escrow PaymentIntent %s for invoice %s: %s",
+                payment_intent_id,
+                getattr(invoice, "id", None),
+                exc,
+            )
+    return None
+
+
 def _orchestrate_subcontractor_payout_for_invoice(invoice: Invoice, *, actor_user=None) -> None:
     try:
         from projects.services.subcontractor_payout_orchestration import orchestrate_subcontractor_payout_for_milestone
@@ -555,6 +646,8 @@ class MagicInvoiceApproveView(APIView):
                 )
 
             source_payment = _select_escrow_source_payment_for_invoice(invoice, payout_cents)
+            if source_payment is None:
+                source_payment = _reconcile_escrow_source_payment_for_invoice(invoice, payout_cents, stripe)
             if source_payment is None:
                 return Response(
                     {
