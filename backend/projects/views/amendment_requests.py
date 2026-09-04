@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -51,6 +52,66 @@ class ContractorAgreementAmendmentRequestSerializer(serializers.Serializer):
     proposed_value_change = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     revised_project_value = serializers.DecimalField(max_digits=12, decimal_places=2, required=False)
     attachment_note = serializers.CharField(required=False, allow_blank=True)
+
+
+class ContractorAgreementAmendmentImproveView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    class InputSerializer(serializers.Serializer):
+        requested_change = serializers.CharField()
+        current_change_type = serializers.ChoiceField(
+            choices=[choice[0] for choice in AmendmentRequest.ChangeType.choices],
+            required=False,
+        )
+
+    def post(self, request, agreement_id: int):
+        agreement = _contractor_agreement_for_user(request.user, agreement_id)
+        if agreement is None:
+            return Response({"detail": "Agreement not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = self.InputSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        original = serializer.validated_data["requested_change"].strip()
+        text = original.lower()
+        suggested = serializer.validated_data.get("current_change_type") or AmendmentRequest.ChangeType.OTHER
+        if re.search(r"\b(remove|omit|delete|descope|de-scope|credit)\b", text):
+            suggested = AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK
+        elif re.search(r"\b(date|delay|schedule|timeline|week|month|day|start|finish)\b", text):
+            suggested = AmendmentRequest.ChangeType.DATE_CHANGE
+        elif re.search(r"\b(price|cost|amount|allowance|budget|increase|decrease|\$)\b", text):
+            suggested = AmendmentRequest.ChangeType.AMOUNT_CHANGE
+        elif re.search(r"\b(scope|material|product|damage|remediation|repair|replace|add|change)\b", text):
+            suggested = AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE
+
+        clean = re.sub(r"\s+", " ", original).rstrip(".")
+        prefix = {
+            AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK: "Please review this proposed removal of work",
+            AmendmentRequest.ChangeType.DATE_CHANGE: "Please review this proposed schedule change",
+            AmendmentRequest.ChangeType.AMOUNT_CHANGE: "Please review this proposed price change",
+            AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE: "Please review this proposed scope or material change",
+        }.get(suggested, "Please review this proposed change")
+        questions = []
+        if len(original) < 40:
+            questions.append("What exact work, location, material, or milestone is affected?")
+        if suggested == AmendmentRequest.ChangeType.AMOUNT_CHANGE and not re.search(r"\$|\b\d+(\.\d+)?\b", text):
+            questions.append("What price adjustment is proposed, if known?")
+        if suggested == AmendmentRequest.ChangeType.DATE_CHANGE and not re.search(r"\b\d|date|week|month|day\b", text):
+            questions.append("What start, finish, or duration change is proposed?")
+        evidence = {
+            AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE: "Add photos of the condition, product details, or a specialist estimate when available.",
+            AmendmentRequest.ChangeType.DESCOPE_REMOVE_WORK: "Add a revised scope or identify the milestones and amounts to be removed.",
+            AmendmentRequest.ChangeType.AMOUNT_CHANGE: "Add an estimate, quote, receipt, or written price basis.",
+            AmendmentRequest.ChangeType.DATE_CHANGE: "Add delivery dates, availability notes, or other schedule support.",
+        }.get(suggested, "Add relevant photos, estimates, documents, or project notes.")
+        return Response({
+            "detail": "Amendment request improved.",
+            "original_request": original,
+            "suggested_change_type": suggested,
+            "suggested_change_type_label": AmendmentRequest.ChangeType(suggested).label,
+            "improved_description": f"{prefix}: {clean}.",
+            "clarification_questions": questions[:3],
+            "evidence_note": evidence,
+            "source": "ai_advisory",
+        })
 
 
 class AmendmentRequestResponseSerializer(serializers.Serializer):

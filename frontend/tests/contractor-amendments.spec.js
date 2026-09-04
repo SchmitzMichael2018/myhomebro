@@ -96,6 +96,19 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   };
   let requestPayload = null;
   await mockContractorShell(page, agreement);
+  await page.route(`**/api/projects/agreements/${AGREEMENT_ID}/amendment-requests/improve/`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        suggested_change_type: 'scope_product_change',
+        suggested_change_type_label: 'Product/Scope Change',
+        improved_description: 'Please review this proposed scope or material change: add water-damage remediation before rough plumbing.',
+        clarification_questions: ['What exact area is affected?'],
+        evidence_note: 'Add photos of the condition or a specialist estimate.',
+      }),
+    });
+  });
   await page.route(`**/api/projects/agreements/${AGREEMENT_ID}/amendment-requests/`, async (route) => {
     requestPayload = route.request().postData() || '';
     agreement.amendment_requests.push({
@@ -120,6 +133,10 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await expect(page.getByTestId('contractor-amendment-request-modal')).toContainText('Request a Change');
   await page.getByTestId('contractor-amendment-request-change').fill('Add water-damage remediation before rough plumbing.');
   await page.getByTestId('contractor-amendment-request-reason').fill('Hidden water damage was found after demolition.');
+  await page.getByTestId('contractor-amendment-ai-improve').click();
+  await expect(page.getByTestId('contractor-amendment-ai-suggestion')).toContainText('What exact area is affected?');
+  await page.getByTestId('contractor-amendment-ai-apply').click();
+  await expect(page.getByTestId('contractor-amendment-request-change')).toHaveValue(/Please review this proposed scope/);
   await page.getByTestId('contractor-amendment-request-attachments').setInputFiles({
     name: 'water-damage.jpg',
     mimeType: 'image/jpeg',
@@ -128,7 +145,7 @@ test('contractor can request a change from the agreement workspace', async ({ pa
   await page.getByRole('button', { name: 'Submit Change Request' }).click();
 
   expect(requestPayload).toContain('scope_product_change');
-  expect(requestPayload).toContain('Add water-damage remediation before rough plumbing.');
+  expect(requestPayload).toContain('Please review this proposed scope or material change');
   expect(requestPayload).toContain('Hidden water damage was found after demolition.');
   expect(requestPayload).toContain('water-damage.jpg');
   await expect(page.getByTestId('agreement-workspace-panel-amendments')).toContainText('Change request submitted');

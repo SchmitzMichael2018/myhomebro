@@ -1770,6 +1770,8 @@ export default function AgreementDetail({
   const [viewedAmendmentIds, setViewedAmendmentIds] = useState(new Set());
   const [amendmentRequestOpen, setAmendmentRequestOpen] = useState(false);
   const [amendmentRequestBusy, setAmendmentRequestBusy] = useState(false);
+  const [amendmentImproveBusy, setAmendmentImproveBusy] = useState(false);
+  const [amendmentSuggestion, setAmendmentSuggestion] = useState(null);
   const [amendmentRequestForm, setAmendmentRequestForm] = useState({
     change_type: 'scope_product_change',
     requested_change: '',
@@ -1824,7 +1826,41 @@ export default function AgreementDetail({
       reason: '',
       attachments: [],
     });
+    setAmendmentSuggestion(null);
     setAmendmentRequestOpen(true);
+  };
+
+  const improveContractorAmendmentRequest = async () => {
+    const requestedChange = amendmentRequestForm.requested_change.trim();
+    if (!requestedChange) {
+      toast.error('Describe the change before asking AI to improve it.');
+      return;
+    }
+    try {
+      setAmendmentImproveBusy(true);
+      const { data } = await api.post(
+        `/projects/agreements/${id}/amendment-requests/improve/`,
+        {
+          requested_change: requestedChange,
+          current_change_type: amendmentRequestForm.change_type,
+        }
+      );
+      setAmendmentSuggestion(data);
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || 'AI could not improve this request right now.');
+    } finally {
+      setAmendmentImproveBusy(false);
+    }
+  };
+
+  const applyContractorAmendmentSuggestion = () => {
+    if (!amendmentSuggestion) return;
+    setAmendmentRequestForm((current) => ({
+      ...current,
+      change_type: amendmentSuggestion.suggested_change_type || current.change_type,
+      requested_change: amendmentSuggestion.improved_description || current.requested_change,
+    }));
+    setAmendmentSuggestion(null);
   };
 
   const submitContractorAmendmentRequest = async (event) => {
@@ -5806,7 +5842,7 @@ export default function AgreementDetail({
         >
           <form
             onSubmit={submitContractorAmendmentRequest}
-            className="w-full max-w-xl rounded-2xl border border-white/15 bg-[#061d42] p-6 text-white shadow-2xl"
+            className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-2xl border border-white/15 bg-[#061d42] p-6 text-white shadow-2xl"
           >
             <h2 className="text-xl font-bold">Request a Change</h2>
             <p className="mt-2 text-sm leading-6 text-sky-100/70">
@@ -5850,6 +5886,54 @@ export default function AgreementDetail({
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
             </label>
+            <div className="mt-4 rounded-xl border border-violet-300/25 bg-violet-300/10 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-violet-100">AI writing help</div>
+                  <div className="mt-1 text-xs text-sky-100/60">
+                    Improve the wording, categorize the request, and identify missing details.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  data-testid="contractor-amendment-ai-improve"
+                  disabled={amendmentImproveBusy || !amendmentRequestForm.requested_change.trim()}
+                  onClick={improveContractorAmendmentRequest}
+                  className="rounded-xl border border-violet-200/40 bg-violet-300/20 px-4 py-2 text-sm font-semibold text-violet-50 hover:bg-violet-300/30 disabled:opacity-50"
+                >
+                  {amendmentImproveBusy ? 'Improving...' : 'Improve with AI'}
+                </button>
+              </div>
+              {amendmentSuggestion ? (
+                <div data-testid="contractor-amendment-ai-suggestion" className="mt-4 space-y-3 border-t border-violet-200/20 pt-4 text-sm">
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Suggested category</span>
+                    <p className="mt-1 font-semibold text-white">{amendmentSuggestion.suggested_change_type_label}</p>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Improved description</span>
+                    <p className="mt-1 text-sky-100/80">{amendmentSuggestion.improved_description}</p>
+                  </div>
+                  {amendmentSuggestion.clarification_questions?.length ? (
+                    <div>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Details to confirm</span>
+                      <ul className="mt-1 list-disc space-y-1 pl-5 text-sky-100/75">
+                        {amendmentSuggestion.clarification_questions.map((question) => <li key={question}>{question}</li>)}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <p className="text-xs text-sky-100/60">{amendmentSuggestion.evidence_note}</p>
+                  <button
+                    type="button"
+                    data-testid="contractor-amendment-ai-apply"
+                    onClick={applyContractorAmendmentSuggestion}
+                    className="rounded-lg bg-violet-200 px-3 py-2 text-xs font-bold text-slate-950"
+                  >
+                    Apply Suggestion
+                  </button>
+                </div>
+              ) : null}
+            </div>
             <label className="mt-4 block text-sm font-semibold">
               Supporting photos or documents
               <input

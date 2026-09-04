@@ -26135,6 +26135,22 @@ class CustomerPortalAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    def test_contractor_can_improve_amendment_request(self):
+        contractor_client = _use_secure_requests(APIClient())
+        contractor_client.force_authenticate(user=self.contractor_user)
+        response = contractor_client.post(
+            f"/api/projects/agreements/{self.agreement.id}/amendment-requests/improve/",
+            {
+                "requested_change": "We found hidden water damage and need remediation before plumbing.",
+                "current_change_type": AmendmentRequest.ChangeType.OTHER,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["suggested_change_type"], AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE)
+        self.assertIn("scope or material change", response.data["improved_description"])
+        self.assertIn("photos", response.data["evidence_note"].lower())
+
     def test_contractor_can_create_and_homeowner_can_respond_to_amendment_request(self):
         milestone = Milestone.objects.create(
             agreement=self.agreement,
