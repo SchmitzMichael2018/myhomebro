@@ -26242,6 +26242,57 @@ class CustomerPortalAccessTests(TestCase):
             ).exists()
         )
 
+    def test_customer_portal_token_can_review_and_approve_contractor_amendment(self):
+        amendment_request = AmendmentRequest.objects.create(
+            agreement=self.agreement,
+            initiated_by_role="contractor",
+            change_type=AmendmentRequest.ChangeType.SCOPE_PRODUCT_CHANGE,
+            requested_changes={
+                "requested_change": "Add water-damage remediation before rough plumbing.",
+                "proposed_value_change": "1850.00",
+                "milestone_draft": {
+                    "title": "Water Damage Remediation",
+                    "scope": "Dry the area, treat mold, and replace damaged framing.",
+                    "completion_criteria": "Moisture readings and completion photos are documented.",
+                },
+            },
+            justification="A leaking pipe caused wet framing and visible mold.",
+        )
+        token = signing.dumps({"email": self.customer_email}, salt=PORTAL_TOKEN_SALT)
+
+        portal_response = self.client.get(f"/api/projects/customer-portal/{token}/")
+        self.assertEqual(portal_response.status_code, 200, portal_response.data)
+        agreement_payload = next(row for row in portal_response.data["agreements"] if row["id"] == self.agreement.id)
+        active_case = next(row for row in agreement_payload["active_cases"] if row["id"] == amendment_request.id)
+        self.assertEqual(active_case["requested_change"], "Add water-damage remediation before rough plumbing.")
+        self.assertEqual(active_case["proposed_value_change"], "1850.00")
+        self.assertEqual(active_case["milestone_draft"]["title"], "Water Damage Remediation")
+
+        response = self.client.post(
+            f"/api/projects/amendment-requests/{amendment_request.id}/respond/",
+            {
+                "response_state": AmendmentRequest.ResponseState.ACCEPTED,
+                "response_note": "Approved for formal amendment preparation.",
+                "portal_token": token,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        amendment_request.refresh_from_db()
+        self.assertEqual(amendment_request.response_state, AmendmentRequest.ResponseState.ACCEPTED)
+        self.assertEqual(amendment_request.status, AmendmentRequest.Status.ROUTED_TO_AMENDMENT)
+        self.assertIsNone(amendment_request.responded_by)
+        self.assertTrue(
+            ProjectActivityEvent.objects.filter(
+                agreement=self.agreement,
+                object_type="amendment_request",
+                object_id=str(amendment_request.id),
+                event_type=ProjectActivityEvent.EventType.AMENDMENT_RESPONDED,
+                actor_role="homeowner",
+            ).exists()
+        )
+
     def test_contractor_agreement_payload_includes_incoming_descope_amendment(self):
         milestone = Milestone.objects.create(
             agreement=self.agreement,

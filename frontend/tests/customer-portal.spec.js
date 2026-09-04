@@ -6355,6 +6355,109 @@ test("customer portal login failure and token password creation states render", 
   await expect(page.getByTestId("customer-portal-create-password-prompt")).not.toBeVisible();
 });
 
+test("amendment email opens the customer review with contingency funding and working portal actions", async ({ page }) => {
+  const amendment = {
+    id: 77,
+    type: "amendment",
+    change_type_label: "Product/Scope Change",
+    response_state: "pending",
+    response_label: "Pending Response",
+    requested_change: "Add water-damage remediation before rough plumbing begins.",
+    justification: "A leaking pipe caused wet framing and visible mold.",
+    proposed_value_change: "1850.00",
+    milestone_draft: {
+      title: "Water Damage Remediation",
+      scope: "Dry the affected area, treat mold, and replace damaged framing.",
+      completion_criteria: "Moisture readings are documented and damaged materials are replaced.",
+    },
+    counter_attachments: [{ id: 1, filename: "water-damage.jpg", url: "/files/water-damage.jpg" }],
+  };
+  const project = {
+    ...portalPayload.projects[0],
+    title: "Master Bath Renovation",
+    status: "active",
+    status_label: "In Progress",
+    customer_status_group: "open",
+    customer_status_label: "Change Requires Review",
+    active_cases: [amendment],
+    homeowner_actions: {
+      amendment: { active: true, available: false, label: "View Amendment Request" },
+    },
+    payment_summary: {
+      incidentals_reserve_amount: "500.00",
+      incidentals_reserve: { original: "500.00", spent: "75.00", pending: "25.00", remaining: "400.00" },
+    },
+  };
+  const agreement = {
+    ...portalPayload.agreements[0],
+    project_title: "Master Bath Renovation",
+    status: "active",
+    status_label: "Signed",
+    customer_status_group: "open",
+    customer_status_label: "Change Requires Review",
+    active_cases: [amendment],
+    homeowner_actions: project.homeowner_actions,
+    payment_summary: project.payment_summary,
+  };
+  const linkedPayload = {
+    ...portalPayload,
+    account: { ...portalPayload.account, has_user: false, has_usable_password: false },
+    projects: [project],
+    agreements: [agreement],
+  };
+  let responsePayload = null;
+  let currentLinkedPayload = linkedPayload;
+
+  await page.route("**/api/projects/customer-portal/customer-token/", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(currentLinkedPayload) });
+  });
+  await page.route("**/api/projects/customer-portal/customer-token/create-password/", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, portal: { ...linkedPayload, account: { ...linkedPayload.account, has_user: true, has_usable_password: true } } }),
+    });
+  });
+  await page.route("**/api/projects/amendment-requests/77/respond/", async (route) => {
+    responsePayload = route.request().postDataJSON();
+    const approvedAmendment = { ...amendment, response_state: "accepted", response_label: "Accepted", response_note: "Approved." };
+    currentLinkedPayload = {
+      ...linkedPayload,
+      projects: [{ ...project, active_cases: [approvedAmendment] }],
+      agreements: [{ ...agreement, active_cases: [approvedAmendment] }],
+    };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: true, amendment_request: { id: 77, response_state: "accepted" } }),
+    });
+  });
+
+  await page.goto("/portal/customer-token?workspace=projects&agreement=1&change_request=77", { waitUntil: "domcontentloaded" });
+  await expect(page.getByTestId("customer-portal-create-password-prompt")).toBeVisible();
+  await page.getByTestId("customer-portal-create-password-input").fill("CustomerPass123!");
+  await page.getByTestId("customer-portal-create-password-confirm-input").fill("CustomerPass123!");
+  await page.getByRole("button", { name: "Create Password" }).click();
+
+  const review = page.getByTestId("customer-amendment-review-modal");
+  await expect(review).toBeVisible();
+  await expect(review).toContainText("Add water-damage remediation");
+  await expect(review).toContainText("$1,850.00");
+  await expect(review).toContainText("Water Damage Remediation");
+  await expect(review).toContainText("water-damage.jpg");
+  await page.getByTestId("customer-amendment-submit-response").click();
+  await expect.poll(() => responsePayload?.response_state).toBe("accepted");
+  expect(responsePayload?.portal_token).toBe("customer-token");
+  await expect(review).toHaveCount(0);
+
+  await expect(page.getByText("Contingency Funding")).toBeVisible();
+  await expect(page.getByText("$400.00 remaining")).toBeVisible();
+  await page.getByTestId("customer-project-card-1").click();
+  await expect(page.locator("#customer-project-detail")).toBeVisible();
+  await page.getByTestId("customer-dashboard-unread-updates").click();
+  await expect(page.getByTestId("customer-dashboard-tab-notifications")).toHaveClass(/border-amber/);
+});
+
 test("customer portal access page handles errors and mobile layout", async ({ page }) => {
   await page.route("**/api/projects/customer-portal/request-link/", async (route) => {
     await route.fulfill({

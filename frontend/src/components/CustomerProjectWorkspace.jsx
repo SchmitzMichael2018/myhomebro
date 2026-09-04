@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { CheckCircle2, ExternalLink, FileText, MessageSquare, Star } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -761,6 +761,13 @@ export default function CustomerProjectWorkspace({
   const [amendmentAiBusy, setAmendmentAiBusy] = useState(false);
   const [amendmentAiError, setAmendmentAiError] = useState("");
   const [amendmentSuggestion, setAmendmentSuggestion] = useState(null);
+  const query = useMemo(() => new URLSearchParams(window.location.search), []);
+  const linkedAgreementId = query.get("agreement") || "";
+  const linkedChangeRequestId = query.get("change_request") || "";
+  const [reviewAmendmentId, setReviewAmendmentId] = useState(linkedChangeRequestId);
+  const [amendmentDecision, setAmendmentDecision] = useState("accepted");
+  const [amendmentResponseNote, setAmendmentResponseNote] = useState("");
+  const [amendmentResponseBusy, setAmendmentResponseBusy] = useState(false);
   const [actionForm, setActionForm] = useState({
     change_type: "scope_change",
     requested_change: "",
@@ -797,6 +804,8 @@ export default function CustomerProjectWorkspace({
     });
 
   const buildNextAction = (project, relatedPayments, agreement) => {
+    const amendment = (project?.active_cases || agreement?.active_cases || []).find((row) => row.type === "amendment" && row.response_state === "pending");
+    if (amendment) return "Review amendment";
     if (relatedPayments.some(isReviewablePayment)) return "Review payment";
     if (relatedPayments.some((payment) => hasOpenDispute(payment))) return "Track issue";
     if (relatedPayments.some(isActionablePayment)) return "Pay invoice";
@@ -1208,6 +1217,49 @@ export default function CustomerProjectWorkspace({
   const milestoneCount = (selected?.milestones || []).length;
   const homeownerActions = selected?.homeowner_actions || selectedAgreement?.homeowner_actions || {};
   const activeCases = selected?.active_cases || selectedAgreement?.active_cases || [];
+  const reviewAmendment = activeCases.find((row) => String(row.id) === String(reviewAmendmentId) && row.type === "amendment") || null;
+  const reviewAmendmentNeedsResponse = String(reviewAmendment?.response_state || "pending").toLowerCase() === "pending";
+  const contingency = selectedAgreement?.payment_summary?.incidentals_reserve || selected?.payment_summary?.incidentals_reserve || {};
+  const contingencyOriginal = numericValue(contingency.original ?? selectedAgreement?.payment_summary?.incidentals_reserve_amount ?? selected?.payment_summary?.incidentals_reserve_amount);
+  const contingencyUsed = numericValue(contingency.spent ?? contingency.used);
+  const contingencyPending = numericValue(contingency.pending);
+  const contingencyRemaining = numericValue(contingency.remaining ?? Math.max(contingencyOriginal - contingencyUsed - contingencyPending, 0));
+
+  useEffect(() => {
+    if (!linkedAgreementId) return;
+    const linkedRow = agreementRows.find((row) => String(row.agreement?.id || "") === String(linkedAgreementId));
+    if (linkedRow) setSelectedId(linkedRow.project.id);
+  }, [agreementRows, linkedAgreementId]);
+
+  useEffect(() => {
+    if (linkedChangeRequestId && activeCases.some((row) => String(row.id) === String(linkedChangeRequestId) && String(row.response_state || "pending").toLowerCase() === "pending")) {
+      setReviewAmendmentId(linkedChangeRequestId);
+    }
+  }, [activeCases, linkedChangeRequestId]);
+
+  const respondToAmendment = async () => {
+    if (!reviewAmendment) return;
+    if (amendmentDecision === "rejected" && !amendmentResponseNote.trim()) {
+      toast.error("Please explain why the change is being rejected.");
+      return;
+    }
+    try {
+      setAmendmentResponseBusy(true);
+      await api.post(`/projects/amendment-requests/${reviewAmendment.id}/respond/`, {
+        response_state: amendmentDecision,
+        response_note: amendmentResponseNote.trim(),
+        portal_token: token,
+      });
+      toast.success(amendmentDecision === "accepted" ? "Change request approved." : "Response sent to your contractor.");
+      setReviewAmendmentId("");
+      setAmendmentResponseNote("");
+      await onRefresh?.();
+    } catch (error) {
+      toast.error(error?.response?.data?.detail || "Could not submit your response.");
+    } finally {
+      setAmendmentResponseBusy(false);
+    }
+  };
   const suggestedMaterialsCard = (
     <Section title="Suggested Materials" eyebrow="Planning and supplies" testId="customer-project-suggested-materials">
       <div data-testid="customer-project-suggested-materials-notice" className="rounded-xl border border-amber-300/25 bg-amber-300/10 px-3 py-2 text-xs font-semibold leading-5 text-amber-100">
@@ -1448,6 +1500,7 @@ export default function CustomerProjectWorkspace({
 
   const openProject = (project) => {
     setSelectedId(project.id);
+    window.setTimeout(() => document.getElementById("customer-project-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   };
 
   const resetListWindow = () => setVisibleCount(10);
@@ -1658,7 +1711,7 @@ export default function CustomerProjectWorkspace({
           ) : null}
         </section>
 
-      <div data-testid="customer-rich-project-workspace" className="space-y-4">
+      <div id="customer-project-detail" data-testid="customer-rich-project-workspace" className="scroll-mt-4 space-y-4">
         {selected ? (
           <>
             <section data-testid="customer-selected-agreement-summary" className="overflow-hidden rounded-3xl border border-slate-700 bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_30%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(12,74,110,0.42))] p-5 shadow-2xl shadow-slate-950/30 sm:p-6">
@@ -1675,14 +1728,16 @@ export default function CustomerProjectWorkspace({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {homeownerActions.amendment?.available ? (
+                  {homeownerActions.amendment?.available || homeownerActions.amendment?.active ? (
                     <button
                       type="button"
                       data-testid="customer-header-request-amendment"
-                      onClick={() => openHomeownerAction("amendment")}
+                      onClick={() => homeownerActions.amendment?.active
+                        ? setReviewAmendmentId(String(activeCases.find((row) => row.type === "amendment")?.id || ""))
+                        : openHomeownerAction("amendment")}
                       className="inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
                     >
-                      Request Change
+                      {homeownerActions.amendment?.label || "Request Change"}
                     </button>
                   ) : null}
                   {selectedRow?.agreementUrl ? (
@@ -1735,7 +1790,7 @@ export default function CustomerProjectWorkspace({
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-400">Milestone Progress</div>
                   <div className="mt-1 text-sm font-semibold text-white">
@@ -1765,6 +1820,17 @@ export default function CustomerProjectWorkspace({
                   {selectedPaymentModel.refunds > 0 ? (
                     <div data-testid="customer-payment-summary-refunds" className="mt-1 text-xs text-slate-300">
                       {money(selectedPaymentModel.refunds)} refunds or adjustments
+                    </div>
+                  ) : null}
+                </div>
+                <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4">
+                  <div className="text-xs uppercase tracking-wide text-amber-200">Contingency Funding</div>
+                  <div data-testid="customer-contingency-remaining" className="mt-1 text-sm font-semibold text-white">
+                    {contingencyOriginal > 0 ? `${money(contingencyRemaining)} remaining` : "No contingency reserve"}
+                  </div>
+                  {contingencyOriginal > 0 ? (
+                    <div className="mt-1 text-xs text-slate-300">
+                      {money(contingencyOriginal)} funded · {money(contingencyUsed)} used{contingencyPending > 0 ? ` · ${money(contingencyPending)} pending` : ""}
                     </div>
                   ) : null}
                 </div>
@@ -1832,6 +1898,16 @@ export default function CustomerProjectWorkspace({
                         ) : null}
                         <AttachmentLinks attachments={caseRow.counter_attachments || []} testId={`customer-counter-attachments-${caseRow.id}`} />
                         {caseRow.summary ? <p className="mt-2 line-clamp-3 text-sm leading-5 text-slate-300">{caseRow.summary}</p> : null}
+                        {caseRow.type === "amendment" ? (
+                          <button
+                            type="button"
+                            data-testid={`customer-view-amendment-${caseRow.id}`}
+                            onClick={() => setReviewAmendmentId(String(caseRow.id))}
+                            className="mt-3 inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-300 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-200"
+                          >
+                            Review Amendment Request
+                          </button>
+                        ) : null}
                         {caseRow.estimated_refundable_escrow_surplus && Number(caseRow.estimated_refundable_escrow_surplus) > 0 ? (
                           <div className="mt-3 rounded-xl bg-slate-950/65 p-3 text-xs text-slate-200">
                             Estimated surplus: <span className="font-semibold text-white">{money(numericValue(caseRow.estimated_refundable_escrow_surplus))}</span>
@@ -2196,6 +2272,76 @@ export default function CustomerProjectWorkspace({
               >
                 {reimbursementAction === `deny-${denyReimbursementPayment.record_id}` ? "Denying..." : "Deny Reimbursement"}
               </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {reviewAmendment ? (
+        <div data-testid="customer-amendment-review-modal" className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-slate-950/80 p-3 sm:items-center" role="dialog" aria-modal="true" aria-label="Review amendment request">
+          <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-amber-300/40 bg-slate-950 p-5 text-white shadow-2xl sm:p-6">
+            <div className="text-xs font-bold uppercase tracking-[0.2em] text-amber-200">Action required</div>
+            <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-2xl font-extrabold">Review Change Request</h2>
+                <p className="mt-1 text-sm text-slate-400">{reviewAmendment.change_type_label || "Agreement change"}</p>
+              </div>
+              <Badge tone="amber">{reviewAmendment.response_label || "Pending Response"}</Badge>
+            </div>
+            <div className="mt-5 space-y-3">
+              <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Requested change</div>
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-100">{reviewAmendment.requested_change || reviewAmendment.summary || "No description provided."}</p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Why it is needed</div>
+                  <p className="mt-2 text-sm leading-6 text-slate-100">{reviewAmendment.justification || reviewAmendment.summary || "No reason provided."}</p>
+                </div>
+                <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-amber-200">Proposed price adjustment</div>
+                  <p className="mt-2 text-lg font-bold text-white">{reviewAmendment.proposed_value_change ? money(reviewAmendment.proposed_value_change) : "To be determined"}</p>
+                </div>
+              </div>
+              {reviewAmendment.milestone_draft?.title ? (
+                <div className="rounded-2xl border border-violet-300/25 bg-violet-300/10 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</div>
+                  <div className="mt-1 font-bold">{reviewAmendment.milestone_draft.title}</div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-200">{reviewAmendment.milestone_draft.scope}</p>
+                  {reviewAmendment.milestone_draft.completion_criteria ? <p className="mt-2 text-sm text-slate-300"><strong>Completed when:</strong> {reviewAmendment.milestone_draft.completion_criteria}</p> : null}
+                </div>
+              ) : null}
+              <AttachmentLinks attachments={reviewAmendment.counter_attachments || []} testId="customer-amendment-review-attachments" />
+            </div>
+            {reviewAmendmentNeedsResponse ? (
+              <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+                <label className="block text-sm font-semibold">
+                  Your response
+                  <select value={amendmentDecision} onChange={(event) => setAmendmentDecision(event.target.value)} className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-white">
+                    <option value="accepted">Approve change request</option>
+                    <option value="countered">Request revisions</option>
+                    <option value="rejected">Reject change request</option>
+                  </select>
+                </label>
+                <label className="mt-3 block text-sm font-semibold">
+                  Note {amendmentDecision === "accepted" ? "(optional)" : ""}
+                  <textarea value={amendmentResponseNote} onChange={(event) => setAmendmentResponseNote(event.target.value)} rows={3} placeholder="Add any conditions, questions, or reason for your response." className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 px-3 py-2 text-white placeholder:text-slate-500" />
+                </label>
+              </div>
+            ) : reviewAmendment.response_note ? (
+              <div className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/70 p-4 text-sm text-slate-200">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-400">Your response note</div>
+                <p className="mt-2 whitespace-pre-wrap">{reviewAmendment.response_note}</p>
+              </div>
+            ) : null}
+            <p className="mt-4 text-xs leading-5 text-slate-400">{reviewAmendmentNeedsResponse ? "Approving this request records your decision. " : "This decision has been recorded. "}The signed agreement does not change until the formal amendment is prepared and signed.</p>
+            <div className="mt-5 flex flex-wrap justify-end gap-3">
+              <button type="button" onClick={() => setReviewAmendmentId("")} className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200">Close</button>
+              {reviewAmendmentNeedsResponse ? (
+                <button type="button" data-testid="customer-amendment-submit-response" disabled={amendmentResponseBusy} onClick={respondToAmendment} className={`rounded-xl px-4 py-2 text-sm font-bold disabled:opacity-60 ${amendmentDecision === "accepted" ? "bg-emerald-400 text-emerald-950" : amendmentDecision === "rejected" ? "bg-rose-400 text-rose-950" : "bg-amber-300 text-slate-950"}`}>
+                  {amendmentResponseBusy ? "Sending..." : amendmentDecision === "accepted" ? "Approve Request" : amendmentDecision === "rejected" ? "Reject Request" : "Send Revision Request"}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>

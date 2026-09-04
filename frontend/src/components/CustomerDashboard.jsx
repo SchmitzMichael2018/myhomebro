@@ -3762,10 +3762,15 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
                 Secure access verified for <span className="font-semibold text-white">{portal?.customer?.email}</span>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <div className="inline-flex items-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100">
+                <button
+                  type="button"
+                  data-testid="customer-dashboard-unread-updates"
+                  onClick={() => setActiveTab("notifications")}
+                  className="inline-flex items-center gap-2 rounded-full border border-sky-300/35 bg-sky-400/10 px-2.5 py-1 text-xs font-semibold text-sky-100 transition hover:bg-sky-400/20"
+                >
                   <Bell size={13} />
                   {unreadCount} unread updates
-                </div>
+                </button>
                 <button
                   type="button"
                   data-testid="customer-dashboard-header-logout"

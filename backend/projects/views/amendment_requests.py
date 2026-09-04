@@ -12,7 +12,7 @@ from django.core import signing
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -516,7 +516,7 @@ class ContractorAgreementAmendmentRequestView(APIView):
 
 
 class AmendmentRequestResponseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [AllowAny]
 
     def post(self, request, request_id: int):
         amendment = get_object_or_404(
@@ -524,11 +524,22 @@ class AmendmentRequestResponseView(APIView):
             id=request_id,
         )
         agreement = amendment.agreement
-        contractor = get_contractor_for_user(request.user)
+        contractor = get_contractor_for_user(request.user) if request.user.is_authenticated else None
         is_contractor = bool(contractor and getattr(agreement, "contractor_id", None) == contractor.id)
         homeowner_email = (getattr(getattr(agreement, "homeowner", None), "email", "") or "").lower()
-        is_homeowner = bool(getattr(request.user, "email", "").lower() == homeowner_email)
-        if not (is_contractor or is_homeowner or request.user.is_staff):
+        portal_email = ""
+        portal_token = str(request.data.get("portal_token") or "").strip() if hasattr(request.data, "get") else ""
+        if portal_token:
+            try:
+                portal_payload = signing.loads(portal_token, salt="myhomebro.customer-portal", max_age=60 * 60 * 24 * 14)
+                portal_email = str(portal_payload.get("email") or "").strip().lower()
+            except (signing.BadSignature, signing.SignatureExpired):
+                return Response({"detail": "This customer portal link is invalid or expired."}, status=status.HTTP_403_FORBIDDEN)
+        is_homeowner = bool(
+            getattr(request.user, "email", "").lower() == homeowner_email
+            or (portal_email and portal_email == homeowner_email)
+        )
+        if not (is_contractor or is_homeowner or (request.user.is_authenticated and request.user.is_staff)):
             return Response({"detail": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         files = (
@@ -549,9 +560,10 @@ class AmendmentRequestResponseView(APIView):
             return Response({"attachments": attachment_errors}, status=status.HTTP_400_BAD_REQUEST)
         if response_state == AmendmentRequest.ResponseState.REJECTED and not response_note.strip():
             return Response({"response_note": "Provide a reason before rejecting this amendment request."}, status=status.HTTP_400_BAD_REQUEST)
+        actor = request.user if request.user.is_authenticated else None
         amendment.mark_responded(
             response_state=response_state,
-            actor=request.user,
+            actor=actor,
             note=response_note,
             counter_proposal=serializer.validated_data.get("counter_proposal"),
         )
@@ -563,7 +575,7 @@ class AmendmentRequestResponseView(APIView):
                 original_filename=getattr(uploaded, "name", "") or "",
                 content_type=getattr(uploaded, "content_type", "") or "",
                 size=int(getattr(uploaded, "size", 0) or 0),
-                uploaded_by=request.user,
+                uploaded_by=actor,
                 response_state=response_state,
             )
             for uploaded in files
@@ -579,7 +591,7 @@ class AmendmentRequestResponseView(APIView):
             object_id=amendment.id,
             title=f"Amendment {amendment.get_response_state_display().lower()}",
             body=amendment.response_note,
-            actor=request.user,
+            actor=actor,
             actor_role="contractor" if is_contractor else "homeowner",
             recipient_role="homeowner" if is_contractor else "contractor",
             delivered=True,
