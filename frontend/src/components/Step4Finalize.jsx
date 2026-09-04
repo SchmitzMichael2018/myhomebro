@@ -2726,7 +2726,7 @@ export default function Step4Finalize({
               <>
                 <button
                   type="button"
-                  onClick={handleSendHomeownerLink}
+                  onClick={() => handleSendHomeownerLink(false)}
                   disabled={sendingLink || hasInvalidMilestoneAmounts || sendBlockedByQuotes}
                   className="mt-2 rounded bg-emerald-600 px-4 py-2 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
                   data-testid="step4-send-or-resend-signature-request-button"

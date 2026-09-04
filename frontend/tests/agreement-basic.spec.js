@@ -648,7 +648,12 @@ async function installStep4FinalizeRoutes(
     new RegExp(`/api/projects/agreements/${agreement.id}/send_signature_request/?(\\?.*)?$`),
     async (route) => {
       if (route.request().method() === 'POST') {
-        if (Array.isArray(events.sendCalls)) events.sendCalls.push(route.request().url());
+        if (Array.isArray(events.sendCalls)) {
+          events.sendCalls.push({
+            url: route.request().url(),
+            body: route.request().postDataJSON(),
+          });
+        }
         agreement = {
           ...agreement,
           signature_request_sent: true,
@@ -6953,6 +6958,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
 
   await page.getByRole('button', { name: 'Send / Resend Signature Request' }).click();
   await expect.poll(() => sendCalls.length).toBe(1);
+  expect(sendCalls[0].body).toEqual({ resend: false });
 
   await page.getByRole('button', { name: 'Step 3 Warranty' }).click();
   await expect(page).toHaveURL(/step=3/);
@@ -6965,6 +6971,7 @@ test('agreement wizard step 4 renders grouped summary and preserves send/sign fl
   await expect(page.getByTestId('step4-resend-signature-request-button')).toBeVisible();
   await page.getByTestId('step4-resend-signature-request-button').click();
   await expect.poll(() => sendCalls.length).toBe(2);
+  expect(sendCalls[1].body).toEqual({ resend: true });
   await page.getByTestId('step4-open-workspace-button').click();
   await expect(page).toHaveURL(new RegExp(`/app/agreements/${AGREEMENT_ID}/workspace$`));
   await expect(page.getByRole('heading', { name: 'Agreement Workspace' })).toBeVisible();
