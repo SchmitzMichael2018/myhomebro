@@ -7234,7 +7234,11 @@ test('agreement workspace routes active milestone action to milestone completion
         order: 1,
         title: 'Completed paid milestone',
         amount: '7000.00',
-        status: 'paid',
+        status: 'active',
+        completed: true,
+        progress: 100,
+        is_invoiced: true,
+        invoice_id: 9001,
         payment_status: 'paid',
         paid_at: '2026-06-25T12:00:00Z',
       },
@@ -7261,8 +7265,19 @@ test('agreement workspace routes active milestone action to milestone completion
     waitUntil: 'domcontentloaded',
   });
 
-  await expect(page.getByTestId('agreement-operations-next-action')).toContainText('Complete Milestone');
-  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Complete Milestone');
+  await expect(page.getByTestId('agreement-operations-next-action')).toContainText(
+    'Complete Milestone: 2. Window and insulation installation'
+  );
+  await expect(page.getByTestId('agreement-overview-primary-cta')).toContainText('Open Milestone 2');
+  await expect(page.getByTestId('agreement-operations-manager')).toContainText(
+    '2. Window and insulation installation'
+  );
+  await expect(page.getByTestId('agreement-workspace-header')).toContainText(
+    '2. Window and insulation installation'
+  );
+  await expect(page.getByTestId('agreement-workspace-header')).not.toContainText(
+    '1. Completed paid milestone'
+  );
   await expect(page.getByTestId('agreement-overview-secondary-cta')).toHaveCount(0);
   await expect(page.getByTestId('agreement-overview-status-summary')).toContainText('1 of 3 complete');
   await expect(page.getByTestId('agreement-overview-milestone-preview')).toContainText('Paid');

@@ -3197,6 +3197,9 @@ export default function AgreementDetail({
       .trim()
       .toLowerCase();
   const activeMilestones = milestones.filter((milestone) => {
+    if (isMilestoneComplete(milestone) || milestoneProgressPercent(milestone) >= 100) {
+      return false;
+    }
     const status = milestoneStatusText(milestone);
     return [
       'active',
@@ -3227,8 +3230,7 @@ export default function AgreementDetail({
       : 0;
   const currentMilestone =
     activeMilestones?.[0] ||
-    milestones.find((milestone) => milestoneProgressPercent(milestone) < 100) ||
-    milestones[0] ||
+    milestones.find((milestone) => !isMilestoneComplete(milestone)) ||
     null;
   const milestoneCompletionUrlFor = (milestone = currentMilestone) =>
     `/app/milestones?agreement=${id}${
@@ -3349,12 +3351,12 @@ export default function AgreementDetail({
                   hrefSecondary: milestoneCompletionUrl,
                 }
               : activeMilestones.length
-                ? {
-                    label: 'Complete Milestone',
+              ? {
+                    label: `Complete Milestone: ${currentMilestoneLabel}`,
                     reason: `${activeMilestones.length} active milestone${activeMilestones.length === 1 ? '' : 's'} need progress or completion handling.`,
                     status: 'Work active',
                     effort: '5-15 min',
-                    cta: 'Complete Milestone',
+                    cta: `Open Milestone ${currentMilestone?.order || milestones.indexOf(currentMilestone) + 1}`,
                     href: milestoneCompletionUrl,
                     secondaryCta: hasActionablePayments
                       ? 'View Payment Details'
@@ -3365,12 +3367,12 @@ export default function AgreementDetail({
                   }
                 : isFundedOrDirectPay && hasLoadedIncompleteMilestones
                   ? {
-                      label: 'Start First Milestone',
+                      label: `Complete Milestone: ${currentMilestoneLabel}`,
                       reason:
-                        'Funding or direct-pay readiness is in place and the loaded milestone plan still has work to start.',
+                        `${currentMilestoneLabel} is the next unfinished milestone in the loaded project plan.`,
                       status: 'Ready to start',
                       effort: '5 min',
-                      cta: 'Start in Milestones',
+                      cta: `Open Milestone ${currentMilestone?.order || milestones.indexOf(currentMilestone) + 1}`,
                       href: milestoneCompletionUrl,
                       secondaryCta: 'Review assignments',
                       secondaryTab: 'activity',
