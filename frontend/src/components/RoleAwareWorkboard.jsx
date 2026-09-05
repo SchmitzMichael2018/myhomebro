@@ -634,7 +634,7 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
         />
         <ScheduleSummaryCard
           title="This Week"
-          subtitle="Upcoming work and payment activity."
+          subtitle="Assigned work coming up this week."
           count={scheduleSummary.this_week.count}
           amount={scheduleSummary.this_week.amount}
           showAmount={!isEmployee}

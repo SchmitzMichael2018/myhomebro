@@ -230,6 +230,12 @@ export default function EmployeeAgreements() {
             ) : (
               filtered.map((r) => {
                 const status = String(r.status || "");
+                const displayStatus =
+                  status === "funded" || status === "signed"
+                    ? "Active"
+                    : status === "draft"
+                    ? "Planning"
+                    : status;
                 const tone =
                   status === "funded"
                     ? "green"
@@ -250,7 +256,9 @@ export default function EmployeeAgreements() {
                   >
                     <td className="px-4 py-2 max-w-[260px] truncate" title={r.project_title}>
                       <div className="font-semibold">{r.project_title || "—"}</div>
-                      <div className="mt-1">{status ? <Badge tone={tone}>{status}</Badge> : null}</div>
+                      <div className="mt-1">
+                        {displayStatus ? <Badge tone={tone}>{displayStatus}</Badge> : null}
+                      </div>
                     </td>
                     <td className="px-4 py-2 max-w-[220px] truncate" title={r.customer_name}>
                       {r.customer_name || "—"}
