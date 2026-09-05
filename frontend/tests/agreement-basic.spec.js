@@ -7375,6 +7375,44 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
     });
   });
 
+  await page.route(/\/api\/projects\/subaccounts\/?(\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(
+        [
+          {
+            id: 91,
+            display_name: 'QA Employee',
+            email: 'info+employee@myhomebro.com',
+            role: 'employee_milestones',
+            is_active: true,
+          },
+        ]
+      ),
+    });
+  });
+  await page.route('**/api/projects/assignments/milestones/702/status/', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        milestone_id: 702,
+        agreement_id: workspaceId,
+        override_subaccount: null,
+        collaborator_subaccounts: [],
+        agreement_assigned_subaccounts: [],
+      }),
+    });
+  });
+  await page.route(`**/projects/agreements/${workspaceId}/subcontractor-invitations/`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ accepted_subcontractors: [] }),
+    });
+  });
+
   const milestoneFiles = [];
   let uploadedRequestBytes = 0;
   let uploadedRequestBody = '';
@@ -7453,6 +7491,20 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
   await expect(page.getByTestId('milestone-request-change-helper')).toContainText('Use this if the milestone scope, price, or timing changed');
   await expect(page.getByTestId('milestone-final-action-section')).toContainText('Final Action');
   await expect(page.getByTestId('milestone-final-complete-action')).toContainText('Complete Milestone');
+
+  await page.getByTestId('milestone-modal-content').getByRole('button', { name: 'Close' }).last().click();
+  await page.getByTestId('milestone-assign-action-702').click();
+  const assignmentDialog = page.getByTestId('milestone-assignment-dialog');
+  await expect(assignmentDialog).toBeVisible();
+  const assignButton = assignmentDialog.getByRole('button', { name: 'Assign Team Member' });
+  await expect(assignButton).toBeDisabled();
+  await assignmentDialog.locator('select').first().selectOption('91');
+  await expect(assignButton).toBeEnabled();
+  const assignmentOverflow = await assignmentDialog.evaluate(
+    (element) => element.scrollWidth - element.clientWidth
+  );
+  expect(assignmentOverflow).toBeLessThanOrEqual(1);
+  await assignmentDialog.getByRole('button', { name: 'Close' }).click();
 
   await page.setViewportSize({ width: 390, height: 900 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

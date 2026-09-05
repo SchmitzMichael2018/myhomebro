@@ -89,7 +89,7 @@ export default function MilestoneAssignmentDialog({ milestone, onClose, onUpdate
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 p-4" role="dialog" aria-modal="true" aria-labelledby="milestone-assignment-title">
-      <div data-testid="milestone-assignment-dialog" className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-white/15 bg-[#061d42] p-5 text-white shadow-2xl">
+      <div data-testid="milestone-assignment-dialog" className="max-h-[90vh] w-full max-w-4xl overflow-x-hidden overflow-y-auto rounded-2xl border border-white/15 bg-[#061d42] p-5 text-white shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100/55">Assign milestone</div>

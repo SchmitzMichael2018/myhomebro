@@ -52,7 +52,7 @@ export default function AssignEmployeeInline({
 
   async function handleAssign() {
     setErr("");
-    if (unassignRequiresSelection && !selected) return setErr("Select an employee first.");
+    if (!selected) return setErr("Select an employee first.");
     if (!onAssign) return;
 
     setBusy(true);
@@ -68,7 +68,8 @@ export default function AssignEmployeeInline({
 
   async function handleUnassign() {
     setErr("");
-    if (!selected) return setErr("Select an employee first.");
+    if (unassignRequiresSelection && !selected) return setErr("Select an employee first.");
+    if (!unassignRequiresSelection && !currentAssignment) return setErr("No team member is currently assigned.");
     if (!onUnassign) return;
 
     setBusy(true);
@@ -104,12 +105,12 @@ export default function AssignEmployeeInline({
         </div>
       ) : null}
 
-      <div className="mt-3 flex flex-col md:flex-row gap-2">
+      <div className="mt-3 grid min-w-0 gap-2 md:grid-cols-[minmax(0,1fr)_auto_auto]">
         <select
           value={selected}
           onChange={(e) => setSelected(e.target.value)}
           disabled={disabled || loading || busy}
-          className={operational ? "mhb-operational-control flex-1 rounded-lg px-3 py-2" : "flex-1 rounded-lg border border-gray-300 px-3 py-2"}
+          className={operational ? "mhb-operational-control min-w-0 w-full rounded-lg px-3 py-2" : "min-w-0 w-full rounded-lg border border-gray-300 px-3 py-2"}
         >
           <option value="">
             {loading ? "Loading employees..." : "— Select employee —"}
@@ -123,16 +124,16 @@ export default function AssignEmployeeInline({
 
         <button
           onClick={handleAssign}
-          disabled={disabled || loading || busy || (unassignRequiresSelection && !selected) || (!unassignRequiresSelection && !currentAssignment)}
-          className="rounded-lg bg-blue-600 text-white px-4 py-2 font-semibold hover:bg-blue-700 disabled:opacity-60"
+          disabled={disabled || loading || busy || !selected}
+          className="whitespace-nowrap rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:opacity-60"
         >
           {busy ? "Working..." : assignButtonLabel}
         </button>
 
         <button
           onClick={handleUnassign}
-          disabled={disabled || loading || busy || !selected}
-          className={operational ? "rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-semibold text-white hover:bg-white/15 disabled:opacity-60" : "rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"}
+          disabled={disabled || loading || busy || (unassignRequiresSelection ? !selected : !currentAssignment)}
+          className={operational ? "whitespace-nowrap rounded-lg border border-white/15 bg-white/10 px-4 py-2 font-semibold text-white hover:bg-white/15 disabled:opacity-60" : "whitespace-nowrap rounded-lg border border-gray-300 bg-white px-4 py-2 font-semibold hover:bg-gray-50 disabled:opacity-60"}
         >
           {busy ? "Working..." : unassignButtonLabel}
         </button>
