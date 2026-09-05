@@ -106,9 +106,7 @@ export default function MobileSidebarShell({ sidebar, children }) {
       const target = e.target;
       const closeHit =
         target?.closest?.("a") ||
-        target?.closest?.("button") ||
-        target?.closest?.('[role="menuitem"]') ||
-        target?.closest?.("[data-close-sidebar]");
+        target?.closest?.('[role="menuitem"]');
 
       if (closeHit) setOpen(false);
     };

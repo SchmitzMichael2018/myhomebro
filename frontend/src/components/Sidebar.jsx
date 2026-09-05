@@ -6,8 +6,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { NavLink, useNavigate, useLocation } from "react-router-dom";
-import api, { getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
-import { clearPwaDrafts } from "../lib/pwaDrafts.js";
+import api, { clearAuth, getAgreementClosureStatus, closeAndArchiveAgreement } from "../api";
 import { PwaInstallButton } from "./PwaInstallAccess.jsx";
 import toast from "react-hot-toast";
 import { useWhoAmI } from "../hooks/useWhoAmI.js";
@@ -191,18 +190,11 @@ export default function Sidebar({ variant = "desktop" }) {
   const reviewQueueCount = Number(data?.review_queue_count || 0);
   const attentionCounts = data?.attention_counts || {};
 
-  const handleLogout = useCallback(async () => {
-    await clearPwaDrafts().catch(() => {});
-    try {
-      localStorage.removeItem("access");
-      localStorage.removeItem("refresh");
-    } catch { /* Continue logout when browser storage is unavailable. */ }
-    try {
-      if (api?.defaults?.headers?.common) {
-        delete api.defaults.headers.common.Authorization;
-      }
-    } catch { /* Continue logout if the shared authorization header is already absent. */ }
-    navigate("/", { replace: true });
+  const handleLogout = useCallback(() => {
+    // Central auth cleanup clears local, session, legacy, and in-memory tokens.
+    // It redirects immediately; IndexedDB draft cleanup continues best-effort.
+    clearAuth(false);
+    navigate("/login", { replace: true });
   }, [navigate]);
 
   const isContractorOwner = useMemo(() => {

@@ -316,6 +316,36 @@ test("standalone authenticated navigation opens the existing drawer and restores
   await expect(menu).toBeFocused();
 });
 
+test("standalone mobile logout clears persistent and session authentication", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    const original = window.matchMedia.bind(window);
+    window.matchMedia = (query) => (
+      query === "(display-mode: standalone)"
+        ? { matches: true, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => true }
+        : original(query)
+    );
+    Object.defineProperty(window.navigator, "standalone", { configurable: true, value: true });
+  });
+  await mockDashboard(page);
+  await page.goto("/app/dashboard", { waitUntil: "domcontentloaded" });
+  await page.evaluate(() => {
+    window.sessionStorage.setItem("access", "session-access-token");
+    window.sessionStorage.setItem("refresh", "session-refresh-token");
+    window.localStorage.setItem("refresh", "persistent-refresh-token");
+  });
+
+  await page.getByTestId("authenticated-mobile-menu-button").click();
+  await page.getByRole("dialog", { name: "Authenticated navigation" }).getByRole("button", { name: "Logout" }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await expect.poll(() => page.evaluate(() => ({
+    localAccess: window.localStorage.getItem("access"),
+    localRefresh: window.localStorage.getItem("refresh"),
+    sessionAccess: window.sessionStorage.getItem("access"),
+    sessionRefresh: window.sessionStorage.getItem("refresh"),
+  }))).toEqual({ localAccess: null, localRefresh: null, sessionAccess: null, sessionRefresh: null });
+});
+
 test("desktop keeps its sidebar and does not render the mobile fallback", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await mockDashboard(page);
