@@ -115,7 +115,7 @@ from .views.public_intake_start import PublicIntakeStartView
 from .views.project_intake import ProjectIntakeViewSet
 
 from .views.contractor_me import ContractorMeView
-from .views.activity_feed import ContractorActivityFeedView
+from .views.activity_feed import ContractorActivityEventStateView, ContractorActivityFeedView
 from .views.contractor_bids import ContractorBidsView, OpportunityEstimateAppointmentCreateView, OpportunityEstimateAppointmentTransitionView
 from .views.estimate_availability import (
     EstimateAvailabilityWindowDetailView,
@@ -636,6 +636,7 @@ urlpatterns = [
     path("capture-qr-assets/<uuid:asset_id>/<str:action>/", CaptureQrAssetActionView.as_view(), name="capture-qr-action"),
     path("public/capture-qr/<str:token>/", PublicCaptureQrView.as_view(), name="public-capture-qr"),
     path("activity-feed/", ContractorActivityFeedView.as_view(), name="activity-feed"),
+    path("activity-feed/<int:event_id>/<str:action>/", ContractorActivityEventStateView.as_view(), name="activity-event-state"),
     path("warranty/dashboard/", WarrantyDashboardView.as_view(), name="warranty-dashboard"),
     path("customer-portal/<str:token>/warranty-requests/", CustomerWarrantyRequestView.as_view(), name="customer-portal-warranty-requests"),
     path("customer-portal/<str:token>/warranty-requests/<int:request_id>/evidence/", CustomerWarrantyEvidenceView.as_view(), name="customer-portal-warranty-request-evidence"),

@@ -300,6 +300,18 @@ describe("getContractorNextActions", () => {
     ]);
   });
 
+  it("does not promote read or informational activity into today's priorities", () => {
+    const actions = getContractorNextActions({
+      activityFeed: [
+        { id: 1, title: "Payment released", navigation_target: "/app/payments" },
+        { id: 2, title: "SMS sent", navigation_target: "/app/agreements/2" },
+        { id: 3, title: "Customer replied", navigation_target: "/app/agreements/3", read_at: "2026-09-04T12:00:00Z" },
+      ],
+    });
+
+    expect(actions).toHaveLength(0);
+  });
+
   it("keeps a blocking planning action instead of a lower-value draft action", () => {
     const actions = getContractorNextActions({
       agreements: [{

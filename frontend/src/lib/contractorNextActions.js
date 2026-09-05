@@ -117,6 +117,10 @@ const STATUS_CONFIRMATION_PATTERNS = [
   /payment.*(setup|configur|ready)/i,
   /escrow.*fund(ed|ing)?/i,
   /fund(ed|ing)?.*escrow/i,
+  /payment.*(released|paid|received|completed)/i,
+  /(released|paid|received).*payment/i,
+  /sms.*(sent|queued|delivered)/i,
+  /(message|notification).*(sent|queued|delivered)/i,
 ];
 
 function isStatusConfirmationItem(item) {
@@ -965,6 +969,7 @@ export function getContractorNextActions({
     : Math.max(0, FALLBACK_ACTIVITY_LIMIT - actions.length);
   if (remainingActivitySlots > 0) {
     const activityActions = [...(Array.isArray(activityFeed) ? activityFeed : [])]
+      .filter((item) => !item?.read_at)
       .filter((item) => !isStatusConfirmationItem(item))
       .filter((item) => !isResolvedActivityItem(item, agreements))
       .filter((item) => safeText(item?.navigation_target) && safeText(item?.navigation_target) !== "/app/dashboard")

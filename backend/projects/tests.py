@@ -21181,6 +21181,36 @@ class ContractorActivityFeedTests(TestCase):
         self.assertEqual(payload["results"][0]["event_type"], "agreement_created")
         self.assertEqual(payload["next_best_action"]["action_type"], "finish_onboarding")
 
+    def test_contractor_can_mark_activity_read_and_dismiss_it(self):
+        event = create_activity_event(
+            contractor=self.contractor,
+            actor_user=self.user,
+            event_type="sms_sent",
+            title="SMS sent",
+            navigation_target=f"/app/agreements/{self.agreement.id}",
+        )
+
+        read_response = self.client.post(f"/api/projects/activity-feed/{event.id}/read/")
+        self.assertEqual(read_response.status_code, 200)
+        self.assertIsNotNone(read_response.json()["read_at"])
+        self.assertIsNotNone(self.client.get("/api/projects/activity-feed/").json()["results"][0]["read_at"])
+
+        dismiss_response = self.client.post(f"/api/projects/activity-feed/{event.id}/dismiss/")
+        self.assertEqual(dismiss_response.status_code, 200)
+        self.assertTrue(dismiss_response.json()["dismissed"])
+        self.assertEqual(self.client.get("/api/projects/activity-feed/").json()["results"], [])
+
+    def test_contractor_cannot_update_another_contractors_activity(self):
+        other_user = get_user_model().objects.create_user(email="other-activity@example.com", password="testpass123")
+        other_contractor = Contractor.objects.create(user=other_user, business_name="Other Activity")
+        event = create_activity_event(contractor=other_contractor, event_type="sms_sent", title="SMS sent")
+
+        response = self.client.post(f"/api/projects/activity-feed/{event.id}/dismiss/")
+
+        self.assertEqual(response.status_code, 404)
+        event.refresh_from_db()
+        self.assertIsNone(event.dismissed_at)
+
     def test_next_best_action_prefers_draft_after_onboarding_complete(self):
         self.contractor.first_project_started_at = timezone.now()
         self.contractor.first_agreement_created_at = timezone.now()

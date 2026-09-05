@@ -38,6 +38,7 @@ def _serialize_event(event: ContractorActivityEvent) -> dict[str, Any]:
         "related_entity_type": event.related_entity_type,
         "related_entity_id": event.related_entity_id,
         "metadata": event.metadata or {},
+        "read_at": event.read_at.isoformat() if event.read_at else None,
     }
 
 

@@ -2254,6 +2254,7 @@ export default function ContractorDashboard() {
   const [contractorProfile, setContractorProfile] = useState(null);
 
   const [activityFeed, setActivityFeed] = useState([]);
+  const [activityActionIds, setActivityActionIds] = useState(() => new Set());
   const [nextBestAction, setNextBestAction] = useState(null);
   const [activationSummary, setActivationSummary] = useState(null);
   const [dismissedContextualGuides, setDismissedContextualGuides] = useState(new Set());
@@ -2448,6 +2449,31 @@ export default function ContractorDashboard() {
 
     return () => (mounted = false);
   }, [who, isEmployee]);
+
+  const updateActivityState = async (item, action) => {
+    if (!item?.id || activityActionIds.has(item.id)) return;
+    setActivityActionIds((current) => new Set([...current, item.id]));
+    try {
+      const { data } = await api.post(`/projects/activity-feed/${item.id}/${action}/`);
+      if (action === "dismiss") {
+        setActivityFeed((current) => current.filter((row) => row.id !== item.id));
+      } else {
+        setActivityFeed((current) => current.map((row) => (
+          row.id === item.id ? { ...row, read_at: data?.read_at || new Date().toISOString() } : row
+        )));
+      }
+      setDismissedNextActionKeys((current) => new Set([...current, `activity:${item.id}`]));
+    } catch (err) {
+      console.error(`Failed to ${action} dashboard activity`, err);
+      toast.error(action === "dismiss" ? "Unable to dismiss activity." : "Unable to mark activity read.");
+    } finally {
+      setActivityActionIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
+    }
+  };
 
   async function dismissActivationSection(section) {
     setContextualGuideSuppressed(true);
@@ -4416,11 +4442,9 @@ export default function ContractorDashboard() {
             >
               <div className="space-y-2.5" data-testid="dashboard-activity-feed">
                 {activityFeed.slice(0, 5).map((item) => (
-                  <button
+                  <article
                     key={item.id}
-                    type="button"
-                    onClick={() => navigate(item.navigation_target || "/app/dashboard")}
-                    className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm ${activityAccent(item.severity)}`}
+                    className={`w-full rounded-2xl border px-4 py-3 text-left shadow-sm ${item.read_at ? "opacity-70" : ""} ${activityAccent(item.severity)}`}
                     data-testid={`dashboard-activity-item-${item.id}`}
                     data-activity-severity={item.severity || "routine"}
                   >
@@ -4430,10 +4454,17 @@ export default function ContractorDashboard() {
                         <div className="mt-1 line-clamp-2 text-sm text-current/90">{item.summary}</div>
                       </div>
                       <div className="shrink-0 text-xs font-semibold opacity-80">
-                        {formatActivityTimestamp(item.created_at)}
+                        {item.read_at ? "Read · " : ""}{formatActivityTimestamp(item.created_at)}
                       </div>
                     </div>
-                  </button>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button theme="operational" variant="ghost" size="sm" onClick={() => navigate(item.navigation_target || "/app/dashboard")}>Open</Button>
+                      {!item.read_at ? (
+                        <Button theme="operational" variant="ghost" size="sm" disabled={activityActionIds.has(item.id)} data-testid={`dashboard-activity-read-${item.id}`} onClick={() => updateActivityState(item, "read")}>Mark read</Button>
+                      ) : null}
+                      <Button theme="operational" variant="ghost" size="sm" disabled={activityActionIds.has(item.id)} data-testid={`dashboard-activity-dismiss-${item.id}`} onClick={() => updateActivityState(item, "dismiss")}>Dismiss</Button>
+                    </div>
+                  </article>
                 ))}
               </div>
             </DashboardSection>
