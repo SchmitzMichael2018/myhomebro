@@ -246,6 +246,7 @@ export default function MilestoneEditModal({
   // Completion evidence belongs to the milestone so it follows the invoice.
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
   const [uploadError, setUploadError] = useState("");
 
   const [recentAttachments, setRecentAttachments] = useState([]);
@@ -721,10 +722,18 @@ export default function MilestoneEditModal({
     }
 
     setUploading(true);
+    setUploadProgress(0);
     setUploadError("");
 
     const postFD = (url, fd) =>
-      api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      api.post(url, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120000,
+        onUploadProgress: (event) => {
+          if (!event.total) return;
+          setUploadProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+        },
+      });
 
     const verify = async () => {
       const list = await fetchMilestoneAttachments(currentMilestone.id);
@@ -745,10 +754,21 @@ export default function MilestoneEditModal({
       if (found) {
         toast.success("File uploaded");
         setFile(null);
+        setUploadProgress(null);
         setUploading(false);
         return;
       }
     } catch (uploadFailure) {
+      if (uploadFailure?.code === "ECONNABORTED") {
+        const found = await verify();
+        if (found) {
+          toast.success("File uploaded");
+          setFile(null);
+          setUploadProgress(null);
+          setUploading(false);
+          return;
+        }
+      }
       const resp = uploadFailure?.response;
       const body =
         (resp?.data &&
@@ -756,14 +776,16 @@ export default function MilestoneEditModal({
         resp?.statusText ||
         uploadFailure?.message ||
         "Upload failed";
-      setUploadError(`HTTP ${resp?.status || 400}: ${body}`);
+      setUploadError(resp?.status ? `HTTP ${resp.status}: ${body}` : body);
       toast.error(`Upload failed: ${body}`);
+      setUploadProgress(null);
       setUploading(false);
       return;
     }
 
     setUploadError("Upload accepted but attachment not visible yet.");
     toast.error("Server accepted upload, but attachment not visible yet.");
+    setUploadProgress(null);
     setUploading(false);
   }, [file, currentMilestone?.id, actionReadOnly]);
 
@@ -1656,6 +1678,14 @@ export default function MilestoneEditModal({
                 {uploading ? "Uploading…" : "Upload"}
               </button>
             </div>
+
+            {uploading ? (
+              <div className="mt-2 text-xs text-gray-600" role="status" aria-live="polite">
+                {uploadProgress !== null && uploadProgress < 100
+                  ? `Uploading ${uploadProgress}%…`
+                  : "Upload received. Saving attachment…"}
+              </div>
+            ) : null}
 
             {!!uploadError && (
               <div className="mt-2 text-xs text-red-600">

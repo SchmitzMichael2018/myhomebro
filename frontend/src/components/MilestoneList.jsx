@@ -458,10 +458,12 @@ export default function MilestoneList() {
     }
     for (const [agId, list] of map.entries()) {
       list.sort((a, b) => {
-        const da = toDateOnly(a._dueRaw)?.getTime() ?? 9e15;
-        const db = toDateOnly(b._dueRaw)?.getTime() ?? 9e15;
-        if (da !== db) return da - db;
-        return String(a.title || "").localeCompare(String(b.title || ""));
+        const orderA = Number(a.order);
+        const orderB = Number(b.order);
+        const normalizedOrderA = Number.isFinite(orderA) ? orderA : Number.MAX_SAFE_INTEGER;
+        const normalizedOrderB = Number.isFinite(orderB) ? orderB : Number.MAX_SAFE_INTEGER;
+        if (normalizedOrderA !== normalizedOrderB) return normalizedOrderA - normalizedOrderB;
+        return Number(a.id || 0) - Number(b.id || 0);
       });
       map.set(agId, list);
     }

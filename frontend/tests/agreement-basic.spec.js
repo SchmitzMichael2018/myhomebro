@@ -7330,9 +7330,10 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
         id: 701,
         agreement: workspaceId,
         order: 1,
-        title: 'Completed paid milestone',
+        title: 'Zulu completed paid milestone',
         amount: '7000.00',
         status: 'completed',
+        completion_date: '2026-09-08',
         payment_status: 'pending',
         paid_at: '2026-06-25T12:00:00Z',
       },
@@ -7344,6 +7345,7 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
         title: 'Target milestone to complete',
         amount: '7000.00',
         status: 'active',
+        completion_date: '2026-09-08',
       },
       {
         id: 801,
@@ -7382,6 +7384,7 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
         file_url: 'https://example.test/media/completion-photo.png',
         uploaded_at: '2026-09-03T20:00:00Z',
       });
+      await new Promise((resolve) => setTimeout(resolve, 300));
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
@@ -7413,6 +7416,7 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
   await expect(page.getByTestId('milestone-row-701')).toContainText('Completed');
   await expect(page.getByTestId('milestone-sequence-701')).toHaveText('1');
   await expect(page.getByTestId('milestone-sequence-701')).toHaveAttribute('aria-label', 'Milestone 1 of 2');
+  await expect(page.getByTestId('milestone-sequence-702')).toHaveText('2');
   await expect(page.getByTestId('milestone-progress-bar-701')).toHaveAttribute('style', /width: 100%/);
   await expect(page.getByTestId('milestone-actions-701')).not.toContainText('Complete Milestone');
   await expect(page.getByTestId('milestone-row-702')).toContainText('Target milestone to complete');
@@ -7435,6 +7439,9 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
     buffer: Buffer.from('completion evidence'),
   });
   await page.getByTestId('milestone-attachments-section').getByRole('button', { name: 'Upload', exact: true }).click();
+  await expect(page.getByTestId('milestone-attachments-section').getByRole('status')).toContainText(
+    /Uploading|Saving attachment/
+  );
   await expect(page.getByTestId('milestone-attachments-section')).toContainText('completion-photo.png');
   await expect(page.getByTestId('milestone-request-change-helper')).toContainText('Use this if the milestone scope, price, or timing changed');
   await expect(page.getByTestId('milestone-final-action-section')).toContainText('Final Action');
