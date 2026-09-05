@@ -56,6 +56,16 @@ class EmployeePortalWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual([row["id"] for row in response.data["milestones"]], [self.assigned.id])
 
+    def test_project_context_does_not_expose_milestone_financials(self):
+        response = self.client.get(f"/api/projects/employee/agreements/{self.agreement.id}/")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data["milestones"]), 2)
+        for milestone in response.data["milestones"]:
+            self.assertNotIn("amount", milestone)
+            self.assertNotIn("invoice_id", milestone)
+            self.assertNotIn("is_invoiced", milestone)
+
     def test_employee_submission_waits_for_review_and_does_not_complete_milestone(self):
         MilestoneComment.objects.create(
             milestone=self.assigned,

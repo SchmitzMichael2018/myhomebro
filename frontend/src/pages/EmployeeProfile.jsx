@@ -6,6 +6,7 @@
 
 import React, { useEffect, useState } from "react";
 import api from "../api";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function Field({ label, children }) {
   return (
@@ -217,13 +218,11 @@ export default function EmployeeProfile() {
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <ContractorPageSurface eyebrow="Team workspace" title="My Profile" subtitle="Keep your contact details, qualifications, availability, and work capabilities current." variant="operational" className="mx-auto max-w-[1050px]">
+    <div data-testid="employee-profile-page">
       <div className="flex items-end justify-between gap-3 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">My Profile</h1>
-          <div className="text-sm text-slate-600 mt-1">
-            Employee profile details (saved to your account).
-          </div>
+          <div className="text-sm text-sky-100/70">Only provide identification or license documents your contractor requires for your role.</div>
         </div>
 
         <div className="flex gap-2">
@@ -603,5 +602,6 @@ export default function EmployeeProfile() {
         </>
       )}
     </div>
+    </ContractorPageSurface>
   );
 }

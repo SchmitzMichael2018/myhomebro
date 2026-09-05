@@ -199,13 +199,10 @@ def agreement_detail(request, agreement_id: int):
                 "order": getattr(m, "order", None),
                 "title": getattr(m, "title", "") or "",
                 "description": getattr(m, "description", "") or "",
-                "amount": str(getattr(m, "amount", None)) if getattr(m, "amount", None) is not None else None,
                 "start_date": getattr(m, "start_date", None),
                 "completion_date": getattr(m, "completion_date", None),
                 "completed": bool(getattr(m, "completed", False)),
                 "completed_at": getattr(m, "completed_at", None),
-                "is_invoiced": bool(getattr(m, "is_invoiced", False)),
-                "invoice_id": getattr(m, "invoice_id", None),
                 "is_late": bool(getattr(m, "is_late", False)),
             }
         )

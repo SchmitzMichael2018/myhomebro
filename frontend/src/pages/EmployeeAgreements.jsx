@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import toast from "react-hot-toast";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function fmtDate(v) {
   if (!v) return "—";
@@ -164,30 +165,25 @@ export default function EmployeeAgreements() {
     );
   }
 
-  const roleLabel = String(identity?.role || "").replaceAll("_", " ");
 
   return (
-    <div className="p-6 space-y-4">
+    <ContractorPageSurface
+      eyebrow="Team workspace"
+      title="Projects"
+      subtitle="Review project context and the work plan connected to your assignments."
+      variant="operational"
+      className="mx-auto max-w-[1180px]"
+    >
+    <div className="space-y-4" data-testid="employee-projects-page">
       <div>
-        <div className="text-2xl font-extrabold">My Agreements</div>
-        <div className="text-sm text-gray-600 mt-1">
-          Agreements assigned to you (supervisors see all milestones for assigned agreements).
-        </div>
-        <div className="text-xs text-gray-400 mt-1">
-          Signed in as <span className="font-semibold">{identity?.email}</span>{" "}
-          {identity?.role ? (
-            <>
-              • role: <span className="font-semibold">{roleLabel}</span>
-            </>
-          ) : null}
-        </div>
+        <div className="text-sm text-sky-100/70">Project access provides context. Your Milestones page contains only work assigned to you.</div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search agreements…"
+          placeholder="Search projects…"
           className="border rounded-lg px-3 py-2 text-sm w-80"
         />
         <button
@@ -199,7 +195,7 @@ export default function EmployeeAgreements() {
         </button>
         <div className="flex-1" />
         <div className="text-xs text-gray-500">
-          {loading ? "Loading…" : `${filtered.length} agreement(s)`}
+          {loading ? "Loading…" : `${filtered.length} project(s)`}
         </div>
       </div>
 
@@ -207,8 +203,6 @@ export default function EmployeeAgreements() {
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-500">
             <tr>
-              <th className="px-4 py-2 text-left">Agreement</th>
-              <th className="px-4 py-2 text-left">Status</th>
               <th className="px-4 py-2 text-left">Project</th>
               <th className="px-4 py-2 text-left">Customer</th>
               <th className="px-4 py-2 text-left">Address</th>
@@ -223,14 +217,14 @@ export default function EmployeeAgreements() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={10} className="px-4 py-6 text-gray-500">
+                <td colSpan={8} className="px-4 py-6 text-gray-500">
                   Loading…
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-6 text-gray-500">
-                  No agreements assigned yet.
+                <td colSpan={8} className="px-4 py-6 text-gray-500">
+                  No projects assigned yet.
                 </td>
               </tr>
             ) : (
@@ -254,12 +248,9 @@ export default function EmployeeAgreements() {
                     onClick={() => openAgreement(r.id)}
                     title="Click to view agreement milestones"
                   >
-                    <td className="px-4 py-2 font-semibold">#{r.id}</td>
-                    <td className="px-4 py-2">
-                      {status ? <Badge tone={tone}>{status}</Badge> : "—"}
-                    </td>
                     <td className="px-4 py-2 max-w-[260px] truncate" title={r.project_title}>
-                      {r.project_title || "—"}
+                      <div className="font-semibold">{r.project_title || "—"}</div>
+                      <div className="mt-1">{status ? <Badge tone={tone}>{status}</Badge> : null}</div>
                     </td>
                     <td className="px-4 py-2 max-w-[220px] truncate" title={r.customer_name}>
                       {r.customer_name || "—"}
@@ -339,7 +330,6 @@ export default function EmployeeAgreements() {
                     <th className="px-4 py-2 text-left">Milestone</th>
                     <th className="px-4 py-2 text-left">Due</th>
                     <th className="px-4 py-2 text-left">Status</th>
-                    <th className="px-4 py-2 text-right">Invoice</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -365,14 +355,11 @@ export default function EmployeeAgreements() {
                             <Badge tone="amber">Open</Badge>
                           )}
                         </td>
-                        <td className="px-4 py-2 text-right">
-                          {m.invoice_id ? `#${m.invoice_id}` : "—"}
-                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={5} className="px-4 py-6 text-gray-500">
+                      <td colSpan={4} className="px-4 py-6 text-gray-500">
                         No milestones found.
                       </td>
                     </tr>
@@ -382,11 +369,12 @@ export default function EmployeeAgreements() {
             </div>
 
             <div className="text-[11px] text-gray-500 mt-3">
-              Tip: Use the employee Milestones page to open a milestone and add evidence/complete it.
+              Open assigned work from Milestones to add evidence and submit it for lead-contractor review.
             </div>
           </>
         )}
       </Modal>
     </div>
+    </ContractorPageSurface>
   );
 }

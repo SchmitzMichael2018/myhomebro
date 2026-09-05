@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import api from "../api";
 import EmployeeMilestoneModal from "./EmployeeMilestoneModal.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function dateKey(v) {
   if (!v) return null;
@@ -52,12 +53,6 @@ function endOfWeekSaturday(d) {
 function fmtMonthYear(d) {
   return d.toLocaleString(undefined, { month: "long", year: "numeric" });
 }
-function moneyFmt(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "$0.00";
-  return `$${v.toFixed(2)}`;
-}
-
 function milestoneDate(m) {
   return m.completion_date || m.due_date || m.start_date || null;
 }
@@ -150,10 +145,10 @@ export default function EmployeeCalendar() {
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <ContractorPageSurface eyebrow="Team workspace" title="Schedule" subtitle="See upcoming assigned work and open a milestone when you are ready to document it." variant="operational" className="mx-auto max-w-[1180px]">
+    <div data-testid="employee-calendar-page">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Calendar</h1>
           <div className="text-sm text-slate-600 mt-1">
             {loading ? "Loading…" : canWork ? "Work enabled" : "Read-only"} • Showing assigned milestones only
           </div>
@@ -202,7 +197,7 @@ export default function EmployeeCalendar() {
         </div>
       </div>
 
-      <div className="mt-4 bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <div className="mt-4 hidden bg-white border border-slate-200 rounded-2xl overflow-hidden md:block">
         <div className="grid grid-cols-7 bg-slate-50 text-slate-600 text-xs font-semibold">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
             <div key={d} className="px-3 py-2 border-b border-slate-200">
@@ -312,7 +307,7 @@ export default function EmployeeCalendar() {
                       ) : null}
                     </div>
                     <div className="text-sm text-slate-600 mt-1">
-                      Agreement #{m.agreement_number || m.agreement_id || "—"} • Amount {moneyFmt(m.amount)}
+                      Milestone {m.order || "—"} • {m.completed ? "Completed" : "Assigned"}
                     </div>
                     {(m.project_title || m.customer_name || m.project_address) ? (
                       <div className="text-xs text-slate-500 mt-1">
@@ -341,5 +336,6 @@ export default function EmployeeCalendar() {
         <EmployeeMilestoneModal milestoneId={activeId} onClose={() => setActiveId(null)} onUpdated={load} />
       ) : null}
     </div>
+    </ContractorPageSurface>
   );
 }

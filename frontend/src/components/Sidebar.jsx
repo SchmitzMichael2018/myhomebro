@@ -214,8 +214,8 @@ export default function Sidebar({ variant = "desktop" }) {
     if (isContractorOwner) return true;
     if (!isEmployee) return false;
     const teamRole = String(data?.team_role || data?.role || "").toLowerCase();
-    return teamRole === "employee_milestones" || teamRole === "employee_supervisor";
-  }, [data, isContractorOwner, isEmployee]);
+    return teamRole === "employee_supervisor" || Number(reviewQueueCount || 0) > 0;
+  }, [data, isContractorOwner, isEmployee, reviewQueueCount]);
 
   const activeAgreementId = useMemo(() => {
     const p = location.pathname || "";
@@ -342,7 +342,7 @@ export default function Sidebar({ variant = "desktop" }) {
           {canAccessReviewerQueue ? (
             <Item to={`${APP_BASE}/reviewer/queue`} label="Awaiting Review" icon={SearchCheck} count={reviewQueueCount} />
           ) : null}
-          <Item to={`${EMP_BASE}/agreements`} label="My Agreements" icon={FileSignature} />
+          <Item to={`${EMP_BASE}/agreements`} label="Projects" icon={FileSignature} />
           <Item to={`${EMP_BASE}/milestones`} label="Milestones" icon={SquareKanban} />
           <Item to={`${EMP_BASE}/calendar`} label="Calendar" icon={CalendarDays} />
         </>
