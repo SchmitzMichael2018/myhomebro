@@ -41,6 +41,7 @@ from projects.models import (
     Agreement,
     InspectionStatus,
     MilestonePayout,
+    MilestoneAssignment,
     SubcontractorComplianceStatus,
     SubcontractorCompletionStatus,
 )
@@ -1605,6 +1606,12 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     "selection_reset": True,
                 },
                 status=status.HTTP_200_OK,
+            )
+
+        if MilestoneAssignment.objects.filter(milestone=milestone).exists():
+            return Response(
+                {"detail": "Remove the assigned team member before assigning a subcontractor."},
+                status=status.HTTP_409_CONFLICT,
             )
 
         serializer = MilestoneSerializer(

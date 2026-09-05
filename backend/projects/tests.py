@@ -9578,6 +9578,45 @@ class SubcontractorMilestoneAssignmentTests(TestCase):
             "manual_release",
         )
 
+    def test_milestone_cannot_have_employee_and_subcontractor_workers(self):
+        employee_user = get_user_model().objects.create_user(
+            email="assignment-employee@example.com",
+            password="testpass123",
+        )
+        employee = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=employee_user,
+            display_name="Assignment Employee",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+        )
+        MilestoneAssignment.objects.create(milestone=self.milestone, subaccount=employee)
+
+        subcontractor_response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "1750.00",
+                "payment_release_mode": "manual_release",
+            },
+            format="json",
+        )
+
+        self.assertEqual(subcontractor_response.status_code, 409)
+        self.assertIn("remove the assigned team member", subcontractor_response.json()["detail"].lower())
+
+        MilestoneAssignment.objects.filter(milestone=self.milestone).delete()
+        self.milestone.assigned_subcontractor_invitation = self.accepted_invitation
+        self.milestone.save(update_fields=["assigned_subcontractor_invitation"])
+
+        employee_response = self.client.post(
+            f"/api/projects/assignments/milestones/{self.milestone.id}/assign/",
+            {"subaccount_id": employee.id},
+            format="json",
+        )
+
+        self.assertEqual(employee_response.status_code, 409)
+        self.assertIn("remove the assigned subcontractor", employee_response.json()["detail"].lower())
+
     def test_over_allocation_requires_override_reason(self):
         response = self.client.post(
             f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",

@@ -7163,11 +7163,12 @@ test('agreement workspace phase 3 shows operations manager and PDF fallback', as
   await expect(page.getByTestId('milestone-team-controls-501')).not.toHaveAttribute('open', '');
   await expect(page.getByTestId('milestone-team-controls-501')).toContainText('Advanced assignment controls');
   await page.getByTestId('milestone-team-controls-501').click();
+  await expect(page.getByTestId('milestone-team-controls-501')).toContainText('Assign Team Member');
   await expect(page.getByTestId('assign-subcontractor-inline').first()).toHaveClass(/bg-\[#041735\]/);
   await expect(page.getByTestId('assign-reviewer-inline').first()).toHaveClass(/bg-\[#041735\]/);
   await page.getByTestId('agreement-workspace-tab-more').click();
   await expect(page.getByTestId('agreement-workspace-panel-activity')).toHaveClass(/bg-\[#061d42\]/);
-  await expect(page.getByTestId('agreement-workspace-panel-activity')).toContainText('Assign Entire Agreement');
+  await expect(page.getByTestId('agreement-workspace-panel-activity')).toContainText('Assign Project Team');
   await expect(page.getByTestId('agreement-workspace-panel-activity')).toContainText('Customer Workspace');
   await page.getByTestId('agreement-workspace-tab-overview').click();
   await expect(page.getByTestId('agreement-workspace-tab-more')).toContainText('More');
@@ -7425,6 +7426,7 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
   await expect(page.getByTestId('milestone-progress-bar-701')).toHaveAttribute('style', /width: 100%/);
   await expect(page.getByTestId('milestone-actions-701')).not.toContainText('Complete Milestone');
   await expect(page.getByTestId('milestone-row-702')).toContainText('Target milestone to complete');
+  await expect(page.getByTestId('milestone-assign-action-702')).toContainText('Assign');
   await expect(page.getByTestId('milestone-row-702')).toHaveClass(/bg-blue-400\/10/);
   await expect(page.getByTestId('milestone-row-801')).toHaveCount(0);
   await expect(page.getByTestId('milestone-secondary-details-701')).not.toHaveAttribute('open', '');

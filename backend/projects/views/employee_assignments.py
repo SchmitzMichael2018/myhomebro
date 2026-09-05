@@ -119,6 +119,12 @@ def assign_milestone(request, milestone_id: int):
     except Milestone.DoesNotExist:
         return Response({"detail": "Milestone not found."}, status=404)
 
+    if milestone.assigned_subcontractor_invitation_id:
+        return Response(
+            {"detail": "Remove the assigned subcontractor before assigning a team member."},
+            status=409,
+        )
+
     obj, created = MilestoneAssignment.objects.update_or_create(
         milestone=milestone,
         defaults={"subaccount": sub},

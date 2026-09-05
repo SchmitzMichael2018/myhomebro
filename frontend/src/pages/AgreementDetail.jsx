@@ -58,7 +58,9 @@ import {
 } from '../components/milestoneRole.jsx';
 import {
   assignAgreementToSubaccount,
+  assignMilestoneToSubaccount,
   unassignAgreementFromSubaccount,
+  unassignMilestone,
 } from '../api/assignments';
 import {
   getMilestoneDisplay,
@@ -2515,6 +2517,18 @@ export default function AgreementDetail({
   const unassignAgreement = async (subId) => {
     await unassignAgreementFromSubaccount(norm.id, subId);
     toast.success('Agreement unassigned.');
+  };
+
+  const assignMilestoneEmployee = async (milestoneId, subId) => {
+    await assignMilestoneToSubaccount(milestoneId, subId);
+    await fetchAgreement();
+    toast.success('Milestone assigned to team member.');
+  };
+
+  const unassignMilestoneEmployee = async (milestoneId) => {
+    await unassignMilestone(milestoneId);
+    await fetchAgreement();
+    toast.success('Team member assignment removed.');
   };
 
   const resetWarrantyForm = () => {
@@ -5436,8 +5450,9 @@ export default function AgreementDetail({
           {/* Agreement assignment selector */}
           {isContractor && (
             <AssignEmployeeInline
-              label="Assign Entire Agreement"
-              help="Assigning an agreement makes all milestones visible to that employee unless a milestone is explicitly assigned to someone else."
+              theme="operational"
+              label="Assign Project Team"
+              help="Add one or more employees to the full project. Repeat the selection to add teammates; individual milestone assignments below remain the accountable-worker override."
               onAssign={(subId) => assignAgreement(subId)}
               onUnassign={(subId) => unassignAgreement(subId)}
               assignButtonLabel="Assign Owner"
@@ -5981,6 +5996,21 @@ export default function AgreementDetail({
                       {request.response_label || request.status_label || 'Pending response'}
                     </span>
                   </div>
+                  <details
+                    className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3"
+                    open={
+                      isOpenContractorAmendment(request) ||
+                      !request.requested_changes?.applied_milestone_id ||
+                      !norm.isSigned ||
+                      Number(fundingPreview?.remaining_to_fund || 0) > 0
+                    }
+                  >
+                    <summary className="cursor-pointer text-sm font-semibold text-sky-100">
+                      {request.requested_changes?.applied_milestone_id && norm.isSigned && Number(fundingPreview?.remaining_to_fund || 0) <= 0
+                        ? 'View completed amendment details'
+                        : 'View change request details'}
+                    </summary>
+                    <div className="mt-3">
                   <div className="mt-4 grid gap-3 lg:grid-cols-2">
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                       <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Requested change</div>
@@ -6129,6 +6159,8 @@ export default function AgreementDetail({
                       </div>
                     </details>
                   ) : null}
+                    </div>
+                  </details>
                 </div>
               ))}
             </div>
@@ -6865,6 +6897,30 @@ export default function AgreementDetail({
 
                       {isContractor && (
                         <div className="mt-3">
+                          <AssignEmployeeInline
+                            theme="operational"
+                            label="Assign Team Member"
+                            help="Assign this milestone to one accountable team member. The same employee can own multiple milestones."
+                            currentAssignment={
+                              m.assigned_worker?.kind === 'employee'
+                                ? m.assigned_worker
+                                : null
+                            }
+                            onAssign={(subaccountId) =>
+                              assignMilestoneEmployee(m.id, subaccountId)
+                            }
+                            onUnassign={() =>
+                              unassignMilestoneEmployee(m.id)
+                            }
+                            unassignRequiresSelection={false}
+                            disabled={m.assigned_worker?.kind === 'subcontractor'}
+                          />
+                          {m.assigned_worker?.kind === 'subcontractor' ? (
+                            <div className="mt-2 text-xs text-amber-100/80">
+                              Remove the subcontractor before assigning a team member.
+                            </div>
+                          ) : null}
+                          <div className="mt-3">
                           <AssignSubcontractorInline
                             theme="operational"
                             acceptedSubcontractors={acceptedSubcontractors}
@@ -6886,7 +6942,9 @@ export default function AgreementDetail({
                             onUnassign={() =>
                               unassignMilestoneSubcontractor(m.id)
                             }
+                            disabled={m.assigned_worker?.kind === 'employee'}
                           />
+                          </div>
                           <div className="mt-3">
                             <AssignReviewerInline
                               theme="operational"

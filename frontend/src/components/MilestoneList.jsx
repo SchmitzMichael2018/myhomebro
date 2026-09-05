@@ -21,6 +21,7 @@ import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
 import RefundEscrowModal from "./RefundEscrowModal";
 import SendInvoiceButton from "./SendInvoiceButton";
+import MilestoneAssignmentDialog from "./MilestoneAssignmentDialog";
 
 // Retained for a later operational-board migration; intentionally not rendered.
 const SHOW_LEGACY_MILESTONE_TABLE = false;
@@ -266,6 +267,7 @@ export default function MilestoneList() {
 
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailItem, setDetailItem] = useState(null);
+  const [assignmentItem, setAssignmentItem] = useState(null);
 
   const [refundOpen, setRefundOpen] = useState(false);
   const [refundAgreementId, setRefundAgreementId] = useState(null);
@@ -1172,6 +1174,16 @@ export default function MilestoneList() {
                                 >
                                   View
                                 </button>
+                                {!isCompleted ? (
+                                  <button
+                                    data-testid={`milestone-assign-action-${m.id}`}
+                                    type="button"
+                                    onClick={() => setAssignmentItem(m)}
+                                    className="rounded-xl border border-violet-300/35 bg-violet-400/14 px-4 py-2.5 text-sm font-bold text-violet-100 hover:bg-violet-400/22"
+                                  >
+                                    Assign
+                                  </button>
+                                ) : null}
 
                                 {needsWorkReview ? (
                                   <>
@@ -1691,6 +1703,17 @@ export default function MilestoneList() {
           onSubmit={({ id, notes, files }) => submitComplete({ id, notes, files })}
         />
       )}
+
+      {assignmentItem ? (
+        <MilestoneAssignmentDialog
+          milestone={assignmentItem}
+          onClose={() => setAssignmentItem(null)}
+          onUpdated={async () => {
+            await reload();
+            setAssignmentItem(null);
+          }}
+        />
+      ) : null}
 
       <RefundEscrowModal
         open={refundOpen}
