@@ -33,7 +33,10 @@ python "$BACKEND_DIR/manage.py" migrate --check
 # 2) Frontend: build only (no npm i/ci)
 log "Building frontend with Vite (no installs)…"
 cd "$FRONTEND_DIR"
-npx vite build
+# PythonAnywhere's NFS can retain temporary .nfs handles in dist/assets while
+# Vite starts its next build. Avoid deleting the staging tree here; the later
+# rsync --delete remains the authority for removing obsolete published assets.
+npx vite build --emptyOutDir=false
 python "$REPO_ROOT/scripts/verify_assistant_launcher_build.py"
 
 PWA_ENABLED_NORMALIZED="${PWA_ENABLED:-false}"

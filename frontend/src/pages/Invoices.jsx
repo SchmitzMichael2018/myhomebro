@@ -16,6 +16,7 @@ import ContractorPageSurface from "../components/dashboard/ContractorPageSurface
 import { Button } from "../components/ui/Button.jsx";
 import { Card, MetricCard } from "../components/ui/surfaces.jsx";
 import { PaginationControls } from "../components/ui/PaginationControls.jsx";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 function useQuery() {
   const { search } = useLocation();
@@ -108,6 +109,7 @@ export default function Invoices() {
   const [pageSize, setPageSize] = useState(10);
   const [autoCreateState, setAutoCreateState] = useState({ running: false, error: "" });
   const [actionLoadingKey, setActionLoadingKey] = useState("");
+  const [collapsedProjects, setCollapsedProjects] = useState(() => new Set());
 
   const resolvedRecordTypeFilter =
     recordTypeFilter !== "all"
@@ -312,6 +314,16 @@ export default function Invoices() {
 
   const ProjectPaymentGroup = ({ group }) => {
     const rows = group.records || [];
+    const isCollapsed = collapsedProjects.has(group.key);
+    const recordsId = `payments-project-records-${group.agreementId || group.key}`;
+    const toggleCollapsed = () => {
+      setCollapsedProjects((current) => {
+        const next = new Set(current);
+        if (next.has(group.key)) next.delete(group.key);
+        else next.add(group.key);
+        return next;
+      });
+    };
     return (
       <Card
         padding="none"
@@ -334,17 +346,30 @@ export default function Invoices() {
               ) : null}
             </div>
           </div>
-          {group.agreementId ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {group.agreementId ? (
+              <button
+                type="button"
+                onClick={() => navigate(`/app/agreements/${group.agreementId}`)}
+                className="min-h-11 rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-3 py-2 text-xs font-semibold text-[var(--mhb-text-primary)] hover:bg-[var(--mhb-surface-interactive-hover)]"
+              >
+                Open Agreement
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => navigate(`/app/agreements/${group.agreementId}`)}
-              className="rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-3 py-2 text-xs font-semibold text-[var(--mhb-text-primary)] hover:bg-[var(--mhb-surface-interactive-hover)]"
+              onClick={toggleCollapsed}
+              aria-expanded={!isCollapsed}
+              aria-controls={recordsId}
+              data-testid={`payments-project-toggle-${group.agreementId || group.key}`}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-[var(--mhb-border-default)] bg-[var(--mhb-surface-card)] px-3 py-2 text-xs font-semibold text-[var(--mhb-text-primary)] hover:bg-[var(--mhb-surface-interactive-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--mhb-focus-ring)]"
             >
-              Open Agreement
+              {isCollapsed ? <ChevronRight size={16} aria-hidden="true" /> : <ChevronDown size={16} aria-hidden="true" />}
+              {isCollapsed ? "Expand" : "Collapse"}
             </button>
-          ) : null}
+          </div>
         </div>
-        <div className="overflow-x-auto">
+        <div id={recordsId} className={isCollapsed ? "hidden" : "overflow-x-auto"}>
           <table className="min-w-full text-sm">
             <thead>
               <tr className="border-b border-[var(--mhb-border-divider)] text-left text-xs font-semibold uppercase tracking-wide text-[var(--mhb-text-muted)]">

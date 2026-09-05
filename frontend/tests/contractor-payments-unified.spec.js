@@ -123,6 +123,17 @@ test("unified payments page filters invoices and draw requests by project class,
   await expect(page.getByTestId("payments-project-301")).toContainText("Invoice");
   await expect(page.getByTestId("payments-project-301")).toContainText("Draw Request");
 
+  const projectToggle = page.getByTestId("payments-project-toggle-301");
+  await expect(projectToggle).toHaveAttribute("aria-expanded", "true");
+  await projectToggle.click();
+  await expect(projectToggle).toHaveAttribute("aria-expanded", "false");
+  await expect(projectToggle).toContainText("Expand");
+  await expect(page.getByTestId("payments-project-301").getByText("Deposit")).toBeHidden();
+  await expect(page.getByTestId("payments-project-301").getByRole("button", { name: "Open Agreement" })).toBeVisible();
+  await projectToggle.click();
+  await expect(projectToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("payments-project-301").getByText("Deposit")).toBeVisible();
+
   await page.getByTestId("payments-filter-project-class").selectOption("commercial");
   await expect(page.getByTestId("payments-project-301")).toBeVisible();
   await expect(page.getByTestId("payments-project-401")).toHaveCount(0);
