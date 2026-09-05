@@ -183,7 +183,7 @@ export default function EmployeeAgreements() {
     >
     <div className="space-y-4" data-testid="employee-projects-page">
       <div>
-        <div className="text-sm text-sky-100/70">Project access provides context. Your Milestones page contains only work assigned to you.</div>
+        <div className="text-sm text-[var(--mhb-text-secondary)]">Project access provides context. Your Milestones page contains only work assigned to you.</div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -196,7 +196,7 @@ export default function EmployeeAgreements() {
         <button
           type="button"
           onClick={load}
-          className="px-3 py-2 rounded-lg border bg-white hover:bg-gray-50 text-sm font-semibold"
+          className="mhb-btn primary min-h-11 px-4 py-2 text-sm"
         >
           Refresh
         </button>
@@ -206,7 +206,7 @@ export default function EmployeeAgreements() {
         </div>
       </div>
 
-      <div className="rounded-2xl border bg-white shadow-sm overflow-x-auto">
+      <div className="mhb-operational-inner overflow-x-auto rounded-2xl border">
         <table className="min-w-full text-sm">
           <thead className="bg-gray-50 text-xs uppercase text-gray-500">
             <tr>
@@ -282,7 +282,7 @@ export default function EmployeeAgreements() {
                     <td className="px-4 py-2 text-right">
                       <button
                         type="button"
-                        className="px-3 py-1.5 rounded-lg border bg-white hover:bg-gray-50 text-xs font-semibold"
+                        className="mhb-btn min-h-10 px-3 py-1.5 text-xs"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();

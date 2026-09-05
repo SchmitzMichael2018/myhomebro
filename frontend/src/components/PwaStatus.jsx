@@ -20,6 +20,7 @@ import {
 import { PwaAppIcon } from "./PwaInstallAccess.jsx";
 
 const CRITICAL_ROUTE = /agreement|estimate|payment|invoice|capture|measurement|takeoff|warrant|change/i;
+const SAFE_EMPLOYEE_ROUTE = /^\/app\/employee\/(?:dashboard|agreements|milestones|calendar|profile)\/?$/i;
 
 export default function PwaStatus() {
   const location = useLocation();
@@ -33,7 +34,7 @@ export default function PwaStatus() {
   const hasUnsavedWork = useMemo(
     () => Boolean(
       document.querySelector('[data-pwa-unsaved="true"]')
-      || CRITICAL_ROUTE.test(location.pathname)
+      || (CRITICAL_ROUTE.test(location.pathname) && !SAFE_EMPLOYEE_ROUTE.test(location.pathname))
     ),
     [location.pathname]
   );
@@ -53,6 +54,11 @@ export default function PwaStatus() {
     });
     return undefined;
   }, []);
+
+  useEffect(() => {
+    if (!updateWaiting || hasUnsavedWork) return;
+    updateRef.current?.(true);
+  }, [hasUnsavedWork, updateWaiting]);
 
   useEffect(() => {
     function offline() {
