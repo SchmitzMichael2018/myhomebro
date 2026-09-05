@@ -14,6 +14,7 @@ from projects.models import (
     ContractorSubAccount,
     AgreementAssignment,
     MilestoneAssignment,
+    MilestoneCollaboratorAssignment,
 )
 from projects.utils.accounts import get_contractor_for_user
 
@@ -59,7 +60,6 @@ def agreement_assignment_status(request, agreement_id: int):
         .select_related("user")
         .order_by("display_name", "id")
     )
-
     return Response(
         {
             "agreement_id": agreement.id,
@@ -106,12 +106,21 @@ def milestone_assignment_status(request, milestone_id: int):
         .select_related("user")
         .order_by("display_name", "id")
     )
+    collaborator_sub_ids = MilestoneCollaboratorAssignment.objects.filter(
+        milestone=milestone
+    ).values_list("subaccount_id", flat=True)
+    collaborators = (
+        ContractorSubAccount.objects.filter(id__in=collaborator_sub_ids, parent_contractor=contractor)
+        .select_related("user")
+        .order_by("display_name", "id")
+    )
 
     return Response(
         {
             "milestone_id": milestone.id,
             "agreement_id": milestone.agreement_id,
             "override_subaccount": override,
+            "collaborator_subaccounts": [_subaccount_payload(s) for s in collaborators],
             "agreement_assigned_subaccounts": [_subaccount_payload(s) for s in subs],
             "agreement_count": subs.count(),
         }

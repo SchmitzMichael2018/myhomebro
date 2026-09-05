@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from projects.models import ContractorSubAccount, Milestone
+from projects.models import ContractorSubAccount, Milestone, MilestoneCollaboratorAssignment
 from projects.models_subcontractor import SubcontractorMilestoneAgreementStatus
 from projects.services.subcontractor_milestone_agreements import get_latest_subcontractor_milestone_agreement
 
@@ -159,13 +159,20 @@ def is_effective_reviewer_user(milestone: Milestone, user) -> bool:
 
 def can_user_submit_work(milestone: Milestone, user) -> bool:
     worker = get_assigned_worker(milestone)
-    if worker is None or worker.user is None or user is None:
+    if user is None:
         return False
-    if getattr(worker.user, "id", None) != getattr(user, "id", None):
+    user_id = getattr(user, "id", None)
+    if MilestoneCollaboratorAssignment.objects.filter(
+        milestone=milestone,
+        subaccount__user_id=user_id,
+        subaccount__is_active=True,
+    ).exists():
+        return True
+    if worker is None or worker.user is None or getattr(worker.user, "id", None) != user_id:
         return False
     invitation = getattr(milestone, "assigned_subcontractor_invitation", None)
     if invitation is None:
-        return False
+        return worker.kind == ROLE_INTERNAL_TEAM_MEMBER
     latest = get_latest_subcontractor_milestone_agreement(milestone, invitation)
     if latest is None:
         return False

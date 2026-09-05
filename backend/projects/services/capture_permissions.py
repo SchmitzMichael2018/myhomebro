@@ -102,6 +102,8 @@ def can_create_project_capture(user, project, milestone=None) -> bool:
         milestone=milestone, subaccount=subaccount
     ).exists():
         return True
+    if milestone and milestone.collaborator_assignments.filter(subaccount=subaccount).exists():
+        return True
     return False
 
 
@@ -118,4 +120,5 @@ def visible_project_capture_projects(user):
     return queryset.filter(
         models.Q(agreement__subaccount_assignments__subaccount=subaccount)
         | models.Q(agreement__milestones__subaccount_assignment__subaccount=subaccount)
+        | models.Q(agreement__milestones__collaborator_assignments__subaccount=subaccount)
     ).distinct()

@@ -27,6 +27,22 @@ export async function unassignMilestone(milestoneId) {
   return res.data;
 }
 
+export async function addMilestoneCollaborator(milestoneId, subaccountId) {
+  const res = await api.post(`/api/projects/assignments/milestones/${milestoneId}/assign/`, {
+    subaccount_id: subaccountId,
+    assignment_type: "collaborator",
+  });
+  return res.data;
+}
+
+export async function removeMilestoneCollaborator(milestoneId, subaccountId) {
+  const res = await api.post(`/api/projects/assignments/milestones/${milestoneId}/unassign/`, {
+    subaccount_id: subaccountId,
+    assignment_type: "collaborator",
+  });
+  return res.data;
+}
+
 // ✅ NEW: assignment status
 export async function fetchAgreementAssignmentStatus(agreementId) {
   const res = await api.get(`/api/projects/assignments/agreements/${agreementId}/status/`);

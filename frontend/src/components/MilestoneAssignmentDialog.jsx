@@ -8,6 +8,7 @@ import {
 } from "../api/assignments";
 import AssignEmployeeInline from "./AssignEmployeeInline";
 import AssignSubcontractorInline from "./AssignSubcontractorInline";
+import MilestoneCollaboratorsInline from "./MilestoneCollaboratorsInline";
 
 export default function MilestoneAssignmentDialog({ milestone, onClose, onUpdated }) {
   const [loading, setLoading] = useState(true);
@@ -60,8 +61,8 @@ export default function MilestoneAssignmentDialog({ milestone, onClose, onUpdate
   };
 
   const assignSubcontractor = async (invitationId, options = {}) => {
-    if (status?.override_subaccount) {
-      throw new Error("Remove the employee before assigning a subcontractor.");
+    if (status?.override_subaccount || status?.collaborator_subaccounts?.length) {
+      throw new Error("Remove all assigned team members before assigning a subcontractor.");
     }
     const payload = {
       invitation_id: invitationId,
@@ -93,7 +94,7 @@ export default function MilestoneAssignmentDialog({ milestone, onClose, onUpdate
           <div>
             <div className="text-xs font-bold uppercase tracking-[0.14em] text-sky-100/55">Assign milestone</div>
             <h2 id="milestone-assignment-title" className="mt-1 text-xl font-bold">{milestone.title || "Milestone"}</h2>
-            <p className="mt-1 text-sm text-sky-100/65">Choose one accountable worker. Team members can be assigned across multiple milestones; project access is managed in the Agreement Workspace.</p>
+            <p className="mt-1 text-sm text-sky-100/65">Choose one primary worker for accountability, then add any other employees who will work on this milestone.</p>
           </div>
           <button type="button" onClick={onClose} className="rounded-lg border border-white/15 px-3 py-2 text-sm font-semibold hover:bg-white/10">Close</button>
         </div>
@@ -112,6 +113,11 @@ export default function MilestoneAssignmentDialog({ milestone, onClose, onUpdate
               unassignRequiresSelection={false}
               disabled={!!milestone.assigned_subcontractor}
             />
+            <MilestoneCollaboratorsInline
+              milestoneId={milestone.id}
+              disabled={!!milestone.assigned_subcontractor}
+              onUpdated={refresh}
+            />
             <AssignSubcontractorInline
               theme="operational"
               acceptedSubcontractors={subcontractors}
@@ -121,7 +127,7 @@ export default function MilestoneAssignmentDialog({ milestone, onClose, onUpdate
               milestoneAmount={milestone.amount}
               onAssign={assignSubcontractor}
               onUnassign={removeSubcontractor}
-              disabled={!!status?.override_subaccount}
+              disabled={!!status?.override_subaccount || !!status?.collaborator_subaccounts?.length}
             />
           </div>
         )}

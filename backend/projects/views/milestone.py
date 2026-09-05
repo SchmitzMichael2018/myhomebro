@@ -42,6 +42,7 @@ from projects.models import (
     InspectionStatus,
     MilestonePayout,
     MilestoneAssignment,
+    MilestoneCollaboratorAssignment,
     SubcontractorComplianceStatus,
     SubcontractorCompletionStatus,
 )
@@ -743,6 +744,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
     def _assigned_queryset_for_user(self, user):
         assignment_filter = (
             Q(subaccount_assignment__subaccount__user=user)
+            | Q(collaborator_assignments__subaccount__user=user)
             | Q(assigned_to=user)
             | Q(assigned_user=user)
             | Q(assigned_employee__user=user)
@@ -1608,9 +1610,12 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_200_OK,
             )
 
-        if MilestoneAssignment.objects.filter(milestone=milestone).exists():
+        if (
+            MilestoneAssignment.objects.filter(milestone=milestone).exists()
+            or MilestoneCollaboratorAssignment.objects.filter(milestone=milestone).exists()
+        ):
             return Response(
-                {"detail": "Remove the assigned team member before assigning a subcontractor."},
+                {"detail": "Remove assigned team members before assigning a subcontractor."},
                 status=status.HTTP_409_CONFLICT,
             )
 

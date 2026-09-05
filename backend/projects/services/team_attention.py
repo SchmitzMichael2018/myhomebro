@@ -140,6 +140,7 @@ def build_subaccount_work_summary(subaccount: ContractorSubAccount) -> dict:
         "delegated_reviewer_subaccount",
     ).filter(
         Q(subaccount_assignment__subaccount=subaccount)
+        | Q(collaborator_assignments__subaccount=subaccount)
         | Q(delegated_reviewer_subaccount=subaccount)
         | Q(assigned_subcontractor_invitation__accepted_by_user=user)
     )
@@ -156,7 +157,10 @@ def build_subaccount_work_summary(subaccount: ContractorSubAccount) -> dict:
     overdue_milestone_count = sum(1 for milestone in active_milestones if milestone_is_overdue(milestone))
 
     agreement_assignment_count = AgreementAssignment.objects.filter(subaccount=subaccount).count()
-    milestone_assignment_count = MilestoneAssignment.objects.filter(subaccount=subaccount).count()
+    milestone_assignment_count = (
+        MilestoneAssignment.objects.filter(subaccount=subaccount).count()
+        + subaccount.milestone_collaborations.count()
+    )
 
     last_activity_at = _max_dt(
         getattr(user, "last_login", None),

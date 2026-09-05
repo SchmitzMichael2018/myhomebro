@@ -14,7 +14,8 @@ def get_visible_milestones_for_subaccount(
 
     Visible if:
       A) milestone explicitly assigned to this subaccount (MilestoneAssignment), OR
-      B) agreement assigned to this subaccount (AgreementAssignment),
+      B) milestone collaborator assignment exists for this subaccount, OR
+      C) agreement assigned to this subaccount (AgreementAssignment),
          AND the milestone is NOT explicitly assigned to someone else.
 
     This implements:
@@ -22,6 +23,11 @@ def get_visible_milestones_for_subaccount(
       - Assign milestone => overrides agreement assignment
     """
     direct_ids = MilestoneAssignmentModel.objects.filter(
+        subaccount=subaccount
+    ).values_list("milestone_id", flat=True)
+    from projects.models import MilestoneCollaboratorAssignment
+
+    collaborator_ids = MilestoneCollaboratorAssignment.objects.filter(
         subaccount=subaccount
     ).values_list("milestone_id", flat=True)
 
@@ -35,5 +41,6 @@ def get_visible_milestones_for_subaccount(
 
     return MilestoneModel.objects.filter(
         Q(id__in=direct_ids)
+        | Q(id__in=collaborator_ids)
         | (Q(agreement_id__in=agreement_ids) & ~Q(id__in=overridden_elsewhere))
     )

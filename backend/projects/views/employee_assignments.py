@@ -14,6 +14,7 @@ from projects.models import (
     ContractorSubAccount,
     AgreementAssignment,
     MilestoneAssignment,
+    MilestoneCollaboratorAssignment,
 )
 from projects.services.milestone_payouts import sync_milestone_payout
 from projects.utils.accounts import get_contractor_for_user
@@ -125,10 +126,23 @@ def assign_milestone(request, milestone_id: int):
             status=409,
         )
 
-    obj, created = MilestoneAssignment.objects.update_or_create(
-        milestone=milestone,
-        defaults={"subaccount": sub},
-    )
+    assignment_type = str(request.data.get("assignment_type") or "primary").strip().lower()
+    if assignment_type not in {"primary", "collaborator"}:
+        return Response({"detail": "assignment_type must be primary or collaborator."}, status=400)
+    if assignment_type == "collaborator":
+        if MilestoneAssignment.objects.filter(milestone=milestone, subaccount=sub).exists():
+            return Response({"detail": "This team member is already the primary worker."}, status=409)
+        obj, created = MilestoneCollaboratorAssignment.objects.get_or_create(
+            milestone=milestone,
+            subaccount=sub,
+        )
+    else:
+        if MilestoneCollaboratorAssignment.objects.filter(milestone=milestone, subaccount=sub).exists():
+            return Response({"detail": "Remove this team member from collaborators before making them primary."}, status=409)
+        obj, created = MilestoneAssignment.objects.update_or_create(
+            milestone=milestone,
+            defaults={"subaccount": sub},
+        )
     sync_milestone_payout(milestone.id)
     return Response({"assigned": True, "created": created, "id": obj.id})
 
@@ -143,10 +157,23 @@ def unassign_milestone(request, milestone_id: int):
     """
     contractor = _require_contractor_owner(request)
 
-    deleted, _ = MilestoneAssignment.objects.filter(
-        milestone_id=milestone_id,
-        milestone__agreement__contractor=contractor,
-    ).delete()
+    assignment_type = str(request.data.get("assignment_type") or "primary").strip().lower()
+    if assignment_type not in {"primary", "collaborator"}:
+        return Response({"detail": "assignment_type must be primary or collaborator."}, status=400)
+    if assignment_type == "collaborator":
+        subaccount_id = request.data.get("subaccount_id")
+        if not subaccount_id:
+            return Response({"detail": "subaccount_id required for collaborator removal"}, status=400)
+        deleted, _ = MilestoneCollaboratorAssignment.objects.filter(
+            milestone_id=milestone_id,
+            subaccount_id=subaccount_id,
+            milestone__agreement__contractor=contractor,
+        ).delete()
+    else:
+        deleted, _ = MilestoneAssignment.objects.filter(
+            milestone_id=milestone_id,
+            milestone__agreement__contractor=contractor,
+        ).delete()
     sync_milestone_payout(milestone_id)
 
     return Response({"unassigned": True, "deleted": deleted})

@@ -37,6 +37,7 @@ import PdfPreviewModal from '../components/PdfPreviewModal';
 import RefundEscrowModal from '../components/RefundEscrowModal';
 import AssignSubcontractorInline from '../components/AssignSubcontractorInline';
 import AssignReviewerInline from '../components/AssignReviewerInline';
+import MilestoneCollaboratorsInline from '../components/MilestoneCollaboratorsInline';
 import SupportRequestModal from '../components/SupportRequestModal';
 
 // Assignment UI
@@ -6920,6 +6921,13 @@ export default function AgreementDetail({
                               Remove the subcontractor before assigning a team member.
                             </div>
                           ) : null}
+                          <div className="mt-3">
+                            <MilestoneCollaboratorsInline
+                              milestoneId={m.id}
+                              disabled={m.assigned_worker?.kind === 'subcontractor'}
+                              onUpdated={fetchAgreement}
+                            />
+                          </div>
                           <div className="mt-3">
                           <AssignSubcontractorInline
                             theme="operational"

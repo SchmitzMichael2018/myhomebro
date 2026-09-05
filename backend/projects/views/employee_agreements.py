@@ -13,6 +13,7 @@ from projects.models import (
     Milestone,
     AgreementAssignment,
     MilestoneAssignment,
+    MilestoneCollaboratorAssignment,
 )
 from projects.utils.accounts import get_subaccount_for_user
 from projects.utils.subaccount_scope import get_visible_milestones_for_subaccount
@@ -104,8 +105,11 @@ def my_agreements(request):
     milestone_agreement_ids = MilestoneAssignment.objects.filter(
         subaccount=sub
     ).values_list("milestone__agreement_id", flat=True)
+    collaborator_agreement_ids = MilestoneCollaboratorAssignment.objects.filter(
+        subaccount=sub
+    ).values_list("milestone__agreement_id", flat=True)
 
-    ag_ids = list(set(list(assigned_agreement_ids) + list(milestone_agreement_ids)))
+    ag_ids = list(set(list(assigned_agreement_ids) + list(milestone_agreement_ids) + list(collaborator_agreement_ids)))
     if not ag_ids:
         return Response({"agreements": []})
 
@@ -163,8 +167,11 @@ def agreement_detail(request, agreement_id: int):
     has_milestone_assignment = MilestoneAssignment.objects.filter(
         milestone__agreement_id=agreement_id, subaccount=sub
     ).exists()
+    has_collaborator_assignment = MilestoneCollaboratorAssignment.objects.filter(
+        milestone__agreement_id=agreement_id, subaccount=sub
+    ).exists()
 
-    if not (has_agreement_assignment or has_milestone_assignment):
+    if not (has_agreement_assignment or has_milestone_assignment or has_collaborator_assignment):
         return Response({"detail": "Not found."}, status=404)
 
     try:

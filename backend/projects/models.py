@@ -3283,6 +3283,28 @@ class MilestoneAssignment(models.Model):
         return f"MilestoneAssignment(milestone={self.milestone_id}, subaccount={self.subaccount_id})"
 
 
+class MilestoneCollaboratorAssignment(models.Model):
+    """Additional internal crew members who may view and submit work for a milestone."""
+
+    milestone = models.ForeignKey(
+        "projects.Milestone",
+        on_delete=models.CASCADE,
+        related_name="collaborator_assignments",
+    )
+    subaccount = models.ForeignKey(
+        "projects.ContractorSubAccount",
+        on_delete=models.CASCADE,
+        related_name="milestone_collaborations",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("milestone", "subaccount")
+
+    def __str__(self):
+        return f"MilestoneCollaboratorAssignment(milestone={self.milestone_id}, subaccount={self.subaccount_id})"
+
+
 # ensure related models are registered
 from .models_attachments import AgreementAttachment, ExpenseRequestAttachment  # noqa: E402,F401
 from .models_schedule import EmployeeWorkSchedule, EmployeeScheduleException  # noqa: E402,F401

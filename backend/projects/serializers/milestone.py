@@ -14,6 +14,7 @@ from projects.models import (
     SubcontractorCompletionStatus,
     ContractorSubAccount,
     MilestoneAssignment,
+    MilestoneCollaboratorAssignment,
 )
 from projects.models_subcontractor import (
     SubcontractorInvitation,
@@ -910,9 +911,12 @@ class MilestoneSerializer(serializers.ModelSerializer):
                 )
 
             if assigned_subcontractor_invitation is not None:
-                if self.instance is not None and MilestoneAssignment.objects.filter(milestone=self.instance).exists():
+                if self.instance is not None and (
+                    MilestoneAssignment.objects.filter(milestone=self.instance).exists()
+                    or MilestoneCollaboratorAssignment.objects.filter(milestone=self.instance).exists()
+                ):
                     raise serializers.ValidationError(
-                        {"assigned_subcontractor_invitation": "Remove the assigned team member before assigning a subcontractor."}
+                        {"assigned_subcontractor_invitation": "Remove assigned team members before assigning a subcontractor."}
                     )
                 assigned_subcontractor_invitation.refresh_expired_status()
                 if assigned_subcontractor_invitation.agreement_id != getattr(agreement, "id", None):

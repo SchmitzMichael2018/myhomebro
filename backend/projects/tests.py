@@ -35,6 +35,7 @@ from projects.services.customer_portal_status import build_customer_payment_mode
 from projects.admin import ProjectTemplateAdmin
 from projects.models import (
     Agreement,
+    AgreementAssignment,
     AgreementAIScope,
     AgreementMode,
     AgreementProjectClass,
@@ -70,6 +71,7 @@ from projects.models import (
     AgreementFundingLink,
     Milestone,
     MilestoneAssignment,
+    MilestoneCollaboratorAssignment,
     MilestoneComment,
     MilestoneFile,
     MilestonePayout,
@@ -9602,7 +9604,7 @@ class SubcontractorMilestoneAssignmentTests(TestCase):
         )
 
         self.assertEqual(subcontractor_response.status_code, 409)
-        self.assertIn("remove the assigned team member", subcontractor_response.json()["detail"].lower())
+        self.assertIn("remove assigned team members", subcontractor_response.json()["detail"].lower())
 
         MilestoneAssignment.objects.filter(milestone=self.milestone).delete()
         self.milestone.assigned_subcontractor_invitation = self.accepted_invitation
@@ -9616,6 +9618,97 @@ class SubcontractorMilestoneAssignmentTests(TestCase):
 
         self.assertEqual(employee_response.status_code, 409)
         self.assertIn("remove the assigned subcontractor", employee_response.json()["detail"].lower())
+
+    def test_contractor_can_add_multiple_milestone_collaborators(self):
+        employees = []
+        for index in range(2):
+            employee_user = get_user_model().objects.create_user(
+                email=f"crew-{index}@example.com",
+                password="testpass123",
+            )
+            employees.append(
+                ContractorSubAccount.objects.create(
+                    parent_contractor=self.contractor,
+                    user=employee_user,
+                    display_name=f"Crew Member {index}",
+                    role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+                )
+            )
+
+        for employee in employees:
+            response = self.client.post(
+                f"/api/projects/assignments/milestones/{self.milestone.id}/assign/",
+                {"subaccount_id": employee.id, "assignment_type": "collaborator"},
+                format="json",
+            )
+            self.assertEqual(response.status_code, 200, response.data)
+
+        status_response = self.client.get(
+            f"/api/projects/assignments/milestones/{self.milestone.id}/status/"
+        )
+        self.assertEqual(status_response.status_code, 200, status_response.data)
+        self.assertEqual(
+            {row["id"] for row in status_response.data["collaborator_subaccounts"]},
+            {employee.id for employee in employees},
+        )
+
+    def test_milestone_collaborator_can_view_and_submit_work(self):
+        from projects.services.milestone_workflow import can_user_submit_work
+        from projects.utils.subaccount_scope import get_visible_milestones_for_subaccount
+
+        employee_user = get_user_model().objects.create_user(
+            email="crew-submit@example.com",
+            password="testpass123",
+        )
+        employee = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=employee_user,
+            display_name="Crew Submitter",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+        )
+        MilestoneCollaboratorAssignment.objects.create(
+            milestone=self.milestone,
+            subaccount=employee,
+        )
+
+        self.assertTrue(can_user_submit_work(self.milestone, employee_user))
+        self.assertTrue(
+            get_visible_milestones_for_subaccount(
+                employee,
+                Milestone,
+                AgreementAssignment,
+                MilestoneAssignment,
+            ).filter(pk=self.milestone.pk).exists()
+        )
+
+    def test_subcontractor_assignment_is_blocked_when_milestone_has_collaborators(self):
+        employee_user = get_user_model().objects.create_user(
+            email="crew-conflict@example.com",
+            password="testpass123",
+        )
+        employee = ContractorSubAccount.objects.create(
+            parent_contractor=self.contractor,
+            user=employee_user,
+            display_name="Crew Conflict",
+            role=ContractorSubAccount.ROLE_EMPLOYEE_MILESTONES,
+        )
+        MilestoneCollaboratorAssignment.objects.create(
+            milestone=self.milestone,
+            subaccount=employee,
+        )
+
+        response = self.client.post(
+            f"/api/projects/milestones/{self.milestone.id}/assign-subcontractor/",
+            {
+                "invitation_id": self.accepted_invitation.id,
+                "agreed_pay": "1750.00",
+                "payment_release_mode": "manual_release",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertIn("remove assigned team members", response.data["detail"].lower())
 
     def test_over_allocation_requires_override_reason(self):
         response = self.client.post(
