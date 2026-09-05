@@ -114,7 +114,7 @@ export default function EmployeeMilestones() {
 
   return (
     <ContractorPageSurface eyebrow="Team workspace" title="My Milestones" subtitle="Open assigned work, add evidence, and submit it for lead-contractor review." variant="operational" className="mx-auto max-w-[1180px]">
-    <div>
+    <div data-testid="employee-milestones-page">
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">My Assigned Milestones</h1>
@@ -126,7 +126,8 @@ export default function EmployeeMilestones() {
         <button
           type="button"
           onClick={load}
-          className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold hover:bg-slate-800"
+          className="mhb-btn primary min-h-11 px-4 py-2"
+          data-testid="employee-milestones-refresh"
         >
           Refresh
         </button>
@@ -138,18 +139,17 @@ export default function EmployeeMilestones() {
             key={f.key}
             type="button"
             onClick={() => setFilterAndUrl(f.key)}
-            className={`px-3 py-1.5 rounded-full text-sm border transition ${
-              filter === f.key
-                ? "bg-slate-900 text-white border-slate-900"
-                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
+            className={`mhb-operational-filter-chip min-h-10 px-3 py-1.5 text-sm ${
+              filter === f.key ? "is-active" : ""
             }`}
+            aria-pressed={filter === f.key}
           >
             {f.label}
           </button>
         ))}
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-[#071d42]/80">
+      <div className="mhb-operational-inner mt-4 overflow-x-auto rounded-2xl border">
         <div className="px-4 py-3 border-b border-slate-200 text-sm text-slate-600">
           {loading ? "Loading…" : `${filtered.length} milestone(s)`}
         </div>
