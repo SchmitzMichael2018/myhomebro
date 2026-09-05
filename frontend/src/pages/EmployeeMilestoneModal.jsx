@@ -176,7 +176,7 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
             <div className="text-lg font-bold text-slate-900 truncate">{title}</div>
             <div className="text-sm text-slate-600 mt-1">
               Agreement <span className="font-semibold">#{milestone?.agreement_id ?? "—"}</span> • Due{" "}
-              <span className="font-semibold">{due}</span> • Amount{" "}
+              <span className="font-semibold">{due}</span> •{" "}
               <span className="font-semibold">Milestone {milestone?.order || "—"}</span>
             </div>
           </div>
