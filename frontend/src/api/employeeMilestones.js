@@ -61,8 +61,8 @@ export async function uploadEmployeeMilestoneFile(milestoneId, file) {
  * POST /api/projects/employee/milestones/:id/complete/
  * Returns: { updated: boolean, completed: boolean }
  */
-export async function markEmployeeMilestoneComplete(milestoneId) {
+export async function submitEmployeeMilestoneForReview(milestoneId, note = "") {
   if (!milestoneId) throw new Error("milestoneId is required");
-  const res = await api.post(`/projects/employee/milestones/${milestoneId}/complete/`);
+  const res = await api.post(`/projects/employee/milestones/${milestoneId}/complete/`, { note });
   return res.data;
 }

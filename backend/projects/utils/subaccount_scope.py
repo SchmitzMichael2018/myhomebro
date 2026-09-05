@@ -3,6 +3,26 @@ from __future__ import annotations
 from django.db.models import Q
 
 
+def get_assigned_milestones_for_subaccount(
+    subaccount,
+    MilestoneModel,
+    MilestoneAssignmentModel,
+):
+    """Milestones for which the team member is accountable for doing the work.
+
+    Agreement assignments grant project context, not an implicit work assignment.
+    """
+    direct_ids = MilestoneAssignmentModel.objects.filter(
+        subaccount=subaccount
+    ).values_list("milestone_id", flat=True)
+    from projects.models import MilestoneCollaboratorAssignment
+
+    collaborator_ids = MilestoneCollaboratorAssignment.objects.filter(
+        subaccount=subaccount
+    ).values_list("milestone_id", flat=True)
+    return MilestoneModel.objects.filter(Q(id__in=direct_ids) | Q(id__in=collaborator_ids))
+
+
 def get_visible_milestones_for_subaccount(
     subaccount,
     MilestoneModel,

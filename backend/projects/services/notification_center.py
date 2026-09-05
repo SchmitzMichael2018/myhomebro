@@ -4,9 +4,9 @@ import logging
 
 from django.db.models import Q
 
-from projects.models import Notification
+from projects.models import Notification, MilestoneAssignment, MilestoneCollaboratorAssignment
 from projects.services.recipient_validation import contractor_has_valid_account_email
-from projects.utils.accounts import get_contractor_for_user
+from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +197,7 @@ def create_notification(
 
 def get_notification_queryset_for_user(user):
     contractor = get_contractor_for_user(user) if user is not None else None
+    subaccount = get_subaccount_for_user(user) if user is not None else None
     qs = Notification.objects.select_related(
         "user",
         "contractor",
@@ -217,6 +218,19 @@ def get_notification_queryset_for_user(user):
         return qs.none(), contractor
 
     q = Q(user=user)
+    if subaccount is not None:
+        assigned_ids = MilestoneAssignment.objects.filter(subaccount=subaccount).values_list("milestone_id", flat=True)
+        collaborator_ids = MilestoneCollaboratorAssignment.objects.filter(subaccount=subaccount).values_list("milestone_id", flat=True)
+        worker_events = {
+            Notification.EVENT_SUBCONTRACTOR_COMMENT,
+            Notification.EVENT_SUBCONTRACTOR_FILE,
+            Notification.EVENT_SUBCONTRACTOR_REVIEW,
+        }
+        q |= Q(
+            milestone_id__in=list(assigned_ids) + list(collaborator_ids),
+            event_type__in=worker_events,
+        )
+        return qs.filter(q).distinct(), contractor
     if contractor is not None:
         q |= Q(contractor=contractor)
     return qs.filter(q).distinct(), contractor

@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import api from "../api";
 import EmployeeMilestoneModal from "./EmployeeMilestoneModal.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function useQuery() {
   const { search } = useLocation();
@@ -44,7 +45,7 @@ export default function EmployeeMilestones() {
   const [activeId, setActiveId] = useState(null);
 
   const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const filter = query.get("filter") || "all";
+  const filter = query.get("filter") || "incomplete";
 
   async function load() {
     setLoading(true);
@@ -112,7 +113,8 @@ export default function EmployeeMilestones() {
   const showContextCols = useMemo(() => hasAnyContextRow(filtered), [filtered]);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <ContractorPageSurface eyebrow="Team workspace" title="My Milestones" subtitle="Open assigned work, add evidence, and submit it for lead-contractor review." variant="operational" className="mx-auto max-w-[1180px]">
+    <div>
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">My Assigned Milestones</h1>
@@ -147,7 +149,7 @@ export default function EmployeeMilestones() {
         ))}
       </div>
 
-      <div className="mt-4 bg-white border border-slate-200 rounded-2xl overflow-hidden">
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-white/10 bg-[#071d42]/80">
         <div className="px-4 py-3 border-b border-slate-200 text-sm text-slate-600">
           {loading ? "Loading…" : `${filtered.length} milestone(s)`}
         </div>
@@ -168,21 +170,19 @@ export default function EmployeeMilestones() {
 
               <th className="text-left px-4 py-3">Status</th>
               <th className="text-left px-4 py-3">Due</th>
-              <th className="text-right px-4 py-3">Amount</th>
             </tr>
           </thead>
 
           <tbody>
             {!loading && filtered.length === 0 ? (
               <tr>
-                <td colSpan={showContextCols ? 8 : 5} className="px-4 py-10 text-center text-slate-500">
+                <td colSpan={showContextCols ? 7 : 4} className="px-4 py-10 text-center text-slate-500">
                   No milestones found.
                 </td>
               </tr>
             ) : (
               filtered.map((m) => {
                 const due = (m.completion_date || m.due_date || m.start_date || "—").toString().slice(0, 10);
-                const amt = m.amount != null ? `$${Number(m.amount).toFixed(2)}` : "—";
                 const agNo = m.agreement_number || m.agreement_id || "—";
 
                 return (
@@ -213,7 +213,6 @@ export default function EmployeeMilestones() {
 
                     <td className="px-4 py-3">{m.completed ? "Completed" : "Assigned"}</td>
                     <td className="px-4 py-3">{due}</td>
-                    <td className="px-4 py-3 text-right">{amt}</td>
                   </tr>
                 );
               })
@@ -230,5 +229,6 @@ export default function EmployeeMilestones() {
         />
       ) : null}
     </div>
+    </ContractorPageSurface>
   );
 }

@@ -11,12 +11,6 @@ function dateOnly(v) {
   return String(v).slice(0, 10);
 }
 
-function moneyFmt(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "$0.00";
-  return `$${v.toFixed(2)}`;
-}
-
 export default function EmployeeDashboard() {
   const navigate = useNavigate();
 
@@ -26,7 +20,6 @@ export default function EmployeeDashboard() {
   const [error, setError] = useState("");
 
   const [activeId, setActiveId] = useState(null);
-  const [busyId, setBusyId] = useState(null);
 
   const todayISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
@@ -80,21 +73,6 @@ export default function EmployeeDashboard() {
 
   function openList(filterKey) {
     navigate(`/app/employee/milestones?filter=${encodeURIComponent(filterKey)}`);
-  }
-
-  async function markComplete(id) {
-    if (!canWork || !id) return;
-
-    setBusyId(id);
-    try {
-      await api.post(`/projects/employee/milestones/${id}/complete/`);
-      await load();
-    } catch (e) {
-      console.error(e);
-      setError("Could not mark complete.");
-    } finally {
-      setBusyId(null);
-    }
   }
 
   return (
@@ -155,8 +133,6 @@ export default function EmployeeDashboard() {
           emptyText="No late milestones."
           canWork={canWork}
           onOpen={(id) => setActiveId(id)}
-          onComplete={markComplete}
-          busyId={busyId}
         />
 
         <Section
@@ -167,8 +143,6 @@ export default function EmployeeDashboard() {
           emptyText="No milestones today."
           canWork={canWork}
           onOpen={(id) => setActiveId(id)}
-          onComplete={markComplete}
-          busyId={busyId}
         />
 
         <Section
@@ -179,8 +153,6 @@ export default function EmployeeDashboard() {
           emptyText="No upcoming milestones."
           canWork={canWork}
           onOpen={(id) => setActiveId(id)}
-          onComplete={markComplete}
-          busyId={busyId}
         />
       </div>
 
@@ -191,7 +163,7 @@ export default function EmployeeDashboard() {
   );
 }
 
-function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onOpen, onComplete, busyId }) {
+function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onOpen }) {
   return (
     <section className="rounded-2xl border border-white/10 bg-[#071d42]/80 shadow-[0_18px_46px_rgba(2,8,23,0.2)]">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
@@ -214,8 +186,6 @@ function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onO
           <div className="space-y-3">
             {items.map((m) => {
               const due = dateOnly(m.completion_date || m.due_date || m.start_date) || "—";
-              const amt = moneyFmt(m.amount);
-
               // Optional extra fields if present (won’t break if missing)
               const projectTitle = m.project_title || m.projectTitle || "";
               const customerName = m.customer_name || m.homeowner_name || "";
@@ -244,7 +214,7 @@ function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onO
                     </div>
 
                     <div className="text-sm text-slate-600 mt-1">
-                      Agreement #{m.agreement_id || "—"} • Due: {due} • Amount: {amt}
+                      Milestone {m.order || "—"} • Due: {due}
                     </div>
 
                     {(projectTitle || customerName || address) ? (
@@ -262,8 +232,8 @@ function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onO
                     {!m.completed ? (
                       <button
                         type="button"
-                        onClick={() => onComplete?.(m.id)}
-                        disabled={!canWork || busyId === m.id}
+                        onClick={() => onOpen?.(m.id)}
+                        disabled={!canWork}
                         className={[
                           "px-4 py-2 rounded-lg text-sm font-semibold",
                           !canWork
@@ -271,7 +241,7 @@ function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onO
                             : "bg-blue-600 hover:bg-blue-700 text-white",
                         ].join(" ")}
                       >
-                        {busyId === m.id ? "Saving…" : "Mark Complete"}
+                        Open Work
                       </button>
                     ) : null}
                   </div>

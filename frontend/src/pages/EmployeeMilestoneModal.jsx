@@ -7,18 +7,12 @@ import {
   fetchEmployeeMilestoneDetail,
   addEmployeeMilestoneComment,
   uploadEmployeeMilestoneFile,
-  markEmployeeMilestoneComplete,
+  submitEmployeeMilestoneForReview,
 } from "../api/employeeMilestones";
 
 function dateOnly(v) {
   if (!v) return "—";
   return String(v).slice(0, 10);
-}
-
-function moneyFmt(n) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return "$0.00";
-  return `$${v.toFixed(2)}`;
 }
 
 function Badge({ label, tone = "base" }) {
@@ -140,7 +134,7 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
     setBusy(true);
     setErr("");
     try {
-      await markEmployeeMilestoneComplete(milestoneId);
+      await submitEmployeeMilestoneForReview(milestoneId, commentText);
       await load();
       onUpdated?.();
       onClose?.();
@@ -157,6 +151,8 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   const statusLabel = useMemo(() => {
     if (!milestone) return "";
     if (milestone.completed) return "Completed";
+    if (milestone.work_submission_status === "submitted_for_review") return "Submitted for review";
+    if (milestone.work_submission_status === "needs_changes") return "Changes requested";
     if (milestone.is_late) return "Late";
     return "Assigned";
   }, [milestone]);
@@ -173,15 +169,15 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   }, [onClose, confirmOpen]);
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black/50 flex items-start justify-center">
-      <div className="mt-10 w-[92vw] max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden relative">
+    <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-3 sm:p-6">
+      <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-2xl relative">
         <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-lg font-bold text-slate-900 truncate">{title}</div>
             <div className="text-sm text-slate-600 mt-1">
               Agreement <span className="font-semibold">#{milestone?.agreement_id ?? "—"}</span> • Due{" "}
               <span className="font-semibold">{due}</span> • Amount{" "}
-              <span className="font-semibold">{moneyFmt(milestone?.amount)}</span>
+              <span className="font-semibold">Milestone {milestone?.order || "—"}</span>
             </div>
           </div>
 
@@ -213,6 +209,24 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                 {!hasEvidence && !milestone.completed ? <Badge label="Evidence required" tone="warn" /> : null}
               </div>
 
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs font-semibold uppercase text-slate-500">Project</div>
+                  <div className="mt-1 font-semibold text-slate-900">{milestone.project_title || `Agreement #${milestone.agreement_id}`}</div>
+                  {milestone.project_address ? <div className="mt-1 text-sm text-slate-600">{milestone.project_address}</div> : null}
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-xs font-semibold uppercase text-slate-500">Review</div>
+                  <div className="mt-1 font-semibold text-slate-900">{milestone.reviewer_display || "Lead contractor"}</div>
+                  <div className="mt-1 text-sm text-slate-600">Your submission must be approved before this milestone is completed.</div>
+                </div>
+              </div>
+              {milestone.work_review_response_note ? (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                  <strong>Changes requested:</strong> {milestone.work_review_response_note}
+                </div>
+              ) : null}
+
               {milestone.description ? (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                   <div className="text-xs font-semibold text-slate-500">Description</div>
@@ -222,22 +236,22 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
 
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div className="text-xs text-slate-500">
-                  Add at least one note or upload a file before completing.
+                  Add a progress note or supporting photo before submitting for review.
                 </div>
 
                 <button
                   type="button"
                   onClick={requestComplete}
-                  disabled={!canWork || busy || milestone.completed || !hasEvidence}
+                  disabled={!canWork || busy || milestone.completed || !hasEvidence || milestone.work_submission_status === "submitted_for_review"}
                   className={[
                     "px-4 py-2 rounded-lg text-sm font-semibold",
                     !canWork || milestone.completed || !hasEvidence
                       ? "bg-slate-200 text-slate-500 cursor-not-allowed"
                       : "bg-blue-600 hover:bg-blue-700 text-white",
                   ].join(" ")}
-                  title={!hasEvidence ? "Add a note or upload a file first" : "Mark complete"}
+                  title={!hasEvidence ? "Add a note or upload a file first" : "Submit for lead-contractor review"}
                 >
-                  {milestone.completed ? "Completed" : busy ? "Working…" : "Mark Complete"}
+                  {milestone.completed ? "Completed" : milestone.work_submission_status === "submitted_for_review" ? "Awaiting Review" : busy ? "Submitting…" : "Submit for Review"}
                 </button>
               </div>
 
@@ -334,9 +348,9 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
         {confirmOpen && (
           <div className="absolute inset-0 bg-black/40 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 border">
-              <div className="text-lg font-bold text-slate-900">Mark milestone complete?</div>
+              <div className="text-lg font-bold text-slate-900">Submit completed work for review?</div>
               <div className="mt-2 text-sm text-slate-700">
-                You are about to mark <b>{milestone?.title}</b> as complete.
+                The lead contractor will review <b>{milestone?.title}</b>. They may approve it or return it with a request for more information or photos.
               </div>
 
               <div className="mt-4 flex justify-end gap-2">
@@ -352,7 +366,7 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                   onClick={confirmComplete}
                   className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold"
                 >
-                  Yes, Complete
+                  Submit for Review
                 </button>
               </div>
             </div>

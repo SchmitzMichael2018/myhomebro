@@ -15,12 +15,14 @@ from projects.models import (
     Milestone,
     MilestoneFile,
     MilestoneComment,
-    AgreementAssignment,
     MilestoneAssignment,
+    SubcontractorCompletionStatus,
 )
 from projects.utils.accounts import get_subaccount_for_user
-from projects.services.recurring_maintenance import handle_milestone_recurring_state_change
-from projects.utils.subaccount_scope import get_visible_milestones_for_subaccount
+from projects.utils.subaccount_scope import get_assigned_milestones_for_subaccount
+from projects.services.milestone_workflow import get_effective_reviewer
+from projects.services.subcontractor_notifications import create_subcontractor_activity_notification
+from projects.models import Notification
 
 
 ROLE_READONLY = "employee_readonly"
@@ -130,6 +132,7 @@ def _address_from_agreement(ag):
 
 
 def _milestone_payload(m: Milestone, ag=None):
+    reviewer = get_effective_reviewer(m)
     payload = {
         "id": m.id,
         "agreement_id": m.agreement_id,
@@ -144,6 +147,11 @@ def _milestone_payload(m: Milestone, ag=None):
         "is_invoiced": bool(getattr(m, "is_invoiced", False)),
         "invoice_id": getattr(m, "invoice_id", None),
         "is_late": bool(getattr(m, "is_late", False)),
+        "work_submission_status": getattr(m, "subcontractor_completion_status", SubcontractorCompletionStatus.NOT_SUBMITTED),
+        "work_submitted_at": getattr(m, "subcontractor_marked_complete_at", None),
+        "work_submission_note": getattr(m, "subcontractor_completion_note", "") or "",
+        "work_review_response_note": getattr(m, "subcontractor_review_response_note", "") or "",
+        "reviewer_display": getattr(reviewer, "display_name", "") or getattr(reviewer, "email", "") or "Lead contractor",
     }
 
     if ag is not None:
@@ -165,10 +173,9 @@ def my_milestones(request):
     sub = _require_active_subaccount(request)
 
     qs = (
-        get_visible_milestones_for_subaccount(
+        get_assigned_milestones_for_subaccount(
             subaccount=sub,
             MilestoneModel=Milestone,
-            AgreementAssignmentModel=AgreementAssignment,
             MilestoneAssignmentModel=MilestoneAssignment,
         )
         .select_related("agreement", "agreement__project", "agreement__homeowner")
@@ -188,10 +195,9 @@ def milestone_detail(request, milestone_id: int):
     sub = _require_active_subaccount(request)
 
     qs = (
-        get_visible_milestones_for_subaccount(
+        get_assigned_milestones_for_subaccount(
             subaccount=sub,
             MilestoneModel=Milestone,
-            AgreementAssignmentModel=AgreementAssignment,
             MilestoneAssignmentModel=MilestoneAssignment,
         )
         .select_related("agreement", "agreement__project", "agreement__homeowner")
@@ -250,10 +256,9 @@ def add_comment(request, milestone_id: int):
     if not content:
         return Response({"detail": "content is required"}, status=400)
 
-    qs = get_visible_milestones_for_subaccount(
+    qs = get_assigned_milestones_for_subaccount(
         subaccount=sub,
         MilestoneModel=Milestone,
-        AgreementAssignmentModel=AgreementAssignment,
         MilestoneAssignmentModel=MilestoneAssignment,
     )
 
@@ -283,10 +288,9 @@ def upload_file(request, milestone_id: int):
     if not _can_work(sub):
         return Response({"detail": "Read-only employee."}, status=403)
 
-    qs = get_visible_milestones_for_subaccount(
+    qs = get_assigned_milestones_for_subaccount(
         subaccount=sub,
         MilestoneModel=Milestone,
-        AgreementAssignmentModel=AgreementAssignment,
         MilestoneAssignmentModel=MilestoneAssignment,
     )
 
@@ -316,17 +320,16 @@ def upload_file(request, milestone_id: int):
 @permission_classes([IsAuthenticated])
 def mark_milestone_complete(request, milestone_id: int):
     """
-    Requires evidence (>=1 comment OR >=1 file) before completion.
-    Sets completed_at when completed.
+    Submit employee work for lead-contractor review. The reviewer, not the
+    employee, owns the authoritative completion transition.
     """
     sub = _require_active_subaccount(request)
     if not _can_work(sub):
         return Response({"detail": "Read-only employee."}, status=403)
 
-    qs = get_visible_milestones_for_subaccount(
+    qs = get_assigned_milestones_for_subaccount(
         subaccount=sub,
         MilestoneModel=Milestone,
-        AgreementAssignmentModel=AgreementAssignment,
         MilestoneAssignmentModel=MilestoneAssignment,
     )
 
@@ -335,15 +338,11 @@ def mark_milestone_complete(request, milestone_id: int):
     except Milestone.DoesNotExist:
         return Response({"detail": "Not found."}, status=404)
 
-    # Idempotent: if completed but timestamp missing, backfill
     if getattr(m, "completed", False):
-        if getattr(m, "completed_at", None) is None:
-            m.completed_at = timezone.now()
-            m.save(update_fields=["completed_at"])
-        return Response({"updated": False, "completed": True, "completed_at": m.completed_at})
+        return Response({"updated": False, "completed": True, "work_submission_status": "approved"})
 
-    comment_count = MilestoneComment.objects.filter(milestone=m).count()
     file_count = MilestoneFile.objects.filter(milestone=m).count()
+    comment_count = MilestoneComment.objects.filter(milestone=m).count()
     if comment_count == 0 and file_count == 0:
         return Response(
             {
@@ -352,11 +351,23 @@ def mark_milestone_complete(request, milestone_id: int):
             status=400,
         )
 
-    m.completed = True
-    m.completed_at = timezone.now()
-    m.save(update_fields=["completed", "completed_at"])
-    try:
-        handle_milestone_recurring_state_change(m)
-    except Exception:
-        pass
-    return Response({"updated": True, "completed": True, "completed_at": m.completed_at})
+    note = (request.data.get("note") or "").strip()
+    m.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+    m.subcontractor_marked_complete_at = timezone.now()
+    m.subcontractor_marked_complete_by = request.user
+    m.subcontractor_completion_note = note
+    m.subcontractor_reviewed_at = None
+    m.subcontractor_reviewed_by = None
+    m.subcontractor_review_response_note = ""
+    m.save(update_fields=[
+        "subcontractor_completion_status", "subcontractor_marked_complete_at",
+        "subcontractor_marked_complete_by", "subcontractor_completion_note",
+        "subcontractor_reviewed_at", "subcontractor_reviewed_by",
+        "subcontractor_review_response_note",
+    ])
+    create_subcontractor_activity_notification(
+        milestone=m,
+        actor_user=request.user,
+        event_type=Notification.EVENT_SUBCONTRACTOR_REVIEW,
+    )
+    return Response({"updated": True, "completed": False, "work_submission_status": "submitted_for_review"})

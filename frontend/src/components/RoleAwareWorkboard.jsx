@@ -162,7 +162,7 @@ function sectionKeyForItem(item, sourceSection) {
 }
 
 function flattenTaskItems(payload) {
-  return [
+  const items = [
     ...(Array.isArray(payload?.today) ? payload.today : []).map((item) => ({
       ...item,
       task_section: sectionKeyForItem(item, "today"),
@@ -176,6 +176,19 @@ function flattenTaskItems(payload) {
       task_section: sectionKeyForItem(item, "this_week"),
     })),
   ];
+  if (payload?.identity_type !== "internal_team_member") return items;
+
+  // Start and due events can describe the same assignment in one dashboard
+  // bucket. Prefer the due event and present/count that milestone once.
+  const byMilestoneAndSection = new Map();
+  items.forEach((item) => {
+    const key = `${item.task_section}:${item.milestone_id || item.id}`;
+    const existing = byMilestoneAndSection.get(key);
+    if (!existing || String(item.item_type || "").startsWith("due_")) {
+      byMilestoneAndSection.set(key, item);
+    }
+  });
+  return Array.from(byMilestoneAndSection.values());
 }
 
 function summarizeAgreementGroup(sectionKey, totalCount, priorityCount) {
@@ -304,10 +317,15 @@ function buildScheduleSummaries(payload) {
 
   const dueTodayItems = todayItems.filter((item) => item?.item_type !== "overdue");
 
-  const summarize = (items) => ({
-    count: items.length,
-    amount: items.reduce((sum, item) => sum + money(item?.amount), 0),
-  });
+  const summarize = (items) => {
+    const rows = payload?.identity_type === "internal_team_member"
+      ? Array.from(new Map(items.map((item) => [item.milestone_id || item.id, item])).values())
+      : items;
+    return {
+      count: rows.length,
+      amount: rows.reduce((sum, item) => sum + money(item?.amount), 0),
+    };
+  };
 
   return {
     past_due: summarize(pastDueItems),
@@ -433,7 +451,7 @@ function EmptyTasksCard() {
   );
 }
 
-function ScheduleSummaryCard({ title, subtitle, count, amount, onClick, testId }) {
+function ScheduleSummaryCard({ title, subtitle, count, amount, showAmount = true, onClick, testId }) {
   return (
     <button
       type="button"
@@ -448,9 +466,7 @@ function ScheduleSummaryCard({ title, subtitle, count, amount, onClick, testId }
             <div className="text-[15px] font-semibold leading-5 text-slate-900">{title}</div>
             <div className="mt-1 text-[13px] leading-5 text-slate-600">{subtitle}</div>
           </div>
-          <div className="shrink-0 text-right text-[20px] font-bold tracking-tight text-slate-950">
-            {formatCurrency(amount)}
-          </div>
+          {showAmount ? <div className="shrink-0 text-right text-[20px] font-bold tracking-tight text-slate-950">{formatCurrency(amount)}</div> : null}
         </div>
         <div className="text-sm font-medium text-slate-600">
           {count} {count === 1 ? "item" : "items"}
@@ -568,6 +584,8 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
 
   const taskSections = buildTaskSections(payload);
   const scheduleSummary = useMemo(() => buildScheduleSummaries(payload), [payload]);
+  const isEmployee = payload.identity_type === "internal_team_member";
+  const calendarRoute = isEmployee ? "/app/employee/calendar" : "/app/calendar";
 
   if (loading) {
     return (
@@ -592,7 +610,8 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
           subtitle="Items that need immediate attention."
           count={scheduleSummary.past_due.count}
           amount={scheduleSummary.past_due.amount}
-          onClick={() => navigate("/app/calendar?range=overdue")}
+          showAmount={!isEmployee}
+          onClick={() => navigate(`${calendarRoute}?range=overdue`)}
           testId="role-workboard-card-past-due"
         />
         <ScheduleSummaryCard
@@ -600,7 +619,8 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
           subtitle="Immediate actions and scheduled work."
           count={scheduleSummary.today.count}
           amount={scheduleSummary.today.amount}
-          onClick={() => navigate("/app/calendar?range=today")}
+          showAmount={!isEmployee}
+          onClick={() => navigate(`${calendarRoute}?range=today`)}
           testId="role-workboard-card-today"
         />
         <ScheduleSummaryCard
@@ -608,7 +628,8 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
           subtitle="What is coming up next."
           count={scheduleSummary.tomorrow.count}
           amount={scheduleSummary.tomorrow.amount}
-          onClick={() => navigate("/app/calendar?range=tomorrow")}
+          showAmount={!isEmployee}
+          onClick={() => navigate(`${calendarRoute}?range=tomorrow`)}
           testId="role-workboard-card-tomorrow"
         />
         <ScheduleSummaryCard
@@ -616,7 +637,8 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
           subtitle="Upcoming work and payment activity."
           count={scheduleSummary.this_week.count}
           amount={scheduleSummary.this_week.amount}
-          onClick={() => navigate("/app/calendar?range=week")}
+          showAmount={!isEmployee}
+          onClick={() => navigate(`${calendarRoute}?range=week`)}
           testId="role-workboard-card-this-week"
         />
       </div>
@@ -637,7 +659,7 @@ export default function RoleAwareWorkboard({ title = null, subtitle = null }) {
         ))
       )}
       <RecentActivitySection
-        items={payload.recent_activity}
+        items={isEmployee ? payload.recent_activity.slice(0, 3) : payload.recent_activity}
         emptyText={payload.empty_states?.recent_activity || "No recent activity."}
         onAction={onAction}
       />

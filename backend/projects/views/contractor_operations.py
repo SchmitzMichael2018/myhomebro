@@ -29,7 +29,7 @@ from projects.services.milestone_workflow import (
     get_effective_reviewer,
 )
 from projects.utils.accounts import get_contractor_for_user, get_subaccount_for_user
-from projects.utils.subaccount_scope import get_visible_milestones_for_subaccount
+from projects.utils.subaccount_scope import get_visible_milestones_for_subaccount, get_assigned_milestones_for_subaccount
 
 
 ROLE_CONTRACTOR_OWNER = "contractor_owner"
@@ -253,10 +253,9 @@ def _contractor_milestones(contractor: Contractor):
 
 def _internal_team_milestones(subaccount):
     visible_qs = (
-        get_visible_milestones_for_subaccount(
+        get_assigned_milestones_for_subaccount(
             subaccount=subaccount,
             MilestoneModel=Milestone,
-            AgreementAssignmentModel=AgreementAssignment,
             MilestoneAssignmentModel=MilestoneAssignment,
         )
     )
