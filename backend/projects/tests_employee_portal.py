@@ -61,6 +61,12 @@ class EmployeePortalWorkflowTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(len(response.data["milestones"]), 2)
+        assignment_flags = {
+            milestone["id"]: milestone["is_assigned_to_me"]
+            for milestone in response.data["milestones"]
+        }
+        self.assertTrue(assignment_flags[self.assigned.id])
+        self.assertFalse(assignment_flags[self.context_only.id])
         for milestone in response.data["milestones"]:
             self.assertNotIn("amount", milestone)
             self.assertNotIn("invoice_id", milestone)

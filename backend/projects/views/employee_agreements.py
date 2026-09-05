@@ -189,6 +189,15 @@ def agreement_detail(request, agreement_id: int):
         .filter(agreement_id=agreement_id)
         .order_by("order", "id")
     )
+    assigned_milestone_ids = set(
+        MilestoneAssignment.objects.filter(subaccount=sub, milestone__agreement_id=agreement_id)
+        .values_list("milestone_id", flat=True)
+    )
+    assigned_milestone_ids.update(
+        MilestoneCollaboratorAssignment.objects.filter(
+            subaccount=sub, milestone__agreement_id=agreement_id
+        ).values_list("milestone_id", flat=True)
+    )
 
     milestones = []
     for m in ms_qs:
@@ -204,6 +213,7 @@ def agreement_detail(request, agreement_id: int):
                 "completed": bool(getattr(m, "completed", False)),
                 "completed_at": getattr(m, "completed_at", None),
                 "is_late": bool(getattr(m, "is_late", False)),
+                "is_assigned_to_me": m.id in assigned_milestone_ids,
             }
         )
 

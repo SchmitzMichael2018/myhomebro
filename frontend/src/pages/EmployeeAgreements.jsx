@@ -9,6 +9,7 @@ import api from "../api";
 import { useWhoAmI } from "../hooks/useWhoAmI";
 import toast from "react-hot-toast";
 import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
+import EmployeeMilestoneModal from "./EmployeeMilestoneModal.jsx";
 
 function fmtDate(v) {
   if (!v) return "—";
@@ -79,6 +80,12 @@ export default function EmployeeAgreements() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState(null);
+  const [activeMilestoneId, setActiveMilestoneId] = useState(null);
+
+  const openAssignedWork = (milestoneId) => {
+    setDetailOpen(false);
+    setActiveMilestoneId(milestoneId);
+  };
 
   const load = async () => {
     try {
@@ -338,12 +345,18 @@ export default function EmployeeAgreements() {
                     <th className="px-4 py-2 text-left">Milestone</th>
                     <th className="px-4 py-2 text-left">Due</th>
                     <th className="px-4 py-2 text-left">Status</th>
+                    <th className="px-4 py-2 text-right">Access</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Array.isArray(detail.milestones) && detail.milestones.length ? (
                     detail.milestones.map((m) => (
-                      <tr key={m.id} className="border-t">
+                      <tr
+                        key={m.id}
+                        className={`border-t ${m.is_assigned_to_me ? "cursor-pointer hover:bg-blue-50" : "opacity-70"}`}
+                        onClick={m.is_assigned_to_me ? () => openAssignedWork(m.id) : undefined}
+                        title={m.is_assigned_to_me ? "Open your assigned milestone" : "Project context only — not assigned to you"}
+                      >
                         <td className="px-4 py-2">{m.order ?? "—"}</td>
                         <td className="px-4 py-2">
                           <div className="font-semibold">{m.title}</div>
@@ -363,11 +376,27 @@ export default function EmployeeAgreements() {
                             <Badge tone="amber">Open</Badge>
                           )}
                         </td>
+                        <td className="px-4 py-2 text-right">
+                          {m.is_assigned_to_me ? (
+                            <button
+                              type="button"
+                              className="mhb-btn primary min-h-10 whitespace-nowrap px-3 py-1.5 text-xs"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openAssignedWork(m.id);
+                              }}
+                            >
+                              Open work
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-500">Context only</span>
+                          )}
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={4} className="px-4 py-6 text-gray-500">
+                      <td colSpan={5} className="px-4 py-6 text-gray-500">
                         No milestones found.
                       </td>
                     </tr>
@@ -382,6 +411,16 @@ export default function EmployeeAgreements() {
           </>
         )}
       </Modal>
+      {activeMilestoneId ? (
+        <EmployeeMilestoneModal
+          milestoneId={activeMilestoneId}
+          onClose={() => setActiveMilestoneId(null)}
+          onUpdated={() => {
+            setActiveMilestoneId(null);
+            load();
+          }}
+        />
+      ) : null}
     </div>
     </ContractorPageSurface>
   );
