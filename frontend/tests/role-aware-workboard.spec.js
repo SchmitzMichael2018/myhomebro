@@ -87,6 +87,8 @@ test('employee dashboard renders shared workboard sections and reviewer actions'
 
   await page.goto('/app/employee/dashboard', { waitUntil: 'domcontentloaded' });
 
+  await expect(page.getByTestId('employee-dashboard-operational')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'My Assigned Work' })).toBeVisible();
   await expect(page.getByTestId('role-workboard-today')).toBeVisible();
   await expect(page.getByTestId('workboard-item-review_submission-901')).toContainText(
     'Cabinet Install is awaiting your review'

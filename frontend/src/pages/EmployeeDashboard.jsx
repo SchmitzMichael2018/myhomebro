@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import api from "../api";
 import EmployeeMilestoneModal from "./EmployeeMilestoneModal.jsx";
 import RoleAwareWorkboard from "../components/RoleAwareWorkboard.jsx";
+import ContractorPageSurface from "../components/dashboard/ContractorPageSurface.jsx";
 
 function dateOnly(v) {
   if (!v) return null;
@@ -50,11 +51,6 @@ export default function EmployeeDashboard() {
     load();
   }, []);
 
-  const totalAmount = useMemo(
-    () => milestones.reduce((sum, m) => sum + Number(m.amount || 0), 0),
-    [milestones]
-  );
-
   const lateItems = useMemo(
     () => milestones.filter((m) => !!m.is_late && !m.completed),
     [milestones]
@@ -86,14 +82,6 @@ export default function EmployeeDashboard() {
     navigate(`/app/employee/milestones?filter=${encodeURIComponent(filterKey)}`);
   }
 
-  function openBucket(items, filterKey) {
-    if (items.length === 1) {
-      setActiveId(items[0].id);
-      return;
-    }
-    openList(filterKey);
-  }
-
   async function markComplete(id) {
     if (!canWork || !id) return;
 
@@ -110,43 +98,53 @@ export default function EmployeeDashboard() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-gradient-to-br from-blue-700 via-blue-600 to-yellow-200 p-8">
-      <div className="max-w-6xl mx-auto">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Team Member</h1>
-            <p className="text-slate-800/80 mt-1">
-              Here are the milestones assigned to you.
-            </p>
-            <div className="mt-2 text-xs font-semibold text-slate-700">
-              {loading ? "Loading…" : canWork ? "Work enabled" : "Read-only"}
-            </div>
-          </div>
-
+    <ContractorPageSurface
+      eyebrow="Team workspace"
+      title="My Assigned Work"
+      subtitle="Review your schedule, open assigned milestones, and submit completed work for lead-contractor review."
+      variant="operational"
+      className="mx-auto max-w-[1180px]"
+      contentClassName="space-y-5"
+      actions={
+        <div className="flex items-center gap-3">
+          <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${canWork ? "border-emerald-300/35 bg-emerald-400/10 text-emerald-100" : "border-amber-300/35 bg-amber-400/10 text-amber-100"}`}>
+            {loading ? "Loading…" : canWork ? "Work enabled" : "Read-only"}
+          </span>
           <button
             type="button"
             onClick={load}
-            className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold hover:bg-slate-800"
+            className="mhb-btn primary px-4 py-2 text-sm font-semibold"
           >
             Refresh
           </button>
         </div>
+      }
+    >
+      <div data-testid="employee-dashboard-operational" className="space-y-5">
 
-        {error && (
-          <div className="mt-4 rounded-lg bg-red-50 border border-red-200 p-4 text-red-700">
+        {error ? (
+          <div className="rounded-xl border border-red-300/35 bg-red-400/10 p-4 text-red-100">
             {error}
           </div>
-        )}
+        ) : null}
 
-        <div className="mt-6">
+        <section className="rounded-2xl border border-white/10 bg-[#071d42]/80 p-4 shadow-[0_18px_46px_rgba(2,8,23,0.2)] md:p-5">
+          <div className="mb-3">
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-100/60">Today</div>
+            <h2 className="mt-1 text-xl font-bold text-white">Workboard</h2>
+            <p className="mt-1 text-sm text-sky-100/70">Your most urgent assigned work and recent updates.</p>
+          </div>
           <RoleAwareWorkboard />
-        </div>
+        </section>
 
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-6">
-          <StatCard title="TODAY" value={loading ? "…" : todayItems.length} onClick={() => openBucket(todayItems, "today")} />
-          <StatCard title="UPCOMING (7 DAYS)" value={loading ? "…" : upcomingItems.length} onClick={() => openBucket(upcomingItems, "upcoming")} />
-          <StatCard title="LATE" value={loading ? "…" : lateItems.length} accent="danger" onClick={() => openBucket(lateItems, "late")} />
-          <StatCard title="TOTAL" value={loading ? "…" : milestones.length} sub={loading ? "" : moneyFmt(totalAmount)} onClick={() => navigate("/app/employee/milestones")} />
+        <div className="flex flex-wrap items-end justify-between gap-3 border-b border-white/10 pb-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-100/60">Milestones</div>
+            <h2 className="mt-1 text-xl font-bold text-white">Assigned milestone schedule</h2>
+          </div>
+          <button type="button" onClick={() => navigate("/app/employee/milestones")} className="mhb-btn px-4 py-2 text-sm font-semibold">
+            View all {loading ? "" : `(${milestones.length})`}
+          </button>
         </div>
 
         <Section
@@ -189,39 +187,13 @@ export default function EmployeeDashboard() {
       {activeId ? (
         <EmployeeMilestoneModal milestoneId={activeId} onClose={() => setActiveId(null)} onUpdated={load} />
       ) : null}
-    </div>
-  );
-}
-
-function StatCard({ title, value, sub = "", accent = "normal", onClick }) {
-  const ring = accent === "danger" ? "ring-2 ring-red-500" : "ring-1 ring-black/5";
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick?.();
-        }
-      }}
-      className={[
-        "rounded-xl bg-white shadow-sm border border-slate-100 p-5",
-        ring,
-        "cursor-pointer hover:shadow-md transition",
-      ].join(" ")}
-    >
-      <div className="text-xs font-semibold tracking-wider text-slate-500">{title}</div>
-      <div className="mt-2 text-3xl font-bold text-slate-900">{value}</div>
-      {sub ? <div className="mt-1 text-sm font-semibold text-slate-700">{sub}</div> : null}
-    </div>
+    </ContractorPageSurface>
   );
 }
 
 function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onOpen, onComplete, busyId }) {
   return (
-    <div className="mt-6 rounded-xl bg-white shadow-sm border border-slate-100">
+    <section className="rounded-2xl border border-white/10 bg-[#071d42]/80 shadow-[0_18px_46px_rgba(2,8,23,0.2)]">
       <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
         <h2 className="font-semibold text-slate-900">
           <button type="button" className="cursor-pointer hover:underline" onClick={onHeaderClick}>
@@ -309,6 +281,6 @@ function Section({ title, onHeaderClick, loading, items, emptyText, canWork, onO
           </div>
         )}
       </div>
-    </div>
+    </section>
   );
 }
