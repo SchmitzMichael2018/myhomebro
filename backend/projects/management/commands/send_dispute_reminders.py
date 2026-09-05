@@ -37,7 +37,11 @@ class Command(BaseCommand):
             response_due_at__gt=now,
         )
 
-        for d in qs_response_soon.iterator():
+        # Materialize each candidate set before delivery work.  Keeping a SQLite
+        # iterator cursor open while email/in-app delivery runs can retain a read
+        # lock for the full network operation and block unrelated writes such as
+        # milestone attachment uploads.
+        for d in list(qs_response_soon):
             kind = "response_24h"
             if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
                 skipped += 1
@@ -65,7 +69,7 @@ class Command(BaseCommand):
             response_due_at__lte=now,
         )
 
-        for d in qs_response_overdue.iterator():
+        for d in list(qs_response_overdue):
             kind = "response_overdue"
             if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
                 skipped += 1
@@ -91,7 +95,7 @@ class Command(BaseCommand):
             proposal_due_at__gt=now,
         ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "canceled"])
 
-        for d in qs_prop_soon.iterator():
+        for d in list(qs_prop_soon):
             kind = "proposal_24h"
             if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
                 skipped += 1
@@ -121,7 +125,7 @@ class Command(BaseCommand):
             proposal_due_at__lte=now,
         ).exclude(status__in=["resolved_contractor", "resolved_homeowner", "canceled"])
 
-        for d in qs_prop_overdue.iterator():
+        for d in list(qs_prop_overdue):
             kind = "proposal_overdue"
             if DisputeReminderLog.objects.filter(dispute=d, kind=kind).exists():
                 skipped += 1

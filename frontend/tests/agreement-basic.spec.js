@@ -7375,8 +7375,13 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
   });
 
   const milestoneFiles = [];
+  let uploadedRequestBytes = 0;
+  let uploadedRequestBody = '';
   await page.route(/\/api\/projects\/milestones\/702\/files\/?$/, async (route) => {
     if (route.request().method() === 'POST') {
+      const requestBody = route.request().postDataBuffer();
+      uploadedRequestBytes = requestBody?.byteLength || 0;
+      uploadedRequestBody = requestBody?.toString('utf8') || '';
       milestoneFiles.unshift({
         id: 990,
         milestone: 702,
@@ -7433,16 +7438,16 @@ test('milestones page deep links to agreement milestone and opens opaque modal',
   await expect(page.getByTestId('milestone-locked-explanation')).toContainText('This milestone is part of a signed agreement');
   await expect(page.getByTestId('milestone-attachments-section')).toContainText('Add Completion Photos / Documents');
   await expect(page.getByTestId('milestone-attachments-section')).toContainText('Upload photos, receipts, or documents');
-  await page.getByLabel('Add Completion Photos / Documents').setInputFiles({
-    name: 'completion-photo.png',
-    mimeType: 'image/png',
-    buffer: Buffer.from('completion evidence'),
-  });
+  await page
+    .getByLabel('Add Completion Photos / Documents')
+    .setInputFiles('src/assets/landing/contractor-card.png');
   await page.getByTestId('milestone-attachments-section').getByRole('button', { name: 'Upload', exact: true }).click();
   await expect(page.getByTestId('milestone-attachments-section').getByRole('status')).toContainText(
-    /Uploading|Saving attachment/
+    /Preparing image|Uploading|Saving attachment/
   );
   await expect(page.getByTestId('milestone-attachments-section')).toContainText('completion-photo.png');
+  expect(uploadedRequestBody).toContain('contractor-card.webp');
+  expect(uploadedRequestBytes).toBeLessThan(750_000);
   await expect(page.getByTestId('milestone-request-change-helper')).toContainText('Use this if the milestone scope, price, or timing changed');
   await expect(page.getByTestId('milestone-final-action-section')).toContainText('Final Action');
   await expect(page.getByTestId('milestone-final-complete-action')).toContainText('Complete Milestone');

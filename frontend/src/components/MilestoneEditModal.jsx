@@ -108,6 +108,72 @@ const safeJsonString = (v) => {
   }
 };
 
+const MAX_MILESTONE_IMAGE_EDGE = 1920;
+const IMAGE_OPTIMIZATION_THRESHOLD_BYTES = 750 * 1024;
+const MILESTONE_IMAGE_QUALITY = 0.82;
+
+const optimizedImageName = (name = "attachment") => {
+  const base = String(name)
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-");
+  return `${base || "attachment"}.webp`;
+};
+
+const optimizeMilestoneImage = async (source) => {
+  if (
+    !source?.type?.startsWith("image/") ||
+    source.size < IMAGE_OPTIMIZATION_THRESHOLD_BYTES
+  ) {
+    return source;
+  }
+
+  let drawable;
+  let objectUrl;
+  try {
+    if (typeof createImageBitmap === "function") {
+      drawable = await createImageBitmap(source, {
+        imageOrientation: "from-image",
+      });
+    } else {
+      objectUrl = URL.createObjectURL(source);
+      drawable = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("Unable to decode image."));
+        image.src = objectUrl;
+      });
+    }
+    const sourceWidth = drawable.width || drawable.naturalWidth;
+    const sourceHeight = drawable.height || drawable.naturalHeight;
+    const scale = Math.min(
+      1,
+      MAX_MILESTONE_IMAGE_EDGE / Math.max(sourceWidth, sourceHeight)
+    );
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) return source;
+    context.drawImage(drawable, 0, 0, width, height);
+    const blob = await new Promise((resolve) =>
+      canvas.toBlob(resolve, "image/webp", MILESTONE_IMAGE_QUALITY)
+    );
+    if (!blob || blob.size >= source.size) return source;
+    return new File([blob], optimizedImageName(source.name), {
+      type: "image/webp",
+      lastModified: source.lastModified,
+    });
+  } catch (error) {
+    console.warn("Milestone image optimization unavailable; uploading original.", error);
+    return source;
+  } finally {
+    drawable?.close?.();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  }
+};
+
 const truthy = (v) => v === true || v === 1 || v === "1" || String(v || "").toLowerCase() === "true";
 
 /**
@@ -247,6 +313,7 @@ export default function MilestoneEditModal({
   const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
+  const [uploadStage, setUploadStage] = useState("");
   const [uploadError, setUploadError] = useState("");
 
   const [recentAttachments, setRecentAttachments] = useState([]);
@@ -722,7 +789,12 @@ export default function MilestoneEditModal({
     }
 
     setUploading(true);
-    setUploadProgress(0);
+    setUploadProgress(null);
+    setUploadStage(
+      file.type?.startsWith("image/")
+        ? "Preparing image for upload…"
+        : "Preparing upload…"
+    );
     setUploadError("");
 
     const postFD = (url, fd) =>
@@ -735,26 +807,39 @@ export default function MilestoneEditModal({
         },
       });
 
+    let uploadPayload = file;
     const verify = async () => {
       const list = await fetchMilestoneAttachments(currentMilestone.id);
       setRecentAttachments(list.slice(0, 10));
       return list.find(
         (a) =>
-          a.file_name === file.name ||
-          a.filename === file.name ||
-          String(a.file || "").endsWith(file.name)
+          a.file_name === uploadPayload.name ||
+          a.filename === uploadPayload.name ||
+          String(a.file || "").endsWith(uploadPayload.name)
       );
     };
 
     try {
+      uploadPayload = await optimizeMilestoneImage(file);
       const fd = new FormData();
-      fd.append("file", file);
-      await postFD(`/projects/milestones/${currentMilestone.id}/files/`, fd);
-      const found = await verify();
-      if (found) {
+      fd.append("file", uploadPayload);
+      setUploadProgress(0);
+      setUploadStage("");
+      const { data: savedAttachment } = await postFD(
+        `/projects/milestones/${currentMilestone.id}/files/`,
+        fd
+      );
+      if (savedAttachment?.id) {
+        setRecentAttachments((existing) =>
+          [
+            savedAttachment,
+            ...existing.filter((item) => item.id !== savedAttachment.id),
+          ].slice(0, 10)
+        );
         toast.success("File uploaded");
         setFile(null);
         setUploadProgress(null);
+        setUploadStage("");
         setUploading(false);
         return;
       }
@@ -765,6 +850,7 @@ export default function MilestoneEditModal({
           toast.success("File uploaded");
           setFile(null);
           setUploadProgress(null);
+          setUploadStage("");
           setUploading(false);
           return;
         }
@@ -779,6 +865,7 @@ export default function MilestoneEditModal({
       setUploadError(resp?.status ? `HTTP ${resp.status}: ${body}` : body);
       toast.error(`Upload failed: ${body}`);
       setUploadProgress(null);
+      setUploadStage("");
       setUploading(false);
       return;
     }
@@ -786,6 +873,7 @@ export default function MilestoneEditModal({
     setUploadError("Upload accepted but attachment not visible yet.");
     toast.error("Server accepted upload, but attachment not visible yet.");
     setUploadProgress(null);
+    setUploadStage("");
     setUploading(false);
   }, [file, currentMilestone?.id, actionReadOnly]);
 
@@ -1681,9 +1769,9 @@ export default function MilestoneEditModal({
 
             {uploading ? (
               <div className="mt-2 text-xs text-gray-600" role="status" aria-live="polite">
-                {uploadProgress !== null && uploadProgress < 100
+                {uploadStage || (uploadProgress !== null && uploadProgress < 100
                   ? `Uploading ${uploadProgress}%…`
-                  : "Upload received. Saving attachment…"}
+                  : "Upload received. Saving attachment…")}
               </div>
             ) : null}
 
