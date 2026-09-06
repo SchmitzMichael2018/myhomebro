@@ -51,9 +51,9 @@ export async function uploadEmployeeMilestoneFile(milestoneId, file) {
   const fd = new FormData();
   fd.append("file", file);
 
-  const res = await api.post(`/projects/employee/milestones/${milestoneId}/files/`, fd, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+  // Let the browser set Content-Type so the multipart boundary is included.
+  // Supplying the header manually can produce an empty upload on mobile WebViews.
+  const res = await api.post(`/projects/employee/milestones/${milestoneId}/files/`, fd);
   return res.data;
 }
 

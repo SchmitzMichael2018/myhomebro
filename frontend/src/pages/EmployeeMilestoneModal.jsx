@@ -44,6 +44,8 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   const [commentText, setCommentText] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [uploadSucceeded, setUploadSucceeded] = useState(false);
   const cameraInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -101,19 +103,29 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   }
 
   async function handleUpload(e) {
-    const file = e.target.files?.[0];
+    const input = e.currentTarget;
+    const file = input.files?.[0];
     if (!file) return;
+
+    // Reset immediately so taking another photo with the same generated name
+    // still triggers a change event on iOS/Android installed apps.
+    input.value = "";
 
     setBusy(true);
     setErr("");
+    setUploadSucceeded(false);
+    setUploadMessage(`Uploading ${file.name || "photo"}…`);
     try {
       await uploadEmployeeMilestoneFile(milestoneId, file);
-      e.target.value = "";
       await load();
+      setUploadSucceeded(true);
+      setUploadMessage("Photo saved to this milestone.");
       onUpdated?.();
     } catch (e2) {
       console.error(e2);
-      setErr(e2?.response?.data?.detail || e2?.message || "Upload failed.");
+      const detail = e2?.response?.data?.detail || e2?.message || "Upload failed.";
+      setUploadMessage(`Photo was not saved. ${detail}`);
+      setErr(detail);
     } finally {
       setBusy(false);
     }
@@ -350,6 +362,20 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                   <div className="w-full text-sm text-[var(--mhb-text-secondary)]">
                     Take a new jobsite photo or attach an existing photo or PDF as proof of work.
                   </div>
+                  {uploadMessage ? (
+                    <div
+                      role="status"
+                      className={`w-full rounded-lg border px-3 py-2 text-sm font-semibold ${
+                        uploadSucceeded
+                          ? "border-emerald-400/50 bg-emerald-500/15 text-[var(--mhb-text-primary)]"
+                          : busy
+                            ? "border-blue-400/50 bg-blue-500/15 text-[var(--mhb-text-primary)]"
+                            : "border-red-400/50 bg-red-500/15 text-[var(--mhb-text-primary)]"
+                      }`}
+                    >
+                      {uploadMessage}
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="mt-3 space-y-2">
