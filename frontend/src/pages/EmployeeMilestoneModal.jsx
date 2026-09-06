@@ -244,10 +244,10 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                   onClick={requestComplete}
                   disabled={!canWork || busy || milestone.completed || !hasEvidence || milestone.work_submission_status === "submitted_for_review"}
                   className={[
-                    "px-4 py-2 rounded-lg text-sm font-semibold",
-                    !canWork || milestone.completed || !hasEvidence
-                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                      : "bg-blue-600 hover:bg-blue-700 text-white",
+                    "min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold",
+                    !canWork || busy || milestone.completed || !hasEvidence || milestone.work_submission_status === "submitted_for_review"
+                      ? "!border-slate-500 !bg-slate-700 !text-slate-100 !opacity-100 cursor-not-allowed"
+                      : "border-blue-600 bg-blue-600 hover:bg-blue-700 text-white",
                   ].join(" ")}
                   title={!hasEvidence ? "Add a note or upload a file first" : "Submit for lead-contractor review"}
                 >
@@ -275,10 +275,10 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                     onClick={handleAddComment}
                     disabled={!canWork || busy || !commentText.trim()}
                     className={[
-                      "px-4 py-2 rounded-lg text-sm font-semibold",
-                      !canWork || !commentText.trim()
-                        ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-                        : "bg-slate-900 hover:bg-slate-800 text-white",
+                      "min-h-11 rounded-lg border px-4 py-2 text-sm font-semibold",
+                      !canWork || busy || !commentText.trim()
+                        ? "!border-slate-500 !bg-slate-700 !text-slate-100 !opacity-100 cursor-not-allowed"
+                        : "border-blue-600 bg-blue-600 hover:bg-blue-700 text-white",
                     ].join(" ")}
                   >
                     {busy ? "Posting…" : "Post"}
