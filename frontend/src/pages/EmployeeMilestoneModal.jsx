@@ -1,7 +1,7 @@
 // frontend/src/pages/EmployeeMilestoneModal.jsx
 // v2026-01-07b — Require evidence (>=1 note OR >=1 file) before completion + confirmation
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   fetchEmployeeMilestoneDetail,
@@ -44,6 +44,8 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   const [commentText, setCommentText] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const cameraInputRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   const title = useMemo(() => milestone?.title || `Milestone #${milestoneId}`, [milestone, milestoneId]);
 
@@ -309,9 +311,45 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                   <div className="text-sm text-[var(--mhb-text-secondary)]">{files.length} file(s)</div>
                 </div>
 
-                <div className="mt-3 flex items-center gap-3 flex-wrap">
-                  <input type="file" onChange={handleUpload} disabled={!canWork || busy} accept="image/*,application/pdf" />
-                  <div className="text-sm text-[var(--mhb-text-secondary)]">Upload photos or PDFs as proof of work.</div>
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    className="sr-only"
+                    onChange={handleUpload}
+                    disabled={!canWork || busy}
+                    accept="image/*"
+                    capture="environment"
+                    aria-label="Take a photo"
+                  />
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="sr-only"
+                    onChange={handleUpload}
+                    disabled={!canWork || busy}
+                    accept="image/*,application/pdf"
+                    aria-label="Choose an existing photo or PDF"
+                  />
+                  <button
+                    type="button"
+                    className="mhb-btn primary min-h-11 px-4 py-2 text-sm font-semibold"
+                    onClick={() => cameraInputRef.current?.click()}
+                    disabled={!canWork || busy}
+                  >
+                    Take Photo
+                  </button>
+                  <button
+                    type="button"
+                    className="mhb-btn min-h-11 px-4 py-2 text-sm font-semibold"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={!canWork || busy}
+                  >
+                    Upload Photo or PDF
+                  </button>
+                  <div className="w-full text-sm text-[var(--mhb-text-secondary)]">
+                    Take a new jobsite photo or attach an existing photo or PDF as proof of work.
+                  </div>
                 </div>
 
                 <div className="mt-3 space-y-2">
