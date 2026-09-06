@@ -5,10 +5,11 @@
 // - Remember Me controls token persistence via setTokens(..., remember)
 
 import React, { useEffect, useRef, useState, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import api, { setTokens } from "../api";
 import toast from "react-hot-toast";
 import { resolveAuthenticatedEntry } from "../lib/contractorOnboardingRoute.js";
+import logo from "../assets/myhomebro_logo.png";
 
 export default function LoginForm({ redirectTo = "/dashboard" }) {
   const navigate = useNavigate();
@@ -140,7 +141,22 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
   };
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <main className="flex min-h-[100dvh] items-center justify-center bg-[radial-gradient(circle_at_top_left,_rgba(245,178,30,0.24),_transparent_34%),linear-gradient(145deg,_#06152d,_#0a2b59)] px-4 py-8">
+      <section className="w-full max-w-md rounded-3xl border border-white/15 bg-white p-6 shadow-2xl sm:p-8" aria-labelledby="login-title">
+        <div className="mb-7 text-center">
+          <Link to="/" className="inline-flex items-center justify-center gap-3" aria-label="MyHomeBro home">
+            <img src={logo} alt="" className="h-14 w-14 rounded-2xl object-cover shadow-lg" />
+            <span className="text-2xl font-black tracking-tight text-slate-950">
+              MyHome<span className="text-amber-500">Bro</span>
+            </span>
+          </Link>
+          <h1 id="login-title" className="mt-6 text-2xl font-extrabold text-slate-950">Welcome back</h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Sign in to your contractor, team member, or customer workspace.
+          </p>
+        </div>
+
+        <form onSubmit={submit} className="space-y-4">
       <input
         ref={emailRef}
         type="email"
@@ -203,6 +219,18 @@ export default function LoginForm({ redirectTo = "/dashboard" }) {
       >
         {loading ? "Signing In..." : "Sign In"}
       </button>
-    </form>
+        </form>
+
+        <div className="mt-6 flex items-center justify-between gap-4 border-t border-slate-200 pt-5 text-sm">
+          <Link to="/forgot-password" className="font-semibold text-blue-700 hover:text-blue-800 hover:underline">
+            Forgot password?
+          </Link>
+          <Link to="/" className="font-semibold text-slate-600 hover:text-slate-900 hover:underline">
+            Back to home
+          </Link>
+        </div>
+        <p className="mt-6 text-center text-xs text-slate-500">Secure project access by MyHomeBro</p>
+      </section>
+    </main>
   );
 }
