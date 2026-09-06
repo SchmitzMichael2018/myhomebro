@@ -169,12 +169,12 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   }, [onClose, confirmOpen]);
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-black/60 flex items-center justify-center p-3 sm:p-6">
-      <div className="w-full max-w-3xl max-h-[92vh] overflow-y-auto bg-white rounded-2xl shadow-2xl relative">
+    <div className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-2 sm:p-6">
+      <div className="mhb-operational-inner w-full max-w-4xl max-h-[94vh] overflow-y-auto rounded-2xl border shadow-2xl relative text-[var(--mhb-text-primary)]">
         <div className="px-5 py-4 border-b flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-lg font-bold text-slate-900 truncate">{title}</div>
-            <div className="text-sm text-slate-600 mt-1">
+            <div className="text-xl font-bold text-[var(--mhb-text-primary)] truncate">{title}</div>
+            <div className="text-sm text-[var(--mhb-text-secondary)] mt-1">
               Agreement <span className="font-semibold">#{milestone?.agreement_id ?? "—"}</span> • Due{" "}
               <span className="font-semibold">{due}</span> •{" "}
               <span className="font-semibold">Milestone {milestone?.order || "—"}</span>
@@ -184,7 +184,7 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 font-semibold"
+            className="mhb-btn min-h-11 px-4 py-2 font-semibold"
           >
             Close
           </button>
@@ -210,15 +210,15 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
               </div>
 
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Project</div>
-                  <div className="mt-1 font-semibold text-slate-900">{milestone.project_title || `Agreement #${milestone.agreement_id}`}</div>
-                  {milestone.project_address ? <div className="mt-1 text-sm text-slate-600">{milestone.project_address}</div> : null}
+                <div className="mhb-operational-card rounded-xl border p-4">
+                  <div className="text-xs font-semibold uppercase text-[var(--mhb-text-secondary)]">Project</div>
+                  <div className="mt-1 font-semibold text-[var(--mhb-text-primary)]">{milestone.project_title || `Agreement #${milestone.agreement_id}`}</div>
+                  {milestone.project_address ? <div className="mt-1 text-sm text-[var(--mhb-text-secondary)]">{milestone.project_address}</div> : null}
                 </div>
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="text-xs font-semibold uppercase text-slate-500">Review</div>
-                  <div className="mt-1 font-semibold text-slate-900">{milestone.reviewer_display || "Lead contractor"}</div>
-                  <div className="mt-1 text-sm text-slate-600">Your submission must be approved before this milestone is completed.</div>
+                <div className="mhb-operational-card rounded-xl border p-4">
+                  <div className="text-xs font-semibold uppercase text-[var(--mhb-text-secondary)]">Review</div>
+                  <div className="mt-1 font-semibold text-[var(--mhb-text-primary)]">{milestone.reviewer_display || "Lead contractor"}</div>
+                  <div className="mt-1 text-sm text-[var(--mhb-text-secondary)]">Your submission must be approved before this milestone is completed.</div>
                 </div>
               </div>
               {milestone.work_review_response_note ? (
@@ -228,14 +228,14 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
               ) : null}
 
               {milestone.description ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="text-xs font-semibold text-slate-500">Description</div>
-                  <div className="mt-1 text-slate-800 whitespace-pre-wrap">{milestone.description}</div>
+                <div className="mhb-operational-card rounded-xl border p-4">
+                  <div className="text-xs font-semibold text-[var(--mhb-text-secondary)]">Description</div>
+                  <div className="mt-1 text-[var(--mhb-text-primary)] whitespace-pre-wrap">{milestone.description}</div>
                 </div>
               ) : null}
 
               <div className="flex items-center justify-between flex-wrap gap-3">
-                <div className="text-xs text-slate-500">
+                <div className="text-sm text-[var(--mhb-text-secondary)]">
                   Add a progress note or supporting photo before submitting for review.
                 </div>
 
@@ -256,10 +256,10 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
               </div>
 
               {/* Notes */}
-              <div className="rounded-xl border border-slate-200 p-4">
+              <div className="mhb-operational-card rounded-xl border p-4">
                 <div className="flex items-center justify-between">
-                  <div className="font-semibold text-slate-900">Notes</div>
-                  <div className="text-xs text-slate-500">{comments.length} note(s)</div>
+                  <div className="font-semibold text-[var(--mhb-text-primary)]">Notes</div>
+                  <div className="text-sm text-[var(--mhb-text-secondary)]">{comments.length} note(s)</div>
                 </div>
 
                 <div className="mt-3 flex gap-2">
@@ -268,7 +268,7 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                     onChange={(e) => setCommentText(e.target.value)}
                     disabled={!canWork || busy}
                     placeholder={canWork ? "Add a note…" : "Read-only"}
-                    className="flex-1 border rounded-lg px-3 py-2"
+                    className="mhb-input min-h-11 flex-1 rounded-lg border px-3 py-2"
                   />
                   <button
                     type="button"
@@ -287,7 +287,7 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
 
                 <div className="mt-3 space-y-2">
                   {comments.length === 0 ? (
-                    <div className="text-sm text-slate-600">No notes yet.</div>
+                    <div className="text-sm text-[var(--mhb-text-secondary)]">No notes yet.</div>
                   ) : (
                     comments.map((c) => (
                       <div key={c.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -303,20 +303,20 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
               </div>
 
               {/* Files */}
-              <div className="rounded-xl border border-slate-200 p-4">
+              <div className="mhb-operational-card rounded-xl border p-4">
                 <div className="flex items-center justify-between">
-                  <div className="font-semibold text-slate-900">Images / Files</div>
-                  <div className="text-xs text-slate-500">{files.length} file(s)</div>
+                  <div className="font-semibold text-[var(--mhb-text-primary)]">Images / Files</div>
+                  <div className="text-sm text-[var(--mhb-text-secondary)]">{files.length} file(s)</div>
                 </div>
 
                 <div className="mt-3 flex items-center gap-3 flex-wrap">
                   <input type="file" onChange={handleUpload} disabled={!canWork || busy} accept="image/*,application/pdf" />
-                  <div className="text-xs text-slate-500">Upload photos or PDFs as proof of work.</div>
+                  <div className="text-sm text-[var(--mhb-text-secondary)]">Upload photos or PDFs as proof of work.</div>
                 </div>
 
                 <div className="mt-3 space-y-2">
                   {files.length === 0 ? (
-                    <div className="text-sm text-slate-600">No files uploaded yet.</div>
+                    <div className="text-sm text-[var(--mhb-text-secondary)]">No files uploaded yet.</div>
                   ) : (
                     files.map((f) => (
                       <div key={f.id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">

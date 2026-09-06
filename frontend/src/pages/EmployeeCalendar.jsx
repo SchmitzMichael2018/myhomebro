@@ -149,7 +149,7 @@ export default function EmployeeCalendar() {
     <div data-testid="employee-calendar-page">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <div className="text-sm text-slate-600 mt-1">
+          <div className="text-sm text-[var(--mhb-text-secondary)] mt-1">
             {loading ? "Loading…" : canWork ? "Work enabled" : "Read-only"} • Showing assigned milestones only
           </div>
         </div>
@@ -157,7 +157,7 @@ export default function EmployeeCalendar() {
         <button
           type="button"
           onClick={load}
-          className="rounded-lg bg-slate-900 text-white px-4 py-2 font-semibold hover:bg-slate-800"
+          className="mhb-btn primary min-h-11 px-4 py-2 font-semibold"
         >
           Refresh
         </button>
@@ -171,10 +171,10 @@ export default function EmployeeCalendar() {
 
       <div className="mt-5 flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <button type="button" onClick={() => setCursorMonth((d) => addMonths(d, -1))} className="px-3 py-2 rounded-lg border bg-white hover:bg-slate-50 font-semibold">
+          <button type="button" onClick={() => setCursorMonth((d) => addMonths(d, -1))} className="mhb-btn min-h-11 px-3 py-2 font-semibold">
             ◀
           </button>
-          <button type="button" onClick={() => setCursorMonth((d) => addMonths(d, 1))} className="px-3 py-2 rounded-lg border bg-white hover:bg-slate-50 font-semibold">
+          <button type="button" onClick={() => setCursorMonth((d) => addMonths(d, 1))} className="mhb-btn min-h-11 px-3 py-2 font-semibold">
             ▶
           </button>
           <button
@@ -184,15 +184,15 @@ export default function EmployeeCalendar() {
               setCursorMonth(new Date(now.getFullYear(), now.getMonth(), 1));
               setSelectedDay(now);
             }}
-            className="px-3 py-2 rounded-lg border bg-white hover:bg-slate-50 font-semibold"
+            className="mhb-btn min-h-11 px-3 py-2 font-semibold"
           >
             Today
           </button>
         </div>
 
-        <div className="text-lg font-extrabold text-slate-900">{fmtMonthYear(cursorMonth)}</div>
+        <div className="text-lg font-extrabold text-[var(--mhb-text-primary)]">{fmtMonthYear(cursorMonth)}</div>
 
-        <div className="text-sm text-slate-600">
+        <div className="text-sm text-[var(--mhb-text-secondary)]">
           Selected: <span className="font-semibold">{selectedISO || "—"}</span>
         </div>
       </div>
