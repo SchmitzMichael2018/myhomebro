@@ -57,6 +57,12 @@ export async function uploadEmployeeMilestoneFile(milestoneId, file) {
   return res.data;
 }
 
+export async function deleteEmployeeMilestoneFile(milestoneId, fileId) {
+  if (!milestoneId) throw new Error("milestoneId is required");
+  if (!fileId) throw new Error("fileId is required");
+  await api.delete(`/projects/employee/milestones/${milestoneId}/files/${fileId}/`);
+}
+
 /**
  * POST /api/projects/employee/milestones/:id/complete/
  * Returns: { updated: boolean, completed: boolean }

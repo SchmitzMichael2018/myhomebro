@@ -11,11 +11,13 @@ from projects.models import (
     Milestone,
     MilestoneAssignment,
     MilestoneComment,
+    MilestoneFile,
     Project,
     SubcontractorCompletionStatus,
     Notification,
 )
 from projects.services.notification_center import get_notification_queryset_for_user
+from django.core.files.uploadedfile import SimpleUploadedFile
 
 
 class EmployeePortalWorkflowTests(TestCase):
@@ -102,6 +104,33 @@ class EmployeePortalWorkflowTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_employee_can_delete_own_evidence_but_not_another_users_file(self):
+        own_file = MilestoneFile.objects.create(
+            milestone=self.assigned,
+            uploaded_by=self.employee_user,
+            file=SimpleUploadedFile("own-photo.jpg", b"photo", content_type="image/jpeg"),
+        )
+        owner_file = MilestoneFile.objects.create(
+            milestone=self.assigned,
+            uploaded_by=self.owner_user,
+            file=SimpleUploadedFile("owner-photo.jpg", b"photo", content_type="image/jpeg"),
+        )
+
+        detail = self.client.get(f"/api/projects/employee/milestones/{self.assigned.id}/")
+        flags = {row["id"]: row["can_delete"] for row in detail.data["files"]}
+        self.assertTrue(flags[own_file.id])
+        self.assertFalse(flags[owner_file.id])
+
+        denied = self.client.delete(
+            f"/api/projects/employee/milestones/{self.assigned.id}/files/{owner_file.id}/"
+        )
+        self.assertEqual(denied.status_code, 404)
+        deleted = self.client.delete(
+            f"/api/projects/employee/milestones/{self.assigned.id}/files/{own_file.id}/"
+        )
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(MilestoneFile.objects.filter(id=own_file.id).exists())
 
     def test_employee_notification_scope_excludes_contractor_financial_events(self):
         Notification.objects.create(

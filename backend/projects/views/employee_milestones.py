@@ -238,6 +238,7 @@ def milestone_detail(request, milestone_id: int):
                     "uploaded_by_email": getattr(getattr(f, "uploaded_by", None), "email", None),
                     "file_url": request.build_absolute_uri(f.file.url) if getattr(f, "file", None) else None,
                     "uploaded_at": f.uploaded_at,
+                    "can_delete": f.uploaded_by_id == request.user.id and _can_work(sub),
                 }
                 for f in files
             ],
@@ -371,3 +372,33 @@ def mark_milestone_complete(request, milestone_id: int):
         event_type=Notification.EVENT_SUBCONTRACTOR_REVIEW,
     )
     return Response({"updated": True, "completed": False, "work_submission_status": "submitted_for_review"})
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_file(request, milestone_id: int, file_id: int):
+    sub = _require_active_subaccount(request)
+    if not _can_work(sub):
+        return Response({"detail": "Read-only employee."}, status=403)
+
+    assigned = get_assigned_milestones_for_subaccount(
+        subaccount=sub,
+        MilestoneModel=Milestone,
+        MilestoneAssignmentModel=MilestoneAssignment,
+    ).filter(id=milestone_id).exists()
+    if not assigned:
+        return Response({"detail": "Not found."}, status=404)
+
+    try:
+        evidence = MilestoneFile.objects.get(
+            id=file_id,
+            milestone_id=milestone_id,
+            uploaded_by=request.user,
+        )
+    except MilestoneFile.DoesNotExist:
+        return Response({"detail": "Not found."}, status=404)
+
+    if evidence.file:
+        evidence.file.delete(save=False)
+    evidence.delete()
+    return Response(status=204)

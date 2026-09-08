@@ -7,6 +7,7 @@ import {
   fetchEmployeeMilestoneDetail,
   addEmployeeMilestoneComment,
   uploadEmployeeMilestoneFile,
+  deleteEmployeeMilestoneFile,
   submitEmployeeMilestoneForReview,
 } from "../api/employeeMilestones";
 
@@ -46,6 +47,8 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
   const [uploadSucceeded, setUploadSucceeded] = useState(false);
+  const [previewFile, setPreviewFile] = useState(null);
+  const [fileToDelete, setFileToDelete] = useState(null);
   const cameraInputRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -131,6 +134,28 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
     }
   }
 
+  async function confirmDeleteFile() {
+    if (!fileToDelete?.id || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await deleteEmployeeMilestoneFile(milestoneId, fileToDelete.id);
+      if (previewFile?.id === fileToDelete.id) setPreviewFile(null);
+      setFileToDelete(null);
+      setUploadSucceeded(true);
+      setUploadMessage("Photo deleted from this milestone.");
+      await load();
+      onUpdated?.();
+    } catch (error) {
+      const detail = error?.response?.data?.detail || error?.message || "Delete failed.";
+      setErr(detail);
+      setUploadSucceeded(false);
+      setUploadMessage(`Photo was not deleted. ${detail}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function requestComplete() {
     if (!canWork || busy || milestone?.completed) return;
 
@@ -174,13 +199,15 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   useEffect(() => {
     function onKey(e) {
       if (e.key === "Escape") {
-        if (confirmOpen) setConfirmOpen(false);
+        if (fileToDelete) setFileToDelete(null);
+        else if (previewFile) setPreviewFile(null);
+        else if (confirmOpen) setConfirmOpen(false);
         else onClose?.();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, confirmOpen]);
+  }, [onClose, confirmOpen, fileToDelete, previewFile]);
 
   return (
     <div className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-2 sm:p-6">
@@ -394,9 +421,25 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                           </div>
                         </div>
                         {f.file_url ? (
-                          <a href={f.file_url} target="_blank" rel="noreferrer" className="text-blue-700 font-semibold underline">
-                            Open
-                          </a>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <button
+                              type="button"
+                              className="mhb-btn min-h-10 px-3 py-1.5 text-sm font-semibold"
+                              onClick={() => setPreviewFile(f)}
+                            >
+                              View
+                            </button>
+                            {f.can_delete ? (
+                              <button
+                                type="button"
+                                className="min-h-10 rounded-lg border border-red-400/60 bg-red-500/15 px-3 py-1.5 text-sm font-semibold text-red-200 hover:bg-red-500/25"
+                                onClick={() => setFileToDelete(f)}
+                                disabled={busy}
+                              >
+                                Delete
+                              </button>
+                            ) : null}
+                          </div>
                         ) : (
                           <span className="text-slate-400 text-sm">—</span>
                         )}
@@ -436,6 +479,39 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
             </div>
           </div>
         )}
+
+        {previewFile?.file_url ? (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/90 p-3 sm:p-6" role="dialog" aria-modal="true" aria-label="Evidence preview">
+            <div className="flex max-h-full w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/20 bg-slate-950 shadow-2xl">
+              <div className="flex items-center justify-between gap-3 border-b border-white/15 px-4 py-3 text-white">
+                <div className="min-w-0 truncate font-semibold">Milestone evidence</div>
+                <button type="button" className="min-h-11 rounded-lg border border-white/30 bg-white/10 px-4 font-semibold hover:bg-white/20" onClick={() => setPreviewFile(null)}>
+                  Close
+                </button>
+              </div>
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-3">
+                {/\.(?:jpe?g|png|gif|webp|heic|heif)(?:\?.*)?$/i.test(previewFile.file_url) ? (
+                  <img src={previewFile.file_url} alt="Milestone evidence" className="max-h-[78vh] max-w-full object-contain" />
+                ) : (
+                  <iframe src={previewFile.file_url} title="Milestone evidence" className="h-[78vh] w-full rounded-lg bg-white" />
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {fileToDelete ? (
+          <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/80 p-4" role="dialog" aria-modal="true" aria-labelledby="delete-evidence-title">
+            <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-900 p-5 text-white shadow-2xl">
+              <h2 id="delete-evidence-title" className="text-xl font-bold">Delete this photo?</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-200">It will be permanently removed from this milestone’s evidence.</p>
+              <div className="mt-5 flex justify-end gap-3">
+                <button type="button" className="min-h-11 rounded-lg border border-white/25 px-4 font-semibold" onClick={() => setFileToDelete(null)} disabled={busy}>Cancel</button>
+                <button type="button" className="min-h-11 rounded-lg bg-red-600 px-4 font-semibold text-white hover:bg-red-700" onClick={confirmDeleteFile} disabled={busy}>{busy ? "Deleting…" : "Delete Photo"}</button>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
