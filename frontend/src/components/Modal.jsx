@@ -115,15 +115,15 @@ export default function Modal({
         }
       >
         {hideHeader ? null : (
-          <header className="flex items-center justify-between border-b px-5 py-3">
+          <header className="flex shrink-0 items-center justify-between border-b px-5 py-3">
             <h3 id={titleIdRef.current} className="text-xl font-semibold text-gray-800">
               {title}
             </h3>
             <button
               type="button"
               onClick={onClose}
-              aria-label="Close modal"
-              className="rounded p-1 text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Close dialog"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               ×
             </button>

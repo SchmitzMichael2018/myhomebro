@@ -300,6 +300,11 @@ test("customer project dashboard opens from the agreement link and updates next 
     buffer: Buffer.from("photo"),
   });
   await expect(page.getByTestId("project-photos")).toContainText("Exterior photo");
+  await page.getByRole("button", { name: /exterior photo/i }).click();
+  await expect(page.getByTestId("project-photo-viewer")).toBeVisible();
+  await expect(page.getByTestId("project-photo-viewer-close")).toBeVisible();
+  await page.getByTestId("project-photo-viewer-close").click();
+  await expect(page.getByTestId("project-photo-viewer")).toBeHidden();
 
   state.value = "signed";
   await page.reload({ waitUntil: "domcontentloaded" });

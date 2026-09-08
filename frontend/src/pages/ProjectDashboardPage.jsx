@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Sparkles,
   Upload,
+  X,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -1036,19 +1037,31 @@ export default function ProjectDashboardPage() {
         visible={Boolean(selectedPhoto)}
         title={selectedPhoto?.title || "Project photo"}
         onClose={() => setSelectedPhoto(null)}
-        containerClassName="max-w-4xl"
-        bodyClassName="max-h-[85vh] px-0 py-0"
+        testId="project-photo-viewer"
+        containerClassName="mx-3 flex max-h-[calc(100dvh-1.5rem)] max-w-4xl flex-col rounded-2xl"
+        bodyClassName="min-h-0 flex-1 px-0 py-0"
       >
         {selectedPhoto ? (
-          <div className="bg-slate-950">
+          <div className="flex min-h-0 flex-1 flex-col bg-slate-950">
             <img
               src={selectedPhoto.url}
               alt={selectedPhoto.title || "Project photo"}
-              className="max-h-[80vh] w-full object-contain"
+              className="min-h-0 flex-1 w-full object-contain"
             />
-            <div className="space-y-1 bg-white px-5 py-4">
-              <div className="text-sm font-semibold text-slate-900">{selectedPhoto.title}</div>
-              <div className="text-xs text-slate-500">{formatDate(selectedPhoto.uploaded_at)}</div>
+            <div className="flex shrink-0 items-center justify-between gap-3 bg-white px-4 py-3 sm:px-5">
+              <div className="min-w-0 space-y-1">
+                <div className="truncate text-sm font-semibold text-slate-900">{selectedPhoto.title}</div>
+                <div className="text-xs text-slate-500">{formatDate(selectedPhoto.uploaded_at)}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPhoto(null)}
+                className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2"
+                data-testid="project-photo-viewer-close"
+              >
+                <X aria-hidden="true" size={18} />
+                Close
+              </button>
             </div>
           </div>
         ) : null}
