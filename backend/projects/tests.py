@@ -31052,6 +31052,39 @@ class DisputeMutationSafetyTests(TestCase):
         recommendation_required = prompt["json_schema"]["schema"]["properties"]["recommendation"]["required"]
         self.assertIn("advisory_boundary", recommendation_required)
 
+    @patch("projects.ai.disputes_recommendation._require_openai_client")
+    def test_ai_dispute_recommendation_serializes_evidence_dates_and_decimals(self, mock_client_factory):
+        from projects.ai.disputes_recommendation import generate_dispute_recommendation
+
+        client = Mock()
+        client.responses.create.return_value = SimpleNamespace(output_text="{}")
+        mock_client_factory.return_value = client
+        active_dispute = self._active_dispute("Serializable evidence")
+        observed_at = timezone.now()
+
+        result = generate_dispute_recommendation(
+            dispute=active_dispute,
+            evidence_context={
+                "agreement": {
+                    "created_at": observed_at,
+                    "start_date": observed_at.date(),
+                    "total_amount": Decimal("750.00"),
+                }
+            },
+            force=True,
+        )
+
+        request = client.responses.create.call_args.kwargs
+        user_payload = json.loads(request["input"][1]["content"])
+        encoded_created_at = user_payload["evidence_context"]["agreement"]["created_at"]
+        self.assertEqual(
+            datetime.fromisoformat(encoded_created_at.replace("Z", "+00:00")),
+            observed_at.replace(microsecond=(observed_at.microsecond // 1000) * 1000),
+        )
+        self.assertEqual(user_payload["evidence_context"]["agreement"]["start_date"], observed_at.date().isoformat())
+        self.assertEqual(user_payload["evidence_context"]["agreement"]["total_amount"], "750.00")
+        self.assertEqual(result.payload["_artifact_type"], "recommendation")
+
 
 class ResolutionWorkspacePhase2Tests(TestCase):
     def setUp(self):

@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 
 from django.conf import settings
 from django.core.cache import cache
+from django.core.serializers.json import DjangoJSONEncoder
 from rest_framework.exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
@@ -335,7 +336,9 @@ def generate_dispute_recommendation(
                 {
                     "role": "user",
                     "content": json.dumps(
-                        prompt["user_json"], ensure_ascii=False
+                        prompt["user_json"],
+                        ensure_ascii=False,
+                        cls=DjangoJSONEncoder,
                     ),
                 },
             ],
