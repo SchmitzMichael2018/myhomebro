@@ -150,6 +150,8 @@ function normalizeProjectClassFilter(value) {
 }
 
 const hasInvoiceLink = (m) => !!pick(m?.invoice, m?.invoice_id, m?.invoiceId);
+const isWarrantyServiceMilestone = (m) =>
+  String(m?.normalized_milestone_type || "").trim().toLowerCase() === "warranty_service";
 
 const getInvoiceIdFromMilestone = (m) => {
   const inv = m?.invoice;
@@ -171,6 +173,7 @@ const isPaidFromInvoice = (m, invoicesMap) => {
 };
 
 const deriveMilestonePhaseLabel = (m, invoicesMap) => {
+  if (isWarrantyServiceMilestone(m) && m.completed === true) return "Completed (No Payment)";
   const invoiceId = getInvoiceIdFromMilestone(m);
   const inv = invoiceId ? invoicesMap[String(invoiceId)] : null;
   const displayMilestone = inv
@@ -599,10 +602,14 @@ export default function MilestoneList() {
 
   const canComplete = (m) => getCompleteBlockReason(m) === "";
 
-  const isCompletedNotInvoiced = (m) => m.completed === true && !(m.is_invoiced === true || hasInvoiceLink(m));
+  const isCompletedNotInvoiced = (m) =>
+    m.completed === true &&
+    !isWarrantyServiceMilestone(m) &&
+    !(m.is_invoiced === true || hasInvoiceLink(m));
 
   const getInvoiceBlockReason = (m) => {
     if (!m?._agId) return "Missing agreement id.";
+    if (isWarrantyServiceMilestone(m)) return "Covered warranty work does not require an invoice or customer payment.";
     if (m._requiresEscrow && m._escrowFunded !== true) return "Escrow must be funded before invoicing milestones.";
     if (!(m.completed === true)) return "Milestone must be completed before invoicing.";
     if (m.is_invoiced === true || hasInvoiceLink(m)) return "Already invoiced.";

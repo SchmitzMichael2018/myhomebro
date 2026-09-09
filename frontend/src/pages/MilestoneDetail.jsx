@@ -303,7 +303,9 @@ export default function MilestoneDetail() {
     (typeof milestone?.invoice === "object" ? milestone.invoice?.id ?? milestone.invoice?.invoice_id ?? milestone.invoice?.pk : milestone?.invoice) ??
     milestone?.invoice_id ?? milestone?.invoiceId ?? null;
   const isInvoiced = milestone?.is_invoiced === true || !!invoiceId;
-  const canSubmitInvoice = !readOnly && milestone?.completed === true && !isInvoiced;
+  const isWarrantyService =
+    String(milestone?.normalized_milestone_type || "").trim().toLowerCase() === "warranty_service";
+  const canSubmitInvoice = !readOnly && milestone?.completed === true && !isInvoiced && !isWarrantyService;
 
   const submitInvoice = async () => {
     if (!canSubmitInvoice || invoiceCreating) return;

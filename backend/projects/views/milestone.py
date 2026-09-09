@@ -1775,6 +1775,12 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         milestone: Milestone = self.get_object()
         agreement = milestone.agreement
 
+        if (getattr(milestone, "normalized_milestone_type", "") or "").strip().lower() == "warranty_service":
+            return Response(
+                {"detail": "Covered warranty milestones do not require an invoice or customer payment."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if not getattr(milestone, "completed", False):
             return Response({"detail": "Milestone must be completed before invoicing."}, status=status.HTTP_400_BAD_REQUEST)
 

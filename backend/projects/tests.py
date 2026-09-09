@@ -7386,6 +7386,16 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(work_order.milestone.amount, Decimal("0.00"))
         self.assertFalse(work_order.milestone.is_invoiced)
         self.assertEqual(request_row.status, WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED)
+        invoice_response = self.client.post(
+            f"/api/projects/milestones/{work_order.milestone_id}/create-invoice/",
+            {},
+            format="json",
+        )
+        self.assertEqual(invoice_response.status_code, 400)
+        self.assertIn("do not require an invoice", invoice_response.json()["detail"])
+        work_order.milestone.refresh_from_db()
+        self.assertFalse(work_order.milestone.is_invoiced)
+        self.assertIsNone(work_order.milestone.invoice_id)
         self.assertTrue(
             SmartNotification.objects.filter(
                 recipient_email__iexact=self.homeowner.email,
