@@ -132,6 +132,58 @@ class EmployeePortalWorkflowTests(TestCase):
         self.assertEqual(deleted.status_code, 204)
         self.assertFalse(MilestoneFile.objects.filter(id=own_file.id).exists())
 
+    def test_employee_can_edit_only_their_own_milestone_note(self):
+        own_note = MilestoneComment.objects.create(
+            milestone=self.assigned,
+            author=self.employee_user,
+            content="Original note",
+        )
+        owner_note = MilestoneComment.objects.create(
+            milestone=self.assigned,
+            author=self.owner_user,
+            content="Owner note",
+        )
+
+        detail = self.client.get(f"/api/projects/employee/milestones/{self.assigned.id}/")
+        flags = {row["id"]: row["can_edit"] for row in detail.data["comments"]}
+        self.assertTrue(flags[own_note.id])
+        self.assertFalse(flags[owner_note.id])
+
+        updated = self.client.patch(
+            f"/api/projects/employee/milestones/{self.assigned.id}/comments/{own_note.id}/",
+            {"content": "Corrected jobsite note"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        own_note.refresh_from_db()
+        self.assertEqual(own_note.content, "Corrected jobsite note")
+
+        denied = self.client.patch(
+            f"/api/projects/employee/milestones/{self.assigned.id}/comments/{owner_note.id}/",
+            {"content": "Not allowed"},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, 404)
+        owner_note.refresh_from_db()
+        self.assertEqual(owner_note.content, "Owner note")
+
+    def test_employee_cannot_replace_note_with_blank_content(self):
+        note = MilestoneComment.objects.create(
+            milestone=self.assigned,
+            author=self.employee_user,
+            content="Keep this note",
+        )
+
+        response = self.client.patch(
+            f"/api/projects/employee/milestones/{self.assigned.id}/comments/{note.id}/",
+            {"content": "   "},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        note.refresh_from_db()
+        self.assertEqual(note.content, "Keep this note")
+
     def test_employee_notification_scope_excludes_contractor_financial_events(self):
         Notification.objects.create(
             contractor=self.contractor,
