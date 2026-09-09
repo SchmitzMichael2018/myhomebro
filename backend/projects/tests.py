@@ -15477,6 +15477,10 @@ class ProgressPaymentWorkflowTests(TestCase):
         self.assertEqual(response.data["mode"], "escrow_release")
         retrieve.assert_called_once_with("pi_missing_funding_row", expand=["latest_charge"])
         self.assertEqual(transfer.call_args.kwargs["source_transaction"], "ch_recovered_funding")
+        self.assertEqual(
+            transfer.call_args.kwargs["idempotency_key"],
+            f"escrow-release-invoice:{invoice.id}:ch_recovered_funding:62950:acct_invoice_ready",
+        )
         payment = Payment.objects.get(
             agreement=self.agreement,
             stripe_payment_intent_id="pi_missing_funding_row",

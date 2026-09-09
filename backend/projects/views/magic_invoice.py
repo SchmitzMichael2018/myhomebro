@@ -694,7 +694,10 @@ class MagicInvoiceApproveView(APIView):
                     currency="usd",
                     destination=str(destination_acct),
                     source_transaction=source_charge_id,
-                    idempotency_key=f"escrow-release-invoice:{invoice.id}",
+                    idempotency_key=(
+                        f"escrow-release-invoice:{invoice.id}:"
+                        f"{source_charge_id}:{int(payout_cents)}:{destination_acct}"
+                    ),
                     metadata={
                         "kind": "milestone_escrow_release",
                         "invoice_id": str(invoice.id),

@@ -19,6 +19,7 @@ from ..models import Invoice, InvoiceStatus, MilestoneComment, MilestoneFile
 from ..serializers.invoices import InvoiceSerializer
 from projects.services.invoice_pdf import generate_invoice_pdf_bytes
 from projects.services.invites_delivery import send_postmark_email
+from projects.services.sms_automation import evaluate_sms_automation
 
 # ✅ Direct Pay service
 from projects.services.direct_pay import create_direct_pay_checkout_for_invoice
@@ -488,7 +489,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             invoice.last_email_error = ""
             invoice.save(update_fields=["email_sent_at", "email_message_id", "last_email_error"])
 
-            return Response(self.get_serializer(invoice, context={"request": request}).data, status=status.HTTP_200_OK)
+            sms_delivery = evaluate_sms_automation(
+                "invoice_ready",
+                homeowner=invoice.agreement.homeowner,
+                agreement=invoice.agreement,
+                invoice=invoice,
+                metadata={"notification_source": "invoice_resend", "manual_resend": True},
+            )
+
+            payload = self.get_serializer(invoice, context={"request": request}).data
+            payload["sms_delivery"] = sms_delivery
+            return Response(payload, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.exception("Invoice resend email failed for invoice %s", invoice.id)

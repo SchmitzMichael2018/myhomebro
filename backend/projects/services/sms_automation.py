@@ -557,6 +557,7 @@ def evaluate_sms_automation(
         )
         return {**decision, "decision_id": decision_obj.id}
 
+    manual_resend = bool(metadata.get("manual_resend"))
     suppressed, suppression_reason = should_escalate_or_suppress(
         event_type,
         phone_number_e164=phone_number_e164,
@@ -564,7 +565,7 @@ def evaluate_sms_automation(
         invoice=ctx.get("invoice"),
         milestone=ctx.get("milestone"),
     )
-    if suppressed:
+    if suppressed and not manual_resend:
         decision = _build_decision_payload(
             should_send=False,
             reason_code=suppression_reason,
@@ -596,7 +597,7 @@ def evaluate_sms_automation(
         )
         return {**decision, "decision_id": decision_obj.id}
 
-    if has_recent_similar_sms(
+    if not manual_resend and has_recent_similar_sms(
         phone_number_e164=phone_number_e164,
         template_key=template.template_key,
         event_type=event_type,

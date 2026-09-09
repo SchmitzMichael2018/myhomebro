@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
+from rest_framework.test import APIClient
 
 from projects.models import Agreement, Contractor, Homeowner, Invoice, Project
 from projects.models_sms import SMSConsent
@@ -13,12 +14,12 @@ from projects.services.sms_service import set_sms_opt_in
 
 class InvoiceNotificationTests(TestCase):
     def setUp(self):
-        user = get_user_model().objects.create_user(
+        self.user = get_user_model().objects.create_user(
             email="invoice-notifications@example.com",
             password="testpass123",
         )
         self.contractor = Contractor.objects.create(
-            user=user,
+            user=self.user,
             business_name="Invoice Notification Builder",
         )
         self.homeowner = Homeowner.objects.create(
@@ -38,6 +39,8 @@ class InvoiceNotificationTests(TestCase):
             homeowner=self.homeowner,
             total_cost=Decimal("1000.00"),
         )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
 
     @override_settings(CELERY_NOTIFICATIONS_ENABLED=False)
     @patch("projects.signals.notify_invoice_created")
@@ -103,3 +106,41 @@ class InvoiceNotificationTests(TestCase):
         self.assertTrue(second_result["sent"])
         self.assertEqual(send_sms.call_count, 2)
 
+    def test_manual_resend_bypasses_recent_invoice_sms_deduplication(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+        invoice = Invoice.objects.create(agreement=self.agreement, amount=Decimal("250.00"))
+        with patch(
+            "projects.services.sms_automation.send_compliant_sms",
+            return_value={"ok": True, "twilio_sid": "SM-RESENT", "status": "sent"},
+        ) as send_sms:
+            evaluate_sms_automation("invoice_ready", invoice=invoice)
+            result = evaluate_sms_automation(
+                "invoice_ready",
+                invoice=invoice,
+                metadata={"manual_resend": True},
+            )
+
+        self.assertTrue(result["sent"])
+        self.assertEqual(send_sms.call_count, 2)
+
+    @patch("projects.views.invoice.evaluate_sms_automation")
+    @patch("projects.views.invoice._send_invoice_email_postmark", return_value={"MessageID": "email-1"})
+    def test_manual_invoice_resend_also_retries_consent_aware_sms(self, _email, evaluate_sms):
+        evaluate_sms.return_value = {"sent": True, "reason_code": "sent"}
+        invoice = Invoice.objects.create(agreement=self.agreement, amount=Decimal("250.00"), status="pending")
+
+        response = self.client.post(f"/api/projects/invoices/{invoice.id}/resend/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["sms_delivery"]["sent"])
+        evaluate_sms.assert_called_once_with(
+            "invoice_ready",
+            homeowner=self.homeowner,
+            agreement=self.agreement,
+            invoice=invoice,
+            metadata={"notification_source": "invoice_resend", "manual_resend": True},
+        )
