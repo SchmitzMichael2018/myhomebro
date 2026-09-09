@@ -115,14 +115,18 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
     setErr("");
     setLoading(true);
     try {
-      const res = await api.post(`/projects/disputes/${disputeId}/ai/recommendation/`, {
-        force,
-        context: serializeAiContext(buildAiContext({
-          page: "disputes",
-          entityId: disputeId || null,
-          entityType: "dispute",
-        })),
-      });
+      const res = await api.post(
+        `/projects/disputes/${disputeId}/ai/recommendation/`,
+        {
+          force,
+          context: serializeAiContext(buildAiContext({
+            page: "disputes",
+            entityId: disputeId || null,
+            entityType: "dispute",
+          })),
+        },
+        { timeout: 120000 },
+      );
       const parsedResponse = parseDisputeRecommendationResponse(res.data?.payload || res.data);
       if (!parsedResponse.overview && !parsedResponse.recommendation) {
         setErr("Resolution Assistant returned an unexpected response. Please try again.");
