@@ -8,7 +8,6 @@ from django.utils import timezone
 from projects.models import (
     AgreementAssignment,
     Contractor,
-    ContractorSubAccount,
     Milestone,
     MilestoneAssignment,
     SubcontractorCompletionStatus,
@@ -106,10 +105,22 @@ def build_contractor_attention_counts(contractor: Contractor | None, *, user=Non
         contractor=contractor,
         status=SubcontractorInvitationStatus.PENDING,
     ).count()
-    active_subcontractor_count = ContractorSubAccount.objects.filter(
-        parent_contractor=contractor,
-        is_active=True,
-    ).count()
+    # ContractorSubAccount rows are employees. The subcontractor directory is
+    # built from accepted external invitations, grouped by the accepted user
+    # (or normalized invitation email when an account is not linked).
+    accepted_subcontractor_identities = set()
+    accepted_invitations = SubcontractorInvitation.objects.filter(
+        contractor=contractor,
+        status=SubcontractorInvitationStatus.ACCEPTED,
+    ).only("accepted_by_user_id", "invite_email")
+    for invitation in accepted_invitations:
+        if invitation.accepted_by_user_id:
+            accepted_subcontractor_identities.add(("user", invitation.accepted_by_user_id))
+            continue
+        email = (invitation.invite_email or "").strip().lower()
+        if email:
+            accepted_subcontractor_identities.add(("email", email))
+    active_subcontractor_count = len(accepted_subcontractor_identities)
 
     total_attention_count = (
         awaiting_review_count

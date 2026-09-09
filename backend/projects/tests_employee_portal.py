@@ -17,6 +17,7 @@ from projects.models import (
     Notification,
 )
 from projects.services.notification_center import get_notification_queryset_for_user
+from projects.services.team_attention import build_contractor_attention_counts
 from django.core.files.uploadedfile import SimpleUploadedFile
 
 
@@ -222,3 +223,8 @@ class EmployeePortalWorkflowTests(TestCase):
         queryset, _ = get_notification_queryset_for_user(self.employee_user)
 
         self.assertFalse(queryset.filter(event_type=Notification.EVENT_PAYMENT_RELEASED).exists())
+
+    def test_employee_account_does_not_count_as_a_subcontractor(self):
+        counts = build_contractor_attention_counts(self.contractor)
+
+        self.assertEqual(counts["active_subcontractor_count"], 0)
