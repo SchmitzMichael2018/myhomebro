@@ -194,3 +194,23 @@ test('Agreement Workspace renders read-only activation preview', async ({ page }
   await expect(page.getByTestId('activation-milestone-timeline')).toContainText('Demo and prep');
   await expect(page.getByTestId('activation-customer-launch-preview')).toContainText('project kickoff');
 });
+
+test('Agreement Workspace summarizes milestone and invoice payment progress', async ({ page }) => {
+  const invoices = [
+    { id: 1, amount: '650.00', status: 'paid' },
+    { id: 2, amount: '700.00', status: 'pending', escrow_released: true },
+    { id: 3, amount: '650.00', status: 'released' },
+    { id: 4, amount: '1650.00', status: 'paid' },
+    { id: 5, amount: '1650.00', status: 'paid' },
+    { id: 6, amount: '400.00', status: 'paid' },
+    { id: 7, amount: '300.00', status: 'pending' },
+    { id: 8, amount: '200.00', status: 'void' },
+  ];
+  await installAgreementDetailMocks(page, { agreement: agreementPayload({ invoices }) });
+
+  await page.goto(`/app/agreements/${AGREEMENT_ID}/workspace`, { waitUntil: 'domcontentloaded' });
+
+  const progress = page.getByText('Milestone & Payment Progress').locator('..');
+  await expect(progress).toContainText('Milestones: 0 of 1 complete (0%)');
+  await expect(progress).toContainText('Payments: 6 of 7 invoices paid');
+});

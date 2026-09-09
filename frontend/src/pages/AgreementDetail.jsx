@@ -3283,6 +3283,30 @@ export default function AgreementDetail({
       ])
       .filter(([invoiceId]) => invoiceId)
   );
+  const paymentProgressInvoiceRows = invoiceRows.filter((invoice) => {
+    const status = String(
+      invoice?.status || invoice?.workflow_status || invoice?.invoice_status || ''
+    ).trim().toLowerCase();
+    const amount = toMoney(invoice?.amount || invoice?.total || invoice?.total_amount);
+    return amount > 0 && !['draft', 'void', 'voided', 'cancelled', 'canceled'].includes(status);
+  });
+  const paidInvoiceCount = paymentProgressInvoiceRows.filter((invoice) => {
+    const status = String(
+      invoice?.status || invoice?.workflow_status || invoice?.invoice_status || ''
+    ).trim().toLowerCase();
+    return Boolean(
+      invoice?.invoice_paid ||
+      invoice?.paid_at ||
+      invoice?.escrow_released ||
+      invoice?.escrow_released_at ||
+      ['paid', 'released'].includes(status)
+    );
+  }).length;
+  const paymentProgressLabel = paymentProgressInvoiceRows.length
+    ? `${paidInvoiceCount} of ${paymentProgressInvoiceRows.length} invoices paid`
+    : workspaceInvoicesLoading
+      ? 'Loading invoices...'
+      : 'No invoices yet';
   const milestoneDisplaySource = (milestone) => {
     if (!milestone || typeof milestone !== 'object') return milestone;
     const existingInvoice =
@@ -3902,8 +3926,8 @@ export default function AgreementDetail({
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="Progress"
-              value={`${milestoneProgressLabel}${milestones.length ? ` (${overallMilestoneProgressPercent}%)` : ''}`}
+              label="Milestone & Payment Progress"
+              value={`Milestones: ${milestoneProgressLabel}${milestones.length ? ` (${overallMilestoneProgressPercent}%)` : ''}\nPayments: ${paymentProgressLabel}`}
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
