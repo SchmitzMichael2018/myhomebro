@@ -21198,6 +21198,82 @@ class AIOrchestratorTests(TestCase):
         self.assertEqual(data["planning_confidence"], "low")
 
 
+class InvoiceAgreementFilterTests(TestCase):
+    def setUp(self):
+        user_model = get_user_model()
+        self.user = user_model.objects.create_user(
+            email="invoice-filter-contractor@example.com",
+            password="testpass123",
+        )
+        self.contractor = Contractor.objects.create(
+            user=self.user,
+            business_name="Invoice Filter Contractor",
+        )
+        self.homeowner = Homeowner.objects.create(
+            created_by=self.contractor,
+            full_name="Invoice Filter Homeowner",
+            email="invoice-filter-homeowner@example.com",
+        )
+        self.project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Invoice Filter Project",
+        )
+        self.first_agreement = Agreement.objects.create(
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="First agreement",
+        )
+        self.second_project = Project.objects.create(
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Second Invoice Filter Project",
+        )
+        self.second_agreement = Agreement.objects.create(
+            project=self.second_project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            description="Second agreement",
+        )
+        self.first_invoice = Invoice.objects.create(
+            agreement=self.first_agreement,
+            amount=Decimal("400.00"),
+            status=InvoiceStatus.PENDING,
+            invoice_number="FILTER-1001",
+        )
+        self.second_invoice = Invoice.objects.create(
+            agreement=self.second_agreement,
+            amount=Decimal("600.00"),
+            status=InvoiceStatus.PAID,
+            invoice_number="FILTER-1002",
+        )
+        self.client = _use_secure_requests(APIClient())
+        self.client.force_authenticate(user=self.user)
+
+    def test_invoice_list_filters_to_requested_agreement(self):
+        response = self.client.get(
+            "/api/projects/invoices/",
+            {"agreement": self.first_agreement.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows = payload.get("results", payload) if isinstance(payload, dict) else payload
+        self.assertEqual([row["id"] for row in rows], [self.first_invoice.id])
+
+    def test_invoice_list_supports_agreement_id_alias(self):
+        response = self.client.get(
+            "/api/projects/invoices/",
+            {"agreement_id": self.second_agreement.id},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        rows = payload.get("results", payload) if isinstance(payload, dict) else payload
+        self.assertEqual([row["id"] for row in rows], [self.second_invoice.id])
+
+
 class ContractorActivationOnboardingTests(TestCase):
     def setUp(self):
         self.pdf_task_patcher = patch(

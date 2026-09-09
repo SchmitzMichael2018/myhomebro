@@ -335,7 +335,7 @@ class InvoiceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        return (
+        queryset = (
             Invoice.objects
             .filter(agreement__project__contractor__user=user)
             .select_related(
@@ -347,6 +347,14 @@ class InvoiceViewSet(viewsets.ModelViewSet):
             )
             .distinct()
         )
+        agreement_id = (
+            self.request.query_params.get("agreement")
+            or self.request.query_params.get("agreement_id")
+            or ""
+        ).strip()
+        if agreement_id:
+            queryset = queryset.filter(agreement_id=agreement_id)
+        return queryset
 
     @action(detail=True, methods=["get"], url_path="pdf")
     def pdf(self, request, pk=None):

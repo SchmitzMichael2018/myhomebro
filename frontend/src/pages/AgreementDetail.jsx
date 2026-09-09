@@ -3263,10 +3263,23 @@ export default function AgreementDetail({
         : milestoneDataKnown
           ? 'No milestones found'
           : 'No milestone data loaded';
-  const embeddedInvoiceRows = Array.isArray(norm.invoices) ? norm.invoices : [];
+  const belongsToWorkspaceAgreement = (invoice) => {
+    const invoiceAgreementId = String(
+      invoice?.agreement_id ||
+        (typeof invoice?.agreement === 'object'
+          ? invoice?.agreement?.id
+          : invoice?.agreement) ||
+        ''
+    ).trim();
+    return !invoiceAgreementId || invoiceAgreementId === String(id);
+  };
+  const embeddedInvoiceRows = Array.isArray(norm.invoices)
+    ? norm.invoices.filter(belongsToWorkspaceAgreement)
+    : [];
   const invoiceRows = [
     ...embeddedInvoiceRows,
     ...workspaceInvoices.filter((invoice) => {
+      if (!belongsToWorkspaceAgreement(invoice)) return false;
       const invoiceId = String(invoice?.id || invoice?.invoice_id || '').trim();
       if (!invoiceId) return true;
       return !embeddedInvoiceRows.some(
