@@ -7226,7 +7226,24 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(work.json()["amount"], "0.00")
         self.assertFalse(work.json()["is_billable"])
         self.assertFalse(work.json()["funding_required"])
-        self.assertTrue(WarrantyWorkOrder.objects.filter(warranty_request=request_row).exists())
+        work_order = WarrantyWorkOrder.objects.get(warranty_request=request_row)
+        self.assertEqual(work.json()["milestone"], work_order.milestone_id)
+        self.assertEqual(work_order.milestone.agreement_id, self.agreement.id)
+        self.assertEqual(work_order.milestone.amount, Decimal("0.00"))
+        self.assertEqual(work_order.milestone.normalized_milestone_type, "warranty_service")
+        self.assertFalse(work_order.milestone.is_invoiced)
+
+        repeated = self.client.post(
+            f"/api/projects/warranty-requests/{request_row.id}/work-order/",
+            {"scope": "Inspect hinge alignment and adjust cabinet door."},
+            format="json",
+        )
+        self.assertEqual(repeated.status_code, 201)
+        self.assertEqual(repeated.json()["milestone"], work_order.milestone_id)
+        self.assertEqual(
+            self.agreement.milestones.filter(normalized_milestone_type="warranty_service").count(),
+            1,
+        )
 
         escalation = self.client.post(
             f"/api/projects/warranty-requests/{request_row.id}/escalate/",
@@ -7357,6 +7374,10 @@ class AgreementWarrantyApiTests(TestCase):
         )
         complete_warranty_work_order(work_order, actor=self.user, notes="Repair complete.")
         request_row.refresh_from_db()
+        work_order.milestone.refresh_from_db()
+        self.assertTrue(work_order.milestone.completed)
+        self.assertEqual(work_order.milestone.amount, Decimal("0.00"))
+        self.assertFalse(work_order.milestone.is_invoiced)
         self.assertEqual(request_row.status, WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED)
         self.assertTrue(
             SmartNotification.objects.filter(

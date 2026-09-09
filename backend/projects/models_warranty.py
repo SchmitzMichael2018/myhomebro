@@ -203,6 +203,14 @@ class WarrantyWorkOrder(models.Model):
     customer_acknowledged_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(max_length=24, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True)
     linked_property_work_order = models.ForeignKey("projects.PropertyWorkOrder", on_delete=models.SET_NULL, null=True, blank=True, related_name="warranty_work_orders")
+    milestone = models.OneToOneField(
+        "projects.Milestone",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="warranty_work_order",
+        help_text="Zero-dollar agreement milestone created for the covered repair.",
+    )
     created_at = models.DateTimeField(default=timezone.now, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
     completed_at = models.DateTimeField(null=True, blank=True)

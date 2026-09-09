@@ -4314,6 +4314,63 @@ export default function AgreementDetail({
               </div>
             </section>
 
+            <section
+              data-testid="agreement-overview-warranty"
+              className="rounded-2xl border border-emerald-200/25 bg-gradient-to-br from-emerald-400/12 to-[#061d42]/95 p-5 text-sky-100 shadow-sm"
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
+                    Warranty Coverage
+                  </div>
+                  <h3 className="mt-1 text-lg font-semibold text-white">
+                    {warranties.length
+                      ? `${warranties.filter((row) => row.status === 'active' && (row.days_remaining === null || row.days_remaining >= 0)).length} active warranty record${warranties.length === 1 ? '' : 's'}`
+                      : isCompletedAgreement
+                        ? 'No active warranty recorded'
+                        : 'Warranty begins after project completion'}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/warranties')}
+                  className="rounded-xl border border-emerald-200/35 bg-emerald-300/15 px-4 py-2 text-sm font-semibold text-emerald-50 hover:bg-emerald-300/25"
+                >
+                  Open Warranty Center
+                </button>
+              </div>
+              {warranties.length ? (
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {warranties.slice(0, 2).map((warranty) => (
+                    <div key={warranty.id} className="rounded-xl border border-white/10 bg-white/8 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="font-semibold text-white">{warranty.title}</div>
+                        <span className="rounded-full border border-emerald-200/30 bg-emerald-300/12 px-2.5 py-1 text-xs font-bold text-emerald-100">
+                          {warranty.days_remaining === null || warranty.days_remaining === undefined
+                            ? String(warranty.status || 'active').replaceAll('_', ' ')
+                            : warranty.days_remaining >= 0
+                              ? `${warranty.days_remaining} days remaining`
+                              : `Expired ${Math.abs(warranty.days_remaining)} days ago`}
+                        </span>
+                      </div>
+                      <div className="mt-3 text-xs font-bold uppercase tracking-wide text-emerald-100">Covered</div>
+                      <p className="mt-1 line-clamp-3 text-sm leading-6 text-sky-100/75">
+                        {warranty.covered_work || warranty.coverage_details || 'Coverage details not recorded.'}
+                      </p>
+                      <div className="mt-3 text-xs font-bold uppercase tracking-wide text-amber-100">Not covered</div>
+                      <p className="mt-1 line-clamp-2 text-sm leading-6 text-sky-100/70">
+                        {warranty.excluded_work || warranty.exclusions || 'No exclusions recorded.'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm leading-6 text-sky-100/70">
+                  The signed agreement terms remain visible now. Remaining coverage and warranty-service requests will appear here when the project is completed.
+                </p>
+              )}
+            </section>
+
             {overviewContractorAmendment ? (
               <section
                 data-testid="agreement-overview-change-request"

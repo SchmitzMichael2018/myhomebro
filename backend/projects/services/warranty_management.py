@@ -1,14 +1,23 @@
 from __future__ import annotations
 
 import calendar
+from decimal import Decimal
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Max, Q
 from django.utils import timezone
 
-from projects.models import Agreement, AgreementWarranty, Notification, WarrantyStatus
+from projects.models import (
+    Agreement,
+    AgreementWarranty,
+    ContractorSubAccount,
+    Milestone,
+    MilestoneAssignment,
+    Notification,
+    WarrantyStatus,
+)
 from projects.models_customer_portal import NotificationRule, SmartNotificationEvent
 from projects.models_dispute import Dispute
 from projects.models_warranty import (
@@ -190,6 +199,7 @@ def build_warranty_ai_review(request: WarrantyRequest) -> dict:
     }
 
 
+@transaction.atomic
 def create_warranty_work_order(request: WarrantyRequest, *, actor=None, payload: dict | None = None) -> WarrantyWorkOrder:
     payload = payload or {}
     assigned_user = payload.get("assigned_user")
@@ -218,13 +228,44 @@ def create_warranty_work_order(request: WarrantyRequest, *, actor=None, payload:
             "status": WarrantyWorkOrder.STATUS_SCHEDULED if payload.get("scheduled_for") else WarrantyWorkOrder.STATUS_OPEN,
         },
     )
+    if work_order.milestone_id is None:
+        agreement = Agreement.objects.select_for_update().get(pk=request.agreement_id)
+        next_order = (
+            Milestone.objects.filter(agreement=agreement).aggregate(value=Max("order"))["value"]
+            or 0
+        ) + 1
+        scheduled_date = None
+        if work_order.scheduled_for:
+            scheduled_date = timezone.localtime(work_order.scheduled_for).date()
+        milestone = Milestone.objects.create(
+            agreement=agreement,
+            order=next_order,
+            title=work_order.title,
+            description=work_order.scope,
+            amount=Decimal("0.00"),
+            completion_date=scheduled_date,
+            normalized_milestone_type="warranty_service",
+            pricing_source_note="Covered warranty repair — no customer payment or escrow funding required.",
+        )
+        work_order.milestone = milestone
+        work_order.save(update_fields=["milestone", "updated_at"])
+        if assigned_user:
+            subaccount = ContractorSubAccount.objects.filter(
+                parent_contractor=request.contractor,
+                user=assigned_user,
+            ).first()
+            if subaccount:
+                MilestoneAssignment.objects.update_or_create(
+                    milestone=milestone,
+                    defaults={"subaccount": subaccount},
+                )
     if created:
         record_warranty_status(
             request,
             WarrantyRequest.STATUS_REPAIR_SCHEDULED if work_order.scheduled_for else WarrantyRequest.STATUS_COVERED,
             actor=actor,
             note="Warranty work order created.",
-            metadata={"work_order_id": work_order.id},
+            metadata={"work_order_id": work_order.id, "milestone_id": work_order.milestone_id},
         )
         _activity(request, actor=actor, title="Warranty work order created", summary=f"Warranty work order created for {request.title}.")
         if work_order.scheduled_for:
@@ -244,6 +285,12 @@ def complete_warranty_work_order(work_order: WarrantyWorkOrder, *, actor=None, n
     if notes:
         work_order.completion_notes = notes
     work_order.save(update_fields=["status", "completed_at", "completion_notes", "updated_at"])
+    if work_order.milestone_id:
+        milestone = work_order.milestone
+        milestone.completed = True
+        milestone.completed_at = work_order.completed_at
+        milestone.completion_notes = notes or milestone.completion_notes
+        milestone.save(update_fields=["completed", "completed_at", "completion_notes"])
     request = work_order.warranty_request
     record_warranty_status(
         request,

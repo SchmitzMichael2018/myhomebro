@@ -3180,6 +3180,11 @@ def _agreements(email: str, request=None) -> list[dict]:
             continue
         contractor = getattr(agreement, "contractor", None)
         homeowner = getattr(agreement, "homeowner", None)
+        warranty = active_warranty_queryset(
+            AgreementWarranty.objects.filter(agreement=agreement)
+        ).filter(
+            Q(origin_capture__isnull=True) | Q(customer_visible=True)
+        ).order_by("-end_date", "-id").first()
         rows.append(
             {
                 "id": agreement.id,
@@ -3209,6 +3214,20 @@ def _agreements(email: str, request=None) -> list[dict]:
                 "description": _safe_text(getattr(agreement, "description", "")),
                 "warranty_type": _safe_text(getattr(agreement, "warranty_type", "")),
                 "warranty_text": _safe_text(getattr(agreement, "warranty_text_snapshot", "")),
+                "warranty_status": "active" if warranty else "none",
+                "warranty_title": _safe_text(getattr(warranty, "title", "")),
+                "warranty_end_date": _safe_dt(getattr(warranty, "end_date", None)),
+                "warranty_days_remaining": (
+                    (warranty.end_date - timezone.localdate()).days
+                    if warranty and warranty.end_date
+                    else None
+                ),
+                "warranty_covered_work": _safe_text(
+                    getattr(warranty, "covered_work", "") or getattr(warranty, "coverage_details", "")
+                ),
+                "warranty_excluded_work": _safe_text(
+                    getattr(warranty, "excluded_work", "") or getattr(warranty, "exclusions", "")
+                ),
                 "customer_visible_reason": visible_reason,
             }
         )
@@ -4947,7 +4966,12 @@ def _project_dashboard_payload(project, agreement, request=None) -> dict:
                 "id": row.id,
                 "title": _safe_text(row.title),
                 "coverage_details": _safe_text(row.coverage_details or row.covered_work),
+                "covered_work": _safe_text(row.covered_work or row.coverage_details),
                 "exclusions": _safe_text(row.exclusions or row.excluded_work),
+                "excluded_work": _safe_text(row.excluded_work or row.exclusions),
+                "customer_responsibilities": _safe_text(row.customer_responsibilities),
+                "contractor_responsibilities": _safe_text(row.contractor_responsibilities),
+                "response_time_expectations": _safe_text(row.response_time_expectations),
                 "status": _safe_text(row.status),
                 "applies_to": _safe_text(row.applies_to),
                 "completion_date": _safe_dt(row.completion_date),

@@ -718,6 +718,16 @@ export default function ProjectDashboardPage() {
                       <p className="leading-6 text-slate-600">
                         {activeWarranty.coverage_details || "Your contractor can review covered workmanship issues from this completed project."}
                       </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-2xl bg-emerald-50 p-3 text-xs leading-5 text-emerald-900">
+                          <span className="font-bold">Covered:</span>{" "}
+                          {activeWarranty.covered_work || activeWarranty.coverage_details || "Covered workmanship defects from this agreement."}
+                        </div>
+                        <div className="rounded-2xl bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+                          <span className="font-bold">Not covered:</span>{" "}
+                          {activeWarranty.excluded_work || activeWarranty.exclusions || "No exclusions have been recorded."}
+                        </div>
+                      </div>
                       {activeWarranty.exclusions ? (
                         <div className="rounded-2xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">
                           <span className="font-bold text-slate-800">Exclusions:</span> {activeWarranty.exclusions}

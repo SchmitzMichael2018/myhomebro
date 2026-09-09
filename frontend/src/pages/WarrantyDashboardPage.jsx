@@ -29,6 +29,14 @@ function daysBetween(start, end) {
   }
 }
 
+function coverageTimeLabel(row) {
+  const remaining = row?.days_remaining;
+  if (remaining === null || remaining === undefined) return "No expiration date recorded";
+  if (remaining < 0) return `Expired ${Math.abs(remaining)} day(s) ago`;
+  if (remaining === 0) return "Expires today";
+  return `${remaining} day(s) remaining`;
+}
+
 const metricTone = {
   active_warranties: "border-emerald-200/30 bg-emerald-400/10 text-emerald-100",
   open_warranty_requests: "border-sky-200/30 bg-sky-400/10 text-sky-100",
@@ -149,12 +157,14 @@ function RequestCard({ row, busyId, runAction }) {
           <button className={`${operationalButton} rounded-lg px-3 py-2 text-sm font-semibold`} onClick={() => runAction(row, "ai")} disabled={busyId === `${row.id}:ai`}>
             Generate recommendation
           </button>
-          <button className={`${operationalPrimaryButton} rounded-lg px-3 py-2 text-sm font-black`} onClick={() => runAction(row, "work-order")} disabled={busyId === `${row.id}:work-order`}>
-            {row.work_order ? "Warranty Service Created" : "Create Warranty Service"}
+          <button className={`${operationalPrimaryButton} rounded-lg px-3 py-2 text-sm font-black`} onClick={() => runAction(row, "work-order")} disabled={busyId === `${row.id}:work-order` || Boolean(row.work_order)}>
+            {row.work_order ? `Accepted · $0 Milestone #${row.work_order.milestone || "Created"}` : "Accept Coverage & Create $0 Milestone"}
           </button>
-          <button className="rounded-lg border border-emerald-200/35 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/16" onClick={() => runAction(row, "status", { status: "completed", note: "Warranty work completed." })} disabled={busyId === `${row.id}:status`}>
-            Complete
-          </button>
+          {row.work_order ? (
+            <button className="rounded-lg border border-emerald-200/35 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/16" onClick={() => runAction(row, "complete-work", { notes: "Warranty repair completed." })} disabled={busyId === `${row.id}:complete-work`}>
+              Complete Repair & Request Customer Acceptance
+            </button>
+          ) : null}
         </div>
       </div>
     </article>
@@ -171,9 +181,18 @@ function WarrantyRecordCard({ row }) {
         </div>
         <span className="rounded-full border border-emerald-200/35 bg-emerald-400/12 px-2.5 py-1 text-xs font-bold text-emerald-100">{statusLabel(row.status)}</span>
       </div>
-      <p className="mt-3 line-clamp-3 text-sm leading-6 text-sky-100/70">{row.coverage_details || row.covered_work || "Coverage details not recorded."}</p>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-xl border border-emerald-200/20 bg-emerald-400/8 p-3">
+          <div className="text-xs font-black uppercase tracking-wide text-emerald-100">Covered</div>
+          <p className="mt-1 text-sm leading-6 text-sky-100/75">{row.coverage_details || row.covered_work || "Coverage details not recorded."}</p>
+        </div>
+        <div className="rounded-xl border border-amber-200/20 bg-amber-400/8 p-3">
+          <div className="text-xs font-black uppercase tracking-wide text-amber-100">Not covered</div>
+          <p className="mt-1 text-sm leading-6 text-sky-100/75">{row.exclusions || row.excluded_work || "No exclusions recorded."}</p>
+        </div>
+      </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs font-semibold text-sky-100/55">
-        <span>{row.start_date || "-"} to {row.end_date || "-"}</span>
+        <span>{row.start_date || "-"} to {row.end_date || "-"} · {coverageTimeLabel(row)}</span>
         <span>{row.open_request_count || 0} open request(s)</span>
       </div>
       <div className="mt-4 flex gap-2">
@@ -304,6 +323,8 @@ export default function WarrantyDashboardPage() {
           scope: row.description,
           ...payload,
         });
+      } else if (action === "complete-work") {
+        await api.post(`/projects/warranty-requests/${row.id}/work-order/complete/`, payload);
       } else if (action === "status") {
         await api.post(`/projects/warranty-requests/${row.id}/status/`, payload);
       }

@@ -174,11 +174,12 @@ class WarrantyWorkOrderSerializer(serializers.ModelSerializer):
             "customer_acknowledged_at",
             "status",
             "linked_property_work_order",
+            "milestone",
             "created_at",
             "updated_at",
             "completed_at",
         ]
-        read_only_fields = ["id", "warranty", "agreement", "project", "contractor", "created_at", "updated_at", "completed_at"]
+        read_only_fields = ["id", "warranty", "agreement", "project", "contractor", "milestone", "created_at", "updated_at", "completed_at"]
 
     def get_milestone_type(self, obj):
         return "warranty_service"

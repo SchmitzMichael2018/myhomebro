@@ -1841,9 +1841,19 @@ export default function CustomerProjectWorkspace({
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-slate-950/45 p-4">
                   <div className="text-xs uppercase tracking-wide text-slate-400">Warranty</div>
-                  <div className="mt-1 line-clamp-2 text-sm font-semibold text-white">
-                    {selectedAgreement?.warranty_text || "Warranty details pending"}
+                  <div className="mt-1 text-sm font-semibold text-white">
+                    {selectedAgreement?.warranty_status === "active"
+                      ? selectedAgreement.warranty_title || "Active warranty"
+                      : "No active warranty"}
                   </div>
+                  {selectedAgreement?.warranty_status === "active" ? (
+                    <div className="mt-1 text-xs font-semibold text-emerald-200">
+                      {selectedAgreement.warranty_days_remaining !== null && selectedAgreement.warranty_days_remaining !== undefined
+                        ? `${selectedAgreement.warranty_days_remaining} days remaining`
+                        : "Coverage active"}
+                      {selectedAgreement.warranty_end_date ? ` · through ${selectedAgreement.warranty_end_date}` : ""}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -2219,8 +2229,18 @@ export default function CustomerProjectWorkspace({
                           </div>
                           <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
                             <div className="text-xs uppercase tracking-wide text-slate-500">Warranty</div>
+                            <div className="mt-1 font-semibold text-white">
+                              {selectedAgreement?.warranty_status === "active"
+                                ? `${selectedAgreement.warranty_title || "Active warranty"}${selectedAgreement.warranty_days_remaining !== null && selectedAgreement.warranty_days_remaining !== undefined ? ` · ${selectedAgreement.warranty_days_remaining} days remaining` : ""}`
+                                : "No active warranty"}
+                            </div>
+                            <div className="mt-3 text-xs font-bold uppercase tracking-wide text-emerald-200">Covered</div>
                             <div className="mt-1 whitespace-pre-wrap text-slate-300">
-                              {selectedAgreement?.warranty_text || "Warranty details will appear here when added to your project."}
+                              {selectedAgreement?.warranty_covered_work || selectedAgreement?.warranty_text || "Coverage details will appear here when available."}
+                            </div>
+                            <div className="mt-3 text-xs font-bold uppercase tracking-wide text-amber-200">Not covered</div>
+                            <div className="mt-1 whitespace-pre-wrap text-slate-300">
+                              {selectedAgreement?.warranty_excluded_work || "No exclusions recorded."}
                             </div>
                           </div>
                         </div>
