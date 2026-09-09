@@ -229,6 +229,7 @@ def milestone_detail(request, milestone_id: int):
                     "author_email": getattr(getattr(c, "author", None), "email", None),
                     "content": c.content,
                     "created_at": c.created_at,
+                    "can_edit": c.author_id == request.user.id and _can_work(sub),
                 }
                 for c in comments
             ],
@@ -278,6 +279,47 @@ def add_comment(request, milestone_id: int):
             "created_at": obj.created_at,
         },
         status=201,
+    )
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_comment(request, milestone_id: int, comment_id: int):
+    sub = _require_active_subaccount(request)
+    if not _can_work(sub):
+        return Response({"detail": "Read-only employee."}, status=403)
+
+    content = (request.data.get("content") or "").strip()
+    if not content:
+        return Response({"detail": "content is required"}, status=400)
+
+    assigned = get_assigned_milestones_for_subaccount(
+        subaccount=sub,
+        MilestoneModel=Milestone,
+        MilestoneAssignmentModel=MilestoneAssignment,
+    ).filter(id=milestone_id).exists()
+    if not assigned:
+        return Response({"detail": "Not found."}, status=404)
+
+    try:
+        comment = MilestoneComment.objects.get(
+            id=comment_id,
+            milestone_id=milestone_id,
+            author=request.user,
+        )
+    except MilestoneComment.DoesNotExist:
+        return Response({"detail": "Not found."}, status=404)
+
+    comment.content = content
+    comment.save(update_fields=["content"])
+    return Response(
+        {
+            "id": comment.id,
+            "author_email": getattr(getattr(comment, "author", None), "email", None),
+            "content": comment.content,
+            "created_at": comment.created_at,
+            "can_edit": True,
+        }
     )
 
 
