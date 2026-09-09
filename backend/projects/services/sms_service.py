@@ -27,13 +27,13 @@ except Exception:  # pragma: no cover
 OPT_OUT_KEYWORDS = {"STOP", "STOPALL", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "REVOKE", "OPTOUT"}
 HELP_KEYWORDS = {"HELP", "INFO"}
 OPT_IN_KEYWORDS = {"START", "UNSTOP", "YES"}
-ESTIMATE_OPT_IN_TEMPLATE_VERSION = "estimate_transactional_opt_in_v1"
+SMS_CUSTOMER_OPT_IN_TEMPLATE_VERSION = "customer_transactional_opt_in_v2"
 HELP_RESPONSE = (
     "MyHomeBro alerts: project updates, payments, and customer-care messages only. "
     "Reply STOP to opt out or START to opt back in. Help: support@myhomebro.com"
 )
 STOP_RESPONSE = "MyHomeBro: You have been unsubscribed from SMS notifications. Reply START to opt back in."
-START_RESPONSE = "MyHomeBro: SMS notifications are enabled again."
+START_RESPONSE = "MyHomeBro: SMS notifications are enabled. Reply STOP to opt out or HELP for help."
 
 
 def normalize_phone_to_e164(value: str | None) -> str:
@@ -356,6 +356,13 @@ def set_sms_opt_in(
     if consent_source_page:
         consent.consent_source_page = consent_source_page
     consent.save()
+    preference = _customer_notification_preference(consent.homeowner)
+    if preference is not None:
+        channels = dict(preference.channel_preferences or {})
+        if channels.get("sms_enabled") is not True:
+            channels["sms_enabled"] = True
+            preference.channel_preferences = channels
+            preference.save(update_fields=["channel_preferences", "updated_at"])
     _sync_legacy_sms_status(
         phone_number_e164=normalized,
         subscribed=True,
@@ -648,9 +655,10 @@ def send_sms_opt_in_request(*, phone_number: str, company_name: str, contractor:
     except Exception:
         pass
     body = (
-        f"MyHomeBro: {str(company_name or 'Your contractor')[:80]} would like to send you transactional project estimates, "
-        "agreements, appointment reminders, payment notices, and project updates by text. Reply YES to opt in. "
-        "Msg & data rates may apply. Reply STOP to cancel."
+        f"MyHomeBro: {str(company_name or 'Your contractor')[:80]} would like to send you text messages with updates "
+        "about agreements, invoices, payments, and project notifications. Do you consent to receive these messages "
+        "from your contractor? Reply YES to consent. Message frequency varies. Msg & data rates may apply. "
+        "Reply STOP to opt out or HELP for help."
     )
     try:
         message = _twilio_client().messages.create(**_twilio_send_kwargs(to=normalized, body=body))
@@ -658,8 +666,13 @@ def send_sms_opt_in_request(*, phone_number: str, company_name: str, contractor:
         consent, _ = SMSConsent.objects.get_or_create(phone_number_e164=normalized)
         if contractor and not consent.contractor_id:
             consent.contractor = contractor
-        consent.consent_text_snapshot = f"{ESTIMATE_OPT_IN_TEMPLATE_VERSION}: {body}"
-        consent.consent_source_page = "estimate_delivery"
+        if contractor and not consent.homeowner_id:
+            consent.homeowner = Homeowner.objects.filter(
+                created_by=contractor,
+                phone_number__in={phone_number, normalized},
+            ).order_by("-id").first()
+        consent.consent_text_snapshot = f"{SMS_CUSTOMER_OPT_IN_TEMPLATE_VERSION}: {body}"
+        consent.consent_source_page = "customer_transactional_sms"
         consent.save()
         if cache_key:
             cache.set(cache_key, True, timeout=60 * 60 * 24)
@@ -713,7 +726,7 @@ def handle_inbound_sms(*, from_phone: str, body: str, message_sid: str = "") -> 
             homeowner=homeowner,
             source=SMSConsent.OPT_IN_SOURCE_ESTIMATE_DELIVERY if keyword == "YES" else SMSConsent.OPT_IN_SOURCE_INBOUND_START,
             consent_text_snapshot=(consent.consent_text_snapshot if consent else ""),
-            consent_source_page="estimate_delivery" if keyword == "YES" else "",
+            consent_source_page=(consent.consent_source_page if consent else "customer_transactional_sms") if keyword == "YES" else "",
         )
         from projects.services.proposal_customer_review import release_pending_estimate_sms
         release_pending_estimate_sms(normalized_phone, message_sid=message_sid)

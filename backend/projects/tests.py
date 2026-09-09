@@ -239,6 +239,7 @@ from projects.services.sms_service import (
     handle_inbound_sms,
     handle_sms_status_callback,
     send_compliant_sms,
+    send_sms_opt_in_request,
     set_sms_opt_in,
     set_sms_opt_out,
 )
@@ -8676,6 +8677,54 @@ class SMSComplianceTests(TestCase):
         )
         self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
+
+    @override_settings(
+        TWILIO_ACCOUNT_SID="AC-test",
+        TWILIO_AUTH_TOKEN="token",
+        TWILIO_PHONE_NUMBER="+15551234567",
+        TWILIO_MESSAGING_SERVICE_SID="",
+    )
+    @patch("projects.services.sms_service._twilio_client")
+    def test_opt_in_request_asks_for_explicit_customer_consent(self, twilio_client):
+        twilio_client.return_value.messages.create.return_value = SimpleNamespace(sid="SM-CONSENT")
+
+        result = send_sms_opt_in_request(
+            phone_number=self.homeowner.phone_number,
+            company_name=self.contractor.business_name,
+            contractor=self.contractor,
+            dedupe_key="consent-copy-test",
+        )
+
+        self.assertTrue(result["ok"])
+        body = twilio_client.return_value.messages.create.call_args.kwargs["body"]
+        self.assertIn("Do you consent", body)
+        self.assertIn("agreements, invoices, payments, and project notifications", body)
+        self.assertIn("Reply YES to consent", body)
+        self.assertIn("Reply STOP to opt out or HELP for help", body)
+        consent = SMSConsent.objects.get(phone_number_e164="+12105550002")
+        self.assertFalse(consent.can_send_sms)
+        self.assertEqual(consent.homeowner_id, self.homeowner.id)
+        self.assertTrue(consent.consent_text_snapshot.startswith("customer_transactional_opt_in_v2:"))
+
+    def test_yes_enables_customer_sms_notification_channel(self):
+        preference = CustomerNotificationPreference.objects.create(
+            customer_email=self.homeowner.email,
+            homeowner=self.homeowner,
+            channel_preferences={"in_app_enabled": True, "email_enabled": True, "sms_enabled": False},
+        )
+        SMSConsent.objects.create(
+            phone_number_e164=self.homeowner.phone_number,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            can_send_sms=False,
+            consent_text_snapshot="customer_transactional_opt_in_v2: consent request",
+        )
+
+        result = handle_inbound_sms(from_phone=self.homeowner.phone_number, body="YES", message_sid="SM-YES")
+
+        preference.refresh_from_db()
+        self.assertEqual(result["keyword"], "YES")
+        self.assertTrue(preference.channel_preferences["sms_enabled"])
 
     def test_opt_in_api_creates_consent_and_activity_event(self):
         response = self.client.post(
