@@ -168,12 +168,14 @@ def _select_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents: in
     )
 
     released_payout_cents = 0
-    released_invoices = Invoice.objects.filter(
+    released_invoices = (
+        Invoice.objects.filter(
             agreement_id=invoice.agreement_id,
             escrow_released=True,
         )
         .exclude(pk=invoice.pk)
         .values_list("amount", "payout_cents", "platform_fee_cents")
+    )
     for amount, stored_payout_cents, platform_fee_cents in released_invoices:
         released_payout_cents += int(stored_payout_cents or 0) or max(
             _to_cents(amount) - int(platform_fee_cents or 0),
