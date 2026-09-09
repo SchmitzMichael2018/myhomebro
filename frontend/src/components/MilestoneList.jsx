@@ -1027,7 +1027,6 @@ export default function MilestoneList() {
                         const refundReason = getRefundBlockReason(m);
                         const isSignedLockedMilestone = Boolean(m._signedLike || m.agreement_is_locked || m.agreement_locked);
                         const isFocused = focusId && String(m.id) === String(focusId);
-                        const isCompleted = milestoneDisplay.isCompleted;
                         const invoiceId = getInvoiceIdFromMilestone(m);
                         const linkedInvoice =
                           (m?.invoice && typeof m.invoice === "object" ? m.invoice : null) ||
@@ -1047,6 +1046,7 @@ export default function MilestoneList() {
                             : m,
                           { agreementId: agId }
                         );
+                        const isCompleted = milestoneDisplay.isCompleted;
                         const submissionStatus = String(
                           m.work_submission_status || m.subcontractor_completion_status || ""
                         ).toLowerCase();
