@@ -248,6 +248,13 @@ def task_auto_release_undisputed_invoices():
             logger.error(f"Auto-release failed for invoice {invoice.id}: {e}")
 
 
+@shared_task(name="auto_refund_unused_contingency")
+def task_auto_refund_unused_contingency():
+    from payments.services.contingency_refunds import process_due_contingency_refunds
+
+    return process_due_contingency_refunds()
+
+
 # ─────────────────────────────────────────────────────────────
 # Agreement signing pipeline
 # ─────────────────────────────────────────────────────────────

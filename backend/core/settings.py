@@ -459,6 +459,7 @@ PDF_ASYNC_ENABLED = get_bool("PDF_ASYNC_ENABLED", default=False)
 PDF_SYNC_FALLBACK_ENABLED = get_bool("PDF_SYNC_FALLBACK_ENABLED", default=False)
 CELERY_NOTIFICATIONS_ENABLED = get_bool("CELERY_NOTIFICATIONS_ENABLED", default=False)
 CELERY_SCHEDULED_JOBS_ENABLED = get_bool("CELERY_SCHEDULED_JOBS_ENABLED", default=False)
+CONTINGENCY_AUTO_REFUND_GRACE_DAYS = int(get_env_var("CONTINGENCY_AUTO_REFUND_GRACE_DAYS", "5"))
 CELERY_BROKER_CONNECTION_TIMEOUT = int(get_env_var("CELERY_BROKER_CONNECTION_TIMEOUT", "5"))
 CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = {
     "socket_connect_timeout": CELERY_BROKER_CONNECTION_TIMEOUT,
@@ -486,6 +487,10 @@ if CELERY_SCHEDULED_JOBS_ENABLED:
         "auto-release-undisputed-invoices-daily": {
             "task": "auto_release_undisputed_invoices",
             "schedule": crontab(hour=0, minute=0),
+        },
+        "auto-refund-unused-contingency-daily": {
+            "task": "auto_refund_unused_contingency",
+            "schedule": crontab(hour=1, minute=0),
         },
     }
 
