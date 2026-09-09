@@ -49,6 +49,25 @@ def _can_work(sub) -> bool:
     return role in {ROLE_MILESTONES, ROLE_SUPERVISOR}
 
 
+def _evidence_editable(milestone: Milestone) -> bool:
+    """Evidence is mutable only before review or after it is sent back."""
+    if getattr(milestone, "completed", False):
+        return False
+    status = getattr(milestone, "subcontractor_completion_status", "") or ""
+    return status in {
+        SubcontractorCompletionStatus.NOT_SUBMITTED,
+        SubcontractorCompletionStatus.NEEDS_CHANGES,
+        "",
+    }
+
+
+def _locked_evidence_response():
+    return Response(
+        {"detail": "Evidence is locked while this milestone is under review or approved."},
+        status=409,
+    )
+
+
 def _pick(*vals):
     for v in vals:
         if v is None:
@@ -222,6 +241,7 @@ def milestone_detail(request, milestone_id: int):
     return Response(
         {
             "can_work": _can_work(sub),
+            "evidence_editable": _can_work(sub) and _evidence_editable(m),
             "milestone": _milestone_payload(m, ag=getattr(m, "agreement", None)),
             "comments": [
                 {
@@ -229,7 +249,7 @@ def milestone_detail(request, milestone_id: int):
                     "author_email": getattr(getattr(c, "author", None), "email", None),
                     "content": c.content,
                     "created_at": c.created_at,
-                    "can_edit": c.author_id == request.user.id and _can_work(sub),
+                    "can_edit": c.author_id == request.user.id and _can_work(sub) and _evidence_editable(m),
                 }
                 for c in comments
             ],
@@ -239,7 +259,7 @@ def milestone_detail(request, milestone_id: int):
                     "uploaded_by_email": getattr(getattr(f, "uploaded_by", None), "email", None),
                     "file_url": request.build_absolute_uri(f.file.url) if getattr(f, "file", None) else None,
                     "uploaded_at": f.uploaded_at,
-                    "can_delete": f.uploaded_by_id == request.user.id and _can_work(sub),
+                    "can_delete": f.uploaded_by_id == request.user.id and _can_work(sub) and _evidence_editable(m),
                 }
                 for f in files
             ],
@@ -269,6 +289,9 @@ def add_comment(request, milestone_id: int):
     except Milestone.DoesNotExist:
         return Response({"detail": "Not found."}, status=404)
 
+    if not _evidence_editable(m):
+        return _locked_evidence_response()
+
     obj = MilestoneComment.objects.create(milestone=m, author=request.user, content=content)
 
     return Response(
@@ -282,40 +305,47 @@ def add_comment(request, milestone_id: int):
     )
 
 
-@api_view(["PATCH"])
+@api_view(["PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
-def update_comment(request, milestone_id: int, comment_id: int):
+def update_or_delete_comment(request, milestone_id: int, comment_id: int):
     sub = _require_active_subaccount(request)
     if not _can_work(sub):
         return Response({"detail": "Read-only employee."}, status=403)
 
-    content = (request.data.get("content") or "").strip()
-    if not content:
-        return Response({"detail": "content is required"}, status=400)
-
-    assigned = get_assigned_milestones_for_subaccount(
-        subaccount=sub,
-        MilestoneModel=Milestone,
-        MilestoneAssignmentModel=MilestoneAssignment,
-    ).filter(id=milestone_id).exists()
-    if not assigned:
+    try:
+        milestone = get_assigned_milestones_for_subaccount(
+            subaccount=sub,
+            MilestoneModel=Milestone,
+            MilestoneAssignmentModel=MilestoneAssignment,
+        ).get(id=milestone_id)
+    except Milestone.DoesNotExist:
         return Response({"detail": "Not found."}, status=404)
+
+    if not _evidence_editable(milestone):
+        return _locked_evidence_response()
 
     try:
         comment = MilestoneComment.objects.get(
             id=comment_id,
-            milestone_id=milestone_id,
+            milestone=milestone,
             author=request.user,
         )
     except MilestoneComment.DoesNotExist:
         return Response({"detail": "Not found."}, status=404)
 
+    if request.method == "DELETE":
+        comment.delete()
+        return Response(status=204)
+
+    content = (request.data.get("content") or "").strip()
+    if not content:
+        return Response({"detail": "content is required"}, status=400)
     comment.content = content
     comment.save(update_fields=["content"])
     return Response(
         {
             "id": comment.id,
-            "author_email": getattr(getattr(comment, "author", None), "email", None),
+            "author_email": getattr(comment.author, "email", None),
             "content": comment.content,
             "created_at": comment.created_at,
             "can_edit": True,
@@ -341,6 +371,9 @@ def upload_file(request, milestone_id: int):
         m = qs.get(id=milestone_id)
     except Milestone.DoesNotExist:
         return Response({"detail": "Not found."}, status=404)
+
+    if not _evidence_editable(m):
+        return _locked_evidence_response()
 
     f = request.FILES.get("file")
     if not f:
@@ -423,18 +456,22 @@ def delete_file(request, milestone_id: int, file_id: int):
     if not _can_work(sub):
         return Response({"detail": "Read-only employee."}, status=403)
 
-    assigned = get_assigned_milestones_for_subaccount(
-        subaccount=sub,
-        MilestoneModel=Milestone,
-        MilestoneAssignmentModel=MilestoneAssignment,
-    ).filter(id=milestone_id).exists()
-    if not assigned:
+    try:
+        milestone = get_assigned_milestones_for_subaccount(
+            subaccount=sub,
+            MilestoneModel=Milestone,
+            MilestoneAssignmentModel=MilestoneAssignment,
+        ).get(id=milestone_id)
+    except Milestone.DoesNotExist:
         return Response({"detail": "Not found."}, status=404)
+
+    if not _evidence_editable(milestone):
+        return _locked_evidence_response()
 
     try:
         evidence = MilestoneFile.objects.get(
             id=file_id,
-            milestone_id=milestone_id,
+            milestone=milestone,
             uploaded_by=request.user,
         )
     except MilestoneFile.DoesNotExist:

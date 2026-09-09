@@ -40,16 +40,19 @@ export async function addEmployeeMilestoneComment(milestoneId, content) {
 }
 
 export async function updateEmployeeMilestoneComment(milestoneId, commentId, content) {
-  if (!milestoneId) throw new Error("milestoneId is required");
-  if (!commentId) throw new Error("commentId is required");
+  if (!milestoneId || !commentId) throw new Error("milestoneId and commentId are required");
   const text = (content || "").trim();
   if (!text) throw new Error("content is required");
-
   const res = await api.patch(
     `/projects/employee/milestones/${milestoneId}/comments/${commentId}/`,
     { content: text }
   );
   return res.data;
+}
+
+export async function deleteEmployeeMilestoneComment(milestoneId, commentId) {
+  if (!milestoneId || !commentId) throw new Error("milestoneId and commentId are required");
+  await api.delete(`/projects/employee/milestones/${milestoneId}/comments/${commentId}/`);
 }
 
 /**

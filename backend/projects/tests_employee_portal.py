@@ -132,57 +132,72 @@ class EmployeePortalWorkflowTests(TestCase):
         self.assertEqual(deleted.status_code, 204)
         self.assertFalse(MilestoneFile.objects.filter(id=own_file.id).exists())
 
-    def test_employee_can_edit_only_their_own_milestone_note(self):
+    def test_employee_can_edit_and_delete_own_note_before_submission(self):
         own_note = MilestoneComment.objects.create(
             milestone=self.assigned,
             author=self.employee_user,
-            content="Original note",
+            content="Initial note",
         )
         owner_note = MilestoneComment.objects.create(
             milestone=self.assigned,
             author=self.owner_user,
-            content="Owner note",
+            content="Contractor note",
         )
-
-        detail = self.client.get(f"/api/projects/employee/milestones/{self.assigned.id}/")
-        flags = {row["id"]: row["can_edit"] for row in detail.data["comments"]}
-        self.assertTrue(flags[own_note.id])
-        self.assertFalse(flags[owner_note.id])
 
         updated = self.client.patch(
             f"/api/projects/employee/milestones/{self.assigned.id}/comments/{own_note.id}/",
-            {"content": "Corrected jobsite note"},
+            {"content": "Updated note"},
             format="json",
         )
         self.assertEqual(updated.status_code, 200, updated.data)
         own_note.refresh_from_db()
-        self.assertEqual(own_note.content, "Corrected jobsite note")
+        self.assertEqual(own_note.content, "Updated note")
 
-        denied = self.client.patch(
-            f"/api/projects/employee/milestones/{self.assigned.id}/comments/{owner_note.id}/",
-            {"content": "Not allowed"},
-            format="json",
+        denied = self.client.delete(
+            f"/api/projects/employee/milestones/{self.assigned.id}/comments/{owner_note.id}/"
         )
         self.assertEqual(denied.status_code, 404)
-        owner_note.refresh_from_db()
-        self.assertEqual(owner_note.content, "Owner note")
+        deleted = self.client.delete(
+            f"/api/projects/employee/milestones/{self.assigned.id}/comments/{own_note.id}/"
+        )
+        self.assertEqual(deleted.status_code, 204)
+        self.assertFalse(MilestoneComment.objects.filter(id=own_note.id).exists())
 
-    def test_employee_cannot_replace_note_with_blank_content(self):
+    def test_evidence_locks_during_review_and_unlocks_when_sent_back(self):
         note = MilestoneComment.objects.create(
             milestone=self.assigned,
             author=self.employee_user,
-            content="Keep this note",
+            content="Ready",
         )
+        evidence = MilestoneFile.objects.create(
+            milestone=self.assigned,
+            uploaded_by=self.employee_user,
+            file=SimpleUploadedFile("ready.jpg", b"photo", content_type="image/jpeg"),
+        )
+        self.assigned.subcontractor_completion_status = SubcontractorCompletionStatus.SUBMITTED_FOR_REVIEW
+        self.assigned.save(update_fields=["subcontractor_completion_status"])
 
-        response = self.client.patch(
+        detail = self.client.get(f"/api/projects/employee/milestones/{self.assigned.id}/")
+        self.assertFalse(detail.data["evidence_editable"])
+        self.assertFalse(detail.data["comments"][0]["can_edit"])
+        self.assertFalse(detail.data["files"][0]["can_delete"])
+        locked_note = self.client.patch(
             f"/api/projects/employee/milestones/{self.assigned.id}/comments/{note.id}/",
-            {"content": "   "},
+            {"content": "Changed while pending"},
             format="json",
         )
+        locked_file = self.client.delete(
+            f"/api/projects/employee/milestones/{self.assigned.id}/files/{evidence.id}/"
+        )
+        self.assertEqual(locked_note.status_code, 409)
+        self.assertEqual(locked_file.status_code, 409)
 
-        self.assertEqual(response.status_code, 400)
-        note.refresh_from_db()
-        self.assertEqual(note.content, "Keep this note")
+        self.assigned.subcontractor_completion_status = SubcontractorCompletionStatus.NEEDS_CHANGES
+        self.assigned.save(update_fields=["subcontractor_completion_status"])
+        unlocked = self.client.get(f"/api/projects/employee/milestones/{self.assigned.id}/")
+        self.assertTrue(unlocked.data["evidence_editable"])
+        self.assertTrue(unlocked.data["comments"][0]["can_edit"])
+        self.assertTrue(unlocked.data["files"][0]["can_delete"])
 
     def test_employee_notification_scope_excludes_contractor_financial_events(self):
         Notification.objects.create(
