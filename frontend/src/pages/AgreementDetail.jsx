@@ -1820,34 +1820,52 @@ export default function AgreementDetail({
     ? norm.amendmentRequests
     : [];
   const homeownerAmendmentRequests = amendmentRequests.filter(
-    (request) => String(request?.initiated_by_role || '').toLowerCase() !== 'contractor'
+    (request) =>
+      String(request?.initiated_by_role || '').toLowerCase() !== 'contractor'
   );
   const contractorSubmittedAmendments = amendmentRequests.filter(
-    (request) => String(request?.initiated_by_role || '').toLowerCase() === 'contractor'
+    (request) =>
+      String(request?.initiated_by_role || '').toLowerCase() === 'contractor'
   );
-  const openContractorSubmittedAmendments = contractorSubmittedAmendments.filter(
-    isOpenContractorAmendment
-  );
-  const acceptedUnappliedContractorAmendments = contractorSubmittedAmendments.filter(
-    (request) => amendmentResponseState(request.response_state) === 'accepted' && !request.requested_changes?.applied_milestone_id
-  );
-  const acceptedAwaitingSignatureAmendments = contractorSubmittedAmendments.filter(
-    (request) => amendmentResponseState(request.response_state) === 'accepted' && request.requested_changes?.applied_milestone_id && !norm.isSigned
-  );
-  const overviewContractorAmendment = openContractorSubmittedAmendments[0] || acceptedUnappliedContractorAmendments[0] || acceptedAwaitingSignatureAmendments[0] || null;
+  const openContractorSubmittedAmendments =
+    contractorSubmittedAmendments.filter(isOpenContractorAmendment);
+  const acceptedUnappliedContractorAmendments =
+    contractorSubmittedAmendments.filter(
+      (request) =>
+        amendmentResponseState(request.response_state) === 'accepted' &&
+        !request.requested_changes?.applied_milestone_id
+    );
+  const acceptedAwaitingSignatureAmendments =
+    contractorSubmittedAmendments.filter(
+      (request) =>
+        amendmentResponseState(request.response_state) === 'accepted' &&
+        request.requested_changes?.applied_milestone_id &&
+        !norm.isSigned
+    );
+  const overviewContractorAmendment =
+    openContractorSubmittedAmendments[0] ||
+    acceptedUnappliedContractorAmendments[0] ||
+    acceptedAwaitingSignatureAmendments[0] ||
+    null;
   const pendingContractorAmendments = homeownerAmendmentRequests.filter(
     isOpenContractorAmendment
   );
 
   const openAmendmentRequest = () => {
-    const placementMilestone = currentMilestone || milestones.find((row) => !isMilestoneComplete(row));
+    const placementMilestone =
+      currentMilestone || milestones.find((row) => !isMilestoneComplete(row));
     setAmendmentRequestForm({
       change_type: 'scope_product_change',
       requested_change: '',
       reason: '',
       proposed_value_change: '',
       placement_before_milestone_id: String(placementMilestone?.id || 'end'),
-      proposed_milestone_date: String(placementMilestone?.completion_date || placementMilestone?.due_date || placementMilestone?.start_date || '').slice(0, 10),
+      proposed_milestone_date: String(
+        placementMilestone?.completion_date ||
+          placementMilestone?.due_date ||
+          placementMilestone?.start_date ||
+          ''
+      ).slice(0, 10),
       attachments: [],
       milestone_draft: null,
     });
@@ -1869,12 +1887,22 @@ export default function AgreementDetail({
           requested_change: requestedChange,
           reason: amendmentRequestForm.reason.trim(),
           current_change_type: amendmentRequestForm.change_type,
-          affected_milestone_title: milestones.find((row) => String(row.id) === String(amendmentRequestForm.placement_before_milestone_id))?.title || currentMilestone?.title || '',
+          affected_milestone_title:
+            milestones.find(
+              (row) =>
+                String(row.id) ===
+                String(amendmentRequestForm.placement_before_milestone_id)
+            )?.title ||
+            currentMilestone?.title ||
+            '',
         }
       );
       setAmendmentSuggestion(data);
     } catch (error) {
-      toast.error(error?.response?.data?.detail || 'AI could not improve this request right now.');
+      toast.error(
+        error?.response?.data?.detail ||
+          'AI could not improve this request right now.'
+      );
     } finally {
       setAmendmentImproveBusy(false);
     }
@@ -1884,12 +1912,19 @@ export default function AgreementDetail({
     if (!amendmentSuggestion) return;
     setAmendmentRequestForm((current) => ({
       ...current,
-      change_type: amendmentSuggestion.suggested_change_type || current.change_type,
-      requested_change: amendmentSuggestion.improved_description || current.requested_change,
+      change_type:
+        amendmentSuggestion.suggested_change_type || current.change_type,
+      requested_change:
+        amendmentSuggestion.improved_description || current.requested_change,
       reason: amendmentSuggestion.improved_reason || current.reason,
       milestone_draft: {
-        ...(amendmentSuggestion.milestone_draft || current.milestone_draft || {}),
-        placement_before_milestone_id: current.placement_before_milestone_id === 'end' ? null : Number(current.placement_before_milestone_id),
+        ...(amendmentSuggestion.milestone_draft ||
+          current.milestone_draft ||
+          {}),
+        placement_before_milestone_id:
+          current.placement_before_milestone_id === 'end'
+            ? null
+            : Number(current.placement_before_milestone_id),
       },
     }));
     setAmendmentSuggestion(null);
@@ -1897,8 +1932,14 @@ export default function AgreementDetail({
 
   const submitContractorAmendmentRequest = async (event) => {
     event.preventDefault();
-    if (!amendmentRequestForm.requested_change.trim() || !amendmentRequestForm.reason.trim() || !amendmentRequestForm.proposed_milestone_date) {
-      toast.error('Describe the change, its cause, and the proposed milestone date.');
+    if (
+      !amendmentRequestForm.requested_change.trim() ||
+      !amendmentRequestForm.reason.trim() ||
+      !amendmentRequestForm.proposed_milestone_date
+    ) {
+      toast.error(
+        'Describe the change, its cause, and the proposed milestone date.'
+      );
       return;
     }
     try {
@@ -1908,25 +1949,49 @@ export default function AgreementDetail({
       form.append('requested_change', amendmentRequestForm.requested_change);
       form.append('reason', amendmentRequestForm.reason);
       if (amendmentRequestForm.proposed_value_change !== '') {
-        form.append('proposed_value_change', amendmentRequestForm.proposed_value_change);
+        form.append(
+          'proposed_value_change',
+          amendmentRequestForm.proposed_value_change
+        );
       }
-      const placementTarget = milestones.find((row) => String(row.id) === String(amendmentRequestForm.placement_before_milestone_id));
-      const proposedOrder = placementTarget ? Number(placementTarget.order || milestones.indexOf(placementTarget) + 1) : milestones.length + 1;
+      const placementTarget = milestones.find(
+        (row) =>
+          String(row.id) ===
+          String(amendmentRequestForm.placement_before_milestone_id)
+      );
+      const proposedOrder = placementTarget
+        ? Number(
+            placementTarget.order || milestones.indexOf(placementTarget) + 1
+          )
+        : milestones.length + 1;
       const placementLabel = placementTarget
         ? `New Milestone ${proposedOrder}, before ${placementTarget.order || proposedOrder}. ${placementTarget.title}`
         : `New Milestone ${proposedOrder}, after the current final milestone`;
       const milestoneDraft = {
-        ...(amendmentRequestForm.milestone_draft || amendmentSuggestion?.milestone_draft || {}),
-        title: amendmentRequestForm.milestone_draft?.title || amendmentSuggestion?.milestone_draft?.title || 'Additional Work',
-        scope: amendmentRequestForm.milestone_draft?.scope || amendmentSuggestion?.milestone_draft?.scope || amendmentRequestForm.requested_change,
-        completion_criteria: amendmentRequestForm.milestone_draft?.completion_criteria || amendmentSuggestion?.milestone_draft?.completion_criteria || 'Changed work is complete and ready for customer review.',
+        ...(amendmentRequestForm.milestone_draft ||
+          amendmentSuggestion?.milestone_draft ||
+          {}),
+        title:
+          amendmentRequestForm.milestone_draft?.title ||
+          amendmentSuggestion?.milestone_draft?.title ||
+          'Additional Work',
+        scope:
+          amendmentRequestForm.milestone_draft?.scope ||
+          amendmentSuggestion?.milestone_draft?.scope ||
+          amendmentRequestForm.requested_change,
+        completion_criteria:
+          amendmentRequestForm.milestone_draft?.completion_criteria ||
+          amendmentSuggestion?.milestone_draft?.completion_criteria ||
+          'Changed work is complete and ready for customer review.',
         placement_before_milestone_id: placementTarget?.id || null,
         proposed_order: proposedOrder,
         recommended_placement: placementLabel,
         proposed_milestone_date: amendmentRequestForm.proposed_milestone_date,
       };
       form.append('milestone_draft', JSON.stringify(milestoneDraft));
-      amendmentRequestForm.attachments.forEach((file) => form.append('attachments', file));
+      amendmentRequestForm.attachments.forEach((file) =>
+        form.append('attachments', file)
+      );
       const { data } = await api.post(
         `/projects/agreements/${id}/amendment-requests/`,
         form
@@ -1946,29 +2011,43 @@ export default function AgreementDetail({
       await fetchAgreement();
       setWorkspaceTab('more');
     } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not submit the change request.');
+      toast.error(
+        error?.response?.data?.detail || 'Could not submit the change request.'
+      );
     } finally {
       setAmendmentRequestBusy(false);
     }
   };
 
   const notifyCustomerOfExistingAmendment = async (request) => {
-    const amount = amendmentNotifyAmounts[request.id] ?? request.requested_changes?.proposed_value_change ?? '';
+    const amount =
+      amendmentNotifyAmounts[request.id] ??
+      request.requested_changes?.proposed_value_change ??
+      '';
     try {
       setAmendmentNotifyBusy(String(request.id));
-      const { data } = await api.post(`/projects/amendment-requests/${request.id}/notify/`, {
-        proposed_value_change: amount === '' ? null : amount,
-      });
+      const { data } = await api.post(
+        `/projects/amendment-requests/${request.id}/notify/`,
+        {
+          proposed_value_change: amount === '' ? null : amount,
+        }
+      );
       const emailSent = data?.notifications?.email?.sent;
       const smsSent = data?.notifications?.sms?.sent;
       if (emailSent || smsSent) {
-        toast.success(`Customer notified${emailSent && smsSent ? ' by email and text' : emailSent ? ' by email' : ' by text'}.`);
+        toast.success(
+          `Customer notified${emailSent && smsSent ? ' by email and text' : emailSent ? ' by email' : ' by text'}.`
+        );
       } else {
-        toast.error('The request was updated, but customer notification could not be delivered.');
+        toast.error(
+          'The request was updated, but customer notification could not be delivered.'
+        );
       }
       await fetchAgreement();
     } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not notify the customer.');
+      toast.error(
+        error?.response?.data?.detail || 'Could not notify the customer.'
+      );
     } finally {
       setAmendmentNotifyBusy('');
     }
@@ -1976,15 +2055,31 @@ export default function AgreementDetail({
 
   const applyAcceptedAmendment = async (request) => {
     if (!request?.id) return;
-    const title = request.requested_changes?.milestone_draft?.title || 'the proposed milestone';
-    if (!window.confirm(`Create an amendment draft and insert ${title}? The amended agreement must be signed before additional escrow can be requested.`)) return;
+    const title =
+      request.requested_changes?.milestone_draft?.title ||
+      'the proposed milestone';
+    if (
+      !window.confirm(
+        `Create an amendment draft and insert ${title}? The amended agreement must be signed before additional escrow can be requested.`
+      )
+    )
+      return;
     try {
       setAmendmentApplyBusy(String(request.id));
-      const { data } = await api.post(`/projects/amendment-requests/${request.id}/apply/`);
-      toast.success(data?.already_applied ? 'This change is already in the amendment draft.' : 'Milestone added to the amendment draft. Review and send it for signatures next.');
+      const { data } = await api.post(
+        `/projects/amendment-requests/${request.id}/apply/`
+      );
+      toast.success(
+        data?.already_applied
+          ? 'This change is already in the amendment draft.'
+          : 'Milestone added to the amendment draft. Review and send it for signatures next.'
+      );
       navigate(data?.next_url || `/app/agreements/${id}/wizard?step=2`);
     } catch (error) {
-      toast.error(error?.response?.data?.detail || 'Could not prepare the amendment draft.');
+      toast.error(
+        error?.response?.data?.detail ||
+          'Could not prepare the amendment draft.'
+      );
     } finally {
       setAmendmentApplyBusy('');
     }
@@ -2098,7 +2193,12 @@ export default function AgreementDetail({
   };
 
   async function refreshAgreementPricing(agreementId) {
-    if (!window.confirm('Recalculate and save refreshed pricing guidance for this agreement? Existing agreement totals and payment records will not be changed.')) return;
+    if (
+      !window.confirm(
+        'Recalculate and save refreshed pricing guidance for this agreement? Existing agreement totals and payment records will not be changed.'
+      )
+    )
+      return;
     setAgreementOpsMsg('');
     setAgreementOpBusy(`pricing-${agreementId}`);
     try {
@@ -2116,7 +2216,12 @@ export default function AgreementDetail({
   }
 
   async function resendAgreementSignature(agreementId) {
-    if (!window.confirm('Resend the customer signature email for this agreement? This sends a new customer communication.')) return;
+    if (
+      !window.confirm(
+        'Resend the customer signature email for this agreement? This sends a new customer communication.'
+      )
+    )
+      return;
     setAgreementOpsMsg('');
     setAgreementOpBusy(`signature-${agreementId}`);
     try {
@@ -2434,8 +2539,7 @@ export default function AgreementDetail({
       } catch (err) {
         setActivationPreview(null);
         setActivationPreviewError(
-          err?.response?.data?.detail ||
-            'Unable to load activation preview.'
+          err?.response?.data?.detail || 'Unable to load activation preview.'
         );
       } finally {
         setActivationPreviewLoading(false);
@@ -2808,7 +2912,8 @@ export default function AgreementDetail({
       .toLowerCase();
     const isDraftRoute =
       routeWorkspaceStatus === 'draft' || (!routeWorkspaceStatus && agreement);
-    if (isAdminMode || isMagicLink || loading || !agreement || !isDraftRoute) return;
+    if (isAdminMode || isMagicLink || loading || !agreement || !isDraftRoute)
+      return;
     navigate(`/app/agreements/${id}/wizard?step=1`, { replace: true });
   }, [agreement, id, isAdminMode, isMagicLink, loading, navigate]);
 
@@ -2825,7 +2930,8 @@ export default function AgreementDetail({
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-950 shadow-sm">
         <div className="font-extrabold">Agreement unavailable</div>
         <p className="mt-1 leading-6">
-          The agreement could not be loaded. Return to Agreements and reopen the record, or retry after checking your connection.
+          The agreement could not be loaded. Return to Agreements and reopen the
+          record, or retry after checking your connection.
         </p>
       </div>
     );
@@ -3271,7 +3377,8 @@ export default function AgreementDetail({
       if (!invoiceId) return true;
       return !embeddedInvoiceRows.some(
         (existing) =>
-          String(existing?.id || existing?.invoice_id || '').trim() === invoiceId
+          String(existing?.id || existing?.invoice_id || '').trim() ===
+          invoiceId
       );
     }),
   ];
@@ -3283,6 +3390,45 @@ export default function AgreementDetail({
       ])
       .filter(([invoiceId]) => invoiceId)
   );
+  const paymentProgressInvoiceRows = invoiceRows.filter((invoice) => {
+    const status = String(
+      invoice?.status ||
+        invoice?.workflow_status ||
+        invoice?.invoice_status ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+    const amount = toMoney(
+      invoice?.amount || invoice?.total || invoice?.total_amount
+    );
+    return (
+      amount > 0 &&
+      !['draft', 'void', 'voided', 'cancelled', 'canceled'].includes(status)
+    );
+  });
+  const paidInvoiceCount = paymentProgressInvoiceRows.filter((invoice) => {
+    const status = String(
+      invoice?.status ||
+        invoice?.workflow_status ||
+        invoice?.invoice_status ||
+        ''
+    )
+      .trim()
+      .toLowerCase();
+    return Boolean(
+      invoice?.invoice_paid ||
+        invoice?.paid_at ||
+        invoice?.escrow_released ||
+        invoice?.escrow_released_at ||
+        ['paid', 'released'].includes(status)
+    );
+  }).length;
+  const paymentProgressLabel = paymentProgressInvoiceRows.length
+    ? `${paidInvoiceCount} of ${paymentProgressInvoiceRows.length} invoices paid`
+    : workspaceInvoicesLoading
+      ? 'Loading invoices...'
+      : 'No invoices yet';
   const milestoneDisplaySource = (milestone) => {
     if (!milestone || typeof milestone !== 'object') return milestone;
     const existingInvoice =
@@ -3306,7 +3452,9 @@ export default function AgreementDetail({
             invoice?.milestone?.id ||
             ''
         ).trim();
-        return invoiceMilestoneId && invoiceMilestoneId === String(milestone.id);
+        return (
+          invoiceMilestoneId && invoiceMilestoneId === String(milestone.id)
+        );
       });
     return matchedInvoice
       ? {
@@ -3396,7 +3544,10 @@ export default function AgreementDetail({
       .trim()
       .toLowerCase();
   const activeMilestones = milestones.filter((milestone) => {
-    if (isMilestoneComplete(milestone) || milestoneProgressPercent(milestone) >= 100) {
+    if (
+      isMilestoneComplete(milestone) ||
+      milestoneProgressPercent(milestone) >= 100
+    ) {
       return false;
     }
     const status = milestoneStatusText(milestone);
@@ -3550,7 +3701,7 @@ export default function AgreementDetail({
                   hrefSecondary: milestoneCompletionUrl,
                 }
               : activeMilestones.length
-              ? {
+                ? {
                     label: `Complete Milestone: ${currentMilestoneLabel}`,
                     reason: `${activeMilestones.length} active milestone${activeMilestones.length === 1 ? '' : 's'} need progress or completion handling.`,
                     status: 'Work active',
@@ -3567,8 +3718,7 @@ export default function AgreementDetail({
                 : isFundedOrDirectPay && hasLoadedIncompleteMilestones
                   ? {
                       label: `Complete Milestone: ${currentMilestoneLabel}`,
-                      reason:
-                        `${currentMilestoneLabel} is the next unfinished milestone in the loaded project plan.`,
+                      reason: `${currentMilestoneLabel} is the next unfinished milestone in the loaded project plan.`,
                       status: 'Ready to start',
                       effort: '5 min',
                       cta: `Open Milestone ${currentMilestone?.order || milestones.indexOf(currentMilestone) + 1}`,
@@ -3659,7 +3809,7 @@ export default function AgreementDetail({
       ? `${invoiceRows.length} invoice${invoiceRows.length === 1 ? '' : 's'} tracked`
       : workspaceInvoicesLoaded
         ? 'No invoices yet'
-      : 'No invoices yet';
+        : 'No invoices yet';
   const drawSummaryLabel = isProgressPayments
     ? activeDrawRows.length
       ? `${activeDrawRows.length} active / ${formatMoney(activeDrawTotal)}`
@@ -3730,8 +3880,12 @@ export default function AgreementDetail({
     { label: 'Warranties', value: warranties.length },
     { label: 'Attachments', value: Number(agreement?.attachments_count || 0) },
   ];
-  const historicalPdfVersions = (Array.isArray(norm.pdfVersions) ? norm.pdfVersions : []).filter(
-    (version) => Number(version?.version_number ?? version?.version ?? 0) !== Number(norm.currentPdfVersion || 0)
+  const historicalPdfVersions = (
+    Array.isArray(norm.pdfVersions) ? norm.pdfVersions : []
+  ).filter(
+    (version) =>
+      Number(version?.version_number ?? version?.version ?? 0) !==
+      Number(norm.currentPdfVersion || 0)
   );
   const hasSmsDetails =
     !!agreement?.sms_enabled ||
@@ -3876,10 +4030,16 @@ export default function AgreementDetail({
               <button
                 type="button"
                 data-testid="contractor-request-amendment"
-                onClick={() => overviewContractorAmendment ? setWorkspaceTab('more') : openAmendmentRequest()}
+                onClick={() =>
+                  overviewContractorAmendment
+                    ? setWorkspaceTab('more')
+                    : openAmendmentRequest()
+                }
                 className="inline-flex min-h-10 items-center justify-center rounded-xl border border-amber-200/45 bg-amber-300/15 px-4 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-300/25"
               >
-                {overviewContractorAmendment ? 'View Change Request' : 'Request Change'}
+                {overviewContractorAmendment
+                  ? 'View Change Request'
+                  : 'Request Change'}
               </button>
             ) : null}
             {norm.isDirectPay && (
@@ -3902,8 +4062,8 @@ export default function AgreementDetail({
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
-              label="Progress"
-              value={`${milestoneProgressLabel}${milestones.length ? ` (${overallMilestoneProgressPercent}%)` : ''}`}
+              label="Milestone & Payment Progress"
+              value={`Milestones: ${milestoneProgressLabel}${milestones.length ? ` (${overallMilestoneProgressPercent}%)` : ''}\nPayments: ${paymentProgressLabel}`}
               className="border-white/10 bg-white/10 text-white"
             />
             <SummaryCard
@@ -3945,8 +4105,13 @@ export default function AgreementDetail({
               {planningValidationSummary?.recommended_timeline?.start_date ? (
                 <div className="mt-1 text-xs font-semibold opacity-90">
                   Recommended adjustment:{' '}
-                  {formatPlanningDate(planningValidationSummary.recommended_timeline.start_date)} to{' '}
-                  {formatPlanningDate(planningValidationSummary.recommended_timeline.finish_date)}
+                  {formatPlanningDate(
+                    planningValidationSummary.recommended_timeline.start_date
+                  )}{' '}
+                  to{' '}
+                  {formatPlanningDate(
+                    planningValidationSummary.recommended_timeline.finish_date
+                  )}
                 </div>
               ) : null}
             </div>
@@ -4051,17 +4216,26 @@ export default function AgreementDetail({
             </div>
           ) : null}
 
-          {!activationPreviewLoading && !activationPreviewError && activationPreview ? (
-            <div data-testid="activation-preview-content" className="mt-5 space-y-4">
+          {!activationPreviewLoading &&
+          !activationPreviewError &&
+          activationPreview ? (
+            <div
+              data-testid="activation-preview-content"
+              className="mt-5 space-y-4"
+            >
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <SummaryCard
                   label="Suggested Start"
-                  value={formatPlanningDate(activationPreview.suggested_schedule?.start_date)}
+                  value={formatPlanningDate(
+                    activationPreview.suggested_schedule?.start_date
+                  )}
                   className="border-white/10 bg-white/10 text-white"
                 />
                 <SummaryCard
                   label="Suggested Finish"
-                  value={formatPlanningDate(activationPreview.suggested_schedule?.finish_date)}
+                  value={formatPlanningDate(
+                    activationPreview.suggested_schedule?.finish_date
+                  )}
                   className="border-white/10 bg-white/10 text-white"
                 />
                 <SummaryCard
@@ -4087,50 +4261,81 @@ export default function AgreementDetail({
                       Readiness Checklist
                     </h4>
                     <span className="text-xs font-semibold text-sky-100/65">
-                      {activationPreview.blockers?.length || 0} blockers / {activationPreview.warnings?.length || 0} warnings
+                      {activationPreview.blockers?.length || 0} blockers /{' '}
+                      {activationPreview.warnings?.length || 0} warnings
                     </span>
                   </div>
-                  <div className="mt-3 space-y-2" data-testid="activation-readiness-checklist">
-                    {(activationPreview.readiness_checklist || []).map((item) => (
-                      <div
-                        key={item.label}
-                        className="rounded-xl border border-white/10 bg-[#061d42]/70 px-3 py-2"
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-                              item.status === 'ready'
-                                ? 'bg-emerald-400/20 text-emerald-50'
-                                : item.status === 'blocked'
-                                  ? 'bg-rose-400/20 text-rose-50'
-                                  : 'bg-amber-400/20 text-amber-50'
-                            }`}
-                          >
-                            {titleCase(item.status)}
-                          </span>
-                          <span className="font-semibold text-white">{item.label}</span>
+                  <div
+                    className="mt-3 space-y-2"
+                    data-testid="activation-readiness-checklist"
+                  >
+                    {(activationPreview.readiness_checklist || []).map(
+                      (item) => (
+                        <div
+                          key={item.label}
+                          className="rounded-xl border border-white/10 bg-[#061d42]/70 px-3 py-2"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                                item.status === 'ready'
+                                  ? 'bg-emerald-400/20 text-emerald-50'
+                                  : item.status === 'blocked'
+                                    ? 'bg-rose-400/20 text-rose-50'
+                                    : 'bg-amber-400/20 text-amber-50'
+                              }`}
+                            >
+                              {titleCase(item.status)}
+                            </span>
+                            <span className="font-semibold text-white">
+                              {item.label}
+                            </span>
+                          </div>
+                          <div className="mt-1 text-sm text-sky-100/70">
+                            {item.detail}
+                          </div>
                         </div>
-                        <div className="mt-1 text-sm text-sky-100/70">{item.detail}</div>
-                      </div>
-                    ))}
+                      )
+                    )}
                   </div>
                 </section>
 
                 <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
-                  <h4 className="text-base font-bold text-white">Customer Launch Preview</h4>
+                  <h4 className="text-base font-bold text-white">
+                    Customer Launch Preview
+                  </h4>
                   <div
                     data-testid="activation-customer-launch-preview"
                     className="mt-3 rounded-xl border border-white/10 bg-[#061d42]/70 px-3 py-3 text-sm text-sky-100/75"
                   >
                     <div className="font-semibold text-white">
-                      {activationPreview.customer_visible_launch_summary_preview?.headline}
+                      {
+                        activationPreview
+                          .customer_visible_launch_summary_preview?.headline
+                      }
                     </div>
                     <div className="mt-2">
-                      {activationPreview.customer_visible_launch_summary_preview?.message}
+                      {
+                        activationPreview
+                          .customer_visible_launch_summary_preview?.message
+                      }
                     </div>
                     <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-sky-100/65">
-                      <div>Start: {formatPlanningDate(activationPreview.customer_visible_launch_summary_preview?.start_date)}</div>
-                      <div>Finish: {formatPlanningDate(activationPreview.customer_visible_launch_summary_preview?.finish_date)}</div>
+                      <div>
+                        Start:{' '}
+                        {formatPlanningDate(
+                          activationPreview
+                            .customer_visible_launch_summary_preview?.start_date
+                        )}
+                      </div>
+                      <div>
+                        Finish:{' '}
+                        {formatPlanningDate(
+                          activationPreview
+                            .customer_visible_launch_summary_preview
+                            ?.finish_date
+                        )}
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -4138,14 +4343,25 @@ export default function AgreementDetail({
 
               <div className="grid gap-4 xl:grid-cols-3">
                 <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
-                  <h4 className="text-base font-bold text-white">Crew & Capability Needs</h4>
-                  <div className="mt-3 space-y-2" data-testid="activation-crew-needs">
+                  <h4 className="text-base font-bold text-white">
+                    Crew & Capability Needs
+                  </h4>
+                  <div
+                    className="mt-3 space-y-2"
+                    data-testid="activation-crew-needs"
+                  >
                     {(activationPreview.crew_capability_needs || []).length ? (
                       activationPreview.crew_capability_needs.map((need) => (
-                        <div key={need.capability} className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm">
-                          <div className="font-semibold text-white">{need.capability}</div>
+                        <div
+                          key={need.capability}
+                          className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm"
+                        >
+                          <div className="font-semibold text-white">
+                            {need.capability}
+                          </div>
                           <div className="text-sky-100/70">
-                            Need {need.needed}; {need.available} active match{Number(need.available) === 1 ? '' : 'es'}
+                            Need {need.needed}; {need.available} active match
+                            {Number(need.available) === 1 ? '' : 'es'}
                             {need.gap ? `; gap ${need.gap}` : ''}
                           </div>
                         </div>
@@ -4159,42 +4375,78 @@ export default function AgreementDetail({
                 </section>
 
                 <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
-                  <h4 className="text-base font-bold text-white">Milestone Timeline</h4>
-                  <div className="mt-3 space-y-2" data-testid="activation-milestone-timeline">
-                    {(activationPreview.milestone_timeline_summary || []).map((row) => (
-                      <div key={row.id} className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm">
-                        <div className="font-semibold text-white">{row.order ? `${row.order}. ` : ''}{row.title}</div>
-                        <div className="text-sky-100/70">
-                          {formatPlanningDate(row.start_date)} to {formatPlanningDate(row.completion_date)}
+                  <h4 className="text-base font-bold text-white">
+                    Milestone Timeline
+                  </h4>
+                  <div
+                    className="mt-3 space-y-2"
+                    data-testid="activation-milestone-timeline"
+                  >
+                    {(activationPreview.milestone_timeline_summary || []).map(
+                      (row) => (
+                        <div
+                          key={row.id}
+                          className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm"
+                        >
+                          <div className="font-semibold text-white">
+                            {row.order ? `${row.order}. ` : ''}
+                            {row.title}
+                          </div>
+                          <div className="text-sky-100/70">
+                            {formatPlanningDate(row.start_date)} to{' '}
+                            {formatPlanningDate(row.completion_date)}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      )
+                    )}
                   </div>
                 </section>
 
                 <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
-                  <h4 className="text-base font-bold text-white">Materials & Documents</h4>
-                  <div className="mt-3 space-y-2" data-testid="activation-material-notes">
-                    {(activationPreview.material_readiness_notes || []).map((row, index) => (
-                      <div key={`${row.milestone_id || 'note'}-${index}`} className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm text-sky-100/75">
-                        {row.milestone_title ? <div className="font-semibold text-white">{row.milestone_title}</div> : null}
-                        <div>{row.note}</div>
-                      </div>
-                    ))}
+                  <h4 className="text-base font-bold text-white">
+                    Materials & Documents
+                  </h4>
+                  <div
+                    className="mt-3 space-y-2"
+                    data-testid="activation-material-notes"
+                  >
+                    {(activationPreview.material_readiness_notes || []).map(
+                      (row, index) => (
+                        <div
+                          key={`${row.milestone_id || 'note'}-${index}`}
+                          className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm text-sky-100/75"
+                        >
+                          {row.milestone_title ? (
+                            <div className="font-semibold text-white">
+                              {row.milestone_title}
+                            </div>
+                          ) : null}
+                          <div>{row.note}</div>
+                        </div>
+                      )
+                    )}
                     <div className="rounded-xl bg-[#061d42]/70 px-3 py-2 text-sm text-sky-100/75">
-                      Attachments: {activationPreview.document_summary?.attachment_count || 0}
+                      Attachments:{' '}
+                      {activationPreview.document_summary?.attachment_count ||
+                        0}
                     </div>
                   </div>
                 </section>
               </div>
 
-              {activationPreview.blockers?.length || activationPreview.warnings?.length ? (
+              {activationPreview.blockers?.length ||
+              activationPreview.warnings?.length ? (
                 <section className="grid gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-rose-300/25 bg-rose-400/10 p-4">
                     <h4 className="font-bold text-rose-50">Blockers</h4>
-                    <ul className="mt-2 space-y-1 text-sm text-rose-50/85" data-testid="activation-blockers">
+                    <ul
+                      className="mt-2 space-y-1 text-sm text-rose-50/85"
+                      data-testid="activation-blockers"
+                    >
                       {(activationPreview.blockers || []).length ? (
-                        activationPreview.blockers.map((row, index) => <li key={`${row.type}-${index}`}>- {row.message}</li>)
+                        activationPreview.blockers.map((row, index) => (
+                          <li key={`${row.type}-${index}`}>- {row.message}</li>
+                        ))
                       ) : (
                         <li>No blockers detected.</li>
                       )}
@@ -4202,9 +4454,14 @@ export default function AgreementDetail({
                   </div>
                   <div className="rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4">
                     <h4 className="font-bold text-amber-50">Warnings</h4>
-                    <ul className="mt-2 space-y-1 text-sm text-amber-50/85" data-testid="activation-warnings">
+                    <ul
+                      className="mt-2 space-y-1 text-sm text-amber-50/85"
+                      data-testid="activation-warnings"
+                    >
                       {(activationPreview.warnings || []).length ? (
-                        activationPreview.warnings.map((row, index) => <li key={`${row.type}-${index}`}>- {row.message}</li>)
+                        activationPreview.warnings.map((row, index) => (
+                          <li key={`${row.type}-${index}`}>- {row.message}</li>
+                        ))
                       ) : (
                         <li>No warnings detected.</li>
                       )}
@@ -4299,52 +4556,90 @@ export default function AgreementDetail({
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="text-lg font-semibold text-white">
-                        {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted'
-                          ? overviewContractorAmendment.requested_changes?.applied_milestone_id
+                        {amendmentResponseState(
+                          overviewContractorAmendment.response_state
+                        ) === 'accepted'
+                          ? overviewContractorAmendment.requested_changes
+                              ?.applied_milestone_id
                             ? 'Amendment Ready for Signature'
                             : 'Accepted Change Requires Amendment'
                           : 'Change Request Pending'}
                       </h3>
                       <span className="rounded-full border border-amber-200/35 bg-amber-300/15 px-2.5 py-1 text-xs font-semibold text-amber-100">
-                        {overviewContractorAmendment.response_label || 'Pending response'}
+                        {overviewContractorAmendment.response_label ||
+                          'Pending response'}
                       </span>
                     </div>
                     <div className="mt-1 text-xs text-sky-100/55">
-                      Submitted {fmtDateTime(overviewContractorAmendment.created_at) || 'recently'}
+                      Submitted{' '}
+                      {fmtDateTime(overviewContractorAmendment.created_at) ||
+                        'recently'}
                     </div>
                     <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-amber-100/75">
-                      {overviewContractorAmendment.requested_changes?.milestone_draft?.title || amendmentLabel(overviewContractorAmendment)}
+                      {overviewContractorAmendment.requested_changes
+                        ?.milestone_draft?.title ||
+                        amendmentLabel(overviewContractorAmendment)}
                     </div>
                     <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-sky-50">
-                      {overviewContractorAmendment.requested_change || overviewContractorAmendment.requested_changes?.requested_change || overviewContractorAmendment.justification}
+                      {overviewContractorAmendment.requested_change ||
+                        overviewContractorAmendment.requested_changes
+                          ?.requested_change ||
+                        overviewContractorAmendment.justification}
                     </p>
                     <p className="mt-3 text-sm font-semibold text-amber-100">
                       Proposed price adjustment:{' '}
-                      {overviewContractorAmendment.requested_changes?.proposed_value_change
-                        ? Number(overviewContractorAmendment.requested_changes.proposed_value_change).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+                      {overviewContractorAmendment.requested_changes
+                        ?.proposed_value_change
+                        ? Number(
+                            overviewContractorAmendment.requested_changes
+                              .proposed_value_change
+                          ).toLocaleString('en-US', {
+                            style: 'currency',
+                            currency: 'USD',
+                          })
                         : 'To be determined'}
                     </p>
                     <p className="mt-3 text-xs text-sky-100/60">
-                      The signed agreement remains controlling until both parties approve and sign an amendment.
+                      The signed agreement remains controlling until both
+                      parties approve and sign an amendment.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' && !overviewContractorAmendment.requested_changes?.applied_milestone_id ? (
+                    {amendmentResponseState(
+                      overviewContractorAmendment.response_state
+                    ) === 'accepted' &&
+                    !overviewContractorAmendment.requested_changes
+                      ?.applied_milestone_id ? (
                       <button
                         type="button"
                         data-testid="agreement-overview-apply-change-request"
-                        disabled={amendmentApplyBusy === String(overviewContractorAmendment.id)}
-                        onClick={() => applyAcceptedAmendment(overviewContractorAmendment)}
+                        disabled={
+                          amendmentApplyBusy ===
+                          String(overviewContractorAmendment.id)
+                        }
+                        onClick={() =>
+                          applyAcceptedAmendment(overviewContractorAmendment)
+                        }
                         className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:opacity-60"
                       >
-                        {amendmentApplyBusy === String(overviewContractorAmendment.id) ? 'Preparing...' : 'Prepare Amendment & Add Milestone'}
+                        {amendmentApplyBusy ===
+                        String(overviewContractorAmendment.id)
+                          ? 'Preparing...'
+                          : 'Prepare Amendment & Add Milestone'}
                       </button>
                     ) : null}
-                    {amendmentResponseState(overviewContractorAmendment.response_state) === 'accepted' && overviewContractorAmendment.requested_changes?.applied_milestone_id && !norm.isSigned ? (
+                    {amendmentResponseState(
+                      overviewContractorAmendment.response_state
+                    ) === 'accepted' &&
+                    overviewContractorAmendment.requested_changes
+                      ?.applied_milestone_id &&
+                    !norm.isSigned ? (
                       <button
                         type="button"
                         data-testid="agreement-overview-review-amendment"
-                        onClick={() => navigate(`/app/agreements/${id}/wizard?step=2`)}
+                        onClick={() =>
+                          navigate(`/app/agreements/${id}/wizard?step=2`)
+                        }
                         className="rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-emerald-950 hover:bg-emerald-300"
                       >
                         Review & Sign Amendment
@@ -4411,7 +4706,8 @@ export default function AgreementDetail({
                       Saved Planning Assumptions
                     </h3>
                     <p className="mt-1 text-sm text-sky-100/70">
-                      Planning only. Employees are not assigned and schedules are not created from this snapshot.
+                      Planning only. Employees are not assigned and schedules
+                      are not created from this snapshot.
                     </p>
                   </div>
                   <span className="inline-flex w-fit items-center rounded-full border border-blue-200/30 bg-blue-400/15 px-3 py-1 text-xs font-bold text-blue-50">
@@ -4422,12 +4718,16 @@ export default function AgreementDetail({
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                   <SummaryCard
                     label="Planned Start"
-                    value={formatPlanningDate(planningAssumptions.planned_start_date)}
+                    value={formatPlanningDate(
+                      planningAssumptions.planned_start_date
+                    )}
                     className="border-white/10 bg-white/10 text-white"
                   />
                   <SummaryCard
                     label="Planned Finish"
-                    value={formatPlanningDate(planningAssumptions.planned_finish_date)}
+                    value={formatPlanningDate(
+                      planningAssumptions.planned_finish_date
+                    )}
                     className="border-white/10 bg-white/10 text-white"
                   />
                   <SummaryCard
@@ -4452,12 +4752,18 @@ export default function AgreementDetail({
                   />
                   <SummaryCard
                     label="Priority"
-                    value={titleCase(planningAssumptions.planning_priority || 'balanced')}
+                    value={titleCase(
+                      planningAssumptions.planning_priority || 'balanced'
+                    )}
                     className="border-white/10 bg-white/10 text-white"
                   />
                   <SummaryCard
                     label="Weekends"
-                    value={planningAssumptions.include_weekends ? 'Included' : 'Excluded'}
+                    value={
+                      planningAssumptions.include_weekends
+                        ? 'Included'
+                        : 'Excluded'
+                    }
                     className="border-white/10 bg-white/10 text-white"
                   />
                 </div>
@@ -4474,7 +4780,9 @@ export default function AgreementDetail({
                           className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs font-semibold text-white"
                         >
                           {item.count || 0} {item.capability || 'Capability'}
-                          {item.available != null ? ` / ${item.available} available` : ''}
+                          {item.available != null
+                            ? ` / ${item.available} available`
+                            : ''}
                         </span>
                       ))}
                     </div>
@@ -4494,9 +4802,7 @@ export default function AgreementDetail({
               className="rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-lg font-semibold text-white">
-                  Milestones
-                </h3>
+                <h3 className="text-lg font-semibold text-white">Milestones</h3>
                 <button
                   type="button"
                   onClick={() => setWorkspaceTab('milestones')}
@@ -4645,9 +4951,7 @@ export default function AgreementDetail({
               data-testid="agreement-overview-timeline"
               className="rounded-2xl border border-white/10 bg-[#061d42]/95 p-5 text-sky-100 shadow-sm"
             >
-              <h3 className="text-lg font-semibold text-white">
-                Timeline
-              </h3>
+              <h3 className="text-lg font-semibold text-white">Timeline</h3>
               <div className="mt-4 space-y-4">
                 {timelineItems.map((item) => (
                   <div key={item.id} className="flex gap-3">
@@ -5231,7 +5535,6 @@ export default function AgreementDetail({
             >
               Download PDF
             </button>
-
           </div>
         </div>
         {pdfPreviewError ? (
@@ -5285,7 +5588,8 @@ export default function AgreementDetail({
                 Signed Agreement
               </h3>
               <p className="mt-1 text-sm text-sky-100/70">
-                The current signed PDF is shown first. Previous versions remain available for records.
+                The current signed PDF is shown first. Previous versions remain
+                available for records.
               </p>
             </div>
             <span className="rounded-full border border-white/10 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-sky-100">
@@ -5429,13 +5733,31 @@ export default function AgreementDetail({
         }
       >
         <section className="rounded-2xl border border-white/10 bg-white/10 p-4">
-          <h3 className="text-lg font-semibold text-white">More project tools</h3>
+          <h3 className="text-lg font-semibold text-white">
+            More project tools
+          </h3>
           <div className="mt-3 flex flex-wrap gap-2">
             {customerWorkspaceUrl ? (
-              <a href={customerWorkspaceUrl} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Customer Workspace</a>
+              <a
+                href={customerWorkspaceUrl}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
+              >
+                Customer Workspace
+              </a>
             ) : null}
-            <a href={recordsUrl} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Customer Records</a>
-            <button type="button" onClick={() => setSupportOpen(true)} className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15">Support</button>
+            <a
+              href={recordsUrl}
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
+            >
+              Customer Records
+            </a>
+            <button
+              type="button"
+              onClick={() => setSupportOpen(true)}
+              className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold text-white hover:bg-white/15"
+            >
+              Support
+            </button>
           </div>
         </section>
         <section className="space-y-4">
@@ -5482,17 +5804,23 @@ export default function AgreementDetail({
                   onClick={() => setInviteFormOpen((open) => !open)}
                   className="rounded-xl border border-white/15 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/15"
                 >
-                  {inviteFormOpen ? 'Close Invite Form' : 'Invite Subcontractor'}
+                  {inviteFormOpen
+                    ? 'Close Invite Form'
+                    : 'Invite Subcontractor'}
                 </button>
               </div>
 
               {inviteFormOpen && (
                 <div className="rounded border border-white/10 bg-[#041735]/80 p-4 grid gap-3 md:grid-cols-2">
                   <div>
-                    <label htmlFor="mhb-agreementdetail-5316" className="block text-sm font-medium mb-1 text-sky-100">
+                    <label
+                      htmlFor="mhb-agreementdetail-5316"
+                      className="block text-sm font-medium mb-1 text-sky-100"
+                    >
                       Email
                     </label>
-                    <input id="mhb-agreementdetail-5316"
+                    <input
+                      id="mhb-agreementdetail-5316"
                       data-testid="subcontractor-email-input"
                       type="email"
                       className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
@@ -5507,10 +5835,14 @@ export default function AgreementDetail({
                     />
                   </div>
                   <div>
-                    <label htmlFor="mhb-agreementdetail-5334" className="block text-sm font-medium mb-1 text-sky-100">
+                    <label
+                      htmlFor="mhb-agreementdetail-5334"
+                      className="block text-sm font-medium mb-1 text-sky-100"
+                    >
                       Name
                     </label>
-                    <input id="mhb-agreementdetail-5334"
+                    <input
+                      id="mhb-agreementdetail-5334"
                       className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                       value={invitationForm.invite_name}
                       onChange={(e) =>
@@ -5523,10 +5855,14 @@ export default function AgreementDetail({
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <label htmlFor="mhb-agreementdetail-5350" className="block text-sm font-medium mb-1">
+                    <label
+                      htmlFor="mhb-agreementdetail-5350"
+                      className="block text-sm font-medium mb-1"
+                    >
                       Message
                     </label>
-                    <textarea id="mhb-agreementdetail-5350"
+                    <textarea
+                      id="mhb-agreementdetail-5350"
                       className="w-full rounded border px-3 py-2 text-sm"
                       rows={3}
                       value={invitationForm.invited_message}
@@ -5724,10 +6060,14 @@ export default function AgreementDetail({
             {warrantyEditorOpen && (
               <div className="rounded border border-white/10 bg-[#041735]/80 p-4 grid gap-3 md:grid-cols-2">
                 <div className="md:col-span-2">
-                  <label htmlFor="mhb-agreementdetail-5551" className="block text-sm font-medium mb-1 text-sky-100">
+                  <label
+                    htmlFor="mhb-agreementdetail-5551"
+                    className="block text-sm font-medium mb-1 text-sky-100"
+                  >
                     Title
                   </label>
-                  <input id="mhb-agreementdetail-5551"
+                  <input
+                    id="mhb-agreementdetail-5551"
                     data-testid="warranty-title-input"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.title}
@@ -5742,10 +6082,14 @@ export default function AgreementDetail({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label htmlFor="mhb-agreementdetail-5569" className="block text-sm font-medium mb-1 text-sky-100">
+                  <label
+                    htmlFor="mhb-agreementdetail-5569"
+                    className="block text-sm font-medium mb-1 text-sky-100"
+                  >
                     Coverage Details
                   </label>
-                  <textarea id="mhb-agreementdetail-5569"
+                  <textarea
+                    id="mhb-agreementdetail-5569"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     rows={4}
                     value={warrantyForm.coverage_details}
@@ -5760,10 +6104,14 @@ export default function AgreementDetail({
                 </div>
 
                 <div className="md:col-span-2">
-                  <label htmlFor="mhb-agreementdetail-5587" className="block text-sm font-medium mb-1 text-sky-100">
+                  <label
+                    htmlFor="mhb-agreementdetail-5587"
+                    className="block text-sm font-medium mb-1 text-sky-100"
+                  >
                     Exclusions
                   </label>
-                  <textarea id="mhb-agreementdetail-5587"
+                  <textarea
+                    id="mhb-agreementdetail-5587"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     rows={3}
                     value={warrantyForm.exclusions}
@@ -5778,10 +6126,14 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label htmlFor="mhb-agreementdetail-5605" className="block text-sm font-medium mb-1 text-sky-100">
+                  <label
+                    htmlFor="mhb-agreementdetail-5605"
+                    className="block text-sm font-medium mb-1 text-sky-100"
+                  >
                     Start Date
                   </label>
-                  <input id="mhb-agreementdetail-5605"
+                  <input
+                    id="mhb-agreementdetail-5605"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     type="date"
                     value={warrantyForm.start_date}
@@ -5795,10 +6147,14 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label htmlFor="mhb-agreementdetail-5622" className="block text-sm font-medium mb-1 text-sky-100">
+                  <label
+                    htmlFor="mhb-agreementdetail-5622"
+                    className="block text-sm font-medium mb-1 text-sky-100"
+                  >
                     End Date
                   </label>
-                  <input id="mhb-agreementdetail-5622"
+                  <input
+                    id="mhb-agreementdetail-5622"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     type="date"
                     value={warrantyForm.end_date}
@@ -5812,10 +6168,14 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label htmlFor="mhb-agreementdetail-5639" className="block text-sm font-medium mb-1 text-sky-100">
+                  <label
+                    htmlFor="mhb-agreementdetail-5639"
+                    className="block text-sm font-medium mb-1 text-sky-100"
+                  >
                     Status
                   </label>
-                  <select id="mhb-agreementdetail-5639"
+                  <select
+                    id="mhb-agreementdetail-5639"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.status}
                     onChange={(e) =>
@@ -5832,10 +6192,14 @@ export default function AgreementDetail({
                 </div>
 
                 <div>
-                  <label htmlFor="mhb-agreementdetail-5659" className="block text-sm font-medium mb-1 text-sky-100">
+                  <label
+                    htmlFor="mhb-agreementdetail-5659"
+                    className="block text-sm font-medium mb-1 text-sky-100"
+                  >
                     Applies To
                   </label>
-                  <select id="mhb-agreementdetail-5659"
+                  <select
+                    id="mhb-agreementdetail-5659"
                     className="w-full rounded border border-white/10 bg-white px-3 py-2 text-sm text-slate-950"
                     value={warrantyForm.applies_to}
                     onChange={(e) =>
@@ -5975,26 +6339,39 @@ export default function AgreementDetail({
         ) : contractorSubmittedAmendments.length ? (
           <section className="rounded-2xl border border-amber-200/30 bg-amber-300/10 p-6 text-sky-100 shadow-sm">
             <h3 className="text-lg font-semibold text-white">
-              {contractorSubmittedAmendments.some((request) => amendmentResponseState(request.response_state) === 'accepted')
+              {contractorSubmittedAmendments.some(
+                (request) =>
+                  amendmentResponseState(request.response_state) === 'accepted'
+              )
                 ? 'Accepted change requests'
                 : 'Change request submitted'}
             </h3>
             <p className="mt-2 text-sm text-sky-100/75">
-              Accepted changes must be placed into a formal amendment and signed before
-              the new milestone can begin or additional escrow funding can be requested.
+              Accepted changes must be placed into a formal amendment and signed
+              before the new milestone can begin or additional escrow funding
+              can be requested.
             </p>
             <div className="mt-4 space-y-2">
               {contractorSubmittedAmendments.map((request) => (
-                <div key={request.id} className="rounded-xl border border-white/10 bg-[#03142e]/80 p-4">
+                <div
+                  key={request.id}
+                  className="rounded-xl border border-white/10 bg-[#03142e]/80 p-4"
+                >
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
-                      <div className="font-semibold text-white">{amendmentLabel(request)}</div>
+                      <div className="font-semibold text-white">
+                        {amendmentLabel(request)}
+                      </div>
                       <div className="mt-1 text-xs text-sky-100/55">
-                        Submitted {fmtDateTime(request.created_at) || 'recently'} · Requested by contractor
+                        Submitted{' '}
+                        {fmtDateTime(request.created_at) || 'recently'} ·
+                        Requested by contractor
                       </div>
                     </div>
                     <span className="self-start rounded-full border border-amber-200/30 bg-amber-300/10 px-3 py-1 text-xs font-semibold text-amber-100">
-                      {request.response_label || request.status_label || 'Pending response'}
+                      {request.response_label ||
+                        request.status_label ||
+                        'Pending response'}
                     </span>
                   </div>
                   <details
@@ -6007,159 +6384,318 @@ export default function AgreementDetail({
                     }
                   >
                     <summary className="cursor-pointer text-sm font-semibold text-sky-100">
-                      {request.requested_changes?.applied_milestone_id && norm.isSigned && Number(fundingPreview?.remaining_to_fund || 0) <= 0
+                      {request.requested_changes?.applied_milestone_id &&
+                      norm.isSigned &&
+                      Number(fundingPreview?.remaining_to_fund || 0) <= 0
                         ? 'View completed amendment details'
                         : 'View change request details'}
                     </summary>
                     <div className="mt-3">
-                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Requested change</div>
-                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-50">
-                        {request.requested_change || request.requested_changes?.requested_change || 'No description provided.'}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Reason</div>
-                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-50">
-                        {request.justification || 'No reason provided.'}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Proposed price adjustment</div>
-                      <div className="mt-2 font-semibold text-white">
-                        {request.requested_changes?.proposed_value_change
-                          ? Number(request.requested_changes.proposed_value_change).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
-                          : 'To be determined'}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">Customer notification</div>
-                      <div className="mt-2 text-sm text-sky-50">
-                        Email: {request.requested_changes?.notification_delivery?.email?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.email?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery ? 'Not available' : 'Not sent'}
-                        <span className="mx-2 text-sky-100/30">•</span>
-                        Text: {request.requested_changes?.notification_delivery?.sms?.sent ? 'Sent' : request.requested_changes?.notification_delivery?.sms?.status === 'consent_pending' ? 'Opt-in sent — awaiting YES' : request.requested_changes?.notification_delivery?.sms?.reason_code === 'opted_out' ? 'Customer opted out — must text START' : request.requested_changes?.notification_delivery?.sms?.status === 'failed' ? 'Failed' : request.requested_changes?.notification_delivery?.sms?.status === 'blocked' ? 'SMS consent required' : request.requested_changes?.notification_delivery ? 'Not available' : 'Not sent'}
-                      </div>
-                    </div>
-                  </div>
-                  {isOpenContractorAmendment(request) ? (
-                    <div className="mt-3 flex flex-col gap-3 rounded-xl border border-amber-200/25 bg-amber-300/10 p-3 sm:flex-row sm:items-end">
-                      <label className="min-w-0 flex-1 text-sm font-semibold text-white">
-                        Price adjustment
-                        <div className="relative mt-2">
-                          <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sky-100/60">$</span>
-                          <input
-                            data-testid={`contractor-amendment-notify-amount-${request.id}`}
-                            type="number"
-                            step="0.01"
-                            value={amendmentNotifyAmounts[request.id] ?? request.requested_changes?.proposed_value_change ?? ''}
-                            onChange={(event) => setAmendmentNotifyAmounts((current) => ({ ...current, [request.id]: event.target.value }))}
-                            placeholder="0.00"
-                            className="w-full rounded-xl border border-white/15 bg-[#03142e] py-2 pl-7 pr-3 text-white"
-                          />
+                      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">
+                            Requested change
+                          </div>
+                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-50">
+                            {request.requested_change ||
+                              request.requested_changes?.requested_change ||
+                              'No description provided.'}
+                          </div>
                         </div>
-                      </label>
-                      <button
-                        type="button"
-                        data-testid={`contractor-amendment-notify-${request.id}`}
-                        disabled={amendmentNotifyBusy === String(request.id)}
-                        onClick={() => notifyCustomerOfExistingAmendment(request)}
-                        className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-60"
-                      >
-                        {amendmentNotifyBusy === String(request.id) ? 'Sending...' : request.requested_changes?.notification_delivery ? 'Update & Resend' : 'Add Amount & Notify Customer'}
-                      </button>
-                    </div>
-                  ) : null}
-                  {amendmentResponseState(request.response_state) === 'accepted' ? (
-                    <div data-testid={`contractor-amendment-accepted-actions-${request.id}`} className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-400/10 p-4">
-                      <div className="font-semibold text-emerald-100">Customer accepted this change request</div>
-                      {!request.requested_changes?.applied_milestone_id ? (
-                        <>
-                          <p className="mt-1 text-sm leading-6 text-sky-100/75">
-                            Insert the proposed milestone into an amendment draft. You will review the amount and sequence before sending it for signatures. The amendment must be signed before additional escrow can be requested.
-                          </p>
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">
+                            Reason
+                          </div>
+                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-50">
+                            {request.justification || 'No reason provided.'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">
+                            Proposed price adjustment
+                          </div>
+                          <div className="mt-2 font-semibold text-white">
+                            {request.requested_changes?.proposed_value_change
+                              ? Number(
+                                  request.requested_changes
+                                    .proposed_value_change
+                                ).toLocaleString('en-US', {
+                                  style: 'currency',
+                                  currency: 'USD',
+                                })
+                              : 'To be determined'}
+                          </div>
+                        </div>
+                        <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-sky-100/55">
+                            Customer notification
+                          </div>
+                          <div className="mt-2 text-sm text-sky-50">
+                            Email:{' '}
+                            {request.requested_changes?.notification_delivery
+                              ?.email?.sent
+                              ? 'Sent'
+                              : request.requested_changes?.notification_delivery
+                                    ?.email?.status === 'failed'
+                                ? 'Failed'
+                                : request.requested_changes
+                                      ?.notification_delivery
+                                  ? 'Not available'
+                                  : 'Not sent'}
+                            <span className="mx-2 text-sky-100/30">•</span>
+                            Text:{' '}
+                            {request.requested_changes?.notification_delivery
+                              ?.sms?.sent
+                              ? 'Sent'
+                              : request.requested_changes?.notification_delivery
+                                    ?.sms?.status === 'consent_pending'
+                                ? 'Opt-in sent — awaiting YES'
+                                : request.requested_changes
+                                      ?.notification_delivery?.sms
+                                      ?.reason_code === 'opted_out'
+                                  ? 'Customer opted out — must text START'
+                                  : request.requested_changes
+                                        ?.notification_delivery?.sms?.status ===
+                                      'failed'
+                                    ? 'Failed'
+                                    : request.requested_changes
+                                          ?.notification_delivery?.sms
+                                          ?.status === 'blocked'
+                                      ? 'SMS consent required'
+                                      : request.requested_changes
+                                            ?.notification_delivery
+                                        ? 'Not available'
+                                        : 'Not sent'}
+                          </div>
+                        </div>
+                      </div>
+                      {isOpenContractorAmendment(request) ? (
+                        <div className="mt-3 flex flex-col gap-3 rounded-xl border border-amber-200/25 bg-amber-300/10 p-3 sm:flex-row sm:items-end">
+                          <label className="min-w-0 flex-1 text-sm font-semibold text-white">
+                            Price adjustment
+                            <div className="relative mt-2">
+                              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sky-100/60">
+                                $
+                              </span>
+                              <input
+                                data-testid={`contractor-amendment-notify-amount-${request.id}`}
+                                type="number"
+                                step="0.01"
+                                value={
+                                  amendmentNotifyAmounts[request.id] ??
+                                  request.requested_changes
+                                    ?.proposed_value_change ??
+                                  ''
+                                }
+                                onChange={(event) =>
+                                  setAmendmentNotifyAmounts((current) => ({
+                                    ...current,
+                                    [request.id]: event.target.value,
+                                  }))
+                                }
+                                placeholder="0.00"
+                                className="w-full rounded-xl border border-white/15 bg-[#03142e] py-2 pl-7 pr-3 text-white"
+                              />
+                            </div>
+                          </label>
                           <button
                             type="button"
-                            data-testid={`contractor-amendment-apply-${request.id}`}
-                            disabled={amendmentApplyBusy === String(request.id)}
-                            onClick={() => applyAcceptedAmendment(request)}
-                            className="mt-3 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:opacity-60"
+                            data-testid={`contractor-amendment-notify-${request.id}`}
+                            disabled={
+                              amendmentNotifyBusy === String(request.id)
+                            }
+                            onClick={() =>
+                              notifyCustomerOfExistingAmendment(request)
+                            }
+                            className="rounded-xl bg-amber-400 px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-60"
                           >
-                            {amendmentApplyBusy === String(request.id) ? 'Preparing Amendment...' : 'Prepare Amendment & Add Milestone'}
+                            {amendmentNotifyBusy === String(request.id)
+                              ? 'Sending...'
+                              : request.requested_changes?.notification_delivery
+                                ? 'Update & Resend'
+                                : 'Add Amount & Notify Customer'}
                           </button>
-                        </>
-                      ) : !norm.isSigned ? (
-                        <>
-                          <p className="mt-1 text-sm leading-6 text-sky-100/75">
-                            Milestone #{request.requested_changes.applied_milestone_id} is in Amendment {request.requested_changes.applied_amendment_number}. Review the milestone, then finalize and send the amendment for signatures.
-                          </p>
-                          <button
-                            type="button"
-                            data-testid={`contractor-amendment-review-draft-${request.id}`}
-                            onClick={() => navigate(`/app/agreements/${id}/wizard?step=2`)}
-                            className="mt-3 rounded-xl border border-emerald-200/40 bg-emerald-300/15 px-4 py-2.5 text-sm font-semibold text-emerald-100 hover:bg-emerald-300/25"
-                          >
-                            Review & Sign Amendment
-                          </button>
-                        </>
-                      ) : Number(fundingPreview?.remaining_to_fund || 0) > 0 ? (
-                        <>
-                          <p className="mt-1 text-sm leading-6 text-sky-100/75">
-                            The amended agreement is signed. Request the remaining {formatMoney(fundingPreview.remaining_to_fund)} in escrow before starting the added milestone.
-                          </p>
-                          <div className="mt-3">
-                            <SendFundingLinkButton
-                              agreementId={id}
-                              isFullySigned={!!norm.isSigned}
-                              amount={fundingPreview.remaining_to_fund}
-                              label="Request Additional Escrow Funding"
-                              variant="success"
-                              onSuccess={() => fetchAgreement()}
-                            />
+                        </div>
+                      ) : null}
+                      {amendmentResponseState(request.response_state) ===
+                      'accepted' ? (
+                        <div
+                          data-testid={`contractor-amendment-accepted-actions-${request.id}`}
+                          className="mt-4 rounded-xl border border-emerald-300/30 bg-emerald-400/10 p-4"
+                        >
+                          <div className="font-semibold text-emerald-100">
+                            Customer accepted this change request
                           </div>
-                        </>
-                      ) : (
-                        <p className="mt-1 text-sm leading-6 text-emerald-100">The amendment milestone is included and escrow is fully funded.</p>
-                      )}
-                    </div>
-                  ) : null}
-                  {request.requested_changes?.milestone_draft?.title ? (
-                    <div data-testid={`contractor-submitted-amendment-draft-${request.id}`} className="mt-4 rounded-xl border border-violet-200/20 bg-violet-300/10 p-4">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</div>
-                      <div className="mt-1 font-semibold text-white">{request.requested_changes.milestone_draft.title}</div>
-                      <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-100/80">{request.requested_changes.milestone_draft.scope}</div>
-                      <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-violet-200">Completed when</div>
-                      <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-sky-100/80">{request.requested_changes.milestone_draft.completion_criteria}</div>
-                      <div className="mt-3 grid gap-2 text-xs text-sky-100/70 sm:grid-cols-2">
-                        <div><span className="font-semibold text-violet-200">Placement:</span> {request.requested_changes.milestone_draft.recommended_placement}</div>
-                        <div><span className="font-semibold text-violet-200">Schedule:</span> {request.requested_changes.milestone_draft.schedule_confirmation}</div>
-                        <div className="sm:col-span-2"><span className="font-semibold text-violet-200">Price:</span> {request.requested_changes.milestone_draft.price_confirmation}</div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {request.requested_changes?.attachment_note ? (
-                    <div className="mt-3 text-sm text-sky-100/70"><span className="font-semibold text-white">Evidence note:</span> {request.requested_changes.attachment_note}</div>
-                  ) : null}
-                  <AttachmentLinks
-                    attachments={request.counter_attachments || []}
-                    testId={`contractor-submitted-amendment-attachments-${request.id}`}
-                  />
-                  {request.activity_events?.length ? (
-                    <details className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
-                      <summary className="cursor-pointer text-sm font-semibold text-white">Activity history</summary>
-                      <div className="mt-3 space-y-2 text-sm text-sky-100/70">
-                        {request.activity_events.map((event) => (
-                          <div key={event.id} className="border-t border-white/10 pt-2 first:border-0 first:pt-0">
-                            <div className="font-semibold text-sky-50">{event.title || event.event_label}</div>
-                            <div className="text-xs text-sky-100/50">{fmtDateTime(event.created_at)}</div>
-                            {event.body ? <div className="mt-1">{event.body}</div> : null}
+                          {!request.requested_changes?.applied_milestone_id ? (
+                            <>
+                              <p className="mt-1 text-sm leading-6 text-sky-100/75">
+                                Insert the proposed milestone into an amendment
+                                draft. You will review the amount and sequence
+                                before sending it for signatures. The amendment
+                                must be signed before additional escrow can be
+                                requested.
+                              </p>
+                              <button
+                                type="button"
+                                data-testid={`contractor-amendment-apply-${request.id}`}
+                                disabled={
+                                  amendmentApplyBusy === String(request.id)
+                                }
+                                onClick={() => applyAcceptedAmendment(request)}
+                                className="mt-3 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:opacity-60"
+                              >
+                                {amendmentApplyBusy === String(request.id)
+                                  ? 'Preparing Amendment...'
+                                  : 'Prepare Amendment & Add Milestone'}
+                              </button>
+                            </>
+                          ) : !norm.isSigned ? (
+                            <>
+                              <p className="mt-1 text-sm leading-6 text-sky-100/75">
+                                Milestone #
+                                {request.requested_changes.applied_milestone_id}{' '}
+                                is in Amendment{' '}
+                                {
+                                  request.requested_changes
+                                    .applied_amendment_number
+                                }
+                                . Review the milestone, then finalize and send
+                                the amendment for signatures.
+                              </p>
+                              <button
+                                type="button"
+                                data-testid={`contractor-amendment-review-draft-${request.id}`}
+                                onClick={() =>
+                                  navigate(
+                                    `/app/agreements/${id}/wizard?step=2`
+                                  )
+                                }
+                                className="mt-3 rounded-xl border border-emerald-200/40 bg-emerald-300/15 px-4 py-2.5 text-sm font-semibold text-emerald-100 hover:bg-emerald-300/25"
+                              >
+                                Review & Sign Amendment
+                              </button>
+                            </>
+                          ) : Number(fundingPreview?.remaining_to_fund || 0) >
+                            0 ? (
+                            <>
+                              <p className="mt-1 text-sm leading-6 text-sky-100/75">
+                                The amended agreement is signed. Request the
+                                remaining{' '}
+                                {formatMoney(fundingPreview.remaining_to_fund)}{' '}
+                                in escrow before starting the added milestone.
+                              </p>
+                              <div className="mt-3">
+                                <SendFundingLinkButton
+                                  agreementId={id}
+                                  isFullySigned={!!norm.isSigned}
+                                  amount={fundingPreview.remaining_to_fund}
+                                  label="Request Additional Escrow Funding"
+                                  variant="success"
+                                  onSuccess={() => fetchAgreement()}
+                                />
+                              </div>
+                            </>
+                          ) : (
+                            <p className="mt-1 text-sm leading-6 text-emerald-100">
+                              The amendment milestone is included and escrow is
+                              fully funded.
+                            </p>
+                          )}
+                        </div>
+                      ) : null}
+                      {request.requested_changes?.milestone_draft?.title ? (
+                        <div
+                          data-testid={`contractor-submitted-amendment-draft-${request.id}`}
+                          className="mt-4 rounded-xl border border-violet-200/20 bg-violet-300/10 p-4"
+                        >
+                          <div className="text-xs font-semibold uppercase tracking-wide text-violet-200">
+                            Proposed milestone
                           </div>
-                        ))}
-                      </div>
-                    </details>
-                  ) : null}
+                          <div className="mt-1 font-semibold text-white">
+                            {request.requested_changes.milestone_draft.title}
+                          </div>
+                          <div className="mt-2 whitespace-pre-wrap text-sm leading-6 text-sky-100/80">
+                            {request.requested_changes.milestone_draft.scope}
+                          </div>
+                          <div className="mt-3 text-xs font-semibold uppercase tracking-wide text-violet-200">
+                            Completed when
+                          </div>
+                          <div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-sky-100/80">
+                            {
+                              request.requested_changes.milestone_draft
+                                .completion_criteria
+                            }
+                          </div>
+                          <div className="mt-3 grid gap-2 text-xs text-sky-100/70 sm:grid-cols-2">
+                            <div>
+                              <span className="font-semibold text-violet-200">
+                                Placement:
+                              </span>{' '}
+                              {
+                                request.requested_changes.milestone_draft
+                                  .recommended_placement
+                              }
+                            </div>
+                            <div>
+                              <span className="font-semibold text-violet-200">
+                                Schedule:
+                              </span>{' '}
+                              {
+                                request.requested_changes.milestone_draft
+                                  .schedule_confirmation
+                              }
+                            </div>
+                            <div className="sm:col-span-2">
+                              <span className="font-semibold text-violet-200">
+                                Price:
+                              </span>{' '}
+                              {
+                                request.requested_changes.milestone_draft
+                                  .price_confirmation
+                              }
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+                      {request.requested_changes?.attachment_note ? (
+                        <div className="mt-3 text-sm text-sky-100/70">
+                          <span className="font-semibold text-white">
+                            Evidence note:
+                          </span>{' '}
+                          {request.requested_changes.attachment_note}
+                        </div>
+                      ) : null}
+                      <AttachmentLinks
+                        attachments={request.counter_attachments || []}
+                        testId={`contractor-submitted-amendment-attachments-${request.id}`}
+                      />
+                      {request.activity_events?.length ? (
+                        <details className="mt-4 rounded-xl border border-white/10 bg-white/5 p-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-white">
+                            Activity history
+                          </summary>
+                          <div className="mt-3 space-y-2 text-sm text-sky-100/70">
+                            {request.activity_events.map((event) => (
+                              <div
+                                key={event.id}
+                                className="border-t border-white/10 pt-2 first:border-0 first:pt-0"
+                              >
+                                <div className="font-semibold text-sky-50">
+                                  {event.title || event.event_label}
+                                </div>
+                                <div className="text-xs text-sky-100/50">
+                                  {fmtDateTime(event.created_at)}
+                                </div>
+                                {event.body ? (
+                                  <div className="mt-1">{event.body}</div>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      ) : null}
                     </div>
                   </details>
                 </div>
@@ -6210,10 +6746,17 @@ export default function AgreementDetail({
               Change type
               <select
                 value={amendmentRequestForm.change_type}
-                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, change_type: event.target.value }))}
+                onChange={(event) =>
+                  setAmendmentRequestForm((current) => ({
+                    ...current,
+                    change_type: event.target.value,
+                  }))
+                }
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white"
               >
-                <option value="scope_product_change">Scope or material change</option>
+                <option value="scope_product_change">
+                  Scope or material change
+                </option>
                 <option value="amount_change">Price change</option>
                 <option value="date_change">Schedule change</option>
                 <option value="descope_remove_work">Remove work</option>
@@ -6226,7 +6769,12 @@ export default function AgreementDetail({
                 data-testid="contractor-amendment-request-change"
                 rows={4}
                 value={amendmentRequestForm.requested_change}
-                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, requested_change: event.target.value }))}
+                onChange={(event) =>
+                  setAmendmentRequestForm((current) => ({
+                    ...current,
+                    requested_change: event.target.value,
+                  }))
+                }
                 placeholder="Describe the work itself. Example: Repair the leak, dry the area, treat mold, and replace damaged wood."
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
@@ -6240,12 +6788,18 @@ export default function AgreementDetail({
                 data-testid="contractor-amendment-request-reason"
                 rows={3}
                 value={amendmentRequestForm.reason}
-                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, reason: event.target.value }))}
+                onChange={(event) =>
+                  setAmendmentRequestForm((current) => ({
+                    ...current,
+                    reason: event.target.value,
+                  }))
+                }
                 placeholder="Describe why the original agreement no longer covers the situation. Example: A hidden pipe leak and mold were found after demolition."
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
               />
               <span className="mt-1 block text-xs font-normal text-sky-100/55">
-                This documents the reason for the amendment; avoid repeating the work description.
+                This documents the reason for the amendment; avoid repeating the
+                work description.
               </span>
             </label>
             <label className="mt-4 block text-sm font-semibold">
@@ -6253,18 +6807,33 @@ export default function AgreementDetail({
               <select
                 data-testid="contractor-amendment-placement"
                 value={amendmentRequestForm.placement_before_milestone_id}
-                onChange={(event) => setAmendmentRequestForm((current) => ({
-                  ...current,
-                  placement_before_milestone_id: event.target.value,
-                  proposed_milestone_date: (() => {
-                    const target = milestones.find((row) => String(row.id) === String(event.target.value));
-                    return String(target?.completion_date || target?.due_date || target?.start_date || current.proposed_milestone_date || '').slice(0, 10);
-                  })(),
-                  milestone_draft: current.milestone_draft ? {
-                    ...current.milestone_draft,
-                    placement_before_milestone_id: event.target.value === 'end' ? null : Number(event.target.value),
-                  } : current.milestone_draft,
-                }))}
+                onChange={(event) =>
+                  setAmendmentRequestForm((current) => ({
+                    ...current,
+                    placement_before_milestone_id: event.target.value,
+                    proposed_milestone_date: (() => {
+                      const target = milestones.find(
+                        (row) => String(row.id) === String(event.target.value)
+                      );
+                      return String(
+                        target?.completion_date ||
+                          target?.due_date ||
+                          target?.start_date ||
+                          current.proposed_milestone_date ||
+                          ''
+                      ).slice(0, 10);
+                    })(),
+                    milestone_draft: current.milestone_draft
+                      ? {
+                          ...current.milestone_draft,
+                          placement_before_milestone_id:
+                            event.target.value === 'end'
+                              ? null
+                              : Number(event.target.value),
+                        }
+                      : current.milestone_draft,
+                  }))
+                }
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white"
               >
                 {milestones.map((milestone, index) => {
@@ -6278,7 +6847,8 @@ export default function AgreementDetail({
                 <option value="end">{`New Milestone ${milestones.length + 1} — after the current final milestone`}</option>
               </select>
               <span className="mt-1 block text-xs font-normal text-sky-100/55">
-                Existing milestones at and after this position will move down one number after the amendment is funded.
+                Existing milestones at and after this position will move down
+                one number after the amendment is funded.
               </span>
             </label>
             <label className="mt-4 block text-sm font-semibold">
@@ -6288,43 +6858,63 @@ export default function AgreementDetail({
                 type="date"
                 required
                 value={amendmentRequestForm.proposed_milestone_date}
-                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, proposed_milestone_date: event.target.value }))}
+                onChange={(event) =>
+                  setAmendmentRequestForm((current) => ({
+                    ...current,
+                    proposed_milestone_date: event.target.value,
+                  }))
+                }
                 className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white"
               />
               <span className="mt-1 block text-xs font-normal text-sky-100/55">
-                Defaults to the date of the milestone that will follow this added work.
+                Defaults to the date of the milestone that will follow this
+                added work.
               </span>
             </label>
             <label className="mt-4 block text-sm font-semibold">
               Proposed price adjustment
               <div className="relative mt-2">
-                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sky-100/60">$</span>
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sky-100/60">
+                  $
+                </span>
                 <input
                   data-testid="contractor-amendment-request-amount"
                   type="number"
                   step="0.01"
                   value={amendmentRequestForm.proposed_value_change}
-                  onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, proposed_value_change: event.target.value }))}
+                  onChange={(event) =>
+                    setAmendmentRequestForm((current) => ({
+                      ...current,
+                      proposed_value_change: event.target.value,
+                    }))
+                  }
                   placeholder="0.00"
                   className="w-full rounded-xl border border-white/15 bg-[#03142e] py-2 pl-7 pr-3 text-white placeholder:text-sky-100/40"
                 />
               </div>
               <span className="mt-1 block text-xs font-normal text-sky-100/55">
-                Enter the added cost, or use a negative amount for a credit. Leave blank only if pricing is still being determined.
+                Enter the added cost, or use a negative amount for a credit.
+                Leave blank only if pricing is still being determined.
               </span>
             </label>
             <div className="mt-4 rounded-xl border border-violet-300/25 bg-violet-300/10 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-violet-100">AI writing help</div>
+                  <div className="text-sm font-semibold text-violet-100">
+                    AI writing help
+                  </div>
                   <div className="mt-1 text-xs text-sky-100/60">
-                    Improve the wording, categorize the request, and identify missing details.
+                    Improve the wording, categorize the request, and identify
+                    missing details.
                   </div>
                 </div>
                 <button
                   type="button"
                   data-testid="contractor-amendment-ai-improve"
-                  disabled={amendmentImproveBusy || !amendmentRequestForm.requested_change.trim()}
+                  disabled={
+                    amendmentImproveBusy ||
+                    !amendmentRequestForm.requested_change.trim()
+                  }
                   onClick={improveContractorAmendmentRequest}
                   className="rounded-xl border border-violet-200/40 bg-violet-300/20 px-4 py-2 text-sm font-semibold text-violet-50 hover:bg-violet-300/30 disabled:opacity-50"
                 >
@@ -6332,38 +6922,89 @@ export default function AgreementDetail({
                 </button>
               </div>
               {amendmentSuggestion ? (
-                <div data-testid="contractor-amendment-ai-suggestion" className="mt-4 space-y-3 border-t border-violet-200/20 pt-4 text-sm">
+                <div
+                  data-testid="contractor-amendment-ai-suggestion"
+                  className="mt-4 space-y-3 border-t border-violet-200/20 pt-4 text-sm"
+                >
                   <div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Suggested category</span>
-                    <p className="mt-1 font-semibold text-white">{amendmentSuggestion.suggested_change_type_label}</p>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">
+                      Suggested category
+                    </span>
+                    <p className="mt-1 font-semibold text-white">
+                      {amendmentSuggestion.suggested_change_type_label}
+                    </p>
                   </div>
                   <div>
-                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Proposed milestone</span>
-                    <p className="mt-1 font-semibold text-white">{amendmentSuggestion.milestone_draft?.title}</p>
-                    <p className="mt-1 text-sky-100/80">{amendmentSuggestion.milestone_draft?.scope || amendmentSuggestion.improved_description}</p>
+                    <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">
+                      Proposed milestone
+                    </span>
+                    <p className="mt-1 font-semibold text-white">
+                      {amendmentSuggestion.milestone_draft?.title}
+                    </p>
+                    <p className="mt-1 text-sky-100/80">
+                      {amendmentSuggestion.milestone_draft?.scope ||
+                        amendmentSuggestion.improved_description}
+                    </p>
                   </div>
                   {amendmentSuggestion.milestone_draft?.completion_criteria ? (
                     <div>
-                      <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Completed when</span>
-                      <p className="mt-1 text-sky-100/80">{amendmentSuggestion.milestone_draft.completion_criteria}</p>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">
+                        Completed when
+                      </span>
+                      <p className="mt-1 text-sky-100/80">
+                        {
+                          amendmentSuggestion.milestone_draft
+                            .completion_criteria
+                        }
+                      </p>
                     </div>
                   ) : null}
-                  {amendmentSuggestion.milestone_draft?.recommended_placement ? (
+                  {amendmentSuggestion.milestone_draft
+                    ?.recommended_placement ? (
                     <div className="grid gap-2 rounded-lg border border-violet-200/15 bg-slate-950/20 p-3 text-xs sm:grid-cols-2">
-                      <div><span className="font-semibold text-violet-200">Placement:</span> {amendmentSuggestion.milestone_draft.recommended_placement}</div>
-                      <div><span className="font-semibold text-violet-200">Schedule:</span> {amendmentSuggestion.milestone_draft.schedule_confirmation}</div>
-                      <div className="sm:col-span-2"><span className="font-semibold text-violet-200">Price:</span> {amendmentSuggestion.milestone_draft.price_confirmation}</div>
+                      <div>
+                        <span className="font-semibold text-violet-200">
+                          Placement:
+                        </span>{' '}
+                        {
+                          amendmentSuggestion.milestone_draft
+                            .recommended_placement
+                        }
+                      </div>
+                      <div>
+                        <span className="font-semibold text-violet-200">
+                          Schedule:
+                        </span>{' '}
+                        {
+                          amendmentSuggestion.milestone_draft
+                            .schedule_confirmation
+                        }
+                      </div>
+                      <div className="sm:col-span-2">
+                        <span className="font-semibold text-violet-200">
+                          Price:
+                        </span>{' '}
+                        {amendmentSuggestion.milestone_draft.price_confirmation}
+                      </div>
                     </div>
                   ) : null}
                   {amendmentSuggestion.clarification_questions?.length ? (
                     <div>
-                      <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">Details to confirm</span>
+                      <span className="text-xs font-semibold uppercase tracking-wide text-violet-200">
+                        Details to confirm
+                      </span>
                       <ul className="mt-1 list-disc space-y-1 pl-5 text-sky-100/75">
-                        {amendmentSuggestion.clarification_questions.map((question) => <li key={question}>{question}</li>)}
+                        {amendmentSuggestion.clarification_questions.map(
+                          (question) => (
+                            <li key={question}>{question}</li>
+                          )
+                        )}
                       </ul>
                     </div>
                   ) : null}
-                  <p className="text-xs text-sky-100/60">{amendmentSuggestion.evidence_note}</p>
+                  <p className="text-xs text-sky-100/60">
+                    {amendmentSuggestion.evidence_note}
+                  </p>
                   <button
                     type="button"
                     data-testid="contractor-amendment-ai-apply"
@@ -6382,14 +7023,20 @@ export default function AgreementDetail({
                 type="file"
                 multiple
                 accept="image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
-                onChange={(event) => setAmendmentRequestForm((current) => ({
-                  ...current,
-                  attachments: Array.from(event.target.files || []).slice(0, 5),
-                }))}
+                onChange={(event) =>
+                  setAmendmentRequestForm((current) => ({
+                    ...current,
+                    attachments: Array.from(event.target.files || []).slice(
+                      0,
+                      5
+                    ),
+                  }))
+                }
                 className="mt-2 block w-full rounded-xl border border-dashed border-sky-200/30 bg-[#03142e] px-3 py-3 text-sm text-sky-100 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-100 file:px-3 file:py-2 file:font-semibold file:text-slate-950"
               />
               <span className="mt-1 block text-xs font-normal text-sky-100/55">
-                Upload up to 5 photos, PDFs, or supporting documents (10 MB each).
+                Upload up to 5 photos, PDFs, or supporting documents (10 MB
+                each).
               </span>
             </label>
             <div className="mt-6 flex justify-end gap-3">
@@ -6406,7 +7053,9 @@ export default function AgreementDetail({
                 disabled={amendmentRequestBusy}
                 className="rounded-xl bg-amber-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-amber-300 disabled:opacity-60"
               >
-                {amendmentRequestBusy ? 'Submitting...' : 'Submit Change Request'}
+                {amendmentRequestBusy
+                  ? 'Submitting...'
+                  : 'Submit Change Request'}
               </button>
             </div>
           </form>
@@ -6533,7 +7182,8 @@ export default function AgreementDetail({
                           </span>
                           <div className="min-w-0">
                             <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-sky-100/55">
-                              Milestone {milestoneIndex + 1} of {milestones.length}
+                              Milestone {milestoneIndex + 1} of{' '}
+                              {milestones.length}
                             </div>
                             <div className="mt-0.5 flex flex-wrap items-center gap-2">
                               <span className="font-semibold text-white">
@@ -6631,9 +7281,7 @@ export default function AgreementDetail({
                           <div
                             data-testid={`milestone-payment-status-${m.id}`}
                             className={`mt-1 font-semibold ${
-                              display.isPaid
-                                ? 'text-emerald-100'
-                                : 'text-white'
+                              display.isPaid ? 'text-emerald-100' : 'text-white'
                             }`}
                           >
                             {display.paymentLabel}
@@ -6722,410 +7370,422 @@ export default function AgreementDetail({
                             <span className="text-gray-500">
                               {' '}
                               (
+                              {fmtDateTime(m.subcontractor_review_requested_at)}
+                              )
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {m.subcontractor_review_note ? (
+                          <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
+                            <span className="font-semibold text-white">
+                              Review note:
+                            </span>{' '}
+                            {m.subcontractor_review_note}
+                          </div>
+                        ) : null}
+
+                        <div
+                          data-testid={`milestone-completion-state-${m.id}`}
+                          className="mt-2 text-sm text-sky-100/70"
+                        >
+                          <span className="font-semibold text-white">
+                            Work submission:
+                          </span>{' '}
+                          {String(
+                            m.work_submission_status ||
+                              m.subcontractor_completion_status ||
+                              'not_submitted'
+                          )
+                            .replaceAll('_', ' ')
+                            .replace(/^\w/, (c) => c.toUpperCase())}
+                          {m.work_submitted_at ||
+                          m.subcontractor_marked_complete_at ? (
+                            <span className="text-gray-500">
+                              {' '}
+                              (
                               {fmtDateTime(
-                                m.subcontractor_review_requested_at
+                                m.work_submitted_at ||
+                                  m.subcontractor_marked_complete_at
                               )}
                               )
                             </span>
                           ) : null}
                         </div>
 
-                      {m.subcontractor_review_note ? (
-                        <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
-                          <span className="font-semibold text-white">
-                            Review note:
-                          </span>{' '}
-                          {m.subcontractor_review_note}
-                        </div>
-                      ) : null}
-
-                      <div
-                        data-testid={`milestone-completion-state-${m.id}`}
-                        className="mt-2 text-sm text-sky-100/70"
-                      >
-                        <span className="font-semibold text-white">
-                          Work submission:
-                        </span>{' '}
-                        {String(
-                          m.work_submission_status ||
-                            m.subcontractor_completion_status ||
-                            'not_submitted'
-                        )
-                          .replaceAll('_', ' ')
-                          .replace(/^\w/, (c) => c.toUpperCase())}
-                        {m.work_submitted_at ||
-                        m.subcontractor_marked_complete_at ? (
-                          <span className="text-gray-500">
-                            {' '}
-                            (
-                            {fmtDateTime(
-                              m.work_submitted_at ||
-                                m.subcontractor_marked_complete_at
-                            )}
-                            )
-                          </span>
+                        {m.work_submission_note ||
+                        m.subcontractor_completion_note ? (
+                          <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
+                            <span className="font-semibold text-white">
+                              Completion note:
+                            </span>{' '}
+                            {m.work_submission_note ||
+                              m.subcontractor_completion_note}
+                          </div>
                         ) : null}
-                      </div>
 
-                      {m.work_submission_note ||
-                      m.subcontractor_completion_note ? (
-                        <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
-                          <span className="font-semibold text-white">
-                            Completion note:
-                          </span>{' '}
-                          {m.work_submission_note ||
-                            m.subcontractor_completion_note}
-                        </div>
-                      ) : null}
+                        {m.work_review_response_note ||
+                        m.subcontractor_review_response_note ? (
+                          <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
+                            <span className="font-semibold text-white">
+                              Review response:
+                            </span>{' '}
+                            {m.work_review_response_note ||
+                              m.subcontractor_review_response_note}
+                          </div>
+                        ) : null}
 
-                      {m.work_review_response_note ||
-                      m.subcontractor_review_response_note ? (
-                        <div className="mt-1 whitespace-pre-wrap text-sm text-sky-100/70">
-                          <span className="font-semibold text-white">
-                            Review response:
-                          </span>{' '}
-                          {m.work_review_response_note ||
-                            m.subcontractor_review_response_note}
-                        </div>
-                      ) : null}
-
-                      {isContractor &&
-                      m.assigned_worker &&
-                      m.assigned_worker.kind === 'subcontractor' ? (
-                        <div
-                          data-testid={`milestone-payout-state-${m.id}`}
-                          className="mt-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-gray-700"
-                        >
-                          <span className="font-semibold text-gray-900">
-                            Payout:
-                          </span>{' '}
-                          {m.payout_amount ? formatMoney(m.payout_amount) : '-'}{' '}
-                          <span className="text-gray-500">
-                            ({formatPayoutStatus(m.payout_status)})
-                          </span>
-                          <div className="mt-3 grid gap-3 md:grid-cols-2">
-                            <div className="rounded-lg bg-slate-50 px-3 py-2">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                Amount
-                              </div>
-                              <div className="font-semibold text-slate-900">
-                                {payoutAmount ? formatMoney(payoutAmount) : '-'}
-                              </div>
-                            </div>
-                            <div className="rounded-lg bg-slate-50 px-3 py-2">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                Release Mode
-                              </div>
-                              <div className="font-semibold text-slate-900">
-                                {payoutMode || 'Manual Release'}
-                              </div>
-                            </div>
-                            <div className="rounded-lg bg-slate-50 px-3 py-2 md:col-span-2">
-                              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                Status
-                              </div>
-                              <div className="font-semibold text-slate-900">
-                                {payoutOrchestration.safe_summary ||
-                                  payoutOrchestrationLabel(payoutState)}
-                              </div>
-                            </div>
-                          </div>
-                          {Array.isArray(
-                            payoutOrchestration.blocking_reasons_labels
-                          ) &&
-                          payoutOrchestration.blocking_reasons_labels.length ? (
-                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-slate-700">
-                              <div className="font-semibold text-slate-900">
-                                Blocking reasons
-                              </div>
-                              <ul className="mt-1 list-disc pl-5">
-                                {payoutOrchestration.blocking_reasons_labels.map(
-                                  (reason) => (
-                                    <li key={reason}>{reason}</li>
-                                  )
-                                )}
-                              </ul>
-                            </div>
-                          ) : null}
-                          {m.payout_ready_for_payout_at ? (
-                            <div
-                              data-testid={`milestone-payout-ready-at-${m.id}`}
-                              className="mt-1 text-xs text-emerald-700"
-                            >
-                              Ready for payout:{' '}
-                              {fmtDateTime(m.payout_ready_for_payout_at)}
-                            </div>
-                          ) : null}
-                          {m.payout_paid_at ? (
-                            <div
-                              data-testid={`milestone-payout-paid-at-${m.id}`}
-                              className="mt-1 text-xs text-emerald-700"
-                            >
-                              Paid: {fmtDateTime(m.payout_paid_at)}
-                            </div>
-                          ) : null}
-                          {m.payout_failed_at ? (
-                            <div
-                              data-testid={`milestone-payout-failed-at-${m.id}`}
-                              className="mt-1 text-xs text-rose-700"
-                            >
-                              Failed: {fmtDateTime(m.payout_failed_at)}
-                            </div>
-                          ) : null}
-                          {m.payout_stripe_transfer_id ? (
-                            <div className="mt-1 text-xs text-gray-500">
-                              Transfer: {m.payout_stripe_transfer_id}
-                            </div>
-                          ) : null}
-                          {m.payout_execution_mode ? (
-                            <div className="mt-1 text-xs text-gray-500">
-                              Execution:{' '}
-                              {formatExecutionMode(m.payout_execution_mode)}
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
-
-                      {isContractor && m.payout_failure_reason ? (
-                        <div
-                          data-testid={`milestone-payout-failure-${m.id}`}
-                          className="mt-1 text-sm text-rose-700 whitespace-pre-wrap"
-                        >
-                          <span className="font-semibold">Payout failure:</span>{' '}
-                          {m.payout_failure_reason}
-                        </div>
-                      ) : null}
-
-                      {isContractor && (
-                        <div className="mt-3">
-                          <AssignEmployeeInline
-                            theme="operational"
-                            label="Assign Team Member"
-                            help="Assign this milestone to one accountable team member. The same employee can own multiple milestones."
-                            currentAssignment={
-                              m.assigned_worker?.kind === 'employee'
-                                ? m.assigned_worker
-                                : null
-                            }
-                            onAssign={(subaccountId) =>
-                              assignMilestoneEmployee(m.id, subaccountId)
-                            }
-                            onUnassign={() =>
-                              unassignMilestoneEmployee(m.id)
-                            }
-                            unassignRequiresSelection={false}
-                            disabled={m.assigned_worker?.kind === 'subcontractor'}
-                          />
-                          {m.assigned_worker?.kind === 'subcontractor' ? (
-                            <div className="mt-2 text-xs text-amber-100/80">
-                              Remove the subcontractor before assigning a team member.
-                            </div>
-                          ) : null}
-                          <div className="mt-3">
-                            <MilestoneCollaboratorsInline
-                              milestoneId={m.id}
-                              disabled={m.assigned_worker?.kind === 'subcontractor'}
-                              onUpdated={fetchAgreement}
-                            />
-                          </div>
-                          <div className="mt-3">
-                          <AssignSubcontractorInline
-                            theme="operational"
-                            acceptedSubcontractors={acceptedSubcontractors}
-                            currentAssignment={m.assigned_subcontractor}
-                            currentCompliance={
-                              m.subcontractor_assignment_compliance
-                            }
-                            currentAgreement={
-                              m.subcontractor_milestone_agreement
-                            }
-                            milestoneAmount={m.amount}
-                            onAssign={(invitationId, options) =>
-                              assignMilestoneSubcontractor(
-                                m.id,
-                                invitationId,
-                                options
-                              )
-                            }
-                            onUnassign={() =>
-                              unassignMilestoneSubcontractor(m.id)
-                            }
-                            disabled={m.assigned_worker?.kind === 'employee'}
-                          />
-                          </div>
-                          <div className="mt-3">
-                            <AssignReviewerInline
-                              theme="operational"
-                              reviewers={eligibleReviewers}
-                              currentReviewer={m.reviewer}
-                              onAssign={(subaccountId) =>
-                                assignDelegatedReviewer(m.id, subaccountId)
-                              }
-                              onClear={() => clearDelegatedReviewer(m.id)}
-                            />
-                          </div>
-                          {m.subcontractor_review_requested ? (
-                            <button
-                              type="button"
-                              data-testid={`milestone-review-clear-${m.id}`}
-                              onClick={() => clearMilestoneReviewRequest(m.id)}
-                              className="mt-3 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
-                            >
-                              Clear Review Request
-                            </button>
-                          ) : null}
-                          <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-[#041735]/80 p-4">
-                            <div className="text-sm font-semibold text-white">
-                              Worker Submission Review
-                            </div>
-                            <textarea
-                              data-testid={`milestone-completion-response-note-${m.id}`}
-                              rows={2}
-                              value={completionResponseNotes[m.id] || ''}
-                              onChange={(e) =>
-                                setCompletionResponseNotes((prev) => ({
-                                  ...prev,
-                                  [m.id]: e.target.value,
-                                }))
-                              }
-                              className="mhb-operational-control w-full rounded-lg px-3 py-2 text-sm"
-                              placeholder="Optional response note"
-                            />
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                data-testid={`milestone-completion-approve-${m.id}`}
-                                onClick={() =>
-                                  approveSubcontractorCompletion(m.id)
-                                }
-                                disabled={
-                                  completionDecisionBusy[m.id] ||
-                                  (m.work_submission_status ||
-                                    m.subcontractor_completion_status) !==
-                                    'submitted_for_review'
-                                }
-                                className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                              >
-                                {completionDecisionBusy[m.id]
-                                  ? 'Working...'
-                                  : 'Mark Reviewed'}
-                              </button>
-                              <button
-                                type="button"
-                                data-testid={`milestone-completion-reject-${m.id}`}
-                                onClick={() =>
-                                  rejectSubcontractorCompletion(m.id)
-                                }
-                                disabled={
-                                  completionDecisionBusy[m.id] ||
-                                  (m.work_submission_status ||
-                                    m.subcontractor_completion_status) !==
-                                    'submitted_for_review'
-                                }
-                                className="rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15 disabled:opacity-40"
-                              >
-                                {completionDecisionBusy[m.id]
-                                  ? 'Working...'
-                                  : 'Send Back for Changes'}
-                              </button>
-                            </div>
-                          </div>
-                          {payoutState === 'ready' ||
-                          payoutState === 'ready_for_payout' ? (
-                            <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                              <div className="text-sm font-semibold text-emerald-900">
-                                Subcontractor payout is ready for contractor
-                                release.
-                              </div>
-                              <div className="mt-1 text-sm text-emerald-800">
-                                Amount:{' '}
-                                {m.payout_amount
-                                  ? formatMoney(m.payout_amount)
-                                  : '-'}
-                              </div>
-                              {payoutOrchestration.can_manual_release ? (
-                                <button
-                                  type="button"
-                                  data-testid={`milestone-payout-execute-${m.id}`}
-                                  onClick={() =>
-                                    requestReleaseSubcontractorPayment(m)
-                                  }
-                                  disabled={payoutDecisionBusy[m.id]}
-                                  className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                                >
-                                  {payoutDecisionBusy[m.id]
-                                    ? 'Processing...'
-                                    : 'Release Subcontractor Payment'}
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                          {payoutState === 'scheduled' ? (
-                            <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
-                              <div className="text-sm font-semibold text-indigo-900">
-                                Subcontractor payout is scheduled.
-                              </div>
-                              <div className="mt-1 text-sm text-indigo-800">
-                                The system will release this payment after
-                                customer approval and payout setup checks.
-                              </div>
-                            </div>
-                          ) : null}
-                          {payoutState === 'blocked' ? (
-                            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-                              <div className="text-sm font-semibold text-amber-900">
-                                Subcontractor payout is blocked.
-                              </div>
-                              <div className="mt-1 text-sm text-amber-800">
-                                {payoutOrchestration.safe_summary ||
-                                  'Review the blocking reasons shown above.'}
-                              </div>
-                            </div>
-                          ) : null}
-                          {m.payout_status === 'failed' ? (
-                            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4">
-                              <div className="text-sm font-semibold text-rose-900">
-                                Subcontractor payout failed.
-                              </div>
-                              <div className="mt-1 text-sm text-rose-800">
-                                Amount:{' '}
-                                {m.payout_amount
-                                  ? formatMoney(m.payout_amount)
-                                  : '-'}
-                              </div>
-                              {m.payout_failure_reason ? (
-                                <div className="mt-1 text-sm text-rose-800 whitespace-pre-wrap">
-                                  Reason: {m.payout_failure_reason}
+                        {isContractor &&
+                        m.assigned_worker &&
+                        m.assigned_worker.kind === 'subcontractor' ? (
+                          <div
+                            data-testid={`milestone-payout-state-${m.id}`}
+                            className="mt-3 rounded-xl border border-slate-200 bg-white p-4 text-sm text-gray-700"
+                          >
+                            <span className="font-semibold text-gray-900">
+                              Payout:
+                            </span>{' '}
+                            {m.payout_amount
+                              ? formatMoney(m.payout_amount)
+                              : '-'}{' '}
+                            <span className="text-gray-500">
+                              ({formatPayoutStatus(m.payout_status)})
+                            </span>
+                            <div className="mt-3 grid gap-3 md:grid-cols-2">
+                              <div className="rounded-lg bg-slate-50 px-3 py-2">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Amount
                                 </div>
-                              ) : null}
-                              <div className="mt-3 flex flex-wrap gap-2">
+                                <div className="font-semibold text-slate-900">
+                                  {payoutAmount
+                                    ? formatMoney(payoutAmount)
+                                    : '-'}
+                                </div>
+                              </div>
+                              <div className="rounded-lg bg-slate-50 px-3 py-2">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Release Mode
+                                </div>
+                                <div className="font-semibold text-slate-900">
+                                  {payoutMode || 'Manual Release'}
+                                </div>
+                              </div>
+                              <div className="rounded-lg bg-slate-50 px-3 py-2 md:col-span-2">
+                                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                                  Status
+                                </div>
+                                <div className="font-semibold text-slate-900">
+                                  {payoutOrchestration.safe_summary ||
+                                    payoutOrchestrationLabel(payoutState)}
+                                </div>
+                              </div>
+                            </div>
+                            {Array.isArray(
+                              payoutOrchestration.blocking_reasons_labels
+                            ) &&
+                            payoutOrchestration.blocking_reasons_labels
+                              .length ? (
+                              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-slate-700">
+                                <div className="font-semibold text-slate-900">
+                                  Blocking reasons
+                                </div>
+                                <ul className="mt-1 list-disc pl-5">
+                                  {payoutOrchestration.blocking_reasons_labels.map(
+                                    (reason) => (
+                                      <li key={reason}>{reason}</li>
+                                    )
+                                  )}
+                                </ul>
+                              </div>
+                            ) : null}
+                            {m.payout_ready_for_payout_at ? (
+                              <div
+                                data-testid={`milestone-payout-ready-at-${m.id}`}
+                                className="mt-1 text-xs text-emerald-700"
+                              >
+                                Ready for payout:{' '}
+                                {fmtDateTime(m.payout_ready_for_payout_at)}
+                              </div>
+                            ) : null}
+                            {m.payout_paid_at ? (
+                              <div
+                                data-testid={`milestone-payout-paid-at-${m.id}`}
+                                className="mt-1 text-xs text-emerald-700"
+                              >
+                                Paid: {fmtDateTime(m.payout_paid_at)}
+                              </div>
+                            ) : null}
+                            {m.payout_failed_at ? (
+                              <div
+                                data-testid={`milestone-payout-failed-at-${m.id}`}
+                                className="mt-1 text-xs text-rose-700"
+                              >
+                                Failed: {fmtDateTime(m.payout_failed_at)}
+                              </div>
+                            ) : null}
+                            {m.payout_stripe_transfer_id ? (
+                              <div className="mt-1 text-xs text-gray-500">
+                                Transfer: {m.payout_stripe_transfer_id}
+                              </div>
+                            ) : null}
+                            {m.payout_execution_mode ? (
+                              <div className="mt-1 text-xs text-gray-500">
+                                Execution:{' '}
+                                {formatExecutionMode(m.payout_execution_mode)}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
+
+                        {isContractor && m.payout_failure_reason ? (
+                          <div
+                            data-testid={`milestone-payout-failure-${m.id}`}
+                            className="mt-1 text-sm text-rose-700 whitespace-pre-wrap"
+                          >
+                            <span className="font-semibold">
+                              Payout failure:
+                            </span>{' '}
+                            {m.payout_failure_reason}
+                          </div>
+                        ) : null}
+
+                        {isContractor && (
+                          <div className="mt-3">
+                            <AssignEmployeeInline
+                              theme="operational"
+                              label="Assign Team Member"
+                              help="Assign this milestone to one accountable team member. The same employee can own multiple milestones."
+                              currentAssignment={
+                                m.assigned_worker?.kind === 'employee'
+                                  ? m.assigned_worker
+                                  : null
+                              }
+                              onAssign={(subaccountId) =>
+                                assignMilestoneEmployee(m.id, subaccountId)
+                              }
+                              onUnassign={() => unassignMilestoneEmployee(m.id)}
+                              unassignRequiresSelection={false}
+                              disabled={
+                                m.assigned_worker?.kind === 'subcontractor'
+                              }
+                            />
+                            {m.assigned_worker?.kind === 'subcontractor' ? (
+                              <div className="mt-2 text-xs text-amber-100/80">
+                                Remove the subcontractor before assigning a team
+                                member.
+                              </div>
+                            ) : null}
+                            <div className="mt-3">
+                              <MilestoneCollaboratorsInline
+                                milestoneId={m.id}
+                                disabled={
+                                  m.assigned_worker?.kind === 'subcontractor'
+                                }
+                                onUpdated={fetchAgreement}
+                              />
+                            </div>
+                            <div className="mt-3">
+                              <AssignSubcontractorInline
+                                theme="operational"
+                                acceptedSubcontractors={acceptedSubcontractors}
+                                currentAssignment={m.assigned_subcontractor}
+                                currentCompliance={
+                                  m.subcontractor_assignment_compliance
+                                }
+                                currentAgreement={
+                                  m.subcontractor_milestone_agreement
+                                }
+                                milestoneAmount={m.amount}
+                                onAssign={(invitationId, options) =>
+                                  assignMilestoneSubcontractor(
+                                    m.id,
+                                    invitationId,
+                                    options
+                                  )
+                                }
+                                onUnassign={() =>
+                                  unassignMilestoneSubcontractor(m.id)
+                                }
+                                disabled={
+                                  m.assigned_worker?.kind === 'employee'
+                                }
+                              />
+                            </div>
+                            <div className="mt-3">
+                              <AssignReviewerInline
+                                theme="operational"
+                                reviewers={eligibleReviewers}
+                                currentReviewer={m.reviewer}
+                                onAssign={(subaccountId) =>
+                                  assignDelegatedReviewer(m.id, subaccountId)
+                                }
+                                onClear={() => clearDelegatedReviewer(m.id)}
+                              />
+                            </div>
+                            {m.subcontractor_review_requested ? (
+                              <button
+                                type="button"
+                                data-testid={`milestone-review-clear-${m.id}`}
+                                onClick={() =>
+                                  clearMilestoneReviewRequest(m.id)
+                                }
+                                className="mt-3 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+                              >
+                                Clear Review Request
+                              </button>
+                            ) : null}
+                            <div className="mt-3 space-y-2 rounded-xl border border-white/10 bg-[#041735]/80 p-4">
+                              <div className="text-sm font-semibold text-white">
+                                Worker Submission Review
+                              </div>
+                              <textarea
+                                data-testid={`milestone-completion-response-note-${m.id}`}
+                                rows={2}
+                                value={completionResponseNotes[m.id] || ''}
+                                onChange={(e) =>
+                                  setCompletionResponseNotes((prev) => ({
+                                    ...prev,
+                                    [m.id]: e.target.value,
+                                  }))
+                                }
+                                className="mhb-operational-control w-full rounded-lg px-3 py-2 text-sm"
+                                placeholder="Optional response note"
+                              />
+                              <div className="flex flex-wrap gap-2">
                                 <button
                                   type="button"
-                                  data-testid={`milestone-payout-retry-${m.id}`}
-                                  onClick={() => retryMilestonePayout(m.id)}
-                                  disabled={payoutDecisionBusy[m.id]}
-                                  className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                  data-testid={`milestone-completion-approve-${m.id}`}
+                                  onClick={() =>
+                                    approveSubcontractorCompletion(m.id)
+                                  }
+                                  disabled={
+                                    completionDecisionBusy[m.id] ||
+                                    (m.work_submission_status ||
+                                      m.subcontractor_completion_status) !==
+                                      'submitted_for_review'
+                                  }
+                                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                                 >
-                                  {payoutDecisionBusy[m.id]
+                                  {completionDecisionBusy[m.id]
                                     ? 'Working...'
-                                    : 'Retry Payout'}
+                                    : 'Mark Reviewed'}
                                 </button>
                                 <button
                                   type="button"
-                                  data-testid={`milestone-payout-reset-${m.id}`}
-                                  onClick={() => resetMilestonePayout(m.id)}
-                                  disabled={payoutDecisionBusy[m.id]}
-                                  className="rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                  data-testid={`milestone-completion-reject-${m.id}`}
+                                  onClick={() =>
+                                    rejectSubcontractorCompletion(m.id)
+                                  }
+                                  disabled={
+                                    completionDecisionBusy[m.id] ||
+                                    (m.work_submission_status ||
+                                      m.subcontractor_completion_status) !==
+                                      'submitted_for_review'
+                                  }
+                                  className="rounded-lg border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold text-white hover:bg-white/15 disabled:opacity-40"
                                 >
-                                  {payoutDecisionBusy[m.id]
+                                  {completionDecisionBusy[m.id]
                                     ? 'Working...'
-                                    : 'Reset Payout'}
+                                    : 'Send Back for Changes'}
                                 </button>
                               </div>
                             </div>
-                          ) : null}
-                        </div>
-                      )}
+                            {payoutState === 'ready' ||
+                            payoutState === 'ready_for_payout' ? (
+                              <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                                <div className="text-sm font-semibold text-emerald-900">
+                                  Subcontractor payout is ready for contractor
+                                  release.
+                                </div>
+                                <div className="mt-1 text-sm text-emerald-800">
+                                  Amount:{' '}
+                                  {m.payout_amount
+                                    ? formatMoney(m.payout_amount)
+                                    : '-'}
+                                </div>
+                                {payoutOrchestration.can_manual_release ? (
+                                  <button
+                                    type="button"
+                                    data-testid={`milestone-payout-execute-${m.id}`}
+                                    onClick={() =>
+                                      requestReleaseSubcontractorPayment(m)
+                                    }
+                                    disabled={payoutDecisionBusy[m.id]}
+                                    className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                                  >
+                                    {payoutDecisionBusy[m.id]
+                                      ? 'Processing...'
+                                      : 'Release Subcontractor Payment'}
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {payoutState === 'scheduled' ? (
+                              <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50 p-4">
+                                <div className="text-sm font-semibold text-indigo-900">
+                                  Subcontractor payout is scheduled.
+                                </div>
+                                <div className="mt-1 text-sm text-indigo-800">
+                                  The system will release this payment after
+                                  customer approval and payout setup checks.
+                                </div>
+                              </div>
+                            ) : null}
+                            {payoutState === 'blocked' ? (
+                              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                                <div className="text-sm font-semibold text-amber-900">
+                                  Subcontractor payout is blocked.
+                                </div>
+                                <div className="mt-1 text-sm text-amber-800">
+                                  {payoutOrchestration.safe_summary ||
+                                    'Review the blocking reasons shown above.'}
+                                </div>
+                              </div>
+                            ) : null}
+                            {m.payout_status === 'failed' ? (
+                              <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 p-4">
+                                <div className="text-sm font-semibold text-rose-900">
+                                  Subcontractor payout failed.
+                                </div>
+                                <div className="mt-1 text-sm text-rose-800">
+                                  Amount:{' '}
+                                  {m.payout_amount
+                                    ? formatMoney(m.payout_amount)
+                                    : '-'}
+                                </div>
+                                {m.payout_failure_reason ? (
+                                  <div className="mt-1 text-sm text-rose-800 whitespace-pre-wrap">
+                                    Reason: {m.payout_failure_reason}
+                                  </div>
+                                ) : null}
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    data-testid={`milestone-payout-retry-${m.id}`}
+                                    onClick={() => retryMilestonePayout(m.id)}
+                                    disabled={payoutDecisionBusy[m.id]}
+                                    className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+                                  >
+                                    {payoutDecisionBusy[m.id]
+                                      ? 'Working...'
+                                      : 'Retry Payout'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    data-testid={`milestone-payout-reset-${m.id}`}
+                                    onClick={() => resetMilestonePayout(m.id)}
+                                    disabled={payoutDecisionBusy[m.id]}
+                                    className="rounded-lg border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-60"
+                                  >
+                                    {payoutDecisionBusy[m.id]
+                                      ? 'Working...'
+                                      : 'Reset Payout'}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
                       </details>
                     </div>
                   );
@@ -7174,7 +7834,8 @@ export default function AgreementDetail({
               {formatMoney(norm.totalCost)}
             </div>
             <div className="mt-1 text-xs text-sky-100/60">
-              {paymentModeLabel(norm.payment_mode)} / {paymentStructure || 'standard'}
+              {paymentModeLabel(norm.payment_mode)} /{' '}
+              {paymentStructure || 'standard'}
             </div>
           </div>
           <div
@@ -7240,15 +7901,25 @@ export default function AgreementDetail({
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                   <SummaryCard
                     label="Milestone Escrow Total"
-                    value={formatMoney(fundingPreview.milestone_escrow_total ?? fundingPreview.project_amount)}
+                    value={formatMoney(
+                      fundingPreview.milestone_escrow_total ??
+                        fundingPreview.project_amount
+                    )}
                   />
                   <SummaryCard
                     label="Incidentals Reserve"
-                    value={formatMoney(fundingPreview.incidentals_reserve ?? agreement?.incidentals_reserve_amount ?? 0)}
+                    value={formatMoney(
+                      fundingPreview.incidentals_reserve ??
+                        agreement?.incidentals_reserve_amount ??
+                        0
+                    )}
                   />
                   <SummaryCard
                     label="Total Escrow Required"
-                    value={formatMoney(fundingPreview.total_required ?? fundingPreview.homeowner_escrow)}
+                    value={formatMoney(
+                      fundingPreview.total_required ??
+                        fundingPreview.homeowner_escrow
+                    )}
                   />
                   <SummaryCard
                     label="Remaining to Fund"
@@ -7292,96 +7963,96 @@ export default function AgreementDetail({
         )}
 
         {hasSmsDetails ? (
-        <section className="space-y-4">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900">
-              Secondary Details
-            </h3>
-            <div className="mt-1 text-sm text-slate-600">
-              Communication diagnostics and lower-priority agreement details
-              stay available here without competing with the core job controls
-              above.
+          <section className="space-y-4">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-900">
+                Secondary Details
+              </h3>
+              <div className="mt-1 text-sm text-slate-600">
+                Communication diagnostics and lower-priority agreement details
+                stay available here without competing with the core job controls
+                above.
+              </div>
             </div>
-          </div>
 
-          <details
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
-            data-testid="agreement-sms-status"
-          >
-            <summary className="cursor-pointer list-none font-semibold text-slate-900">
-              SMS Status
-            </summary>
-            <div className="mt-2">
-              {agreement?.sms_enabled
-                ? 'Customer SMS updates are enabled for this agreement.'
-                : agreement?.sms_opted_out
-                  ? 'Customer has opted out of SMS updates for this agreement.'
-                  : 'Recent SMS diagnostics are available for this agreement.'}
-            </div>
-            {agreement?.sms_status?.phone_number_e164 ? (
-              <div className="mt-1 text-xs text-slate-500">
-                Phone: {agreement.sms_status.phone_number_e164}
+            <details
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
+              data-testid="agreement-sms-status"
+            >
+              <summary className="cursor-pointer list-none font-semibold text-slate-900">
+                SMS Status
+              </summary>
+              <div className="mt-2">
+                {agreement?.sms_enabled
+                  ? 'Customer SMS updates are enabled for this agreement.'
+                  : agreement?.sms_opted_out
+                    ? 'Customer has opted out of SMS updates for this agreement.'
+                    : 'Recent SMS diagnostics are available for this agreement.'}
               </div>
-            ) : null}
-            {agreement?.last_sms_event?.summary ? (
-              <div className="mt-1 text-xs text-slate-500">
-                Last SMS event: {agreement.last_sms_event.summary}
-              </div>
-            ) : null}
-          </details>
+              {agreement?.sms_status?.phone_number_e164 ? (
+                <div className="mt-1 text-xs text-slate-500">
+                  Phone: {agreement.sms_status.phone_number_e164}
+                </div>
+              ) : null}
+              {agreement?.last_sms_event?.summary ? (
+                <div className="mt-1 text-xs text-slate-500">
+                  Last SMS event: {agreement.last_sms_event.summary}
+                </div>
+              ) : null}
+            </details>
 
-          <details
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
-            data-testid="agreement-sms-automation"
-          >
-            <summary className="cursor-pointer list-none font-semibold text-slate-900">
-              SMS Automation
-            </summary>
-            {agreement?.last_sms_automation_decision ? (
-              <div className="mt-2 space-y-1">
-                <div>
-                  Last decision:{' '}
-                  <span className="font-semibold text-slate-900">
-                    {agreement.last_sms_automation_decision.reason_code}
-                  </span>
+            <details
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm"
+              data-testid="agreement-sms-automation"
+            >
+              <summary className="cursor-pointer list-none font-semibold text-slate-900">
+                SMS Automation
+              </summary>
+              {agreement?.last_sms_automation_decision ? (
+                <div className="mt-2 space-y-1">
+                  <div>
+                    Last decision:{' '}
+                    <span className="font-semibold text-slate-900">
+                      {agreement.last_sms_automation_decision.reason_code}
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {agreement.last_sms_automation_decision.message_preview ||
+                      'No message preview available.'}
+                  </div>
                 </div>
-                <div className="text-xs text-slate-500">
-                  {agreement.last_sms_automation_decision.message_preview ||
-                    'No message preview available.'}
+              ) : (
+                <div className="mt-2 text-sm text-slate-600">
+                  No SMS automation decisions for this agreement yet.
                 </div>
-              </div>
-            ) : (
-              <div className="mt-2 text-sm text-slate-600">
-                No SMS automation decisions for this agreement yet.
-              </div>
-            )}
-            {Array.isArray(agreement?.recent_sms_automation_decisions) &&
-            agreement.recent_sms_automation_decisions.length ? (
-              <div className="mt-3 space-y-2">
-                {agreement.recent_sms_automation_decisions
-                  .slice(0, 4)
-                  .map((item) => (
-                    <div
-                      key={item.id || `${item.event_type}-${item.created_at}`}
-                      className="rounded-lg bg-slate-50 px-3 py-2"
-                    >
-                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                        {item.event_type}
+              )}
+              {Array.isArray(agreement?.recent_sms_automation_decisions) &&
+              agreement.recent_sms_automation_decisions.length ? (
+                <div className="mt-3 space-y-2">
+                  {agreement.recent_sms_automation_decisions
+                    .slice(0, 4)
+                    .map((item) => (
+                      <div
+                        key={item.id || `${item.event_type}-${item.created_at}`}
+                        className="rounded-lg bg-slate-50 px-3 py-2"
+                      >
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                          {item.event_type}
+                        </div>
+                        <div className="mt-1 text-sm text-slate-800">
+                          {item.reason_code} / {item.channel_decision}
+                          {item.sent
+                            ? ' / sent'
+                            : item.deferred
+                              ? ' / deferred'
+                              : ''}
+                        </div>
                       </div>
-                      <div className="mt-1 text-sm text-slate-800">
-                        {item.reason_code} / {item.channel_decision}
-                        {item.sent
-                          ? ' / sent'
-                          : item.deferred
-                            ? ' / deferred'
-                            : ''}
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : null}
-          </details>
-        </section>
+                    ))}
+                </div>
+              ) : null}
+            </details>
+          </section>
         ) : null}
 
         {showDrawRequestsPanel && (
@@ -7394,8 +8065,8 @@ export default function AgreementDetail({
                 <div>
                   <h3 className="text-lg font-semibold mb-1">Draw Requests</h3>
                   <p className="text-sm text-gray-500">
-                    {drawSummaryLabel}. Create and review progress-payment
-                    draws after the agreement is signed.
+                    {drawSummaryLabel}. Create and review progress-payment draws
+                    after the agreement is signed.
                   </p>
                 </div>
                 {isExecuted ? (
