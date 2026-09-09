@@ -116,6 +116,7 @@ export default function ProjectDashboardPage() {
   const { project_id } = useParams();
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token") || "";
+  const focusedWarrantyRequestId = searchParams.get("warranty_request") || "";
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -239,6 +240,16 @@ export default function ProjectDashboardPage() {
 
   const activeWarranty = warrantyRows[0] || null;
   const activeWarrantyRequests = Array.isArray(activeWarranty?.requests) ? activeWarranty.requests : [];
+
+  useEffect(() => {
+    if (!focusedWarrantyRequestId || !activeWarrantyRequests.length) return;
+    const requestCard = document.getElementById(`warranty-request-${focusedWarrantyRequestId}`);
+    if (!requestCard) return;
+    window.requestAnimationFrame(() => {
+      requestCard.scrollIntoView({ behavior: "smooth", block: "center" });
+      requestCard.focus({ preventScroll: true });
+    });
+  }, [focusedWarrantyRequestId, activeWarrantyRequests.length]);
 
   const updateWarrantyField = (field, value) => {
     setWarrantyForm((prev) => ({ ...prev, [field]: value }));
@@ -742,7 +753,22 @@ export default function ProjectDashboardPage() {
                       {activeWarrantyRequests.length ? (
                         <div className="space-y-3 pt-2">
                           {activeWarrantyRequests.map((requestRow) => (
-                            <div key={requestRow.id} className="rounded-2xl border border-slate-200 bg-white p-3" data-testid={`customer-warranty-request-${requestRow.id}`}>
+                            <div
+                              key={requestRow.id}
+                              id={`warranty-request-${requestRow.id}`}
+                              tabIndex={focusedWarrantyRequestId === String(requestRow.id) ? -1 : undefined}
+                              className={`rounded-2xl border bg-white p-3 outline-none transition ${
+                                focusedWarrantyRequestId === String(requestRow.id)
+                                  ? "border-emerald-500 ring-4 ring-emerald-100"
+                                  : "border-slate-200"
+                              }`}
+                              data-testid={`customer-warranty-request-${requestRow.id}`}
+                            >
+                              {focusedWarrantyRequestId === String(requestRow.id) && requestRow.allow_acknowledgment ? (
+                                <div className="mb-3 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-900" role="status">
+                                  This warranty repair is ready for your review. Choose an option below to acknowledge the work.
+                                </div>
+                              ) : null}
                               <div className="flex flex-wrap items-start justify-between gap-2">
                                 <div>
                                   <div className="font-semibold text-slate-900">{requestRow.title}</div>

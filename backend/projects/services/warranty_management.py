@@ -510,7 +510,10 @@ def _customer_warranty_action_url(request: WarrantyRequest, customer_email: str)
         or getattr(settings, "SITE_URL", "")
         or "https://www.myhomebro.com"
     ).rstrip("/")
-    return f"{base}/app/project/{request.project_id}?token={quote(token, safe='')}#warranty"
+    return (
+        f"{base}/app/project/{request.project_id}?token={quote(token, safe='')}"
+        f"&warranty_request={request.id}#warranty-request-{request.id}"
+    )
 
 
 def _send_customer_warranty_email(
@@ -641,7 +644,7 @@ def _send_customer_warranty_sms(
         WarrantyRequest.STATUS_ESCALATED_TO_RESOLUTION: "Your warranty request moved to Resolution for further review.",
     }
     message = copy.get(to_status, "Your warranty request has an update.")
-    body = f"MyHomeBro: {message} {action_url}".strip()
+    body = f"MyHomeBro warranty - {request.title}: {message} Review this work order: {action_url}".strip()
     result = send_compliant_sms(
         phone,
         body,

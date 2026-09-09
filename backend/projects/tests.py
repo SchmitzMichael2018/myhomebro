@@ -7383,6 +7383,8 @@ class AgreementWarrantyApiTests(TestCase):
             channel=NotificationRule.CHANNEL_EMAIL,
         )
         self.assertIn(f"/app/project/{self.project.id}?token=", submitted_email.action_url)
+        self.assertIn(f"&warranty_request={request_row.id}", submitted_email.action_url)
+        self.assertTrue(submitted_email.action_url.endswith(f"#warranty-request-{request_row.id}"))
 
         work_order = create_warranty_work_order(
             request_row,
@@ -7420,7 +7422,8 @@ class AgreementWarrantyApiTests(TestCase):
             event_type=SmartNotificationEvent.WARRANTY_ACKNOWLEDGMENT_REQUESTED,
             channel=NotificationRule.CHANNEL_EMAIL,
         )
-        self.assertIn("#warranty", acknowledgment_email.action_url)
+        self.assertIn(f"&warranty_request={request_row.id}", acknowledgment_email.action_url)
+        self.assertTrue(acknowledgment_email.action_url.endswith(f"#warranty-request-{request_row.id}"))
         self.assertTrue(
             any(
                 "Warranty repair ready for your review" in call.kwargs.get("subject", "")
@@ -7429,7 +7432,9 @@ class AgreementWarrantyApiTests(TestCase):
         )
         self.assertTrue(
             any(
-                "warranty repair was marked complete" in call.args[1]
+                "Warranty repair:" in call.args[1]
+                and "warranty repair was marked complete" in call.args[1]
+                and "Review this work order:" in call.args[1]
                 for call in send_sms.call_args_list
             )
         )
