@@ -9135,6 +9135,28 @@ class SMSAutomationTests(TestCase):
             "direct_pay_link_ready_homeowner",
         )
 
+    @override_settings(SITE_URL="https://www.myhomebro.com")
+    def test_invoice_ready_sms_includes_public_invoice_review_link(self):
+        set_sms_opt_in(
+            phone_number=self.homeowner.phone_number,
+            homeowner=self.homeowner,
+            source=SMSConsent.OPT_IN_SOURCE_ADMIN,
+        )
+
+        decision = evaluate_sms_automation(
+            "invoice_ready",
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            agreement=self.agreement,
+            invoice=self.invoice,
+            simulate=True,
+        )
+
+        expected_url = f"https://www.myhomebro.com/invoice/{self.invoice.public_token}"
+        self.assertTrue(decision["should_send"])
+        self.assertIn("Review and approve:", decision["message_preview"])
+        self.assertIn(expected_url, decision["message_preview"])
+
     def test_agreement_fully_signed_emits_sms_for_opted_in_contractor(self):
         set_sms_opt_in(
             phone_number=self.contractor.phone,

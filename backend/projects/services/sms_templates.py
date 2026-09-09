@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from core.public_app_urls import build_public_app_url
+
 
 @dataclass(frozen=True)
 class SMSTemplateDefinition:
@@ -34,6 +36,18 @@ def _invoice_label(ctx: dict) -> str:
     if invoice is not None and getattr(invoice, "invoice_number", None):
         return f"Invoice {invoice.invoice_number}"
     return "your invoice"
+
+
+def _invoice_review_url(ctx: dict) -> str:
+    invoice = ctx.get("invoice")
+    token = str(getattr(invoice, "public_token", "") or "").strip()
+    return build_public_app_url(f"/invoice/{token}") if token else ""
+
+
+def _invoice_ready_message(ctx: dict) -> str:
+    prefix = f"{_invoice_label(ctx)} is ready for your review on {_agreement_label(ctx)}."
+    review_url = _invoice_review_url(ctx)
+    return f"{prefix} Review and approve: {review_url}" if review_url else f"{prefix} Open MyHomeBro to review it."
 
 
 TEMPLATES: dict[str, SMSTemplateDefinition] = {
@@ -116,7 +130,7 @@ TEMPLATES: dict[str, SMSTemplateDefinition] = {
         intent_summary="Tell the homeowner an invoice is ready for review.",
         priority="high",
         short_fallback_text="An invoice is ready for your review.",
-        body_builder=lambda ctx: f"{_invoice_label(ctx)} is ready for your review on {_agreement_label(ctx)}. Open MyHomeBro to review it.",
+        body_builder=_invoice_ready_message,
     ),
     "dispute_opened_contractor": SMSTemplateDefinition(
         template_key="dispute_opened_contractor",
