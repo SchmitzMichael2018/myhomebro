@@ -109,6 +109,15 @@ TEMPLATES: dict[str, SMSTemplateDefinition] = {
         short_fallback_text="Your payment link is ready.",
         body_builder=lambda ctx: f"A payment link is ready for {_agreement_label(ctx)}. Open MyHomeBro to pay securely.",
     ),
+    "invoice_ready_homeowner": SMSTemplateDefinition(
+        template_key="invoice_ready_homeowner",
+        audience="homeowner",
+        intent_key="homeowner_action_needed",
+        intent_summary="Tell the homeowner an invoice is ready for review.",
+        priority="high",
+        short_fallback_text="An invoice is ready for your review.",
+        body_builder=lambda ctx: f"{_invoice_label(ctx)} is ready for your review on {_agreement_label(ctx)}. Open MyHomeBro to review it.",
+    ),
     "dispute_opened_contractor": SMSTemplateDefinition(
         template_key="dispute_opened_contractor",
         audience="contractor",

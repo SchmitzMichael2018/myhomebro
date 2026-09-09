@@ -175,7 +175,7 @@ def _build_from_and_reply_to(recipient, context):
 # Public notification function
 # ---------------------------------------------------------------------------
 
-def send_notification(recipient, subject, template_prefix, context):
+def send_notification(recipient, subject, template_prefix, context, *, send_sms=True):
     """
     Central notification helper for email + optional SMS.
 
@@ -238,7 +238,7 @@ def send_notification(recipient, subject, template_prefix, context):
     # SMS (Twilio) behavior unchanged
     # -----------------------------------------------------------------------
     phone_number = getattr(recipient, "phone", None) or getattr(recipient, "phone_number", None)
-    if twilio_client and phone_number:
+    if send_sms and twilio_client and phone_number:
         # Prefer context["sms_text"] if provided; otherwise truncate email body.
         sms_body = (context or {}).get("sms_text")
         if not sms_body:

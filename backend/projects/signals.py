@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from .models import Agreement, Contractor, ContractorReview, Invoice, Milestone
 from .models_dispute import Dispute
+from .notifications import notify_invoice_created
 from .tasks import task_generate_full_agreement_pdf, task_send_invoice_notification
 
 logger = logging.getLogger(__name__)
@@ -127,23 +128,32 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
     """
     _capture_milestone_performance_from_invoice(instance, "invoice_created" if created else "invoice_saved")
     if created:
-        if not getattr(settings, "CELERY_NOTIFICATIONS_ENABLED", False):
-            logger.info(
-                "invoice_notification_dispatch_skipped invoice_id=%s "
-                "reason=celery_notifications_disabled",
-                instance.id,
-            )
-            return
-        try:
-            task_send_invoice_notification.delay(instance.id)
-            logger.info(
-                f"📨 Invoice notification queued for Invoice {instance.id}."
-            )
-        except Exception as e:
-            logger.error(
-                f"❌ Failed to dispatch invoice notification for "
-                f"Invoice {instance.id}: {e}"
-            )
+        invoice_id = instance.id
+
+        def dispatch_notification():
+            if getattr(settings, "CELERY_NOTIFICATIONS_ENABLED", False):
+                try:
+                    task_send_invoice_notification.delay(invoice_id)
+                    logger.info("Invoice notification queued for Invoice %s.", invoice_id)
+                    return
+                except Exception as exc:
+                    logger.warning(
+                        "Invoice notification queue unavailable for Invoice %s; "
+                        "using synchronous fallback: %s",
+                        invoice_id,
+                        exc,
+                    )
+            try:
+                invoice = Invoice.objects.select_related(
+                    "agreement__project__homeowner",
+                    "agreement__project__contractor",
+                ).get(pk=invoice_id)
+                notify_invoice_created(invoice)
+                logger.info("Invoice notification sent synchronously for Invoice %s.", invoice_id)
+            except Exception:
+                logger.exception("Failed to send invoice notification for Invoice %s.", invoice_id)
+
+        transaction.on_commit(dispatch_notification)
 
 
 # --------------------------------------------------------------------

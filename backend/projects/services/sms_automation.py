@@ -37,6 +37,7 @@ RULES: dict[str, SMSAutomationRule] = {
     "agreement_signed": SMSAutomationRule("agreement_signed", "medium", "agreement_signed_contractor", "dashboard_only", 24, "agreement", "contractor"),
     "agreement_fully_signed": SMSAutomationRule("agreement_fully_signed", "high", "agreement_fully_signed_contractor", "sms", 24, "agreement", "contractor", True, "send", True),
     "direct_pay_link_ready": SMSAutomationRule("direct_pay_link_ready", "high", "direct_pay_link_ready_homeowner", "sms", 12, "invoice", "homeowner", True, "send", True),
+    "invoice_ready": SMSAutomationRule("invoice_ready", "high", "invoice_ready_homeowner", "sms", 12, "invoice", "homeowner", True, "send", True),
     "dispute_opened": SMSAutomationRule("dispute_opened", "high", "dispute_opened_contractor", "sms", 12, "agreement", "contractor", True, "send", True),
     "dispute_resolved": SMSAutomationRule("dispute_resolved", "medium", "dispute_resolved_contractor", "sms", 12, "agreement", "contractor"),
     "upcoming_due_milestone": SMSAutomationRule("upcoming_due_milestone", "low", "upcoming_due_milestone_homeowner", "dashboard_only", 24, "milestone", "homeowner"),
@@ -123,6 +124,7 @@ def has_recent_similar_sms(
     template_key: str,
     event_type: str,
     agreement: Agreement | None,
+    invoice: Invoice | None,
     milestone: Milestone | None,
     cooldown_hours: int,
 ) -> bool:
@@ -133,6 +135,12 @@ def has_recent_similar_sms(
     )
     if template_key:
         recent = recent.filter(template_key=template_key)
+    if invoice is not None:
+        recent = recent.filter(invoice=invoice)
+    elif milestone is not None:
+        recent = recent.filter(milestone=milestone)
+    elif agreement is not None:
+        recent = recent.filter(agreement=agreement)
     if recent.exists():
         return True
     same_event = SMSAutomationDecision.objects.filter(
@@ -142,7 +150,9 @@ def has_recent_similar_sms(
     )
     if agreement is not None:
         same_event = same_event.filter(agreement=agreement)
-    if milestone is not None:
+    if invoice is not None:
+        same_event = same_event.filter(invoice=invoice)
+    elif milestone is not None:
         same_event = same_event.filter(milestone=milestone)
     return same_event.exists()
 
@@ -591,6 +601,7 @@ def evaluate_sms_automation(
         template_key=template.template_key,
         event_type=event_type,
         agreement=ctx.get("agreement"),
+        invoice=ctx.get("invoice"),
         milestone=ctx.get("milestone"),
         cooldown_hours=rule.cooldown_hours,
     ):
