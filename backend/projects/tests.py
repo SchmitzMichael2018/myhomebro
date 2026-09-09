@@ -7336,7 +7336,11 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(warranty_event["extendedProps"]["estimated_duration_minutes"], 90)
 
     @patch("projects.services.warranty_management.send_postmark_email", return_value=(True, "sent"))
-    def test_warranty_status_notifications_and_acknowledgment_paths(self, send_email):
+    @patch(
+        "projects.services.warranty_management.send_compliant_sms",
+        return_value={"ok": True, "status": "sent"},
+    )
+    def test_warranty_status_notifications_and_acknowledgment_paths(self, send_sms, send_email):
         warranty = AgreementWarranty.objects.create(
             agreement=self.agreement,
             contractor=self.contractor,
@@ -7355,6 +7359,8 @@ class AgreementWarrantyApiTests(TestCase):
             title="Warranty repair",
             description="Needs repair.",
         )
+        self.homeowner.phone_number = "+12105550123"
+        self.homeowner.save(update_fields=["phone_number"])
         from projects.services.warranty_management import create_initial_status, create_warranty_work_order, complete_warranty_work_order
 
         create_initial_status(request_row)
@@ -7363,6 +7369,13 @@ class AgreementWarrantyApiTests(TestCase):
                 recipient_email__iexact=self.homeowner.email,
                 event_type=SmartNotificationEvent.WARRANTY_REQUEST_RECEIVED,
             ).exists()
+        )
+        self.assertTrue(
+            any(
+                "warranty request was submitted" in call.args[1]
+                and f"/app/project/{self.project.id}?token=" in call.args[1]
+                for call in send_sms.call_args_list
+            )
         )
         submitted_email = SmartNotification.objects.get(
             recipient_email__iexact=self.homeowner.email,
@@ -7412,6 +7425,12 @@ class AgreementWarrantyApiTests(TestCase):
             any(
                 "Warranty repair ready for your review" in call.kwargs.get("subject", "")
                 for call in send_email.call_args_list
+            )
+        )
+        self.assertTrue(
+            any(
+                "warranty repair was marked complete" in call.args[1]
+                for call in send_sms.call_args_list
             )
         )
 

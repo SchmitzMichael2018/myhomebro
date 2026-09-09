@@ -32,6 +32,7 @@ from projects.models_warranty import (
 from projects.services.activity_feed import create_activity_event
 from projects.services.invites_delivery import send_postmark_email
 from projects.services.notification_center import create_notification
+from projects.services.sms_service import normalize_phone_to_e164, send_compliant_sms
 from projects.services.smart_notifications import create_smart_notification
 
 
@@ -478,6 +479,13 @@ def notify_warranty_status_change(
             action_url=action_url,
             context=context,
         )
+        _send_customer_warranty_sms(
+            request,
+            event_type=event_type,
+            to_status=to_status,
+            action_url=action_url,
+            context=context,
+        )
     create_notification(
         contractor=request.contractor,
         category=_contractor_category_for_status(to_status),
@@ -598,6 +606,64 @@ def _send_customer_warranty_email(
             text_body=text_body,
             html_body=html_body,
         )
+
+
+def _send_customer_warranty_sms(
+    request: WarrantyRequest,
+    *,
+    event_type: str,
+    to_status: str,
+    action_url: str,
+    context: dict,
+) -> None:
+    homeowner = request.homeowner or getattr(request.agreement, "homeowner", None)
+    phone = normalize_phone_to_e164(getattr(homeowner, "phone_number", ""))
+    if not phone:
+        return
+
+    dedupe_key = f"{context['dedupe_key']}:sms"
+    if SmartNotification.objects.filter(
+        event_type=event_type,
+        channel=NotificationRule.CHANNEL_SMS,
+        metadata__dedupe_key=dedupe_key,
+    ).exists():
+        return
+
+    copy = {
+        WarrantyRequest.STATUS_SUBMITTED: "Your warranty request was submitted.",
+        WarrantyRequest.STATUS_COVERED: "Your warranty request was accepted and a no-charge repair was created.",
+        WarrantyRequest.STATUS_PARTIALLY_COVERED: "A partial warranty coverage decision is ready.",
+        WarrantyRequest.STATUS_NOT_COVERED: "A warranty coverage decision is ready for review.",
+        WarrantyRequest.STATUS_DENIED: "A warranty request decision is ready for review.",
+        WarrantyRequest.STATUS_REPAIR_SCHEDULED: "Your warranty repair was scheduled.",
+        WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED: "Your warranty repair was marked complete. Confirm completion or report that the issue remains.",
+        WarrantyRequest.STATUS_CLOSED: "Your warranty request was closed.",
+        WarrantyRequest.STATUS_ESCALATED_TO_RESOLUTION: "Your warranty request moved to Resolution for further review.",
+    }
+    message = copy.get(to_status, "Your warranty request has an update.")
+    body = f"MyHomeBro: {message} {action_url}".strip()
+    result = send_compliant_sms(
+        phone,
+        body,
+        related_object=request.agreement,
+        category="customer_care",
+        dedupe_key=dedupe_key,
+    )
+    if not result.get("ok"):
+        return
+    create_smart_notification(
+        event_type=event_type,
+        recipient_email=(request.submitted_by_email or getattr(homeowner, "email", "") or "").strip(),
+        context={**context, "dedupe_key": dedupe_key, "phone_number": phone},
+        channel=NotificationRule.CHANNEL_SMS,
+        audience=NotificationRule.AUDIENCE_CUSTOMER,
+        action_url=action_url,
+        homeowner=homeowner,
+        contractor=request.contractor,
+        project=request.project,
+        agreement=request.agreement,
+        property_profile=request.property_profile,
+    )
 
 
 def _customer_event_for_status(status_value: str) -> str:
