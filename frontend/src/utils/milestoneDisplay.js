@@ -182,12 +182,6 @@ export function milestoneDisplayPaymentStatus(milestone) {
       ''
     )
   );
-  if (
-    isMilestoneCompleted(milestone) &&
-    ['pending', 'unpaid', 'payment_pending', 'invoice_pending'].includes(raw)
-  ) {
-    return 'Paid';
-  }
   if (raw) {
     if (['pending', 'unpaid', 'payment_pending', 'invoice_pending'].includes(raw)) {
       return isMilestoneInvoiced(milestone) ? 'Pending Payment' : 'Not requested';
