@@ -104,6 +104,12 @@ log "index.css -> $CSS_HASHED"
 
 # 4) Reload app
 log "Reloading WSGI…"
-touch "$BACKEND_DIR/wsgi.py" || true
+WSGI_RELOAD_FILE="${WSGI_RELOAD_FILE:-/var/www/www_myhomebro_com_wsgi.py}"
+if [[ -f "$WSGI_RELOAD_FILE" ]]; then
+  touch "$WSGI_RELOAD_FILE"
+else
+  # Local/non-PythonAnywhere fallback.
+  touch "$BACKEND_DIR/wsgi.py"
+fi
 
 log "Done ✅ (fast rebuild)"
