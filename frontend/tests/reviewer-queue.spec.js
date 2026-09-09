@@ -19,7 +19,7 @@ test('contractor reviewer queue renders review items and supports approve flow',
         type: 'contractor',
         role: 'contractor_owner',
         identity_type: 'contractor_owner',
-        review_queue_count: 9,
+        review_queue_count: emptyMode ? 0 : 9,
       }),
     });
   });
@@ -81,6 +81,7 @@ test('contractor reviewer queue renders review items and supports approve flow',
   });
 
   await page.route('**/api/projects/milestones/901/approve-work/', async (route) => {
+    emptyMode = true;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -115,8 +116,9 @@ test('contractor reviewer queue renders review items and supports approve flow',
     .fill('Looks good from the queue.');
   await page.getByTestId('reviewer-queue-approve-901').click();
   await expect(page.getByTestId('reviewer-queue-empty')).toBeVisible();
+  await expect(page.getByText('Pending: 0')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Awaiting Review' })).toBeVisible();
 
-  emptyMode = true;
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByTestId('reviewer-queue-empty')).toBeVisible();
 });

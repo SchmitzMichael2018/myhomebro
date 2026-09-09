@@ -135,7 +135,9 @@ export default function ReviewerQueuePage() {
         response_note: (responseNotes[milestoneId] || "").trim(),
       });
       removeMilestone(milestoneId);
+      setQueueCount((previous) => Math.max(0, previous - 1));
       setResponseNotes((prev) => ({ ...prev, [milestoneId]: "" }));
+      window.dispatchEvent(new Event("mhb:identity-refresh"));
       toast.success(successMessage);
     } catch (err) {
       console.error(err);

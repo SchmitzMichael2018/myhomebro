@@ -12,9 +12,9 @@ export function useWhoAmI() {
   useEffect(() => {
     let active = true;
 
-    async function fetchIdentity() {
+    async function fetchIdentity({ showLoading = true } = {}) {
       try {
-        setLoading(true);
+        if (showLoading) setLoading(true);
         setError(null);
 
         // IMPORTANT: leading slash, NO extra "api" prefix
@@ -32,15 +32,18 @@ export function useWhoAmI() {
         console.error("whoami error:", err); // 🔍 DEBUG
         setError(err);
       } finally {
-        if (active) {
+        if (active && showLoading) {
           setLoading(false);
         }
       }
     }
 
     fetchIdentity();
+    const refreshIdentity = () => fetchIdentity({ showLoading: false });
+    window.addEventListener("mhb:identity-refresh", refreshIdentity);
     return () => {
       active = false;
+      window.removeEventListener("mhb:identity-refresh", refreshIdentity);
     };
   }, []);
 
