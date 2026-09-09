@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from projects.models import Agreement, Invoice, Milestone, Contractor, ProjectStatus
 from projects.services.agreement_completion import (
+    agreement_archive_blockers,
     check_agreement_completion,
     recompute_and_apply_agreement_completion,
 )
@@ -77,7 +78,7 @@ def _closure_status(agreement: Agreement) -> dict:
         "mode": _agreement_mode(agreement),
     }
 
-    ms_qs = Milestone.objects.filter(agreement=agreement)
+    ms_qs = Milestone.objects.filter(agreement=agreement).exclude(normalized_milestone_type="warranty_service")
     inv_qs = Invoice.objects.filter(agreement=agreement)
 
     totals["milestones_total"] = ms_qs.count()
@@ -110,7 +111,17 @@ def _closure_status(agreement: Agreement) -> dict:
         if totals["invoices_disputed"] > 0:
             reasons.append("Agreement has disputed invoices.")
 
+    completion_check = check_agreement_completion(agreement)
+    if not completion_check.ok and completion_check.reason not in reasons:
+        reasons.append(completion_check.reason)
     eligible = (len(reasons) == 0)
+
+    archive_blockers = agreement_archive_blockers(agreement)
+    if completion_check.ok:
+        archive_blockers = [
+            reason for reason in archive_blockers
+            if reason != "Only completed or cancelled agreements can be archived."
+        ]
 
     return {
         "agreement_id": agreement.id,
@@ -118,6 +129,8 @@ def _closure_status(agreement: Agreement) -> dict:
         "already_archived": bool(getattr(agreement, "is_archived", False)),
         "eligible": eligible,
         "reasons": reasons,
+        "can_archive": not archive_blockers,
+        "archive_blockers": archive_blockers,
         "totals": totals,
     }
 

@@ -31,6 +31,7 @@ from projects.services.contractor_activation_analytics import (
 from projects.services.activity_feed import create_activity_event
 from projects.services.agreements.pdf_loader import load_pdf_services
 from projects.services.agreements.pdf_stream import serve_agreement_preview_or_final
+from projects.services.agreement_completion import agreement_archive_blockers
 
 from projects.services.agreements.final_link import send_final_link_for_agreement
 
@@ -811,6 +812,13 @@ class AgreementViewSet(viewsets.ModelViewSet):
             contractor = resolve_contractor_for_user(user)
             if contractor is None or getattr(ag, "contractor_id", None) != contractor.id:
                 return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
+
+        blockers = agreement_archive_blockers(ag)
+        if blockers:
+            return Response(
+                {"detail": blockers[0], "archive_blockers": blockers},
+                status=status.HTTP_409_CONFLICT,
+            )
 
         with transaction.atomic():
             ag = Agreement.objects.select_for_update().get(pk=ag.pk)

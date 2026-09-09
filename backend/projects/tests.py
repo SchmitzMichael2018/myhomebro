@@ -148,7 +148,11 @@ from projects.models_amendment_request import AmendmentRequest, AmendmentRequest
 from projects.services.project_activity import create_project_activity_event
 from projects.models_customer_refund_request import CustomerRefundRequest
 from projects.models_contractor_discovery import ContractorDirectoryEntry, ContractorOpportunity
-from projects.services.agreement_completion import recompute_and_apply_agreement_completion
+from projects.services.agreement_completion import (
+    agreement_archive_blockers,
+    check_agreement_completion,
+    recompute_and_apply_agreement_completion,
+)
 from projects.services.project_learning import (
     capture_agreement_outcome_snapshot,
     rebuild_milestone_benchmarks,
@@ -7003,6 +7007,101 @@ class AgreementWarrantyApiTests(TestCase):
         )
         self.client = _use_secure_requests(APIClient())
         self.client.force_authenticate(user=self.user)
+
+    def _make_financially_complete_agreement(self):
+        self.agreement.payment_mode = "direct"
+        self.agreement.status = ProjectStatus.IN_PROGRESS
+        self.agreement.save(update_fields=["payment_mode", "status"])
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Original contracted work",
+            amount=Decimal("500.00"),
+            completed=True,
+            is_invoiced=True,
+        )
+        Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("500.00"),
+            status=InvoiceStatus.PAID,
+            direct_pay_paid_at=timezone.now(),
+            milestone_id_snapshot=milestone.id,
+            milestone_title_snapshot=milestone.title,
+        )
+        return milestone
+
+    def test_warranty_service_milestone_does_not_require_an_invoice_for_completion(self):
+        self._make_financially_complete_agreement()
+        Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="No-charge warranty repair",
+            amount=Decimal("0.00"),
+            completed=True,
+            is_invoiced=False,
+            normalized_milestone_type="warranty_service",
+        )
+
+        check = check_agreement_completion(self.agreement)
+
+        self.assertTrue(check.ok)
+        self.assertEqual(check.milestones_total, 1)
+        self.assertEqual(check.milestones_invoiced, 1)
+
+    def test_open_warranty_request_blocks_completion_and_archival(self):
+        self._make_financially_complete_agreement()
+        warranty = AgreementWarranty.objects.create(
+            agreement=self.agreement,
+            contractor=self.contractor,
+            title="Workmanship warranty",
+            coverage_details="Covered workmanship.",
+            status="active",
+            applies_to="workmanship",
+        )
+        request_row = WarrantyRequest.objects.create(
+            warranty=warranty,
+            agreement=self.agreement,
+            project=self.project,
+            contractor=self.contractor,
+            homeowner=self.homeowner,
+            title="Open repair",
+            description="Repair is awaiting acknowledgment.",
+            status=WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED,
+        )
+
+        self.assertFalse(check_agreement_completion(self.agreement).ok)
+        self.agreement.status = ProjectStatus.COMPLETED
+        self.agreement.save(update_fields=["status"])
+        self.assertIn("Resolve all warranty requests before archiving this agreement.", agreement_archive_blockers(self.agreement))
+
+        request_row.status = WarrantyRequest.STATUS_CLOSED
+        request_row.save(update_fields=["status"])
+        self.assertEqual(agreement_archive_blockers(self.agreement), [])
+
+    def test_open_dispute_blocks_completion_and_archive_api(self):
+        milestone = self._make_financially_complete_agreement()
+        dispute = Dispute.objects.create(
+            agreement=self.agreement,
+            project=self.project,
+            milestone=milestone,
+            initiator="homeowner",
+            reason="Work remains disputed",
+            status="open",
+        )
+
+        self.assertFalse(check_agreement_completion(self.agreement).ok)
+        self.agreement.status = ProjectStatus.COMPLETED
+        self.agreement.save(update_fields=["status"])
+        response = self.client.post(f"/api/projects/agreements/{self.agreement.id}/archive/", {}, format="json")
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("Resolve all disputes", response.data["detail"])
+
+        dispute.status = "resolved_contractor"
+        dispute.save(update_fields=["status"])
+        response = self.client.post(f"/api/projects/agreements/{self.agreement.id}/archive/", {}, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.agreement.refresh_from_db()
+        self.assertTrue(self.agreement.is_archived)
 
     def test_can_create_and_filter_warranty_records_for_agreement(self):
         create_response = self.client.post(

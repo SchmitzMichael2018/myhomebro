@@ -113,7 +113,14 @@ class CompletionCheck:
 def check_agreement_completion(agreement: Agreement) -> CompletionCheck:
     mode = _agreement_mode(agreement)
 
-    milestones = list(Milestone.objects.filter(agreement=agreement).only("id", "is_invoiced", "invoice_id"))
+    # Warranty repairs are no-charge service records attached to the original
+    # agreement. They must be resolved before archival, but never invoiced and
+    # therefore must not block the original project's financial completion.
+    milestones = list(
+        Milestone.objects.filter(agreement=agreement)
+        .exclude(normalized_milestone_type="warranty_service")
+        .only("id", "is_invoiced", "invoice_id")
+    )
 
     # Only milestone invoices should participate in completion logic
     all_invoices = list(
@@ -181,6 +188,28 @@ def check_agreement_completion(agreement: Agreement) -> CompletionCheck:
             mode=mode,
         )
 
+    if _agreement_has_open_disputes(agreement):
+        return CompletionCheck(
+            ok=False,
+            reason="Resolve open disputes before completing this agreement.",
+            milestones_total=ms_total,
+            milestones_invoiced=ms_invoiced,
+            invoices_total=inv_total,
+            invoices_paid=inv_paid,
+            mode=mode,
+        )
+
+    if _agreement_has_open_warranty_requests(agreement):
+        return CompletionCheck(
+            ok=False,
+            reason="Resolve open warranty work before completing this agreement.",
+            milestones_total=ms_total,
+            milestones_invoiced=ms_invoiced,
+            invoices_total=inv_total,
+            invoices_paid=inv_paid,
+            mode=mode,
+        )
+
     return CompletionCheck(
         ok=True,
         reason="Agreement is eligible to be completed.",
@@ -190,6 +219,39 @@ def check_agreement_completion(agreement: Agreement) -> CompletionCheck:
         invoices_paid=inv_paid,
         mode=mode,
     )
+
+
+def _agreement_has_open_disputes(agreement: Agreement) -> bool:
+    from projects.models_dispute import Dispute
+
+    return Dispute.objects.filter(
+        agreement=agreement,
+        is_archived=False,
+        status__in=("initiated", "open", "under_review"),
+    ).exists()
+
+
+def _agreement_has_open_warranty_requests(agreement: Agreement) -> bool:
+    from projects.models_warranty import WarrantyRequest
+
+    terminal_statuses = (
+        WarrantyRequest.STATUS_COMPLETED,
+        WarrantyRequest.STATUS_CLOSED,
+        WarrantyRequest.STATUS_DENIED,
+        WarrantyRequest.STATUS_NOT_COVERED,
+    )
+    return WarrantyRequest.objects.filter(agreement=agreement).exclude(status__in=terminal_statuses).exists()
+
+
+def agreement_archive_blockers(agreement: Agreement) -> list[str]:
+    blockers: list[str] = []
+    if agreement.status not in {ProjectStatus.COMPLETED, ProjectStatus.CANCELLED}:
+        blockers.append("Only completed or cancelled agreements can be archived.")
+    if _agreement_has_open_disputes(agreement):
+        blockers.append("Resolve all disputes before archiving this agreement.")
+    if _agreement_has_open_warranty_requests(agreement):
+        blockers.append("Resolve all warranty requests before archiving this agreement.")
+    return blockers
 
 
 def recompute_and_apply_agreement_completion(agreement_id: int) -> Tuple[bool, CompletionCheck]:

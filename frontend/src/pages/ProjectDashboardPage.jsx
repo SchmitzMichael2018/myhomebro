@@ -240,6 +240,10 @@ export default function ProjectDashboardPage() {
 
   const activeWarranty = warrantyRows[0] || null;
   const activeWarrantyRequests = Array.isArray(activeWarranty?.requests) ? activeWarranty.requests : [];
+  const focusedWarrantyRequest = activeWarrantyRequests.find(
+    (requestRow) => String(requestRow.id) === focusedWarrantyRequestId
+  );
+  const warrantyReviewPending = Boolean(focusedWarrantyRequest?.allow_acknowledgment);
 
   useEffect(() => {
     if (!focusedWarrantyRequestId || !activeWarrantyRequests.length) return;
@@ -927,7 +931,16 @@ export default function ProjectDashboardPage() {
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 px-4 py-3 backdrop-blur lg:hidden">
         <div className="mx-auto flex max-w-7xl gap-2">
-          {primaryHref ? (
+          {warrantyReviewPending ? (
+            <ActionLink
+              onClick={() => document.getElementById(`warranty-request-${focusedWarrantyRequestId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })}
+              tone="emerald"
+              className="flex-1"
+            >
+              Review Warranty Repair
+              <ArrowRight size={16} />
+            </ActionLink>
+          ) : primaryHref ? (
             <ActionLink href={primaryHref} tone={statusTone} className="flex-1">
               {nextAction.label || "Open"}
               <ArrowRight size={16} />
