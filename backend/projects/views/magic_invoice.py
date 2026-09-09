@@ -6,7 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -158,19 +158,35 @@ def _select_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents: in
     except Exception:
         return None
 
-    payments = (
+    payments = list(
         Payment.objects.select_for_update()
         .filter(
             agreement_id=invoice.agreement_id,
             status="succeeded",
         )
-        .exclude(stripe_charge_id__isnull=True)
-        .exclude(stripe_charge_id="")
         .order_by("created_at", "id")
     )
+
+    released_payout_cents = 0
+    released_invoices = Invoice.objects.filter(
+            agreement_id=invoice.agreement_id,
+            escrow_released=True,
+        )
+        .exclude(pk=invoice.pk)
+        .values_list("amount", "payout_cents", "platform_fee_cents")
+    for amount, stored_payout_cents, platform_fee_cents in released_invoices:
+        released_payout_cents += int(stored_payout_cents or 0) or max(
+            _to_cents(amount) - int(platform_fee_cents or 0),
+            0,
+        )
+
     for payment in payments:
         amount_cents = int(getattr(payment, "amount_cents", 0) or 0)
-        if amount_cents >= int(payout_cents or 0):
+        consumed_cents = min(amount_cents, released_payout_cents)
+        released_payout_cents -= consumed_cents
+        remaining_cents = max(amount_cents - consumed_cents, 0)
+        charge_id = str(getattr(payment, "stripe_charge_id", "") or "").strip()
+        if charge_id and remaining_cents >= int(payout_cents or 0):
             return payment
     return None
 
@@ -194,6 +210,7 @@ def _reconcile_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents:
     candidates = list(
         Payment.objects.select_for_update()
         .filter(agreement_id=invoice.agreement_id)
+        .filter(Q(stripe_charge_id__isnull=True) | Q(stripe_charge_id="") | Q(amount_cents=0))
         .exclude(stripe_payment_intent_id__isnull=True)
         .exclude(stripe_payment_intent_id="")
         .order_by("created_at", "id")
@@ -226,7 +243,7 @@ def _reconcile_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents:
                 or (latest_charge if isinstance(latest_charge, str) else "")
                 or ""
             ).strip()
-            if not charge_id or amount_cents < int(payout_cents or 0):
+            if not charge_id:
                 continue
 
             payment = Payment.objects.filter(
@@ -255,7 +272,9 @@ def _reconcile_escrow_source_payment_for_invoice(invoice: Invoice, payout_cents:
                     update_fields.append("status")
                 if update_fields:
                     payment.save(update_fields=update_fields)
-            return payment
+            source_payment = _select_escrow_source_payment_for_invoice(invoice, payout_cents)
+            if source_payment is not None:
+                return source_payment
         except Exception as exc:
             logger.warning(
                 "Unable to reconcile escrow PaymentIntent %s for invoice %s: %s",

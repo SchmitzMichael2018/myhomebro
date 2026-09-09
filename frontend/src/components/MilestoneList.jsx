@@ -1018,7 +1018,6 @@ export default function MilestoneList() {
                           g.allMilestones.findIndex((item) => String(item.id) === String(m.id)) + 1,
                           1
                         );
-                        const milestoneDisplay = getMilestoneDisplay(m, { agreementId: agId });
                         const allowED = canEditDelete(m);
                         const allowComplete = canComplete(m);
                         const isRowBusy = busy.has(m.id);
@@ -1033,6 +1032,21 @@ export default function MilestoneList() {
                         const linkedInvoice =
                           (m?.invoice && typeof m.invoice === "object" ? m.invoice : null) ||
                           (invoiceId ? invoicesMap[String(invoiceId)] : null);
+                        const milestoneDisplay = getMilestoneDisplay(
+                          linkedInvoice
+                            ? {
+                                ...m,
+                                invoice: linkedInvoice,
+                                invoice_status: linkedInvoice.status || linkedInvoice.invoice_status || linkedInvoice.state,
+                                escrow_released: linkedInvoice.escrow_released,
+                                escrow_released_at: linkedInvoice.escrow_released_at,
+                                invoice_paid: String(
+                                  linkedInvoice.status || linkedInvoice.invoice_status || linkedInvoice.state || ""
+                                ).toLowerCase() === "paid",
+                              }
+                            : m,
+                          { agreementId: agId }
+                        );
                         const submissionStatus = String(
                           m.work_submission_status || m.subcontractor_completion_status || ""
                         ).toLowerCase();
