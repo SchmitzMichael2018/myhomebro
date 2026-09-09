@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchEmployeeMilestoneDetail,
   addEmployeeMilestoneComment,
+  updateEmployeeMilestoneComment,
   uploadEmployeeMilestoneFile,
   deleteEmployeeMilestoneFile,
   submitEmployeeMilestoneForReview,
@@ -43,6 +44,8 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
   const [files, setFiles] = useState([]);
 
   const [commentText, setCommentText] = useState("");
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentText, setEditingCommentText] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [uploadMessage, setUploadMessage] = useState("");
@@ -100,6 +103,36 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
     } catch (e) {
       console.error(e);
       setErr(e?.response?.data?.detail || e?.message || "Failed to add note.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startEditingComment(comment) {
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.content || "");
+    setErr("");
+  }
+
+  function cancelEditingComment() {
+    setEditingCommentId(null);
+    setEditingCommentText("");
+  }
+
+  async function saveEditedComment() {
+    const text = editingCommentText.trim();
+    if (!editingCommentId || !text || busy) return;
+
+    setBusy(true);
+    setErr("");
+    try {
+      await updateEmployeeMilestoneComment(milestoneId, editingCommentId, text);
+      cancelEditingComment();
+      await load();
+      onUpdated?.();
+    } catch (e) {
+      console.error(e);
+      setErr(e?.response?.data?.detail || e?.message || "Failed to update note.");
     } finally {
       setBusy(false);
     }
@@ -332,11 +365,55 @@ export default function EmployeeMilestoneModal({ milestoneId, onClose, onUpdated
                   ) : (
                     comments.map((c) => (
                       <div key={c.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                        <div className="text-xs text-slate-500">
-                          {c.author_email || "—"} •{" "}
-                          {c.created_at ? String(c.created_at).slice(0, 19).replace("T", " ") : ""}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="text-xs text-slate-500">
+                            {c.author_email || "—"} •{" "}
+                            {c.created_at ? String(c.created_at).slice(0, 19).replace("T", " ") : ""}
+                          </div>
+                          {c.can_edit && editingCommentId !== c.id ? (
+                            <button
+                              type="button"
+                              className="mhb-btn min-h-10 shrink-0 px-3 py-1.5 text-sm font-semibold"
+                              onClick={() => startEditingComment(c)}
+                              disabled={busy}
+                              data-testid={`employee-milestone-note-edit-${c.id}`}
+                            >
+                              Edit
+                            </button>
+                          ) : null}
                         </div>
-                        <div className="mt-1 text-sm text-slate-900 whitespace-pre-wrap">{c.content}</div>
+                        {editingCommentId === c.id ? (
+                          <div className="mt-2 space-y-2">
+                            <textarea
+                              value={editingCommentText}
+                              onChange={(e) => setEditingCommentText(e.target.value)}
+                              className="mhb-input min-h-24 w-full rounded-lg border px-3 py-2"
+                              disabled={busy}
+                              aria-label="Edit milestone note"
+                            />
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                className="mhb-btn min-h-10 px-3 py-1.5 text-sm font-semibold"
+                                onClick={cancelEditingComment}
+                                disabled={busy}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                className="mhb-btn primary min-h-10 px-3 py-1.5 text-sm font-semibold"
+                                onClick={saveEditedComment}
+                                disabled={busy || !editingCommentText.trim()}
+                                data-testid={`employee-milestone-note-save-${c.id}`}
+                              >
+                                {busy ? "Saving…" : "Save note"}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-1 text-sm text-slate-900 whitespace-pre-wrap">{c.content}</div>
+                        )}
                       </div>
                     ))
                   )}
