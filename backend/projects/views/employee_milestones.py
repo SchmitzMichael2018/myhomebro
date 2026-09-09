@@ -51,12 +51,16 @@ def _can_work(sub) -> bool:
 
 def _evidence_editable(milestone: Milestone) -> bool:
     """Evidence is mutable only before review or after it is sent back."""
-    if getattr(milestone, "completed", False):
-        return False
     status = getattr(milestone, "subcontractor_completion_status", "") or ""
+    # The review status is authoritative for a returned submission. Legacy
+    # employee completions can still carry completed=True; sending one back
+    # must reopen its evidence so the employee can revise and resubmit.
+    if status == SubcontractorCompletionStatus.NEEDS_CHANGES:
+        return True
+    if status == SubcontractorCompletionStatus.APPROVED or getattr(milestone, "completed", False):
+        return False
     return status in {
         SubcontractorCompletionStatus.NOT_SUBMITTED,
-        SubcontractorCompletionStatus.NEEDS_CHANGES,
         "",
     }
 

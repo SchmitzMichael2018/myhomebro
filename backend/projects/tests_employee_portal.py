@@ -199,6 +199,17 @@ class EmployeePortalWorkflowTests(TestCase):
         self.assertTrue(unlocked.data["comments"][0]["can_edit"])
         self.assertTrue(unlocked.data["files"][0]["can_delete"])
 
+        # The legacy employee flow marked work complete before review. A
+        # send-back status must still reopen evidence on those records.
+        self.assigned.completed = True
+        self.assigned.save(update_fields=["completed"])
+        legacy_unlocked = self.client.get(
+            f"/api/projects/employee/milestones/{self.assigned.id}/"
+        )
+        self.assertTrue(legacy_unlocked.data["evidence_editable"])
+        self.assertTrue(legacy_unlocked.data["comments"][0]["can_edit"])
+        self.assertTrue(legacy_unlocked.data["files"][0]["can_delete"])
+
     def test_employee_notification_scope_excludes_contractor_financial_events(self):
         Notification.objects.create(
             contractor=self.contractor,
