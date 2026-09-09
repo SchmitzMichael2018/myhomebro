@@ -12508,6 +12508,16 @@ class ReviewerQueueTests(TestCase):
             subcontractor_marked_complete_at=timezone.now(),
             subcontractor_marked_complete_by=self.worker_user,
         )
+        self.evidence_comment = MilestoneComment.objects.create(
+            milestone=self.default_review_milestone,
+            author=self.worker_user,
+            content="Completed and ready for review.",
+        )
+        self.evidence_file = MilestoneFile.objects.create(
+            milestone=self.default_review_milestone,
+            uploaded_by=self.worker_user,
+            file=SimpleUploadedFile("completed-work.jpg", b"photo-data", content_type="image/jpeg"),
+        )
 
         self.client = _use_secure_requests(APIClient())
 
@@ -12531,6 +12541,11 @@ class ReviewerQueueTests(TestCase):
             item["work_submission_note"],
             "Cabinets are installed and aligned.",
         )
+        self.assertEqual(item["evidence_comments"][0]["content"], "Completed and ready for review.")
+        self.assertEqual(item["evidence_comments"][0]["author_email"], self.worker_user.email)
+        self.assertEqual(item["evidence_files"][0]["file_name"], "completed-work.jpg")
+        self.assertEqual(item["evidence_files"][0]["uploaded_by_email"], self.worker_user.email)
+        self.assertTrue(item["evidence_files"][0]["file_url"].startswith("https://testserver/"))
 
     def test_delegated_reviewer_sees_only_items_assigned_to_them(self):
         self.client.force_authenticate(user=self.delegated_user)

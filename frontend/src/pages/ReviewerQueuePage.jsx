@@ -29,6 +29,11 @@ function projectClassLabel(value) {
   return normalizeProjectClass(value) === "commercial" ? "Commercial" : "Residential";
 }
 
+function isImageFile(file) {
+  const value = String(file?.file_name || file?.file_url || "").toLowerCase();
+  return /\.(png|jpe?g|gif|webp|heic|heif)(?:$|\?)/.test(value);
+}
+
 function normalizeProjectClassFilter(value) {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "commercial" || normalized === "residential" ? normalized : "all";
@@ -259,6 +264,56 @@ export default function ReviewerQueuePage() {
                       <div className="mt-1 whitespace-pre-wrap">
                         {milestone.work_submission_note || "No submission note provided."}
                       </div>
+                    </div>
+
+                    <div className="mt-3 rounded-xl border border-white/10 bg-slate-950/40 p-4">
+                      <div className="font-semibold text-white">Employee evidence</div>
+                      {(milestone.evidence_comments || []).length === 0 &&
+                      (milestone.evidence_files || []).length === 0 ? (
+                        <div className="mt-2 text-sm text-sky-100/60">No progress notes or files were attached.</div>
+                      ) : (
+                        <div className="mt-3 space-y-4">
+                          {(milestone.evidence_comments || []).length > 0 ? (
+                            <div>
+                              <div className="text-xs font-bold uppercase tracking-wide text-sky-100/55">Progress notes</div>
+                              <div className="mt-2 space-y-2">
+                                {milestone.evidence_comments.map((comment) => (
+                                  <div key={comment.id} className="rounded-lg border border-white/10 bg-slate-900/50 p-3 text-sm text-sky-100/80">
+                                    <div className="whitespace-pre-wrap text-white">{comment.content}</div>
+                                    <div className="mt-1 text-xs text-sky-100/50">
+                                      {comment.author_email || "Team member"} · {formatDateTime(comment.created_at)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                          {(milestone.evidence_files || []).length > 0 ? (
+                            <div>
+                              <div className="text-xs font-bold uppercase tracking-wide text-sky-100/55">Photos and files</div>
+                              <div className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                                {milestone.evidence_files.map((file) => (
+                                  <a
+                                    key={file.id}
+                                    href={file.file_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="overflow-hidden rounded-lg border border-white/10 bg-slate-900/50 transition hover:border-sky-300/50"
+                                  >
+                                    {isImageFile(file) ? (
+                                      <img src={file.file_url} alt={file.file_name || "Milestone evidence"} className="h-36 w-full object-cover" />
+                                    ) : null}
+                                    <div className="p-3">
+                                      <div className="truncate text-sm font-semibold text-white">{file.file_name || "Evidence file"}</div>
+                                      <div className="mt-1 text-xs text-sky-100/50">View evidence · {formatDateTime(file.uploaded_at)}</div>
+                                    </div>
+                                  </a>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-3 space-y-2">

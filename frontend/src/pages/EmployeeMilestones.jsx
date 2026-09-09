@@ -149,11 +149,65 @@ export default function EmployeeMilestones() {
         ))}
       </div>
 
-      <div className="mhb-operational-inner mt-4 overflow-x-auto rounded-2xl border">
+      <div className="mhb-operational-inner mt-4 rounded-2xl border">
         <div className="px-4 py-3 border-b border-slate-200 text-sm text-slate-600">
           {loading ? "Loading…" : `${filtered.length} milestone(s)`}
         </div>
 
+        <div className="divide-y divide-slate-200 md:hidden">
+          {!loading && filtered.length === 0 ? (
+            <div className="px-4 py-10 text-center text-slate-500">No milestones found.</div>
+          ) : (
+            filtered.map((m) => {
+              const due = (m.completion_date || m.due_date || m.start_date || "—").toString().slice(0, 10);
+              const agNo = m.agreement_number || m.agreement_id || "—";
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setActiveId(m.id)}
+                  className="block w-full px-4 py-4 text-left transition hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300"
+                  data-testid={`employee-milestone-card-${m.id}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 text-base font-bold text-slate-900">{m.title || `Milestone #${m.id}`}</div>
+                    <span className="shrink-0 rounded-full border border-slate-300 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      {m.completed ? "Completed" : "Assigned"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project</div>
+                      <div className="mt-0.5 text-slate-800">{m.project_title || `Agreement #${agNo}`}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Due</div>
+                      <div className="mt-0.5 text-slate-800">{due}</div>
+                    </div>
+                    {m.customer_name ? (
+                      <div className="col-span-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Customer</div>
+                        <div className="mt-0.5 text-slate-800">{m.customer_name}</div>
+                      </div>
+                    ) : null}
+                    {m.project_address ? (
+                      <div className="col-span-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Jobsite</div>
+                        <div className="mt-0.5 break-words text-slate-800">{m.project_address}</div>
+                      </div>
+                    ) : null}
+                  </div>
+                  {m.is_late && !m.completed ? (
+                    <div className="mt-3 text-xs font-semibold text-red-700">Past due</div>
+                  ) : null}
+                  <div className="mt-4 text-sm font-bold text-blue-700">Open milestone →</div>
+                </button>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-600">
             <tr>
@@ -219,6 +273,7 @@ export default function EmployeeMilestones() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {activeId ? (

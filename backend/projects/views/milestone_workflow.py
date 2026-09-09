@@ -6,7 +6,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from projects.models import Milestone, Notification, SubcontractorCompletionStatus
+from projects.models import (
+    Milestone,
+    MilestoneComment,
+    MilestoneFile,
+    Notification,
+    SubcontractorCompletionStatus,
+)
 from projects.serializers.milestone import MilestoneSerializer
 from projects.services.bid_workflow import project_class_label
 from projects.services.milestone_workflow import (
@@ -43,12 +49,23 @@ def _workflow_queryset():
     )
 
 
-def _serialize_queue_item(milestone: Milestone) -> dict:
+def _serialize_queue_item(milestone: Milestone, request=None) -> dict:
     assigned_worker = get_assigned_worker(milestone)
     reviewer = get_effective_reviewer(milestone)
     agreement = getattr(milestone, "agreement", None)
     project = getattr(agreement, "project", None) if agreement is not None else None
     project_class = getattr(agreement, "project_class", None) or getattr(project, "project_class", None) or ""
+
+    comments = list(
+        MilestoneComment.objects.filter(milestone=milestone)
+        .select_related("author")
+        .order_by("created_at")
+    )
+    files = list(
+        MilestoneFile.objects.filter(milestone=milestone)
+        .select_related("uploaded_by")
+        .order_by("uploaded_at")
+    )
 
     return {
         "id": milestone.id,
@@ -98,6 +115,29 @@ def _serialize_queue_item(milestone: Milestone) -> dict:
         "work_submission_status": milestone.subcontractor_completion_status,
         "work_submitted_at": milestone.subcontractor_marked_complete_at,
         "work_submission_note": milestone.subcontractor_completion_note or "",
+        "evidence_comments": [
+            {
+                "id": comment.id,
+                "author_email": getattr(comment.author, "email", "") or "",
+                "content": comment.content,
+                "created_at": comment.created_at,
+            }
+            for comment in comments
+        ],
+        "evidence_files": [
+            {
+                "id": evidence.id,
+                "uploaded_by_email": getattr(evidence.uploaded_by, "email", "") or "",
+                "file_name": evidence.file.name.rsplit("/", 1)[-1] if evidence.file else "Evidence file",
+                "file_url": (
+                    request.build_absolute_uri(evidence.file.url)
+                    if request is not None and evidence.file
+                    else evidence.file.url if evidence.file else None
+                ),
+                "uploaded_at": evidence.uploaded_at,
+            }
+            for evidence in files
+        ],
     }
 
 
@@ -124,7 +164,7 @@ def reviewer_queue(request):
         if is_effective_reviewer_user(milestone, request.user)
     ]
 
-    serialized = [_serialize_queue_item(milestone) for milestone in milestones]
+    serialized = [_serialize_queue_item(milestone, request=request) for milestone in milestones]
     grouped: dict[int, dict] = {}
     for item in serialized:
         agreement_id = item.get("agreement_id")
