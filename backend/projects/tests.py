@@ -7335,7 +7335,8 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(warranty_event["extendedProps"]["warranty_request_id"], request_row.id)
         self.assertEqual(warranty_event["extendedProps"]["estimated_duration_minutes"], 90)
 
-    def test_warranty_status_notifications_and_acknowledgment_paths(self):
+    @patch("projects.services.warranty_management.send_postmark_email", return_value=(True, "sent"))
+    def test_warranty_status_notifications_and_acknowledgment_paths(self, send_email):
         warranty = AgreementWarranty.objects.create(
             agreement=self.agreement,
             contractor=self.contractor,
@@ -7363,6 +7364,12 @@ class AgreementWarrantyApiTests(TestCase):
                 event_type=SmartNotificationEvent.WARRANTY_REQUEST_RECEIVED,
             ).exists()
         )
+        submitted_email = SmartNotification.objects.get(
+            recipient_email__iexact=self.homeowner.email,
+            event_type=SmartNotificationEvent.WARRANTY_REQUEST_RECEIVED,
+            channel=NotificationRule.CHANNEL_EMAIL,
+        )
+        self.assertIn(f"/app/project/{self.project.id}?token=", submitted_email.action_url)
 
         work_order = create_warranty_work_order(
             request_row,
@@ -7384,6 +7391,18 @@ class AgreementWarrantyApiTests(TestCase):
                 recipient_email__iexact=self.homeowner.email,
                 event_type=SmartNotificationEvent.WARRANTY_ACKNOWLEDGMENT_REQUESTED,
             ).exists()
+        )
+        acknowledgment_email = SmartNotification.objects.get(
+            recipient_email__iexact=self.homeowner.email,
+            event_type=SmartNotificationEvent.WARRANTY_ACKNOWLEDGMENT_REQUESTED,
+            channel=NotificationRule.CHANNEL_EMAIL,
+        )
+        self.assertIn("#warranty", acknowledgment_email.action_url)
+        self.assertTrue(
+            any(
+                "Warranty repair ready for your review" in call.kwargs.get("subject", "")
+                for call in send_email.call_args_list
+            )
         )
 
         response = self.client.post(

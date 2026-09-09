@@ -3,8 +3,12 @@ from __future__ import annotations
 import calendar
 from decimal import Decimal
 from datetime import timedelta
+from html import escape
+from urllib.parse import quote
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core import signing
 from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
@@ -18,7 +22,7 @@ from projects.models import (
     Notification,
     WarrantyStatus,
 )
-from projects.models_customer_portal import NotificationRule, SmartNotificationEvent
+from projects.models_customer_portal import NotificationRule, SmartNotification, SmartNotificationEvent
 from projects.models_dispute import Dispute
 from projects.models_warranty import (
     WarrantyRequest,
@@ -26,6 +30,7 @@ from projects.models_warranty import (
     WarrantyWorkOrder,
 )
 from projects.services.activity_feed import create_activity_event
+from projects.services.invites_delivery import send_postmark_email
 from projects.services.notification_center import create_notification
 from projects.services.smart_notifications import create_smart_notification
 
@@ -452,17 +457,26 @@ def notify_warranty_status_change(
     }
     event_type = _customer_event_for_status(to_status)
     if customer_email and event_type:
+        action_url = _customer_warranty_action_url(request, customer_email)
         create_smart_notification(
             event_type=event_type,
             recipient_email=customer_email,
             context=context,
             audience=NotificationRule.AUDIENCE_CUSTOMER,
-            action_url=f"/app/project/{request.project_id}?token={getattr(request.agreement, 'homeowner_access_token', '')}" if request.project_id else "",
+            action_url=action_url,
             homeowner=request.homeowner,
             contractor=request.contractor,
             project=request.project,
             agreement=request.agreement,
             property_profile=request.property_profile,
+        )
+        _send_customer_warranty_email(
+            request,
+            event_type=event_type,
+            to_status=to_status,
+            customer_email=customer_email,
+            action_url=action_url,
+            context=context,
         )
     create_notification(
         contractor=request.contractor,
@@ -473,6 +487,117 @@ def notify_warranty_status_change(
         agreement=request.agreement,
         actor_user=actor if getattr(actor, "is_authenticated", False) else None,
     )
+
+
+def _customer_warranty_action_url(request: WarrantyRequest, customer_email: str) -> str:
+    if not request.project_id:
+        return ""
+    token = signing.dumps(
+        {"email": customer_email.lower().strip()},
+        salt="myhomebro.customer-portal",
+    )
+    base = (
+        getattr(settings, "PUBLIC_FRONTEND_BASE_URL", "")
+        or getattr(settings, "FRONTEND_URL", "")
+        or getattr(settings, "SITE_URL", "")
+        or "https://www.myhomebro.com"
+    ).rstrip("/")
+    return f"{base}/app/project/{request.project_id}?token={quote(token, safe='')}#warranty"
+
+
+def _send_customer_warranty_email(
+    request: WarrantyRequest,
+    *,
+    event_type: str,
+    to_status: str,
+    customer_email: str,
+    action_url: str,
+    context: dict,
+) -> None:
+    dedupe_key = f"{context['dedupe_key']}:email"
+    if SmartNotification.objects.filter(
+        event_type=event_type,
+        channel=NotificationRule.CHANNEL_EMAIL,
+        recipient_email__iexact=customer_email,
+        metadata__dedupe_key=dedupe_key,
+    ).exists():
+        return
+
+    copy = {
+        WarrantyRequest.STATUS_SUBMITTED: (
+            "Warranty request received",
+            "Your warranty request was submitted to the contractor for review.",
+        ),
+        WarrantyRequest.STATUS_COVERED: (
+            "Warranty request accepted",
+            "Your contractor accepted this warranty request and created a no-charge repair milestone.",
+        ),
+        WarrantyRequest.STATUS_PARTIALLY_COVERED: (
+            "Warranty coverage decision available",
+            "Your contractor recorded a partial-coverage decision for this warranty request.",
+        ),
+        WarrantyRequest.STATUS_NOT_COVERED: (
+            "Warranty coverage decision available",
+            "Your contractor determined that this request is not covered. Open MyHomeBro to review the decision.",
+        ),
+        WarrantyRequest.STATUS_DENIED: (
+            "Warranty request decision available",
+            "Your contractor denied this warranty request. Open MyHomeBro to review the decision.",
+        ),
+        WarrantyRequest.STATUS_REPAIR_SCHEDULED: (
+            "Warranty repair scheduled",
+            "Your contractor scheduled the covered warranty repair.",
+        ),
+        WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED: (
+            "Warranty repair ready for your review",
+            "Your contractor marked the warranty repair complete. Please confirm completion or report that the issue still exists.",
+        ),
+        WarrantyRequest.STATUS_CLOSED: (
+            "Warranty request closed",
+            "Your warranty request has been closed.",
+        ),
+        WarrantyRequest.STATUS_ESCALATED_TO_RESOLUTION: (
+            "Warranty request moved to Resolution",
+            "This warranty request was moved to the Resolution workspace for further review.",
+        ),
+    }
+    subject_label, message = copy.get(
+        to_status,
+        ("Warranty request updated", "Your warranty request has a new update."),
+    )
+    project_title = context.get("project_title") or "your project"
+    subject = f"{subject_label}: {request.title}"
+    text_body = f"{message}\n\nProject: {project_title}\nRequest: {request.title}"
+    if action_url:
+        text_body += f"\n\nView warranty request: {action_url}"
+    html_body = (
+        f"<p>{escape(message)}</p>"
+        f"<p><strong>Project:</strong> {escape(project_title)}<br>"
+        f"<strong>Request:</strong> {escape(request.title)}</p>"
+    )
+    if action_url:
+        html_body += f'<p><a href="{escape(action_url, quote=True)}">View warranty request</a></p>'
+
+    email_notification = create_smart_notification(
+        event_type=event_type,
+        recipient_email=customer_email,
+        context={**context, "dedupe_key": dedupe_key},
+        channel=NotificationRule.CHANNEL_EMAIL,
+        audience=NotificationRule.AUDIENCE_CUSTOMER,
+        action_url=action_url,
+        homeowner=request.homeowner,
+        contractor=request.contractor,
+        project=request.project,
+        agreement=request.agreement,
+        property_profile=request.property_profile,
+    )
+    if email_notification is not None:
+        send_postmark_email(
+            to_email=customer_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
 
 
 def _customer_event_for_status(status_value: str) -> str:
