@@ -31223,7 +31223,14 @@ class DisputeMutationSafetyTests(TestCase):
 
         response = self.contractor_client.post(
             f"/api/projects/disputes/public/{active_dispute.id}/messages/?token={active_dispute.public_token}",
-            {"body": "The trim is still damaged."},
+            {
+                "body": "The trim is still damaged.",
+                "files[]": SimpleUploadedFile(
+                    "trim-photo.jpg",
+                    b"fake-jpeg-content",
+                    content_type="image/jpeg",
+                ),
+            },
             format="multipart",
         )
 
@@ -31232,6 +31239,7 @@ class DisputeMutationSafetyTests(TestCase):
         active_dispute.refresh_from_db()
         self.assertEqual(active_dispute.status, "under_review")
         self.assertIn("PUBLIC MESSAGE: The trim is still damaged.", active_dispute.homeowner_response)
+        self.assertTrue(active_dispute.attachments.filter(kind="photo").exists())
         self.assertTrue(
             Notification.objects.filter(
                 contractor=self.contractor,

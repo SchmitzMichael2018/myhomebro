@@ -6,6 +6,7 @@ from datetime import datetime
 
 from django.conf import settings
 from django.core.exceptions import FieldError
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -963,6 +964,7 @@ def public_dispute_detail(request, dispute_id: int):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@transaction.atomic
 def public_dispute_message(request, dispute_id: int):
     token = (request.query_params.get("token") or "").strip()
     body = (
@@ -1008,9 +1010,14 @@ def public_dispute_message(request, dispute_id: int):
     dispute.save(update_fields=["homeowner_response", "status", "last_activity_at", "updated_at"])
 
     for file_obj in files:
+        requested_kind = (request.data.get("kind") or "").strip().lower()
+        content_type = str(getattr(file_obj, "content_type", "") or "").lower()
+        attachment_kind = requested_kind if requested_kind in dict(DisputeAttachment.KIND_CHOICES) else "other"
+        if attachment_kind == "other" and content_type.startswith("image/"):
+            attachment_kind = "photo"
         att = DisputeAttachment.objects.create(
             dispute=dispute,
-            kind=(request.data.get("kind") or "other").strip(),
+            kind=attachment_kind,
             file=file_obj,
             uploaded_by=None,
         )

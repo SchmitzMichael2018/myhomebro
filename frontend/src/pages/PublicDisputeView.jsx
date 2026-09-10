@@ -186,6 +186,7 @@ export default function PublicDisputeView() {
       const fd = new FormData();
       fd.append("body", reply || "");
       fd.append("message_type", "comment");
+      fd.append("kind", "photo");
       files.forEach((f) => fd.append("files[]", f));
 
       const url = `/api/projects/disputes/public/${encodeURIComponent(id)}/messages/${

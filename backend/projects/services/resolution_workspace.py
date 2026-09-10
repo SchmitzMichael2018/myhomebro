@@ -35,11 +35,14 @@ def record_timeline_event(
     visibility: str = ResolutionCaseTimelineEvent.VISIBILITY_ALL,
     metadata: dict | None = None,
 ) -> ResolutionCaseTimelineEvent:
+    # FileField/FieldFile values and other model-backed display objects must not
+    # cross into JSON audit fields without being reduced to plain text first.
+    description = str(description or "")
     event = ResolutionCaseTimelineEvent.objects.create(
         dispute=dispute,
         event_type=event_type,
         title=title,
-        description=description or "",
+        description=description,
         actor=actor if getattr(actor, "is_authenticated", False) else None,
         related_object_type=related_object.__class__.__name__ if related_object is not None else "",
         related_object_id=getattr(related_object, "id", None),
@@ -52,7 +55,7 @@ def record_timeline_event(
         actor=event.actor,
         summary=title,
         after={
-            "description": description or "",
+            "description": description,
             "related_object_type": event.related_object_type,
             "related_object_id": event.related_object_id,
         },
@@ -192,7 +195,7 @@ def index_evidence(
         ResolutionCaseTimelineEvent.EVENT_EVIDENCE_UPLOADED,
         "Evidence uploaded",
         actor=actor,
-        description=description or getattr(attachment, "file", ""),
+        description=description or str(getattr(attachment, "file", "") or ""),
         related_object=evidence,
         metadata={"evidence_id": evidence.id, "attachment_id": attachment.id, "category": evidence.category},
     )
