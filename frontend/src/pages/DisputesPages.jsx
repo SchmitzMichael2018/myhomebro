@@ -222,24 +222,11 @@ function ModalShell({ title, onClose, children, width = "min(920px, 96vw)" }) {
 
 const FILTERS_BASE = [
   { key: "all", label: "All" },
-  { key: "open", label: "Open" },
-  { key: "awaiting_response", label: "Awaiting response" },
-  { key: "awaiting_evidence", label: "Awaiting evidence" },
-  { key: "rework_required", label: "Rework required" },
-  { key: "waiting_fee", label: "Waiting on fee" },
-  { key: "waiting_contractor", label: "Waiting on contractor" },
-  { key: "waiting_homeowner", label: "Waiting on homeowner" },
-  { key: "ready", label: "Ready" },
-  { key: "under_review", label: "Under review" },
+  { key: "needs_action", label: "Needs Action" },
+  { key: "waiting", label: "Waiting" },
+  { key: "rework_required", label: "Rework" },
   { key: "resolved", label: "Resolved" },
-  { key: "canceled", label: "Canceled" },
   { key: "archived", label: "Archived" },
-];
-
-const FILTERS_ADMIN_EXTRA = [
-  { key: "overdue", label: "Overdue" },
-  { key: "due_soon", label: "Due soon (24h)" },
-  { key: "awaiting_admin_review", label: "Awaiting admin review" },
 ];
 
 const RESOLUTION_LABELS = {
@@ -291,41 +278,15 @@ function disputeBoardKey(d, isAdmin = false) {
 
 function getFilterKeyBase(d) {
   const boardKey = disputeBoardKey(d);
-  if (["open", "awaiting_response", "awaiting_evidence", "rework_required", "archived"].includes(boardKey)) {
-    return boardKey;
-  }
-  const status = String(d?.status || "").toLowerCase();
-
-  if (status === "canceled") return "canceled";
-  if (status === "resolved_contractor" || status === "resolved_homeowner" || status === "resolved_partial") return "resolved";
-  if (status === "under_review") return "under_review";
-
-  if (!d?.fee_paid) return "waiting_fee";
-
-  const hasHome = Boolean(String(d?.homeowner_response || "").trim());
-  const hasCont = Boolean(String(d?.contractor_response || "").trim());
-
-  if (hasHome && hasCont) return "ready";
-  if (!hasCont) return "waiting_contractor";
-  if (!hasHome) return "waiting_homeowner";
-
-  return "all";
+  if (boardKey === "archived") return "archived";
+  if (boardKey === "rework_required") return "rework_required";
+  if (["resolved", "canceled"].includes(boardKey)) return "resolved";
+  if (boardKey === "waiting_homeowner") return "waiting";
+  return "needs_action";
 }
 
 function filterRowsBase(rows, selectedKey) {
-  if (!selectedKey || selectedKey === "all") return rows;
-  if (
-    [
-      "open",
-      "awaiting_response",
-      "awaiting_evidence",
-      "awaiting_admin_review",
-      "rework_required",
-      "archived",
-    ].includes(selectedKey)
-  ) {
-    return rows.filter((d) => disputeBoardKey(d, selectedKey === "awaiting_admin_review") === selectedKey);
-  }
+  if (!selectedKey || selectedKey === "all") return rows.filter((d) => !isDisputeArchived(d));
   return rows.filter((d) => getFilterKeyBase(d) === selectedKey);
 }
 
@@ -472,19 +433,9 @@ function DeadlineLine({ dispute, now }) {
   );
 }
 
-/* Stage E: filter + search with admin-only keys */
-function applyFilterAndSearch(rows, filterKey, searchQuery, isAdmin, now) {
-  let filtered = rows;
-
-  if (isAdmin && filterKey === "overdue") {
-    filtered = rows.filter((d) => isOverdueDispute(d, now));
-  } else if (isAdmin && filterKey === "due_soon") {
-    filtered = rows.filter((d) => isDueSoonDispute(d, now));
-  } else if (isAdmin && filterKey === "awaiting_admin_review") {
-    filtered = rows.filter((d) => disputeBoardKey(d, true) === "awaiting_admin_review");
-  } else {
-    filtered = filterRowsBase(rows, filterKey);
-  }
+/* Workflow-level filtering; detailed states remain visible on each case. */
+function applyFilterAndSearch(rows, filterKey, searchQuery) {
+  const filtered = filterRowsBase(rows, filterKey);
 
   if (!searchQuery?.trim()) return filtered;
   return filtered.filter((d) => matchesSearch(d, searchQuery));
@@ -507,32 +458,25 @@ function sortAdminUrgency(rows, now) {
   });
 }
 
-function FilterBar({ rows, selected, onChange, filters, isAdmin, now, operational = false }) {
+function FilterBar({ rows, selected, onChange, filters, operational = false }) {
   const counts = useMemo(() => {
     const c = Object.fromEntries(filters.map((f) => [f.key, 0]));
     c.all = rows.length;
 
     for (const d of rows) {
-      // Count base buckets
+      // Count workflow-level buckets.
       const baseKey = getFilterKeyBase(d);
       if (c[baseKey] != null) c[baseKey] += 1;
-
-      // Count admin-only buckets
-      if (isAdmin) {
-        if (isOverdueDispute(d, now)) c.overdue = (c.overdue || 0) + 1;
-        if (isDueSoonDispute(d, now)) c.due_soon = (c.due_soon || 0) + 1;
-        if (disputeBoardKey(d, true) === "awaiting_admin_review") c.awaiting_admin_review = (c.awaiting_admin_review || 0) + 1;
-      }
     }
 
     // Ensure keys exist
     for (const f of filters) if (c[f.key] == null) c[f.key] = 0;
 
     // Overwrite "all" accurately
-    c.all = rows.length;
+    c.all = rows.filter((d) => !isDisputeArchived(d)).length;
 
     return c;
-  }, [rows, filters, isAdmin, now]);
+  }, [rows, filters]);
 
   return (
     <div className="flex flex-wrap gap-2 items-center">
@@ -1581,7 +1525,6 @@ export default function DisputesPages() {
   // Filters + Search
   const [filterKey, setFilterKey] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [showArchived, setShowArchived] = useState(false);
 
   // "now" ticker so countdown updates
   const [now, setNow] = useState(() => new Date());
@@ -1590,23 +1533,19 @@ export default function DisputesPages() {
     return () => clearInterval(t);
   }, []);
 
-  const filtersForRole = useMemo(
-    () => (isAdmin ? [...FILTERS_ADMIN_EXTRA, ...FILTERS_BASE] : FILTERS_BASE),
-    [isAdmin]
-  );
+  const filtersForRole = FILTERS_BASE;
 
   const asList = (r) => (Array.isArray(r.data) ? r.data : r.data?.results || []);
 
   const fetchNewApi = async () => {
     try {
       setLoading(true);
-      const archivedParam = showArchived ? "&include_archived=1" : "";
       const reqs = [
-        api.get(`/projects/disputes/?mine=true${archivedParam}`),
-        api.get(`/projects/disputes/?initiator=homeowner${archivedParam}`),
+        api.get("/projects/disputes/?mine=true&include_archived=1"),
+        api.get("/projects/disputes/?initiator=homeowner&include_archived=1"),
       ];
 
-      if (isAdmin) reqs.push(api.get(`/projects/disputes/?include_archived=${showArchived ? 1 : 0}`));
+      if (isAdmin) reqs.push(api.get("/projects/disputes/?include_archived=1"));
 
       const res = await Promise.all(reqs);
 
@@ -1646,7 +1585,7 @@ export default function DisputesPages() {
       if (!supportsDisputesApi) await fetchFallback();
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin, showArchived]);
+  }, [isAdmin]);
 
   const cancelDispute = async (d) => {
     if (!d?.id) return;
@@ -1693,26 +1632,24 @@ export default function DisputesPages() {
 
   // Counts source for filter pills
   const filterRowsSource = useMemo(() => {
-    const rows = isAdmin ? allDisputes : [...mine, ...customer];
-    return showArchived ? rows : rows.filter((d) => !isDisputeArchived(d));
-  }, [isAdmin, allDisputes, mine, customer, showArchived]);
+    return isAdmin ? allDisputes : [...mine, ...customer];
+  }, [isAdmin, allDisputes, mine, customer]);
 
   // Apply filter/search + Stage E admin urgency sort
   const mineFiltered = useMemo(
-    () => applyFilterAndSearch(showArchived ? mine : mine.filter((d) => !isDisputeArchived(d)), filterKey, searchQuery, false, now),
-    [mine, filterKey, searchQuery, now, showArchived]
+    () => applyFilterAndSearch(mine, filterKey, searchQuery),
+    [mine, filterKey, searchQuery]
   );
 
   const customerFiltered = useMemo(
-    () => applyFilterAndSearch(showArchived ? customer : customer.filter((d) => !isDisputeArchived(d)), filterKey, searchQuery, false, now),
-    [customer, filterKey, searchQuery, now, showArchived]
+    () => applyFilterAndSearch(customer, filterKey, searchQuery),
+    [customer, filterKey, searchQuery]
   );
 
   const allFiltered = useMemo(() => {
-    const visible = showArchived ? allDisputes : allDisputes.filter((d) => !isDisputeArchived(d));
-    const base = applyFilterAndSearch(visible, filterKey, searchQuery, true, now);
+    const base = applyFilterAndSearch(allDisputes, filterKey, searchQuery);
     return sortAdminUrgency(base, now);
-  }, [allDisputes, filterKey, searchQuery, now, showArchived]);
+  }, [allDisputes, filterKey, searchQuery, now]);
 
   const RowActions = ({ d }) => {
     const archived = isDisputeArchived(d);
@@ -2074,8 +2011,6 @@ export default function DisputesPages() {
               selected={filterKey}
               onChange={setFilterKey}
               filters={filtersForRole}
-              isAdmin={isAdmin}
-              now={now}
               operational={operationalDisputes}
             />
             <SearchBox
@@ -2084,13 +2019,6 @@ export default function DisputesPages() {
               onClear={() => setSearchQuery("")}
               operational={operationalDisputes}
             />
-            <button
-              type="button"
-              className={`mhb-btn ${showArchived ? "primary" : ""}`}
-              onClick={() => setShowArchived((prev) => !prev)}
-            >
-              {showArchived ? "Showing archived" : "Show archived"}
-            </button>
           </div>
 
           <div className="flex gap-2">
