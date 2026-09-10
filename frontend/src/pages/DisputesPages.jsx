@@ -828,7 +828,7 @@ function customerFacingDisputeDescription(value) {
   return String(value || "")
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("[Portal Source]"))
+    .filter((line) => line && !/^\[[^\]]*Source\]/i.test(line))
     .join("\n");
 }
 

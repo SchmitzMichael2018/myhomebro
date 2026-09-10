@@ -1,6 +1,7 @@
 # backend/projects/services/ai/evidence_context.py
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from django.utils import timezone
@@ -22,7 +23,7 @@ def _customer_complaint_text(value: Any) -> str:
     lines = [
         line.strip()
         for line in str(value or "").splitlines()
-        if line.strip() and not line.strip().startswith("[Portal Source]")
+        if line.strip() and not re.match(r"^\[[^\]]*Source\]", line.strip(), flags=re.IGNORECASE)
     ]
     return "\n".join(lines)
 

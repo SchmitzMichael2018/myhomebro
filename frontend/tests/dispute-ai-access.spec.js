@@ -40,7 +40,7 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
             agreement_number: '321',
             initiator: 'contractor',
             reason: 'Scope disagreement',
-            description: "The door doesn't close right.\n\n[Portal Source] agreement_level_dispute",
+            description: "The door doesn't close right.\n\n[MagicInvoice Source] invoice_id=25",
             status: 'open',
             fee_amount: 250,
             fee_paid: true,
@@ -203,7 +203,7 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(page.getByTestId('resolution-case-page')).toContainText("The door doesn't close right.");
   await expect(page.getByTestId('resolution-case-page')).toContainText('Latest homeowner message');
   await expect(page.getByTestId('resolution-case-page')).toContainText('PUBLIC MESSAGE: Just come and fix it');
-  await expect(page.getByTestId('resolution-case-page')).not.toContainText('[Portal Source]');
+  await expect(page.getByTestId('resolution-case-page')).not.toContainText('[MagicInvoice Source]');
   await expect(page.getByTestId('resolution-workspace-overview')).toContainText('Case origin');
   await expect(page.getByTestId('resolution-workspace-timeline')).toContainText('Resolution case opened');
   await expect(page.getByTestId('resolution-workspace-evidence')).toContainText('Photos, Documents, Receipts, Messages');
