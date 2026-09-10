@@ -160,7 +160,11 @@ function RequestCard({ row, busyId, runAction }) {
           <button className={`${operationalPrimaryButton} rounded-lg px-3 py-2 text-sm font-black`} onClick={() => runAction(row, "work-order")} disabled={busyId === `${row.id}:work-order` || Boolean(row.work_order)}>
             {row.work_order ? `Accepted · $0 Milestone #${row.work_order.milestone || "Created"}` : "Accept Coverage & Create $0 Milestone"}
           </button>
-          {row.work_order ? (
+          {row.status === "acknowledgment_requested" ? (
+            <button className="rounded-lg border border-emerald-200/35 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/16" onClick={() => runAction(row, "resend-acknowledgment")} disabled={busyId === `${row.id}:resend-acknowledgment`}>
+              {busyId === `${row.id}:resend-acknowledgment` ? "Sending…" : "Resend Customer Acknowledgment"}
+            </button>
+          ) : row.work_order && row.work_order.status !== "completed" ? (
             <button className="rounded-lg border border-emerald-200/35 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-100 hover:bg-emerald-400/16" onClick={() => runAction(row, "complete-work", { notes: "Warranty repair completed." })} disabled={busyId === `${row.id}:complete-work`}>
               Complete Repair & Request Customer Acceptance
             </button>
@@ -325,6 +329,8 @@ export default function WarrantyDashboardPage() {
         });
       } else if (action === "complete-work") {
         await api.post(`/projects/warranty-requests/${row.id}/work-order/complete/`, payload);
+      } else if (action === "resend-acknowledgment") {
+        await api.post(`/projects/warranty-requests/${row.id}/resend-acknowledgment/`);
       } else if (action === "status") {
         await api.post(`/projects/warranty-requests/${row.id}/status/`, payload);
       }

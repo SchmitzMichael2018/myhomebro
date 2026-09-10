@@ -731,6 +731,21 @@ export default function MilestoneList() {
     }
   };
 
+  const resendWarrantyAcknowledgment = async (m) => {
+    if (!m?.warranty_request_id) return;
+    markBusy(m.id, true);
+    try {
+      const { data } = await api.post(`/projects/warranty-requests/${m.warranty_request_id}/resend-acknowledgment/`);
+      if (data?.sms_delivery?.sent) toast.success("Acknowledgment request sent by email and text.");
+      else toast.success("Acknowledgment request email sent. Text delivery was unavailable.");
+      await reload();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || "Unable to resend the acknowledgment request.");
+    } finally {
+      markBusy(m.id, false);
+    }
+  };
+
   const createInvoiceAndGo = async (m) => {
     const milestoneId = m?.id;
     if (!milestoneId) return;
@@ -1214,6 +1229,16 @@ export default function MilestoneList() {
                                 >
                                   View
                                 </button>
+                                {m.warranty_request_status === "acknowledgment_requested" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => resendWarrantyAcknowledgment(m)}
+                                    disabled={isRowBusy}
+                                    className="rounded-xl border border-emerald-200/40 bg-emerald-400/16 px-4 py-2.5 text-sm font-bold text-emerald-100 hover:bg-emerald-400/24 disabled:opacity-50"
+                                  >
+                                    {isRowBusy ? "Sending…" : "Resend Customer Acknowledgment"}
+                                  </button>
+                                ) : null}
                                 {!isCompleted ? (
                                   <button
                                     data-testid={`milestone-assign-action-${m.id}`}

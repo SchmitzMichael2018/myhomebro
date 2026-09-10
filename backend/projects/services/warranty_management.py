@@ -441,20 +441,21 @@ def notify_warranty_status_change(
     actor=None,
     note: str = "",
     metadata: dict | None = None,
-) -> None:
+) -> dict:
     metadata = metadata or {}
     customer_email = (
         getattr(request, "submitted_by_email", "")
         or getattr(getattr(request, "homeowner", None), "email", "")
         or ""
     )
+    delivery_key = str(metadata.get("delivery_key") or "").strip()
     context = {
         "request_title": request.title,
         "project_title": getattr(getattr(request, "project", None), "title", "") or getattr(getattr(request.agreement, "project", None), "title", ""),
         "contractor_name": getattr(request.contractor, "business_name", "") or "Your contractor",
         "coverage_decision": request.coverage_decision or to_status.replace("_", " "),
         "scheduled_for": metadata.get("scheduled_for") or _scheduled_label(getattr(getattr(request, "work_order", None), "scheduled_for", None)),
-        "dedupe_key": f"warranty:{request.id}:{to_status}:{metadata.get('work_order_id', '')}",
+        "dedupe_key": f"warranty:{request.id}:{to_status}:{metadata.get('work_order_id', '')}{f':{delivery_key}' if delivery_key else ''}",
     }
     event_type = _customer_event_for_status(to_status)
     if customer_email and event_type:
@@ -471,7 +472,7 @@ def notify_warranty_status_change(
             agreement=request.agreement,
             property_profile=request.property_profile,
         )
-        _send_customer_warranty_email(
+        email_delivery = _send_customer_warranty_email(
             request,
             event_type=event_type,
             to_status=to_status,
@@ -479,13 +480,16 @@ def notify_warranty_status_change(
             action_url=action_url,
             context=context,
         )
-        _send_customer_warranty_sms(
+        sms_delivery = _send_customer_warranty_sms(
             request,
             event_type=event_type,
             to_status=to_status,
             action_url=action_url,
             context=context,
         )
+    else:
+        email_delivery = {"sent": False, "reason": "missing_customer_email"}
+        sms_delivery = {"sent": False, "reason": "missing_customer_email"}
     create_notification(
         contractor=request.contractor,
         category=_contractor_category_for_status(to_status),
@@ -495,6 +499,7 @@ def notify_warranty_status_change(
         agreement=request.agreement,
         actor_user=actor if getattr(actor, "is_authenticated", False) else None,
     )
+    return {"email_delivery": email_delivery, "sms_delivery": sms_delivery}
 
 
 def _customer_warranty_action_url(request: WarrantyRequest, customer_email: str) -> str:
@@ -524,7 +529,7 @@ def _send_customer_warranty_email(
     customer_email: str,
     action_url: str,
     context: dict,
-) -> None:
+) -> dict:
     dedupe_key = f"{context['dedupe_key']}:email"
     if SmartNotification.objects.filter(
         event_type=event_type,
@@ -532,7 +537,7 @@ def _send_customer_warranty_email(
         recipient_email__iexact=customer_email,
         metadata__dedupe_key=dedupe_key,
     ).exists():
-        return
+        return {"sent": False, "reason": "duplicate"}
 
     copy = {
         WarrantyRequest.STATUS_SUBMITTED: (
@@ -603,12 +608,14 @@ def _send_customer_warranty_email(
         property_profile=request.property_profile,
     )
     if email_notification is not None:
-        send_postmark_email(
+        sent, detail = send_postmark_email(
             to_email=customer_email,
             subject=subject,
             text_body=text_body,
             html_body=html_body,
         )
+        return {"sent": bool(sent), "reason": "sent" if sent else "send_failed", "detail": detail}
+    return {"sent": False, "reason": "notification_suppressed"}
 
 
 def _send_customer_warranty_sms(
@@ -618,11 +625,11 @@ def _send_customer_warranty_sms(
     to_status: str,
     action_url: str,
     context: dict,
-) -> None:
+) -> dict:
     homeowner = request.homeowner or getattr(request.agreement, "homeowner", None)
     phone = normalize_phone_to_e164(getattr(homeowner, "phone_number", ""))
     if not phone:
-        return
+        return {"sent": False, "reason": "missing_phone_number"}
 
     dedupe_key = f"{context['dedupe_key']}:sms"
     if SmartNotification.objects.filter(
@@ -630,7 +637,7 @@ def _send_customer_warranty_sms(
         channel=NotificationRule.CHANNEL_SMS,
         metadata__dedupe_key=dedupe_key,
     ).exists():
-        return
+        return {"sent": False, "reason": "duplicate"}
 
     copy = {
         WarrantyRequest.STATUS_SUBMITTED: "Your warranty request was submitted.",
@@ -653,7 +660,7 @@ def _send_customer_warranty_sms(
         dedupe_key=dedupe_key,
     )
     if not result.get("ok"):
-        return
+        return {"sent": False, "reason": result.get("reason_code") or result.get("detail") or "send_failed"}
     create_smart_notification(
         event_type=event_type,
         recipient_email=(request.submitted_by_email or getattr(homeowner, "email", "") or "").strip(),
@@ -667,6 +674,7 @@ def _send_customer_warranty_sms(
         agreement=request.agreement,
         property_profile=request.property_profile,
     )
+    return {"sent": True, "reason": "sent", "twilio_sid": result.get("twilio_sid", "")}
 
 
 def _customer_event_for_status(status_value: str) -> str:

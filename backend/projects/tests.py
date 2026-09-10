@@ -7538,6 +7538,27 @@ class AgreementWarrantyApiTests(TestCase):
             )
         )
 
+        milestone_response = self.client.get(f"/api/projects/milestones/{work_order.milestone_id}/")
+        self.assertEqual(milestone_response.status_code, 200)
+        self.assertEqual(milestone_response.data["warranty_request_id"], request_row.id)
+        self.assertEqual(
+            milestone_response.data["warranty_request_status"],
+            WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED,
+        )
+
+        email_count = send_email.call_count
+        sms_count = send_sms.call_count
+        resend_response = self.client.post(
+            f"/api/projects/warranty-requests/{request_row.id}/resend-acknowledgment/",
+            {},
+            format="json",
+        )
+        self.assertEqual(resend_response.status_code, 200, resend_response.data)
+        self.assertTrue(resend_response.data["email_delivery"]["sent"])
+        self.assertTrue(resend_response.data["sms_delivery"]["sent"])
+        self.assertEqual(send_email.call_count, email_count + 1)
+        self.assertEqual(send_sms.call_count, sms_count + 1)
+
         response = self.client.post(
             f"/api/projects/customer-portal/{self.agreement.homeowner_access_token}/warranty-requests/{request_row.id}/acknowledge/",
             {"action": "issue_still_exists", "note": "The transition is still loose."},

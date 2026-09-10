@@ -287,6 +287,29 @@ class WarrantyRequestViewSet(viewsets.ModelViewSet):
         updated = complete_warranty_work_order(work_order, actor=request.user, notes=(request.data.get("notes") or "").strip())
         return Response(WarrantyWorkOrderSerializer(updated, context={"request": request}).data, status=200)
 
+    @action(detail=True, methods=["post"], url_path="resend-acknowledgment")
+    def resend_acknowledgment(self, request, pk=None):
+        row = self.get_object()
+        if row.status != WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED:
+            return Response(
+                {"detail": "This warranty request is not awaiting customer acknowledgment."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        from projects.services.warranty_management import notify_warranty_status_change
+
+        delivery = notify_warranty_status_change(
+            row,
+            to_status=WarrantyRequest.STATUS_ACKNOWLEDGMENT_REQUESTED,
+            actor=request.user,
+            note="Customer acknowledgment reminder sent.",
+            metadata={
+                "work_order_id": getattr(getattr(row, "work_order", None), "id", ""),
+                "delivery_key": timezone.now().isoformat(),
+                "manual_resend": True,
+            },
+        )
+        return Response({"ok": True, **(delivery or {})}, status=200)
+
     @action(detail=True, methods=["post"], url_path="escalate")
     def escalate(self, request, pk=None):
         row = self.get_object()

@@ -162,6 +162,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
     is_rework = serializers.SerializerMethodField()
     origin_milestone = serializers.SerializerMethodField()
+    warranty_request_id = serializers.SerializerMethodField()
+    warranty_request_status = serializers.SerializerMethodField()
     assigned_subcontractor = serializers.SerializerMethodField()
     assigned_subcontractor_display = serializers.SerializerMethodField()
     assigned_worker = serializers.SerializerMethodField()
@@ -223,6 +225,8 @@ class MilestoneSerializer(serializers.ModelSerializer):
             "milestone_lifecycle_state",
             "is_rework",
             "origin_milestone",
+            "warranty_request_id",
+            "warranty_request_status",
             "agreement_status",
             "agreement_is_locked",
             "agreement_is_completed",
@@ -481,6 +485,20 @@ class MilestoneSerializer(serializers.ModelSerializer):
             return bool(getattr(obj, "rework_origin_milestone_id", None))
         except Exception:
             return False
+
+    def _warranty_request(self, obj: Milestone):
+        try:
+            return obj.warranty_work_order.warranty_request
+        except Exception:
+            return None
+
+    def get_warranty_request_id(self, obj: Milestone):
+        request = self._warranty_request(obj)
+        return getattr(request, "id", None)
+
+    def get_warranty_request_status(self, obj: Milestone) -> str:
+        request = self._warranty_request(obj)
+        return (getattr(request, "status", "") or "").strip()
 
     def _origin_queryset(self):
         return Milestone.objects.all().only(
