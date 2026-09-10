@@ -649,6 +649,10 @@ class Dispute(models.Model):
         if "status" in field_names:
             # Keep it consistent with your InvoiceStatus naming style (incomplete)
             m_kwargs["status"] = "incomplete"
+        if "completed" in field_names:
+            m_kwargs["completed"] = False
+        if "completed_at" in field_names:
+            m_kwargs["completed_at"] = None
 
         if "description" in field_names and "description" not in m_kwargs:
             base_desc = f"Rework required from Dispute #{self.pk}."

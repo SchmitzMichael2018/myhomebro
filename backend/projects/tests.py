@@ -31056,6 +31056,8 @@ class DisputeMutationSafetyTests(TestCase):
         work_order = DisputeWorkOrder.objects.get(dispute=dispute)
         rework = Milestone.objects.get(id=work_order.rework_milestone_id)
         self.assertEqual(rework.amount, Decimal("0.00"))
+        self.assertFalse(rework.completed)
+        self.assertFalse(rework.is_invoiced)
         self.assertEqual(rework.rework_origin_milestone_id, milestone.id)
 
     def test_terminal_dispute_rejects_mutations(self):
