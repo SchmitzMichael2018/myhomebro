@@ -27,7 +27,16 @@ export default function SendInvoiceButton({
   const emailSentAt = invoice?.email_sent_at || null;
   const status = invoice?.status || "";
 
-  const label = emailSentAt ? "Resend Invoice" : "Send Invoice";
+  const label = emailSentAt ? "Resend to Customer" : "Send to Customer";
+  const sentLabel = emailSentAt
+    ? `Sent ${new Date(emailSentAt).toLocaleString([], {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })}`
+    : "Not sent yet";
 
   const disabled = useMemo(() => {
     if (!invoiceId) return true;
@@ -101,19 +110,30 @@ export default function SendInvoiceButton({
   };
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={disabled}
-      title={title}
-      className={[
-        "rounded-lg px-4 py-2 font-semibold text-sm transition-colors text-white",
-        loading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700",
-        disabled ? "opacity-60" : "",
-        className,
-      ].join(" ")}
-    >
-      {loading ? "Sending…" : label}
-    </button>
+    <div className="inline-flex flex-col items-start gap-1.5">
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={disabled}
+        title={title}
+        className={[
+          "rounded-lg px-4 py-2 font-semibold text-sm transition-colors text-white",
+          loading ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700",
+          disabled ? "opacity-60" : "",
+          className,
+        ].join(" ")}
+      >
+        {loading ? "Sending…" : label}
+      </button>
+      <span
+        className={`rounded-md border px-2 py-1 text-xs font-semibold ${
+          emailSentAt
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+            : "border-slate-200 bg-slate-50 text-slate-600"
+        }`}
+      >
+        {sentLabel}
+      </span>
+    </div>
   );
 }

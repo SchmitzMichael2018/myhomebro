@@ -745,7 +745,7 @@ export default function MilestoneList() {
       const { data } = await api.post(API.createInvoice(milestoneId));
       const invoiceId = data?.id || data?.invoice_id || data?.pk || getInvoiceIdFromMilestone(m) || null;
 
-      toast.success("Invoice created.");
+      toast.success("Invoice created. Review it, then send it to the customer.");
       await reload();
 
       if (invoiceId) navigate(`/app/invoices/${invoiceId}`);
@@ -1257,7 +1257,7 @@ export default function MilestoneList() {
                                     className="rounded-xl border border-indigo-300/35 bg-indigo-400/14 px-4 py-2.5 text-sm font-bold text-indigo-100 hover:bg-indigo-400/22"
                                     title={invoiceReason || "Create invoice for this completed milestone"}
                                   >
-                                    Invoice
+                                    Create Invoice
                                   </button>
                                 ) : !isCompleted && completeReason ? (
                                   <div className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-xs leading-5 text-sky-100/62">
@@ -1609,7 +1609,7 @@ export default function MilestoneList() {
                                                       className="px-3 py-2 text-xs rounded-md border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold"
                                                       title={invoiceReason || "Create invoice for this completed milestone"}
                                                     >
-                                                      Invoice
+                                                      Create Invoice
                                                     </button>
                                                   </>
                                                 ) : (
