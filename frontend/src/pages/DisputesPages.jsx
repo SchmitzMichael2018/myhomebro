@@ -42,6 +42,21 @@ function extractProposalFromResponse(responseText) {
   return safeJsonParse(json);
 }
 
+function currentPartyStatement(dispute, role) {
+  const statements = Array.isArray(dispute?.party_statements) ? dispute.party_statements : [];
+  return statements.find((statement) => statement.party_role === role && statement.is_current)
+    || statements.find((statement) => statement.party_role === role)
+    || null;
+}
+
+function contractorStatementText(dispute) {
+  const statement = currentPartyStatement(dispute, "contractor");
+  const raw = String(statement?.text || dispute?.contractor_response || "").trim();
+  const legacyProposal = extractProposalFromResponse(raw);
+  if (!legacyProposal) return raw;
+  return String(legacyProposal.notes || legacyProposal.proposed_solution || legacyProposal.problem_statement || "").trim();
+}
+
 function parseDate(value) {
   if (!value) return null;
   const d = new Date(value);
@@ -1013,7 +1028,7 @@ function PartyStatements({ dispute }) {
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <div className="text-sm font-extrabold text-slate-950">Contractor</div>
-          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{String(contractor?.text || dispute.contractor_response || "").trim() || "No contractor statement submitted yet."}</div>
+          <div className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{contractorStatementText(dispute) || "No contractor statement submitted yet."}</div>
           {contractor ? <div className="mt-2 text-xs font-bold text-slate-500">Version {contractor.version} - {contractor.created_at ? new Date(contractor.created_at).toLocaleString() : ""}</div> : null}
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -1207,9 +1222,9 @@ function DetailsModal({
       <section id="resolution-response" className="scroll-mt-52 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><div className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-500">Step 3</div><h3 className="mt-1 text-xl font-extrabold text-slate-950">Contractor Response</h3></div>
-          {!isClosed(dispute) ? <button className="mhb-btn primary" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">{String(dispute.contractor_response || "").trim() ? "Add Updated Statement" : "Write Response"}</button> : null}
+          {!isClosed(dispute) ? <button className="mhb-btn primary" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">{contractorStatementText(dispute) ? "Add Updated Statement" : "Write Response"}</button> : null}
         </div>
-        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800">{String(dispute.contractor_response || "").trim() || "No contractor response has been added yet. Review the customer request and supporting record, then document your response."}</div>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800">{contractorStatementText(dispute) || "No contractor response has been added yet. Review the customer request and supporting record, then document your version of the issue and proposed next step."}</div>
       </section>
 
       <details className="rounded-2xl border border-white/10 bg-slate-950/35 p-4 text-sky-50">
@@ -1259,7 +1274,7 @@ function DetailsModal({
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
           Review the suggested response and resolution below. Project Assistant is advisory only; you decide what is sent to the customer.
         </div>
-        {aiEnabled ? <DisputeAIRecommendationPanel disputeId={dispute.id} /> : null}
+        {aiEnabled ? <DisputeAIRecommendationPanel disputeId={dispute.id} dispute={dispute} /> : null}
       </WorkspaceSection></div>
 
       {/* ✅ Rework milestone CTA */}

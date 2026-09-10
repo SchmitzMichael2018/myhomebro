@@ -63,7 +63,7 @@ function BulletList({ items, empty = "None identified." }) {
   );
 }
 
-export default function DisputeAIRecommendationPanel({ disputeId }) {
+export default function DisputeAIRecommendationPanel({ disputeId, dispute = null }) {
   const [loading, setLoading] = useState(false);
   const [loadingLatest, setLoadingLatest] = useState(false);
   const [err, setErr] = useState("");
@@ -80,6 +80,14 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
   const recommendation = result?.payload?.recommendation || null;
   const draft = result?.payload?.draft_resolution_agreement || null;
   const unsafeLanguageDetected = hasPayload && hasForbiddenLanguage(result?.payload);
+  const attachments = Array.isArray(dispute?.attachments) ? dispute.attachments : [];
+  const indexedEvidence = Array.isArray(dispute?.evidence_index) ? dispute.evidence_index : [];
+  const hasVisualEvidence = attachments.some((item) => ["photo", "image", "video"].includes(String(item?.kind || "").toLowerCase()))
+    || indexedEvidence.some((item) => ["photo", "image", "video"].includes(String(item?.category || "").toLowerCase()));
+  const statements = Array.isArray(dispute?.party_statements) ? dispute.party_statements : [];
+  const currentContractorStatement = statements.find((item) => item?.party_role === "contractor" && item?.is_current);
+  const contractorStatementText = String(currentContractorStatement?.text || dispute?.contractor_response || "").trim();
+  const hasContractorStatement = Boolean(contractorStatementText && !contractorStatementText.startsWith("MHB_PROPOSAL_V1:"));
 
   async function loadLatest() {
     if (!disputeId) return;
@@ -170,6 +178,14 @@ export default function DisputeAIRecommendationPanel({ disputeId }) {
         </>
       }
     >
+
+      {dispute && (!hasVisualEvidence || !hasContractorStatement) ? (
+        <div style={{ marginTop: 12, border: "1px solid #fcd34d", background: "#fffbeb", color: "#78350f", borderRadius: 12, padding: 12, fontSize: 13 }} data-testid="dispute-ai-evidence-readiness">
+          <div style={{ fontWeight: 800 }}>Complete the record before deciding on a resolution</div>
+          {!hasVisualEvidence ? <div style={{ marginTop: 4 }}>Request clear photos of the specific area identified in the complaint. If the issue is unclear, ask the customer to identify the location, condition, and expected correction.</div> : null}
+          {!hasContractorStatement ? <div style={{ marginTop: 4 }}>Add the contractor&apos;s account after reviewing the complaint and evidence. Project Assistant will then compare both statements with the signed agreement and submitted files.</div> : null}
+        </div>
+      ) : null}
 
       {err ? <div style={{ marginTop: 12, color: "#b91c1c", fontWeight: 700 }}>{err}</div> : null}
 

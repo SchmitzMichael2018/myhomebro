@@ -9,6 +9,14 @@ from ...models_dispute import Dispute
 from ...models import Milestone
 
 
+PROPOSAL_RECEIPT_PREFIX = "MHB_PROPOSAL_V1:"
+
+
+def _party_statement_text(value: Any) -> str:
+    text = str(value or "").strip()
+    return "" if text.startswith(PROPOSAL_RECEIPT_PREFIX) else text
+
+
 def _safe_dt(val):
     """
     Keep timestamps JSON-friendly. DRF can serialize datetimes/dates.
@@ -64,6 +72,14 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
             "contractor_name": getattr(agreement, "contractor_name", None),
             "contractor_email": getattr(agreement, "contractor_email", None),
             "total_amount": getattr(agreement, "total_cost", None) or getattr(agreement, "total_amount", None),
+            "scope_description": getattr(agreement, "description", None),
+            "terms_text": getattr(agreement, "terms_text", None),
+            "warranty_type": getattr(agreement, "warranty_type", None),
+            "warranty_text": getattr(agreement, "warranty_text_snapshot", None),
+            "signed_by_homeowner": getattr(agreement, "signed_by_homeowner", None),
+            "signed_by_contractor": getattr(agreement, "signed_by_contractor", None),
+            "signed_at_homeowner": _safe_dt(getattr(agreement, "signed_at_homeowner", None)),
+            "signed_at_contractor": _safe_dt(getattr(agreement, "signed_at_contractor", None)),
             "start_date": _safe_dt(getattr(agreement, "start_date", None)),
             "end_date": _safe_dt(getattr(agreement, "end_date", None)),
             "created_at": _safe_dt(getattr(agreement, "created_at", None)),
@@ -137,6 +153,20 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
     except Exception:
         pass
 
+    statements_data: List[Dict[str, Any]] = []
+    try:
+        for statement in dispute.party_statements.filter(is_current=True).order_by("created_at", "id"):
+            statements_data.append({
+                "id": statement.id,
+                "party_role": statement.party_role,
+                "statement_type": statement.statement_type,
+                "text": _party_statement_text(statement.text),
+                "version": statement.version,
+                "created_at": _safe_dt(statement.created_at),
+            })
+    except Exception:
+        pass
+
     # ──────────────────────────────────────────────────────────────────────────
     # Dispute snapshot (core fields)
     # ──────────────────────────────────────────────────────────────────────────
@@ -144,10 +174,10 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
         "id": getattr(dispute, "id", None),
         "status": getattr(dispute, "status", None),
         "initiator": getattr(dispute, "initiator", None),
-        "category": getattr(dispute, "category", None),
-        "complaint": getattr(dispute, "complaint", None),
+        "category": getattr(dispute, "category", None) or getattr(dispute, "reason", None),
+        "complaint": getattr(dispute, "complaint", None) or getattr(dispute, "homeowner_response", None) or getattr(dispute, "description", None),
         "proposal": getattr(dispute, "proposal", None),
-        "contractor_response": getattr(dispute, "contractor_response", None),
+        "contractor_response": _party_statement_text(getattr(dispute, "contractor_response", None)),
         "homeowner_response": getattr(dispute, "homeowner_response", None),
         "admin_notes": getattr(dispute, "admin_notes", None),
         "fee_paid": getattr(dispute, "fee_paid", None),
@@ -172,4 +202,5 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
         "invoices": invoices_data,
         "dispute": dispute_data,
         "evidence": evidence_data,
+        "party_statements": statements_data,
     }
