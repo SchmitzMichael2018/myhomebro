@@ -1188,7 +1188,17 @@ function DetailsModal({
             <div className="text-sm font-extrabold">Signed Agreement</div><div className="mt-1 text-xs">Open Agreement #{dispute.agreement_number || dispute.agreement}</div>
           </a>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-extrabold text-slate-950">Milestone & Invoice</div><div className="mt-1 text-xs text-slate-600">{dispute.milestone_title || "Agreement-level dispute"}</div></div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-extrabold text-slate-950">Comments</div><div className="mt-1 text-xs text-slate-600">Customer and contractor statements are preserved</div></div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-sm font-extrabold text-slate-950">Comments</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <a href="#resolution-request" className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-100">
+                Review customer comments
+              </a>
+              <a href="#resolution-response" className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-bold text-slate-800 hover:bg-slate-100">
+                {String(dispute.contractor_response || "").trim() ? "Review contractor comments" : "Add contractor comments"}
+              </a>
+            </div>
+          </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-extrabold text-slate-950">Photos & Files</div><div className="mt-1 text-xs text-slate-600">{attachments.length} submitted item{attachments.length === 1 ? "" : "s"}</div></div>
         </div>
         <div className="mt-4"><ResolutionEvidence dispute={dispute} attachments={attachments} attachmentUrl={attachmentUrl} /></div>
