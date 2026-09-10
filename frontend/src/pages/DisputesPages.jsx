@@ -1791,32 +1791,15 @@ export default function DisputesPages() {
       return "Cancel dispute (unfreezes escrow)";
     })();
 
-    const next = nextStepLabel(d, isAdmin);
-
     return (
       <div className="flex flex-wrap gap-2 items-center">
-        <Badge tone={pillToneForNext(next)} title="Next step">
-          {next}
-        </Badge>
-        <DeadlineBadge dispute={d} now={now} />
-
-        {d.escrow_frozen ? (
-          <Badge tone="info" className="bg-slate-900 text-white" title="Escrow hold is currently active">
-            Escrow Hold
-          </Badge>
-        ) : null}
-
         {!isClosed(d) ? (
           !d.fee_paid ? (
             <button className="mhb-btn" onClick={() => payFee(d)} title="Pay dispute fee and place an escrow hold where applicable" type="button">
               Pay Fee
             </button>
-          ) : (
-            <span className={`font-bold text-sm ${operationalDisputes ? "text-emerald-300" : "text-emerald-700"}`}>Fee Paid</span>
-          )
-        ) : (
-          <span className={`font-bold text-sm ${operationalDisputes ? "text-sky-100/55" : "text-slate-500"}`}>Read only</span>
-        )}
+          ) : null
+        ) : null}
 
         <button
           className="mhb-btn"
@@ -1881,19 +1864,6 @@ export default function DisputesPages() {
           </label>
         ) : null}
 
-        {hasAnyResponse(d) && !isClosed(d) && (
-          <span
-            className={
-              operationalDisputes
-                ? "inline-flex items-center gap-1 rounded-full border border-emerald-300/25 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-bold text-emerald-200"
-                : "inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700"
-            }
-            title="At least one response has been submitted"
-          >
-            Response received
-          </span>
-        )}
-
         {isAdmin && (
           <button
             className="mhb-btn primary"
@@ -1908,11 +1878,6 @@ export default function DisputesPages() {
           </button>
         )}
 
-        {isClosed(d) ? (
-          <span className={`self-center text-xs ${operationalDisputes ? "text-sky-100/55" : "text-slate-500"}`}>
-            Read only
-          </span>
-        ) : null}
       </div>
     );
   };
