@@ -69,7 +69,18 @@ export default function SendInvoiceButton({
     try {
       const { data } = await api.post(endpoint);
 
-      toast.success(emailSentAt ? "Invoice resent." : "Invoice sent.");
+      const smsDelivery = data?.sms_delivery;
+      if (smsDelivery?.sent) {
+        toast.success(emailSentAt ? "Invoice resent by email and text." : "Invoice sent by email and text.");
+      } else if (smsDelivery?.deferred) {
+        toast.success("Invoice emailed. Text message is scheduled for the next delivery window.");
+      } else {
+        toast.success(emailSentAt ? "Invoice email resent." : "Invoice email sent.");
+        if (smsDelivery) {
+          const smsReason = String(smsDelivery.reason_code || "").replaceAll("_", " ");
+          toast.error(`Text message was not sent${smsReason ? `: ${smsReason}` : "."}`);
+        }
+      }
 
       // If backend returns updated invoice, use it.
       // Otherwise, refetch invoice detail and pass to parent.

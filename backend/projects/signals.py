@@ -127,7 +127,7 @@ def on_invoice_creation(sender, instance: Invoice, created: bool, **kwargs):
     After a new Invoice is created, notify the homeowner.
     """
     _capture_milestone_performance_from_invoice(instance, "invoice_created" if created else "invoice_saved")
-    if created:
+    if created and not getattr(instance, "_defer_customer_notification", False):
         invoice_id = instance.id
 
         def dispatch_notification():

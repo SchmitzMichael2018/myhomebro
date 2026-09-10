@@ -458,7 +458,17 @@ class InvoiceViewSet(viewsets.ModelViewSet):
                 update_fields.append("last_email_error")
             invoice.save(update_fields=update_fields)
 
-            return Response(self.get_serializer(invoice, context={"request": request}).data, status=status.HTTP_200_OK)
+            sms_delivery = evaluate_sms_automation(
+                "invoice_ready",
+                homeowner=invoice.agreement.homeowner,
+                agreement=invoice.agreement,
+                invoice=invoice,
+                metadata={"notification_source": "invoice_submit", "manual_resend": True},
+            )
+
+            payload = self.get_serializer(invoice, context={"request": request}).data
+            payload["sms_delivery"] = sms_delivery
+            return Response(payload, status=status.HTTP_200_OK)
 
         except Exception as e:
             logger.exception("Invoice submit email failed for invoice %s", invoice.id)

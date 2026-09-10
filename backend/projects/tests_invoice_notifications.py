@@ -129,6 +129,24 @@ class InvoiceNotificationTests(TestCase):
 
     @patch("projects.views.invoice.evaluate_sms_automation")
     @patch("projects.views.invoice._send_invoice_email_postmark", return_value={"MessageID": "email-1"})
+    def test_manual_invoice_submit_sends_email_and_consent_aware_sms(self, _email, evaluate_sms):
+        evaluate_sms.return_value = {"sent": True, "reason_code": "sent_immediately"}
+        invoice = Invoice.objects.create(agreement=self.agreement, amount=Decimal("250.00"), status="pending")
+
+        response = self.client.post(f"/api/projects/invoices/{invoice.id}/submit/", {}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["sms_delivery"]["sent"])
+        evaluate_sms.assert_called_once_with(
+            "invoice_ready",
+            homeowner=self.homeowner,
+            agreement=self.agreement,
+            invoice=invoice,
+            metadata={"notification_source": "invoice_submit", "manual_resend": True},
+        )
+
+    @patch("projects.views.invoice.evaluate_sms_automation")
+    @patch("projects.views.invoice._send_invoice_email_postmark", return_value={"MessageID": "email-1"})
     def test_manual_invoice_resend_also_retries_consent_aware_sms(self, _email, evaluate_sms):
         evaluate_sms.return_value = {"sent": True, "reason_code": "sent"}
         invoice = Invoice.objects.create(agreement=self.agreement, amount=Decimal("250.00"), status="pending")

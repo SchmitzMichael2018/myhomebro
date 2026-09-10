@@ -1867,7 +1867,7 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
                 # Status for escrow flow stays PENDING approval.
                 # For direct-pay you may later want SENT; for now leave as PENDING (your existing pipeline).
-                invoice = Invoice.objects.create(
+                invoice = Invoice(
                     agreement=agreement,
                     amount=milestone.amount,
                     status=InvoiceStatus.PENDING,
@@ -1877,6 +1877,10 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                     milestone_completion_notes=completion_notes or "",
                     milestone_attachments_snapshot=attachments or [],
                 )
+                # This workflow has an explicit "Send to Customer" step. Do not
+                # deliver email/SMS merely because the contractor created a draft.
+                invoice._defer_customer_notification = True
+                invoice.save()
 
                 milestone.is_invoiced = True
                 milestone.invoice = invoice
