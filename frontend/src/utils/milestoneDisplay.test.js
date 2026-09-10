@@ -25,4 +25,14 @@ describe('milestoneDisplayPaymentStatus', () => {
       })
     ).toBe('Paid');
   });
+
+  it('shows no payment required for a zero-dollar rework milestone', () => {
+    expect(
+      milestoneDisplayPaymentStatus({
+        status: 'completed',
+        amount: '0.00',
+        rework_origin_milestone_id: 298,
+      })
+    ).toBe('No payment required');
+  });
 });

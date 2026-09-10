@@ -171,6 +171,10 @@ export function milestoneDisplayProgressPercent(milestone) {
 
 export function milestoneDisplayPaymentStatus(milestone) {
   if (isMilestonePaid(milestone)) return 'Paid';
+  const amount = milestone?.amount;
+  if (amount !== undefined && amount !== null && amount !== '' && Number(amount) <= 0) {
+    return 'No payment required';
+  }
 
   const raw = normalizeKey(
     pick(
@@ -200,6 +204,9 @@ export function milestoneDisplayPaymentStatus(milestone) {
 export function milestoneDisplayPhaseLabel(milestone) {
   const paymentStatus = milestoneDisplayPaymentStatus(milestone);
   if (paymentStatus === 'Paid') return 'Paid';
+  if (paymentStatus === 'No payment required') {
+    return isMilestoneCompleted(milestone) ? 'Completed (No Payment)' : 'Incomplete';
+  }
   if (isMilestoneInvoiced(milestone)) {
     return 'Invoiced / Pending Payment';
   }
@@ -244,6 +251,7 @@ export function milestoneStatusTone(label) {
 const paymentTone = (label) => {
   const normalized = normalizeKey(label);
   if (normalized === 'paid') return 'success';
+  if (normalized === 'no payment required') return 'success';
   if (normalized.includes('pending')) return 'warning';
   if (normalized.includes('not requested')) return 'muted';
   return 'neutral';

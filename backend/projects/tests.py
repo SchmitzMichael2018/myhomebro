@@ -7080,6 +7080,16 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(payload["reasons"], [])
         self.assertEqual(payload["totals"]["milestones_total"], 1)
 
+        archive_response = self.client.post(
+            f"/api/projects/agreements/{self.agreement.id}/archive/",
+            {},
+            format="json",
+        )
+        self.assertEqual(archive_response.status_code, 200, archive_response.data)
+        self.agreement.refresh_from_db()
+        self.assertEqual(self.agreement.status, ProjectStatus.COMPLETED)
+        self.assertTrue(self.agreement.is_archived)
+
     def test_archived_agreement_milestones_are_historical_not_active(self):
         milestone = self._make_financially_complete_agreement()
         self.agreement.status = ProjectStatus.COMPLETED

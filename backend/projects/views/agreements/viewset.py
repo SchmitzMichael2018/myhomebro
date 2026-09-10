@@ -817,6 +817,13 @@ class AgreementViewSet(viewsets.ModelViewSet):
             if contractor is None or getattr(ag, "contractor_id", None) != contractor.id:
                 return Response({"detail": "Not authorized."}, status=status.HTTP_403_FORBIDDEN)
 
+        # Bring an otherwise-finished agreement into its canonical completed
+        # state before evaluating archival. This is especially important when
+        # the last record is a completed, non-billable $0 rework milestone.
+        if ag.status not in {ProjectStatus.COMPLETED, ProjectStatus.CANCELLED}:
+            recompute_and_apply_agreement_completion(ag.id)
+            ag.refresh_from_db()
+
         blockers = agreement_archive_blockers(ag)
         if blockers:
             return Response(
