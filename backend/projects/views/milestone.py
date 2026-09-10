@@ -664,6 +664,13 @@ def _mark_milestone_complete_side_effects(*, request, milestone: Milestone, comp
     except Exception:
         pass
 
+    try:
+        from projects.services.resolution_workspace import reopen_original_invoice_after_rework
+
+        reopen_original_invoice_after_rework(milestone, actor=request.user)
+    except Exception:
+        logger.exception("Unable to reopen the original invoice after rework milestone %s", milestone.id)
+
     milestone.refresh_from_db()
     return milestone
 

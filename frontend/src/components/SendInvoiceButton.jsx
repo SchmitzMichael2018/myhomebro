@@ -52,7 +52,8 @@ export default function SendInvoiceButton({
     ? `/projects/invoices/${invoiceId}/resend/`
     : `/projects/invoices/${invoiceId}/submit/`;
 
-  const handleClick = async () => {
+  const handleClick = async (event) => {
+    event?.stopPropagation?.();
     if (!invoiceId) return;
 
     setLoading(true);

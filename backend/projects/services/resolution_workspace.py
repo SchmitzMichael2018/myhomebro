@@ -202,6 +202,67 @@ def index_evidence(
     return evidence
 
 
+def reopen_original_invoice_after_rework(milestone, *, actor=None):
+    """Return the original disputed invoice to customer approval after rework."""
+    from django.db.models import Q
+    from projects.models import Invoice, InvoiceStatus
+
+    origin_id = getattr(milestone, "rework_origin_milestone_id", None)
+    if not origin_id or not getattr(milestone, "completed", False):
+        return None
+
+    dispute = (
+        Dispute.objects.filter(
+            work_orders__rework_milestone_id=milestone.id,
+            status="resolved_contractor",
+        )
+        .order_by("-resolved_at", "-id")
+        .first()
+    )
+    if dispute is None:
+        return None
+
+    invoice = getattr(dispute, "payment_request", None)
+    if invoice is None:
+        invoice = (
+            Invoice.objects.filter(agreement_id=milestone.agreement_id)
+            .filter(Q(source_milestone__id=origin_id) | Q(milestone_id_snapshot=origin_id))
+            .order_by("-created_at", "-id")
+            .first()
+        )
+    if invoice is None or getattr(invoice, "escrow_released", False):
+        return invoice
+
+    changed = []
+    if invoice.status == InvoiceStatus.DISPUTED:
+        invoice.status = InvoiceStatus.PENDING
+        changed.append("status")
+    if invoice.disputed:
+        invoice.disputed = False
+        changed.append("disputed")
+    if invoice.disputed_at is not None:
+        invoice.disputed_at = None
+        changed.append("disputed_at")
+    if invoice.dispute_by:
+        invoice.dispute_by = ""
+        changed.append("dispute_by")
+    if changed:
+        invoice.save(update_fields=changed)
+        record_timeline_event(
+            dispute,
+            ResolutionCaseTimelineEvent.EVENT_HUMAN_DECISION_RECORDED,
+            "Corrective work completed; invoice returned for customer approval",
+            actor=actor,
+            description=(
+                f"Invoice {invoice.invoice_number} is pending customer approval. "
+                "The original dispute remains in case history."
+            ),
+            related_object=invoice,
+            metadata={"invoice_id": invoice.id, "rework_milestone_id": milestone.id},
+        )
+    return invoice
+
+
 def create_resolution_proposal(
     dispute: Dispute,
     *,

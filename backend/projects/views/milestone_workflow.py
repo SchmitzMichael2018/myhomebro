@@ -293,6 +293,10 @@ def approve_work_submission(request, milestone_id: int):
             "subcontractor_review_response_note",
         ]
     )
+    if milestone.completed:
+        from projects.services.resolution_workspace import reopen_original_invoice_after_rework
+
+        reopen_original_invoice_after_rework(milestone, actor=request.user)
     payout = sync_milestone_payout(milestone.id)
     if payout is not None and getattr(payout, "status", "") in {"ready_for_payout", "paid", "failed"}:
         try:

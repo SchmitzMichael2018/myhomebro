@@ -31015,10 +31015,22 @@ class DisputeMutationSafetyTests(TestCase):
             amount=Decimal("400.00"),
             completed=True,
         )
+        invoice = Invoice.objects.create(
+            agreement=self.agreement,
+            amount=Decimal("400.00"),
+            status=InvoiceStatus.DISPUTED,
+            disputed=True,
+            disputed_at=timezone.now(),
+            dispute_by="homeowner",
+            dispute_reason="Door does not close.",
+            milestone_id_snapshot=milestone.id,
+            milestone_title_snapshot=milestone.title,
+        )
         dispute = Dispute.objects.create(
             agreement=self.agreement,
             project=self.project,
             milestone=milestone,
+            payment_request=invoice,
             initiator="homeowner",
             reason="Door does not close",
             description="The door is visibly misaligned and does not close.",
@@ -31059,6 +31071,18 @@ class DisputeMutationSafetyTests(TestCase):
         self.assertFalse(rework.completed)
         self.assertFalse(rework.is_invoiced)
         self.assertEqual(rework.rework_origin_milestone_id, milestone.id)
+
+        rework.completed = True
+        rework.completed_at = timezone.now()
+        rework.save(update_fields=["completed", "completed_at"])
+        from projects.services.resolution_workspace import reopen_original_invoice_after_rework
+
+        reopen_original_invoice_after_rework(rework, actor=self.contractor_user)
+        invoice.refresh_from_db()
+        self.assertEqual(invoice.status, InvoiceStatus.PENDING)
+        self.assertFalse(invoice.disputed)
+        self.assertIsNone(invoice.disputed_at)
+        self.assertEqual(invoice.dispute_by, "")
 
     def test_terminal_dispute_rejects_mutations(self):
         attachment = SimpleUploadedFile("evidence.txt", b"terminal dispute evidence")
