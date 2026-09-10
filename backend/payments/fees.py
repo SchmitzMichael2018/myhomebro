@@ -10,7 +10,7 @@
 # Business rules:
 # - 60-day intro: 3%
 # - After intro: 4%, discounted to 3.5% at $20k monthly processed volume
-# - Optional high-risk surcharge (+1.5%)
+# - No risk surcharge; every project uses the published adoption-friendly rates
 # - Cap: $750 per project; $650 while the volume rate applies
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ TIER2_RATE = Decimal("0.040")
 TIER3_RATE = Decimal("0.035")
 VOLUME_DISCOUNT_THRESHOLD = Decimal("20000.00")
 
-HIGH_RISK_SURCHARGE = Decimal("0.015")
+HIGH_RISK_SURCHARGE = Decimal("0.00")
 
 FLAT_FEE = Decimal("0.00")
 
@@ -347,7 +347,7 @@ def get_fee_rate_for_contractor(
             tier_name = "tier3"
 
     high_risk_applied = False
-    if is_high_risk:
+    if is_high_risk and HIGH_RISK_SURCHARGE > 0:
         base_rate = base_rate + HIGH_RISK_SURCHARGE
         high_risk_applied = True
 
