@@ -3136,7 +3136,7 @@ export default function ContractorDashboard() {
       subtitleParts.push("Intro (first 60 days): 3.00%.");
     } else {
       subtitleParts.push("Intro pricing window has ended.");
-      subtitleParts.push("Standard escrow pricing is tiered by monthly volume.");
+      subtitleParts.push("Process $20,000 this month to earn the volume rate for all of next month.");
     }
 
     if (ratePercentFromBackend) {

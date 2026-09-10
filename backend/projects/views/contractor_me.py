@@ -30,6 +30,7 @@ from payments.fees import (
     get_fee_rate_for_contractor,
     get_intro_pricing_start_for_contractor,
     get_monthly_processed_volume_breakdown_for_contractor,
+    get_previous_month_processed_volume_breakdown_for_contractor,
 )
 
 INTRO_DAYS_TOTAL = INTRO_DAYS
@@ -133,18 +134,21 @@ class ContractorMeView(APIView):
         intro_active, intro_days_remaining = _compute_intro(pricing_start_dt)
         volume_breakdown = get_monthly_processed_volume_breakdown_for_contractor(c)
         monthly_volume = volume_breakdown["total_volume"]
+        qualifying_volume_breakdown = get_previous_month_processed_volume_breakdown_for_contractor(c)
+        qualifying_volume = qualifying_volume_breakdown["total_volume"]
         rate_info = get_fee_rate_for_contractor(
             contractor_created_at=pricing_start_dt or timezone.now(),
-            monthly_volume=monthly_volume,
+            monthly_volume=qualifying_volume,
             today=timezone.now().date(),
         )
 
         volume_discount_threshold = VOLUME_DISCOUNT_THRESHOLD
-        volume_discount_active = monthly_volume >= volume_discount_threshold
+        volume_discount_active = rate_info.tier_name == "tier3" and not rate_info.is_intro
+        next_month_discount_unlocked = monthly_volume >= volume_discount_threshold
         volume_shortfall = max(volume_discount_threshold - monthly_volume, Decimal("0.00"))
         volume_progress_pct = (
             100
-            if volume_discount_active
+            if next_month_discount_unlocked
             else int((monthly_volume / volume_discount_threshold) * 100)
             if volume_discount_threshold
             else 0
@@ -154,9 +158,9 @@ class ContractorMeView(APIView):
         tier_type = _tier_type_from_tier_name(rate_info.tier_name)
         intro_status_label = "Intro pricing active" if intro_active else "Intro period ended"
         volume_status_label = (
-            "Volume discount active for this month"
-            if volume_discount_active
-            else f"${volume_shortfall:.2f} away from the 3.5% volume rate"
+            "3.5% rate and $650 project cap unlocked for next month"
+            if next_month_discount_unlocked
+            else f"Process ${volume_shortfall:,.2f} more this month to unlock 3.5% next month"
         )
 
         ai_summary = _ai_payload()
@@ -214,8 +218,11 @@ class ContractorMeView(APIView):
                 "monthly_volume_label": f"${monthly_volume:,.2f}",
                 "monthly_invoice_volume": f"{volume_breakdown['invoice_volume']:.2f}",
                 "monthly_draw_volume": f"{volume_breakdown['draw_volume']:.2f}",
+                "qualifying_previous_month_volume": f"{qualifying_volume:.2f}",
+                "qualifying_previous_month_volume_label": f"${qualifying_volume:,.2f}",
                 "volume_discount_threshold": f"{volume_discount_threshold:.2f}",
                 "volume_discount_active": bool(volume_discount_active),
+                "next_month_volume_discount_unlocked": bool(next_month_discount_unlocked),
                 "volume_discount_label": volume_status_label,
                 "volume_shortfall": f"{volume_shortfall:.2f}",
                 "volume_progress_pct": volume_progress_pct,

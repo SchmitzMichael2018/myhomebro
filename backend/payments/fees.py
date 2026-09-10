@@ -9,14 +9,14 @@
 #
 # Business rules:
 # - 60-day intro: 3%
-# - After intro: 4%, discounted to 3.5% at $20k monthly processed volume
+# - After intro: 4%, discounted to 3.5% when the prior calendar month processed $20k+
 # - No risk surcharge; every project uses the published adoption-friendly rates
 # - Cap: $750 per project; $650 while the volume rate applies
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Literal, Optional, Tuple
 
@@ -25,7 +25,7 @@ from django.utils import timezone
 
 FeePayer = Literal["contractor", "homeowner", "split"]
 
-FEE_ENGINE_VERSION = "v2026-09-10-adoption"
+FEE_ENGINE_VERSION = "v2026-09-10-adoption-prior-month"
 
 INTRO_DAYS = 60
 INTRO_RATE = Decimal("0.03")
@@ -143,6 +143,12 @@ def _month_start_for_now(now=None):
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+def _previous_month_bounds(now=None):
+    current_start = _month_start_for_now(now)
+    previous_start = (current_start - timedelta(days=1)).replace(day=1)
+    return previous_start, current_start
+
+
 def _is_paid_like_status(status: str) -> bool:
     normalized = str(status or "").strip().lower()
     return any(token in normalized for token in ("paid", "released", "completed"))
@@ -165,12 +171,12 @@ def _draw_processed_event_time(draw):
     )
 
 
-def _invoice_monthly_volume_for_contractor(contractor) -> Decimal:
+def _invoice_monthly_volume_for_contractor(contractor, *, month_start=None, month_end=None) -> Decimal:
     monthly_volume = Decimal("0.00")
     try:
         from projects.models import Invoice  # type: ignore
 
-        month_start = _month_start_for_now()
+        month_start = month_start or _month_start_for_now()
 
         qs = Invoice.objects.filter(agreement__contractor=contractor)
         total = Decimal("0.00")
@@ -189,7 +195,7 @@ def _invoice_monthly_volume_for_contractor(contractor) -> Decimal:
             if not _is_paid_like_status(status) and not has_release_signal and not getattr(inv, "paid_at", None) and not getattr(inv, "direct_pay_paid_at", None) and not getattr(inv, "escrow_released_at", None):
                 continue
             event_time = _invoice_processed_event_time(inv)
-            if event_time is not None and event_time < month_start:
+            if event_time is not None and (event_time < month_start or (month_end is not None and event_time >= month_end)):
                 continue
             amt = getattr(inv, "amount", None)
             if amt is not None:
@@ -200,12 +206,12 @@ def _invoice_monthly_volume_for_contractor(contractor) -> Decimal:
     return monthly_volume
 
 
-def _draw_monthly_volume_for_contractor(contractor) -> Decimal:
+def _draw_monthly_volume_for_contractor(contractor, *, month_start=None, month_end=None) -> Decimal:
     monthly_volume = Decimal("0.00")
     try:
         from projects.models import DrawRequest  # type: ignore
 
-        month_start = _month_start_for_now()
+        month_start = month_start or _month_start_for_now()
         qs = DrawRequest.objects.filter(agreement__contractor=contractor)
         total = Decimal("0.00")
         for draw in qs.only("gross_amount", "status", "paid_at", "released_at", "updated_at"):
@@ -213,7 +219,7 @@ def _draw_monthly_volume_for_contractor(contractor) -> Decimal:
             if not _is_paid_like_status(status) and not getattr(draw, "paid_at", None) and not getattr(draw, "released_at", None):
                 continue
             event_time = _draw_processed_event_time(draw)
-            if event_time is not None and event_time < month_start:
+            if event_time is not None and (event_time < month_start or (month_end is not None and event_time >= month_end)):
                 continue
             # We count the draw request once, regardless of whether an
             # ExternalPaymentRecord exists for the same economic event.
@@ -226,12 +232,12 @@ def _draw_monthly_volume_for_contractor(contractor) -> Decimal:
     return monthly_volume
 
 
-def _expense_monthly_volume_for_contractor(contractor) -> Decimal:
+def _expense_monthly_volume_for_contractor(contractor, *, month_start=None, month_end=None) -> Decimal:
     monthly_volume = Decimal("0.00")
     try:
         from projects.models import ExpenseRequest  # type: ignore
 
-        month_start = _month_start_for_now()
+        month_start = month_start or _month_start_for_now()
         qs = ExpenseRequest.objects.filter(agreement__contractor=contractor)
         total = Decimal("0.00")
         for expense in qs.only("amount", "status", "paid_at", "updated_at"):
@@ -239,7 +245,7 @@ def _expense_monthly_volume_for_contractor(contractor) -> Decimal:
             if str(status).lower() != "paid" and not getattr(expense, "paid_at", None):
                 continue
             event_time = getattr(expense, "paid_at", None) or getattr(expense, "updated_at", None)
-            if event_time is not None and event_time < month_start:
+            if event_time is not None and (event_time < month_start or (month_end is not None and event_time >= month_end)):
                 continue
             amt = getattr(expense, "amount", None)
             if amt is not None:
@@ -250,10 +256,10 @@ def _expense_monthly_volume_for_contractor(contractor) -> Decimal:
     return monthly_volume
 
 
-def get_monthly_processed_volume_breakdown_for_contractor(contractor) -> dict:
-    invoice_volume = _invoice_monthly_volume_for_contractor(contractor)
-    draw_volume = _draw_monthly_volume_for_contractor(contractor)
-    expense_volume = _expense_monthly_volume_for_contractor(contractor)
+def get_monthly_processed_volume_breakdown_for_contractor(contractor, *, month_start=None, month_end=None) -> dict:
+    invoice_volume = _invoice_monthly_volume_for_contractor(contractor, month_start=month_start, month_end=month_end)
+    draw_volume = _draw_monthly_volume_for_contractor(contractor, month_start=month_start, month_end=month_end)
+    expense_volume = _expense_monthly_volume_for_contractor(contractor, month_start=month_start, month_end=month_end)
     total_volume = _round_money(invoice_volume + draw_volume + expense_volume)
     return {
         "invoice_volume": invoice_volume,
@@ -265,6 +271,19 @@ def get_monthly_processed_volume_breakdown_for_contractor(contractor) -> dict:
 
 def get_monthly_processed_volume_for_contractor(contractor) -> Decimal:
     return get_monthly_processed_volume_breakdown_for_contractor(contractor)["total_volume"]
+
+
+def get_previous_month_processed_volume_breakdown_for_contractor(contractor) -> dict:
+    month_start, month_end = _previous_month_bounds()
+    return get_monthly_processed_volume_breakdown_for_contractor(
+        contractor,
+        month_start=month_start,
+        month_end=month_end,
+    )
+
+
+def get_previous_month_processed_volume_for_contractor(contractor) -> Decimal:
+    return get_previous_month_processed_volume_breakdown_for_contractor(contractor)["total_volume"]
 
 
 def get_monthly_paid_invoice_volume_for_contractor(contractor) -> Decimal:
@@ -384,7 +403,7 @@ def get_current_fee_cap_for_contractor(contractor) -> Decimal:
     pricing_start = get_intro_pricing_start_for_contractor(contractor)
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=pricing_start,
-        monthly_volume=get_monthly_processed_volume_for_contractor(contractor),
+        monthly_volume=get_previous_month_processed_volume_for_contractor(contractor),
         today=date.today(),
     )
     return get_fee_cap_for_rate_info(rate_info)
@@ -625,7 +644,7 @@ def _calculate_unified_platform_fee(
     is_high_risk: bool = False,
 ) -> UnifiedPlatformFeeResult:
     contractor_created_at = get_intro_pricing_start_for_contractor(contractor)
-    monthly_volume = get_monthly_processed_volume_for_contractor(contractor)
+    monthly_volume = get_previous_month_processed_volume_for_contractor(contractor)
 
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=contractor_created_at,
@@ -715,7 +734,7 @@ def compute_fee_summary(
     NOTE: This uses PER-CALL cap (historical behavior) by applying MAX_PLATFORM_FEE here.
     """
     if contractor is not None:
-        monthly_volume_value = get_monthly_processed_volume_for_contractor(contractor)
+        monthly_volume_value = get_previous_month_processed_volume_for_contractor(contractor)
     else:
         monthly_volume_value = _round_money(Decimal(str(monthly_volume or 0)))
 
@@ -784,7 +803,7 @@ def compute_fee_summary_for_invoice_payment(
         rate_info=unified.rate_info,
         platform_fee=unified.platform_fee,
         agreement_cap=unified.cap_info,
-        monthly_volume_used=get_monthly_processed_volume_for_contractor(contractor),
+        monthly_volume_used=get_previous_month_processed_volume_for_contractor(contractor),
         platform_fee_uncapped=unified.platform_fee_uncapped,
     )
 
@@ -815,7 +834,7 @@ def calculate_total_allowed_fee_cents_for_agreement_total(
     is_high_risk: bool = False,
 ) -> int:
     contractor_created_at = get_intro_pricing_start_for_contractor(contractor)
-    monthly_volume = get_monthly_processed_volume_for_contractor(contractor)
+    monthly_volume = get_previous_month_processed_volume_for_contractor(contractor)
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=contractor_created_at,
         monthly_volume=monthly_volume,

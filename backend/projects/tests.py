@@ -16543,16 +16543,18 @@ class ContractorProcessedVolumePricingTests(TestCase):
         self.now = timezone.now()
 
     def _create_paid_invoice(self, *, amount, **kwargs):
+        event_at = kwargs.pop("event_at", self.now)
         return Invoice.objects.create(
             agreement=self.agreement,
             amount=Decimal(str(amount)),
             status=InvoiceStatus.PAID,
             escrow_released=True,
-            escrow_released_at=self.now,
+            escrow_released_at=event_at,
             **kwargs,
         )
 
     def _create_released_draw(self, *, gross_amount, **kwargs):
+        event_at = kwargs.pop("event_at", self.now)
         return DrawRequest.objects.create(
             agreement=self.agreement,
             draw_number=kwargs.pop("draw_number", DrawRequest.objects.filter(agreement=self.agreement).count() + 1),
@@ -16561,7 +16563,7 @@ class ContractorProcessedVolumePricingTests(TestCase):
             gross_amount=Decimal(str(gross_amount)),
             retainage_amount=Decimal("0.00"),
             net_amount=Decimal(str(gross_amount)),
-            released_at=self.now,
+            released_at=event_at,
             paid_at=None,
             **kwargs,
         )
@@ -16588,9 +16590,26 @@ class ContractorProcessedVolumePricingTests(TestCase):
 
         self.assertEqual(volume, Decimal("3650.00"))
 
-    def test_threshold_crossing_uses_combined_monthly_volume(self):
+    def test_current_month_threshold_does_not_change_the_current_month_rate(self):
         self._create_paid_invoice(amount="8000.00")
         self._create_released_draw(gross_amount="18000.00")
+
+        summary = compute_fee_summary(
+            project_amount=Decimal("1000.00"),
+            contractor_created_at=self.now - timedelta(days=120),
+            contractor=self.contractor,
+            fee_payer="contractor",
+            today=self.now.date(),
+        )
+
+        self.assertEqual(summary.rate_info.tier_name, "tier1")
+        self.assertEqual(summary.rate_info.rate, Decimal("0.040"))
+
+    def test_previous_month_threshold_earns_fixed_volume_rate_this_month(self):
+        current_month_start = self.now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        previous_month_event = current_month_start - timedelta(days=1)
+        self._create_paid_invoice(amount="8000.00", event_at=previous_month_event)
+        self._create_released_draw(gross_amount="18000.00", event_at=previous_month_event)
 
         summary = compute_fee_summary(
             project_amount=Decimal("1000.00"),
@@ -16704,6 +16723,8 @@ class ContractorProcessedVolumePricingTests(TestCase):
         self.assertEqual(payload["monthly_volume"], "26000.00")
         self.assertEqual(payload["monthly_invoice_volume"], "8000.00")
         self.assertEqual(payload["monthly_draw_volume"], "18000.00")
+        self.assertEqual(payload["qualifying_previous_month_volume"], "0.00")
+        self.assertTrue(payload["next_month_volume_discount_unlocked"])
         self.assertEqual(payload["tier_type"], "intro")
         self.assertTrue(payload["intro_active"])
 

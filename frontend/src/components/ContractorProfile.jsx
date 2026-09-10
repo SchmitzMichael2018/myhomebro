@@ -611,9 +611,13 @@ export default function ContractorProfile() {
     const introStatusLabel =
       pricing.intro_status_label || (introActive ? "Intro pricing active" : "Intro period ended");
     const monthlyVolumeLabel = pricing.monthly_volume_label || fmtMoney(pricing.monthly_volume);
+    const qualifyingVolumeLabel =
+      pricing.qualifying_previous_month_volume_label ||
+      fmtMoney(pricing.qualifying_previous_month_volume);
     const volumeDiscountLabel = pricing.volume_discount_label || "";
     const volumeProgressPct = Number(pricing.volume_progress_pct);
     const volumeDiscountActive = pricing.volume_discount_active === true;
+    const nextMonthDiscountUnlocked = pricing.next_month_volume_discount_unlocked === true;
 
     const aiStatus = getAiStatusFromMe(meData);
 
@@ -652,6 +656,11 @@ export default function ContractorProfile() {
               {introStatusLabel}
               {introActive && introDaysText ? ` - ${introDaysText}` : ""}
             </div>
+            {!introActive && qualifyingVolumeLabel ? (
+              <div className="mt-2 text-xs text-slate-500">
+                This month&apos;s fixed rate is based on {qualifyingVolumeLabel} processed last month.
+              </div>
+            ) : null}
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -686,16 +695,15 @@ export default function ContractorProfile() {
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
                 <div
-                  className={`h-full rounded-full ${volumeDiscountActive ? "bg-emerald-600" : "bg-slate-900"}`}
+                  className={`h-full rounded-full ${nextMonthDiscountUnlocked ? "bg-emerald-600" : "bg-slate-900"}`}
                   style={{
                     width: `${Math.max(0, Math.min(100, Number.isFinite(volumeProgressPct) ? volumeProgressPct : 0))}%`,
                   }}
                 />
               </div>
               <div className="mt-2 text-sm text-slate-600">
-                {volumeDiscountActive
-                  ? "Volume discount active for this month."
-                  : volumeDiscountLabel || "Volume discount information unavailable."}
+                {volumeDiscountLabel || "Volume discount information unavailable."}
+                {volumeDiscountActive ? " Your current month is already at the volume rate." : ""}
               </div>
             </div>
           ) : null}
@@ -761,7 +769,7 @@ export default function ContractorProfile() {
               <ul className="mt-2 list-disc space-y-1 pl-5">
                 <li>Intro pricing: 3% for the first 60 days</li>
                 <li>Standard pricing: 4%</li>
-                <li>Volume pricing: 3.5% after $20,000 in monthly sales</li>
+                <li>Volume pricing: process $20,000 in one calendar month to earn 3.5% for the entire following month</li>
                 <li>$750 cap per project; $650 cap at the volume rate</li>
               </ul>
             </div>
