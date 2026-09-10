@@ -142,7 +142,7 @@ from projects.models_subcontractor import (
     SubcontractorQuoteRequest,
     SubcontractorQuoteRequestStatus,
 )
-from projects.models_dispute import Dispute, DisputeWorkOrder
+from projects.models_dispute import Dispute, DisputeWorkOrder, ResolutionProposal
 from projects.models_ai_artifacts import DisputeAIArtifact
 from projects.models_amendment_request import AmendmentRequest, AmendmentRequestAttachment, apply_descoped_milestone_hold
 from projects.services.project_activity import create_project_activity_event
@@ -31001,6 +31001,62 @@ class DisputeMutationSafetyTests(TestCase):
         self.assertTrue(is_terminal_dispute_status("closed"))
         self.assertTrue(is_terminal_dispute_status("cancelled"))
         self.assertFalse(is_terminal_dispute_status("open"))
+
+    @patch("projects.views.dispute.email_admin_dispute_update")
+    @patch("projects.views.dispute.email_contractor_status_update")
+    @patch("projects.views.dispute.notify_dispute_event")
+    def test_customer_acceptance_marks_proposal_accepted_and_creates_zero_dollar_rework(
+        self, _notify, _contractor_email, _admin_email
+    ):
+        milestone = Milestone.objects.create(
+            agreement=self.agreement,
+            order=1,
+            title="Door repair",
+            amount=Decimal("400.00"),
+            completed=True,
+        )
+        dispute = Dispute.objects.create(
+            agreement=self.agreement,
+            project=self.project,
+            milestone=milestone,
+            initiator="homeowner",
+            reason="Door does not close",
+            description="The door is visibly misaligned and does not close.",
+            status="under_review",
+            fee_amount=Decimal("10.00"),
+            fee_paid=True,
+            escrow_frozen=True,
+            proposal={
+                "proposal_type": "rework",
+                "rework_by": "2026-09-12",
+                "notes": "Adjust the door and confirm that it closes correctly.",
+            },
+        )
+        dispute.ensure_public_token()
+        dispute.save(update_fields=["public_token", "updated_at"])
+        proposal = ResolutionProposal.objects.create(
+            dispute=dispute,
+            proposed_by=self.contractor_user,
+            problem_statement=dispute.description,
+            proposed_solution="Adjust the door and confirm that it closes correctly.",
+            status=ResolutionProposal.STATUS_PROPOSED,
+            metadata={"legacy_proposal": dispute.proposal},
+        )
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.contractor_client.post(
+                f"/api/projects/disputes/public/{dispute.id}/accept/?token={dispute.public_token}",
+                {"note": "Accepted."},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, ResolutionProposal.STATUS_ACCEPTED_CUSTOMER)
+        work_order = DisputeWorkOrder.objects.get(dispute=dispute)
+        rework = Milestone.objects.get(id=work_order.rework_milestone_id)
+        self.assertEqual(rework.amount, Decimal("0.00"))
+        self.assertEqual(rework.rework_origin_milestone_id, milestone.id)
 
     def test_terminal_dispute_rejects_mutations(self):
         attachment = SimpleUploadedFile("evidence.txt", b"terminal dispute evidence")

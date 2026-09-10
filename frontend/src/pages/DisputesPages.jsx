@@ -697,43 +697,52 @@ function ProposalModal({ open, dispute, onClose, onProposed }) {
 function ProposalCard({ proposal }) {
   if (!proposal) return null;
 
-  const ptype = proposal?.proposal_type || "—";
+  const legacy = proposal?.metadata?.legacy_proposal || {};
+  const ptype = proposal?.proposal_type || legacy?.proposal_type || "—";
   const label = PROPOSAL_TYPES.find((p) => p.key === ptype)?.label || ptype;
+  const proposedAt = proposal?.proposed_at || legacy?.proposed_at || proposal?.created_at;
+  const reworkBy = proposal?.rework_by || legacy?.rework_by;
+  const refundAmount = proposal?.refund_amount ?? legacy?.refund_amount;
+  const releaseAmount = proposal?.release_amount ?? legacy?.release_amount;
+  const notes = proposal?.notes || proposal?.proposed_solution || legacy?.notes;
+  const status = String(proposal?.status || "proposed").replaceAll("_", " ");
 
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-extrabold text-emerald-900">Proposal</div>
         <div className="text-xs font-bold text-emerald-800">
-          {proposal?.proposed_at ? new Date(proposal.proposed_at).toLocaleString() : ""}
+          {proposedAt ? new Date(proposedAt).toLocaleString() : ""}
         </div>
       </div>
 
       <div className="mt-2 text-sm text-emerald-900">
         <b>Type:</b> {label}
       </div>
+      <div className="mt-1 text-sm capitalize text-emerald-900"><b>Status:</b> {status}</div>
 
-      {proposal?.rework_by ? (
+      {reworkBy ? (
         <div className="mt-1 text-sm text-emerald-900">
-          <b>Rework by:</b> {proposal.rework_by}
+          <b>Rework by:</b> {reworkBy}
         </div>
       ) : null}
 
-      {proposal?.refund_amount != null ? (
+      {refundAmount != null ? (
         <div className="mt-1 text-sm text-emerald-900">
-          <b>Refund:</b> {money(proposal.refund_amount)}
+          <b>Refund:</b> {money(refundAmount)}
         </div>
       ) : null}
 
-      {proposal?.release_amount != null ? (
+      {releaseAmount != null ? (
         <div className="mt-1 text-sm text-emerald-900">
-          <b>Release:</b> {money(proposal.release_amount)}
+          <b>Release:</b> {money(releaseAmount)}
         </div>
       ) : null}
 
-      {proposal?.notes ? (
-        <div className="mt-2 whitespace-pre-wrap text-sm text-emerald-900">{proposal.notes}</div>
+      {notes ? (
+        <div className="mt-2 whitespace-pre-wrap text-sm text-emerald-900">{notes}</div>
       ) : null}
+      {ptype === "rework" ? <div className="mt-3 rounded-lg border border-emerald-200 bg-white/70 p-2 text-xs font-bold text-emerald-950">Corrective-work milestone: $0.00. The original disputed milestone retains the held {money(proposal?.payment_impact?.held_amount || 0)} obligation.</div> : null}
     </div>
   );
 }
@@ -755,7 +764,7 @@ function ReworkMilestoneCTA({ dispute, basePath = "/app" }) {
       {items.map((wo) => (
         <div key={wo?.id || wo?.rework_milestone_id} className="flex flex-wrap items-center justify-between gap-2">
           <div className="text-sm font-extrabold text-emerald-900">
-            ✅ Rework milestone created: Milestone #{wo.rework_milestone_id}
+            ✅ Corrective rework milestone created: Milestone #{wo.rework_milestone_id} ($0.00 — original disputed payment remains authoritative)
             {wo?.due_date ? (
               <span className="ml-2 text-xs font-bold text-emerald-800">(due {wo.due_date})</span>
             ) : null}

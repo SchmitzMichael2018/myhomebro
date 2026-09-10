@@ -409,7 +409,8 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
           ) : null}
 
           {draft ? (
-            <Section title="Human Approval Notes" testId="dispute-ai-human-approval">
+            <Section title="AI Draft Resolution Terms" testId="dispute-ai-human-approval">
+              <div style={{ marginBottom: 10, fontSize: 12, color: "#475569" }}>Draft guidance only. The actual proposal and its acceptance status appear in Step 5: Proposed Resolution.</div>
               <div style={{ fontWeight: 800, marginBottom: 8 }}>{draft.title}</div>
               {draft.terms?.length ? (
                 <ol style={{ margin: 0, paddingLeft: 18 }}>

@@ -528,26 +528,10 @@ class Dispute(models.Model):
 
     def _compute_rework_amount(self) -> Decimal:
         """
-        Determine the rework milestone amount.
-        Priority:
-          1) proposal.rework_amount (if provided and valid)
-          2) origin milestone amount
-          3) 0.00
+        Rework corrects the already-priced disputed milestone; it is not a
+        second billable obligation. Any additional customer charge must be
+        handled through an approved amendment, not a rework milestone.
         """
-        amt = self._parse_rework_amount()
-        if amt is not None:
-            try:
-                return Decimal(str(amt)).quantize(Decimal("0.01"))
-            except Exception:
-                pass
-
-        origin_amt = self._origin_amount()
-        if origin_amt is not None:
-            try:
-                return Decimal(str(origin_amt)).quantize(Decimal("0.01"))
-            except Exception:
-                pass
-
         return Decimal("0.00")
 
     def _create_rework_workorder_and_milestone(self):
@@ -559,7 +543,7 @@ class Dispute(models.Model):
 
         UI FIXES (NEW):
           ✅ rework milestone title includes origin milestone title
-          ✅ amount copies origin/proposal amount (not always $0.00)
+          ✅ rework remains $0.00 so the original disputed amount is not duplicated
           ✅ always stamps rework_origin_milestone_id when field exists
           ✅ avoids creating duplicate “rework” milestones by preferring workorder linkage
         """
@@ -657,7 +641,7 @@ class Dispute(models.Model):
             elif "end_date" in field_names:
                 m_kwargs["end_date"] = rework_by
 
-        # amount: DO NOT default to 0.00 anymore unless we truly have no info
+        # Rework is corrective work against the original held milestone amount.
         rework_amount = self._compute_rework_amount()
         if "amount" in field_names:
             m_kwargs["amount"] = rework_amount

@@ -1086,12 +1086,19 @@ def public_dispute_accept(request, dispute_id: int):
         "homeowner_response", "status", "escrow_frozen", "resolved_at",
         "last_activity_at", "updated_at"
     ])
+    accepted_proposal = dispute.resolution_proposals.order_by("-created_at", "-id").first()
+    if accepted_proposal is not None:
+        accepted_proposal.status = ResolutionProposal.STATUS_ACCEPTED_CUSTOMER
+        accepted_proposal.save(update_fields=["status", "updated_at"])
     create_party_statement(
         dispute,
         author=None,
         text=tag,
         party_role="customer",
-        metadata={"public_token_accept": True},
+        metadata={
+            "public_token_accept": True,
+            "proposal_id": getattr(accepted_proposal, "id", None),
+        },
     )
     record_timeline_event(
         dispute,
