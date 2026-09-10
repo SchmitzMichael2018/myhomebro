@@ -334,8 +334,10 @@ const btnStyle = {
   borderRadius: 10,
   border: "1px solid #d1d5db",
   background: "#fff",
+  color: "#0f172a",
   cursor: "pointer",
   fontWeight: 600,
+  opacity: 1,
 };
 
 const preStyle = {
