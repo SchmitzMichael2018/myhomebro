@@ -63,7 +63,7 @@ function BulletList({ items, empty = "None identified." }) {
   );
 }
 
-export default function DisputeAIRecommendationPanel({ disputeId, dispute = null }) {
+export default function DisputeAIRecommendationPanel({ disputeId, dispute = null, onUseResponseDraft = null }) {
   const [loading, setLoading] = useState(false);
   const [loadingLatest, setLoadingLatest] = useState(false);
   const [err, setErr] = useState("");
@@ -103,9 +103,9 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
     }
     try {
       await navigator.clipboard.writeText(response);
-      setCopyStatus("Copied. Open Add Updated Statement, then choose Paste Response.");
+      setCopyStatus("Copied. Open Send Contractor Message, then choose Paste Response.");
     } catch {
-      setCopyStatus("Draft saved. Open Add Updated Statement, then choose Paste Response.");
+      setCopyStatus("Draft saved. Open Send Contractor Message, then choose Paste Response.");
     }
   }
 
@@ -392,8 +392,11 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
               {contractorResponseDraft.subject ? <div style={{ marginTop: 8, fontWeight: 800 }}>{contractorResponseDraft.subject}</div> : null}
               <div style={{ marginTop: 8, whiteSpace: "pre-wrap", border: "1px solid #bfdbfe", background: "#eff6ff", color: "#172554", borderRadius: 10, padding: 12 }}>{contractorResponseDraft.response}</div>
               {contractorResponseDraft.review_note ? <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}>{contractorResponseDraft.review_note}</div> : null}
-              <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800 }}>Next: copy this draft, open Add Updated Statement, paste it, review it, and submit it to the customer.</div>
-              <button type="button" onClick={copyContractorResponse} style={{ ...btnStyle, marginTop: 10, background: "#1d4ed8", color: "#fff" }} data-testid="copy-contractor-response">Copy Response</button>
+              <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800 }}>Need more information? Send this as a contractor message. Ready to offer final terms? Continue to Proposed Resolution.</div>
+              <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {onUseResponseDraft ? <button type="button" onClick={() => onUseResponseDraft(contractorResponseDraft.response)} style={{ ...btnStyle, background: "#1d4ed8", color: "#fff" }} data-testid="send-contractor-response">Send as Contractor Message</button> : null}
+                <button type="button" onClick={copyContractorResponse} style={{ ...btnStyle, background: "#fff", color: "#0f172a" }} data-testid="copy-contractor-response">Copy Response</button>
+              </div>
               {copyStatus ? <div role="status" style={{ marginTop: 8, fontSize: 12, color: "#166534", fontWeight: 700 }}>{copyStatus}</div> : null}
             </Section>
           ) : null}

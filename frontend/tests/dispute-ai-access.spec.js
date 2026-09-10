@@ -230,7 +230,10 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(page.getByTestId('generate-contractor-response')).toBeVisible();
   await page.getByTestId('copy-contractor-response').click();
   await expect(page.getByRole('status')).toContainText(/Copied|Draft saved/);
-  await page.getByRole('button', { name: /Add Statement|Write Response|Add Updated Statement/ }).first().click();
+  await page.getByTestId('send-contractor-response').click();
+  await expect(page.getByPlaceholder('Write your rebuttal or proposed solution…')).toHaveValue('Please send clear photos of the door so I can prepare the correct repair.');
+  await page.getByRole('button', { name: 'Close' }).last().click();
+  await page.getByRole('button', { name: 'Send Contractor Message' }).first().click();
   await page.getByTestId('paste-contractor-response').click();
   await expect(page.getByPlaceholder('Write your rebuttal or proposed solution…')).toHaveValue('Please send clear photos of the door so I can prepare the correct repair.');
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Recommendation only');
