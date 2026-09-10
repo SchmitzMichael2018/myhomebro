@@ -78,7 +78,12 @@ def _closure_status(agreement: Agreement) -> dict:
         "mode": _agreement_mode(agreement),
     }
 
-    ms_qs = Milestone.objects.filter(agreement=agreement).exclude(normalized_milestone_type="warranty_service")
+    # Zero-dollar warranty/dispute rework milestones document corrective work;
+    # they are deliberately non-billable and do not participate in closeout.
+    ms_qs = (
+        Milestone.objects.filter(agreement=agreement, amount__gt=0)
+        .exclude(normalized_milestone_type="warranty_service")
+    )
     inv_qs = Invoice.objects.filter(agreement=agreement)
 
     totals["milestones_total"] = ms_qs.count()

@@ -113,11 +113,12 @@ class CompletionCheck:
 def check_agreement_completion(agreement: Agreement) -> CompletionCheck:
     mode = _agreement_mode(agreement)
 
-    # Warranty repairs are no-charge service records attached to the original
-    # agreement. They must be resolved before archival, but never invoiced and
-    # therefore must not block the original project's financial completion.
+    # No-charge service milestones (warranty repairs and dispute rework) are
+    # completion records, not new billable scope. They must never require an
+    # invoice or block the original project's financial completion.
     milestones = list(
         Milestone.objects.filter(agreement=agreement)
+        .filter(amount__gt=0)
         .exclude(normalized_milestone_type="warranty_service")
         .only("id", "is_invoiced", "invoice_id")
     )

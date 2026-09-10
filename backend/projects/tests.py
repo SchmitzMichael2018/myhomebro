@@ -7048,6 +7048,38 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(check.milestones_total, 1)
         self.assertEqual(check.milestones_invoiced, 1)
 
+    def test_zero_dollar_dispute_rework_does_not_require_an_invoice_for_completion(self):
+        original = self._make_financially_complete_agreement()
+        original.invoice = Invoice.objects.get(
+            agreement=self.agreement,
+            milestone_id_snapshot=original.id,
+        )
+        original.save(update_fields=["invoice"])
+        Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Rework — Correct disputed installation",
+            amount=Decimal("0.00"),
+            completed=True,
+            is_invoiced=False,
+            rework_origin_milestone_id=original.id,
+        )
+
+        check = check_agreement_completion(self.agreement)
+
+        self.assertTrue(check.ok)
+        self.assertEqual(check.milestones_total, 1)
+        self.assertEqual(check.milestones_invoiced, 1)
+
+        status_response = self.client.get(
+            f"/api/projects/agreements/{self.agreement.id}/closure_status/"
+        )
+        self.assertEqual(status_response.status_code, 200, status_response.data)
+        payload = status_response.json()
+        self.assertTrue(payload["eligible"])
+        self.assertEqual(payload["reasons"], [])
+        self.assertEqual(payload["totals"]["milestones_total"], 1)
+
     def test_open_warranty_request_blocks_completion_and_archival(self):
         self._make_financially_complete_agreement()
         warranty = AgreementWarranty.objects.create(
