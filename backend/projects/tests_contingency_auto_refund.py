@@ -68,6 +68,22 @@ class ContingencyAutoRefundTests(TestCase):
         self.assertFalse(result["eligible"])
         self.assertIn("grace_period", result["blockers"])
 
+    def test_zero_dollar_service_after_final_payment_does_not_block_return(self):
+        Milestone.objects.create(
+            agreement=self.agreement,
+            order=2,
+            title="Warranty service follow-up",
+            amount=Decimal("0.00"),
+            completed=True,
+            is_invoiced=False,
+            normalized_milestone_type="warranty_service",
+        )
+
+        result = contingency_refund_eligibility(self.agreement)
+
+        self.assertTrue(result["eligible"])
+        self.assertEqual(result["refundable_cents"], 10000)
+
     def test_pending_contingency_request_blocks_refund(self):
         ExpenseRequest.objects.create(
             agreement=self.agreement,

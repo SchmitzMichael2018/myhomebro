@@ -23,7 +23,15 @@ def _cents(value) -> int:
 
 
 def _final_milestone_release_at(agreement: Agreement):
-    final_milestone = agreement.milestones.order_by("-order", "-id").select_related("invoice").first()
+    # Warranty and dispute-rework milestones are standalone $0 service records.
+    # They may be appended after the paid project scope and must not replace the
+    # last billable milestone when determining contingency-return eligibility.
+    final_milestone = (
+        agreement.milestones.filter(amount__gt=0)
+        .order_by("-order", "-id")
+        .select_related("invoice")
+        .first()
+    )
     if not final_milestone or not final_milestone.invoice_id:
         return None
     invoice = final_milestone.invoice
