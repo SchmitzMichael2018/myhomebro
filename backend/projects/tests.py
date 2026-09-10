@@ -7135,6 +7135,12 @@ class AgreementWarrantyApiTests(TestCase):
         self.agreement.refresh_from_db()
         self.assertTrue(self.agreement.is_archived)
 
+        archived_detail = self.client.get(
+            f"/api/projects/agreements/{self.agreement.id}/"
+        )
+        self.assertEqual(archived_detail.status_code, 200, archived_detail.data)
+        self.assertTrue(archived_detail.data["is_archived"])
+
     def test_can_create_and_filter_warranty_records_for_agreement(self):
         create_response = self.client.post(
             "/api/projects/warranties/",

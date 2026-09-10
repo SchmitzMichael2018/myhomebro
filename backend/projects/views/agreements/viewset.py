@@ -141,6 +141,10 @@ class AgreementViewSet(viewsets.ModelViewSet):
             "archive",
             "unarchive",
             "mark_complete",
+            # Archived agreements remain readable as historical records. Without
+            # this, a successful archive followed by the detail-page refresh
+            # misleadingly renders "Agreement unavailable."
+            "retrieve",
         )
         if not (include_archived_param or action_allows_archived):
             qs = qs.filter(is_archived=False)
