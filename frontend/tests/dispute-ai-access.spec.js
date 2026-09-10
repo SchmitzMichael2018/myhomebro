@@ -182,6 +182,12 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
             notes_for_parties: 'Based on the available evidence, this is a review recommendation only.',
             advisory_boundary: 'Recommendation only. A human must accept, reject, counter, or escalate.',
           },
+          contractor_response_draft: {
+            selected_option_id: 'coa_1',
+            subject: 'Request for door photos',
+            response: 'Please send clear photos of the door so I can prepare the correct repair.',
+            review_note: 'Review this wording before sending it to the homeowner.',
+          },
           draft_resolution_agreement: {
             title: 'Human review notes',
             terms: ['Collect missing evidence before any final resolution is recorded.'],
@@ -222,6 +228,11 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('Readiness for a final resolution');
   await expect(page.getByTestId('select-dispute-coa-coa_1')).toContainText('Selected');
   await expect(page.getByTestId('generate-contractor-response')).toBeVisible();
+  await page.getByTestId('copy-contractor-response').click();
+  await expect(page.getByRole('status')).toContainText(/Copied|Draft saved/);
+  await page.getByRole('button', { name: /Add Statement|Write Response|Add Updated Statement/ }).first().click();
+  await page.getByTestId('paste-contractor-response').click();
+  await expect(page.getByPlaceholder('Write your rebuttal or proposed solution…')).toHaveValue('Please send clear photos of the door so I can prepare the correct repair.');
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Recommendation only');
   await expect(page.getByTestId('dispute-ai-missing-evidence')).toContainText('Contractor statement');
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('liable');

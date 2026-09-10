@@ -1341,12 +1341,38 @@ function DetailsModal({
 function RespondModal({ open, dispute, onClose, onSubmitted }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pasteHint, setPasteHint] = useState("");
 
   useEffect(() => {
-    if (open) setText("");
+    if (open) {
+      setText("");
+      setPasteHint("");
+    }
   }, [open]);
 
   if (!open || !dispute) return null;
+
+  const pasteResponse = async () => {
+    let value = "";
+    try {
+      value = String(await navigator.clipboard.readText()).trim();
+    } catch {
+      // Fall back to the response saved by the Project Assistant copy action.
+    }
+    if (!value) {
+      try {
+        value = String(window.sessionStorage.getItem(`mhb:dispute:${dispute.id}:contractor-response-draft`) || "").trim();
+      } catch {
+        value = "";
+      }
+    }
+    if (!value) {
+      setPasteHint("Nothing is available to paste. Copy the generated response first.");
+      return;
+    }
+    setText(value);
+    setPasteHint("Response pasted. Review it before submitting to the customer.");
+  };
 
   const submit = async () => {
     const msg = (text || "").trim();
@@ -1370,6 +1396,15 @@ function RespondModal({ open, dispute, onClose, onSubmitted }) {
 
   return (
     <ModalShell title={`Respond to Resolution Case #${dispute.id}`} onClose={onClose}>
+      <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
+        Copied a Project Assistant response? Paste it here, review the wording, then submit it to the customer.
+      </div>
+      <div>
+        <button className="mhb-btn" onClick={pasteResponse} disabled={busy} type="button" data-testid="paste-contractor-response">
+          Paste Response
+        </button>
+        {pasteHint ? <div role="status" className="mt-2 text-sm text-slate-600">{pasteHint}</div> : null}
+      </div>
       <textarea
         className="w-full border rounded px-3 py-2"
         rows={6}
