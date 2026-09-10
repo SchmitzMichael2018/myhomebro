@@ -908,7 +908,6 @@ function AdminAgreementCommandCenter({
             {fundingPreview?.rate != null ? (
               <div className="mt-1 text-xs text-slate-500">
                 Current rate: {(Number(fundingPreview.rate) * 100).toFixed(2)}%
-                + $1
               </div>
             ) : null}
           </div>
@@ -7312,12 +7311,7 @@ export default function AgreementDetail({
                 <div className="text-[11px] text-sky-100/60 text-right space-y-0.5">
                   {tierLabel && <div>{tierLabel}</div>}
                   {ratePercent && (
-                    <div>Current platform rate: {ratePercent}% + $1</div>
-                  )}
-                  {fundingPreview.high_risk_applied && (
-                    <div className="text-[11px] text-amber-100">
-                      High-risk surcharge applied for this project type.
-                    </div>
+                    <div>Current platform rate: {ratePercent}%</div>
                   )}
                 </div>
               )}
@@ -7356,7 +7350,7 @@ export default function AgreementDetail({
                       ratePercent
                         ? `${formatMoney(
                             fundingPreview.platform_fee
-                          )} @ ${ratePercent}% + $1`
+                          )} @ ${ratePercent}%`
                         : formatMoney(fundingPreview.platform_fee)
                     }
                   />
