@@ -1697,6 +1697,10 @@ export default function AgreementDetail({
   const [fundingPreview, setFundingPreview] = useState(null);
   const [fundingLoading, setFundingLoading] = useState(false);
   const [fundingError, setFundingError] = useState('');
+  const [contingencyRefund, setContingencyRefund] = useState(null);
+  const [contingencyRefundLoading, setContingencyRefundLoading] = useState(false);
+  const [contingencyRefundBusy, setContingencyRefundBusy] = useState(false);
+  const [contingencyRefundConfirmOpen, setContingencyRefundConfirmOpen] = useState(false);
   const [activationPreview, setActivationPreview] = useState(null);
   const [activationPreviewLoading, setActivationPreviewLoading] =
     useState(false);
@@ -2412,6 +2416,47 @@ export default function AgreementDetail({
     fetchFundingPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, norm.isDirectPay, ready, isAuthed]);
+
+  const fetchContingencyRefundStatus = async () => {
+    if (!id || !ready || !isAuthed || norm.isDirectPay) return;
+    setContingencyRefundLoading(true);
+    try {
+      const { data } = await api.get(
+        `/projects/agreements/${id}/contingency-refund-status/`
+      );
+      setContingencyRefund(data);
+    } catch (err) {
+      console.error(err);
+      setContingencyRefund(null);
+    } finally {
+      setContingencyRefundLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchContingencyRefundStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, norm.isDirectPay, ready, isAuthed]);
+
+  const returnUnusedContingency = async () => {
+    setContingencyRefundBusy(true);
+    try {
+      const { data } = await api.post(
+        `/projects/agreements/${id}/return-unused-contingency/`,
+        {}
+      );
+      setContingencyRefund(data);
+      setContingencyRefundConfirmOpen(false);
+      toast.success('Unused contingency return submitted to the customer.');
+    } catch (err) {
+      const data = err?.response?.data;
+      if (data?.agreement_id) setContingencyRefund(data);
+      toast.error(data?.detail || 'Unused contingency could not be returned. Review the blockers below.');
+      setContingencyRefundConfirmOpen(false);
+    } finally {
+      setContingencyRefundBusy(false);
+    }
+  };
 
   useEffect(() => {
     const fetchActivationPreview = async () => {
@@ -7379,6 +7424,80 @@ export default function AgreementDetail({
           </section>
         )}
 
+        {!norm.isDirectPay && Number(contingencyRefund?.original_cents || 0) > 0 ? (
+          <section
+            className="rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-6 shadow-sm"
+            data-testid="agreement-contingency-return"
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-200/80">
+                  Contingency Return
+                </div>
+                <h3 className="mt-1 text-lg font-semibold text-white">
+                  Unused homeowner contingency
+                </h3>
+                <p className="mt-1 max-w-2xl text-sm text-sky-100/70">
+                  Return available funds now, or let MyHomeBro return them automatically after the closeout waiting period. Funds return to the homeowner&apos;s original payment method.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setContingencyRefundConfirmOpen(true)}
+                disabled={!contingencyRefund?.manual_eligible || contingencyRefundBusy}
+                className="rounded-xl bg-emerald-400 px-5 py-3 text-sm font-bold text-emerald-950 hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-sky-100/45"
+              >
+                {contingencyRefundBusy
+                  ? 'Submitting return...'
+                  : `Return ${formatMoney(Number(contingencyRefund?.available_cents || 0) / 100)} now`}
+              </button>
+            </div>
+
+            {contingencyRefundLoading ? (
+              <div className="mt-4 text-sm text-sky-100/65">Checking contingency status...</div>
+            ) : (
+              <>
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <SummaryCard label="Original contingency" value={formatMoney(Number(contingencyRefund?.original_cents || 0) / 100)} />
+                  <SummaryCard label="Used" value={formatMoney(Number(contingencyRefund?.spent_cents || 0) / 100)} />
+                  <SummaryCard label="Pending requests" value={formatMoney(Number(contingencyRefund?.pending_cents || 0) / 100)} />
+                  <SummaryCard label="Available to return" value={formatMoney(Number(contingencyRefund?.available_cents || 0) / 100)} />
+                </div>
+
+                {contingencyRefund?.latest_refund ? (
+                  <div className="mt-4 rounded-xl border border-emerald-300/25 bg-emerald-950/30 p-4 text-sm text-emerald-100">
+                    <span className="font-semibold">Return {contingencyRefund.latest_refund.status}:</span>{' '}
+                    {formatMoney(Number(contingencyRefund.latest_refund.amount_cents || 0) / 100)} on{' '}
+                    {new Date(contingencyRefund.latest_refund.created_at).toLocaleString()}.
+                  </div>
+                ) : contingencyRefund?.automatic_eligible_at ? (
+                  <div className="mt-4 text-sm text-sky-100/75">
+                    Automatic return date: <span className="font-semibold text-white">{new Date(contingencyRefund.automatic_eligible_at).toLocaleString()}</span>
+                  </div>
+                ) : null}
+
+                {!contingencyRefund?.manual_eligible && !contingencyRefund?.latest_refund ? (
+                  <div className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/10 p-4">
+                    <div className="text-sm font-semibold text-amber-100">Return is not available yet</div>
+                    <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-50/80">
+                      {(contingencyRefund?.manual_blockers || []).map((blocker) => (
+                        <li key={blocker}>{({
+                          not_escrow: 'This agreement is not funded through escrow.',
+                          no_unused_contingency: 'There is no unused contingency balance.',
+                          pending_contingency_request: 'A contingency request is still pending.',
+                          escrow_hold: 'An active dispute or escrow hold must be resolved.',
+                          final_milestone_not_paid: 'The final billable milestone has not been paid and released.',
+                          already_refunded_or_pending: 'The available contingency was already returned or a return is pending.',
+                        })[blocker] || 'A closeout requirement is still outstanding.'}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </section>
+        ) : null}
+
         {hasSmsDetails ? (
         <section className="space-y-4">
           <div>
@@ -8069,6 +8188,38 @@ export default function AgreementDetail({
                 className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
               >
                 {paymentSaving ? 'Saving...' : 'Record Payment'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {contingencyRefundConfirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="text-xl font-bold text-slate-900">Return unused contingency?</div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              You are returning <span className="font-bold text-slate-900">{formatMoney(Number(contingencyRefund?.available_cents || 0) / 100)}</span> to the homeowner&apos;s original payment method. Once Stripe accepts the return, it cannot be canceled from MyHomeBro.
+            </p>
+            <div className="mt-4 rounded-xl bg-slate-100 p-3 text-xs text-slate-600">
+              MyHomeBro checks the balance and all closeout blockers again before submitting, and prevents duplicate returns.
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setContingencyRefundConfirmOpen(false)}
+                disabled={contingencyRefundBusy}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={returnUnusedContingency}
+                disabled={contingencyRefundBusy}
+                className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {contingencyRefundBusy ? 'Returning...' : 'Confirm return'}
               </button>
             </div>
           </div>

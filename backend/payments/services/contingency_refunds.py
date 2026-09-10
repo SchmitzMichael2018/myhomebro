@@ -86,7 +86,13 @@ def contingency_refund_eligibility(agreement: Agreement, *, now=None, grace_days
     }
 
 
-def auto_refund_unused_contingency(agreement: Agreement, *, now=None, grace_days: int | None = None) -> dict:
+def auto_refund_unused_contingency(
+    agreement: Agreement,
+    *,
+    now=None,
+    grace_days: int | None = None,
+    initiated_by: str = "automatic",
+) -> dict:
     check = contingency_refund_eligibility(agreement, now=now, grace_days=grace_days)
     if not check["eligible"]:
         return {"status": "skipped", **check}
@@ -119,7 +125,11 @@ def auto_refund_unused_contingency(agreement: Agreement, *, now=None, grace_days
                 amount_cents=amount,
                 currency=payment.currency or "usd",
                 reason=AUTO_REFUND_REASON,
-                note=f"Automatic return of unused contingency after {grace_days if grace_days is not None else getattr(settings, 'CONTINGENCY_AUTO_REFUND_GRACE_DAYS', 5)}-day closeout grace period.",
+                note=(
+                    "Manual return of unused contingency requested by the contractor."
+                    if initiated_by == "contractor"
+                    else f"Automatic return of unused contingency after {grace_days if grace_days is not None else getattr(settings, 'CONTINGENCY_AUTO_REFUND_GRACE_DAYS', 5)}-day closeout grace period."
+                ),
                 status="pending",
             )
             try:

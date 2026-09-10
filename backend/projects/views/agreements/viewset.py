@@ -4,7 +4,9 @@ from __future__ import annotations
 import sys
 import traceback
 import json
+from decimal import Decimal
 
+from django.conf import settings
 from django.db.models import Q
 from django.db import transaction
 from django.utils import timezone
@@ -32,6 +34,13 @@ from projects.services.activity_feed import create_activity_event
 from projects.services.agreements.pdf_loader import load_pdf_services
 from projects.services.agreements.pdf_stream import serve_agreement_preview_or_final
 from projects.services.agreement_completion import agreement_archive_blockers
+from payments.models import Refund
+from payments.services.contingency_refunds import (
+    AUTO_REFUND_REASON,
+    auto_refund_unused_contingency,
+    contingency_refund_eligibility,
+)
+from projects.services.escrow_reimbursements import incidentals_reserve_summary
 
 from projects.services.agreements.final_link import send_final_link_for_agreement
 
@@ -145,6 +154,8 @@ class AgreementViewSet(viewsets.ModelViewSet):
             # this, a successful archive followed by the detail-page refresh
             # misleadingly renders "Agreement unavailable."
             "retrieve",
+            "contingency_refund_status",
+            "return_unused_contingency",
         )
         if not (include_archived_param or action_allows_archived):
             qs = qs.filter(is_archived=False)
@@ -878,6 +889,65 @@ class AgreementViewSet(viewsets.ModelViewSet):
 
         ser = self.get_serializer(ag)
         return Response({"ok": True, "agreement": ser.data}, status=status.HTTP_200_OK)
+
+    def _contingency_refund_payload(self, ag: Agreement) -> dict:
+        reserve = incidentals_reserve_summary(ag)
+        manual = contingency_refund_eligibility(ag, grace_days=0)
+        automatic = contingency_refund_eligibility(ag)
+        refunds = Refund.objects.filter(
+            payment__agreement=ag,
+            reason=AUTO_REFUND_REASON,
+        ).order_by("-created_at", "-id")
+        latest = refunds.first()
+        returned_cents = sum(
+            refunds.filter(status__in=["pending", "succeeded"]).values_list(
+                "amount_cents", flat=True
+            )
+        )
+        return {
+            "agreement_id": ag.id,
+            "original_cents": int(Decimal(str(reserve.get("original") or 0)) * 100),
+            "spent_cents": int(Decimal(str(reserve.get("spent") or 0)) * 100),
+            "pending_cents": int(Decimal(str(reserve.get("pending") or 0)) * 100),
+            "available_cents": int(manual["refundable_cents"]),
+            "returned_cents": int(returned_cents or 0),
+            "manual_eligible": bool(manual["eligible"]),
+            "manual_blockers": manual["blockers"],
+            "automatic_eligible": bool(automatic["eligible"]),
+            "automatic_blockers": automatic["blockers"],
+            "automatic_eligible_at": automatic["eligible_at"],
+            "auto_grace_days": int(getattr(settings, "CONTINGENCY_AUTO_REFUND_GRACE_DAYS", 5)),
+            "latest_refund": (
+                {
+                    "amount_cents": latest.amount_cents,
+                    "status": latest.status,
+                    "created_at": latest.created_at,
+                    "stripe_refund_id": latest.stripe_refund_id,
+                }
+                if latest
+                else None
+            ),
+        }
+
+    @action(detail=True, methods=["get"], url_path="contingency-refund-status")
+    def contingency_refund_status(self, request, pk=None):
+        return Response(self._contingency_refund_payload(self.get_object()))
+
+    @action(detail=True, methods=["post"], url_path="return-unused-contingency")
+    def return_unused_contingency(self, request, pk=None):
+        ag: Agreement = self.get_object()
+        result = auto_refund_unused_contingency(
+            ag,
+            grace_days=0,
+            initiated_by="contractor",
+        )
+        payload = self._contingency_refund_payload(ag)
+        payload["result"] = result
+        if result.get("status") == "skipped":
+            return Response(payload, status=status.HTTP_409_CONFLICT)
+        if result.get("status") == "failed":
+            return Response(payload, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(payload, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"], url_path="acknowledge")
     def acknowledge(self, request, pk=None):
