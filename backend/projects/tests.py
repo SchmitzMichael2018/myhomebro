@@ -7080,6 +7080,35 @@ class AgreementWarrantyApiTests(TestCase):
         self.assertEqual(payload["reasons"], [])
         self.assertEqual(payload["totals"]["milestones_total"], 1)
 
+    def test_archived_agreement_milestones_are_historical_not_active(self):
+        milestone = self._make_financially_complete_agreement()
+        self.agreement.status = ProjectStatus.COMPLETED
+        self.agreement.is_archived = True
+        self.agreement.save(update_fields=["status", "is_archived"])
+
+        active_list = self.client.get("/api/projects/milestones/")
+        self.assertEqual(active_list.status_code, 200, active_list.data)
+        active_rows = (
+            active_list.data.get("results", [])
+            if isinstance(active_list.data, dict)
+            else active_list.data
+        )
+        self.assertFalse(any(row["id"] == milestone.id for row in active_rows))
+
+        historical_list = self.client.get(
+            "/api/projects/milestones/?include_archived=1"
+        )
+        self.assertEqual(historical_list.status_code, 200, historical_list.data)
+        historical_rows = (
+            historical_list.data.get("results", [])
+            if isinstance(historical_list.data, dict)
+            else historical_list.data
+        )
+        self.assertTrue(any(row["id"] == milestone.id for row in historical_rows))
+
+        detail = self.client.get(f"/api/projects/milestones/{milestone.id}/")
+        self.assertEqual(detail.status_code, 200, detail.data)
+
     def test_open_warranty_request_blocks_completion_and_archival(self):
         self._make_financially_complete_agreement()
         warranty = AgreementWarranty.objects.create(

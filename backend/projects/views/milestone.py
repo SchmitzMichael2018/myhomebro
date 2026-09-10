@@ -776,6 +776,10 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        include_archived = str(
+            self.request.query_params.get("include_archived", "")
+        ).strip().lower() in {"1", "true", "yes"}
+        action_allows_archived = getattr(self, "action", None) == "retrieve"
 
         contractor = get_contractor_for_user(user)
         if contractor is not None:
@@ -808,6 +812,9 @@ class MilestoneViewSet(viewsets.ModelViewSet):
                 .order_by("order", "id")
             )
 
+            if not (include_archived or action_allows_archived):
+                qs = qs.filter(agreement__is_archived=False)
+
             agreement = (
                 self.request.query_params.get("agreement")
                 or self.request.query_params.get("agreement_id")
@@ -820,7 +827,10 @@ class MilestoneViewSet(viewsets.ModelViewSet):
 
             return qs
 
-        return self._assigned_queryset_for_user(user)
+        qs = self._assigned_queryset_for_user(user)
+        if not (include_archived or action_allows_archived):
+            qs = qs.filter(agreement__is_archived=False)
+        return qs
 
     def _lineage_state(self, agreement: Optional[Agreement]):
         if agreement is None:

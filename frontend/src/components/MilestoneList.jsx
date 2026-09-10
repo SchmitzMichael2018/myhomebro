@@ -255,6 +255,7 @@ export default function MilestoneList() {
   const focusIdRaw = query.get("focus");
   const agreementQuery = query.get("agreement") ? String(query.get("agreement")) : null;
   const milestoneQuery = query.get("milestone") ? String(query.get("milestone")) : null;
+  const [showArchived, setShowArchived] = useState(query.get("include_archived") === "1");
   const focusId = milestoneQuery || (focusIdRaw ? String(focusIdRaw) : null);
 
   const [rows, setRows] = useState([]);
@@ -338,8 +339,8 @@ export default function MilestoneList() {
     setLoading(true);
     try {
       const [mRes, aRes, iRes] = await Promise.all([
-        api.get(API.listMilestones, { params: { page_size: 500, _ts: Date.now() } }),
-        api.get(API.listAgreements, { params: { page_size: 500, _ts: Date.now() } }),
+        api.get(API.listMilestones, { params: { page_size: 500, include_archived: showArchived ? 1 : undefined, _ts: Date.now() } }),
+        api.get(API.listAgreements, { params: { page_size: 500, include_archived: showArchived ? 1 : undefined, _ts: Date.now() } }),
         api.get(API.listInvoices, { params: { page_size: 500, _ts: Date.now() } }),
       ]);
 
@@ -368,7 +369,7 @@ export default function MilestoneList() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showArchived]);
 
   useEffect(() => {
     reload();
@@ -951,6 +952,18 @@ export default function MilestoneList() {
               </option>
             ))}
           </select>
+          <button
+            type="button"
+            onClick={() => {
+              const next = !showArchived;
+              setShowArchived(next);
+              updateQueryParam("include_archived", next ? "1" : "");
+            }}
+            className={`mhb-operational-filter-chip rounded-xl px-4 py-2 text-sm font-extrabold ${showArchived ? "is-active" : ""}`}
+            data-testid="milestone-list-archived-toggle"
+          >
+            {showArchived ? "Hide Archived" : "Show Archived"}
+          </button>
           <button
             type="button"
             onClick={() => reload()}
