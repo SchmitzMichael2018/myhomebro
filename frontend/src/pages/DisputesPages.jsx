@@ -16,8 +16,6 @@ import {
   getDisputeReadOnlyLabel,
 } from "../lib/disputeStatus.js";
 
-// Project Assistant evidence snapshot (read-only, evidence-context-based)
-import DisputeAIAdvisor from "../components/ai/DisputeAIAdvisor.jsx";
 import DisputeAIRecommendationPanel from "../components/ai/DisputeAIRecommendationPanel.jsx";
 
 // ─────────────────────────────────────────────
@@ -1134,7 +1132,7 @@ function DetailsModal({
 
   return (
     <div className="grid gap-4" data-testid="resolution-case-page">
-      <div data-testid="resolution-workspace-title" className="sticky top-0 z-20 rounded-2xl border border-white/15 bg-slate-950/95 p-4 text-white shadow-xl backdrop-blur">
+      <div data-testid="resolution-workspace-title" className="sticky top-0 z-20 rounded-2xl border border-white/15 bg-slate-950/95 p-4 pr-24 text-white shadow-xl backdrop-blur xl:pr-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-sky-200/70">Resolution Workspace</div>
@@ -1154,24 +1152,67 @@ function DetailsModal({
         </div>
         <nav className="mt-3 flex gap-2 overflow-x-auto border-t border-white/10 pt-3 text-sm font-bold" aria-label="Resolution case sections">
           {[
-            ["overview", "Overview"],
-            ["timeline", "Activity"],
-            ["evidence", "Evidence"],
-            ["statements", "Statements"],
-            ["agreement", "Agreement"],
-            ["analysis", "AI Analysis"],
-            ["decision", "Resolution"],
+            ["request", "1. Customer Request"],
+            ["record", "2. Supporting Record"],
+            ["response", "3. Contractor Response"],
+            ["analysis", "4. AI Recommendation"],
+            ["decision", "5. Resolution"],
           ].map(([target, label]) => (
             <a key={target} href={`#resolution-${target}`} className="whitespace-nowrap rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-white hover:bg-white/20">{label}</a>
           ))}
         </nav>
       </div>
-      <div id="resolution-overview" className="scroll-mt-52"><ResolutionOverview dispute={dispute} proposal={proposal} isAdmin={isAdmin} /></div>
-      <div id="resolution-timeline" className="scroll-mt-52"><ResolutionTimeline dispute={dispute} proposal={proposal} attachments={attachments} /></div>
-      <div id="resolution-evidence" className="scroll-mt-52"><ResolutionEvidence dispute={dispute} attachments={attachments} attachmentUrl={attachmentUrl} /></div>
-      <div id="resolution-statements" className="scroll-mt-52"><PartyStatements dispute={dispute} /></div>
-      <div id="resolution-agreement" className="grid scroll-mt-52 gap-4"><AgreementReview dispute={dispute} /><PaymentImpact dispute={dispute} /></div>
-      <div className="mhb-glass" style={{ padding: 12 }}>
+      <section id="resolution-request" className="scroll-mt-52 rounded-2xl border border-amber-200 bg-white p-5 shadow-sm">
+        <div className="text-xs font-extrabold uppercase tracking-[0.16em] text-amber-700">Step 1</div>
+        <h3 className="mt-1 text-xl font-extrabold text-slate-950">Customer Request</h3>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-bold uppercase tracking-wide text-slate-500">What the customer reported</div>
+            <div className="mt-2 whitespace-pre-wrap text-base leading-7 text-slate-900">{String(dispute.homeowner_response || dispute.description || "").trim() || "No customer statement has been submitted."}</div>
+            {dispute.reason ? <div className="mt-3 text-sm text-slate-600"><b>Category:</b> {String(dispute.reason).replaceAll("_", " ")}</div> : null}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            <InfoTile label="Agreement" value={`#${dispute.agreement_number || dispute.agreement || "—"}`} />
+            <InfoTile label="Disputed milestone" value={dispute.milestone_title || "General agreement issue"} />
+            <InfoTile label="Amount held" value={dispute.escrow_frozen ? "Escrow hold active" : "No active hold"} tone={dispute.escrow_frozen ? "warning" : "default"} />
+          </div>
+        </div>
+      </section>
+
+      <section id="resolution-record" className="scroll-mt-52 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-500">Step 2</div>
+        <h3 className="mt-1 text-xl font-extrabold text-slate-950">Supporting Record</h3>
+        <p className="mt-1 text-sm text-slate-600">The signed agreement and project records stay attached to this case automatically.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <a href={`/app/agreements/${dispute.agreement}/workspace?tab=documents`} className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-950 hover:bg-blue-100">
+            <div className="text-sm font-extrabold">Signed Agreement</div><div className="mt-1 text-xs">Open Agreement #{dispute.agreement_number || dispute.agreement}</div>
+          </a>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-extrabold text-slate-950">Milestone & Invoice</div><div className="mt-1 text-xs text-slate-600">{dispute.milestone_title || "Agreement-level dispute"}</div></div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-extrabold text-slate-950">Comments</div><div className="mt-1 text-xs text-slate-600">Customer and contractor statements are preserved</div></div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4"><div className="text-sm font-extrabold text-slate-950">Photos & Files</div><div className="mt-1 text-xs text-slate-600">{attachments.length} submitted item{attachments.length === 1 ? "" : "s"}</div></div>
+        </div>
+        <div className="mt-4"><ResolutionEvidence dispute={dispute} attachments={attachments} attachmentUrl={attachmentUrl} /></div>
+      </section>
+
+      <section id="resolution-response" className="scroll-mt-52 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><div className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-500">Step 3</div><h3 className="mt-1 text-xl font-extrabold text-slate-950">Contractor Response</h3></div>
+          {!isClosed(dispute) ? <button className="mhb-btn primary" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">{String(dispute.contractor_response || "").trim() ? "Add Updated Statement" : "Write Response"}</button> : null}
+        </div>
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800">{String(dispute.contractor_response || "").trim() || "No contractor response has been added yet. Review the customer request and supporting record, then document your response."}</div>
+      </section>
+
+      <details className="rounded-2xl border border-white/10 bg-slate-950/35 p-4 text-sky-50">
+        <summary className="cursor-pointer font-extrabold">Case History & Administration</summary>
+        <div className="mt-4 grid gap-4">
+          <ResolutionOverview dispute={dispute} proposal={proposal} isAdmin={isAdmin} />
+          <ResolutionTimeline dispute={dispute} proposal={proposal} attachments={attachments} />
+          <PartyStatements dispute={dispute} />
+          <AgreementReview dispute={dispute} />
+          <PaymentImpact dispute={dispute} />
+        </div>
+      </details>
+      <div className="hidden" aria-hidden="true">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={toneFor(dispute.status)}>{statusText || "—"}</Badge>
           {readOnlyLabel ? <Badge tone="default">{readOnlyLabel}</Badge> : null}
@@ -1204,22 +1245,27 @@ function DetailsModal({
         </div>
       </div>
 
-      {/* Project Assistant panel (read-only, evidence-context only) */}
-      <div id="resolution-analysis" className="scroll-mt-52"><WorkspaceSection title="Project Assistant Resolution Analysis" eyebrow="Advisory Only" testId="resolution-workspace-ai-analysis">
+      <div id="resolution-analysis" className="scroll-mt-52"><WorkspaceSection title="Project Assistant Recommended Response" eyebrow="Step 4" testId="resolution-workspace-ai-analysis">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
-          Project Assistant may summarize evidence, identify disputed facts, list missing evidence,
-          compare courses of action, and recommend a COA. It cannot close the case or move money.
+          Review the suggested response and resolution below. Project Assistant is advisory only; you decide what is sent to the customer.
         </div>
-        <DisputeAIAdvisor disputeId={dispute.id} enabled={aiEnabled} />
         {aiEnabled ? <DisputeAIRecommendationPanel disputeId={dispute.id} /> : null}
       </WorkspaceSection></div>
 
       {/* ✅ Rework milestone CTA */}
       <ReworkMilestoneCTA dispute={dispute} basePath={basePath} />
 
-      {proposal ? <ProposalCard proposal={proposal} /> : null}
+      <section className="rounded-2xl border border-emerald-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div><div className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-700">Step 5</div><h3 className="mt-1 text-xl font-extrabold text-slate-950">Proposed Resolution</h3></div>
+          {isContractor && !isClosed(dispute) ? <button className="mhb-btn primary" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">{proposal ? "Update Resolution" : "Propose Resolution"}</button> : null}
+        </div>
+        <div className="mt-4">{proposal ? <ProposalCard proposal={proposal} /> : <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">No resolution has been proposed yet. Use the customer request, supporting record, contractor response, and AI guidance to prepare one.</div>}</div>
+      </section>
 
-      <div className="mhb-glass" style={{ padding: 12 }}>
+      <details className="rounded-2xl border border-white/10 bg-slate-950/35 p-4 text-sky-50">
+        <summary className="cursor-pointer font-extrabold">Additional Resolution Records</summary>
+      <div className="mt-4 rounded-xl bg-white p-3" style={{ padding: 12 }}>
         <div className="grid gap-3 md:grid-cols-3">
           <div>
             <div className="text-xs font-extrabold uppercase tracking-wide text-slate-600">Resolution Type</div>
@@ -1290,8 +1336,9 @@ function DetailsModal({
           </div>
         )}
       </div>
+      </details>
 
-      <div id="resolution-decision" className="scroll-mt-52"><HumanDecisionPanel
+      {isAdmin ? <div id="resolution-decision" className="scroll-mt-52"><HumanDecisionPanel
         dispute={dispute}
         isAdmin={isAdmin}
         isContractor={isContractor}
@@ -1300,7 +1347,7 @@ function DetailsModal({
         onOpenRespond={onOpenRespond}
         onOpenResolve={onOpenResolve}
         onClose={onClose}
-      /></div>
+      /></div> : null}
     </div>
   );
 }
