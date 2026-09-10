@@ -1221,7 +1221,12 @@ export default function MilestoneEditModal({
   // forward to their linked invoice instead of offering completion again.
   const canShowComplete = !actionReadOnly && !milestoneCompleted;
 
-  const billingAction = milestoneCompleted ? (
+  const isNonBillableServiceMilestone =
+    Boolean(currentMilestone?.rework_origin_milestone_id) ||
+    String(currentMilestone?.normalized_milestone_type || "").trim().toLowerCase() === "warranty_service" ||
+    Number(currentMilestone?.amount || 0) <= 0;
+
+  const billingAction = milestoneCompleted && !isNonBillableServiceMilestone ? (
     linkedInvoice ? (
       <SendInvoiceButton
         invoice={linkedInvoice}

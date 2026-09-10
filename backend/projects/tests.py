@@ -31075,6 +31075,15 @@ class DisputeMutationSafetyTests(TestCase):
         rework.completed = True
         rework.completed_at = timezone.now()
         rework.save(update_fields=["completed", "completed_at"])
+
+        invoice_response = self.contractor_client.post(
+            f"/api/projects/milestones/{rework.id}/create-invoice/",
+            {},
+            format="json",
+        )
+        self.assertEqual(invoice_response.status_code, 400, invoice_response.data)
+        self.assertIn("$0 service milestones", str(invoice_response.data["detail"]))
+
         from projects.services.resolution_workspace import reopen_original_invoice_after_rework
 
         reopen_original_invoice_after_rework(rework, actor=self.contractor_user)

@@ -1782,9 +1782,14 @@ class MilestoneViewSet(viewsets.ModelViewSet):
         milestone: Milestone = self.get_object()
         agreement = milestone.agreement
 
-        if (getattr(milestone, "normalized_milestone_type", "") or "").strip().lower() == "warranty_service":
+        is_nonbillable_service = (
+            (getattr(milestone, "normalized_milestone_type", "") or "").strip().lower() == "warranty_service"
+            or bool(getattr(milestone, "rework_origin_milestone_id", None))
+            or (getattr(milestone, "amount", 0) or 0) <= 0
+        )
+        if is_nonbillable_service:
             return Response(
-                {"detail": "Covered warranty milestones do not require an invoice or customer payment."},
+                {"detail": "Corrective and other $0 service milestones do not require an invoice or customer payment."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 

@@ -152,6 +152,8 @@ function normalizeProjectClassFilter(value) {
 const hasInvoiceLink = (m) => !!pick(m?.invoice, m?.invoice_id, m?.invoiceId);
 const isWarrantyServiceMilestone = (m) =>
   String(m?.normalized_milestone_type || "").trim().toLowerCase() === "warranty_service";
+const isNonBillableServiceMilestone = (m) =>
+  isWarrantyServiceMilestone(m) || isReworkMilestone(m) || Number(m?.amount || 0) <= 0;
 
 const getInvoiceIdFromMilestone = (m) => {
   const inv = m?.invoice;
@@ -604,12 +606,12 @@ export default function MilestoneList() {
 
   const isCompletedNotInvoiced = (m) =>
     m.completed === true &&
-    !isWarrantyServiceMilestone(m) &&
+    !isNonBillableServiceMilestone(m) &&
     !(m.is_invoiced === true || hasInvoiceLink(m));
 
   const getInvoiceBlockReason = (m) => {
     if (!m?._agId) return "Missing agreement id.";
-    if (isWarrantyServiceMilestone(m)) return "Covered warranty work does not require an invoice or customer payment.";
+    if (isNonBillableServiceMilestone(m)) return "Corrective and other $0 service milestones do not require an invoice or customer payment.";
     if (m._requiresEscrow && m._escrowFunded !== true) return "Escrow must be funded before invoicing milestones.";
     if (!(m.completed === true)) return "Milestone must be completed before invoicing.";
     if (m.is_invoiced === true || hasInvoiceLink(m)) return "Already invoiced.";
@@ -1263,7 +1265,7 @@ export default function MilestoneList() {
                                   </div>
                                 ) : null}
 
-                                {isCompleted && linkedInvoice ? (
+                                {isCompleted && linkedInvoice && !isNonBillableServiceMilestone(m) ? (
                                   <SendInvoiceButton
                                     invoice={linkedInvoice}
                                     onUpdated={reload}
