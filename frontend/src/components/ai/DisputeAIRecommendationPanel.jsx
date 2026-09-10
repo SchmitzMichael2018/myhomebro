@@ -314,7 +314,8 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
               </div>
                 <div style={{ fontSize: 13 }}>
                 <div style={{ margin: "12px 0 6px" }}><b>Recommended option:</b> {coursesOfAction.find((item) => String(item.option_id) === String(recommendation.recommended_option_id))?.label || recommendation.recommended_option_id}</div>
-                <div style={{ marginBottom: 6 }}><b>Confidence:</b> {confidenceLabel(recommendation.confidence)}</div>
+                <div style={{ marginBottom: 6 }}><b>Confidence in this recommended next step:</b> {confidenceLabel(recommendation.confidence)}</div>
+                <div style={{ marginBottom: 10 }}><b>Readiness for a final resolution:</b> <span style={{ textTransform: "capitalize" }}>{recommendation.final_resolution_readiness || (list(recommendation.missing_evidence).length ? "low" : "medium")}</span>{recommendation.readiness_explanation ? ` — ${recommendation.readiness_explanation}` : " — More evidence is needed before selecting a final outcome."}</div>
                 <div style={{ marginBottom: 8 }}><b>Why:</b> {recommendation.why_this_option}</div>
                 <div style={{ marginBottom: 12, borderLeft: "4px solid #22c55e", background: "#fff", padding: "10px 12px", borderRadius: 8 }}><b>Why this is favored:</b> {recommendation.favored_over_alternatives || "This option best matches the current evidence while limiting avoidable delay and risk."}</div>
                 <div style={{ marginBottom: 8 }}>

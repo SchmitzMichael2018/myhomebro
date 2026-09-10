@@ -17,6 +17,16 @@ def _party_statement_text(value: Any) -> str:
     return "" if text.startswith(PROPOSAL_RECEIPT_PREFIX) else text
 
 
+def _customer_complaint_text(value: Any) -> str:
+    """Keep customer-authored detail while excluding internal portal markers."""
+    lines = [
+        line.strip()
+        for line in str(value or "").splitlines()
+        if line.strip() and not line.strip().startswith("[Portal Source]")
+    ]
+    return "\n".join(lines)
+
+
 def _safe_dt(val):
     """
     Keep timestamps JSON-friendly. DRF can serialize datetimes/dates.
@@ -175,10 +185,12 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
         "status": getattr(dispute, "status", None),
         "initiator": getattr(dispute, "initiator", None),
         "category": getattr(dispute, "category", None) or getattr(dispute, "reason", None),
-        "complaint": getattr(dispute, "complaint", None) or getattr(dispute, "homeowner_response", None) or getattr(dispute, "description", None),
+        "complaint": _customer_complaint_text(
+            getattr(dispute, "complaint", None) or getattr(dispute, "description", None)
+        ),
         "proposal": getattr(dispute, "proposal", None),
         "contractor_response": _party_statement_text(getattr(dispute, "contractor_response", None)),
-        "homeowner_response": getattr(dispute, "homeowner_response", None),
+        "homeowner_response": _customer_complaint_text(getattr(dispute, "homeowner_response", None)),
         "admin_notes": getattr(dispute, "admin_notes", None),
         "fee_paid": getattr(dispute, "fee_paid", None),
         "fee_paid_at": _safe_dt(getattr(dispute, "fee_paid_at", None)),

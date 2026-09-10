@@ -824,6 +824,14 @@ function resolutionSourceLabel(dispute) {
   return "General Project Issue";
 }
 
+function customerFacingDisputeDescription(value) {
+  return String(value || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("[Portal Source]"))
+    .join("\n");
+}
+
 function buildResolutionTimeline(dispute, proposal, attachments) {
   if (Array.isArray(dispute?.timeline_events) && dispute.timeline_events.length) {
     return dispute.timeline_events.map((event) => ({
@@ -838,7 +846,7 @@ function buildResolutionTimeline(dispute, proposal, attachments) {
     if (!title) return;
     rows.push({ at, title, detail, source });
   };
-  add(dispute?.created_at, "Resolution case opened", dispute?.description || dispute?.reason, "Case record");
+  add(dispute?.created_at, "Resolution case opened", customerFacingDisputeDescription(dispute?.description) || dispute?.reason, "Case record");
   if (dispute?.fee_paid_at || dispute?.fee_paid) {
     add(dispute?.fee_paid_at || dispute?.updated_at, "Dispute fee paid and hold reviewed", dispute?.escrow_frozen ? "Escrow hold active where applicable." : "No active escrow hold recorded.", "Payment hold");
   }
@@ -1093,6 +1101,9 @@ function DetailsModal({
 
   const structuredProposals = Array.isArray(dispute.resolution_proposals) ? dispute.resolution_proposals : [];
   const proposal = structuredProposals[0] || extractProposalFromResponse(dispute.contractor_response);
+  const initialCustomerReport = customerFacingDisputeDescription(dispute.description);
+  const latestHomeownerMessage = String(dispute.homeowner_response || "").trim();
+  const reportsDiffer = latestHomeownerMessage && latestHomeownerMessage !== initialCustomerReport;
 
   return (
     <div className="grid gap-4" data-testid="resolution-case-page">
@@ -1132,7 +1143,8 @@ function DetailsModal({
         <div className="mt-4 grid gap-4 lg:grid-cols-[1.5fr_1fr]">
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
             <div className="text-xs font-bold uppercase tracking-wide text-slate-500">What the customer reported</div>
-            <div className="mt-2 whitespace-pre-wrap text-base leading-7 text-slate-900">{String(dispute.homeowner_response || dispute.description || "").trim() || "No customer statement has been submitted."}</div>
+            <div className="mt-2 whitespace-pre-wrap text-base leading-7 text-slate-900">{initialCustomerReport || latestHomeownerMessage || "No customer statement has been submitted."}</div>
+            {reportsDiffer ? <div className="mt-4 border-t border-slate-200 pt-3"><div className="text-xs font-bold uppercase tracking-wide text-slate-500">Latest homeowner message</div><div className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-800">{latestHomeownerMessage}</div></div> : null}
             {dispute.reason ? <div className="mt-3 text-sm text-slate-600"><b>Category:</b> {String(dispute.reason).replaceAll("_", " ")}</div> : null}
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -1267,7 +1279,7 @@ function DetailsModal({
         <div className="mt-1 font-extrabold text-slate-900">{dispute.reason || "—"}</div>
 
         <div className="mt-4 text-xs font-extrabold uppercase tracking-wide text-slate-600">Description</div>
-        <div className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{String(dispute.description || "").trim() || "—"}</div>
+        <div className="mt-1 whitespace-pre-wrap text-sm text-slate-800">{customerFacingDisputeDescription(dispute.description) || "—"}</div>
       </div>
 
       <div className="mhb-glass" style={{ padding: 12 }}>

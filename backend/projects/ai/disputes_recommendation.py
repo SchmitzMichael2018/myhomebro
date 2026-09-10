@@ -136,6 +136,7 @@ def build_dispute_recommendation_prompt(
         "- When the contractor has proposed a solution, review it for alignment with the signed agreement and available evidence, clear corrective actions, responsible party, target dates, completion evidence, payment impact, and homeowner review or acknowledgment.\n"
         "- Preserve the contractor's practical intent. Identify concrete gaps and draft a clearer improved version when useful; never overwrite, send, accept, or apply the contractor's proposal automatically.\n"
         "- Explain briefly why the recommended course is favored over each alternative, using the evidence and current risks rather than generic language.\n"
+        "- The recommendation confidence means confidence that the recommended next action is appropriate. Report final-resolution readiness separately; missing evidence can make final-resolution readiness low even when confidence in an evidence-gathering next action is high.\n"
         "- If contractor_review_request.selected_coa is present, draft a concise customer-facing contractor response that follows that course of action. The draft must be reviewable and must not be sent automatically.\n"
         "- If the contractor supplied their own response, assess its clarity, agreement alignment, missing commitments, tone, evidentiary gaps, and practical risks; then suggest specific improvements.\n"
         "- Use neutral headings such as Neutral Case Summary, Timeline, Evidence Used, Missing Evidence, Open Questions, and Courses of Action.\n"
@@ -229,6 +230,8 @@ def build_dispute_recommendation_prompt(
                         "why_this_option": {"type": "string"},
                         "favored_over_alternatives": {"type": "string"},
                         "confidence": {"type": "number"},
+                        "final_resolution_readiness": {"type": "string", "enum": ["low", "medium", "high"]},
+                        "readiness_explanation": {"type": "string"},
                         "supporting_evidence": {"type": "array", "items": {"type": "string"}},
                         "missing_evidence": {"type": "array", "items": {"type": "string"}},
                         "notes_for_parties": {"type": "string"},
@@ -239,6 +242,8 @@ def build_dispute_recommendation_prompt(
                         "why_this_option",
                         "favored_over_alternatives",
                         "confidence",
+                        "final_resolution_readiness",
+                        "readiness_explanation",
                         "supporting_evidence",
                         "missing_evidence",
                         "notes_for_parties",

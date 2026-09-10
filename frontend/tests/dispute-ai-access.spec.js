@@ -40,12 +40,12 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
             agreement_number: '321',
             initiator: 'contractor',
             reason: 'Scope disagreement',
-            description: 'Need an advisory summary.',
+            description: "The door doesn't close right.\n\n[Portal Source] agreement_level_dispute",
             status: 'open',
             fee_amount: 250,
             fee_paid: true,
             escrow_frozen: true,
-            homeowner_response: '',
+            homeowner_response: 'PUBLIC MESSAGE: Just come and fix it',
             contractor_response: '',
             attachments: [],
             created_at: '2026-03-23T10:00:00Z',
@@ -175,6 +175,8 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
             why_this_option: 'The evidence supports collecting both party statements before selecting a final path.',
             favored_over_alternatives: 'It closes the most important evidence gaps before rework or escalation adds cost and delay.',
             confidence: 0.64,
+            final_resolution_readiness: 'low',
+            readiness_explanation: 'The final outcome is not ready because the contractor statement and completion photos are missing.',
             supporting_evidence: ['Agreement #321', 'Customer complaint'],
             missing_evidence: ['Contractor statement', 'Completion photos'],
             notes_for_parties: 'Based on the available evidence, this is a review recommendation only.',
@@ -198,6 +200,10 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await disputeRow.getByRole('button', { name: 'View' }).click();
 
   await expect(page.getByTestId('resolution-workspace-title')).toContainText(`Resolution Case #${DISPUTE_ID}`);
+  await expect(page.getByTestId('resolution-case-page')).toContainText("The door doesn't close right.");
+  await expect(page.getByTestId('resolution-case-page')).toContainText('Latest homeowner message');
+  await expect(page.getByTestId('resolution-case-page')).toContainText('PUBLIC MESSAGE: Just come and fix it');
+  await expect(page.getByTestId('resolution-case-page')).not.toContainText('[Portal Source]');
   await expect(page.getByTestId('resolution-workspace-overview')).toContainText('Case origin');
   await expect(page.getByTestId('resolution-workspace-timeline')).toContainText('Resolution case opened');
   await expect(page.getByTestId('resolution-workspace-evidence')).toContainText('Photos, Documents, Receipts, Messages');
@@ -212,6 +218,8 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 3');
   await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('COA 1 - request missing evidence');
   await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('Why this is favored');
+  await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('Confidence in this recommended next step');
+  await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('Readiness for a final resolution');
   await expect(page.getByTestId('select-dispute-coa-coa_1')).toContainText('Selected');
   await expect(page.getByTestId('generate-contractor-response')).toBeVisible();
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Recommendation only');
