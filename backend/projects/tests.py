@@ -10926,6 +10926,44 @@ class ContractorNotificationTests(TestCase):
             any(f"dispute:{dispute_id}" in str(row.metadata.get("dedupe_key", "")) for row in customer_dispute_notifications)
         )
 
+    @patch("projects.services.workflow_notifications.send_postmark_email")
+    def test_contractor_dispute_message_emails_customer_and_records_channel(self, mock_send_email):
+        self.client.force_authenticate(user=self.contractor_user)
+        created = self.client.post(
+            "/api/projects/disputes/",
+            {
+                "agreement": self.agreement.id,
+                "milestone": self.milestone.id,
+                "initiator": "contractor",
+                "reason": "scope",
+                "description": "Door does not close correctly.",
+                "fee_amount": "25.00",
+            },
+            format="json",
+        )
+        self.assertEqual(created.status_code, 201, created.data)
+        dispute = Dispute.objects.get(pk=created.data["id"])
+        dispute.fee_paid = True
+        dispute.save(update_fields=["fee_paid", "updated_at"])
+
+        response = self.client.patch(
+            f"/api/projects/disputes/{dispute.id}/respond/",
+            {"response": "Please send close-up photos of the door and frame."},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        mock_send_email.assert_called_once()
+        self.assertEqual(mock_send_email.call_args.kwargs["to_email"], self.homeowner.email)
+        self.assertIn("Please send close-up photos", mock_send_email.call_args.kwargs["text_body"])
+        self.assertTrue(
+            SmartNotification.objects.filter(
+                recipient_email=self.homeowner.email,
+                event_type=SmartNotificationEvent.DISPUTE_UPDATED,
+                channel=NotificationRule.CHANNEL_EMAIL,
+            ).exists()
+        )
+
 
 class SubcontractorCompletionReviewTests(TestCase):
     def setUp(self):

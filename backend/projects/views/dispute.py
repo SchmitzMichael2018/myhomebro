@@ -604,6 +604,7 @@ class DisputeViewSet(viewsets.ModelViewSet):
                 dispute=dispute,
                 event_type=Notification.EVENT_DISPUTE_UPDATED,
                 actor_user=request.user,
+                customer_message=response_text if actor_is_contractor and not proposal_sent else "",
             )
         except Exception:
             pass

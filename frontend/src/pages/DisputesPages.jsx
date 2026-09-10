@@ -1069,7 +1069,7 @@ function HumanDecisionPanel({ dispute, isAdmin, isContractor, isClosedCase, onOp
       ) : null}
       <div className="mt-4 flex flex-wrap justify-end gap-2">
         {isContractor && !isClosedCase ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">Prepare Resolution Proposal</button> : null}
-        {!isClosedCase ? <button className="mhb-btn" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">{isContractor ? "Send Contractor Message" : "Add Customer Statement"}</button> : null}
+        {!isClosedCase ? <button className="mhb-btn" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">{isContractor ? "Send Customer Message" : "Add Customer Statement"}</button> : null}
         {isAdmin && !isClosedCase ? <button className="mhb-btn primary" onClick={onOpenResolve} disabled={!canResolveAdmin(dispute)} type="button">Record Human Resolution</button> : null}
         <button className="mhb-btn primary" onClick={onClose} type="button">Close Workspace</button>
       </div>
@@ -1121,7 +1121,7 @@ function DetailsModal({
           </div>
           <div className="flex flex-wrap gap-2">
             {isContractor && !isClosed(dispute) ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">Prepare Resolution Proposal</button> : null}
-            {!isClosed(dispute) ? <button className="mhb-btn" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">Send Contractor Message</button> : null}
+            {!isClosed(dispute) ? <button className="mhb-btn" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">Send Customer Message</button> : null}
             <button className="mhb-btn primary" onClick={onClose} type="button">Back to Cases</button>
           </div>
         </div>
@@ -1183,7 +1183,7 @@ function DetailsModal({
       <section id="resolution-response" className="scroll-mt-52 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div><div className="text-xs font-extrabold uppercase tracking-[0.16em] text-slate-500">Step 3</div><h3 className="mt-1 text-xl font-extrabold text-slate-950">Contractor Response</h3></div>
-          {!isClosed(dispute) ? <button className="mhb-btn primary" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">Send Contractor Message</button> : null}
+          {!isClosed(dispute) ? <button className="mhb-btn primary" onClick={() => onOpenRespond()} disabled={!canRespond(dispute)} type="button">Send Customer Message</button> : null}
         </div>
         <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-800">{contractorStatementText(dispute) || "No contractor response has been added yet. Review the customer request and supporting record, then document your version of the issue and proposed next step."}</div>
       </section>
@@ -1395,7 +1395,7 @@ function RespondModal({ open, dispute, initialText = "", onClose, onSubmitted })
   };
 
   return (
-    <ModalShell title={`Send Contractor Message — Case #${dispute.id}`} onClose={onClose}>
+    <ModalShell title={`Send Customer Message — Case #${dispute.id}`} onClose={onClose}>
       <div className="rounded border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-950">
         Copied a Project Assistant response? Paste it here, review the wording, then submit it to the customer.
       </div>

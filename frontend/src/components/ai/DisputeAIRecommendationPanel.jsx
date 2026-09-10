@@ -103,9 +103,9 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
     }
     try {
       await navigator.clipboard.writeText(response);
-      setCopyStatus("Copied. Open Send Contractor Message, then choose Paste Response.");
+      setCopyStatus("Copied. Open Send Customer Message, then choose Paste Response.");
     } catch {
-      setCopyStatus("Draft saved. Open Send Contractor Message, then choose Paste Response.");
+      setCopyStatus("Draft saved. Open Send Customer Message, then choose Paste Response.");
     }
   }
 
@@ -394,7 +394,7 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
               {contractorResponseDraft.review_note ? <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}>{contractorResponseDraft.review_note}</div> : null}
               <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800 }}>Need more information? Send this as a contractor message. Ready to offer final terms? Continue to Proposed Resolution.</div>
               <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {onUseResponseDraft ? <button type="button" onClick={() => onUseResponseDraft(contractorResponseDraft.response)} style={{ ...btnStyle, background: "#1d4ed8", color: "#fff" }} data-testid="send-contractor-response">Send as Contractor Message</button> : null}
+                {onUseResponseDraft ? <button type="button" onClick={() => onUseResponseDraft(contractorResponseDraft.response)} style={{ ...btnStyle, background: "#1d4ed8", color: "#fff" }} data-testid="send-contractor-response">Send to Customer</button> : null}
                 <button type="button" onClick={copyContractorResponse} style={{ ...btnStyle, background: "#fff", color: "#0f172a" }} data-testid="copy-contractor-response">Copy Response</button>
               </div>
               {copyStatus ? <div role="status" style={{ marginTop: 8, fontSize: 12, color: "#166534", fontWeight: 700 }}>{copyStatus}</div> : null}

@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+from html import escape
+import logging
 from typing import Iterable
 
+from django.conf import settings
+
 from projects.models import ExpenseRequest, Notification, PublicContractorLead
-from projects.models_customer_portal import SmartNotificationEvent
+from projects.models_customer_portal import NotificationRule, SmartNotificationEvent
+from projects.services.customer_notification_preferences import (
+    notification_category_enabled,
+    notification_channel_enabled,
+    notification_preferences_for_email,
+)
+from projects.services.invites_delivery import send_postmark_email
 from projects.services.notification_center import create_notification
+from projects.services.sms_service import normalize_phone_to_e164, send_compliant_sms
 from projects.services.smart_notifications import create_smart_notification
+
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_text(value) -> str:
@@ -202,7 +216,7 @@ def notify_reimbursement_contractor_update(*, expense: ExpenseRequest, event_typ
     )
 
 
-def notify_dispute_event(*, dispute, event_type: str, actor_user=None) -> None:
+def notify_dispute_event(*, dispute, event_type: str, actor_user=None, customer_message: str = "") -> None:
     agreement = getattr(dispute, "agreement", None)
     contractor = getattr(agreement, "contractor", None) if agreement is not None else None
     project_title = _agreement_title(agreement) if agreement is not None else "this project"
@@ -231,6 +245,10 @@ def notify_dispute_event(*, dispute, event_type: str, actor_user=None) -> None:
         Notification.EVENT_DISPUTE_UPDATED: SmartNotificationEvent.DISPUTE_UPDATED,
         Notification.EVENT_DISPUTE_RESOLVED: SmartNotificationEvent.DISPUTE_RESOLVED,
     }.get(event_type)
+    customer_context = {
+        "project_title": project_title,
+        "dedupe_key": f"{event_type}:dispute:{getattr(dispute, 'id', '')}:{getattr(dispute, 'updated_at', '')}",
+    }
     if customer_email and smart_event:
         create_smart_notification(
             event_type=smart_event,
@@ -241,8 +259,76 @@ def notify_dispute_event(*, dispute, event_type: str, actor_user=None) -> None:
             agreement=agreement,
             milestone=getattr(dispute, "milestone", None),
             action_url="/portal",
-            context={
-                "project_title": project_title,
-                "dedupe_key": f"{event_type}:dispute:{getattr(dispute, 'id', '')}:{getattr(dispute, 'updated_at', '')}",
-            },
+            context=customer_context,
         )
+
+    message_text = _safe_text(customer_message)
+    if not (customer_email and message_text and smart_event == SmartNotificationEvent.DISPUTE_UPDATED):
+        return
+
+    project = getattr(agreement, "project", None)
+    homeowner = getattr(agreement, "homeowner", None) or getattr(project, "homeowner", None)
+    preferences = notification_preferences_for_email(customer_email, homeowner=homeowner)
+    if not notification_category_enabled(preferences, "contractor_responses"):
+        return
+
+    action_url = "/portal"
+    base_url = _safe_text(
+        getattr(settings, "PUBLIC_FRONTEND_BASE_URL", "")
+        or getattr(settings, "FRONTEND_URL", "")
+        or getattr(settings, "SITE_URL", "")
+        or "https://www.myhomebro.com"
+    ).rstrip("/")
+    portal_url = f"{base_url}{action_url}"
+    channel_context = {**customer_context, "contractor_message": message_text}
+
+    if notification_channel_enabled(preferences, "email_enabled"):
+        create_smart_notification(
+            event_type=smart_event,
+            recipient_email=customer_email,
+            context={**channel_context, "dedupe_key": f"{customer_context['dedupe_key']}:email"},
+            channel=NotificationRule.CHANNEL_EMAIL,
+            homeowner=homeowner,
+            contractor=contractor,
+            project=getattr(agreement, "project", None),
+            agreement=agreement,
+            milestone=getattr(dispute, "milestone", None),
+            action_url=action_url,
+        )
+        try:
+            send_postmark_email(
+                to_email=customer_email,
+                subject=f"Message from your contractor: {project_title}",
+                text_body=f"Your contractor sent a message about {project_title}:\n\n{message_text}\n\nView and respond: {portal_url}",
+                html_body=(
+                    f"<p>Your contractor sent a message about <strong>{escape(project_title)}</strong>:</p>"
+                    f"<p>{escape(message_text)}</p><p><a href=\"{escape(portal_url, quote=True)}\">View and respond in MyHomeBro</a></p>"
+                ),
+            )
+        except Exception:
+            logger.exception("Failed to email customer for dispute %s contractor message.", getattr(dispute, "id", None))
+
+    if notification_channel_enabled(preferences, "sms_enabled"):
+        phone = normalize_phone_to_e164(getattr(homeowner, "phone_number", ""))
+        if phone:
+            sms_dedupe_key = f"{customer_context['dedupe_key']}:sms"
+            result = send_compliant_sms(
+                phone,
+                f"MyHomeBro: Your contractor sent a message about {project_title}. View and respond: {portal_url}",
+                related_object=agreement,
+                category="customer_care",
+                dedupe_key=sms_dedupe_key,
+            )
+            if result.get("ok"):
+                create_smart_notification(
+                    event_type=smart_event,
+                    recipient_email=customer_email,
+                    context={**channel_context, "dedupe_key": sms_dedupe_key, "phone_number": phone},
+                    channel=NotificationRule.CHANNEL_SMS,
+                    homeowner=homeowner,
+                    contractor=contractor,
+                    project=getattr(agreement, "project", None),
+                    agreement=agreement,
+                    milestone=getattr(dispute, "milestone", None),
+                    action_url=action_url,
+                )
