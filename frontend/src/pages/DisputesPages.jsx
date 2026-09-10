@@ -126,6 +126,15 @@ const nextStepLabel = (d, isAdmin) => {
 
   if (!d?.fee_paid) return "Waiting on fee";
 
+  const pendingProposal = Array.isArray(d?.resolution_proposals)
+    ? d.resolution_proposals.some((proposal) =>
+        ["proposed", "pending", "pending_homeowner", "sent"].includes(
+          String(proposal?.status || "").toLowerCase()
+        )
+      )
+    : false;
+  if (pendingProposal) return "Waiting on homeowner";
+
   const hasHome = Boolean(String(d?.homeowner_response || "").trim());
   const hasCont = Boolean(String(d?.contractor_response || "").trim());
 
@@ -1124,20 +1133,44 @@ function DetailsModal({
   const proposal = structuredProposals[0] || extractProposalFromResponse(dispute.contractor_response);
 
   return (
-    <ModalShell title={`Resolution Case #${dispute.id} - Workspace`} onClose={onClose} width="min(1120px, 96vw)">
-      <div data-testid="resolution-workspace-title" className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-slate-500">Resolution Workspace</div>
-        <h2 className="mt-1 text-2xl font-extrabold text-slate-950">Resolution Case #{dispute.id}</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-600">
-          A guided investigation and settlement workspace. Project Assistant is neutral and advisory; human users make the final decision.
-        </p>
+    <div className="grid gap-4" data-testid="resolution-case-page">
+      <div data-testid="resolution-workspace-title" className="sticky top-0 z-20 rounded-2xl border border-white/15 bg-slate-950/95 p-4 text-white shadow-xl backdrop-blur">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-sky-200/70">Resolution Workspace</div>
+            <h2 className="mt-1 text-2xl font-extrabold">Resolution Case #{dispute.id}</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Badge tone={toneFor(dispute.status)}>{statusText || "Open"}</Badge>
+              <Badge tone={pillToneForNext(next)}>{next}</Badge>
+              <DeadlineBadge dispute={dispute} now={now} />
+              {dispute.escrow_frozen ? <Badge tone="info" className="bg-white text-slate-950">Escrow Hold Active</Badge> : null}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {isContractor && !isClosed(dispute) ? <button className="mhb-btn" onClick={onOpenProposal} disabled={!dispute.fee_paid} type="button">Propose Resolution</button> : null}
+            {!isClosed(dispute) ? <button className="mhb-btn" onClick={onOpenRespond} disabled={!canRespond(dispute)} type="button">Add Statement</button> : null}
+            <button className="mhb-btn primary" onClick={onClose} type="button">Back to Cases</button>
+          </div>
+        </div>
+        <nav className="mt-3 flex gap-2 overflow-x-auto border-t border-white/10 pt-3 text-sm font-bold" aria-label="Resolution case sections">
+          {[
+            ["overview", "Overview"],
+            ["timeline", "Activity"],
+            ["evidence", "Evidence"],
+            ["statements", "Statements"],
+            ["agreement", "Agreement"],
+            ["analysis", "AI Analysis"],
+            ["decision", "Resolution"],
+          ].map(([target, label]) => (
+            <a key={target} href={`#resolution-${target}`} className="whitespace-nowrap rounded-lg border border-white/15 bg-white/10 px-3 py-2 text-white hover:bg-white/20">{label}</a>
+          ))}
+        </nav>
       </div>
-      <ResolutionOverview dispute={dispute} proposal={proposal} isAdmin={isAdmin} />
-      <ResolutionTimeline dispute={dispute} proposal={proposal} attachments={attachments} />
-      <ResolutionEvidence dispute={dispute} attachments={attachments} attachmentUrl={attachmentUrl} />
-      <PartyStatements dispute={dispute} />
-      <AgreementReview dispute={dispute} />
-      <PaymentImpact dispute={dispute} />
+      <div id="resolution-overview" className="scroll-mt-52"><ResolutionOverview dispute={dispute} proposal={proposal} isAdmin={isAdmin} /></div>
+      <div id="resolution-timeline" className="scroll-mt-52"><ResolutionTimeline dispute={dispute} proposal={proposal} attachments={attachments} /></div>
+      <div id="resolution-evidence" className="scroll-mt-52"><ResolutionEvidence dispute={dispute} attachments={attachments} attachmentUrl={attachmentUrl} /></div>
+      <div id="resolution-statements" className="scroll-mt-52"><PartyStatements dispute={dispute} /></div>
+      <div id="resolution-agreement" className="grid scroll-mt-52 gap-4"><AgreementReview dispute={dispute} /><PaymentImpact dispute={dispute} /></div>
       <div className="mhb-glass" style={{ padding: 12 }}>
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone={toneFor(dispute.status)}>{statusText || "—"}</Badge>
@@ -1172,14 +1205,14 @@ function DetailsModal({
       </div>
 
       {/* Project Assistant panel (read-only, evidence-context only) */}
-      <WorkspaceSection title="Project Assistant Resolution Analysis" eyebrow="Advisory Only" testId="resolution-workspace-ai-analysis">
+      <div id="resolution-analysis" className="scroll-mt-52"><WorkspaceSection title="Project Assistant Resolution Analysis" eyebrow="Advisory Only" testId="resolution-workspace-ai-analysis">
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-950">
           Project Assistant may summarize evidence, identify disputed facts, list missing evidence,
           compare courses of action, and recommend a COA. It cannot close the case or move money.
         </div>
         <DisputeAIAdvisor disputeId={dispute.id} enabled={aiEnabled} />
         {aiEnabled ? <DisputeAIRecommendationPanel disputeId={dispute.id} /> : null}
-      </WorkspaceSection>
+      </WorkspaceSection></div>
 
       {/* ✅ Rework milestone CTA */}
       <ReworkMilestoneCTA dispute={dispute} basePath={basePath} />
@@ -1258,7 +1291,7 @@ function DetailsModal({
         )}
       </div>
 
-      <HumanDecisionPanel
+      <div id="resolution-decision" className="scroll-mt-52"><HumanDecisionPanel
         dispute={dispute}
         isAdmin={isAdmin}
         isContractor={isContractor}
@@ -1267,8 +1300,8 @@ function DetailsModal({
         onOpenRespond={onOpenRespond}
         onOpenResolve={onOpenResolve}
         onClose={onClose}
-      />
-    </ModalShell>
+      /></div>
+    </div>
   );
 }
 
@@ -1989,6 +2022,7 @@ export default function DisputesPages() {
 
   return (
     <ShellComponent {...shellProps}>
+      {!detailsOpen ? <>
       {supportsDisputesApi ? (
         <div
           className={
@@ -2066,6 +2100,7 @@ export default function DisputesPages() {
           }}
         />
       )}
+      </> : null}
 
       <DetailsModal
         open={detailsOpen}
