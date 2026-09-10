@@ -1249,7 +1249,16 @@ export default function Step4Finalize({
       }
     };
     fetchFundingPreview();
-  }, [agreementId, amendmentNumber, projectAmount, isDirectPay, authReady, isAuthed]);
+  }, [
+    agreementId,
+    amendmentNumber,
+    projectAmount,
+    agreement?.incidentals_reserve_amount,
+    dLocal?.incidentals_reserve_amount,
+    isDirectPay,
+    authReady,
+    isAuthed,
+  ]);
 
   const homeownerAddressDisplay = getHomeownerAddressFromAgreement(agreement, homeownerObj);
   const projectAddressDisplay = getProjectAddressFromAgreement(agreement);
