@@ -1407,8 +1407,8 @@ export default function Step4Finalize({
 
   const pdfVersion = agreement?.pdf_version != null ? Number(agreement.pdf_version) : null;
 
-  const escrowRate = fundingPreview?.rate != null ? Number(fundingPreview.rate) : 0.05;
-  const escrowFlat = fundingPreview?.flat_fee != null ? Number(fundingPreview.flat_fee) : 1;
+  const escrowRate = fundingPreview?.rate != null ? Number(fundingPreview.rate) : 0.04;
+  const escrowFlat = fundingPreview?.flat_fee != null ? Number(fundingPreview.flat_fee) : 0;
 
   const escrowPlatformFee =
     fundingPreview?.platform_fee != null
@@ -1464,12 +1464,12 @@ export default function Step4Finalize({
   );
   const platformFeeRateLine =
     !isDirectPay && fundingPreview?.rate != null
-      ? `${(Number(fundingPreview.rate) * 100).toFixed(1)}% + $${Number(
-          fundingPreview.flat_fee ?? 1
-        ).toFixed(Number.isInteger(Number(fundingPreview.flat_fee ?? 1)) ? 0 : 2)}`
+      ? `${(Number(fundingPreview.rate) * 100).toFixed(1)}%${Number(fundingPreview.flat_fee || 0) > 0
+          ? ` + $${Number(fundingPreview.flat_fee).toFixed(Number.isInteger(Number(fundingPreview.flat_fee)) ? 0 : 2)}`
+          : ""}`
       : "";
   const platformFeeHelperText =
-    "This is a full-project estimate. MyHomeBro fees are applied as payments are processed, and fee charging stops once the project cap is reached.";
+    "This estimate is based on milestone work and excludes unused contingency. MyHomeBro fees are applied as payments are successfully released and stop at the project cap. Stripe processing fees are separate and depend on the customer's payment method.";
   const summaryBreakdownRows = [
     {
       key: "project-total",

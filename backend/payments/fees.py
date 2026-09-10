@@ -8,13 +8,10 @@
 #       calculate_platform_fee_cents_for_invoice(...)
 #
 # Business rules:
-# - 60-day intro: 3% + $1
-# - After intro: tiered by MONTHLY processed volume:
-#       < $10k      -> 4.5% + $1
-#       $10k-$24,999-> 4.0% + $1
-#       $25k+       -> 3.5% + $1
+# - 60-day intro: 3%
+# - After intro: 4%, discounted to 3.5% at $20k monthly processed volume
 # - Optional high-risk surcharge (+1.5%)
-# - Cap: $750 PER AGREEMENT (across all milestone payments), when agreement_id is provided
+# - Cap: $750 per project; $650 while the volume rate applies
 
 from __future__ import annotations
 
@@ -28,20 +25,22 @@ from django.utils import timezone
 
 FeePayer = Literal["contractor", "homeowner", "split"]
 
-FEE_ENGINE_VERSION = "v2025-12-29"
+FEE_ENGINE_VERSION = "v2026-09-10-adoption"
 
 INTRO_DAYS = 60
 INTRO_RATE = Decimal("0.03")
 
-TIER1_RATE = Decimal("0.045")
+TIER1_RATE = Decimal("0.040")
 TIER2_RATE = Decimal("0.040")
 TIER3_RATE = Decimal("0.035")
+VOLUME_DISCOUNT_THRESHOLD = Decimal("20000.00")
 
 HIGH_RISK_SURCHARGE = Decimal("0.015")
 
-FLAT_FEE = Decimal("1.00")
+FLAT_FEE = Decimal("0.00")
 
 MAX_PLATFORM_FEE = Decimal("750.00")
+VOLUME_PLATFORM_FEE_CAP = Decimal("650.00")
 
 
 @dataclass
@@ -272,6 +271,53 @@ def get_monthly_paid_invoice_volume_for_contractor(contractor) -> Decimal:
     return _invoice_monthly_volume_for_contractor(contractor)
 
 
+def get_intro_pricing_start_for_contractor(contractor, *, fallback=None):
+    """Anchor introductory pricing to the first successful funded or paid project transaction."""
+    candidates = []
+    try:
+        from payments.models import Payment
+
+        first_funding = (
+            Payment.objects.filter(
+                agreement__contractor=contractor,
+                status="succeeded",
+            )
+            .order_by("created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
+        if first_funding is not None:
+            candidates.append(first_funding)
+    except Exception:
+        pass
+    try:
+        from projects.models import DrawRequest, Invoice
+
+        for field_name in ("direct_pay_paid_at", "escrow_released_at"):
+            value = (
+                Invoice.objects.filter(agreement__contractor=contractor, **{f"{field_name}__isnull": False})
+                .order_by(field_name)
+                .values_list(field_name, flat=True)
+                .first()
+            )
+            if value is not None:
+                candidates.append(value)
+        for field_name in ("paid_at", "released_at"):
+            value = (
+                DrawRequest.objects.filter(agreement__contractor=contractor, **{f"{field_name}__isnull": False})
+                .order_by(field_name)
+                .values_list(field_name, flat=True)
+                .first()
+            )
+            if value is not None:
+                candidates.append(value)
+    except Exception:
+        pass
+    if candidates:
+        return min(candidates)
+    return fallback or timezone.now()
+
+
 # ---------------------------------------------------------------------------
 # Core tier logic
 # ---------------------------------------------------------------------------
@@ -287,18 +333,15 @@ def get_fee_rate_for_contractor(
     cdate = _to_date(contractor_created_at)
     days_active = (today - cdate).days
 
-    if days_active <= INTRO_DAYS:
+    if days_active < INTRO_DAYS:
         base_rate = INTRO_RATE
         tier_name = "intro"
         is_intro = True
     else:
         is_intro = False
-        if monthly_volume < Decimal("10000"):
+        if monthly_volume < VOLUME_DISCOUNT_THRESHOLD:
             base_rate = TIER1_RATE
             tier_name = "tier1"
-        elif monthly_volume < Decimal("25000"):
-            base_rate = TIER2_RATE
-            tier_name = "tier2"
         else:
             base_rate = TIER3_RATE
             tier_name = "tier3"
@@ -331,6 +374,20 @@ def _calculate_platform_fee_from_rate(
         variable_fee=variable_fee,
         total_fee=total_fee,
     )
+
+
+def get_fee_cap_for_rate_info(rate_info: FeeRateInfo) -> Decimal:
+    return VOLUME_PLATFORM_FEE_CAP if rate_info.tier_name == "tier3" and not rate_info.is_intro else MAX_PLATFORM_FEE
+
+
+def get_current_fee_cap_for_contractor(contractor) -> Decimal:
+    pricing_start = get_intro_pricing_start_for_contractor(contractor)
+    rate_info = get_fee_rate_for_contractor(
+        contractor_created_at=pricing_start,
+        monthly_volume=get_monthly_processed_volume_for_contractor(contractor),
+        today=date.today(),
+    )
+    return get_fee_cap_for_rate_info(rate_info)
 
 
 def _resolve_project_id_from_agreement_id(agreement_id: Optional[int]) -> Optional[int]:
@@ -513,8 +570,9 @@ def apply_project_cap(
     *,
     project_id: Optional[int],
     uncapped_fee: Decimal,
+    cap_total: Decimal = MAX_PLATFORM_FEE,
 ) -> Tuple[Decimal, AgreementCapInfo]:
-    cap_total = _round_money(MAX_PLATFORM_FEE)
+    cap_total = _round_money(cap_total)
     already = _round_money(get_collected_platform_fees_for_project(project_id))
     remaining = _round_money(cap_total - already)
     if remaining < Decimal("0.00"):
@@ -535,12 +593,13 @@ def apply_agreement_cap(
     *,
     agreement_id: Optional[int],
     uncapped_fee: Decimal,
+    cap_total: Decimal = MAX_PLATFORM_FEE,
 ) -> Tuple[Decimal, AgreementCapInfo]:
     project_id = _resolve_project_id_from_agreement_id(agreement_id)
     if project_id:
-        return apply_project_cap(project_id=project_id, uncapped_fee=uncapped_fee)
+        return apply_project_cap(project_id=project_id, uncapped_fee=uncapped_fee, cap_total=cap_total)
 
-    cap_total = _round_money(MAX_PLATFORM_FEE)
+    cap_total = _round_money(cap_total)
     already = _round_money(get_collected_platform_fees_for_agreement(agreement_id))
     remaining = _round_money(cap_total - already)
     if remaining < Decimal("0.00"):
@@ -565,12 +624,7 @@ def _calculate_unified_platform_fee(
     context: str,
     is_high_risk: bool = False,
 ) -> UnifiedPlatformFeeResult:
-    contractor_created_at = (
-        getattr(contractor, "created_at", None)
-        or getattr(contractor, "created", None)
-        or getattr(getattr(contractor, "user", None), "date_joined", None)
-        or timezone.now()
-    )
+    contractor_created_at = get_intro_pricing_start_for_contractor(contractor)
     monthly_volume = get_monthly_processed_volume_for_contractor(contractor)
 
     rate_info = get_fee_rate_for_contractor(
@@ -582,7 +636,11 @@ def _calculate_unified_platform_fee(
 
     project_amount = _money_from_cents(int(amount_cents))
     uncapped = _calculate_platform_fee_from_rate(project_amount=project_amount, rate_info=rate_info).total_fee
-    applied_fee, cap_info = apply_project_cap(project_id=project_id, uncapped_fee=uncapped)
+    applied_fee, cap_info = apply_project_cap(
+        project_id=project_id,
+        uncapped_fee=uncapped,
+        cap_total=get_fee_cap_for_rate_info(rate_info),
+    )
     applied_fee_cents = _cents_from_money(applied_fee)
     payout_cents = max(int(amount_cents) - applied_fee_cents, 0)
 
@@ -674,8 +732,9 @@ def compute_fee_summary(
     )
 
     platform_fee = platform.total_fee
-    if platform_fee > MAX_PLATFORM_FEE:
-        platform_fee = MAX_PLATFORM_FEE
+    applicable_cap = get_fee_cap_for_rate_info(rate_info)
+    if platform_fee > applicable_cap:
+        platform_fee = applicable_cap
 
     split = split_fee_between_parties(
         project_amount=platform.project_amount,
@@ -755,12 +814,7 @@ def calculate_total_allowed_fee_cents_for_agreement_total(
     contractor,
     is_high_risk: bool = False,
 ) -> int:
-    contractor_created_at = (
-        getattr(contractor, "created_at", None)
-        or getattr(contractor, "created", None)
-        or getattr(getattr(contractor, "user", None), "date_joined", None)
-        or timezone.now()
-    )
+    contractor_created_at = get_intro_pricing_start_for_contractor(contractor)
     monthly_volume = get_monthly_processed_volume_for_contractor(contractor)
     rate_info = get_fee_rate_for_contractor(
         contractor_created_at=contractor_created_at,
@@ -770,7 +824,7 @@ def calculate_total_allowed_fee_cents_for_agreement_total(
     )
     amount = _money_from_cents(int(contract_amount_cents or 0))
     uncapped = calculate_platform_fee(project_amount=amount, rate_info=rate_info).total_fee
-    capped = min(_round_money(uncapped), _round_money(MAX_PLATFORM_FEE))
+    capped = min(_round_money(uncapped), _round_money(get_fee_cap_for_rate_info(rate_info)))
     return _cents_from_money(capped)
 
 

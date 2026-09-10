@@ -39,7 +39,7 @@ from projects.services.business_insights import build_business_insights
 from projects.services.business_dashboard_insights import build_business_dashboard_contractor_insights
 from projects.services.insights_command_center import build_insights_command_center
 from projects.services.milestone_lifecycle import milestone_is_overdue
-from payments.fees import MAX_PLATFORM_FEE, get_collected_platform_fees_for_agreement
+from payments.fees import get_collected_platform_fees_for_agreement, get_current_fee_cap_for_contractor
 from projects.views.payout_history import _apply_history_filters, _history_base_queryset, _serialize_payout_row
 
 
@@ -610,7 +610,7 @@ def _serialize_fee_drilldown_row(invoice):
 def _serialize_fee_project_row(agreement, range_fee_cents, last_fee_activity_at):
     project = getattr(agreement, "project", None)
     collected_total = Decimal(get_collected_platform_fees_for_agreement(getattr(agreement, "id", None)))
-    cap_total = Decimal(MAX_PLATFORM_FEE).quantize(Decimal("0.01"))
+    cap_total = Decimal(get_current_fee_cap_for_contractor(agreement.contractor)).quantize(Decimal("0.01"))
     remaining_cap = max(cap_total - collected_total, Decimal("0.00")).quantize(Decimal("0.01"))
     total_cost = Decimal(getattr(agreement, "total_cost", 0) or 0).quantize(Decimal("0.01"))
 
@@ -1058,7 +1058,7 @@ def _build_project_financial_rows(contractor):
             if _record_is_on_hold(record):
                 hold_cents += _record_gross_cents(record)
 
-        cap_total = Decimal(MAX_PLATFORM_FEE).quantize(Decimal("0.01"))
+        cap_total = Decimal(get_current_fee_cap_for_contractor(agreement.contractor)).quantize(Decimal("0.01"))
         collected_total = Decimal(get_collected_platform_fees_for_agreement(agreement.id)).quantize(Decimal("0.01"))
         remaining_cap = max(cap_total - collected_total, Decimal("0.00")).quantize(Decimal("0.01"))
         total_cents = gross_cents + pending_cents + hold_cents

@@ -533,7 +533,7 @@ const fmtRate = (rateDecimal) => {
 
 // ✅ pricing labels (keep in sync with backend/backend/payments/fees.py)
 const INTRO_RATE_LABEL = "3.00%";
-const STANDARD_START_RATE_LABEL = "4.50%";
+const STANDARD_START_RATE_LABEL = "4.00%";
 
 // ✅ Direct Pay pricing (LOCKED)
 const DIRECT_PAY_LABEL = "1% + $1";
@@ -2299,7 +2299,7 @@ export default function ContractorDashboard() {
   const [pricing, setPricing] = useState({
     loading: true,
     rate: null,
-    fixed_fee: 1,
+    fixed_fee: 0,
     is_intro: null,
     tier_name: null,
     error: "",
@@ -2720,7 +2720,7 @@ export default function ContractorDashboard() {
     const loadPricing = async () => {
       if (!authReady || !isAuthed || !who) return;
       if (isEmployee) {
-        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
+        setPricing({ loading: false, rate: null, fixed_fee: 0, is_intro: null, tier_name: null, error: "" });
         return;
       }
 
@@ -2732,7 +2732,7 @@ export default function ContractorDashboard() {
 
         if (!list.length) {
           if (!mounted) return;
-          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
+          setPricing({ loading: false, rate: null, fixed_fee: 0, is_intro: null, tier_name: null, error: "" });
           return;
         }
 
@@ -2741,7 +2741,7 @@ export default function ContractorDashboard() {
 
         if (!agreementId) {
           if (!mounted) return;
-          setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
+          setPricing({ loading: false, rate: null, fixed_fee: 0, is_intro: null, tier_name: null, error: "" });
           return;
         }
 
@@ -2751,14 +2751,14 @@ export default function ContractorDashboard() {
         setPricing({
           loading: false,
           rate: fp?.rate ?? null,
-          fixed_fee: fp?.fixed_fee ?? 1,
+          fixed_fee: fp?.fixed_fee ?? 0,
           is_intro: fp?.is_intro ?? null,
           tier_name: fp?.tier_name ?? (fp?.is_intro ? "INTRO" : null),
           error: "",
         });
       } catch (err) {
         if (!mounted) return;
-        setPricing({ loading: false, rate: null, fixed_fee: 1, is_intro: null, tier_name: null, error: "" });
+        setPricing({ loading: false, rate: null, fixed_fee: 0, is_intro: null, tier_name: null, error: "" });
       }
     };
 
@@ -3104,7 +3104,8 @@ export default function ContractorDashboard() {
   /* =======================================================================
    * Pricing Card
    * ======================================================================= */
-  const fixedFeeLabel = `+ $${Number(pricing.fixed_fee || 1).toFixed(0)}`;
+  const fixedFee = Number(pricing.fixed_fee || 0);
+  const fixedFeeLabel = fixedFee > 0 ? ` + $${fixedFee.toFixed(0)}` : "";
   const ratePercentFromBackend = pricing.rate != null ? fmtRate(pricing.rate) : null;
   const isIntroTierBackend = pricing.is_intro === true || String(pricing.tier_name || "").toUpperCase() === "INTRO";
 
@@ -3114,7 +3115,7 @@ export default function ContractorDashboard() {
     ? INTRO_RATE_LABEL
     : STANDARD_START_RATE_LABEL;
 
-  const currentRateTitle = pricing.loading ? "Checking your rate…" : `Current Rate: ${currentRatePercent} ${fixedFeeLabel}`;
+  const currentRateTitle = pricing.loading ? "Checking your rate…" : `Current Rate: ${currentRatePercent}${fixedFeeLabel}`;
 
   const daysLeftText =
     introDaysRemaining !== null
@@ -3132,7 +3133,7 @@ export default function ContractorDashboard() {
   } else {
     if (introActive) {
       subtitleParts.push(`Intro pricing is active (${daysLeftText || "days remaining"}).`);
-      subtitleParts.push("Intro (first 60 days): 3.00% + $1.");
+      subtitleParts.push("Intro (first 60 days): 3.00%.");
     } else {
       subtitleParts.push("Intro pricing window has ended.");
       subtitleParts.push("Standard escrow pricing is tiered by monthly volume.");

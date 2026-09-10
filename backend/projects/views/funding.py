@@ -9,10 +9,7 @@
 # - Adds receipt_email to PaymentIntent (Stripe can email receipts if enabled)
 # - Adds receipt endpoint: GET /api/projects/funding/receipt/?token=...
 #
-# ✅ Fix:
-# - Funding preview intro pricing now anchors to the *most recent* of:
-#     contractor.created_at OR contractor.user.date_joined
-#   This prevents pre-created contractor rows (invites/seeds) from incorrectly ending intro pricing.
+# Intro pricing begins with the contractor's first successfully funded agreement.
 
 from __future__ import annotations
 
@@ -35,8 +32,9 @@ from projects.services.mailer import email_escrow_funding_request
 from projects.services.planning_validation import revalidate_unsigned_pipeline_for_committed_agreement
 from payments.fees import (
     compute_fee_summary,
+    get_fee_cap_for_rate_info,
+    get_intro_pricing_start_for_contractor,
     INTRO_DAYS,
-    MAX_PLATFORM_FEE,
 )  # ✅ pull intro days for UI consistency
 
 logger = logging.getLogger(__name__)
@@ -142,26 +140,8 @@ def _sync_funding_flags(agreement: Agreement, *, heal_total: bool = True, persis
 
 
 def _pricing_start_date_for_contractor(contractor):
-    """
-    ✅ Determines pricing start anchor for intro pricing.
-    Use the *most recent* of contractor.created_at and contractor.user.date_joined.
-    This prevents pre-created contractor rows from incorrectly ending intro pricing.
-    """
-    created_at = getattr(contractor, "created_at", None) or getattr(contractor, "created", None)
-    user = getattr(contractor, "user", None)
-    joined_at = getattr(user, "date_joined", None) if user else None
-
-    candidates = []
-    if created_at:
-        candidates.append(created_at)
-    if joined_at:
-        candidates.append(joined_at)
-
-    if not candidates:
-        return timezone.now()
-
-    latest = max(candidates)
-    return latest
+    """Return the first successful agreement-funding date, or today before funding."""
+    return get_intro_pricing_start_for_contractor(contractor)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -589,7 +569,9 @@ class AgreementFundingPreviewView(APIView):
         total_required = sync["total_required"]
         try:
             summary = compute_fee_summary(
-                project_amount=total_required,
+                # Contingency is not a fee-bearing project charge unless it is
+                # later invoiced and released for approved work.
+                project_amount=sync["milestone_escrow_total"],
                 contractor_created_at=pricing_start,
                 contractor=contractor,
                 fee_payer="contractor",
@@ -615,6 +597,7 @@ class AgreementFundingPreviewView(APIView):
                     "homeowner_escrow": f"{sync['total_required']:.2f}",
                     "fee_payer": "contractor",
                     "rate": "0.0",
+                    "flat_fee": "0.00",
                     "is_intro": False,
                     "tier_name": "unknown",
                     "tier_label": "Fee summary unavailable",
@@ -636,15 +619,16 @@ class AgreementFundingPreviewView(APIView):
                 "project_amount": f"{summary.project_amount:.2f}",
                 "platform_fee": f"{summary.platform_fee:.2f}",
                 "contractor_payout": f"{summary.contractor_payout:.2f}",
-                "homeowner_escrow": f"{summary.homeowner_escrow:.2f}",
+                "homeowner_escrow": f"{sync['total_required']:.2f}",
                 "fee_payer": "contractor",
                 "rate": str(summary.rate_info.rate),
+                "flat_fee": f"{summary.rate_info.flat_fee:.2f}",
                 "is_intro": summary.rate_info.is_intro,
                 "tier_name": summary.rate_info.tier_name,
                 "tier_label": getattr(summary.rate_info, "label", ""),
                 "high_risk_applied": summary.rate_info.high_risk_applied,
-                "fee_cap": f"{MAX_PLATFORM_FEE:.2f}",
-                "fee_cap_label": "$750 per project",
+                "fee_cap": f"{get_fee_cap_for_rate_info(summary.rate_info):.2f}",
+                "fee_cap_label": "$650 per project" if summary.rate_info.tier_name == "tier3" else "$750 per project",
                 "intro_days": INTRO_DAYS,
             },
             status=status.HTTP_200_OK,

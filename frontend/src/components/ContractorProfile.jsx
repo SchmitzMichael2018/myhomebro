@@ -607,7 +607,7 @@ export default function ContractorProfile() {
         : null;
     const currentRateLabel = pricing.current_rate_label || null;
     const tierType = titleize(pricing.tier_type || pricing.tier_name || "");
-    const feeCapLabel = pricing.fee_cap_label || "$750 per agreement";
+    const feeCapLabel = pricing.fee_cap_label || "$750 per project";
     const introStatusLabel =
       pricing.intro_status_label || (introActive ? "Intro pricing active" : "Intro period ended");
     const monthlyVolumeLabel = pricing.monthly_volume_label || fmtMoney(pricing.monthly_volume);
@@ -759,10 +759,10 @@ export default function ContractorProfile() {
             <div>
               <div className="font-semibold text-slate-900">Platform Fees (MyHomeBro)</div>
               <ul className="mt-2 list-disc space-y-1 pl-5">
-                <li>Intro pricing: 3% + $1 for the first 60 days</li>
-                <li>Standard pricing: 4.5% + $1</li>
-                <li>Volume discount: 3.5% + $1</li>
-                <li>$750 cap per agreement</li>
+                <li>Intro pricing: 3% for the first 60 days</li>
+                <li>Standard pricing: 4%</li>
+                <li>Volume pricing: 3.5% after $20,000 in monthly sales</li>
+                <li>$750 cap per project; $650 cap at the volume rate</li>
               </ul>
             </div>
 

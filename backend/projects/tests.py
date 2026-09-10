@@ -247,7 +247,7 @@ from projects.services.sms_service import (
     set_sms_opt_in,
     set_sms_opt_out,
 )
-from payments.fees import compute_fee_summary, get_monthly_processed_volume_for_contractor
+from payments.fees import compute_fee_summary, get_intro_pricing_start_for_contractor, get_monthly_processed_volume_for_contractor
 from projects.services.sms_automation import build_sms_automation_summary, evaluate_sms_automation
 from payments.webhooks import (
     _handle_direct_pay_checkout_completed,
@@ -16603,6 +16603,45 @@ class ContractorProcessedVolumePricingTests(TestCase):
         self.assertEqual(summary.rate_info.tier_name, "tier3")
         self.assertEqual(summary.rate_info.rate, Decimal("0.035"))
 
+    def test_standard_rate_is_four_percent_without_flat_fee(self):
+        summary = compute_fee_summary(
+            project_amount=Decimal("1000.00"),
+            contractor_created_at=self.now - timedelta(days=120),
+            monthly_volume=Decimal("0.00"),
+            fee_payer="contractor",
+            today=self.now.date(),
+        )
+
+        self.assertEqual(summary.rate_info.rate, Decimal("0.040"))
+        self.assertEqual(summary.rate_info.flat_fee, Decimal("0.00"))
+        self.assertEqual(summary.platform_fee, Decimal("40.00"))
+
+    def test_volume_rate_starts_at_twenty_thousand_and_caps_at_six_fifty(self):
+        summary = compute_fee_summary(
+            project_amount=Decimal("50000.00"),
+            contractor_created_at=self.now - timedelta(days=120),
+            monthly_volume=Decimal("20000.00"),
+            fee_payer="contractor",
+            today=self.now.date(),
+        )
+
+        self.assertEqual(summary.rate_info.rate, Decimal("0.035"))
+        self.assertEqual(summary.rate_info.tier_name, "tier3")
+        self.assertEqual(summary.platform_fee, Decimal("650.00"))
+
+    def test_intro_rate_has_seven_fifty_cap_and_no_flat_fee(self):
+        summary = compute_fee_summary(
+            project_amount=Decimal("50000.00"),
+            contractor_created_at=self.now - timedelta(days=10),
+            monthly_volume=Decimal("50000.00"),
+            fee_payer="contractor",
+            today=self.now.date(),
+        )
+
+        self.assertEqual(summary.rate_info.rate, Decimal("0.03"))
+        self.assertEqual(summary.rate_info.flat_fee, Decimal("0.00"))
+        self.assertEqual(summary.platform_fee, Decimal("750.00"))
+
     def test_intro_period_still_overrides_volume_logic(self):
         self._create_paid_invoice(amount="15000.00")
         self._create_released_draw(gross_amount="15000.00")
@@ -16618,6 +16657,19 @@ class ContractorProcessedVolumePricingTests(TestCase):
         self.assertTrue(summary.rate_info.is_intro)
         self.assertEqual(summary.rate_info.tier_name, "intro")
         self.assertEqual(summary.rate_info.rate, Decimal("0.03"))
+
+    def test_intro_clock_starts_with_first_successful_funding(self):
+        funded_at = self.now - timedelta(days=12)
+        payment = Payment.objects.create(
+            agreement=self.agreement,
+            amount_cents=500000,
+            status="succeeded",
+        )
+        Payment.objects.filter(pk=payment.pk).update(created_at=funded_at)
+
+        pricing_start = get_intro_pricing_start_for_contractor(self.contractor)
+
+        self.assertEqual(pricing_start, funded_at)
 
     def test_linked_draw_payment_record_is_not_double_counted(self):
         draw = self._create_released_draw(gross_amount="2000.00")
@@ -16730,6 +16782,20 @@ class AgreementFundingPreviewAccessTests(TestCase):
         self.assertIn("tier_name", payload)
         self.assertEqual(payload["fee_cap"], "750.00")
         self.assertEqual(payload["fee_cap_label"], "$750 per project")
+
+    def test_funding_preview_excludes_unused_contingency_from_platform_fee(self):
+        self.agreement.incidentals_reserve_amount = Decimal("1000.00")
+        self.agreement.save(update_fields=["incidentals_reserve_amount", "updated_at"])
+        self.client.force_authenticate(user=self.contractor_user)
+
+        response = self.client.get(f"/api/projects/agreements/{self.agreement.id}/funding_preview/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["project_amount"], "15000.00")
+        self.assertEqual(payload["platform_fee"], "450.00")
+        self.assertEqual(payload["homeowner_escrow"], "16000.00")
+        self.assertEqual(payload["incidentals_reserve"], "1000.00")
 
     def test_unrelated_contractor_cannot_access_funding_preview(self):
         self.client.force_authenticate(user=self.other_user)

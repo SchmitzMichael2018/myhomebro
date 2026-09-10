@@ -25,8 +25,10 @@ from projects.services.sms_automation import build_sms_automation_summary
 from projects.services.sms_service import get_sms_status_payload
 from payments.fees import (
     INTRO_DAYS,
-    MAX_PLATFORM_FEE,
+    VOLUME_DISCOUNT_THRESHOLD,
+    get_fee_cap_for_rate_info,
     get_fee_rate_for_contractor,
+    get_intro_pricing_start_for_contractor,
     get_monthly_processed_volume_breakdown_for_contractor,
 )
 
@@ -127,7 +129,7 @@ class ContractorMeView(APIView):
         contractor_created_dt = _parse_dt(contractor_created_raw)
         user_joined_dt = _parse_dt(user_joined_raw)
 
-        pricing_start_dt = user_joined_dt or contractor_created_dt
+        pricing_start_dt = get_intro_pricing_start_for_contractor(c)
         intro_active, intro_days_remaining = _compute_intro(pricing_start_dt)
         volume_breakdown = get_monthly_processed_volume_breakdown_for_contractor(c)
         monthly_volume = volume_breakdown["total_volume"]
@@ -137,7 +139,7 @@ class ContractorMeView(APIView):
             today=timezone.now().date(),
         )
 
-        volume_discount_threshold = Decimal("25000.00")
+        volume_discount_threshold = VOLUME_DISCOUNT_THRESHOLD
         volume_discount_active = monthly_volume >= volume_discount_threshold
         volume_shortfall = max(volume_discount_threshold - monthly_volume, Decimal("0.00"))
         volume_progress_pct = (
@@ -148,13 +150,13 @@ class ContractorMeView(APIView):
             else 0
         )
         current_rate_pct = f"{(rate_info.rate * 100):.1f}%"
-        current_rate_label = f"{current_rate_pct} + $1 per agreement"
+        current_rate_label = current_rate_pct
         tier_type = _tier_type_from_tier_name(rate_info.tier_name)
         intro_status_label = "Intro pricing active" if intro_active else "Intro period ended"
         volume_status_label = (
             "Volume discount active for this month"
             if volume_discount_active
-            else f"${volume_shortfall:.2f} away from discounted rate (3.5% + $1)"
+            else f"${volume_shortfall:.2f} away from the 3.5% volume rate"
         )
 
         ai_summary = _ai_payload()
@@ -203,8 +205,8 @@ class ContractorMeView(APIView):
                 "current_rate_label": current_rate_label,
                 "tier_name": rate_info.tier_name,
                 "tier_type": tier_type,
-                "fee_cap": f"{MAX_PLATFORM_FEE:.2f}",
-                "fee_cap_label": "$750 per agreement",
+                "fee_cap": f"{get_fee_cap_for_rate_info(rate_info):.2f}",
+                "fee_cap_label": "$650 per project" if tier_type == "volume" else "$750 per project",
                 "intro_active": bool(intro_active),
                 "intro_status_label": intro_status_label,
                 "intro_days_remaining": intro_days_remaining,
@@ -217,7 +219,7 @@ class ContractorMeView(APIView):
                 "volume_discount_label": volume_status_label,
                 "volume_shortfall": f"{volume_shortfall:.2f}",
                 "volume_progress_pct": volume_progress_pct,
-                "next_discount_rate_label": "3.5% + $1",
+                "next_discount_rate_label": "3.5%",
             },
             "auto_subcontractor_payouts_enabled": bool(
                 getattr(c, "auto_subcontractor_payouts_enabled", False)
