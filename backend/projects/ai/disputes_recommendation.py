@@ -133,6 +133,8 @@ def build_dispute_recommendation_prompt(
         "- If the contractor has not provided a separate current statement, request the contractor's version only after the customer details and visual evidence are recorded.\n"
         "- A resolution recommendation may be drafted only when the record includes a sufficiently specific customer complaint, relevant signed-agreement content, visual evidence when the issue can be photographed, and a contractor statement. Otherwise recommend evidence collection, identify every missing item, and keep confidence low.\n"
         "- Do not treat a machine-formatted proposal receipt or proposal metadata as a substitute for either party's statement.\n"
+        "- When the contractor has proposed a solution, review it for alignment with the signed agreement and available evidence, clear corrective actions, responsible party, target dates, completion evidence, payment impact, and homeowner review or acknowledgment.\n"
+        "- Preserve the contractor's practical intent. Identify concrete gaps and draft a clearer improved version when useful; never overwrite, send, accept, or apply the contractor's proposal automatically.\n"
         "- Use neutral headings such as Neutral Case Summary, Timeline, Evidence Used, Missing Evidence, Open Questions, and Courses of Action.\n"
         "- Avoid legal advice; provide procedural suggestions and neutral language.\n"
         "- Use phrases like 'Based on the available evidence...', 'The agreement appears to state...', 'The evidence supports...', and 'Insufficient evidence to determine...'.\n"
@@ -238,6 +240,19 @@ def build_dispute_recommendation_prompt(
                         "advisory_boundary",
                     ],
                 },
+                "contractor_solution_review": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "solution_present": {"type": "boolean"},
+                        "summary": {"type": "string"},
+                        "strengths": {"type": "array", "items": {"type": "string"}},
+                        "gaps": {"type": "array", "items": {"type": "string"}},
+                        "improved_solution": {"type": "string"},
+                        "human_review_required": {"type": "string"},
+                    },
+                    "required": ["solution_present", "summary", "strengths", "gaps", "improved_solution", "human_review_required"],
+                },
                 "courses_of_action": {
                     "type": "array",
                     "minItems": 3,
@@ -295,6 +310,7 @@ def build_dispute_recommendation_prompt(
             "required": [
                 "overview",
                 "recommendation",
+                "contractor_solution_review",
                 "courses_of_action",
                 "options",
                 "draft_resolution_agreement",

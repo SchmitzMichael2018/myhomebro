@@ -78,6 +78,7 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
 
   const overview = result?.payload?.overview || null;
   const recommendation = result?.payload?.recommendation || null;
+  const contractorSolutionReview = result?.payload?.contractor_solution_review || null;
   const draft = result?.payload?.draft_resolution_agreement || null;
   const unsafeLanguageDetected = hasPayload && hasForbiddenLanguage(result?.payload);
   const attachments = Array.isArray(dispute?.attachments) ? dispute.attachments : [];
@@ -276,6 +277,23 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
           <Section title="Missing Evidence" testId="dispute-ai-missing-evidence">
             <BulletList items={overview?.missing_evidence || overview?.missing_info} empty="Insufficient evidence to determine additional missing items." />
           </Section>
+
+          {contractorSolutionReview?.solution_present ? (
+            <Section title="Contractor Solution Review" testId="dispute-ai-contractor-solution-review">
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>{contractorSolutionReview.summary}</div>
+              <div style={{ marginTop: 12, display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+                <div><div style={{ fontWeight: 800, marginBottom: 6 }}>What works</div><BulletList items={contractorSolutionReview.strengths} /></div>
+                <div><div style={{ fontWeight: 800, marginBottom: 6 }}>What needs clarification</div><BulletList items={contractorSolutionReview.gaps} /></div>
+              </div>
+              {contractorSolutionReview.improved_solution ? (
+                <div style={{ marginTop: 12, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#172554", borderRadius: 10, padding: 12 }}>
+                  <div style={{ fontWeight: 800, marginBottom: 6 }}>Suggested improved version</div>
+                  <div style={{ whiteSpace: "pre-wrap" }}>{contractorSolutionReview.improved_solution}</div>
+                </div>
+              ) : null}
+              <div style={{ marginTop: 8, fontWeight: 700 }}>{contractorSolutionReview.human_review_required}</div>
+            </Section>
+          ) : null}
 
           {recommendation ? (
             <Section title="Recommended COA" testId="dispute-ai-recommended-coa">
