@@ -10956,6 +10956,10 @@ class ContractorNotificationTests(TestCase):
         mock_send_email.assert_called_once()
         self.assertEqual(mock_send_email.call_args.kwargs["to_email"], self.homeowner.email)
         self.assertIn("Please send close-up photos", mock_send_email.call_args.kwargs["text_body"])
+        self.assertIn(
+            f"/disputes/{dispute.id}?token={dispute.public_token}",
+            mock_send_email.call_args.kwargs["text_body"],
+        )
         self.assertTrue(
             SmartNotification.objects.filter(
                 recipient_email=self.homeowner.email,

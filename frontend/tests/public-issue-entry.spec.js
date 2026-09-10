@@ -101,4 +101,7 @@ test('public customer issue entry can open from magic invoice and redirect into 
   );
   await expect(page.getByTestId('public-dispute-reply-input')).toBeVisible();
   await expect(page.getByTestId('public-dispute-send-button')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Send Response to Contractor' })).toBeDisabled();
+  await expect(page.getByText('Take Photo', { exact: true })).toBeVisible();
+  await expect(page.getByText('Choose Photos', { exact: true })).toBeVisible();
 });

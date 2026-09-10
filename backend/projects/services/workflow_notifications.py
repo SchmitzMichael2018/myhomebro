@@ -272,7 +272,9 @@ def notify_dispute_event(*, dispute, event_type: str, actor_user=None, customer_
     if not notification_category_enabled(preferences, "contractor_responses"):
         return
 
-    action_url = "/portal"
+    dispute_id = getattr(dispute, "id", "")
+    public_token = _safe_text(getattr(dispute, "public_token", ""))
+    action_url = f"/disputes/{dispute_id}?token={public_token}" if dispute_id and public_token else "/portal"
     base_url = _safe_text(
         getattr(settings, "PUBLIC_FRONTEND_BASE_URL", "")
         or getattr(settings, "FRONTEND_URL", "")

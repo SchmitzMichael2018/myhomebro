@@ -9,7 +9,7 @@
 //
 // This page is intentionally defensive: it shows clear errors if endpoints are not live yet.
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
@@ -37,6 +37,13 @@ export default function PublicDisputeView() {
   const [reply, setReply] = useState("");
   const [files, setFiles] = useState([]);
   const [posting, setPosting] = useState(false);
+  const photoInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+
+  const addSelectedFiles = (selectedFiles) => {
+    const incoming = Array.from(selectedFiles || []);
+    setFiles((current) => [...current, ...incoming]);
+  };
 
   const apiGet = useCallback(async (path) => {
     const res = await fetch(path, { method: "GET" });
@@ -129,7 +136,9 @@ export default function PublicDisputeView() {
 
       setReply("");
       setFiles([]);
-      toast.success("Message sent.");
+      if (photoInputRef.current) photoInputRef.current.value = "";
+      if (cameraInputRef.current) cameraInputRef.current.value = "";
+      toast.success("Response sent to your contractor.");
     } catch (e2) {
       toast.error(e2.message || "Failed to send message.");
     } finally {
@@ -301,38 +310,82 @@ export default function PublicDisputeView() {
           )}
         </div>
 
-        {/* Reply */}
+        {/* Customer response */}
         <div className="mt-6">
-          <div className="text-sm font-extrabold text-slate-800">Send a Message</div>
+          <div className="text-lg font-extrabold text-slate-900">Respond to Your Contractor</div>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Add comments and photos in one response. Include an overview and close-up photos when your contractor asks for visual details.
+          </p>
           <form onSubmit={postReply} className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
+            <label htmlFor="customer-dispute-comment" className="text-sm font-extrabold text-slate-800">
+              Comments
+            </label>
             <textarea
+              id="customer-dispute-comment"
               data-testid="public-dispute-reply-input"
-              className="min-h-[110px] w-full rounded border border-slate-200 bg-white px-3 py-2"
-              placeholder="Add details, propose a resolution, or upload supporting evidence…"
+              className="mt-2 min-h-[110px] w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900"
+              placeholder="Describe the issue, answer the contractor's questions, or explain what each photo shows…"
               value={reply}
               onChange={(e) => setReply(e.target.value)}
               disabled={posting}
             />
-            <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
+            <div className="mt-4">
+              <div className="text-sm font-extrabold text-slate-800">Photos</div>
+              <div className="mt-1 text-xs text-slate-500">Take new photos or select multiple photos from your device.</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-xl bg-emerald-600 px-4 py-2 text-sm font-extrabold text-white hover:bg-emerald-700">
+                Take Photo
                 <input
+                  ref={cameraInputRef}
                   type="file"
-                  multiple
-                  onChange={(e) => setFiles(Array.from(e.target.files || []))}
+                  accept="image/*"
+                  capture="environment"
+                  className="sr-only"
+                  onChange={(e) => addSelectedFiles(e.target.files)}
                   disabled={posting}
                 />
-                {files.length ? (
-                  <div className="mt-1 text-xs text-slate-500">{files.length} file(s) selected</div>
-                ) : null}
+              </label>
+              <label className="inline-flex min-h-11 cursor-pointer items-center justify-center rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-extrabold text-slate-900 hover:bg-slate-100">
+                Choose Photos
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => addSelectedFiles(e.target.files)}
+                  disabled={posting}
+                />
+              </label>
               </div>
+              {files.length ? (
+                <div className="mt-3 space-y-2" data-testid="public-dispute-selected-photos">
+                  {files.map((file, index) => (
+                    <div key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                      <span className="min-w-0 truncate text-sm text-slate-700">{file.name}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 rounded-lg border border-rose-200 bg-white px-3 py-1 text-xs font-extrabold text-rose-700"
+                        onClick={() => setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}
+                        disabled={posting}
+                        aria-label={`Remove ${file.name}`}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
 
+            <div className="mt-4 flex justify-end">
               <button
                 data-testid="public-dispute-send-button"
                 type="submit"
-                disabled={posting}
+                disabled={posting || (!reply.trim() && files.length === 0)}
                 className="rounded-xl bg-emerald-600 px-5 py-2 font-extrabold text-white hover:bg-emerald-700 disabled:opacity-60"
               >
-                {posting ? "Sending…" : "Send"}
+                {posting ? "Sending…" : "Send Response to Contractor"}
               </button>
             </div>
 
