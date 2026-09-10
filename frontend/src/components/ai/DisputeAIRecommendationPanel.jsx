@@ -68,6 +68,7 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
   const [loadingLatest, setLoadingLatest] = useState(false);
   const [err, setErr] = useState("");
   const [result, setResult] = useState(null);
+  const [selectedCoa, setSelectedCoa] = useState("");
 
   const hasPayload = !!result?.payload;
   const parsed = useMemo(() => parseDisputeRecommendationResponse(result || {}), [result]);
@@ -79,6 +80,7 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
   const overview = result?.payload?.overview || null;
   const recommendation = result?.payload?.recommendation || null;
   const contractorSolutionReview = result?.payload?.contractor_solution_review || null;
+  const contractorResponseDraft = result?.payload?.contractor_response_draft || null;
   const draft = result?.payload?.draft_resolution_agreement || null;
   const unsafeLanguageDetected = hasPayload && hasForbiddenLanguage(result?.payload);
   const attachments = Array.isArray(dispute?.attachments) ? dispute.attachments : [];
@@ -119,7 +121,7 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
     }
   }
 
-  async function generate(force = false) {
+  async function generate(force = false, selectedOptionId = "") {
     if (!disputeId) return;
     setErr("");
     setLoading(true);
@@ -128,6 +130,7 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
         `/projects/disputes/${disputeId}/ai/recommendation/`,
         {
           force,
+          selected_coa: selectedOptionId,
           context: serializeAiContext(buildAiContext({
             page: "disputes",
             entityId: disputeId || null,
@@ -158,6 +161,12 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
     if (disputeId) loadLatest();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disputeId]);
+
+  useEffect(() => {
+    if (recommendation?.recommended_option_id && !selectedCoa) {
+      setSelectedCoa(String(recommendation.recommended_option_id));
+    }
+  }, [recommendation?.recommended_option_id, selectedCoa]);
 
   return (
     <ProjectAssistantPanel
@@ -284,6 +293,8 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
               <div style={{ marginTop: 12, display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
                 <div><div style={{ fontWeight: 800, marginBottom: 6 }}>What works</div><BulletList items={contractorSolutionReview.strengths} /></div>
                 <div><div style={{ fontWeight: 800, marginBottom: 6 }}>What needs clarification</div><BulletList items={contractorSolutionReview.gaps} /></div>
+                <div><div style={{ fontWeight: 800, marginBottom: 6 }}>Recommended improvements</div><BulletList items={contractorSolutionReview.recommended_improvements} /></div>
+                <div><div style={{ fontWeight: 800, marginBottom: 6 }}>Risks to address</div><BulletList items={contractorSolutionReview.risks} /></div>
               </div>
               {contractorSolutionReview.improved_solution ? (
                 <div style={{ marginTop: 12, border: "1px solid #bfdbfe", background: "#eff6ff", color: "#172554", borderRadius: 10, padding: 12 }}>
@@ -296,11 +307,16 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
           ) : null}
 
           {recommendation ? (
-            <Section title="Recommended COA" testId="dispute-ai-recommended-coa">
+            <div data-testid="dispute-ai-recommended-coa" style={{ border: "2px solid #22c55e", background: "linear-gradient(135deg, #ecfdf5 0%, #f0fdf4 100%)", color: "#052e16", borderRadius: 16, padding: 18, boxShadow: "0 12px 30px rgba(34, 197, 94, 0.14)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <div><div style={{ fontSize: 12, fontWeight: 900, letterSpacing: ".12em", textTransform: "uppercase", color: "#15803d" }}>Project Assistant&apos;s preferred course</div><h3 style={{ margin: "5px 0 0", fontSize: 20 }}>Recommended COA</h3></div>
+                <span style={{ borderRadius: 999, background: "#166534", color: "#fff", padding: "6px 10px", fontSize: 12, fontWeight: 800 }}>Recommended</span>
+              </div>
                 <div style={{ fontSize: 13 }}>
-                <div style={{ marginBottom: 6 }}><b>Recommended option:</b> {recommendation.recommended_option_id}</div>
+                <div style={{ margin: "12px 0 6px" }}><b>Recommended option:</b> {coursesOfAction.find((item) => String(item.option_id) === String(recommendation.recommended_option_id))?.label || recommendation.recommended_option_id}</div>
                 <div style={{ marginBottom: 6 }}><b>Confidence:</b> {confidenceLabel(recommendation.confidence)}</div>
                 <div style={{ marginBottom: 8 }}><b>Why:</b> {recommendation.why_this_option}</div>
+                <div style={{ marginBottom: 12, borderLeft: "4px solid #22c55e", background: "#fff", padding: "10px 12px", borderRadius: 8 }}><b>Why this is favored:</b> {recommendation.favored_over_alternatives || "This option best matches the current evidence while limiting avoidable delay and risk."}</div>
                 <div style={{ marginBottom: 8 }}>
                   <b>Supporting evidence:</b>
                   <BulletList items={recommendation.supporting_evidence} />
@@ -314,17 +330,21 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
                   <div style={{ marginTop: 8, fontWeight: 800 }}>{recommendation.advisory_boundary}</div>
                 ) : null}
               </div>
-            </Section>
+            </div>
           ) : null}
 
           {coursesOfAction.length ? (
             <Section title="Courses of Action" testId="dispute-ai-coas">
               <div style={{ display: "grid", gap: 12 }}>
-                {coursesOfAction.map((opt, idx) => (
-                  <div key={opt.option_id || idx} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14 }}>
+                {coursesOfAction.map((opt, idx) => {
+                  const optionId = String(opt.option_id || `coa_${idx + 1}`);
+                  const isRecommended = optionId === String(recommendation?.recommended_option_id || "");
+                  const isSelected = optionId === selectedCoa;
+                  return (
+                  <div key={optionId} style={{ border: isSelected ? "2px solid #2563eb" : isRecommended ? "2px solid #22c55e" : "1px solid #e5e7eb", borderRadius: 12, padding: 14, background: isSelected ? "#eff6ff" : isRecommended ? "#f0fdf4" : "transparent", color: "#0f172a" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
                       <div style={{ fontWeight: 900 }}>
-                        {opt.label || `COA ${idx + 1}`} <span style={{ fontWeight: 600, opacity: 0.7 }}>({opt.option_id || `coa_${idx + 1}`})</span>
+                        {opt.label || `COA ${idx + 1}`} {isRecommended ? <span style={{ color: "#15803d", fontSize: 12 }}>(Recommended)</span> : null}
                       </div>
                       <div style={{ fontSize: 12, opacity: 0.75 }}>{opt.estimated_impact || opt.outcome}</div>
                     </div>
@@ -335,9 +355,22 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
                       <div><b>Evidence supporting</b><BulletList items={opt.evidence_supporting} /></div>
                       <div><b>Risks</b><BulletList items={opt.risks} /></div>
                     </div>
+                    <button type="button" onClick={() => setSelectedCoa(optionId)} style={{ ...btnStyle, marginTop: 12, background: isSelected ? "#1d4ed8" : "#fff", color: isSelected ? "#fff" : "#0f172a" }} data-testid={`select-dispute-coa-${optionId}`}>{isSelected ? "Selected" : "Select this COA"}</button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
+              {selectedCoa ? <div style={{ marginTop: 14, borderTop: "1px solid #cbd5e1", paddingTop: 14 }}><button type="button" onClick={() => generate(true, selectedCoa)} disabled={loading} style={{ ...btnStyle, background: "#1d4ed8", color: "#fff" }} data-testid="generate-contractor-response">{loading ? "Drafting response..." : "Draft contractor response from selected COA"}</button><div style={{ marginTop: 6, fontSize: 12, color: "#475569" }}>Creates a reviewable draft. Nothing is sent or saved as the contractor&apos;s statement automatically.</div></div> : null}
+            </Section>
+          ) : null}
+
+          {contractorResponseDraft?.response ? (
+            <Section title="Draft Contractor Response" testId="dispute-ai-contractor-response-draft">
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#475569" }}>Based on selected COA: {contractorResponseDraft.selected_option_id || selectedCoa}</div>
+              {contractorResponseDraft.subject ? <div style={{ marginTop: 8, fontWeight: 800 }}>{contractorResponseDraft.subject}</div> : null}
+              <div style={{ marginTop: 8, whiteSpace: "pre-wrap", border: "1px solid #bfdbfe", background: "#eff6ff", color: "#172554", borderRadius: 10, padding: 12 }}>{contractorResponseDraft.response}</div>
+              {contractorResponseDraft.review_note ? <div style={{ marginTop: 8, fontSize: 12, color: "#475569" }}>{contractorResponseDraft.review_note}</div> : null}
+              <div style={{ marginTop: 10, fontSize: 12, fontWeight: 800 }}>Review and edit this draft before adding it as the contractor&apos;s response.</div>
             </Section>
           ) : null}
 

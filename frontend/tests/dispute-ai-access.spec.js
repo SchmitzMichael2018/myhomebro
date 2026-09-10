@@ -173,6 +173,7 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
           recommendation: {
             recommended_option_id: 'coa_1',
             why_this_option: 'The evidence supports collecting both party statements before selecting a final path.',
+            favored_over_alternatives: 'It closes the most important evidence gaps before rework or escalation adds cost and delay.',
             confidence: 0.64,
             supporting_evidence: ['Agreement #321', 'Customer complaint'],
             missing_evidence: ['Contractor statement', 'Completion photos'],
@@ -203,16 +204,16 @@ test('dispute AI surface renders without legacy AI gating text or routes', async
   await expect(page.getByTestId('resolution-workspace-statements')).toContainText('Customer');
   await expect(page.getByTestId('resolution-workspace-agreement-review')).toContainText('Agreement Review');
   await expect(page.getByTestId('resolution-workspace-payment-impact')).toContainText('No payment changes occur automatically');
-  await expect(page.getByTestId('resolution-workspace-human-decision')).toContainText('Human Decision');
-  await expect(page.getByTestId('dispute-ai-advisor')).toBeVisible();
   await expect(page.getByTestId('resolution-workspace-ai-analysis')).toContainText('Project Assistant');
-  await expect(page.getByTestId('dispute-ai-advisor')).toContainText('Project Assistant');
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Project Assistant Recommendation');
   await page.getByRole('button', { name: 'Generate recommendation' }).click();
   await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 1');
   await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 2');
   await expect(page.getByTestId('dispute-ai-coas')).toContainText('COA 3');
-  await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('coa_1');
+  await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('COA 1 - request missing evidence');
+  await expect(page.getByTestId('dispute-ai-recommended-coa')).toContainText('Why this is favored');
+  await expect(page.getByTestId('select-dispute-coa-coa_1')).toContainText('Selected');
+  await expect(page.getByTestId('generate-contractor-response')).toBeVisible();
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).toContainText('Recommendation only');
   await expect(page.getByTestId('dispute-ai-missing-evidence')).toContainText('Contractor statement');
   await expect(page.getByTestId('dispute-ai-recommendation-panel')).not.toContainText('liable');

@@ -119,6 +119,12 @@ def dispute_ai_recommendation(request, dispute_id: int):
         evidence_context = build_dispute_evidence_context(dispute)
         if not isinstance(evidence_context, dict):
             raise RuntimeError("Evidence context builder must return a dict.")
+        selected_coa = str(request.data.get("selected_coa") or "").strip()[:120]
+        if selected_coa:
+            evidence_context["contractor_review_request"] = {
+                "selected_coa": selected_coa,
+                "instruction": "Draft a contractor response for this selected course of action and review any existing contractor response for improvements and risks.",
+            }
         digest = DisputeAIArtifact.compute_digest(evidence_context)
     except Exception as e:
         return JsonResponse({"detail": f"Evidence context error: {e}"}, status=HTTP_400_BAD_REQUEST)

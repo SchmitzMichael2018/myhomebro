@@ -135,6 +135,9 @@ def build_dispute_recommendation_prompt(
         "- Do not treat a machine-formatted proposal receipt or proposal metadata as a substitute for either party's statement.\n"
         "- When the contractor has proposed a solution, review it for alignment with the signed agreement and available evidence, clear corrective actions, responsible party, target dates, completion evidence, payment impact, and homeowner review or acknowledgment.\n"
         "- Preserve the contractor's practical intent. Identify concrete gaps and draft a clearer improved version when useful; never overwrite, send, accept, or apply the contractor's proposal automatically.\n"
+        "- Explain briefly why the recommended course is favored over each alternative, using the evidence and current risks rather than generic language.\n"
+        "- If contractor_review_request.selected_coa is present, draft a concise customer-facing contractor response that follows that course of action. The draft must be reviewable and must not be sent automatically.\n"
+        "- If the contractor supplied their own response, assess its clarity, agreement alignment, missing commitments, tone, evidentiary gaps, and practical risks; then suggest specific improvements.\n"
         "- Use neutral headings such as Neutral Case Summary, Timeline, Evidence Used, Missing Evidence, Open Questions, and Courses of Action.\n"
         "- Avoid legal advice; provide procedural suggestions and neutral language.\n"
         "- Use phrases like 'Based on the available evidence...', 'The agreement appears to state...', 'The evidence supports...', and 'Insufficient evidence to determine...'.\n"
@@ -224,6 +227,7 @@ def build_dispute_recommendation_prompt(
                     "properties": {
                         "recommended_option_id": {"type": "string"},
                         "why_this_option": {"type": "string"},
+                        "favored_over_alternatives": {"type": "string"},
                         "confidence": {"type": "number"},
                         "supporting_evidence": {"type": "array", "items": {"type": "string"}},
                         "missing_evidence": {"type": "array", "items": {"type": "string"}},
@@ -233,6 +237,7 @@ def build_dispute_recommendation_prompt(
                     "required": [
                         "recommended_option_id",
                         "why_this_option",
+                        "favored_over_alternatives",
                         "confidence",
                         "supporting_evidence",
                         "missing_evidence",
@@ -248,10 +253,23 @@ def build_dispute_recommendation_prompt(
                         "summary": {"type": "string"},
                         "strengths": {"type": "array", "items": {"type": "string"}},
                         "gaps": {"type": "array", "items": {"type": "string"}},
+                        "risks": {"type": "array", "items": {"type": "string"}},
+                        "recommended_improvements": {"type": "array", "items": {"type": "string"}},
                         "improved_solution": {"type": "string"},
                         "human_review_required": {"type": "string"},
                     },
-                    "required": ["solution_present", "summary", "strengths", "gaps", "improved_solution", "human_review_required"],
+                    "required": ["solution_present", "summary", "strengths", "gaps", "risks", "recommended_improvements", "improved_solution", "human_review_required"],
+                },
+                "contractor_response_draft": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "selected_option_id": {"type": "string"},
+                        "subject": {"type": "string"},
+                        "response": {"type": "string"},
+                        "review_note": {"type": "string"},
+                    },
+                    "required": ["selected_option_id", "subject", "response", "review_note"],
                 },
                 "courses_of_action": {
                     "type": "array",
@@ -311,6 +329,7 @@ def build_dispute_recommendation_prompt(
                 "overview",
                 "recommendation",
                 "contractor_solution_review",
+                "contractor_response_draft",
                 "courses_of_action",
                 "options",
                 "draft_resolution_agreement",
