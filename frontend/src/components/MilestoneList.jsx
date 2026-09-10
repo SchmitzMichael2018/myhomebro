@@ -16,6 +16,7 @@ import {
 import { ProjectModeBadge, PROJECT_MODE_OPTIONS, normalizeProjectModeFilter, normalizeProjectMode } from "./projectMode.jsx";
 import { MilestoneRoleBadge, MilestoneSafetyBadges, InspectionStatusBadge, deriveMilestoneRoleLabel } from "./milestoneRole.jsx";
 import ContractorPageSurface from "./dashboard/ContractorPageSurface.jsx";
+import { getAgreementCompletionState } from "../utils/agreementCompletionState.js";
 
 import MilestoneEditModal from "./MilestoneEditModal";
 import MilestoneDetailModal from "./MilestoneDetailModal";
@@ -966,6 +967,7 @@ export default function MilestoneList() {
             const matchSet = matchSetByAgreement.get(agId) || new Set();
             const milestonesToShow = isFiltering ? g.allMilestones.filter((m) => matchSet.has(String(m.id))) : g.allMilestones;
             const signedLabel = isAgreementFullySigned(g.ag) ? "Fully signed" : isAgreementSigned(g.ag) ? "Signature pending" : "Not signed";
+            const completionState = getAgreementCompletionState(g.allMilestones, invoicesMap);
 
             return (
               <section
@@ -984,9 +986,24 @@ export default function MilestoneList() {
                       <span className="text-xs font-bold uppercase tracking-[0.16em] text-sky-200/70">Agreement {agreementNum}</span>
                       <span className={chipClass("active")}>{agreementFundingLabel(g.ag)}</span>
                       <span className={chipClass(isAgreementFullySigned(g.ag) ? "success" : "warning")}>{signedLabel}</span>
+                      {completionState.fullyCompletedAndPaid ? (
+                        <span
+                          data-testid={`agreement-fully-completed-paid-${agId}`}
+                          className="inline-flex rounded-full border border-emerald-200 bg-emerald-300 px-3 py-1 text-xs font-black text-emerald-950 shadow-[0_0_18px_rgba(52,211,153,0.24)]"
+                        >
+                          Project Fully Completed &amp; Paid
+                        </span>
+                      ) : completionState.allWorkComplete ? (
+                        <span className={chipClass("warning")}>Work Complete · Payment Pending</span>
+                      ) : null}
                     </div>
                     <div className="mt-2 text-xl font-extrabold text-white">{g.projectTitle || "Untitled agreement"}</div>
                     <div className="mt-1 text-sm text-sky-100/68">Customer: {g.homeownerName || "No customer"} · Total: {totalLabel}</div>
+                    {completionState.fullyCompletedAndPaid ? (
+                      <div className="mt-2 text-sm font-bold text-emerald-200">
+                        {completionState.paidBillableCount} of {completionState.billableCount} billable milestone payments completed.
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-[minmax(12rem,18rem)_auto_auto] sm:items-center">
