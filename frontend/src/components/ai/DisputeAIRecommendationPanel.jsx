@@ -344,6 +344,7 @@ const preStyle = {
   marginTop: 10,
   padding: 10,
   background: "#f9fafb",
+  color: "#0f172a",
   borderRadius: 10,
   border: "1px solid #e5e7eb",
   whiteSpace: "pre-wrap",
