@@ -278,9 +278,14 @@ function disputeBoardKey(d, isAdmin = false) {
 
 function getFilterKeyBase(d) {
   const boardKey = disputeBoardKey(d);
+  const hasPendingHomeownerDecision = Array.isArray(d?.resolution_proposals)
+    && d.resolution_proposals.some((proposal) =>
+      ["proposed", "pending", "pending_homeowner", "sent"].includes(String(proposal?.status || "").toLowerCase())
+    );
   if (boardKey === "archived") return "archived";
   if (boardKey === "rework_required") return "rework_required";
   if (["resolved", "canceled"].includes(boardKey)) return "resolved";
+  if (hasPendingHomeownerDecision) return "waiting";
   if (boardKey === "waiting_homeowner") return "waiting";
   return "needs_action";
 }
