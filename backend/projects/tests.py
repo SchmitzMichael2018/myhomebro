@@ -31262,6 +31262,8 @@ class DisputeMutationSafetyTests(TestCase):
         self.assertIn("Humans decide all outcomes", system)
         self.assertIn("Never determine fault", system)
         self.assertIn("Never instruct the platform to release funds", system)
+        self.assertIn("A single clear photo plus a specific complaint can be enough", system)
+        self.assertIn("favor evaluating or improving the corrective-action proposal", system)
         recommendation_required = prompt["json_schema"]["schema"]["properties"]["recommendation"]["required"]
         self.assertIn("advisory_boundary", recommendation_required)
 

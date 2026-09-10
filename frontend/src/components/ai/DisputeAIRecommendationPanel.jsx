@@ -214,6 +214,13 @@ export default function DisputeAIRecommendationPanel({ disputeId, dispute = null
         </div>
       ) : null}
 
+      {dispute && hasVisualEvidence && hasContractorStatement ? (
+        <div style={{ marginTop: 12, border: "1px solid #86efac", background: "#f0fdf4", color: "#14532d", borderRadius: 12, padding: 12, fontSize: 13 }} data-testid="dispute-ai-evidence-ready">
+          <div style={{ fontWeight: 800 }}>Evidence is ready for corrective-action review</div>
+          <div style={{ marginTop: 4 }}>The complaint, visual evidence, and contractor response are present. Generate a new recommendation to evaluate and improve the proposed solution.</div>
+        </div>
+      ) : null}
+
       {err ? <div style={{ marginTop: 12, color: "#b91c1c", fontWeight: 700 }}>{err}</div> : null}
 
       {!hasPayload ? (

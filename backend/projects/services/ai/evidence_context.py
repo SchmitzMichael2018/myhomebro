@@ -159,7 +159,7 @@ def build_dispute_evidence_context(dispute: Dispute) -> Dict[str, Any]:
                 "kind": getattr(att, "kind", None),
                 "file": att.file.name if getattr(att, "file", None) else None,
                 "uploaded_by": getattr(getattr(att, "uploaded_by", None), "email", None),
-                "uploaded_at": _safe_dt(getattr(att, "created_at", None)),
+                "uploaded_at": _safe_dt(getattr(att, "uploaded_at", None)),
             })
     except Exception:
         pass
