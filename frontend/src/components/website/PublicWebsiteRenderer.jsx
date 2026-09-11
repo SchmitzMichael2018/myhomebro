@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
 import api from '../../api';
+import remodelerConceptHero from '../../assets/website/qa-remodeler-concept-hero.png';
 
 function getBlock(page, key) {
   return page?.content_blocks?.[key] || {};
@@ -65,6 +66,8 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
   const profile = payload?.profile || {};
   const pages = payload?.pages || [];
   const layout = payload?.homepage_layout || payload?.website?.homepage_layout || {};
+  const templateKey = payload?.template_key || payload?.website?.template_key || layout?.template?.key || 'starter';
+  const isRemodeler = templateKey === 'remodeler';
   const branding = layout.branding || {};
   const identity = profile.identity || {};
   const contact = profile.contact || {};
@@ -88,7 +91,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
   const accent = color(branding.accent_color, profile.branding?.accent_color || profile.branding?.brand_accent_color || '#14b8a6');
   const images = profile.images || {};
   const logoImage = images.logo || profile.branding?.logo_url || '';
-  const heroImage = images.hero || images.cover || profile.branding?.hero_image_url || profile.branding?.cover_image_url || gallery.items?.[0]?.image_url || '';
+  const heroImage = images.hero || images.cover || profile.branding?.hero_image_url || profile.branding?.cover_image_url || gallery.items?.[0]?.image_url || (isRemodeler ? remodelerConceptHero : '');
   const serviceItems = [
     ...(Array.isArray(services.specialties) ? services.specialties : []),
     ...(Array.isArray(services.work_types) ? services.work_types : []),
@@ -155,7 +158,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
       }`}
       style={{ '--website-primary': primary, '--website-accent': accent }}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
+      <header className={`flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4 backdrop-blur ${isRemodeler ? 'border-white/10 bg-slate-950 text-white' : 'border-slate-200 bg-white/95'}`}>
         <div className="flex min-w-0 items-center gap-3">
           {logoImage ? (
             <img src={logoImage} alt="" className="h-10 w-10 rounded-xl object-cover" />
@@ -166,7 +169,7 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
           )}
           <div className="min-w-0">
             <div className="truncate text-sm font-bold">{businessName}</div>
-            <div className="truncate text-xs text-slate-500">{serviceArea.service_area_text || [serviceArea.city, serviceArea.state].filter(Boolean).join(', ')}</div>
+            <div className={`truncate text-xs ${isRemodeler ? 'text-slate-300' : 'text-slate-500'}`}>{serviceArea.service_area_text || [serviceArea.city, serviceArea.state].filter(Boolean).join(', ')}</div>
           </div>
         </div>
         <a href="#website-intake" className="rounded-full px-4 py-2 text-xs font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5" style={{ background: primary }}>
@@ -175,27 +178,30 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
       </header>
 
       {sections.includes('hero') ? (
-        <section className="grid gap-0 bg-slate-50 md:grid-cols-[1.05fr_0.95fr]">
-          <div className="px-6 py-10 md:px-8 md:py-14">
+        <section className={isRemodeler ? 'relative isolate min-h-[560px] overflow-hidden bg-slate-950 text-white' : 'grid gap-0 bg-slate-50 md:grid-cols-[1.05fr_0.95fr]'}>
+          {isRemodeler && heroImage ? <img src={heroImage} alt="Illustrative remodeling design concept" className="absolute inset-0 -z-20 h-full w-full object-cover" /> : null}
+          {isRemodeler ? <div className="absolute inset-0 -z-10 bg-gradient-to-r from-slate-950 via-slate-950/80 to-slate-950/10" /> : null}
+          <div className={`px-6 py-10 md:px-8 md:py-14 ${isRemodeler ? 'flex min-h-[560px] max-w-3xl flex-col justify-center md:px-14' : ''}`}>
             <div className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-black uppercase tracking-[0.18em] shadow-sm" style={{ color: accent }}>
               {identity.tagline || 'Local contractor'}
             </div>
-            <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight md:text-5xl">
+            <h1 className={`mt-5 text-3xl font-black leading-tight tracking-tight ${isRemodeler ? 'max-w-2xl font-serif md:text-6xl' : 'md:text-5xl'}`}>
               {hero.headline || businessName || 'Build with confidence'}
             </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
+            <p className={`mt-4 max-w-2xl text-base leading-7 ${isRemodeler ? 'text-slate-200 md:text-lg' : 'text-slate-600'}`}>
               {hero.subheadline || about.body || identity.bio || 'Professional project planning, clear agreements, and reliable communication from first request to final walkthrough.'}
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a href="#website-intake" className="rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg shadow-slate-200 transition hover:-translate-y-0.5" style={{ background: primary }}>
                 {websiteCtaText(hero.cta_text)}
               </a>
-              <a href="#portfolio" className="rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-black text-slate-800 shadow-sm transition hover:bg-slate-50">
+              <a href="#portfolio" className={`rounded-2xl border px-5 py-3 text-sm font-black shadow-sm transition ${isRemodeler ? 'border-white/50 bg-white/10 text-white backdrop-blur hover:bg-white/20' : 'border-slate-300 bg-white text-slate-800 hover:bg-slate-50'}`}>
                 View Work
               </a>
             </div>
+            {isRemodeler ? <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-white/20 pt-5 text-xs font-bold uppercase tracking-[0.14em] text-slate-200"><span>Clear milestones</span><span>Documented approvals</span><span>San Antonio area</span></div> : null}
           </div>
-          <div className="min-h-64 bg-slate-100">
+          {!isRemodeler ? <div className="min-h-64 bg-slate-100">
             {heroImage ? (
               <img src={heroImage} alt="" className="h-full min-h-64 w-full object-cover" />
             ) : (
@@ -206,19 +212,19 @@ export default function PublicWebsiteRenderer({ payload, currentPage, previewMod
                 </div>
               </div>
             )}
-          </div>
+          </div> : null}
         </section>
       ) : null}
 
       {sections.includes('services') ? (
-        <section className="border-t border-slate-200 px-6 py-8 md:px-8">
+        <section className={`border-t border-slate-200 px-6 py-8 md:px-8 ${isRemodeler ? 'bg-[#f7f3ed] md:px-14 md:py-14' : ''}`}>
           <div className="max-w-2xl">
             <h2 className="text-2xl font-black">{serviceBlock.heading || 'Services'}</h2>
             <p className="mt-2 text-sm leading-6 text-slate-600">{serviceBlock.intro || 'Clear scopes and reliable execution for the work your customers request most.'}</p>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {(serviceCards.length ? serviceCards : ['Residential projects', 'Repairs', 'Renovations'].map((item) => ({ title: item, description: '' }))).map((item) => (
-              <div key={item.title || item} className="rounded-2xl border border-slate-200 bg-white p-5 text-sm shadow-sm">
+              <div key={item.title || item} className={`rounded-2xl border bg-white p-5 text-sm shadow-sm ${isRemodeler ? 'border-stone-200 border-l-4' : 'border-slate-200'}`} style={isRemodeler ? { borderLeftColor: accent } : undefined}>
                 <div className="font-black text-slate-950">{item.title || item}</div>
                 {item.description ? <div className="mt-2 leading-6 text-slate-600">{item.description}</div> : null}
               </div>
