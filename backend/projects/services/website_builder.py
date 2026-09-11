@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -80,6 +81,7 @@ WEBSITE_AI_ACTIONS = {
     "final_website_audit",
     "faq_generation",
     "local_business_schema",
+    "generate_website_copy_set",
 }
 
 WEBSITE_FEATURE_KEYS = (
@@ -455,6 +457,66 @@ def get_contractor_website_entitlements(contractor: Contractor | None = None) ->
     }
 
 
+def _website_ai_public_context(contractor: Contractor, *, request=None) -> dict[str, Any]:
+    profile = build_website_profile_payload(contractor, request=request, public_safe=True)
+    return {
+        "business": profile.get("business_identity", {}),
+        "services": profile.get("trades_services", {}),
+        "service_area": profile.get("service_area", {}),
+        "verified_trust": profile.get("trust", {}).get("indicators", []),
+        "public_reviews": profile.get("reviews", {}),
+        "public_portfolio": profile.get("gallery", {}),
+        "seo": profile.get("seo", {}),
+    }
+
+
+def _website_ai_instructions(action: str) -> str:
+    instructions = {
+        "generate_website_copy_set": "Draft a coordinated homepage headline, subheadline, call to action, and about paragraph.",
+        "design_recommendation": "Recommend a distinctive visual direction, palette, typography mood, and section emphasis.",
+        "hero_image_generation": "Write a safe decorative hero-image brief. Do not imply the image is completed contractor work.",
+        "final_website_audit": "List the highest-value accuracy, trust, clarity, mobile, and conversion improvements.",
+        "business_description": "Draft a concise, trustworthy business description.",
+        "hero_headline": "Draft one concise homepage headline.",
+        "hero_subheadline": "Draft one supporting homepage subheadline.",
+        "cta_text": "Draft one short customer action label.",
+        "about_section": "Draft a concise About section.",
+        "service_description": "Draft a clear service description using only listed services.",
+        "seo_title": "Draft a local-search title under 65 characters.",
+        "seo_description": "Draft a search description under 160 characters.",
+        "seo_keywords": "Suggest concise service-and-location search phrases.",
+        "photo_title": "Draft a factual project-photo title without inventing scope.",
+        "photo_caption": "Improve the supplied project-photo description without inventing work or results.",
+        "photo_category": "Suggest one concise project category.",
+        "logo_generation": "Write a practical logo concept brief; do not claim an image was generated.",
+        "review_summary": "Summarize only the supplied public reviews without inventing quotations.",
+        "faq_generation": "Suggest factual customer FAQs and cautious answers based only on supplied facts.",
+        "local_business_schema": "Identify public facts suitable for local-business structured data.",
+    }
+    return instructions.get(action, "Prepare one concise, reviewable website improvement.")
+
+
+def _normalize_website_ai_result(action: str, value: Any) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    draft = data.get("draft") if isinstance(data.get("draft"), dict) else {}
+    allowed_draft = {
+        key: _safe_text(draft.get(key))[:1200]
+        for key in ("headline", "subheadline", "cta_text", "about", "visual_direction", "image_brief")
+        if _safe_text(draft.get(key))
+    }
+    suggestions = [_safe_text(item)[:300] for item in _safe_list(data.get("suggestions")) if _safe_text(item)][:5]
+    suggested_value = _safe_text(data.get("suggested_value"))[:1600]
+    if action == "generate_website_copy_set" and not suggested_value and allowed_draft:
+        suggested_value = allowed_draft.get("headline", "Website draft ready for review.")
+    return {
+        "suggested_value": suggested_value,
+        "suggestions": suggestions,
+        "draft": allowed_draft,
+        "basis": [_safe_text(item)[:200] for item in _safe_list(data.get("basis")) if _safe_text(item)][:5],
+        "warnings": [_safe_text(item)[:240] for item in _safe_list(data.get("warnings")) if _safe_text(item)][:5],
+    }
+
+
 def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, Any], *, request=None) -> dict[str, Any]:
     action = _safe_text(payload.get("action"))
     if action not in WEBSITE_AI_ACTIONS:
@@ -476,12 +538,70 @@ def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, 
             "suggested_value": "",
             "suggestions": [],
         }
-    return {
-        "ok": False,
-        "status": 501,
-        "detail": "Website AI provider integration is pending.",
-        "action": action,
-    }
+    api_key = _safe_text(getattr(settings, "OPENAI_API_KEY", "") or getattr(settings, "AI_OPENAI_API_KEY", ""))
+    if not api_key:
+        return {
+            "ok": True,
+            "configured": False,
+            "detail": "Website suggestions are temporarily unavailable. You can continue manually.",
+            "action": action,
+            "suggested_value": "",
+            "suggestions": [],
+        }
+    try:
+        from openai import OpenAI  # type: ignore
+
+        client = OpenAI(api_key=api_key, timeout=20.0, max_retries=0)
+        context = _website_ai_public_context(contractor, request=request)
+        current_value = _safe_text(payload.get("current_value"))[:2000]
+        response = client.responses.create(
+            model=getattr(settings, "OPENAI_WEBSITE_BUILDER_MODEL", "gpt-4.1-mini"),
+            temperature=0.45,
+            input=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Project Assistant helping a contractor prepare accurate public website content. "
+                        "Use only the supplied public facts. Never invent licenses, insurance, awards, guarantees, reviews, "
+                        "customer quotes, project results, years of experience, locations, or completed work. AI-generated "
+                        "visuals may be proposed only as decorative illustrations and never as portfolio evidence. Return "
+                        "valid JSON with suggested_value, suggestions, draft, basis, and warnings. The draft object may use "
+                        "headline, subheadline, cta_text, about, visual_direction, and image_brief. Keep copy concise."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "task": _website_ai_instructions(action),
+                            "action": action,
+                            "current_value": current_value,
+                            "authorized_public_context": context,
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    ),
+                },
+            ],
+        )
+        parsed = json.loads(getattr(response, "output_text", "") or "{}")
+        normalized = _normalize_website_ai_result(action, parsed)
+        return {
+            "ok": True,
+            "configured": True,
+            "detail": "Review this draft before applying it.",
+            "action": action,
+            **normalized,
+        }
+    except Exception:
+        return {
+            "ok": True,
+            "configured": False,
+            "detail": "Website suggestions are temporarily unavailable. You can continue manually.",
+            "action": action,
+            "suggested_value": "",
+            "suggestions": [],
+        }
 
 
 def _checklist_item(key: str, label: str, complete: bool, action: str, required: bool = True) -> dict[str, Any]:

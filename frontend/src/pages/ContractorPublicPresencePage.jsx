@@ -291,6 +291,22 @@ function AiSuggestionCard({ suggestion, onAccept, onRegenerate, onDismiss }) {
           {suggestion.suggestions.slice(0, 5).map((item) => <li key={String(item)}>{String(item)}</li>)}
         </ul>
       ) : null}
+      {suggestion.draft && Object.keys(suggestion.draft).length ? (
+        <dl className="mt-3 grid gap-2 rounded-lg border border-blue-100 bg-white p-3" data-testid={`ai-draft-${suggestion.target}`}>
+          {Object.entries(suggestion.draft).map(([key, value]) => (
+            <div key={key}>
+              <dt className="text-[10px] font-black uppercase tracking-wide text-slate-500">{key.replaceAll('_', ' ')}</dt>
+              <dd className="mt-0.5 leading-5 text-slate-800">{String(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {Array.isArray(suggestion.basis) && suggestion.basis.length ? (
+        <div className="mt-3 text-xs text-slate-700"><strong>Based on:</strong> {suggestion.basis.join(' · ')}</div>
+      ) : null}
+      {Array.isArray(suggestion.warnings) && suggestion.warnings.length ? (
+        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><strong>Review:</strong> {suggestion.warnings.join(' ')}</div>
+      ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {hasValue ? <button type="button" onClick={onAccept} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-bold text-white" data-testid={`ai-accept-${suggestion.target}`}>Accept</button> : null}
         <button type="button" onClick={onRegenerate} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-bold text-blue-700">Regenerate</button>
@@ -1020,6 +1036,9 @@ export default function ContractorPublicPresencePage() {
           detail: data?.configured === false ? 'Suggestions are temporarily unavailable. You can continue manually.' : data?.detail || '',
           suggested_value: data?.suggested_value || data?.suggestion || '',
           suggestions: Array.isArray(data?.suggestions) ? data.suggestions : [],
+          draft: data?.draft && typeof data.draft === 'object' ? data.draft : {},
+          basis: Array.isArray(data?.basis) ? data.basis : [],
+          warnings: Array.isArray(data?.warnings) ? data.warnings : [],
         },
       }));
     } catch (err) {
@@ -1056,6 +1075,19 @@ export default function ContractorPublicPresencePage() {
     if (!String(value || '').trim()) return;
     applyValue(value);
     dismissAiSuggestion(target);
+  }
+
+  function applyWebsiteCopySet() {
+    const draft = aiSuggestions['website-copy-set']?.draft || {};
+    if (!Object.keys(draft).length) return;
+    updateHomePageHero({
+      ...(draft.headline ? { headline: draft.headline } : {}),
+      ...(draft.subheadline ? { subheadline: draft.subheadline } : {}),
+      ...(draft.cta_text ? { cta_text: draft.cta_text } : {}),
+    });
+    if (draft.about) setProfile((prev) => ({ ...prev, bio: draft.about }));
+    dismissAiSuggestion('website-copy-set');
+    toast.success('Website draft applied. Review and save before publishing.');
   }
 
   const goToStep = useCallback((key, { replace = false } = {}) => {
@@ -2743,6 +2775,35 @@ export default function ContractorPublicPresencePage() {
             <section className="space-y-4" data-testid="marketing-website-builder-tab">
               <div><h2 className="text-2xl font-black text-slate-950">Content</h2><p className="mt-1 text-sm text-slate-600">Build your website pages and content that turns visitors into customers.</p></div>
               {!canCustomizeWebsite ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{websiteBuilderGate.reason || 'Upgrade to customize website content.'}</div> : null}
+              <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm" data-testid="ai-website-studio">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-3xl">
+                    <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">Project Assistant Website Studio</div>
+                    <h3 className="mt-1 text-xl font-black text-slate-950">Create a coordinated website draft from your real business information</h3>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">Project Assistant uses your services, service area, public trust information, approved reviews, and public portfolio records. It prepares editable copy and a visual direction; nothing is saved or published until you review it.</p>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!canCustomizeWebsite || aiBusyTarget === 'website-copy-set'}
+                    onClick={() => requestAiSuggestion('generate_website_copy_set', 'website-copy-set', [heroContent.headline, heroContent.subheadline, heroContent.cta_text].filter(Boolean).join('\n'))}
+                    className="min-h-11 shrink-0 rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600"
+                    data-testid="ai-generate-website-draft"
+                  >
+                    {aiBusyTarget === 'website-copy-set' ? 'Preparing draft...' : 'Generate Website Draft'}
+                  </button>
+                </div>
+                <div className="mt-4 grid gap-3 md:grid-cols-3" data-testid="ai-website-source-rules">
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><div className="text-xs font-black text-emerald-900">Real work stays real</div><p className="mt-1 text-xs leading-5 text-emerald-800">Portfolio photos and reviews must come from approved customer and project records.</p></div>
+                  <div className="rounded-xl border border-sky-200 bg-sky-50 p-3"><div className="text-xs font-black text-sky-900">AI visuals are illustrative</div><p className="mt-1 text-xs leading-5 text-sky-800">Generated image ideas are for decorative backgrounds and graphics—not examples of completed work.</p></div>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3"><div className="text-xs font-black text-amber-900">You approve every change</div><p className="mt-1 text-xs leading-5 text-amber-800">Review, edit, regenerate, or dismiss suggestions before saving or publishing.</p></div>
+                </div>
+                <AiSuggestionCard
+                  suggestion={aiSuggestions['website-copy-set']}
+                  onAccept={applyWebsiteCopySet}
+                  onRegenerate={() => requestAiSuggestion('generate_website_copy_set', 'website-copy-set', [heroContent.headline, heroContent.subheadline, heroContent.cta_text].filter(Boolean).join('\n'))}
+                  onDismiss={() => dismissAiSuggestion('website-copy-set')}
+                />
+              </div>
               <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="website-builder-design-tab"><div><h3 className="text-base font-black text-slate-950">Choose Website Style</h3><p className="mt-1 text-xs text-slate-500">Pick a style that matches your brand. You can customize it later.</p></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="content-style-cards">{DESIGN_STYLE_OPTIONS.map((template, index) => { const selected = (websiteData.template_key || 'starter') === template.key; const colors = [['#dbeafe', '#2563eb'], ['#fef3c7', '#92400e'], ['#111827', '#facc15'], ['#dcfce7', '#15803d']][index]; return <button key={template.key} type="button" aria-pressed={selected} disabled={!canCustomizeWebsite || websiteBusy} onClick={() => saveWebsiteSettings({ template_key: template.key })} className={`relative rounded-xl border p-3 text-left transition disabled:opacity-60 ${selected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-blue-200'}`} data-testid={`content-style-${template.key}`}>{selected ? <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-black text-white">✓</span> : null}<div className="text-sm font-black text-slate-950">{template.label}</div><div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white" aria-hidden="true"><div className="flex h-5 items-center gap-1 border-b border-slate-100 px-2"><span className="h-1.5 w-6 rounded" style={{ backgroundColor: colors[1] }} /><span className="ml-auto h-1 w-5 rounded bg-slate-200" /><span className="h-1 w-5 rounded bg-slate-200" /></div><div className="h-16 p-2" style={{ backgroundColor: colors[0] }}><div className="h-2 w-2/3 rounded" style={{ backgroundColor: colors[1] }} /><div className="mt-2 h-1.5 w-full rounded bg-white/80" /><div className="mt-1 h-1.5 w-3/4 rounded bg-white/80" /><div className="mt-2 h-3 w-10 rounded" style={{ backgroundColor: colors[1] }} /></div></div><p className="mt-2 text-xs leading-5 text-slate-600">{template.description}</p></button>; })}</div></div>
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="grid min-w-0 gap-4 lg:grid-cols-2">

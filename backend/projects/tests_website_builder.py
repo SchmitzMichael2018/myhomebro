@@ -367,7 +367,7 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.data["configured"])
-        self.assertIn("not configured", response.data["detail"])
+        self.assertIn("unavailable", response.data["detail"])
         self.assertNotIn("secret@example.com", str(response.data))
 
     def test_ai_assist_endpoint_accepts_online_presence_action_types(self):
@@ -391,6 +391,7 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
             "final_website_audit",
             "faq_generation",
             "local_business_schema",
+            "generate_website_copy_set",
         ]
         for action in actions:
             with self.subTest(action=action):

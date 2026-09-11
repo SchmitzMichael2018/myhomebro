@@ -459,6 +459,16 @@ async function mockMarketingPage(page, { pro = false, developmentOverride = fals
         action: body.action,
         configured: true,
         suggested_value: suggestions[body.action] || 'Premium remodeling, handled clearly',
+        draft: body.action === 'generate_website_copy_set' ? {
+          headline: 'A distinct Austin remodel, built around your home',
+          subheadline: 'Bright Build Co combines careful finish work with clear milestones and dependable communication.',
+          cta_text: 'Plan My Remodel',
+          about: 'Bright Build Co helps Austin homeowners plan and complete thoughtful remodeling projects with clear communication.',
+          visual_direction: 'Warm, detail-focused residential design using authentic completed-project photography.',
+          image_brief: 'Decorative architectural texture only; never present it as completed contractor work.',
+        } : {},
+        basis: body.action === 'generate_website_copy_set' ? ['Austin service area', 'Remodeling services', 'Public business profile'] : [],
+        warnings: body.action === 'generate_website_copy_set' ? ['Confirm every public claim before saving.'] : [],
         explanation: 'This keeps the copy specific and customer-facing.',
       }),
     });
@@ -1020,6 +1030,15 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await page.getByTestId('portfolio-project-editor').getByRole('button', { name: 'Close' }).click();
 
   await setupNav.getByRole('button', { name: /Design & Content/ }).click();
+  await expect(page.getByTestId('ai-website-studio')).toContainText('Real work stays real');
+  await page.getByTestId('ai-generate-website-draft').click();
+  await expect(page.getByTestId('ai-draft-website-copy-set')).toContainText('A distinct Austin remodel');
+  await expect(page.getByTestId('ai-suggestion-website-copy-set')).toContainText('Based on:');
+  await expect(page.getByTestId('ai-suggestion-website-copy-set')).toContainText('Confirm every public claim');
+  await page.getByTestId('ai-accept-website-copy-set').click();
+  await expect(page.getByTestId('website-builder-hero-headline')).toHaveValue('A distinct Austin remodel, built around your home');
+  await expect(page.getByTestId('website-builder-hero-subheadline')).toHaveValue(/clear milestones/);
+  await expect(page.getByTestId('website-builder-cta-text')).toHaveValue('Plan My Remodel');
   await page.getByTestId('ai-hero-headline').click();
   await expect(page.getByTestId('website-builder-hero-headline')).not.toHaveValue('Austin remodeling without project chaos');
   await page.getByTestId('ai-accept-hero-headline').click();
@@ -1050,6 +1069,28 @@ test('Marketing Project Assistant hooks show review-before-apply suggestions', a
   await expect(page.getByTestId('assistant-desktop-dock')).toBeVisible();
   await expect(page.getByTestId('assistant-desktop-dock')).toContainText('Project Assistant for Final Review');
   await expect(page.getByTestId('assistant-desktop-dock')).not.toContainText('agreement');
+});
+
+test('AI Website Studio stays responsive on desktop and mobile', async ({ page }) => {
+  await mockMarketingPage(page, { pro: true });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const startedAt = Date.now();
+  await page.goto('/app/marketing?tab=website', { waitUntil: 'domcontentloaded' });
+  await expect(page.getByTestId('ai-website-studio')).toBeVisible();
+  const desktopReadyMs = Date.now() - startedAt;
+  // Includes the first on-demand Vite transform in local test mode.
+  expect(desktopReadyMs).toBeLessThan(8000);
+
+  const generationStartedAt = Date.now();
+  await page.getByTestId('ai-generate-website-draft').click();
+  await expect(page.getByTestId('ai-draft-website-copy-set')).toBeVisible();
+  const draftReadyMs = Date.now() - generationStartedAt;
+  expect(draftReadyMs).toBeLessThan(2000);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByTestId('ai-generate-website-draft')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  console.log(`AI Website Studio performance: desktop ready ${desktopReadyMs}ms; mocked draft ${draftReadyMs}ms`);
 });
 
 test('Marketing registers isolated step context and synchronizes browser history', async ({ page }) => {
