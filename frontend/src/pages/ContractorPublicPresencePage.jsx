@@ -55,13 +55,13 @@ const LEGACY_STEP_ALIASES = {
 };
 
 const DESIGN_STYLE_OPTIONS = [
-  { key: 'general_contractor', label: 'General Contractor', description: 'Balanced services, trust, project work, and estimate requests.' },
-  { key: 'remodeler', label: 'Remodeler', description: 'Visual project storytelling with portfolio work near the top.' },
-  { key: 'handyman', label: 'Handyman', description: 'Fast service discovery and a simple request path.' },
-  { key: 'roofing', label: 'Roofing', description: 'Verification, service area, and inspection-focused calls to action.' },
-  { key: 'painting', label: 'Painting', description: 'Image-led layout suited to before-and-after work.' },
-  { key: 'mechanical_service', label: 'Electrical / Plumbing / HVAC', description: 'Structured service information and prominent contact options.' },
-  { key: 'premium_custom_builder', label: 'Premium Custom Builder', description: 'Editorial layout for detailed, high-consideration projects.' },
+  { key: 'general_contractor', label: 'General Contractor', description: 'Balanced services, trust, project work, and estimate requests.', mood: 'Capable & established', hero: 'Built right. Managed clearly.', palette: ['#0f172a', '#f59e0b', '#f8fafc'], layout: 'split' },
+  { key: 'remodeler', label: 'Remodeler', description: 'Visual project storytelling with portfolio work near the top.', mood: 'Warm & transformative', hero: 'Rooms that feel like home again.', palette: ['#292524', '#c08457', '#faf7f2'], layout: 'gallery' },
+  { key: 'handyman', label: 'Handyman', description: 'Fast service discovery and a simple request path.', mood: 'Friendly & responsive', hero: 'Your list. Handled.', palette: ['#164e63', '#22d3ee', '#ecfeff'], layout: 'cards' },
+  { key: 'roofing', label: 'Roofing', description: 'Verification, service area, and inspection-focused calls to action.', mood: 'Strong & reassuring', hero: 'Protection above everything.', palette: ['#172554', '#dc2626', '#eff6ff'], layout: 'angle' },
+  { key: 'painting', label: 'Painting', description: 'Image-led layout suited to before-and-after work.', mood: 'Fresh & visual', hero: 'Color changes everything.', palette: ['#312e81', '#f472b6', '#fdf4ff'], layout: 'gallery' },
+  { key: 'mechanical_service', label: 'Electrical / Plumbing / HVAC', description: 'Structured service information and prominent contact options.', mood: 'Precise & dependable', hero: 'Comfort restored. Fast.', palette: ['#0c4a6e', '#38bdf8', '#f0f9ff'], layout: 'cards' },
+  { key: 'premium_custom_builder', label: 'Premium Custom Builder', description: 'Editorial layout for detailed, high-consideration projects.', mood: 'Refined & architectural', hero: 'Crafted for the way you live.', palette: ['#1c1917', '#d6d3d1', '#fafaf9'], layout: 'editorial' },
 ];
 
 const WEBSITE_SECTION_LABELS = {
@@ -113,6 +113,31 @@ const BRAND_TEXT_STYLE_LABELS = {
   warm_serif: 'Friendly & Approachable',
   compact_sans: 'Premium & Refined',
 };
+
+function StarterDesignPreview({ template, businessName = 'Your Business' }) {
+  const [ink, accent, paper] = template.palette;
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-hidden="true">
+      <div className="flex h-7 items-center gap-1.5 px-3" style={{ backgroundColor: ink }}>
+        <span className="h-2 w-2 rounded-full bg-white/80" />
+        <span className="max-w-[90px] truncate text-[7px] font-black uppercase tracking-wider text-white">{businessName}</span>
+        <span className="ml-auto h-1 w-8 rounded bg-white/40" /><span className="h-1 w-5 rounded bg-white/25" />
+      </div>
+      <div className={`relative min-h-32 overflow-hidden p-4 ${template.layout === 'editorial' ? 'text-center' : ''}`} style={{ backgroundColor: paper }}>
+        <div className="absolute -right-8 -top-8 h-28 w-28 rotate-12 rounded-3xl opacity-20" style={{ backgroundColor: accent }} />
+        {template.layout === 'gallery' ? <div className="absolute right-3 top-3 grid w-24 grid-cols-2 gap-1"><span className="h-12 rounded-lg bg-slate-300" /><span className="h-8 rounded-lg bg-slate-400" /><span className="h-8 rounded-lg bg-slate-400" /><span className="h-12 -translate-y-4 rounded-lg" style={{ backgroundColor: accent }} /></div> : null}
+        {template.layout === 'cards' ? <div className="absolute bottom-3 right-3 flex gap-1"><span className="h-12 w-10 rounded-lg bg-white shadow" /><span className="h-12 w-10 rounded-lg bg-white shadow" /><span className="h-12 w-10 rounded-lg bg-white shadow" /></div> : null}
+        <div className={`${template.layout === 'gallery' || template.layout === 'cards' ? 'max-w-[58%]' : 'mx-auto max-w-[85%]'} relative`}>
+          <div className="text-[7px] font-black uppercase tracking-[0.18em]" style={{ color: accent }}>{template.mood}</div>
+          <div className="mt-2 text-base font-black leading-4" style={{ color: ink }}>{template.hero}</div>
+          <div className="mt-2 h-1.5 w-4/5 rounded bg-slate-300" /><div className="mt-1 h-1.5 w-3/5 rounded bg-slate-300" />
+          <div className="mt-3 inline-flex rounded-md px-3 py-1.5 text-[7px] font-black text-white" style={{ backgroundColor: accent }}>REQUEST A QUOTE</div>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-1 p-2"><span className="h-7 rounded bg-slate-100" /><span className="h-7 rounded bg-slate-100" /><span className="h-7 rounded bg-slate-100" /></div>
+    </div>
+  );
+}
 
 function normalizeList(data) {
   if (Array.isArray(data)) return data;
@@ -616,6 +641,13 @@ export default function ContractorPublicPresencePage() {
   const [websitePublishMessage, setWebsitePublishMessage] = useState('');
   const [aiBusyTarget, setAiBusyTarget] = useState('');
   const [aiSuggestions, setAiSuggestions] = useState({});
+  const [distinctiveBrief, setDistinctiveBrief] = useState({
+    ideal_work: '',
+    differentiator: '',
+    personality: 'Trustworthy and approachable',
+    primary_action: 'Request an Estimate',
+  });
+  const [showAllDesigns, setShowAllDesigns] = useState(false);
   const [activationSummary, setActivationSummary] = useState(null);
   const [dismissedContextualGuides, setDismissedContextualGuides] = useState(new Set());
   const [galleryBusy, setGalleryBusy] = useState(false);
@@ -1098,6 +1130,17 @@ export default function ContractorPublicPresencePage() {
     if (draft.about) setProfile((prev) => ({ ...prev, bio: draft.about }));
     dismissAiSuggestion('website-copy-set');
     toast.success('Website draft applied. Review and save before publishing.');
+  }
+
+  function generateDistinctiveWebsiteDraft() {
+    const brief = [
+      `Work we want more of: ${distinctiveBrief.ideal_work || profile.primary_trade || specialtiesText || 'not specified'}`,
+      `Why customers choose us: ${distinctiveBrief.differentiator || 'not specified'}`,
+      `Brand personality: ${distinctiveBrief.personality}`,
+      `Primary customer action: ${distinctiveBrief.primary_action}`,
+      'Create specific, non-generic website copy. Do not invent credentials, reviews, years in business, project results, or guarantees.',
+    ].join('\n');
+    requestAiSuggestion('generate_website_copy_set', 'website-copy-set', brief, { distinctiveness_brief: distinctiveBrief });
   }
 
   const goToStep = useCallback((key, { replace = false } = {}) => {
@@ -2823,22 +2866,14 @@ export default function ContractorPublicPresencePage() {
               <div><h2 className="text-2xl font-black text-slate-950">Content</h2><p className="mt-1 text-sm text-slate-600">Build your website pages and content that turns visitors into customers.</p></div>
               {!canCustomizeWebsite ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">{websiteBuilderGate.reason || 'Upgrade to customize website content.'}</div> : null}
               <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm" data-testid="ai-website-studio">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="max-w-3xl">
-                    <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">Project Assistant Website Studio</div>
-                    <h3 className="mt-1 text-xl font-black text-slate-950">Create a coordinated website draft from your real business information</h3>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">Project Assistant uses your services, service area, public trust information, approved reviews, and public portfolio records. It prepares editable copy and a visual direction; nothing is saved or published until you review it.</p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!canCustomizeWebsite || aiBusyTarget === 'website-copy-set'}
-                    onClick={() => requestAiSuggestion('generate_website_copy_set', 'website-copy-set', [heroContent.headline, heroContent.subheadline, heroContent.cta_text].filter(Boolean).join('\n'))}
-                    className="min-h-11 shrink-0 rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600"
-                    data-testid="ai-generate-website-draft"
-                  >
-                    {aiBusyTarget === 'website-copy-set' ? 'Preparing draft...' : 'Generate Website Draft'}
-                  </button>
+                <div className="max-w-3xl"><div className="text-xs font-black uppercase tracking-[0.18em] text-blue-700">Project Assistant Website Studio</div><h3 className="mt-1 text-xl font-black text-slate-950">Make my website distinctive</h3><p className="mt-2 text-sm leading-6 text-slate-600">Answer four short prompts. AI combines your answers with verified business details, approved reviews, and real projects to create a coordinated draft that sounds like your company—not a generic contractor template.</p></div>
+                <div className="mt-5 grid gap-3 md:grid-cols-2" data-testid="distinctive-website-brief">
+                  <label className="space-y-1"><span className="text-xs font-black text-slate-800">What work do you want more of?</span><input value={distinctiveBrief.ideal_work} onChange={(event) => setDistinctiveBrief((prev) => ({ ...prev, ideal_work: event.target.value }))} placeholder="Example: high-end bathroom remodels" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" data-testid="distinctive-ideal-work" /></label>
+                  <label className="space-y-1"><span className="text-xs font-black text-slate-800">Why do customers choose you?</span><input value={distinctiveBrief.differentiator} onChange={(event) => setDistinctiveBrief((prev) => ({ ...prev, differentiator: event.target.value }))} placeholder="Example: clean job sites and weekly updates" className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" data-testid="distinctive-differentiator" /></label>
+                  <label className="space-y-1"><span className="text-xs font-black text-slate-800">How should the site feel?</span><select value={distinctiveBrief.personality} onChange={(event) => setDistinctiveBrief((prev) => ({ ...prev, personality: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" data-testid="distinctive-personality"><option>Trustworthy and approachable</option><option>Premium and refined</option><option>Bold and hardworking</option><option>Warm and family focused</option><option>Clean and modern</option></select></label>
+                  <label className="space-y-1"><span className="text-xs font-black text-slate-800">What should visitors do first?</span><select value={distinctiveBrief.primary_action} onChange={(event) => setDistinctiveBrief((prev) => ({ ...prev, primary_action: event.target.value }))} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm" data-testid="distinctive-primary-action"><option>Request an Estimate</option><option>Start a Project Request</option><option>Call Contractor</option><option>Send a Message</option><option>View Completed Work</option></select></label>
                 </div>
+                <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center"><button type="button" disabled={!canCustomizeWebsite || aiBusyTarget === 'website-copy-set'} onClick={generateDistinctiveWebsiteDraft} className="min-h-11 rounded-xl bg-blue-600 px-5 py-3 text-sm font-black text-white shadow-sm hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-600" data-testid="ai-generate-website-draft">{aiBusyTarget === 'website-copy-set' ? 'Building your draft...' : 'Build My Distinctive Draft'}</button><p className="text-xs leading-5 text-slate-500">You’ll review the words and visual direction before anything is saved.</p></div>
                 <div className="mt-4 grid gap-3 md:grid-cols-3" data-testid="ai-website-source-rules">
                   <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3"><div className="text-xs font-black text-emerald-900">Real work stays real</div><p className="mt-1 text-xs leading-5 text-emerald-800">Portfolio photos and reviews must come from approved customer and project records.</p></div>
                   <div className="rounded-xl border border-sky-200 bg-sky-50 p-3"><div className="text-xs font-black text-sky-900">AI visuals are illustrative</div><p className="mt-1 text-xs leading-5 text-sky-800">Generated image ideas are for decorative backgrounds and graphics—not examples of completed work.</p></div>
@@ -2851,7 +2886,7 @@ export default function ContractorPublicPresencePage() {
                   onDismiss={() => dismissAiSuggestion('website-copy-set')}
                 />
               </div>
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="website-builder-design-tab"><div><h3 className="text-base font-black text-slate-950">Choose Website Style</h3><p className="mt-1 text-xs text-slate-500">Pick a style that matches your brand. You can customize it later.</p></div><div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="content-style-cards">{DESIGN_STYLE_OPTIONS.map((template, index) => { const selected = (websiteData.template_key || 'starter') === template.key; const colors = [['#dbeafe', '#2563eb'], ['#fef3c7', '#92400e'], ['#111827', '#facc15'], ['#dcfce7', '#15803d']][index % 4]; return <button key={template.key} type="button" aria-pressed={selected} disabled={!canCustomizeWebsite || websiteBusy} onClick={() => saveWebsiteSettings({ template_key: template.key })} className={`relative rounded-xl border p-3 text-left transition disabled:opacity-60 ${selected ? 'border-blue-500 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 bg-white hover:border-blue-200'}`} data-testid={`content-style-${template.key}`}>{selected ? <span className="absolute right-2 top-2 flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-[10px] font-black text-white">✓</span> : null}<div className="text-sm font-black text-slate-950">{template.label}</div><div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white" aria-hidden="true"><div className="flex h-5 items-center gap-1 border-b border-slate-100 px-2"><span className="h-1.5 w-6 rounded" style={{ backgroundColor: colors[1] }} /><span className="ml-auto h-1 w-5 rounded bg-slate-200" /><span className="h-1 w-5 rounded bg-slate-200" /></div><div className="h-16 p-2" style={{ backgroundColor: colors[0] }}><div className="h-2 w-2/3 rounded" style={{ backgroundColor: colors[1] }} /><div className="mt-2 h-1.5 w-full rounded bg-white/80" /><div className="mt-1 h-1.5 w-3/4 rounded bg-white/80" /><div className="mt-2 h-3 w-10 rounded" style={{ backgroundColor: colors[1] }} /></div></div><p className="mt-2 text-xs leading-5 text-slate-600">{template.description}</p></button>; })}</div></div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="website-builder-design-tab"><div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-base font-black text-slate-950">Choose a strong starting point</h3><p className="mt-1 text-xs text-slate-500">These are real layout previews—not just color swatches. Your business details, photos, and voice make the selected design yours.</p></div><button type="button" onClick={() => setShowAllDesigns((value) => !value)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-700" data-testid="toggle-all-designs">{showAllDesigns ? 'Show fewer designs' : 'See all 7 designs'}</button></div><div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="content-style-cards">{DESIGN_STYLE_OPTIONS.slice(0, showAllDesigns ? DESIGN_STYLE_OPTIONS.length : 3).map((template) => { const selected = (websiteData.template_key || 'starter') === template.key; return <button key={template.key} type="button" aria-pressed={selected} disabled={!canCustomizeWebsite || websiteBusy} onClick={() => saveWebsiteSettings({ template_key: template.key })} className={`relative rounded-2xl border p-3 text-left transition disabled:opacity-60 ${selected ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-slate-200 bg-white hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md'}`} data-testid={`content-style-${template.key}`}>{selected ? <span className="absolute right-5 top-5 z-10 rounded-full bg-blue-600 px-2 py-1 text-[10px] font-black text-white shadow">Selected</span> : null}<StarterDesignPreview template={template} businessName={websiteBusinessName} /><div className="mt-3 flex items-start justify-between gap-2"><div><div className="text-sm font-black text-slate-950">{template.label}</div><div className="mt-0.5 text-[10px] font-black uppercase tracking-wide" style={{ color: template.palette[1] }}>{template.mood}</div></div></div><p className="mt-2 text-xs leading-5 text-slate-600">{template.description}</p><span className="mt-3 inline-flex text-xs font-black text-blue-700">Use this direction →</span></button>; })}</div></div>
               <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
                 <div className="grid min-w-0 gap-4 lg:grid-cols-2">
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" data-testid="content-page-builder"><h3 className="text-base font-black text-slate-950">Build your website pages</h3><p className="mt-1 text-xs text-slate-500">These pages appear in your website navigation and public experience.</p><div className="mt-4 divide-y divide-slate-200 rounded-xl border border-slate-200">{websitePages.map((page) => <div key={page.id} className="flex items-center gap-3 p-3" data-testid={`content-page-row-${page.id}`}><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-xs font-black text-blue-700">{String(page.title || page.page_type || 'P').slice(0, 1).toUpperCase()}</span><div className="min-w-0 flex-1"><div className="truncate text-sm font-black text-slate-900">{page.title || page.page_type}</div><span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-black ${page.is_published ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{page.is_published ? 'Published' : 'Draft'}</span></div><button type="button" onClick={() => setSelectedWebsitePageId(page.id)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">Edit</button><a href={websiteFullPreviewUrl('desktop')} target="_blank" rel="noreferrer" aria-label={`Preview ${page.title || page.page_type}`} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">View</a></div>)}</div></div>

@@ -537,6 +537,13 @@ test('contractor can manage public presence and see qr data', async ({ page }) =
   await page.getByRole('button', { name: 'Design & Content' }).click();
   await expect(page.getByRole('heading', { name: 'Design & Content' })).toBeVisible();
   await expect(page.getByTestId('marketing-website-builder-tab')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Make my website distinctive' })).toBeVisible();
+  await expect(page.getByTestId('distinctive-website-brief')).toBeVisible();
+  await expect(page.getByTestId('content-style-general_contractor')).toContainText('Built right. Managed clearly.');
+  await expect(page.getByTestId('content-style-remodeler')).toContainText('Rooms that feel like home again.');
+  await expect(page.getByTestId('content-style-premium_custom_builder')).toHaveCount(0);
+  await page.getByTestId('toggle-all-designs').click();
+  await expect(page.getByTestId('content-style-premium_custom_builder')).toContainText('Crafted for the way you live.');
 
   await page.getByRole('button', { name: 'SEO & Visibility' }).click();
   await expect(page.getByRole('heading', { name: 'SEO & Visibility' })).toBeVisible();
