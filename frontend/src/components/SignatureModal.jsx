@@ -60,6 +60,12 @@ function dataUrlLooksValidPng(dataUrl) {
   return s.startsWith("data:image/png;base64,") || s.startsWith("data:image/");
 }
 
+export function signatureReviewMessage(agreementReviewed) {
+  return agreementReviewed
+    ? "Agreement reviewed. Complete your signature and consent below."
+    : "You must review the agreement before signing.";
+}
+
 export default function SignatureModal({
   isOpen,
   onClose,
@@ -449,8 +455,12 @@ export default function SignatureModal({
                 </div>
               </div>
 
-              <div className="rounded-lg border border-slate-200/10 bg-slate-900/60 px-3 py-2 text-[11px] text-slate-200">
-                You must review the agreement before signing.
+              <div className={`rounded-lg border px-3 py-2 text-[11px] ${
+                agreementReviewed
+                  ? "border-emerald-300/30 bg-emerald-400/10 text-emerald-100"
+                  : "border-amber-300/30 bg-amber-400/10 text-amber-100"
+              }`}>
+                {signatureReviewMessage(agreementReviewed)}
               </div>
 
               <div>

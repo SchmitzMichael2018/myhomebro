@@ -52,6 +52,7 @@ def prepare_accepted_change_amendment(amendment: AmendmentRequest, *, actor=None
         raise ValueError("Add a positive price adjustment before preparing this added-work milestone.")
 
     current_amendment_number = int(getattr(agreement, "amendment_number", 0) or 0)
+    prior_executed_total = Decimal(str(getattr(agreement, "total_cost", 0) or 0)).quantize(Decimal("0.01"))
     mark_agreement_amended(agreement, actor=actor, reason=f"accepted-change-request-{amendment.id}")
     agreement.amendment_number = current_amendment_number + 1
     agreement.status = "draft"
@@ -105,6 +106,8 @@ def prepare_accepted_change_amendment(amendment: AmendmentRequest, *, actor=None
         "milestone_activation": "awaiting_additional_funding",
         "confirmed_milestone_order": insert_order,
         "confirmed_milestone_date": proposed_date.isoformat() if proposed_date else None,
+        "prior_executed_total": str(prior_executed_total),
+        "proposed_total": str(agreement.total_cost),
     })
     amendment.requested_changes = requested_changes
     amendment.save(update_fields=["requested_changes", "updated_at"])

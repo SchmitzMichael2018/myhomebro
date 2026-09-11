@@ -3188,6 +3188,22 @@ def _agreements(email: str, request=None) -> list[dict]:
         ).filter(
             Q(origin_capture__isnull=True) | Q(customer_visible=True)
         ).order_by("-end_date", "-id").first()
+        active_amendment = _active_amendment_request(agreement)
+        amendment_changes = dict(getattr(active_amendment, "requested_changes", None) or {})
+        amendment_number = int(getattr(agreement, "amendment_number", 0) or 0)
+        awaiting_amendment_signature = bool(
+            amendment_number > 0
+            and getattr(agreement, "signed_by_contractor", False)
+            and not getattr(agreement, "signed_by_homeowner", False)
+        )
+        proposed_total = _safe_text(getattr(agreement, "total_cost", ""))
+        executed_total = _safe_text(amendment_changes.get("prior_executed_total"))
+        if awaiting_amendment_signature and not executed_total:
+            try:
+                change_amount = Decimal(str(amendment_changes.get("proposed_value_change") or "0"))
+                executed_total = str(Decimal(str(getattr(agreement, "total_cost", 0) or 0)) - change_amount)
+            except Exception:
+                executed_total = ""
         rows.append(
             {
                 "id": agreement.id,
@@ -3212,6 +3228,10 @@ def _agreements(email: str, request=None) -> list[dict]:
                 "payment_mode": _safe_text(getattr(agreement, "payment_mode", "")),
                 "payment_mode_label": _safe_text(getattr(agreement, "payment_mode", "")).replace("_", " ").title(),
                 "total_cost": _safe_text(getattr(agreement, "total_cost", "")),
+                "amendment_number": amendment_number,
+                "awaiting_amendment_signature": awaiting_amendment_signature,
+                "executed_total": executed_total,
+                "proposed_total": proposed_total,
                 "escrow_funded": bool(getattr(agreement, "escrow_funded", False)),
                 "escrow_funded_amount": _safe_text(getattr(agreement, "escrow_funded_amount", "")),
                 "description": _safe_text(getattr(agreement, "description", "")),
@@ -4348,6 +4368,8 @@ def _ensure_portal_workflow_notifications(email: str) -> None:
         project = getattr(agreement, "project", None)
         project_title = _agreement_title(agreement)
         if getattr(agreement, "signed_by_contractor", False) and not getattr(agreement, "signed_by_homeowner", False):
+            amendment_number = int(getattr(agreement, "amendment_number", 0) or 0)
+            is_amendment = amendment_number > 0
             create_smart_notification(
                 event_type=SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE,
                 recipient_email=normalized_email,
@@ -4361,6 +4383,11 @@ def _ensure_portal_workflow_notifications(email: str) -> None:
                     "project_title": project_title,
                     "dedupe_key": f"agreement_needs_signature:{agreement.id}",
                 },
+                title_override=f"Amendment {amendment_number} needs signature" if is_amendment else "",
+                message_override=(
+                    f"Amendment {amendment_number} for {project_title} is waiting for your signature."
+                    if is_amendment else ""
+                ),
             )
         if (
             getattr(agreement, "signed_by_contractor", False)

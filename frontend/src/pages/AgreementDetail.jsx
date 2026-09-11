@@ -1786,6 +1786,7 @@ export default function AgreementDetail({
     requested_change: '',
     reason: '',
     proposed_value_change: '',
+    milestone_title: '',
     placement_before_milestone_id: '',
     proposed_milestone_date: '',
     attachments: [],
@@ -1849,6 +1850,7 @@ export default function AgreementDetail({
       requested_change: '',
       reason: '',
       proposed_value_change: '',
+      milestone_title: '',
       placement_before_milestone_id: String(placementMilestone?.id || 'end'),
       proposed_milestone_date: String(placementMilestone?.completion_date || placementMilestone?.due_date || placementMilestone?.start_date || '').slice(0, 10),
       attachments: [],
@@ -1894,14 +1896,15 @@ export default function AgreementDetail({
         ...(amendmentSuggestion.milestone_draft || current.milestone_draft || {}),
         placement_before_milestone_id: current.placement_before_milestone_id === 'end' ? null : Number(current.placement_before_milestone_id),
       },
+      milestone_title: amendmentSuggestion.milestone_draft?.title || current.milestone_title,
     }));
     setAmendmentSuggestion(null);
   };
 
   const submitContractorAmendmentRequest = async (event) => {
     event.preventDefault();
-    if (!amendmentRequestForm.requested_change.trim() || !amendmentRequestForm.reason.trim() || !amendmentRequestForm.proposed_milestone_date) {
-      toast.error('Describe the change, its cause, and the proposed milestone date.');
+    if (!amendmentRequestForm.milestone_title.trim() || !amendmentRequestForm.requested_change.trim() || !amendmentRequestForm.reason.trim() || !amendmentRequestForm.proposed_milestone_date) {
+      toast.error('Add a milestone title, describe the change and its cause, and choose the proposed date.');
       return;
     }
     try {
@@ -1920,13 +1923,17 @@ export default function AgreementDetail({
         : `New Milestone ${proposedOrder}, after the current final milestone`;
       const milestoneDraft = {
         ...(amendmentRequestForm.milestone_draft || amendmentSuggestion?.milestone_draft || {}),
-        title: amendmentRequestForm.milestone_draft?.title || amendmentSuggestion?.milestone_draft?.title || 'Additional Work',
+        title: amendmentRequestForm.milestone_title.trim(),
         scope: amendmentRequestForm.milestone_draft?.scope || amendmentSuggestion?.milestone_draft?.scope || amendmentRequestForm.requested_change,
         completion_criteria: amendmentRequestForm.milestone_draft?.completion_criteria || amendmentSuggestion?.milestone_draft?.completion_criteria || 'Changed work is complete and ready for customer review.',
         placement_before_milestone_id: placementTarget?.id || null,
         proposed_order: proposedOrder,
         recommended_placement: placementLabel,
         proposed_milestone_date: amendmentRequestForm.proposed_milestone_date,
+        schedule_confirmation: `Proposed milestone date: ${amendmentRequestForm.proposed_milestone_date}.`,
+        price_confirmation: amendmentRequestForm.proposed_value_change !== ''
+          ? `Proposed price adjustment: $${Number(amendmentRequestForm.proposed_value_change || 0).toFixed(2)}.`
+          : 'Pricing is still being determined.',
       };
       form.append('milestone_draft', JSON.stringify(milestoneDraft));
       amendmentRequestForm.attachments.forEach((file) => form.append('attachments', file));
@@ -6359,6 +6366,21 @@ export default function AgreementDetail({
               </select>
             </label>
             <label className="mt-4 block text-sm font-semibold">
+              Proposed milestone title
+              <input
+                data-testid="contractor-amendment-milestone-title"
+                type="text"
+                required
+                value={amendmentRequestForm.milestone_title}
+                onChange={(event) => setAmendmentRequestForm((current) => ({ ...current, milestone_title: event.target.value }))}
+                placeholder="Example: Strike Plate & Latch Adjustment"
+                className="mt-2 w-full rounded-xl border border-white/15 bg-[#03142e] px-3 py-2 text-white placeholder:text-sky-100/40"
+              />
+              <span className="mt-1 block text-xs font-normal text-sky-100/55">
+                This name will appear as the added milestone in the amendment.
+              </span>
+            </label>
+            <label className="mt-4 block text-sm font-semibold">
               What work will be added, changed, or removed?
               <textarea
                 data-testid="contractor-amendment-request-change"
@@ -6396,7 +6418,7 @@ export default function AgreementDetail({
                   placement_before_milestone_id: event.target.value,
                   proposed_milestone_date: (() => {
                     const target = milestones.find((row) => String(row.id) === String(event.target.value));
-                    return String(target?.completion_date || target?.due_date || target?.start_date || current.proposed_milestone_date || '').slice(0, 10);
+                    return String(current.proposed_milestone_date || target?.completion_date || target?.due_date || target?.start_date || '').slice(0, 10);
                   })(),
                   milestone_draft: current.milestone_draft ? {
                     ...current.milestone_draft,

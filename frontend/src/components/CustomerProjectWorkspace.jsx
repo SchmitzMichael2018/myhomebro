@@ -1659,8 +1659,13 @@ export default function CustomerProjectWorkspace({
                   </div>
                   <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
                     <div>
-                      <div className="text-xs uppercase tracking-wide text-slate-500">Project value</div>
-                      <div className="mt-1 font-semibold text-slate-100">{project.total_cost || row.agreement?.total_cost ? money(project.total_cost || row.agreement?.total_cost) : "Pending"}</div>
+                      <div className="text-xs uppercase tracking-wide text-slate-500">
+                        {row.agreement?.awaiting_amendment_signature ? `Amendment ${row.agreement.amendment_number} proposed total` : "Project value"}
+                      </div>
+                      <div className="mt-1 font-semibold text-slate-100">{project.total_cost || row.agreement?.proposed_total || row.agreement?.total_cost ? money(project.total_cost || row.agreement?.proposed_total || row.agreement?.total_cost) : "Pending"}</div>
+                      {row.agreement?.awaiting_amendment_signature && row.agreement?.executed_total ? (
+                        <div className="mt-1 text-xs text-slate-400">Current signed agreement: {money(row.agreement.executed_total)}</div>
+                      ) : null}
                     </div>
                     <div>
                       <div className="text-xs uppercase tracking-wide text-slate-500">Remaining in escrow</div>

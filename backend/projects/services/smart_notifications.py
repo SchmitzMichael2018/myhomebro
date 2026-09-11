@@ -199,6 +199,8 @@ def create_smart_notification(
     draw_request=None,
     customer_request=None,
     property_profile=None,
+    title_override: str = "",
+    message_override: str = "",
 ) -> SmartNotification | None:
     raw_email = str(recipient_email or "").strip().lower()
     normalized_email = normalize_valid_email(raw_email)
@@ -240,6 +242,15 @@ def create_smart_notification(
             .first()
         )
         if existing:
+            updated_fields = []
+            if title_override.strip() and existing.title != title_override.strip():
+                existing.title = title_override.strip()
+                updated_fields.append("title")
+            if message_override.strip() and existing.message != message_override.strip():
+                existing.message = message_override.strip()
+                updated_fields.append("message")
+            if updated_fields:
+                existing.save(update_fields=updated_fields)
             NotificationLog.objects.create(
                 smart_notification=existing,
                 notification_rule=rule,
@@ -252,8 +263,8 @@ def create_smart_notification(
             )
             return existing
 
-    title = _render(rule.title_template, context)
-    message = _render(rule.message_template, context)
+    title = title_override.strip() or _render(rule.title_template, context)
+    message = message_override.strip() or _render(rule.message_template, context)
     notification = SmartNotification.objects.create(
         event_type=event_type,
         channel=channel,

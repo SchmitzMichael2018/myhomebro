@@ -27202,6 +27202,9 @@ class CustomerPortalAccessTests(TestCase):
         self.assertEqual(self.agreement.escrow_funded_amount, Decimal("5000.00"))
         self.assertEqual(amendment_request.requested_changes["applied_milestone_id"], added.id)
         self.assertEqual(amendment_request.requested_changes["confirmed_milestone_order"], 1)
+        self.assertEqual(amendment_request.requested_changes["confirmed_milestone_date"], (timezone.localdate() + timedelta(days=3)).isoformat())
+        self.assertEqual(amendment_request.requested_changes["prior_executed_total"], "5000.00")
+        self.assertEqual(amendment_request.requested_changes["proposed_total"], "5700.00")
 
         repeat = contractor_client.post(f"/api/projects/amendment-requests/{amendment_request.id}/apply/")
         self.assertEqual(repeat.status_code, 200, repeat.data)
@@ -30294,6 +30297,7 @@ class CustomerPortalAccessTests(TestCase):
             project_class=AgreementProjectClass.RESIDENTIAL,
             total_cost=Decimal("3200.00"),
             description="Needs customer signature",
+            amendment_number=1,
             signed_by_contractor=True,
             signed_by_homeowner=False,
         )
@@ -30334,6 +30338,13 @@ class CustomerPortalAccessTests(TestCase):
             ).count(),
             1,
         )
+        amendment_notification = SmartNotification.objects.get(
+            event_type=SmartNotificationEvent.AGREEMENT_NEEDS_SIGNATURE,
+            agreement=unsigned_agreement,
+            recipient_email=self.customer_email,
+        )
+        self.assertEqual(amendment_notification.title, "Amendment 1 needs signature")
+        self.assertIn("Amendment 1 for Bathroom Repair", amendment_notification.message)
         self.assertEqual(
             SmartNotification.objects.filter(
                 event_type=SmartNotificationEvent.MILESTONE_NEEDS_APPROVAL,
