@@ -558,32 +558,58 @@ function inferWetBarProjectSetup(sourceText = "") {
   };
 }
 
-function inferStep1ProjectClassificationConsistency({
+export function inferStep1ProjectClassificationConsistency({
   sourceText = "",
   scopeText = "",
   suggestedProjectType = "",
   suggestedProjectSubtype = "",
   suggestedProjectTitle = "",
 }) {
-  const combinedText = [scopeText, sourceText, suggestedProjectType, suggestedProjectSubtype, suggestedProjectTitle]
+  const evidenceText = [scopeText, sourceText]
+    .filter(Boolean)
+    .join(" ");
+  const combinedText = [evidenceText, suggestedProjectType, suggestedProjectSubtype, suggestedProjectTitle]
     .filter(Boolean)
     .join(" ");
   const combined = normalizeAiText(combinedText);
   if (!combined) return null;
 
-  const mediaRoomSetup = inferMediaRoomProjectSetup(combinedText);
+  // Treat the scope and description as evidence. Suggested classification fields
+  // must not validate themselves (for example, a hallucinated "Garage Doors"
+  // suggestion on a kitchen-faucet request).
+  const classificationEvidence = evidenceText || combinedText;
+
+  const faucetInstallIntent =
+    /\b(faucet|tap)\b/i.test(classificationEvidence) &&
+    /\b(install|installation|replace|replacement)\b/i.test(classificationEvidence);
+  if (faucetInstallIntent) {
+    return {
+      project_type: "Plumbing",
+      project_subtype: "Fixture Installation",
+      project_title: /\bkitchen\b/i.test(classificationEvidence)
+        ? "Kitchen Faucet Replacement"
+        : "Faucet Replacement",
+      description:
+        "Remove the existing faucet, inspect accessible shutoffs and supply connections, install the replacement faucet, test operation and accessible connections for leaks, and clean the work area.",
+      reason: "The requested work is a limited plumbing-fixture replacement, not a room remodel.",
+      confidence: "high",
+      confidence_label: "High confidence",
+    };
+  }
+
+  const mediaRoomSetup = inferMediaRoomProjectSetup(classificationEvidence);
   if (mediaRoomSetup) return mediaRoomSetup;
 
-  const outdoorKitchenSetup = inferOutdoorKitchenProjectSetup(combinedText);
+  const outdoorKitchenSetup = inferOutdoorKitchenProjectSetup(classificationEvidence);
   if (outdoorKitchenSetup) return outdoorKitchenSetup;
 
-  const junkRemovalSetup = inferJunkRemovalProjectSetup(combinedText);
+  const junkRemovalSetup = inferJunkRemovalProjectSetup(classificationEvidence);
   if (junkRemovalSetup) return junkRemovalSetup;
 
-  const basementSetup = inferBasementProjectSetup(combinedText);
+  const basementSetup = inferBasementProjectSetup(classificationEvidence);
   if (basementSetup) return basementSetup;
 
-  const garageDoorSetup = inferGarageDoorProjectSetup(combinedText);
+  const garageDoorSetup = inferGarageDoorProjectSetup(classificationEvidence);
   if (garageDoorSetup) return garageDoorSetup;
 
   const windowRepairSignals = countMatchingPatterns(combinedText, [
@@ -1340,6 +1366,17 @@ const STEP1_LOCAL_FALLBACK_RULES = [
       "Prepare the substrate, install tile to the specified areas, complete grout and finish details, and clean the work area after installation.",
   },
   {
+    patterns: [
+      /\b(?:install|replace)\s+(?:an?\s+|the\s+|existing\s+|old\s+|new\s+)*(?:kitchen\s+|bathroom\s+)?faucet\b/i,
+      /\bfaucet\s+(?:install|installation|replace|replacement)\b/i,
+    ],
+    project_type: "Plumbing",
+    project_subtype: "Fixture Installation",
+    project_title: "Faucet Replacement",
+    scope:
+      "Remove the existing faucet, inspect accessible shutoffs and supply connections, install the replacement faucet, test hot and cold water and accessible connections for leaks, and clean the work area. Contractor will confirm any defective shutoff valves, supply lines, or plumbing changes before performing extra work.",
+  },
+  {
     patterns: [/\bfix\s+leaking\s+faucet\b/i, /\bfaucet\s+repair\b/i, /\bleaking\s+faucet\b/i],
     project_type: "Plumbing",
     project_subtype: "Faucet Repair",
@@ -1600,7 +1637,7 @@ function inferStartMode({
   return "manual";
 }
 
-function buildDeterministicStep1Setup(sourceText = "") {
+export function buildDeterministicStep1Setup(sourceText = "") {
   const cleaned = safeTrim(sourceText);
   const matchedRule = STEP1_LOCAL_FALLBACK_RULES.find((rule) =>
     rule.patterns.some((pattern) => pattern.test(cleaned))
@@ -4863,17 +4900,16 @@ export default function Step1Details({
     });
     const hasExplicitAiDraftClassification =
       Boolean(rawProjectTitle) && Boolean(rawProjectType) && Boolean(rawProjectSubtype);
+    const evidenceConsistencySetup = inferStep1ProjectClassificationConsistency({
+      sourceText,
+      scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
+      suggestedProjectType: rawProjectType,
+      suggestedProjectSubtype: rawProjectSubtype,
+      suggestedProjectTitle: rawProjectTitle,
+    });
     const consistencySetup =
-      hasExplicitAiDraftClassification
-        ? null
-        : normalizedBackendClassification ||
-          inferStep1ProjectClassificationConsistency({
-            sourceText,
-            scopeText: refinedDescription || aiData?.scope_of_work || dLocal?.description || "",
-            suggestedProjectType: "",
-            suggestedProjectSubtype: "",
-            suggestedProjectTitle: "",
-          });
+      evidenceConsistencySetup ||
+      (hasExplicitAiDraftClassification ? null : normalizedBackendClassification);
     const dominantCategory = consistencySetup
       ? {
           category: consistencySetup.project_type,
@@ -4934,8 +4970,8 @@ export default function Step1Details({
     const generatedType =
       normalizeStep1FieldValue(
         (preserveManualClassification ? safeTrim(dLocal?.project_type) : "") ||
-        rawProjectType ||
         consistencySetup?.project_type ||
+        rawProjectType ||
         optionCanonicalValue(resolvedType) ||
           dominantCategory.category ||
           buildGeneratedProjectTitle(sourceText).split(/\s+/).slice(0, 2).join(" ") ||
@@ -4945,8 +4981,8 @@ export default function Step1Details({
     const generatedSubtype =
       normalizeStep1FieldValue(
         (preserveManualClassification ? safeTrim(dLocal?.project_subtype) : "") ||
-        rawProjectSubtype ||
         consistencySetup?.project_subtype ||
+        rawProjectSubtype ||
         optionCanonicalValue(matchedSubtype) ||
         dominantCategory.subtype ||
           buildGeneratedProjectTitle(sourceText)
@@ -4954,8 +4990,8 @@ export default function Step1Details({
 
     const generatedTitle =
       normalizeStep1FieldValue(
-        rawProjectTitle ||
         consistencySetup?.project_title ||
+        rawProjectTitle ||
         buildProjectFriendlyTitle({
           subtype: generatedSubtype,
           category: generatedType,

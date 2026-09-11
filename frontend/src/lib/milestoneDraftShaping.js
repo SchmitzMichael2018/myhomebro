@@ -252,6 +252,9 @@ function projectSpecificFallbackRows({ projectType = "", projectSubtype = "", de
   const hasPainting = /\bpaint|painting\b/.test(projectText);
   const hasTile = /\btile\b/.test(projectText);
   const hasPlumbing = /\bplumb|faucet\b/.test(projectText);
+  const hasFixtureInstallation =
+    /\b(faucet|tap)\b/.test(projectText) &&
+    /\b(install|installation|replace|replacement)\b/.test(projectText);
   const hasFence = /\bfence|fencing\b/.test(projectText);
   const hasDrywall = /\bdrywall\b/.test(projectText);
   const hasSiding = /\bsiding\b/.test(projectText);
@@ -354,6 +357,35 @@ function projectSpecificFallbackRows({ projectType = "", projectSubtype = "", de
           "Complete touch-ups and detail work.",
           "Address edges, trim, and finish transitions.",
           "Cleanup the space for handoff."
+        ),
+      },
+    ];
+  }
+
+  if (hasFixtureInstallation) {
+    return [
+      {
+        title: "Inspection & Removal",
+        description: bulletDescription(
+          "Confirm the accessible shutoff valves and supply connections.",
+          "Protect the work area and remove the existing faucet.",
+          "Identify any connection defects that require separate approval."
+        ),
+      },
+      {
+        title: "Faucet Installation",
+        description: bulletDescription(
+          "Install and securely mount the replacement faucet.",
+          "Reconnect the existing accessible supply lines.",
+          "Restore hot and cold water service."
+        ),
+      },
+      {
+        title: "Leak Test, Cleanup & Walkthrough",
+        description: bulletDescription(
+          "Test hot and cold water and verify proper faucet operation.",
+          "Check accessible connections for visible leaks.",
+          "Clean the work area and review the completed installation with the customer."
         ),
       },
     ];
