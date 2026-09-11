@@ -1021,6 +1021,11 @@ export default function ContractorPublicPresencePage() {
     }
     try {
       setAiBusyTarget(target);
+      setAiSuggestions((prev) => {
+        const next = { ...prev };
+        delete next[target];
+        return next;
+      });
       const { data } = await api.post('/projects/contractor/website/ai-assist/', {
         action,
         current_value: currentValue,

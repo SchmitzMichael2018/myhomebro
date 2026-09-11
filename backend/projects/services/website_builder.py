@@ -505,9 +505,10 @@ def _normalize_website_ai_result(action: str, value: Any) -> dict[str, Any]:
         if _safe_text(draft.get(key))
     }
     suggestions = [_safe_text(item)[:300] for item in _safe_list(data.get("suggestions")) if _safe_text(item)][:5]
-    suggested_value = _safe_text(data.get("suggested_value"))[:1600]
-    if action == "generate_website_copy_set" and not suggested_value and allowed_draft:
-        suggested_value = allowed_draft.get("headline", "Website draft ready for review.")
+    raw_suggested_value = data.get("suggested_value")
+    suggested_value = _safe_text(raw_suggested_value)[:1600] if not isinstance(raw_suggested_value, (dict, list)) else ""
+    if action == "generate_website_copy_set":
+        suggested_value = allowed_draft.get("headline", suggested_value or "Website draft ready for review.")
     return {
         "suggested_value": suggested_value,
         "suggestions": suggestions,
@@ -557,6 +558,7 @@ def build_website_ai_assist_response(contractor: Contractor, payload: dict[str, 
         response = client.responses.create(
             model=getattr(settings, "OPENAI_WEBSITE_BUILDER_MODEL", "gpt-4.1-mini"),
             temperature=0.45,
+            max_output_tokens=650,
             input=[
                 {
                     "role": "system",

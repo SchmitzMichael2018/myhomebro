@@ -19,7 +19,7 @@ from projects.models import (
     Skill,
 )
 from projects.models_project_intake import ProjectIntake
-from projects.services.website_builder import build_website_profile_payload
+from projects.services.website_builder import _normalize_website_ai_result, build_website_profile_payload
 
 
 User = get_user_model()
@@ -403,6 +403,21 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
                 )
                 self.assertNotEqual(response.status_code, 400)
                 self.assertEqual(response.data["action"], action)
+
+    def test_coordinated_ai_draft_never_echoes_a_raw_object_as_summary(self):
+        result = _normalize_website_ai_result(
+            "generate_website_copy_set",
+            {
+                "suggested_value": {"headline": "Raw nested value"},
+                "draft": {
+                    "headline": "Clear reviewed headline",
+                    "subheadline": "A concise supporting line.",
+                },
+            },
+        )
+
+        self.assertEqual(result["suggested_value"], "Clear reviewed headline")
+        self.assertNotIn("{", result["suggested_value"])
 
     @override_settings(
         CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={
