@@ -1049,9 +1049,10 @@ def update_contractor_website(
         order = [item for item in website.homepage_layout.get("section_order", []) if item in SECTION_KEYS]
         website.homepage_layout["section_order"] = order or TEMPLATE_PRESETS.get(website.template_key, TEMPLATE_PRESETS["starter"])["section_order"]
 
-    if website.status == ContractorWebsite.STATUS_PUBLISHED:
-        website.status = ContractorWebsite.STATUS_DRAFT
-    website.save(update_fields=["template_key", "homepage_layout", "status", "updated_at"])
+    # A published website keeps serving its immutable published_snapshot while
+    # the contractor edits the working draft. The updated_at/published_at
+    # timestamps tell the workspace that a newer draft is waiting to publish.
+    website.save(update_fields=["template_key", "homepage_layout", "updated_at"])
     return website
 
 
@@ -1069,10 +1070,6 @@ def update_website_page(page: ContractorWebsitePage, payload: dict[str, Any]) ->
     if isinstance(payload.get("content_blocks"), dict):
         page.content_blocks = _merge_dict(page.content_blocks or {}, payload["content_blocks"])
     page.save()
-    website = page.website
-    if website.status == ContractorWebsite.STATUS_PUBLISHED:
-        website.status = ContractorWebsite.STATUS_DRAFT
-        website.save(update_fields=["status", "updated_at"])
     return page
 
 

@@ -510,6 +510,34 @@ class ContractorWebsiteBuilderFoundationTests(TestCase):
             "website_publish": True,
         }
     )
+    def test_editing_published_page_keeps_last_snapshot_live(self):
+        self.client.get("/api/projects/contractor/website/", secure=True)
+        website = ContractorWebsite.objects.get(contractor=self.contractor)
+        home = website.pages.get(page_type=ContractorWebsitePage.PAGE_HOME)
+        home.content_blocks["hero_headline"] = "Original live headline"
+        home.save(update_fields=["content_blocks", "updated_at"])
+        self.client.post("/api/projects/contractor/website/publish/", secure=True)
+
+        update = self.client.patch(
+            f"/api/projects/contractor/website/pages/{home.id}/",
+            {"content_blocks": {"hero_headline": "New draft headline"}},
+            format="json",
+            secure=True,
+        )
+        self.assertEqual(update.status_code, 200)
+        website.refresh_from_db()
+        self.assertEqual(website.status, ContractorWebsite.STATUS_PUBLISHED)
+
+        public = self.client.get(f"/api/projects/public/websites/{self.profile.slug}/", secure=True)
+        self.assertEqual(public.status_code, 200)
+        self.assertEqual(public.data["current_page"]["content_blocks"]["hero_headline"], "Original live headline")
+
+    @override_settings(
+        CONTRACTOR_WEBSITE_FEATURE_DEFAULTS={
+            "website_builder": True,
+            "website_publish": True,
+        }
+    )
     def test_paused_website_not_public(self):
         self.client.get("/api/projects/contractor/website/", secure=True)
         self.client.post("/api/projects/contractor/website/publish/", secure=True)
