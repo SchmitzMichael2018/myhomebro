@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FileText, FolderKanban, Hammer, Home, Inbox, LayoutDashboard, LogOut, Pencil, UserRound, Users, Wrench } from "lucide-react";
+import { Bell, CheckCircle2, Circle, CreditCard, ExternalLink, FolderKanban, Home, LayoutDashboard, LogOut, Pencil, UserRound, Users, Wrench } from "lucide-react";
 import toast from "react-hot-toast";
 
 import api, { clearAuth } from "../api";
@@ -12,18 +12,39 @@ import CustomerPropertyProfile from "./CustomerPropertyProfile.jsx";
 import CustomerRequests from "./CustomerRequests.jsx";
 import DIYProjectPlanner from "./DIYProjectPlanner.jsx";
 
-const BASE_TABS = [
-  ["overview", "Overview", LayoutDashboard],
-  ["requests", "Requests", Inbox],
-  ["estimates", "Estimates", FileText],
+const PRIMARY_TABS = [
+  ["overview", "Home", LayoutDashboard],
   ["projects", "Projects", FolderKanban],
-  ["diy-planner", "DIY Planner", Hammer],
-  ["property", "Property", Home],
   ["payments", "Payments", CreditCard],
-  ["documents", "Documents", FileText],
-  ["notifications", "Notifications", Bell],
-  ["account", "Account", UserRound],
+  ["property", "Property", Home],
+  ["notifications", "Updates", Bell],
 ];
+
+const PROJECT_TABS = [
+  ["projects", "Project Workspaces"],
+  ["requests", "Requests"],
+  ["estimates", "Estimates"],
+  ["diy-planner", "DIY Planner"],
+];
+
+const PROPERTY_TABS = [
+  ["property", "Property Records"],
+  ["documents", "Documents"],
+];
+
+const VALID_PORTAL_TABS = new Set([
+  "overview",
+  "projects",
+  "requests",
+  "estimates",
+  "diy-planner",
+  "maintenance",
+  "property",
+  "documents",
+  "payments",
+  "notifications",
+  "account",
+]);
 
 const MAINTENANCE_TAB = ["maintenance", "Maintenance", Wrench];
 const SEARCH_RADIUS_OPTIONS = [5, 10, 25, 50, 100];
@@ -63,9 +84,19 @@ const DEFAULT_NOTIFICATION_FREQUENCY_OPTIONS = [
   { value: "off", label: "Off" },
 ];
 
-function customerPortalTabs(showMaintenanceTab) {
-  if (!showMaintenanceTab) return BASE_TABS;
-  return [BASE_TABS[0], MAINTENANCE_TAB, ...BASE_TABS.slice(1)];
+function primaryTabFor(tab) {
+  if (["requests", "estimates", "diy-planner", "maintenance"].includes(tab)) return "projects";
+  if (["documents"].includes(tab)) return "property";
+  if (tab === "account") return "overview";
+  return tab;
+}
+
+function contextualTabs(activeTab, showMaintenanceTab) {
+  if (primaryTabFor(activeTab) === "projects") {
+    return showMaintenanceTab ? [...PROJECT_TABS, [MAINTENANCE_TAB[0], MAINTENANCE_TAB[1]]] : PROJECT_TABS;
+  }
+  if (primaryTabFor(activeTab) === "property") return PROPERTY_TABS;
+  return [];
 }
 
 const PORTAL_ADDRESS_AUTOCOMPLETE_CLASSES = {
@@ -112,6 +143,59 @@ function EmptyState({ title, children, testId }) {
       <p className="mt-1 leading-6 text-slate-400">{children}</p>
     </div>
   );
+}
+
+function isCompletedCustomerProject(project = {}) {
+  const state = [project.customer_status, project.status, project.status_label, project.customer_status_label]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return Boolean(project.archived || project.is_archived || project.completed_at || /completed|closed|archived/.test(state));
+}
+
+function customerProjectSummary(project = {}) {
+  const summary = project.summary || {};
+  const parts = [project.contractor_name || "Contractor pending"];
+  const completed = Number(summary.milestones_completed ?? project.milestones_completed);
+  const total = Number(summary.milestones_total ?? project.milestones_total);
+  if (Number.isFinite(completed) && Number.isFinite(total) && total > 0) {
+    parts.push(`${completed} of ${total} milestones complete`);
+  }
+  const paid = Number(summary.payments_paid ?? project.payments_paid);
+  const paymentTotal = Number(summary.payments_total ?? project.payments_total);
+  if (Number.isFinite(paid) && Number.isFinite(paymentTotal) && paymentTotal > 0) {
+    parts.push(`${paid} of ${paymentTotal} payments complete`);
+  }
+  if (project.remaining_amount != null || summary.remaining_amount != null) {
+    parts.push(`${moneyLabel(summary.remaining_amount ?? project.remaining_amount)} remaining`);
+  } else if (project.total_cost) {
+    parts.push(`${moneyLabel(project.total_cost)} project value`);
+  }
+  if (project.warranty_status_label || project.warranty_status) {
+    parts.push(`Warranty: ${project.warranty_status_label || project.warranty_status}`);
+  }
+  if (project.next_action_label || project.next_action) {
+    parts.push(`Next: ${project.next_action_label || project.next_action}`);
+  }
+  return parts.join(" · ");
+}
+
+function tabFromPortalDestination(destination = "") {
+  const value = String(destination || "").trim();
+  if (value.startsWith("portal:")) return value.replace("portal:", "") || "overview";
+  if (value.startsWith("#")) return value.replace(/^#/, "") || "overview";
+  if (value.startsWith("/portal#")) return value.split("#")[1] || "overview";
+  return "";
+}
+
+function openPortalDestination(destination, onOpenTab) {
+  const target = String(destination || "").trim();
+  const tab = tabFromPortalDestination(target);
+  if (tab) {
+    onOpenTab?.(tab);
+    return;
+  }
+  if (target) window.location.assign(target);
 }
 
 function recommendationTheme(recommendation = {}) {
@@ -1258,7 +1342,10 @@ function CustomerActivationChecklist({ portal, onOpenTab }) {
 function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead }) {
   const summary = portal?.summary || {};
   const latestRequests = (portal?.requests || []).slice(0, 3);
-  const latestProjects = (portal?.projects || []).slice(0, 3);
+  const allProjects = Array.isArray(portal?.projects) ? portal.projects : [];
+  const activeProjects = allProjects.filter((project) => !isCompletedCustomerProject(project));
+  const completedProjects = allProjects.filter(isCompletedCustomerProject);
+  const latestProjects = activeProjects.slice(0, 3);
   const notifications = portal?.notifications || [];
   const unreadNotifications = notifications.filter(isUnreadNotification);
   const overviewRecommendations = [...(Array.isArray(portal?.recommendations) ? portal.recommendations : []), ...(Array.isArray(portal?.property_intelligence?.insights) ? portal.property_intelligence.insights.map(normalizeInsightRecommendation) : [])];
@@ -1278,6 +1365,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
       body: `${request.status_label || "Submitted"}${request.property_name ? ` - ${request.property_name}` : ""}${request.unit_label ? ` - ${request.unit_label}` : ""}`,
       action: "Review maintenance request",
       tab: tenantMaintenanceTab,
+      priority: 3,
     })),
     ...openDisputes.slice(0, 2).map((payment) => ({
       id: `dispute-${payment.id}`,
@@ -1285,6 +1373,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
       body: `${payment.dispute_status_label || payment.dispute_status} - ${payment.amount_label || "$0.00"}`,
       action: "Track Issue Status",
       tab: "payments",
+      priority: 1,
     })),
     ...homeSystemAttentionItems(portal).slice(0, 2),
     ...actionableNotifications.slice(0, 3).map((notification) => ({
@@ -1293,6 +1382,8 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
       body: notification.message || "A project update is available.",
       action: "Open Notifications",
       tab: "notifications",
+      destination: notification.action_url,
+      priority: /signature|funding|approval|response/i.test(String(notification.event_type || "")) ? 1 : 3,
     })),
     ...openPayments.slice(0, 2).map((payment) => ({
       id: `payment-${payment.id}`,
@@ -1300,8 +1391,10 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
       body: `${payment.amount_label || "$0.00"} - ${payment.status_label || "Pending"}`,
       action: "Open Payments",
       tab: "payments",
+      destination: payment.action_target,
+      priority: 2,
     })),
-  ];
+  ].sort((a, b) => Number(a.priority || 9) - Number(b.priority || 9));
 
   return (
     <div data-testid="customer-dashboard-overview" className="space-y-5">
@@ -1314,7 +1407,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
           </div>
           <Badge tone={needsAttention.length ? "gold" : "slate"}>{needsAttention.length || "No"} open</Badge>
         </div>
-        <div className="mt-4 grid gap-3 lg:grid-cols-2">{needsAttention.length ? needsAttention.slice(0, 5).map((item) => <InfoCard key={item.id} title={item.title} body={item.body} actionLabel={item.action} onClick={() => onOpenTab?.(item.tab)} />) : <div className="lg:col-span-2 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">Nothing needs your attention right now. New signatures, payment reviews, contractor responses, disputes, and maintenance reminders will appear here.</div>}</div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">{needsAttention.length ? needsAttention.slice(0, 5).map((item) => <InfoCard key={item.id} title={item.title} body={item.body} actionLabel={item.action} onClick={() => item.destination ? openPortalDestination(item.destination, onOpenTab) : onOpenTab?.(item.tab)} />) : <div className="lg:col-span-2 rounded-2xl border border-emerald-300/30 bg-emerald-400/10 p-4 text-sm text-emerald-100">Nothing needs your attention right now. New signatures, payment reviews, contractor responses, disputes, and maintenance reminders will appear here.</div>}</div>
       </section>
 
       <section data-testid="customer-overview-active-projects" className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5">
@@ -1330,7 +1423,7 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
           {latestProjects.length ? (
-            latestProjects.map((project) => <InfoCard key={project.id} title={project.title} eyebrow={project.customer_status_label || project.status_label || "Project"} body={`${project.contractor_name || "Contractor pending"}${project.total_cost ? ` - ${moneyLabel(project.total_cost)}` : ""}`} actionLabel="View project workspace" onClick={() => onOpenTab?.("projects")} />)
+            latestProjects.map((project) => <InfoCard key={project.id} title={project.title} eyebrow={project.customer_status_label || project.status_label || "Project"} body={customerProjectSummary(project)} actionLabel="View project workspace" onClick={() => onOpenTab?.("projects")} />)
           ) : (
             <div className="lg:col-span-3">
               <EmptyState title="No active projects yet" testId="customer-overview-projects-empty">
@@ -1339,9 +1432,19 @@ function OverviewPanel({ portal, onOpenTab, tenantMaintenanceTab = "requests", m
             </div>
           )}
         </div>
+        {completedProjects.length ? (
+          <details className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/55 p-4" data-testid="customer-overview-completed-projects">
+            <summary className="cursor-pointer text-sm font-semibold text-slate-200">Completed Projects ({completedProjects.length})</summary>
+            <div className="mt-3 grid gap-3 lg:grid-cols-3">
+              {completedProjects.slice(0, 6).map((project) => (
+                <InfoCard key={project.id} title={project.title} eyebrow="Completed" body={customerProjectSummary(project)} actionLabel="View project record" onClick={() => onOpenTab?.("projects")} />
+              ))}
+            </div>
+          </details>
+        ) : null}
       </section>
 
-      <NotificationPanel notifications={unreadNotifications} unreadCount={unreadNotifications.length} markingId={markingId} bulkMarking={bulkMarking} onMarkRead={onMarkRead} onMarkAllRead={onMarkAllRead} onOpenHistory={() => onOpenTab?.("notifications")} />
+      <NotificationPanel notifications={unreadNotifications} unreadCount={unreadNotifications.length} markingId={markingId} bulkMarking={bulkMarking} onMarkRead={onMarkRead} onMarkAllRead={onMarkAllRead} onOpenHistory={() => onOpenTab?.("notifications")} onOpenTab={onOpenTab} />
 
       <CustomerRecommendationsPanel recommendations={overviewRecommendations} onOpenTab={onOpenTab} />
 
@@ -1706,9 +1809,9 @@ function NotificationsCenter({ notifications = [], unreadCount = 0, preferences 
                           if (notification.action_url.startsWith("#reminder:")) {
                             event.preventDefault();
                             onOpenReminder?.(notification.action_url.replace("#reminder:", ""));
-                          } else if (notification.action_url.startsWith("#")) {
+                          } else if (tabFromPortalDestination(notification.action_url)) {
                             event.preventDefault();
-                            onOpenTab?.(notification.action_url.replace(/^#/, ""));
+                            openPortalDestination(notification.action_url, onOpenTab);
                           }
                           if (isUnread) onMarkRead?.(notification);
                         }}
@@ -1853,7 +1956,7 @@ function normalizePortalNotifications(rows = []) {
   });
 }
 
-function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead, onOpenHistory }) {
+function NotificationPanel({ notifications = [], unreadCount = 0, markingId = "", bulkMarking = false, onMarkRead, onMarkAllRead, onOpenHistory, onOpenTab }) {
   const unreadNotifications = notifications
     .filter(isUnreadNotification)
     .sort((a, b) => {
@@ -1900,6 +2003,22 @@ function NotificationPanel({ notifications = [], unreadCount = 0, markingId = ""
                     </div>
                     <p className="mt-2 text-sm leading-5 text-slate-300">{notification.message || "A workspace update is available."}</p>
                     <div className="mt-2 text-xs text-slate-500">{notification.created_at ? new Date(notification.created_at).toLocaleString() : "No date"}</div>
+                    {notification.action_url ? (
+                      <a
+                        href={notification.action_url}
+                        onClick={(event) => {
+                          if (tabFromPortalDestination(notification.action_url)) {
+                            event.preventDefault();
+                            openPortalDestination(notification.action_url, onOpenTab);
+                          }
+                          if (isUnreadNotification(notification)) onMarkRead?.(notification);
+                        }}
+                        className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-amber-100 hover:text-amber-50"
+                      >
+                        Open related item
+                        <ExternalLink size={14} />
+                      </a>
+                    ) : null}
                   </div>
                   <button type="button" data-testid={`customer-notification-mark-read-${notification.id}`} disabled={markingId === String(notification.id)} onClick={() => onMarkRead?.(notification)} className="shrink-0 rounded-lg border border-slate-600 bg-slate-950 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:border-sky-300/50 hover:text-white disabled:opacity-50">
                     {markingId === String(notification.id) ? "Saving..." : "Mark as read"}
@@ -2762,12 +2881,12 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
   const requestedWorkspace = linkedParams.get("workspace");
   const targetReimbursementId = linkedParams.get("reimbursement") || "";
   const targetAgreementId = linkedParams.get("agreement") || "";
-  const linkedWorkspace = ["projects", "requests", "payments", "notifications", "diy-planner"].includes(requestedWorkspace)
+  const linkedWorkspace = VALID_PORTAL_TABS.has(requestedWorkspace)
     ? requestedWorkspace
     : "overview";
   const [activeTab, setActiveTab] = useState(linkedWorkspace);
   useEffect(() => {
-    if (["projects", "requests", "payments", "notifications", "diy-planner"].includes(requestedWorkspace)) {
+    if (VALID_PORTAL_TABS.has(requestedWorkspace)) {
       setActiveTab(requestedWorkspace);
     }
   }, [requestedWorkspace]);
@@ -2810,12 +2929,13 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     rental_operations_locked: Boolean(portal?.account?.rental_operations_locked),
     checkout_endpoint: "",
   };
-  const visibleTabs = useMemo(() => customerPortalTabs(showMaintenanceTab), [showMaintenanceTab]);
+  const visibleTabs = PRIMARY_TABS;
+  const secondaryTabs = useMemo(() => contextualTabs(activeTab, showMaintenanceTab), [activeTab, showMaintenanceTab]);
   useEffect(() => {
-    if (!visibleTabs.some(([key]) => key === activeTab)) {
+    if (!VALID_PORTAL_TABS.has(activeTab)) {
       setActiveTab("overview");
     }
-  }, [activeTab, visibleTabs]);
+  }, [activeTab]);
   const openRequestFromPropertyTimeline = useCallback((requestId) => {
     if (!requestId) return;
     setFocusedRequestId(String(requestId));
@@ -3765,8 +3885,24 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
     return <CustomerDocuments documents={portal?.documents || []} propertyProfile={portal?.property_profile || {}} uploading={uploadingPropertyFile} uploadError={uploadError} onUpload={uploadPropertyFile} />;
   }, [activeTab, portal, creatingRequest, savingProperty, savingUnit, savingTenant, savingHomeSystem, uploadingPropertyFile, uploadError, token, onPortalUpdate, notifications, unreadCount, markingNotificationId, markingAllNotifications, archivingNotificationId, restoringNotificationId, savingNotificationPreferences, notificationPreferenceError, savingDeliveryPreferences, deliveryPreferenceError, savingProfile, savingTeamMember, savingVendor, focusedRequestId, requestDraft, openRequestFromPropertyTimeline, isPropertyManagementAccount, showMaintenanceTab]);
 
+  const mobilePrimaryAction = useMemo(() => {
+    const actionNotification = notifications.find((notification) => isUnreadNotification(notification) && ACTIONABLE_NOTIFICATION_EVENTS.has(String(notification.event_type || "")) && notification.action_url);
+    if (actionNotification) {
+      return {
+        label: actionNotification.action_label || actionNotification.title || "Review update",
+        destination: actionNotification.action_url,
+        tab: "notifications",
+      };
+    }
+    const disputedPayment = (portal?.payments || []).find(hasOpenDispute);
+    if (disputedPayment) return { label: "Review open dispute", destination: disputedPayment.action_target, tab: "payments" };
+    const pendingPayment = (portal?.payments || []).find(isActionablePayment);
+    if (pendingPayment) return { label: paymentActionLabel(pendingPayment), destination: pendingPayment.action_target, tab: "payments" };
+    return { label: "Open Projects", destination: "", tab: "projects" };
+  }, [notifications, portal?.payments]);
+
   return (
-    <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 text-slate-100">
+    <div data-testid="customer-dashboard" className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(251,191,36,0.16),transparent_28%),linear-gradient(135deg,#020617,#082f49_52%,#020617)] px-4 py-6 pb-28 text-slate-100 md:pb-6">
       <div className="mx-auto w-full max-w-[1800px]">
         <header className="rounded-3xl border border-amber-200/20 bg-slate-900/80 p-5 shadow-2xl shadow-slate-950/40 sm:p-6 md:p-8">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -3799,6 +3935,15 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
                 </button>
                 <button
                   type="button"
+                  data-testid="customer-dashboard-tab-account"
+                  onClick={() => setActiveTab("account")}
+                  className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full border border-slate-600 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-amber-300/50 hover:text-white"
+                >
+                  <UserRound size={13} />
+                  Account
+                </button>
+                <button
+                  type="button"
                   data-testid="customer-dashboard-header-logout"
                   onClick={() => {
                     clearAuth(false);
@@ -3815,12 +3960,21 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
 
           <nav className="mt-6 flex gap-2 overflow-x-auto pb-1" aria-label="Customer workspace tabs">
             {visibleTabs.map(([key, label, Icon]) => (
-              <button key={key} type="button" data-testid={`customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${activeTab === key ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"}`}>
+              <button key={key} type="button" data-testid={`customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`inline-flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition ${primaryTabFor(activeTab) === key ? "border-amber-300/60 bg-amber-300/15 text-amber-100" : "border-slate-700 bg-slate-950/40 text-slate-300 hover:border-slate-500 hover:bg-slate-900"}`}>
                 <Icon size={16} />
                 {label}
               </button>
             ))}
           </nav>
+          {secondaryTabs.length ? (
+            <nav className="mt-3 flex gap-2 overflow-x-auto border-t border-slate-700/70 pt-3" aria-label={`${primaryTabFor(activeTab)} sections`} data-testid="customer-dashboard-context-tabs">
+              {secondaryTabs.map(([key, label]) => (
+                <button key={key} type="button" data-testid={key === "projects" || key === "property" ? `customer-dashboard-section-${key}` : `customer-dashboard-tab-${key}`} onClick={() => setActiveTab(key)} className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition ${activeTab === key ? "bg-sky-400/15 text-sky-100 ring-1 ring-sky-300/40" : "text-slate-400 hover:bg-slate-800 hover:text-white"}`}>
+                  {label}
+                </button>
+              ))}
+            </nav>
+          ) : null}
         </header>
 
         <main className="mt-5">
@@ -3841,6 +3995,15 @@ export default function CustomerDashboard({ portal, token, onPortalUpdate }) {
           ) : null}
           {tabContent}
         </main>
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-amber-200/20 bg-slate-950/95 p-3 shadow-[0_-12px_30px_rgba(2,6,23,0.55)] backdrop-blur md:hidden" data-testid="customer-mobile-primary-action">
+        <button
+          type="button"
+          onClick={() => mobilePrimaryAction.destination ? openPortalDestination(mobilePrimaryAction.destination, setActiveTab) : setActiveTab(mobilePrimaryAction.tab)}
+          className="mx-auto flex min-h-12 w-full max-w-xl items-center justify-center rounded-xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950"
+        >
+          {mobilePrimaryAction.label}
+        </button>
       </div>
       <ReminderDetailModal
         reminder={reminderDetail}

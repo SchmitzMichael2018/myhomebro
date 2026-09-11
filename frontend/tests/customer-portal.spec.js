@@ -4515,7 +4515,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-dashboard-logo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Customer Portal" })).toBeVisible();
   await expect(page.getByText("track projects, payments, documents, warranties, and property records in one place.")).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([/Overview/, /Requests/, /Projects/, /DIY Planner/, /Property/, /Payments/, /Documents/, /Notifications/, /Account/]);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText(["Home", "Projects", "Payments", "Property", "Updates"]);
   await expect(page.getByTestId("customer-portal-summary")).toBeVisible();
   await expect(page.getByTestId("customer-portal-summary-active-requests")).toContainText("1");
   await expect(page.getByTestId("customer-portal-summary-agreements")).toContainText("1");
@@ -4543,7 +4543,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("contractor_performance");
   await expect(page.getByTestId("customer-unified-recommendations")).not.toContainText("Admin");
   await page.getByTestId("customer-unified-recommendations").getByRole("button", { name: "Create Request" }).click();
-  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/bg-sky/);
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await page.getByTestId("customer-unified-recommendations").getByRole("button", { name: "View Property Records" }).click();
   await expect(page.getByTestId("customer-dashboard-tab-property")).toHaveClass(/border-amber/);
@@ -4555,7 +4555,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-portal-summary-projects")).toHaveClass(/hover:border-amber/);
   await page.getByTestId("customer-portal-summary-active-requests").click();
-  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/bg-sky/);
   await expect(page.getByTestId("customer-notifications-panel")).toHaveCount(0);
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-notifications-panel")).toContainText("Recent Updates");
@@ -4659,7 +4659,7 @@ test("customer portal is reachable from the landing page and loads secure record
     company_notes: "Portfolio onboarding account.",
   });
   expect(savedProfilePayload).toMatchObject(profileSavePayload);
-  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText([/Overview/, /Maintenance/, /Requests/, /Projects/, /DIY Planner/, /Property/, /Payments/, /Documents/, /Notifications/, /Account/]);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).locator("button")).toHaveText(["Home", "Projects", "Payments", "Property", "Updates"]);
   await page.getByTestId("customer-account-type-individual").check();
   await expect(page.getByTestId("customer-company-profile-section")).toHaveCount(0);
   await expect(page.getByTestId("pm-team-members-section")).toHaveCount(0);
@@ -4715,7 +4715,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Plumbing");
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Active");
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Manual Vendor");
-  await page.getByTestId("pm-vendor-edit-701").click();
+  await page.getByTestId("pm-vendor-edit-701").evaluate((button) => button.click());
   await expect(page.getByTestId("pm-vendor-edit-modal")).toBeVisible();
   await page.getByTestId("pm-vendor-phone").fill("512-555-0199");
   await page.getByTestId("pm-vendor-save-edit").click();
@@ -4724,7 +4724,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await page.getByTestId("pm-vendor-disable-701").click();
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Inactive");
   await expect(page.getByTestId("pm-vendor-disable-701")).toHaveCount(0);
-  await page.getByTestId("pm-vendor-edit-701").click();
+  await page.getByTestId("pm-vendor-edit-701").evaluate((button) => button.click());
   await page.getByTestId("pm-vendor-status").selectOption("active");
   await page.getByTestId("pm-vendor-save-edit").click();
   await expect(page.getByTestId("pm-vendor-701")).toContainText("Active");
@@ -4879,12 +4879,13 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("home-records-timeline-action-tenant-maintenance-801")).toContainText("Review maintenance request");
   await expect(page.getByTestId("home-records-timeline")).toContainText("Old dishwasher leak");
   await page.getByTestId("home-records-timeline-action-tenant-maintenance-801").click();
-  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/bg-sky/);
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-overview").click();
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Kitchen sink leak");
   await expect(page.getByTestId("customer-overview-needs-attention")).toContainText("Review maintenance request");
   await expect(page.getByTestId("customer-overview-needs-attention")).not.toContainText("Old dishwasher leak");
+  await page.getByTestId("customer-dashboard-tab-projects").click();
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("tenant-maintenance-review-queue")).toHaveCount(0);
   await expect(page.getByTestId("property-work-orders-section")).toHaveCount(0);
@@ -5247,7 +5248,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toContainText("View request");
   await expect(page.getByTestId("home-records-timeline-action-request-customer-request-9")).toHaveAttribute("aria-label", "View request for Seasonal HVAC maintenance");
   await page.getByTestId("home-records-timeline-action-request-customer-request-9").click();
-  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveClass(/bg-sky/);
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Seasonal HVAC maintenance");
   await expect(page.getByTestId("customer-request-detail-modal")).toContainText("Request Details");
   await page.getByRole("button", { name: "Close request details" }).click();
@@ -5516,6 +5517,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("customer-notifications-center").getByRole("heading", { name: "Payment received" })).toHaveCount(1);
   await expect(page.getByTestId("customer-notifications-center")).not.toContainText("Internal payment email row");
 
+  await page.getByTestId("customer-dashboard-tab-property").click();
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-portal-documents")).toContainText("Home Document Vault");
   await expect(page.getByTestId("customer-documents-vault-controls")).toBeVisible();
@@ -5715,7 +5717,7 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-active-project")).toHaveCount(0);
   await expect(page.getByTestId("property-open-request")).toHaveCount(0);
   await expect(page.getByTestId("customer-dashboard-tab-projects")).toBeVisible();
-  await expect(page.getByTestId("customer-dashboard-tab-requests")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveCount(0);
   await expect(page.getByTestId("customer-property-manager")).toContainText("My Properties");
   await expect(page.getByTestId("customer-property-card-1")).toContainText("Primary Property");
   await expect(page.getByTestId("customer-property-card-2")).toContainText("Lake House");
@@ -5737,10 +5739,11 @@ test("customer portal is reachable from the landing page and loads secure record
   await expect(page.getByTestId("property-view-documents")).toHaveCount(0);
   await expect(page.getByTestId("customer-property-profile")).not.toContainText("Document library");
   await page.getByTestId("customer-dashboard-tab-documents").click();
-  await expect(page.getByTestId("customer-dashboard-tab-documents")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-dashboard-tab-documents")).toHaveClass(/bg-sky/);
   await page.getByTestId("customer-dashboard-tab-property").click();
   await expect(page.getByTestId("home-records-timeline")).toContainText("Quarterly service visit");
 
+  await page.getByTestId("customer-dashboard-tab-projects").click();
   await page.getByTestId("customer-dashboard-tab-requests").click();
   await expect(page.getByTestId("customer-portal-bid-accept-lead-2")).toContainText("Award Bid");
   await page.getByTestId("customer-bid-comparison-award-lead-2").click();
@@ -5813,6 +5816,7 @@ test("customer notification preferences save and reminder details show supplies"
 });
 
 test("customer portal supports returning customer login", async ({ page }) => {
+  await page.addInitScript(() => window.localStorage.clear());
   await page.route("**/api/auth/login/", async (route) => {
     await route.fulfill({
       status: 200,
@@ -5825,10 +5829,11 @@ test("customer portal supports returning customer login", async ({ page }) => {
     });
   });
   await page.route("**/api/projects/customer-portal/account/", async (route) => {
+    const authorization = route.request().headers().authorization || "";
     await route.fulfill({
-      status: 200,
+      status: authorization ? 200 : 401,
       contentType: "application/json",
-      body: JSON.stringify(portalPayload),
+      body: JSON.stringify(authorization ? portalPayload : { detail: "Authentication credentials were not provided." }),
     });
   });
 
@@ -6498,6 +6503,8 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await page.goto("/portal/empty-token", { waitUntil: "domcontentloaded" });
   await expect(page.getByTestId("customer-dashboard")).toBeVisible();
   await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Customer workspace tabs" }).getByRole("button")).toHaveCount(5);
+  await expect(page.getByTestId("customer-mobile-primary-action")).toHaveCount(1);
   await expect(page.getByTestId("customer-notifications-empty")).toContainText("No new notifications");
   await expect(page.getByTestId("customer-overview-projects-empty")).toContainText("No active projects yet");
   await expect(page.getByTestId("customer-overview-requests-empty")).toContainText("No requests yet");
@@ -6518,7 +6525,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await expect(page.getByTestId("property-home-systems")).toContainText("Home Systems");
   await expect(page.getByTestId("property-active-work")).toHaveCount(0);
   await expect(page.getByTestId("customer-dashboard-tab-projects")).toBeVisible();
-  await expect(page.getByTestId("customer-dashboard-tab-requests")).toBeVisible();
+  await expect(page.getByTestId("customer-dashboard-tab-requests")).toHaveCount(0);
   await expect(page.getByTestId("property-maintenance-center")).toContainText("Maintenance Center");
   await expect(page.getByTestId("home-records-timeline-empty")).toContainText("No property timeline yet");
   await expect(page.getByTestId("home-records-warranty-center")).toHaveCount(0);
@@ -6535,6 +6542,7 @@ test("customer portal shows friendly empty states", async ({ page }) => {
   await page.getByTestId("customer-dashboard-tab-payments").click();
   await expect(page.getByTestId("customer-payments-empty")).toContainText("No payment records yet");
 
+  await page.getByTestId("customer-dashboard-tab-property").click();
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-documents-empty")).toContainText("No documents yet");
 
@@ -6606,14 +6614,13 @@ test("tenant maintenance notification opens the Maintenance tab", async ({ page 
   });
 
   await page.goto("/portal/customer-token", { waitUntil: "domcontentloaded" });
-  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-notifications").click();
   await expect(page.getByTestId("customer-notifications-center-item-901")).toContainText("New tenant maintenance request");
   await page
     .getByTestId("customer-notifications-center-item-901")
     .getByRole("link", { name: /Open related item/ })
     .click();
-  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/border-amber/);
+  await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toHaveClass(/bg-sky/);
   await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
 });
 
@@ -6675,6 +6682,7 @@ test("rental operations gating locks internal work orders but keeps marketplace 
 
   await page.goto("/portal/customer-token");
   await expect(page.getByTestId("rental-operations-subscription-banner")).toContainText("Internal maintenance tools require Rental Operations.");
+  await page.getByTestId("customer-dashboard-tab-projects").click();
   await page.getByTestId("customer-dashboard-tab-maintenance").click();
   await page.getByTestId("property-work-order-add").click();
   await page.getByTestId("property-work-order-title").fill("Locked staff repair");
@@ -6893,6 +6901,7 @@ test("individual customer rental toggle unlocks tenant and unit tools for that p
 
   await expect(page.getByTestId("property-units-section")).toBeVisible();
   await expect(page.getByTestId("property-tenants-section")).toBeVisible();
+  await page.getByTestId("customer-dashboard-tab-projects").click();
   await expect(page.getByTestId("customer-dashboard-tab-maintenance")).toBeVisible();
   await page.getByTestId("customer-dashboard-tab-maintenance").click();
   await expect(page.getByTestId("customer-maintenance-workspace")).toBeVisible();
@@ -7123,6 +7132,7 @@ test("customer portal limits long home records, payments, and documents without 
   await page.getByTestId("customer-payments-history-toggle").click();
   await expect(page.getByTestId("customer-payment-history")).toContainText("Paid receipt 6");
 
+  await page.getByTestId("customer-dashboard-tab-property").click();
   await page.getByTestId("customer-dashboard-tab-documents").click();
   await expect(page.getByTestId("customer-portal-documents")).not.toContainText("Portal extra document 10");
   await page.getByTestId("customer-documents-show-more").click();

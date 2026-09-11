@@ -17,6 +17,7 @@ const TeamAccountSetup = lazy(() => import("./components/TeamAccountSetup"));
 
 const AgreementReview = lazy(() => import("./pages/AgreementReview.jsx"));
 const ProjectDashboardPage = lazy(() => import("./pages/ProjectDashboardPage.jsx"));
+const CustomerPortalPage = lazy(() => import("./pages/CustomerPortalPage.jsx"));
 const CustomerPortalUploadSessionPage = lazy(() => import("./pages/CustomerPortalUploadSessionPage.jsx"));
 const StripeOnboarding = lazy(() => import("./components/Stripe/StripeOnboarding.jsx"));
 
@@ -85,6 +86,8 @@ export default function App() {
           <Route path="/customer-portal/:token" element={<LegacyPortalTokenRedirect />} />
           <Route path="/my-records" element={<Navigate to="/portal" replace />} />
           <Route path="/my-records/:token" element={<LegacyPortalTokenRedirect />} />
+          <Route path="/portal" element={<CustomerPortalPage />} />
+          <Route path="/portal/:token" element={<CustomerPortalPage />} />
           <Route path="/portal/upload-session/:sessionToken" element={<CustomerPortalUploadSessionPage />} />
 
           {/* 🔐 Public password reset */}

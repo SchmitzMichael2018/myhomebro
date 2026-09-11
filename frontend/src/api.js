@@ -359,6 +359,13 @@ function installInterceptors(instance) {
       const config = error.config || {};
       const reqPath = pathOnly(config.url || "");
 
+      // Some public entry points intentionally probe an authenticated endpoint
+      // to decide whether to render a dashboard or a sign-in screen. A 401 in
+      // that case is expected and must not bounce the visitor to the homepage.
+      if (config.skipAuthRedirect) {
+        return Promise.reject(error);
+      }
+
       if (isNoAuthPath(reqPath)) {
         return Promise.reject(error);
       }

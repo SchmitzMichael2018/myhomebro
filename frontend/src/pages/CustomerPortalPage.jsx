@@ -215,7 +215,9 @@ export default function CustomerPortalPage() {
         setLoading(true);
         setLoadError("");
         try {
-          const { data } = await api.get("/projects/customer-portal/account/");
+          const { data } = await api.get("/projects/customer-portal/account/", {
+            skipAuthRedirect: true,
+          });
           if (!mounted) return;
           setPortal(data);
         } catch {
